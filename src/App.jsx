@@ -1,45 +1,56 @@
 // src/App.jsx
-// Agora só orquestra as rotas — o conteúdo de cada página mora em src/pages/.
-import React from 'react';
+// Orquestra as rotas — cada página só é baixada quando o usuário navega até ela
+// (code splitting via React.lazy), em vez de tudo ir junto no primeiro carregamento.
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 
-import Login from './pages/Login';
-import Cadastro from './pages/Cadastro';
-import EventosLista from './pages/EventosLista';
-import EventoNovo from './pages/EventoNovo';
-import AnaliseEvento from './pages/AnaliseEvento';
-import Times from './pages/Times';
-import Ligas from './pages/Ligas';
+const Login = lazy(() => import('./pages/Login'));
+const Cadastro = lazy(() => import('./pages/Cadastro'));
+const EventosLista = lazy(() => import('./pages/EventosLista'));
+const EventoNovo = lazy(() => import('./pages/EventoNovo'));
+const AnaliseEvento = lazy(() => import('./pages/AnaliseEvento'));
+const Times = lazy(() => import('./pages/Times'));
+const Ligas = lazy(() => import('./pages/Ligas'));
+
+function CarregandoPagina() {
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center text-slate-500 text-sm">
+      Carregando...
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/cadastro" element={<Cadastro />} />
+        <Suspense fallback={<CarregandoPagina />}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/cadastro" element={<Cadastro />} />
 
-          <Route path="/eventos" element={
-            <ProtectedRoute><Layout><EventosLista /></Layout></ProtectedRoute>
-          } />
-          <Route path="/eventos/novo" element={
-            <ProtectedRoute><Layout><EventoNovo /></Layout></ProtectedRoute>
-          } />
-          <Route path="/analise" element={
-            <ProtectedRoute><Layout><AnaliseEvento /></Layout></ProtectedRoute>
-          } />
-          <Route path="/times" element={
-            <ProtectedRoute><Layout><Times /></Layout></ProtectedRoute>
-          } />
-          <Route path="/ligas" element={
-            <ProtectedRoute><Layout><Ligas /></Layout></ProtectedRoute>
-          } />
+            <Route path="/eventos" element={
+              <ProtectedRoute><Layout><EventosLista /></Layout></ProtectedRoute>
+            } />
+            <Route path="/eventos/novo" element={
+              <ProtectedRoute><Layout><EventoNovo /></Layout></ProtectedRoute>
+            } />
+            <Route path="/analise" element={
+              <ProtectedRoute><Layout><AnaliseEvento /></Layout></ProtectedRoute>
+            } />
+            <Route path="/times" element={
+              <ProtectedRoute><Layout><Times /></Layout></ProtectedRoute>
+            } />
+            <Route path="/ligas" element={
+              <ProtectedRoute><Layout><Ligas /></Layout></ProtectedRoute>
+            } />
 
-          <Route path="*" element={<Navigate to="/analise" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/analise" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );
