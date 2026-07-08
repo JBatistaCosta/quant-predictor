@@ -1,6 +1,6 @@
 // src/pages/Times.jsx — Cadastro de times/seleções (instituição + equipe por categoria)
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, X, Loader2, AlertTriangle, Building2 } from 'lucide-react';
+import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const CATEGORIAS = [
@@ -34,32 +34,47 @@ export default function Times() {
   const [form, setForm] = useState(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
 
-  const buscarTudo = async () => {
+  // --- Paginação, busca e filtros ---
+  const TAMANHO_PAGINA = 20;
+  const [pagina, setPagina] = useState(0);
+  const [totalRegistros, setTotalRegistros] = useState(0);
+  const [buscaDigitada, setBuscaDigitada] = useState('');
+  const [busca, setBusca] = useState('');           // valor "com debounce" que realmente dispara a consulta
+  const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('');
+
+  // Debounce: só atualiza "busca" (e por consequência consulta o banco) 400ms depois
+  // que o usuário para de digitar — evita uma consulta a cada tecla.
+  useEffect(() => {
+    const timer = setTimeout(() => { setBusca(buscaDigitada); setPagina(0); }, 400);
+    return () => clearTimeout(timer);
+  }, [buscaDigitada]);
+
+  const buscarEquipes = async () => {
     setCarregando(true);
-    // Busca equipes + o nome popular da instituição de cada uma, numa consulta só
-    const { data: eqData, error: eqErro } = await supabase
-      .from('equipes')
-      .select('id, tipo, categoria, instituicao_id')
-      .order('id');
-    if (eqErro) { setErro(eqErro.message); setCarregando(false); return; }
+    let query = supabase.from('vw_equipes_completo').select('*', { count: 'exact' });
+    if (busca) query = query.ilike('nome_popular', `%${busca}%`);
+    if (filtroTipo) query = query.eq('tipo', filtroTipo);
+    if (filtroCategoria) query = query.eq('categoria', filtroCategoria);
+    query = query.order('nome_popular').range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
 
-    const { data: nomesData } = await supabase
-      .from('instituicao_nomes')
-      .select('instituicao_id, nome')
-      .eq('formalidade', 'popular');
-
-    const nomePorInstituicao = {};
-    (nomesData || []).forEach(n => { if (!nomePorInstituicao[n.instituicao_id]) nomePorInstituicao[n.instituicao_id] = n.nome; });
-
-    setEquipes((eqData || []).map(e => ({ ...e, nome: nomePorInstituicao[e.instituicao_id] || '(sem nome)' })));
-
-    const { data: instData } = await supabase.from('instituicoes').select('id');
-    setInstituicoes((instData || []).map(i => ({ id: i.id, nome: nomePorInstituicao[i.id] || `Instituição #${i.id}` })));
-
+    const { data, error, count } = await query;
+    if (error) setErro(error.message);
+    else { setEquipes(data || []); setTotalRegistros(count || 0); }
     setCarregando(false);
   };
 
-  useEffect(() => { if (supabaseAtivo) buscarTudo(); }, []);
+  // Lista completa de instituições, só usada dentro do formulário (carregada uma vez, é leve)
+  const buscarInstituicoesParaForm = async () => {
+    const { data: instData } = await supabase.from('instituicoes').select('id');
+    const { data: nomesData } = await supabase.from('instituicao_nomes').select('instituicao_id, nome').eq('formalidade', 'popular');
+    const nomePorInstituicao = {};
+    (nomesData || []).forEach(n => { if (!nomePorInstituicao[n.instituicao_id]) nomePorInstituicao[n.instituicao_id] = n.nome; });
+    setInstituicoes((instData || []).map(i => ({ id: i.id, nome: nomePorInstituicao[i.id] || `Instituição #${i.id}` })).sort((a, b) => a.nome.localeCompare(b.nome)));
+  };
+
+  useEffect(() => { if (supabaseAtivo) buscarEquipes(); }, [pagina, busca, filtroTipo, filtroCategoria]);
+  useEffect(() => { if (supabaseAtivo && mostrarForm) buscarInstituicoesParaForm(); }, [mostrarForm]);
 
   const salvar = async (e) => {
     e.preventDefault();
@@ -109,7 +124,7 @@ export default function Times() {
 
       setForm(FORM_VAZIO);
       setMostrarForm(false);
-      buscarTudo();
+      buscarEquipes();
     } catch (err) {
       setErro(err.message);
     } finally {
@@ -121,7 +136,7 @@ export default function Times() {
     if (!window.confirm('Apagar essa equipe? A instituição continua existindo (isso só remove essa categoria).')) return;
     const { error } = await supabase.from('equipes').delete().eq('id', id);
     if (error) { setErro(error.message); return; }
-    buscarTudo();
+    buscarEquipes();
   };
 
   if (!supabaseAtivo) {
@@ -251,11 +266,34 @@ export default function Times() {
         </form>
       )}
 
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+          <input
+            value={buscaDigitada}
+            onChange={(e) => setBuscaDigitada(e.target.value)}
+            placeholder="Buscar por nome..."
+            className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-100"
+          />
+        </div>
+        <select value={filtroTipo} onChange={(e) => { setFiltroTipo(e.target.value); setPagina(0); }}
+          className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
+          <option value="">Todos os tipos</option>
+          <option value="selecao">Seleção</option>
+          <option value="clube">Clube</option>
+        </select>
+        <select value={filtroCategoria} onChange={(e) => { setFiltroCategoria(e.target.value); setPagina(0); }}
+          className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
+          <option value="">Todas as categorias</option>
+          {CATEGORIAS.map(c => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
+        </select>
+      </div>
+
       <div className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
         {carregando ? (
           <p className="text-slate-500 text-center py-10 text-sm">Carregando...</p>
         ) : equipes.length === 0 ? (
-          <p className="text-slate-500 text-center py-10 text-sm">Nenhuma equipe cadastrada ainda.</p>
+          <p className="text-slate-500 text-center py-10 text-sm">Nenhuma equipe encontrada.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -270,7 +308,7 @@ export default function Times() {
               <tbody className="divide-y divide-slate-700/50">
                 {equipes.map(eq => (
                   <tr key={eq.id} className="hover:bg-slate-700/20">
-                    <td className="p-3 font-semibold text-slate-200">{eq.nome}</td>
+                    <td className="p-3 font-semibold text-slate-200">{eq.nome_popular || "(sem nome)"}</td>
                     <td className="p-3 text-slate-400">
                       {eq.categoria === 'masculino_profissional'
                         ? <span className="text-slate-600 text-xs">— (padrão)</span>
@@ -287,6 +325,30 @@ export default function Times() {
           </div>
         )}
       </div>
+
+      {totalRegistros > TAMANHO_PAGINA && (
+        <div className="flex items-center justify-between mt-4 text-sm">
+          <span className="text-slate-500">
+            {pagina * TAMANHO_PAGINA + 1}–{Math.min((pagina + 1) * TAMANHO_PAGINA, totalRegistros)} de {totalRegistros}
+          </span>
+          <div className="flex gap-2">
+            <button
+              disabled={pagina === 0}
+              onClick={() => setPagina(p => p - 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700"
+            >
+              <ChevronLeft size={16} /> Anterior
+            </button>
+            <button
+              disabled={(pagina + 1) * TAMANHO_PAGINA >= totalRegistros}
+              onClick={() => setPagina(p => p + 1)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700"
+            >
+              Próxima <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
