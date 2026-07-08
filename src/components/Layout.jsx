@@ -5,13 +5,40 @@ import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X }
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
-const ITENS_MENU = [
-  { to: '/eventos', label: 'Eventos', icone: Calendar },
-  { to: '/eventos/novo', label: 'Novo Evento', icone: PlusCircle },
-  { to: '/analise', label: 'Análise de Evento', icone: Calculator },
-  { to: '/times', label: 'Times', icone: Users },
-  { to: '/ligas', label: 'Ligas', icone: Trophy },
+// Duas "visões": CONSUMO (só olhar o que já existe) e CADASTRO (criar/editar dados).
+const GRUPOS_MENU = [
+  {
+    grupo: 'Consumo',
+    itens: [
+      { to: '/eventos', label: 'Eventos', icone: Calendar },
+      { to: '/analise', label: 'Análise de Evento', icone: Calculator },
+    ],
+  },
+  {
+    grupo: 'Cadastro',
+    itens: [
+      { to: '/eventos/novo', label: 'Novo Evento', icone: PlusCircle },
+      { to: '/times', label: 'Times', icone: Users },
+      { to: '/ligas', label: 'Ligas', icone: Trophy },
+    ],
+  },
 ];
+
+function ItemMenu({ item, mobile, onClick }) {
+  return (
+    <NavLink
+      to={item.to}
+      onClick={onClick}
+      className={({ isActive }) =>
+        `flex items-center gap-1.5 ${mobile ? 'px-3 py-2.5' : 'px-3 py-2'} rounded-lg text-sm font-semibold transition-colors ${
+          isActive ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+        }`
+      }
+    >
+      <item.icone size={mobile ? 18 : 16} /> {item.label}
+    </NavLink>
+  );
+}
 
 export default function Layout({ children }) {
   const [menuAberto, setMenuAberto] = useState(false);
@@ -37,20 +64,17 @@ export default function Layout({ children }) {
           </span>
         </div>
 
-        {/* Menu desktop */}
-        <nav className="hidden md:flex items-center gap-1">
-          {ITENS_MENU.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  isActive ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
-                }`
-              }
-            >
-              <item.icone size={16} /> {item.label}
-            </NavLink>
+        {/* Menu desktop: dois grupos separados por uma divisória, com rótulo pequeno acima de cada um */}
+        <nav className="hidden md:flex items-end gap-4">
+          {GRUPOS_MENU.map((g, gi) => (
+            <div key={g.grupo} className={`flex items-center gap-1 ${gi > 0 ? 'pl-4 border-l border-slate-700' : ''}`}>
+              <div className="flex flex-col">
+                <span className="text-[9px] uppercase tracking-wider text-slate-600 font-bold mb-1 ml-1">{g.grupo}</span>
+                <div className="flex items-center gap-1">
+                  {g.itens.map(item => <ItemMenu key={item.to} item={item} />)}
+                </div>
+              </div>
+            </div>
           ))}
         </nav>
 
@@ -66,22 +90,18 @@ export default function Layout({ children }) {
         </div>
       </div>
 
-      {/* Menu mobile (expande abaixo da barra) */}
+      {/* Menu mobile (expande abaixo da barra), também em dois grupos com título */}
       {menuAberto && (
-        <nav className="md:hidden bg-slate-800 border-b border-slate-700 px-4 py-2 flex flex-col gap-1">
-          {ITENS_MENU.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setMenuAberto(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                  isActive ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-                }`
-              }
-            >
-              <item.icone size={18} /> {item.label}
-            </NavLink>
+        <nav className="md:hidden bg-slate-800 border-b border-slate-700 px-4 py-3 flex flex-col gap-3">
+          {GRUPOS_MENU.map(g => (
+            <div key={g.grupo}>
+              <span className="text-[10px] uppercase tracking-wider text-slate-600 font-bold block mb-1 ml-1">{g.grupo}</span>
+              <div className="flex flex-col gap-1">
+                {g.itens.map(item => (
+                  <ItemMenu key={item.to} item={item} mobile onClick={() => setMenuAberto(false)} />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
       )}
