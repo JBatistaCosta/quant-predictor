@@ -11,6 +11,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Cadastro = lazy(() => import('./pages/Cadastro'));
 const EventosLista = lazy(() => import('./pages/EventosLista'));
 const EventoNovo = lazy(() => import('./pages/EventoNovo'));
+const ImportarJogos = lazy(() => import('./pages/ImportarJogos'));
 const AnaliseEvento = lazy(() => import('./pages/AnaliseEvento'));
 const Times = lazy(() => import('./pages/Times'));
 const TimeDetalhe = lazy(() => import('./pages/TimeDetalhe'));
@@ -38,6 +39,9 @@ export default function App() {
             } />
             <Route path="/eventos/novo" element={
               <ProtectedRoute><Layout><EventoNovo /></Layout></ProtectedRoute>
+            } />
+            <Route path="/importar" element={
+              <ProtectedRoute><Layout><ImportarJogos /></Layout></ProtectedRoute>
             } />
             <Route path="/analise" element={
               <ProtectedRoute><Layout><AnaliseEvento /></Layout></ProtectedRoute>
