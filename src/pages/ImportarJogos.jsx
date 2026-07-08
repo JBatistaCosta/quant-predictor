@@ -1,0 +1,198 @@
+// src/pages/ImportarJogos.jsx
+// Busca jogos (passados e futuros) de um time na API-Football, tenta casar os
+// adversários com o registro de equipes já cadastrado, e importa os selecionados
+// pra tabela `eventos` — com registro auditado em `importacoes`.
+import React, { useState } from 'react';
+import { Download, Loader2, AlertTriangle, Check, Info } from 'lucide-react';
+import { supabase, supabaseAtivo } from '../supabaseClient';
+import SeletorEquipe from '../components/SeletorEquipe';
+
+export default function ImportarJogos() {
+  const [equipe, setEquipe] = useState(null);
+  const [diasPassado, setDiasPassado] = useState(30);
+  const [diasFuturo, setDiasFuturo] = useState(30);
+  const [buscando, setBuscando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [jogos, setJogos] = useState(null);
+  const [selecionados, setSelecionados] = useState({});
+  const [importando, setImportando] = useState(false);
+  const [resultadoImportacao, setResultadoImportacao] = useState(null);
+
+  const buscar = async () => {
+    if (!equipe) { setErro('Selecione um time primeiro.'); return; }
+    setErro('');
+    setBuscando(true);
+    setJogos(null);
+    setResultadoImportacao(null);
+
+    try {
+      const resp = await fetch(`/api/fixtures?time=${encodeURIComponent(equipe.nome_popular)}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`);
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
+
+      const nomesAdversarios = data.jogos.map(j => j.mandante === equipe.nome_popular ? j.visitante : j.mandante);
+      let equipesEncontradas = [];
+      if (nomesAdversarios.length > 0) {
+        const { data: vwData } = await supabase.from('vw_equipes_completo').select('id, nome_popular').in('nome_popular', [...new Set(nomesAdversarios)]);
+        equipesEncontradas = vwData || [];
+      }
+      const idPorNome = {};
+      equipesEncontradas.forEach(e => { idPorNome[e.nome_popular] = e.id; });
+
+      const jogosComMatch = data.jogos.map(j => {
+        const ehMandanteOEquipe = j.mandante === equipe.nome_popular;
+        const nomeAdversario = ehMandanteOEquipe ? j.visitante : j.mandante;
+        return {
+          ...j,
+          equipe_mandante_id: ehMandanteOEquipe ? equipe.id : (idPorNome[j.mandante] || null),
+          equipe_visitante_id: ehMandanteOEquipe ? (idPorNome[j.visitante] || null) : equipe.id,
+          adversario_casado: !!idPorNome[nomeAdversario],
+          nome_adversario: nomeAdversario,
+        };
+      });
+
+      setJogos(jogosComMatch);
+      const preSelecao = {};
+      jogosComMatch.forEach(j => { if (j.equipe_mandante_id && j.equipe_visitante_id) preSelecao[j.fixture_id] = true; });
+      setSelecionados(preSelecao);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setBuscando(false);
+    }
+  };
+
+  const importar = async () => {
+    const idsSelecionados = Object.keys(selecionados).filter(id => selecionados[id]);
+    const jogosParaImportar = jogos.filter(j => idsSelecionados.includes(String(j.fixture_id)) && j.equipe_mandante_id && j.equipe_visitante_id);
+    if (jogosParaImportar.length === 0) { setErro('Nenhum jogo selecionado (com os dois times identificados) pra importar.'); return; }
+
+    setImportando(true);
+    setErro('');
+
+    try {
+      const { error: impErro } = await supabase
+        .from('importacoes')
+        .insert({
+          fonte: 'API-Football',
+          descricao: `${jogosParaImportar.length} jogos de ${equipe.nome_popular} (${diasPassado} dias atrás até ${diasFuturo} dias à frente)`,
+          status: 'sucesso',
+        });
+      if (impErro) throw impErro;
+
+      let duplicados = 0, importados = 0;
+      for (const j of jogosParaImportar) {
+        const { data: existente } = await supabase
+          .from('eventos')
+          .select('id')
+          .eq('equipe_mandante_id', j.equipe_mandante_id)
+          .eq('equipe_visitante_id', j.equipe_visitante_id)
+          .eq('data_evento', j.data)
+          .maybeSingle();
+
+        if (existente) { duplicados++; continue; }
+
+        const { error: evErro } = await supabase.from('eventos').insert({
+          equipe_mandante_id: j.equipe_mandante_id,
+          equipe_visitante_id: j.equipe_visitante_id,
+          data_evento: j.data,
+          resolvido: j.resolvido,
+          placar_mandante: j.resolvido ? j.placar_mandante : null,
+          placar_visitante: j.resolvido ? j.placar_visitante : null,
+        });
+        if (!evErro) importados++;
+      }
+
+      setResultadoImportacao({ importados, duplicados, total: jogosParaImportar.length });
+      setJogos(null);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setImportando(false);
+    }
+  };
+
+  if (!supabaseAtivo) {
+    return (
+      <div className="max-w-4xl mx-auto bg-slate-800 border border-red-500/30 rounded-2xl p-6 text-center">
+        <AlertTriangle className="text-red-400 mx-auto mb-2" size={28} />
+        <p className="text-slate-300">Supabase não configurado.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+        <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
+          <Download className="text-emerald-400" size={28} /> Importar Jogos
+        </h1>
+        <p className="text-slate-400 mt-1 text-sm">Busca jogos passados e futuros de um time na API-Football (fonte auditada).</p>
+      </div>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4 space-y-4">
+        <SeletorEquipe label="Time" selecionado={equipe} onSelecionar={setEquipe} />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Dias no passado</label>
+            <input type="number" min="0" max="365" value={diasPassado} onChange={(e) => setDiasPassado(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Dias no futuro</label>
+            <input type="number" min="0" max="365" value={diasFuturo} onChange={(e) => setDiasFuturo(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
+          </div>
+        </div>
+        <button onClick={buscar} disabled={buscando || !equipe}
+          className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-lg flex items-center gap-2">
+          {buscando && <Loader2 size={16} className="animate-spin" />} Buscar Jogos
+        </button>
+        {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-2.5 rounded-lg">{erro}</div>}
+      </div>
+
+      {resultadoImportacao && (
+        <div className="bg-emerald-950/30 border border-emerald-600/40 text-emerald-300 text-sm px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
+          <Check size={16} /> {resultadoImportacao.importados} importado(s), {resultadoImportacao.duplicados} já existiam (pulados).
+        </div>
+      )}
+
+      {jogos && (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-bold text-slate-300">{jogos.length} jogo(s) encontrado(s)</span>
+            <button onClick={importar} disabled={importando}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+              {importando && <Loader2 size={14} className="animate-spin" />} Importar Selecionados
+            </button>
+          </div>
+
+          {jogos.some(j => !j.adversario_casado) && (
+            <div className="bg-blue-950/30 border border-blue-600/40 text-blue-300 text-xs px-3 py-2 rounded-lg mb-3 flex items-start gap-2">
+              <Info size={14} className="shrink-0 mt-0.5" />
+              Jogos marcados em laranja têm um adversário que não está no seu registro de Times — não dá pra importar até esse time existir em "Times".
+            </div>
+          )}
+
+          <div className="space-y-1.5 max-h-96 overflow-y-auto">
+            {jogos.map(j => (
+              <label key={j.fixture_id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${j.adversario_casado ? 'bg-slate-900' : 'bg-orange-950/20 opacity-60'}`}>
+                <input
+                  type="checkbox"
+                  checked={!!selecionados[j.fixture_id]}
+                  disabled={!j.adversario_casado}
+                  onChange={(e) => setSelecionados(prev => ({ ...prev, [j.fixture_id]: e.target.checked }))}
+                  className="accent-emerald-500"
+                />
+                <span className="text-slate-500 text-xs w-24 shrink-0">{j.data}</span>
+                <span className="flex-1 text-slate-200">{j.mandante} x {j.visitante}</span>
+                {j.resolvido && <span className="font-mono text-slate-300">{j.placar_mandante}-{j.placar_visitante}</span>}
+                <span className="text-[10px] text-slate-500 w-28 shrink-0 text-right">{j.liga}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
