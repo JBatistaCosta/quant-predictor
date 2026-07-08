@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCheck, Target, Zap, AlertTriangle, Crosshair, Activity, Flag, Scale, FileJson, Check, X, Camera, Loader2, PlayCircle, DollarSign, ScanLine, TrendingUp } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCheck, Target, Zap, AlertTriangle, Crosshair, Activity, Flag, Scale, FileJson, Check, X, Camera, Loader2, PlayCircle, DollarSign, ScanLine, TrendingUp, Grid3x3 } from 'lucide-react';
+import { supabase, supabaseAtivo } from './supabaseClient';
 
 const selecoesData = [
   // CONCACAF
@@ -67,6 +68,47 @@ const poissonCDF = (lambda, k) => {
   return sum;
 };
 
+// --- Correção de Dixon-Coles (1997) para placares baixos ---
+// rho calibrado com 314 jogos reais (StatsBomb: Copas 2022/2018, Euro 2024/2020,
+// Copa América 2024, Copa Africana 2023) — ver calibration/dixon_coles_calibration.json
+// para os dados brutos e calibration/calibrate_dixon_coles.py para o método.
+// Simplificação do modelo original: usa lambda/mu médios da amostra inteira (não por
+// time), então captura o efeito médio de correlação de placar baixo no futebol em
+// geral, não uma correção específica de cada confronto.
+const DIXON_COLES_RHO = -0.042;
+
+// --- MÉDIAS DA LIGA (mesma calibração real, 314 jogos, 6 torneios) ---
+// Usadas pra combinar xG próprio com xGA do adversário de forma MULTIPLICATIVA
+// (Dixon-Coles), em vez de uma média simples, que "dilui" ataques/defesas muito
+// fora da média. Também dá, de graça, um termo real de vantagem de mando de campo.
+const LIGA_MEDIA_MANDANTE = 1.3854;
+const LIGA_MEDIA_VISITANTE = 1.1274;
+const LIGA_MEDIA_GERAL = (LIGA_MEDIA_MANDANTE + LIGA_MEDIA_VISITANTE) / 2; // 1.2564 — baseline neutro
+const GAMMA_MANDANTE = LIGA_MEDIA_MANDANTE / LIGA_MEDIA_GERAL;   // ≈1.1027 — vantagem de jogar em casa
+const GAMMA_VISITANTE = LIGA_MEDIA_VISITANTE / LIGA_MEDIA_GERAL; // ≈0.8973 — desvantagem de jogar fora
+
+// Grade de Expected Threat (xT, Karun Singh 2018) — calibrada com 313 jogos reais
+// (StatsBomb: Copas 2022/2018, Euro 2024/2020, Copa América 2024, Copa Africana 2023),
+// 587 mil eventos posicionais. Só exibida como referência visual — não entra em
+// nenhum cálculo do app (ver calibration/xt_calibration.json e xt_README.md).
+const XT_GRID = [
+  [0.00148, 0.00203, 0.00269, 0.00349, 0.00433, 0.00533, 0.00675, 0.00859, 0.01101, 0.01416, 0.01612, 0.02290],
+  [0.00184, 0.00255, 0.00331, 0.00413, 0.00513, 0.00625, 0.00774, 0.00984, 0.01254, 0.01602, 0.01918, 0.01890],
+  [0.00239, 0.00300, 0.00366, 0.00455, 0.00559, 0.00677, 0.00836, 0.01024, 0.01336, 0.01921, 0.03196, 0.03147],
+  [0.00296, 0.00332, 0.00387, 0.00478, 0.00568, 0.00694, 0.00855, 0.01086, 0.01371, 0.02614, 0.06749, 0.13954],
+  [0.00299, 0.00326, 0.00388, 0.00476, 0.00563, 0.00696, 0.00813, 0.01089, 0.01539, 0.02418, 0.11423, 0.16764],
+  [0.00237, 0.00303, 0.00372, 0.00458, 0.00551, 0.00679, 0.00839, 0.01063, 0.01423, 0.02088, 0.03141, 0.03302],
+  [0.00194, 0.00253, 0.00331, 0.00417, 0.00509, 0.00623, 0.00787, 0.00984, 0.01309, 0.01693, 0.02072, 0.02140],
+  [0.00149, 0.00204, 0.00272, 0.00339, 0.00431, 0.00539, 0.00694, 0.00882, 0.01162, 0.01447, 0.01675, 0.02474],
+];
+const dixonColesTau = (x, y, lam, mu, rho) => {
+  if (x === 0 && y === 0) return 1 - (lam * mu * rho);
+  if (x === 0 && y === 1) return 1 + (lam * rho);
+  if (x === 1 && y === 0) return 1 + (mu * rho);
+  if (x === 1 && y === 1) return 1 - rho;
+  return 1.0;
+};
+
 // Gerador aleatório de Poisson (algoritmo de Knuth) para o Monte Carlo
 const getPoissonRandom = (lambda) => {
   const L = Math.exp(-lambda);
@@ -77,6 +119,14 @@ const getPoissonRandom = (lambda) => {
     p *= Math.random();
   } while (p > L);
   return k - 1;
+};
+
+// Converte um valor de input (texto, possivelmente vazio ou parcial como "-" ou ".")
+// em número seguro para cálculo. Texto vazio/inválido vira 0 SÓ na hora de calcular —
+// nunca no campo em si, para não "empurrar" um 0 de volta na caixa enquanto o usuário digita.
+const toNumber = (v) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
 };
 
 // --- PROMPT 1: extração de ESTATÍSTICAS (tabela "Estatística média") ---
@@ -119,6 +169,19 @@ A imagem mostra vários mercados com suas odds decimais. Extraia o máximo de me
     ],
     "total_escanteios": [
       { "linha": 8.5, "mais": null, "menos": null }
+    ],
+    "resultado_correto": [
+      { "placar": "1-0", "odd": null },
+      { "placar": "2-0", "odd": null },
+      { "placar": "0-0", "odd": null },
+      { "placar": "1-1", "odd": null },
+      { "placar": "0-1", "odd": null },
+      { "placar": "0-2", "odd": null }
+    ],
+    "handicap_resultado_final": [
+      { "linha": -1, "casa": null, "empate": null, "fora": null },
+      { "linha": -2, "casa": null, "empate": null, "fora": null },
+      { "linha": 1, "casa": null, "empate": null, "fora": null }
     ]
   }
 }
@@ -127,9 +190,11 @@ Regras:
 - "Resultado Final" / "1X2": casa = equipe mandante (esquerda), fora = equipe visitante.
 - "Total de Gols": para cada linha visível (Mais de 1.5 / Menos de 1.5 etc.), crie um objeto {"linha", "mais", "menos"}. Inclua todas as linhas visíveis.
 - "Escanteios" / "Total de Cantos": mesmo formato em total_escanteios.
+- "Resultado Correto" / "Placar Exato": formato "golsMandante-golsVisitante" (ex: "2-1" = mandante fez 2, visitante fez 1). Inclua TODOS os placares visíveis na tabela, mesmo os de odd muito alta.
+- "Handicap - Resultado Final" (tabela com 3 colunas: Mandante / Empate / Visitante para cada linha): a "linha" é SEMPRE relativa à equipe MANDANTE. Linha negativa (ex: -1) significa que a mandante começa "devendo" esse número de golos (precisa vencer por mais que |linha| golos para a coluna "casa" ganhar; vencer por exatamente |linha| golos ganha a coluna "empate"). Linha positiva (ex: +1) significa que a mandante já começa com essa vantagem de golos. Copie a linha exatamente como aparece na tabela (com o sinal), e os 3 valores de odd de cada linha (casa/empate/fora) na mesma ordem das colunas.
 - "Ambas Marcam" / "Ambas as equipes marcam": sim/nao.
 - Odds são números decimais como 1.87, 3.30, 5.25. Se um mercado não estiver visível ou estiver bloqueado, use null.
-- Ignore mercados de jogadores, cartões, handicaps e impulsos/promoções (odds turbinadas).
+- Ignore mercados de jogadores, cartões, e impulsos/promoções (odds turbinadas).
 - Escreva os nomes das equipes em português.`;
 
 export default function App() {
@@ -143,22 +208,29 @@ export default function App() {
   // Calculator State
   const [team1Id, setTeam1Id] = useState(36); // Portugal
   const [team2Id, setTeam2Id] = useState(32); // RD Congo
+  // Os valores ficam como TEXTO (string) enquanto o usuário digita — isso permite
+  // apagar a caixa inteira e ela ficar vazia, em vez de "saltar" para 0 sozinha.
+  // A conversão para número só acontece no momento do cálculo (função toNumber).
   const [metrics, setMetrics] = useState({
-    xg1: 2.44, xga1: 1.12, poss1: 60, shots1: 18.44, shotsOnTarget1: 6.25, corners1: 6.31,
-    xg2: 1.64, xga2: 0.71, poss2: 40, shots2: 12.36, shotsOnTarget2: 3.33, corners2: 4.44
+    xg1: '2.44', xga1: '1.12', poss1: '60', shots1: '18.44', shotsOnTarget1: '6.25', corners1: '6.31',
+    xg2: '1.64', xga2: '0.71', poss2: '40', shots2: '12.36', shotsOnTarget2: '3.33', corners2: '4.44'
   });
   const [results, setResults] = useState(null);
+  const [autoLoadMsg, setAutoLoadMsg] = useState('');
+  const [predictionsLog, setPredictionsLog] = useState([]);
+  const [logMsg, setLogMsg] = useState('');
+  const [showCalibration, setShowCalibration] = useState(false);
 
   const [eloWeight, setEloWeight] = useState(50);
   const [showAllScores, setShowAllScores] = useState(false);
-  const [customScore1, setCustomScore1] = useState(2);
-  const [customScore2, setCustomScore2] = useState(0);
+  const [customScore1, setCustomScore1] = useState('2');
+  const [customScore2, setCustomScore2] = useState('0');
 
   // Handicap State
   const [handicapTeam, setHandicapTeam] = useState(1);
-  const [handicapLine, setHandicapLine] = useState(1);
+  const [handicapLine, setHandicapLine] = useState('1');
 
-  // JSON Import State
+  // JSON Import State (unificado: aceita estatísticas e/ou odds, coladas juntas ou separadas)
   const [showJsonInput, setShowJsonInput] = useState(false);
   const [jsonInputData, setJsonInputData] = useState('');
   const [jsonError, setJsonError] = useState('');
@@ -176,13 +248,22 @@ export default function App() {
   const [bookieOddsData, setBookieOddsData] = useState(null);
 
   // Monte Carlo & Kelly State
-  const [bankroll, setBankroll] = useState(100.0);
-  const [bookieOdd, setBookieOdd] = useState(1.85);
+  const [bankroll, setBankroll] = useState('100');
+  const [bookieOdd, setBookieOdd] = useState('1.85');
   const [kellyFraction, setKellyFraction] = useState(0.25);
   const [kellyTarget, setKellyTarget] = useState('1');
   const [mcResults, setMcResults] = useState(null);
   const [kellyRecommendation, setKellyRecommendation] = useState(null);
   const [mcRunning, setMcRunning] = useState(false);
+
+  // Simulação por Cadeia de Markov (minuto a minuto)
+  const [markovDynamics, setMarkovDynamics] = useState(false);
+  const [dixonColesEnabled, setDixonColesEnabled] = useState(true);
+  const [xgMultiplicativo, setXgMultiplicativo] = useState(true);
+  const [markovSimCount, setMarkovSimCount] = useState(20000);
+  const [markovResults, setMarkovResults] = useState(null);
+  const [markovHeatDisplay, setMarkovHeatDisplay] = useState('pct'); // 'pct' ou 'odd'
+  const [markovRunning, setMarkovRunning] = useState(false);
   const [showOnlyEvPlus, setShowOnlyEvPlus] = useState(false);
 
   const SIMULATIONS = 10000;
@@ -215,11 +296,18 @@ export default function App() {
   };
 
   const handleMetricChange = (field, value) => {
-    const val = parseFloat(value) || 0;
-    const newMetrics = { ...metrics, [field]: val };
-    if (field === 'poss1') newMetrics.poss2 = Math.max(0, 100 - val);
-    if (field === 'poss2') newMetrics.poss1 = Math.max(0, 100 - val);
-    setMetrics(newMetrics);
+    setMetrics(prev => {
+      const next = { ...prev, [field]: value };
+      // A posse complementar (Equipa 2 = 100 - Equipa 1) só é recalculada quando o
+      // texto digitado já forma um número válido — assim, campo vazio ou "em digitação"
+      // (ex: "6" antes de virar "65") não força um 0/valor estranho no campo irmão.
+      const parsed = parseFloat(value);
+      if (Number.isFinite(parsed)) {
+        if (field === 'poss1') next.poss2 = String(Math.max(0, 100 - parsed));
+        if (field === 'poss2') next.poss1 = String(Math.max(0, 100 - parsed));
+      }
+      return next;
+    });
   };
 
   // --- Aplica JSON de ESTATÍSTICAS (importador manual OU leitor de imagem) ---
@@ -247,53 +335,290 @@ export default function App() {
     }
 
     setMetrics(prev => ({
-      xg1: mStats.xg_gols_esperados ?? prev.xg1,
-      xga1: mStats.xga_xg_sofridos ?? prev.xga1,
-      poss1: 50,
-      shots1: mStats.chutes ?? prev.shots1,
-      shotsOnTarget1: mStats.chutes_no_gol ?? prev.shotsOnTarget1,
-      corners1: mStats.escanteios ?? prev.corners1,
+      xg1: mStats.xg_gols_esperados != null ? String(mStats.xg_gols_esperados) : prev.xg1,
+      xga1: mStats.xga_xg_sofridos != null ? String(mStats.xga_xg_sofridos) : prev.xga1,
+      poss1: '50',
+      shots1: mStats.chutes != null ? String(mStats.chutes) : prev.shots1,
+      shotsOnTarget1: mStats.chutes_no_gol != null ? String(mStats.chutes_no_gol) : prev.shotsOnTarget1,
+      corners1: mStats.escanteios != null ? String(mStats.escanteios) : prev.corners1,
 
-      xg2: vStats.xg_gols_esperados ?? prev.xg2,
-      xga2: vStats.xga_xg_sofridos ?? prev.xga2,
-      poss2: 50,
-      shots2: vStats.chutes ?? prev.shots2,
-      shotsOnTarget2: vStats.chutes_no_gol ?? prev.shotsOnTarget2,
-      corners2: vStats.escanteios ?? prev.corners2,
+      xg2: vStats.xg_gols_esperados != null ? String(vStats.xg_gols_esperados) : prev.xg2,
+      xga2: vStats.xga_xg_sofridos != null ? String(vStats.xga_xg_sofridos) : prev.xga2,
+      poss2: '50',
+      shots2: vStats.chutes != null ? String(vStats.chutes) : prev.shots2,
+      shotsOnTarget2: vStats.chutes_no_gol != null ? String(vStats.chutes_no_gol) : prev.shotsOnTarget2,
+      corners2: vStats.escanteios != null ? String(vStats.escanteios) : prev.corners2,
     }));
 
     return { matchedT1, matchedT2 };
   };
 
+  // --- Salva no Supabase (histórico persistente) — "dispara e esquece": não trava a
+  // interface esperando resposta, e se o Supabase não estiver configurado, não faz nada. ---
+  const salvarStatsNoSupabase = async (nomeA, nomeB, mStats, vStats) => {
+    if (!supabaseAtivo) return;
+    const linhas = [
+      { team_name: nomeA, xg: mStats.xg_gols_esperados, xga: mStats.xga_xg_sofridos, chutes: mStats.chutes, chutes_no_gol: mStats.chutes_no_gol, escanteios: mStats.escanteios, updated_at: new Date().toISOString() },
+      { team_name: nomeB, xg: vStats.xg_gols_esperados, xga: vStats.xga_xg_sofridos, chutes: vStats.chutes, chutes_no_gol: vStats.chutes_no_gol, escanteios: vStats.escanteios, updated_at: new Date().toISOString() },
+    ];
+    const { error } = await supabase.from('team_stats').upsert(linhas);
+    if (error) console.warn('Falha ao salvar estatísticas no Supabase:', error.message);
+  };
+
+  const salvarOddsNoSupabase = async (parsed) => {
+    if (!supabaseAtivo) return;
+    const { error } = await supabase.from('match_odds').upsert({
+      equipe_mandante: parsed.confronto?.equipe_mandante,
+      equipe_visitante: parsed.confronto?.equipe_visitante,
+      odds: parsed.odds,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'equipe_mandante,equipe_visitante' });
+    if (error) console.warn('Falha ao salvar odds no Supabase:', error.message);
+  };
+
+  // Registra as 3 probabilidades do resultado final (casa/empate/fora) no histórico de
+  // calibração — cada uma vira uma "aposta" separada de "quando eu digo X%, acontece X%?"
+  const registrarPrevisao = async () => {
+    if (!supabaseAtivo || !results) return;
+    const odds = bookieOddsData?.odds?.resultado_final;
+    const linhas = [
+      { equipe_mandante: results.t1.name, equipe_visitante: results.t2.name, mercado: 'resultado_final', outcome: 'casa', probabilidade: results.probWin1, odd_oferecida: odds?.casa ?? null },
+      { equipe_mandante: results.t1.name, equipe_visitante: results.t2.name, mercado: 'resultado_final', outcome: 'empate', probabilidade: results.probDraw, odd_oferecida: odds?.empate ?? null },
+      { equipe_mandante: results.t1.name, equipe_visitante: results.t2.name, mercado: 'resultado_final', outcome: 'fora', probabilidade: results.probWin2, odd_oferecida: odds?.fora ?? null },
+    ];
+    const { error } = await supabase.from('predictions_log').insert(linhas);
+    if (error) { setLogMsg('Erro ao registrar: ' + error.message); return; }
+    setLogMsg(`Previsão registrada (${results.t1.name} x ${results.t2.name}) — 3 linhas, uma por resultado possível.`);
+    setTimeout(() => setLogMsg(''), 4000);
+    buscarPredictionsLog();
+  };
+
+  const buscarPredictionsLog = async () => {
+    if (!supabaseAtivo) return;
+    const { data, error } = await supabase.from('predictions_log').select('*').order('criado_em', { ascending: false });
+    if (error) { console.warn('Falha ao buscar histórico:', error.message); return; }
+    setPredictionsLog(data || []);
+  };
+
+  // Marca uma previsão pendente como "aconteceu" (true) ou "não aconteceu" (false)
+  const resolverPrevisao = async (id, aconteceu) => {
+    const { error } = await supabase.from('predictions_log')
+      .update({ resultado: aconteceu, resolvido_em: new Date().toISOString() })
+      .eq('id', id);
+    if (error) { console.warn('Falha ao resolver previsão:', error.message); return; }
+    buscarPredictionsLog();
+  };
+
+  useEffect(() => { if (showCalibration) buscarPredictionsLog(); }, [showCalibration]);
+
+  // Monta o diagrama de confiabilidade: agrupa as previsões RESOLVIDAS em faixas de 10%
+  // (0-10%, 10-20%, ..., 90-100%) e compara a probabilidade média prevista de cada faixa
+  // com a frequência real de acerto naquela faixa.
+  const calibracao = useMemo(() => {
+    const resolvidas = predictionsLog.filter(p => p.resultado !== null);
+    const faixas = Array.from({ length: 10 }, (_, i) => ({
+      min: i / 10, max: (i + 1) / 10, label: `${i * 10}-${(i + 1) * 10}%`,
+      previsoes: [],
+    }));
+    resolvidas.forEach(p => {
+      const idx = Math.min(9, Math.floor(p.probabilidade * 10));
+      faixas[idx].previsoes.push(p);
+    });
+    return faixas.map(f => {
+      const n = f.previsoes.length;
+      const mediaProvista = n > 0 ? f.previsoes.reduce((s, p) => s + p.probabilidade, 0) / n : null;
+      const frequenciaReal = n > 0 ? f.previsoes.filter(p => p.resultado === true).length / n : null;
+      return { ...f, n, mediaProvista, frequenciaReal };
+    });
+  }, [predictionsLog]);
+
+  // Sempre que os times selecionados mudarem, busca no Supabase ANTES de pedir
+  // pra colar o JSON de novo. Se já existir algo salvo, preenche sozinho.
+  useEffect(() => {
+    if (!supabaseAtivo) return;
+    const t1 = selecoesData.find(t => t.id === team1Id);
+    const t2 = selecoesData.find(t => t.id === team2Id);
+    if (!t1 || !t2) return;
+
+    let cancelado = false;
+    (async () => {
+      const mensagens = [];
+
+      const { data: statsData, error: statsErro } = await supabase
+        .from('team_stats')
+        .select('*')
+        .in('team_name', [t1.name, t2.name]);
+
+      if (statsErro) { console.warn('Falha ao buscar estatísticas no Supabase:', statsErro.message); }
+      else if (statsData && statsData.length > 0 && !cancelado) {
+        const s1 = statsData.find(s => s.team_name === t1.name);
+        const s2 = statsData.find(s => s.team_name === t2.name);
+        if (s1 || s2) {
+          setMetrics(prev => ({
+            ...prev,
+            xg1: s1 ? String(s1.xg) : prev.xg1,
+            xga1: s1 ? String(s1.xga) : prev.xga1,
+            shots1: s1?.chutes != null ? String(s1.chutes) : prev.shots1,
+            shotsOnTarget1: s1?.chutes_no_gol != null ? String(s1.chutes_no_gol) : prev.shotsOnTarget1,
+            corners1: s1?.escanteios != null ? String(s1.escanteios) : prev.corners1,
+            xg2: s2 ? String(s2.xg) : prev.xg2,
+            xga2: s2 ? String(s2.xga) : prev.xga2,
+            shots2: s2?.chutes != null ? String(s2.chutes) : prev.shots2,
+            shotsOnTarget2: s2?.chutes_no_gol != null ? String(s2.chutes_no_gol) : prev.shotsOnTarget2,
+            corners2: s2?.escanteios != null ? String(s2.escanteios) : prev.corners2,
+          }));
+          mensagens.push(`Estatísticas carregadas do banco (${[s1 && t1.name, s2 && t2.name].filter(Boolean).join(', ')})`);
+        }
+      }
+
+      const { data: oddsData, error: oddsErro } = await supabase
+        .from('match_odds')
+        .select('*')
+        .eq('equipe_mandante', t1.name)
+        .eq('equipe_visitante', t2.name)
+        .maybeSingle();
+
+      if (oddsErro) { console.warn('Falha ao buscar odds no Supabase:', oddsErro.message); }
+      else if (oddsData && !cancelado) {
+        setBookieOddsData({ confronto: { equipe_mandante: t1.name, equipe_visitante: t2.name }, odds: oddsData.odds });
+        mensagens.push('Odds carregadas do banco');
+      }
+
+      if (mensagens.length > 0 && !cancelado) {
+        setAutoLoadMsg(mensagens.join(' · '));
+        setTimeout(() => setAutoLoadMsg(''), 5000);
+      }
+    })();
+
+    return () => { cancelado = true; };
+  }, [team1Id, team2Id]);
+
+  // Conta quantas "seleções" (linhas de aposta) vieram no JSON de odds, só para feedback visual
+  const countOddsMarkets = (parsedData) => {
+    const o = parsedData.odds || {};
+    return (
+      (o.resultado_final ? 3 : 0) +
+      (o.total_gols?.length || 0) * 2 +
+      (o.total_escanteios?.length || 0) * 2 +
+      (o.resultado_correto?.length || 0) +
+      (o.ambas_marcam ? 2 : 0) +
+      (o.dupla_chance ? 3 : 0) +
+      (o.handicap_resultado_final?.length || 0) * 3
+    );
+  };
+
+  // Varre um texto colado e extrai cada objeto JSON "de nível raiz" (equilibrando chaves { }),
+  // ignorando chaves que apareçam dentro de strings. Isso permite colar DOIS JSONs seguidos
+  // (ex: o de estatísticas logo em seguida do de odds) na mesma caixa de texto, mesmo que
+  // isso não seja, sozinho, um JSON único válido.
+  const extractJsonObjects = (text) => {
+    const objects = [];
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (escapeNext) { escapeNext = false; continue; }
+      if (ch === '\\') { escapeNext = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+
+      if (ch === '{') {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === '}') {
+        depth = Math.max(0, depth - 1);
+        if (depth === 0 && start !== -1) {
+          objects.push(text.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+    return objects;
+  };
+
+  // --- IMPORTAÇÃO UNIFICADA: aceita estatísticas, odds, ou os dois colados juntos ---
+  // Reconhece cada bloco automaticamente: se tem "estatistica_media" vira estatísticas,
+  // se tem "odds" vira odds da casa. Não importa a ordem nem se veio só um dos dois.
   const handleImportJson = () => {
     setJsonError('');
     setJsonSuccess('');
 
     if (!jsonInputData.trim()) {
-      setJsonError('Cole o código JSON antes de importar.');
+      setJsonError('Cole pelo menos um JSON (estatísticas e/ou odds) antes de importar.');
       return;
     }
 
-    try {
-      const parsedData = JSON.parse(jsonInputData);
-      const { matchedT1, matchedT2 } = applyParsedData(parsedData);
-
-      let successMsg = 'Estatísticas importadas com sucesso!';
-      if (!matchedT1 || !matchedT2) {
-        successMsg += ' (Aviso: Selecione as equipas manualmente, os nomes não corresponderam).';
-      }
-      setJsonSuccess(successMsg);
-
-      setTimeout(() => {
-        setShowJsonInput(false);
-        setJsonInputData('');
-        setJsonSuccess('');
-      }, 3000);
-    } catch (error) {
-      setJsonError(error.message === 'Formato de JSON não reconhecido.'
-        ? error.message
-        : 'JSON Inválido. Verifique se copiou todo o código corretamente.');
+    const rawBlocks = extractJsonObjects(jsonInputData);
+    if (rawBlocks.length === 0) {
+      setJsonError('Não encontrei nenhum JSON válido no texto colado (verifique se as chaves { } estão completas).');
+      return;
     }
+
+    let statsApplied = false;
+    let oddsApplied = false;
+    let statsMatchedBoth = true;
+    let oddsMarketCount = 0;
+    let oddsTeams = '';
+    const blockErrors = [];
+
+    rawBlocks.forEach((raw, idx) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (e) {
+        blockErrors.push(`Bloco ${idx + 1}: JSON inválido (verifique vírgulas e chaves).`);
+        return;
+      }
+
+      if (parsed.estatistica_media) {
+        try {
+          const { matchedT1, matchedT2 } = applyParsedData(parsed);
+          statsApplied = true;
+          if (!matchedT1 || !matchedT2) statsMatchedBoth = false;
+          const nomeA = parsed.confronto?.equipe_mandante;
+          const nomeB = parsed.confronto?.equipe_visitante;
+          const mStats = parsed.estatistica_media?.mandante?.metricas;
+          const vStats = parsed.estatistica_media?.visitante?.metricas;
+          if (nomeA && nomeB && mStats && vStats) salvarStatsNoSupabase(nomeA, nomeB, mStats, vStats);
+        } catch (e) {
+          blockErrors.push(`Bloco ${idx + 1} (estatísticas): ${e.message}`);
+        }
+      } else if (parsed.odds) {
+        setBookieOddsData(parsed);
+        oddsApplied = true;
+        oddsMarketCount = countOddsMarkets(parsed);
+        oddsTeams = `${parsed.confronto?.equipe_mandante || '?'} x ${parsed.confronto?.equipe_visitante || '?'}`;
+        salvarOddsNoSupabase(parsed);
+      } else {
+        blockErrors.push(`Bloco ${idx + 1}: não reconheci como estatísticas nem odds (faltam os campos "estatistica_media" ou "odds").`);
+      }
+    });
+
+    if (!statsApplied && !oddsApplied) {
+      setJsonError(blockErrors.join(' ') || 'Nenhum dos JSONs colados foi reconhecido.');
+      return;
+    }
+
+    const parts = [];
+    if (statsApplied) {
+      parts.push('Estatísticas importadas' + (!statsMatchedBoth ? ' (confira as equipas manualmente, nomes não corresponderam)' : ''));
+    }
+    if (oddsApplied) {
+      parts.push(`Odds importadas (${oddsTeams}, ~${oddsMarketCount} seleções)`);
+    }
+    if (blockErrors.length) {
+      parts.push(`Aviso: ${blockErrors.join(' ')}`);
+    }
+    setJsonSuccess(parts.join(' · '));
+
+    setTimeout(() => {
+      setShowJsonInput(false);
+      setJsonInputData('');
+      setJsonSuccess('');
+    }, 4000);
   };
 
   // --- Passo A: normaliza QUALQUER imagem (foto de celular, HEIC, PNG gigante...) ---
@@ -328,34 +653,25 @@ export default function App() {
     reader.readAsDataURL(file);
   });
 
-  // --- Núcleo compartilhado do OCR: imagem -> base64 (normalizada) -> IA -> JSON ---
+  // --- Núcleo compartilhado do OCR: imagem -> base64 (normalizada) -> /api/ocr -> JSON ---
+  // Repare que aqui NÃO chamamos api.anthropic.com diretamente.
+  // Chamamos nosso próprio endpoint (/api/ocr), que roda no servidor do Vercel
+  // e guarda a chave da API em segredo (arquivo api/ocr.js).
   const extractJsonFromImage = async (file, prompt) => {
     // Passo 1: normaliza a imagem (sempre vira JPEG, sempre redimensionada)
     const base64Data = await normalizeImageToJpeg(file);
     const mediaType = 'image/jpeg';
 
-    // Passo 2: envia imagem + instruções para a IA
+    // Passo 2: envia imagem + instruções para o NOSSO backend
     let response;
     try {
-      response = await fetch('https://api.anthropic.com/v1/messages', {
+      response = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
-                { type: 'text', text: prompt }
-              ]
-            }
-          ]
-        })
+        body: JSON.stringify({ image: base64Data, mediaType, prompt })
       });
     } catch (networkErr) {
-      throw new Error('Falha de rede ao contactar a IA. Verifique a conexão e tente novamente.');
+      throw new Error('Falha de rede ao contactar o servidor. Verifique a conexão e tente novamente.');
     }
 
     let data;
@@ -433,12 +749,7 @@ export default function App() {
       setOcrJsonPreview(JSON.stringify(parsedData, null, 2));
       setBookieOddsData(parsedData);
 
-      const nMercados =
-        (parsedData.odds.resultado_final ? 3 : 0) +
-        (parsedData.odds.total_gols?.length || 0) * 2 +
-        (parsedData.odds.total_escanteios?.length || 0) * 2 +
-        (parsedData.odds.ambas_marcam ? 2 : 0) +
-        (parsedData.odds.dupla_chance ? 3 : 0);
+      const nMercados = countOddsMarkets(parsedData);
 
       setOcrSuccess(`Odds da casa importadas (${parsedData.confronto?.equipe_mandante || '?'} x ${parsedData.confronto?.equipe_visitante || '?'}, ~${nMercados} seleções mapeadas). Agora processe a precificação e o Scanner Kelly aparecerá nos resultados.`);
     } catch (error) {
@@ -454,20 +765,35 @@ export default function App() {
     const t1 = selecoesData.find(t => t.id === Number(team1Id));
     const t2 = selecoesData.find(t => t.id === Number(team2Id));
 
+    // Converte os campos de texto para números só aqui, no momento do cálculo
+    // (campo vazio ou "em digitação" vira 0, sem afetar o que está escrito na tela)
+    const m = {
+      xg1: toNumber(metrics.xg1), xga1: toNumber(metrics.xga1), poss1: toNumber(metrics.poss1),
+      shots1: toNumber(metrics.shots1), shotsOnTarget1: toNumber(metrics.shotsOnTarget1), corners1: toNumber(metrics.corners1),
+      xg2: toNumber(metrics.xg2), xga2: toNumber(metrics.xga2), poss2: toNumber(metrics.poss2),
+      shots2: toNumber(metrics.shots2), shotsOnTarget2: toNumber(metrics.shotsOnTarget2), corners2: toNumber(metrics.corners2),
+    };
+
     const rawEloDiff = t1.rating - t2.rating;
     const weightedEloDiff = rawEloDiff * (eloWeight / 100);
 
     const expectancyT1 = 1 / (1 + Math.pow(10, -weightedEloDiff / 400));
     const expectancyT2 = 1 - expectancyT1;
 
-    const modPoss1 = 0.8 + (0.2 * (metrics.poss1 / 50));
-    const modPoss2 = 0.8 + (0.2 * (metrics.poss2 / 50));
+    const modPoss1 = 0.8 + (0.2 * (m.poss1 / 50));
+    const modPoss2 = 0.8 + (0.2 * (m.poss2 / 50));
 
-    const eff1 = metrics.shots1 > 0 ? metrics.xg1 / metrics.shots1 : 0;
-    const eff2 = metrics.shots2 > 0 ? metrics.xg2 / metrics.shots2 : 0;
+    const eff1 = m.shots1 > 0 ? m.xg1 / m.shots1 : 0;
+    const eff2 = m.shots2 > 0 ? m.xg2 / m.shots2 : 0;
 
-    const trueXG_T1 = (metrics.xg1 + metrics.xga2) / 2;
-    const trueXG_T2 = (metrics.xg2 + metrics.xga1) / 2;
+    // Combina xG próprio + xGA do adversário: multiplicativo (mais profissional, com
+    // mando de campo real embutido) ou média simples (comportamento antigo, pra comparar).
+    const trueXG_T1 = xgMultiplicativo
+      ? (m.xg1 * m.xga2 / LIGA_MEDIA_GERAL) * GAMMA_MANDANTE
+      : (m.xg1 + m.xga2) / 2;
+    const trueXG_T2 = xgMultiplicativo
+      ? (m.xg2 * m.xga1 / LIGA_MEDIA_GERAL) * GAMMA_VISITANTE
+      : (m.xg2 + m.xga1) / 2;
 
     const lambda1 = Math.max(0.1, trueXG_T1 * (expectancyT1 / 0.5) * modPoss1);
     const lambda2 = Math.max(0.1, trueXG_T2 * (expectancyT2 / 0.5) * modPoss2);
@@ -481,7 +807,15 @@ export default function App() {
       for (let j = 0; j <= maxGoals; j++) {
         const p1 = poisson(lambda1, i);
         const p2 = poisson(lambda2, j);
-        const probMatrix = p1 * p2;
+        let probMatrix = p1 * p2;
+
+        // Correção de Dixon-Coles (1997): ajusta só as 4 células de placar baixo,
+        // onde a suposição de independência entre os gols dos dois times falha um
+        // pouco na prática (0-0/1-1 acontecem mais, 1-0/0-1 acontecem menos do que
+        // a Poisson pura prevê). rho calibrado com 314 jogos reais — ver calibration/.
+        if (dixonColesEnabled) {
+          probMatrix *= dixonColesTau(i, j, lambda1, lambda2, DIXON_COLES_RHO);
+        }
 
         exactScores.push({ score: `${i}-${j}`, prob: probMatrix, g1: i, g2: j });
 
@@ -498,7 +832,7 @@ export default function App() {
     probWin1 /= total; probWin2 /= total; probDraw /= total;
     probBtts /= total;
 
-    const lambdaCorners = metrics.corners1 + metrics.corners2;
+    const lambdaCorners = m.corners1 + m.corners2;
     const probUnder85Corners = poissonCDF(lambdaCorners, 8);
     const probOver85Corners = 1 - probUnder85Corners;
     const probOver95Corners = 1 - poissonCDF(lambdaCorners, 9);
@@ -542,6 +876,7 @@ export default function App() {
     setShowAllScores(false);
     setMcResults(null);
     setKellyRecommendation(null);
+    setMarkovResults(null);
   };
 
   // --- MOTOR MONTE CARLO + KELLY (mercado único, manual) ---
@@ -573,13 +908,16 @@ export default function App() {
       else if (kellyTarget === 'X') { p = probDraw; targetLabel = 'Empate'; }
       else { p = probWin2; targetLabel = results.t2.name; }
 
-      const b = bookieOdd - 1;
+      const bookieOddNum = toNumber(bookieOdd);
+      const bankrollNum = toNumber(bankroll);
+
+      const b = bookieOddNum - 1;
       const q = 1 - p;
       const f = b > 0 ? (p * b - q) / b : -1;
 
       if (f > 0) {
         const safeFraction = f * kellyFraction;
-        const recommendedBet = bankroll * safeFraction;
+        const recommendedBet = bankrollNum * safeFraction;
         setKellyRecommendation({
           edge: true,
           target: targetLabel,
@@ -587,7 +925,7 @@ export default function App() {
           stake: recommendedBet.toFixed(2),
           pct: (safeFraction * 100).toFixed(2),
           fullKelly: (f * 100).toFixed(2),
-          message: `Vantagem matemática (EV+) detectada em "${targetLabel}" @ ${bookieOdd.toFixed(2)}. Stake recomendada:`
+          message: `Vantagem matemática (EV+) detectada em "${targetLabel}" @ ${bookieOddNum.toFixed(2)}. Stake recomendada:`
         });
       } else {
         setKellyRecommendation({
@@ -596,11 +934,147 @@ export default function App() {
           fairOdd: p > 0 ? (1 / p).toFixed(2) : '—',
           stake: 0,
           pct: 0,
-          message: `Aposta EV- em "${targetLabel}". A odd ${bookieOdd.toFixed(2)} está abaixo da odd justa do modelo. A matemática manda NÃO apostar.`
+          message: `Aposta EV- em "${targetLabel}". A odd ${bookieOddNum.toFixed(2)} está abaixo da odd justa do modelo. A matemática manda NÃO apostar.`
         });
       }
 
       setMcRunning(false);
+    }, 50);
+  };
+
+  const MARKOV_MINUTES = 90;
+
+  // --- MULTIPLICADORES CALIBRADOS COM DADOS REAIS ---
+  // Fonte: StatsBomb Open Data, FIFA World Cup 2022 (64 partidas, licença não-comercial).
+  // Metodologia: para cada minuto de jogo, classificamos o estado de placar (do ponto de
+  // vista de quem ataca) e medimos a taxa real de golos por minuto em cada estado,
+  // dividida pela taxa média geral do torneio (1.4885 golos/90min).
+  // Amostra pequena (64 jogos, torneio único e de mata-mata) — trate como um primeiro sinal
+  // real, não como verdade definitiva. Script de recalibração: calibrate_markov.py.
+  const MARKOV_STATE_MULTIPLIERS = {
+    perdendo_2mais: 1.313, // atrás por 2+ golos: ataca mais desesperadamente
+    perdendo_1: 0.945,     // atrás por 1 golo: quase neutro
+    empatando: 0.768,      // empate: jogo mais cauteloso
+    ganhando_1: 1.518,     // à frente por 1: ataca MAIS (contra-ataque, quem está atrás se expõe)
+    ganhando_2mais: 1.376, // à frente por 2+: ainda ataca mais que a média
+  };
+
+  const getStateMultiplier = (diff) => {
+    if (diff <= -2) return MARKOV_STATE_MULTIPLIERS.perdendo_2mais;
+    if (diff === -1) return MARKOV_STATE_MULTIPLIERS.perdendo_1;
+    if (diff === 0) return MARKOV_STATE_MULTIPLIERS.empatando;
+    if (diff === 1) return MARKOV_STATE_MULTIPLIERS.ganhando_1;
+    return MARKOV_STATE_MULTIPLIERS.ganhando_2mais;
+  };
+
+  // --- MULTIPLICADOR TEMPORAL (distribuição real de gols ao longo dos 90 minutos) ---
+  // Mesma fonte e amostra do multiplicador de placar acima (StatsBomb, Copa 2022, 64 jogos).
+  // Fato bem documentado no futebol: gols se concentram no fim de cada tempo (cansaço
+  // defensivo + acréscimos). Os multiplicadores já vêm normalizados para média 1 ao longo
+  // dos 90 minutos, então aplicá-los preserva o total esperado de golos do modelo (λ).
+  const MARKOV_MINUTE_BINS = [
+    { label: '0–14',  lo: 0,  hi: 14, mult: 0.455 },
+    { label: '15–29', lo: 15, hi: 29, mult: 0.485 },
+    { label: '30–44', lo: 30, hi: 44, mult: 0.939 },
+    { label: '45–59', lo: 45, hi: 59, mult: 1.000 },
+    { label: '60–74', lo: 60, hi: 74, mult: 0.939 },
+    { label: '75–89', lo: 75, hi: 89, mult: 2.182 }, // inclui efeito de acréscimos/cansaço
+  ];
+  // Distribuição real observada (% dos golos em cada bin) — usada só para comparação visual
+  const REAL_MINUTE_DISTRIBUTION = [0.076, 0.081, 0.157, 0.167, 0.157, 0.364];
+
+  const getTimeMultiplier = (minute) => {
+    const bin = MARKOV_MINUTE_BINS.find(b => minute >= b.lo && minute <= b.hi);
+    return bin ? bin.mult : 1;
+  };
+
+  const getMinuteBinIndex = (minute) => {
+    const idx = MARKOV_MINUTE_BINS.findIndex(b => minute >= b.lo && minute <= b.hi);
+    return idx === -1 ? MARKOV_MINUTE_BINS.length - 1 : idx;
+  };
+
+  // --- MOTOR DE SIMULAÇÃO POR CADEIA DE MARKOV (minuto a minuto) ---
+  // Diferença central para o Monte Carlo acima: aqui o jogo é simulado passo a passo
+  // (90 "estados", um por minuto). A probabilidade de gol em cada minuto pode reagir
+  // ao placar atual, usando os multiplicadores calibrados acima — algo que uma Poisson
+  // bivariada simples não consegue representar.
+  const runMarkovSimulation = () => {
+    if (!results) return;
+    setMarkovRunning(true);
+
+    setTimeout(() => {
+      const { lambda1, lambda2 } = results;
+      // Taxa de gol "de base" por minuto (Poisson dividida igualmente pelos 90 minutos)
+      const baseRate1 = lambda1 / MARKOV_MINUTES;
+      const baseRate2 = lambda2 / MARKOV_MINUTES;
+
+      let wins1 = 0, wins2 = 0, draws = 0;
+      const scoreCounts = {};
+      const goalMinuteBins = new Array(MARKOV_MINUTE_BINS.length).fill(0);
+
+      for (let sim = 0; sim < markovSimCount; sim++) {
+        let g1 = 0, g2 = 0;
+
+        for (let minute = 0; minute < MARKOV_MINUTES; minute++) {
+          let p1 = baseRate1;
+          let p2 = baseRate2;
+
+          if (markovDynamics) {
+            p1 *= getStateMultiplier(g1 - g2) * getTimeMultiplier(minute);
+            p2 *= getStateMultiplier(g2 - g1) * getTimeMultiplier(minute);
+          }
+
+          // Estado -> Próximo estado: no máximo 1 gol por equipa por minuto (aproximação razoável,
+          // já que p1 e p2 são frações pequenas, tipicamente < 5% por minuto)
+          const binIdx = getMinuteBinIndex(minute);
+          if (Math.random() < p1) { g1++; goalMinuteBins[binIdx]++; }
+          if (Math.random() < p2) { g2++; goalMinuteBins[binIdx]++; }
+        }
+
+        if (g1 > g2) wins1++;
+        else if (g1 < g2) wins2++;
+        else draws++;
+
+        const key = `${g1}-${g2}`;
+        scoreCounts[key] = (scoreCounts[key] || 0) + 1;
+      }
+
+      const topScores = Object.entries(scoreCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([score, count]) => ({ score, prob: count / markovSimCount }));
+
+      const totalSimGoals = goalMinuteBins.reduce((a, b) => a + b, 0);
+      const minuteDistribution = goalMinuteBins.map(c => totalSimGoals > 0 ? c / totalSimGoals : 0);
+
+      // Matriz 7x7 (0 a 6 golos) com as probabilidades REAIS obtidas na simulação,
+      // no mesmo formato do mapa de calor de Poisson lá em cima — permite comparar
+      // "teoria" (Poisson puro) com "simulação" (que pode incluir a dinâmica calibrada).
+      const heatGrid = [];
+      let heatMin = Infinity, heatMax = -Infinity;
+      for (let i = 0; i < 7; i++) {
+        const row = [];
+        for (let j = 0; j < 7; j++) {
+          const count = scoreCounts[`${i}-${j}`] || 0;
+          const p = count / markovSimCount;
+          row.push(p);
+          if (p < heatMin) heatMin = p;
+          if (p > heatMax) heatMax = p;
+        }
+        heatGrid.push(row);
+      }
+
+      setMarkovResults({
+        probWin1: wins1 / markovSimCount,
+        probDraw: draws / markovSimCount,
+        probWin2: wins2 / markovSimCount,
+        topScores,
+        minuteDistribution,
+        heatGrid,
+        heatMin,
+        heatMax,
+      });
+      setMarkovRunning(false);
     }, 50);
   };
 
@@ -609,7 +1083,9 @@ export default function App() {
 
   const getCustomScoreData = () => {
     if (!results) return { prob: 0, odd: 0 };
-    const prob = poisson(results.lambda1, customScore1) * poisson(results.lambda2, customScore2);
+    const k1 = Math.max(0, Math.round(toNumber(customScore1)));
+    const k2 = Math.max(0, Math.round(toNumber(customScore2)));
+    const prob = poisson(results.lambda1, k1) * poisson(results.lambda2, k2);
     return { prob, odd: toOdd(prob), pct: toPct(prob) };
   };
 
@@ -643,6 +1119,50 @@ export default function App() {
   };
 
   const hcData = getHandicapData();
+
+  // --- MAPA DE CALOR: matriz 7x7 (0 a 6 golos) de probabilidade por placar ---
+  // Reaproveita a matriz de Poisson já calculada em results.exactScores.
+  const heatmapData = useMemo(() => {
+    if (!results) return null;
+    const SIZE = 7; // golos de 0 a 6
+    const grid = [];
+    let min = Infinity, max = -Infinity;
+
+    for (let i = 0; i < SIZE; i++) {
+      const row = [];
+      for (let j = 0; j < SIZE; j++) {
+        const cell = results.exactScores.find(s => s.g1 === i && s.g2 === j);
+        const p = cell ? cell.prob : 0;
+        row.push(p);
+        if (p < min) min = p;
+        if (p > max) max = p;
+      }
+      grid.push(row);
+    }
+    return { grid, min, max, size: SIZE };
+  }, [results]);
+
+  // Interpola a cor de uma célula: 0% da escala = azul, 50% = amarelo, 100% (maior prob) = verde
+  const heatColor = (p, min, max) => {
+    const t = max > min ? (p - min) / (max - min) : 0;
+    const blue = { r: 37, g: 99, b: 235 };    // menor probabilidade
+    const yellow = { r: 250, g: 204, b: 21 }; // probabilidade intermediária
+    const green = { r: 22, g: 163, b: 74 };   // maior probabilidade
+
+    let c1, c2, localT;
+    if (t < 0.5) { c1 = blue; c2 = yellow; localT = t / 0.5; }
+    else { c1 = yellow; c2 = green; localT = (t - 0.5) / 0.5; }
+
+    const r = Math.round(c1.r + (c2.r - c1.r) * localT);
+    const g = Math.round(c1.g + (c2.g - c1.g) * localT);
+    const b = Math.round(c1.b + (c2.b - c1.b) * localT);
+
+    // Luminância aproximada, para decidir se o texto da célula deve ser preto ou branco
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    const textColor = luminance > 150 ? '#0f172a' : '#ffffff';
+
+    return { background: `rgb(${r}, ${g}, ${b})`, color: textColor };
+  };
 
   // --- SCANNER MULTI-MERCADO DE KELLY ---
   // Compara CADA odd importada da casa com a probabilidade do MODELO,
@@ -716,6 +1236,38 @@ export default function App() {
       push(`Menos de ${l.linha} cantos`, 'Escanteios', pUnder, l.menos);
     });
 
+    // Placar Exato / Resultado Correto (compara cada placar diretamente com a matriz de Poisson)
+    (o.resultado_correto || []).forEach(rc => {
+      if (!rc?.placar || rc.odd == null) return;
+      const match = results.exactScores.find(s => s.score === rc.placar);
+      if (!match) return; // placar fora da matriz (ex: acima de 10 golos)
+      push(`Placar Exato ${rc.placar}`, 'Placar Exato', match.prob, rc.odd);
+    });
+
+    // Handicap - Resultado Final (3 vias: casa cobre / empate na linha / fora cobre)
+    // A "linha" é sempre relativa à equipa mandante: negativa = mandante precisa
+    // vencer por mais gols que isso; positiva = mandante já começa com essa vantagem.
+    // Convenção: margem_ajustada = (golos_casa - golos_fora) + linha.
+    // "Casa" cobre se margem_ajustada > 0  <=>  margem > -linha.
+    (o.handicap_resultado_final || []).forEach(h => {
+      if (h?.linha == null) return;
+      const H = Number(h.linha);
+      const threshold = -H;
+      let pWinCasa = 0, pDraw = 0;
+
+      results.exactScores.forEach(s => {
+        const margin = s.g1 - s.g2;
+        if (margin > threshold) pWinCasa += s.prob;
+        else if (margin === threshold) pDraw += s.prob;
+      });
+      const pWinFora = Math.max(0, 1 - pWinCasa - pDraw);
+
+      const sinal = H > 0 ? `+${H}` : `${H}`;
+      push(`Handicap ${results.t1.name} (${sinal})`, 'Handicap', pWinCasa, h.casa);
+      push(`Handicap Empate (${sinal})`, 'Handicap', pDraw, h.empate);
+      push(`Handicap ${results.t2.name} (${sinal})`, 'Handicap', pWinFora, h.fora);
+    });
+
     // Ordena do maior EV para o menor
     list.sort((a, b) => b.ev - a.ev);
     return list;
@@ -733,9 +1285,9 @@ export default function App() {
             <div>
               <h1 className="text-2xl md:text-3xl font-extrabold flex items-center gap-3 text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-blue-500">
                 <Zap className="text-emerald-400" size={32} />
-                Quant System Predictor 8.0
+                Quant System Predictor 18.0
               </h1>
-              <p className="text-slate-400 mt-1 text-sm">Duplo OCR (Estatísticas + Odds), com leitura de imagem mais robusta.</p>
+              <p className="text-slate-400 mt-1 text-sm">Handicap Europeu (Resultado Final) integrado ao Scanner de Kelly.</p>
             </div>
             <div className="flex bg-slate-900 rounded-lg p-1 w-full md:w-auto border border-slate-700">
               <button
@@ -797,10 +1349,16 @@ export default function App() {
                     onClick={() => setShowJsonInput(!showJsonInput)}
                     className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${showJsonInput ? 'bg-slate-700 text-slate-200' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'}`}
                   >
-                    <FileJson size={16}/> JSON
+                    <FileJson size={16}/> Colar JSON
                   </button>
                 </div>
               </div>
+
+              {autoLoadMsg && (
+                <div className="mb-4 flex items-center gap-2 bg-emerald-950/30 border border-emerald-600/40 text-emerald-300 text-xs font-bold px-3 py-2 rounded-lg">
+                  <Check size={14}/> {autoLoadMsg} (do Supabase — não precisou colar de novo)
+                </div>
+              )}
 
               {/* Status das odds importadas */}
               {bookieOddsData && (
@@ -832,18 +1390,25 @@ export default function App() {
                 </div>
               )}
 
-              {/* Área de Importação JSON manual */}
+              {/* Área de Importação JSON unificada — aceita estatísticas, odds, ou os dois juntos */}
               {showJsonInput && (
                 <div className="mb-8 p-5 bg-slate-900 border border-blue-500/30 rounded-xl animate-in slide-in-from-top-2 duration-200">
-                  <label className="block text-sm font-bold text-blue-400 mb-2">Cole o código JSON extraído da IA:</label>
+                  <label className="block text-sm font-bold text-blue-400 mb-2">
+                    Cole aqui o JSON de estatísticas, o de odds, ou os dois colados um após o outro:
+                  </label>
                   <textarea
-                    className="w-full h-32 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-emerald-400 font-mono outline-none focus:border-blue-500"
-                    placeholder='{"confronto": {"equipe_mandante": "Portugal"...}}'
+                    className="w-full h-48 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-emerald-400 font-mono outline-none focus:border-blue-500"
+                    placeholder={'{"confronto": {"equipe_mandante": "Portugal"...}, "estatistica_media": {...}}\n\n{"confronto": {...}, "odds": {"resultado_final": {...}}}'}
                     value={jsonInputData}
                     onChange={(e) => setJsonInputData(e.target.value)}
                   ></textarea>
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    O app reconhece sozinho cada bloco: quem tem <code className="text-blue-300">"estatistica_media"</code> vira
+                    estatísticas, quem tem <code className="text-purple-300">"odds"</code> vira odds da casa. Não precisa se preocupar
+                    com a ordem, nem colar os dois — um só também funciona.
+                  </p>
 
-                  <div className="flex items-center justify-between mt-3">
+                  <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
                     <div className="text-sm">
                       {jsonError && <span className="text-red-400 flex items-center gap-1"><X size={14}/> {jsonError}</span>}
                       {jsonSuccess && <span className="text-emerald-400 flex items-center gap-1"><Check size={14}/> {jsonSuccess}</span>}
@@ -852,7 +1417,7 @@ export default function App() {
                       onClick={handleImportJson}
                       className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-bold text-sm transition-colors"
                     >
-                      Processar Dados
+                      Processar JSON
                     </button>
                   </div>
                 </div>
@@ -958,6 +1523,43 @@ export default function App() {
                 </div>
               </div>
 
+              <label className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={xgMultiplicativo}
+                  onChange={(e) => setXgMultiplicativo(e.target.checked)}
+                  className="w-5 h-5 accent-emerald-500"
+                />
+                <div>
+                  <span className="text-sm font-bold text-slate-200 block">Combinação de xG Multiplicativa (com mando de campo real)</span>
+                  <span className="text-xs text-slate-500">
+                    Desligado: xG próprio + xGA do adversário viram uma MÉDIA simples (comportamento antigo — "dilui"
+                    ataques/defesas muito fora do normal). Ligado: combinação multiplicativa (mesmo espírito do
+                    Dixon-Coles profissional), com vantagem de mando de campo real embutida — casa ×1,10, fora ×0,90,
+                    calibrado com os mesmos 314 jogos reais. Times muito acima ou abaixo da média ficam com previsões
+                    mais decisivas, em vez de "amassadas" pela média do adversário.
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={dixonColesEnabled}
+                  onChange={(e) => setDixonColesEnabled(e.target.checked)}
+                  className="w-5 h-5 accent-emerald-500"
+                />
+                <div>
+                  <span className="text-sm font-bold text-slate-200 block">Correção Dixon-Coles (placares baixos, calibrada com dados reais)</span>
+                  <span className="text-xs text-slate-500">
+                    Desligado: Poisson pura (assume os dois times marcam de forma totalmente independente).
+                    Ligado: ajusta 0-0, 1-0, 0-1 e 1-1 com ρ = −0,042, calibrado com 314 jogos reais (Copas do
+                    Mundo 2022/2018, Euro 2024/2020, Copa América 2024, Copa Africana 2023) — 0-0 e 1-1 ficam
+                    um pouco mais prováveis, 1-0 e 0-1 um pouco menos.
+                  </span>
+                </div>
+              </label>
+
               <button
                 onClick={runAlgorithm}
                 className="mt-6 w-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 text-lg"
@@ -1044,6 +1646,28 @@ export default function App() {
                   </div>
                 </div>
 
+                {supabaseAtivo && (
+                  <div className="col-span-3 flex items-center gap-3 flex-wrap bg-slate-900 border border-purple-500/30 rounded-xl p-4 mt-2">
+                    <button
+                      onClick={registrarPrevisao}
+                      className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                    >
+                      <Target size={16}/> Registrar Previsão (Calibração)
+                    </button>
+                    <span className="text-xs text-slate-500 flex-1 min-w-[200px]">
+                      Salva as 3 probabilidades (casa/empate/fora) no histórico. Quando o jogo acabar, volte e marque
+                      o que realmente aconteceu — assim dá pra medir se o modelo está bem calibrado.
+                    </span>
+                    {logMsg && <span className="text-xs text-emerald-400 font-bold flex items-center gap-1"><Check size={13}/> {logMsg}</span>}
+                    <button
+                      onClick={() => setShowCalibration(!showCalibration)}
+                      className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                    >
+                      <BarChart3 size={16}/> {showCalibration ? 'Ocultar' : 'Ver'} Histórico e Calibração
+                    </button>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
                     <h3 className="text-xs font-bold uppercase text-slate-400 mb-3 text-center flex justify-center items-center gap-2">
@@ -1076,7 +1700,7 @@ export default function App() {
                         <span className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider truncate w-20 text-center">{results.t1.name}</span>
                         <input
                           type="number" min="0" value={customScore1}
-                          onChange={e => setCustomScore1(Math.max(0, parseInt(e.target.value) || 0))}
+                          onChange={e => setCustomScore1(e.target.value)}
                           className="w-16 bg-slate-950 border border-slate-600 rounded-lg p-2 text-center text-2xl font-bold text-emerald-400 focus:border-emerald-500 outline-none transition-colors"
                         />
                       </div>
@@ -1085,7 +1709,7 @@ export default function App() {
                         <span className="text-[10px] text-slate-400 mb-1 uppercase tracking-wider truncate w-20 text-center">{results.t2.name}</span>
                         <input
                           type="number" min="0" value={customScore2}
-                          onChange={e => setCustomScore2(Math.max(0, parseInt(e.target.value) || 0))}
+                          onChange={e => setCustomScore2(e.target.value)}
                           className="w-16 bg-slate-950 border border-slate-600 rounded-lg p-2 text-center text-2xl font-bold text-orange-400 focus:border-orange-500 outline-none transition-colors"
                         />
                       </div>
@@ -1103,6 +1727,64 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* MAPA DE CALOR: MATRIZ 7x7 DE PROBABILIDADES POR PLACAR */}
+                {heatmapData && (
+                  <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-slate-700 mt-4 shadow-xl">
+                    <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2 border-b border-slate-700 pb-3">
+                      <Grid3x3 className="text-blue-400" /> Mapa de Calor — Matriz de Placares (0 a 6 golos)
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-3 mb-5">
+                      Cada célula é a probabilidade de exatamente aquele placar acontecer, calculada pela distribuição de Poisson
+                      com λ = {results.lambda1.toFixed(2)} ({results.t1.name}) e λ = {results.lambda2.toFixed(2)} ({results.t2.name}).
+                      Azul = menos provável · Amarelo = intermediário · Verde = mais provável.
+                    </p>
+
+                    <div className="overflow-x-auto">
+                      <div className="inline-block min-w-full">
+                        {/* Cabeçalho: golos da equipa 2 (colunas) */}
+                        <div className="flex items-center mb-1">
+                          <div className="w-24 shrink-0"></div>
+                          <div className="flex-1 text-center text-[10px] font-bold text-orange-400 uppercase tracking-wider pb-1">
+                            Golos {results.t2.name}
+                          </div>
+                        </div>
+                        <div className="flex">
+                          <div className="w-24 shrink-0"></div>
+                          {Array.from({ length: heatmapData.size }).map((_, j) => (
+                            <div key={j} className="flex-1 min-w-[44px] text-center text-xs font-bold text-slate-400 pb-1">{j}</div>
+                          ))}
+                        </div>
+
+                        {/* Linhas: golos da equipa 1 */}
+                        {heatmapData.grid.map((row, i) => (
+                          <div key={i} className="flex items-center">
+                            {i === Math.floor(heatmapData.size / 2) ? (
+                              <div className="w-24 shrink-0 text-[10px] font-bold text-emerald-400 uppercase tracking-wider text-right pr-2">
+                                Golos<br/>{results.t1.name}
+                              </div>
+                            ) : (
+                              <div className="w-24 shrink-0 text-xs font-bold text-slate-400 text-right pr-2">{i}</div>
+                            )}
+                            {row.map((p, j) => {
+                              const { background, color } = heatColor(p, heatmapData.min, heatmapData.max);
+                              return (
+                                <div
+                                  key={j}
+                                  className="flex-1 min-w-[44px] aspect-square flex items-center justify-center m-0.5 rounded-md text-[10px] font-bold font-mono transition-transform hover:scale-110"
+                                  style={{ background, color }}
+                                  title={`${results.t1.name} ${i} x ${j} ${results.t2.name}: ${toPct(p)}`}
+                                >
+                                  {(p * 100).toFixed(1)}%
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* SCANNER MULTI-MERCADO DE KELLY */}
                 <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-purple-500/30 mt-4 shadow-xl">
@@ -1153,7 +1835,7 @@ export default function App() {
 
                       <p className="text-xs text-slate-400 mb-4">
                         Cada linha compara a <strong className="text-slate-200">odd da casa</strong> com a <strong className="text-slate-200">odd justa do modelo</strong>.
-                        EV = (probabilidade × odd) − 1. A stake segue Kelly Fracionado ({(kellyFraction * 100).toFixed(0)}%) sobre a banca de R$ {bankroll.toFixed(2)} definida abaixo.
+                        EV = (probabilidade × odd) − 1. A stake segue Kelly Fracionado ({(kellyFraction * 100).toFixed(0)}%) sobre a banca de R$ {toNumber(bankroll).toFixed(2)} definida abaixo.
                       </p>
 
                       <div className="overflow-x-auto rounded-xl border border-slate-700">
@@ -1174,7 +1856,7 @@ export default function App() {
                               .filter(m => !showOnlyEvPlus || m.ev > 0)
                               .map((m, idx) => {
                                 const isEvPlus = m.ev > 0;
-                                const stake = isEvPlus ? (bankroll * m.kellyFull * kellyFraction) : 0;
+                                const stake = isEvPlus ? (toNumber(bankroll) * m.kellyFull * kellyFraction) : 0;
                                 return (
                                   <tr key={idx} className={`${isEvPlus ? 'bg-emerald-950/20 hover:bg-emerald-950/40' : 'hover:bg-slate-700/20'} transition-colors`}>
                                     <td className="p-3 font-semibold text-slate-200">{m.label}</td>
@@ -1214,7 +1896,7 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                       <label className="text-xs text-slate-500 uppercase font-bold">Banca Total (R$)</label>
-                      <input type="number" min="0" step="10" value={bankroll} onChange={e => setBankroll(Math.max(0, Number(e.target.value)))} className="w-full bg-slate-800 text-white p-2 mt-1 rounded font-mono" />
+                      <input type="number" min="0" step="10" value={bankroll} onChange={e => setBankroll(e.target.value)} className="w-full bg-slate-800 text-white p-2 mt-1 rounded font-mono" />
                     </div>
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                       <label className="text-xs text-slate-500 uppercase font-bold">Mercado Alvo</label>
@@ -1226,7 +1908,7 @@ export default function App() {
                     </div>
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                       <label className="text-xs text-slate-500 uppercase font-bold">Odd da Casa</label>
-                      <input type="number" step="0.01" min="1.01" value={bookieOdd} onChange={e => setBookieOdd(Math.max(1.01, Number(e.target.value)))} className="w-full bg-slate-800 text-blue-400 p-2 mt-1 rounded font-mono font-bold" />
+                      <input type="number" step="0.01" min="1.01" value={bookieOdd} onChange={e => setBookieOdd(e.target.value)} className="w-full bg-slate-800 text-blue-400 p-2 mt-1 rounded font-mono font-bold" />
                     </div>
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                       <label className="text-xs text-slate-500 uppercase font-bold">Risco (Fração Kelly)</label>
@@ -1293,11 +1975,243 @@ export default function App() {
                             OPERAÇÃO ABORTADA. ODD INJUSTA.
                           </div>
                           <div className="text-xs text-slate-400 font-mono mt-2">
-                            Odd justa do modelo: <span className="text-slate-200">@ {kellyRecommendation.fairOdd}</span> · Odd oferecida: <span className="text-red-400">@ {bookieOdd.toFixed(2)}</span>
+                            Odd justa do modelo: <span className="text-slate-200">@ {kellyRecommendation.fairOdd}</span> · Odd oferecida: <span className="text-red-400">@ {toNumber(bookieOdd).toFixed(2)}</span>
                           </div>
                         </div>
                       )}
                     </div>
+                  )}
+                </div>
+
+                {/* SIMULAÇÃO POR CADEIA DE MARKOV (MINUTO A MINUTO) */}
+                <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-blue-500/30 mt-4 shadow-xl">
+                  <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2 border-b border-slate-700 pb-3">
+                    <Grid3x3 className="text-blue-400" /> Simulação por Cadeia de Markov (Minuto a Minuto)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-3 mb-4">
+                    Simula partidas minuto a minuto ({MARKOV_MINUTES} passos cada), em vez de sortear o placar final de
+                    uma vez. A cada minuto, a chance de gol é a taxa base (λ ÷ {MARKOV_MINUTES}) — e, se a dinâmica de
+                    placar estiver ativa, essa chance muda de acordo com quem está ganhando ou perdendo naquele instante.
+                  </p>
+
+                  <div className="bg-slate-900 border border-slate-700 p-4 rounded-xl mb-5">
+                    <label className="text-xs text-slate-500 uppercase font-bold block mb-1">Quantidade de Simulações</label>
+                    <select
+                      value={markovSimCount}
+                      onChange={(e) => setMarkovSimCount(Number(e.target.value))}
+                      className="w-full bg-slate-800 text-slate-200 p-2 mt-1 rounded font-mono font-bold"
+                    >
+                      <option value={1000}>1.000 (rápido, menos preciso)</option>
+                      <option value={5000}>5.000</option>
+                      <option value={10000}>10.000</option>
+                      <option value={20000}>20.000 (recomendado)</option>
+                      <option value={50000}>50.000</option>
+                      <option value={100000}>100.000 (mais lento, mais preciso)</option>
+                    </select>
+                    <p className="text-[11px] text-slate-500 mt-2">
+                      Mais simulações reduzem o ruído estatístico da estimativa, ao custo de mais tempo de processamento
+                      (cada simulação percorre {MARKOV_MINUTES} minutos).
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-4 mb-5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={markovDynamics}
+                      onChange={(e) => setMarkovDynamics(e.target.checked)}
+                      className="w-5 h-5 accent-blue-500"
+                    />
+                    <div>
+                      <span className="text-sm font-bold text-slate-200 block">Ativar dinâmica de placar + tempo (calibrada com dados reais)</span>
+                      <span className="text-xs text-slate-500">
+                        Desligado: estatisticamente equivalente à Poisson pura (serve para validar o modelo).
+                        Ligado: usa multiplicadores calibrados com 64 jogos reais da Copa do Mundo 2022 (StatsBomb Open Data) —
+                        por placar (empatando: ×0.77; à frente por 1: ×1.52; atrás por 2+: ×1.31) e por minuto do jogo
+                        (últimos 15min: ×2.18; primeiros 15min: ×0.46 — gols se concentram no fim da partida).
+                        Amostra pequena (um único torneio); trate como indicativo, não definitivo.
+                      </span>
+                    </div>
+                  </label>
+                  {markovDynamics && (
+                    <p className="text-[11px] text-yellow-400/80 -mt-3 mb-5 flex items-start gap-1.5">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0"/>
+                      Calibração baseada em apenas 64 partidas de mata-mata de Copa do Mundo — contexto de alta pressão que
+                      pode não generalizar para ligas domésticas. Use o script <code className="text-yellow-300">calibrate_markov.py</code> para
+                      recalibrar com mais competições/temporadas.
+                    </p>
+                  )}
+
+                  <button
+                    onClick={runMarkovSimulation}
+                    disabled={markovRunning}
+                    className={`w-full text-white font-bold py-4 rounded-xl transition-all flex justify-center items-center gap-2 ${markovRunning ? 'bg-slate-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.3)]'}`}
+                  >
+                    {markovRunning ? <Loader2 className="animate-spin"/> : <PlayCircle />}
+                    {markovRunning ? 'Simulando minuto a minuto...' : `Rodar ${markovSimCount.toLocaleString('pt-BR')} Simulações (Cadeia de Markov)`}
+                  </button>
+
+                  {markovResults && (
+                    <>
+                      <div className="mt-6 grid grid-cols-3 gap-4">
+                        <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 text-center">
+                          <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t1.name}</span>
+                          <span className="text-2xl font-black text-emerald-400 font-mono">{toPct(markovResults.probWin1)}</span>
+                          <span className="block text-xs text-slate-500 font-mono mt-1">@ {toOdd(markovResults.probWin1)}</span>
+                        </div>
+                        <div className="bg-slate-950 p-4 rounded-xl border border-slate-700 text-center">
+                          <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Empate</span>
+                          <span className="text-2xl font-black text-slate-300 font-mono">{toPct(markovResults.probDraw)}</span>
+                          <span className="block text-xs text-slate-500 font-mono mt-1">@ {toOdd(markovResults.probDraw)}</span>
+                        </div>
+                        <div className="bg-slate-950 p-4 rounded-xl border border-orange-500/30 text-center">
+                          <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t2.name}</span>
+                          <span className="text-2xl font-black text-orange-400 font-mono">{toPct(markovResults.probWin2)}</span>
+                          <span className="block text-xs text-slate-500 font-mono mt-1">@ {toOdd(markovResults.probWin2)}</span>
+                        </div>
+                      </div>
+
+                      {/* Comparação direta com o modelo de Poisson (matriz) */}
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+                          <span className="block text-slate-500 uppercase font-bold mb-1">Δ vs Poisson ({results.t1.name})</span>
+                          <span className={`font-mono font-bold ${Math.abs(markovResults.probWin1 - results.probWin1) < 0.01 ? 'text-slate-400' : 'text-yellow-400'}`}>
+                            {((markovResults.probWin1 - results.probWin1) * 100).toFixed(1)} p.p.
+                          </span>
+                        </div>
+                        <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+                          <span className="block text-slate-500 uppercase font-bold mb-1">Δ vs Poisson (Empate)</span>
+                          <span className={`font-mono font-bold ${Math.abs(markovResults.probDraw - results.probDraw) < 0.01 ? 'text-slate-400' : 'text-yellow-400'}`}>
+                            {((markovResults.probDraw - results.probDraw) * 100).toFixed(1)} p.p.
+                          </span>
+                        </div>
+                        <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+                          <span className="block text-slate-500 uppercase font-bold mb-1">Δ vs Poisson ({results.t2.name})</span>
+                          <span className={`font-mono font-bold ${Math.abs(markovResults.probWin2 - results.probWin2) < 0.01 ? 'text-slate-400' : 'text-yellow-400'}`}>
+                            {((markovResults.probWin2 - results.probWin2) * 100).toFixed(1)} p.p.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 bg-slate-900 rounded-xl border border-slate-700 p-4">
+                        <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-3">Placares mais frequentes na simulação</span>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                          {markovResults.topScores.map((s, idx) => (
+                            <div key={idx} className="bg-slate-950 px-2 py-2 rounded text-center border border-slate-700/50">
+                              <span className="block font-bold text-slate-200 text-sm">{s.score}</span>
+                              <span className="block text-[10px] text-blue-400 font-mono">{toPct(s.prob)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* DISTRIBUIÇÃO DE GOLS POR MINUTO: simulação vs dados reais */}
+                      <div className="mt-4 bg-slate-900 rounded-xl border border-slate-700 p-4">
+                        <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">
+                          Distribuição de Golos por Minuto (a cada 15 min)
+                        </span>
+                        <p className="text-[11px] text-slate-500 mb-4">
+                          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block"/> Sua simulação</span>
+                          {' vs '}
+                          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block"/> Real (Copa 2022, referência)</span>
+                        </p>
+                        <div className="flex items-end justify-between gap-2 h-36">
+                          {MARKOV_MINUTE_BINS.map((bin, idx) => {
+                            const simPct = markovResults.minuteDistribution[idx] * 100;
+                            const realPct = REAL_MINUTE_DISTRIBUTION[idx] * 100;
+                            const maxPct = Math.max(...markovResults.minuteDistribution.map(v => v * 100), ...REAL_MINUTE_DISTRIBUTION.map(v => v * 100));
+                            return (
+                              <div key={idx} className="flex-1 flex flex-col items-center h-full">
+                                <div className="flex-1 w-full flex items-end justify-center gap-0.5">
+                                  <div
+                                    className="w-1/2 bg-blue-500 rounded-t"
+                                    style={{ height: `${(simPct / maxPct) * 100}%` }}
+                                    title={`Simulação: ${simPct.toFixed(1)}%`}
+                                  />
+                                  <div
+                                    className="w-1/2 bg-emerald-500 rounded-t"
+                                    style={{ height: `${(realPct / maxPct) * 100}%` }}
+                                    title={`Real: ${realPct.toFixed(1)}%`}
+                                  />
+                                </div>
+                                <span className="text-[9px] text-slate-500 mt-1">{bin.label}</span>
+                                <span className="text-[9px] text-blue-400 font-mono">{simPct.toFixed(0)}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {!markovDynamics && (
+                          <p className="text-[11px] text-yellow-400/80 mt-3 flex items-start gap-1.5">
+                            <AlertTriangle size={12} className="mt-0.5 shrink-0"/>
+                            Dinâmica de placar/tempo desligada — sua simulação deve ficar bem mais uniforme (achatada)
+                            que a distribuição real. Ligue a dinâmica calibrada acima para reproduzir a concentração
+                            de golos no fim do jogo.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* MAPA DE CALOR DA SIMULAÇÃO: mesma matriz 7x7, agora com dados do Markov */}
+                      {markovResults.heatGrid && (
+                        <div className="mt-4 bg-slate-900 rounded-xl border border-slate-700 p-4">
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                            <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider flex items-center gap-2">
+                              <Grid3x3 size={13}/> Matriz de Placares — Obtida pela Simulação (0 a 6 golos)
+                            </span>
+                            <button
+                              onClick={() => setMarkovHeatDisplay(markovHeatDisplay === 'pct' ? 'odd' : 'pct')}
+                              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              <Scale size={12}/> Mostrar {markovHeatDisplay === 'pct' ? 'Odd' : '%'}
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mb-4">
+                            Baseada nos {markovSimCount.toLocaleString('pt-BR')} jogos simulados minuto a minuto — compare com o
+                            mapa de calor teórico (Poisson pura) lá em cima para ver o efeito da dinâmica de placar/tempo.
+                          </p>
+
+                          <div className="overflow-x-auto">
+                            <div className="inline-block min-w-full">
+                              <div className="flex items-center mb-1">
+                                <div className="w-24 shrink-0"></div>
+                                <div className="flex-1 text-center text-[10px] font-bold text-orange-400 uppercase tracking-wider pb-1">
+                                  Golos {results.t2.name}
+                                </div>
+                              </div>
+                              <div className="flex">
+                                <div className="w-24 shrink-0"></div>
+                                {Array.from({ length: 7 }).map((_, j) => (
+                                  <div key={j} className="flex-1 min-w-[44px] text-center text-xs font-bold text-slate-400 pb-1">{j}</div>
+                                ))}
+                              </div>
+
+                              {markovResults.heatGrid.map((row, i) => (
+                                <div key={i} className="flex items-center">
+                                  {i === 3 ? (
+                                    <div className="w-24 shrink-0 text-[10px] font-bold text-emerald-400 uppercase tracking-wider text-right pr-2">
+                                      Golos<br/>{results.t1.name}
+                                    </div>
+                                  ) : (
+                                    <div className="w-24 shrink-0 text-xs font-bold text-slate-400 text-right pr-2">{i}</div>
+                                  )}
+                                  {row.map((p, j) => {
+                                    const { background, color } = heatColor(p, markovResults.heatMin, markovResults.heatMax);
+                                    return (
+                                      <div
+                                        key={j}
+                                        className="flex-1 min-w-[44px] aspect-square flex items-center justify-center m-0.5 rounded-md text-[10px] font-bold font-mono transition-transform hover:scale-110"
+                                        style={{ background, color }}
+                                        title={`${results.t1.name} ${i} x ${j} ${results.t2.name}: ${toPct(p)}`}
+                                      >
+                                        {markovHeatDisplay === 'pct' ? `${(p * 100).toFixed(1)}%` : toOdd(p)}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -1324,7 +2238,7 @@ export default function App() {
                         <span className="text-xl font-bold text-slate-500 pl-3">-</span>
                         <input
                           type="number" min="1" max="8" value={handicapLine}
-                          onChange={(e) => setHandicapLine(Math.max(1, parseInt(e.target.value) || 1))}
+                          onChange={(e) => setHandicapLine(e.target.value)}
                           className="w-full bg-transparent text-center text-xl font-bold text-white outline-none"
                         />
                       </div>
@@ -1384,6 +2298,88 @@ export default function App() {
 
                 </div>
 
+              </div>
+            )}
+
+            {/* HISTÓRICO E CALIBRAÇÃO — visível mesmo sem um confronto calculado no momento */}
+            {supabaseAtivo && showCalibration && (
+              <div className="bg-slate-800 p-6 rounded-2xl border border-purple-500/30 mt-4 shadow-xl">
+                <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2 border-b border-slate-700 pb-3">
+                  <BarChart3 className="text-purple-400" /> Histórico e Calibração do Modelo
+                </h3>
+                <p className="text-xs text-slate-400 mt-3 mb-4">
+                  Um modelo bem calibrado não precisa "acertar sempre" — precisa que, das vezes que disse 70%, aconteça
+                  perto de 70% mesmo. Resolva as previsões pendentes abaixo (marque o que realmente aconteceu) pra
+                  começar a ver o diagrama de confiabilidade.
+                </p>
+
+                {predictionsLog.filter(p => p.resultado === null).length > 0 && (
+                  <div className="mb-6">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                      Pendentes ({predictionsLog.filter(p => p.resultado === null).length})
+                    </span>
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                      {predictionsLog.filter(p => p.resultado === null).map(p => (
+                        <div key={p.id} className="flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                          <span className="flex-1 text-slate-300">
+                            {p.equipe_mandante} x {p.equipe_visitante} — <strong className="text-slate-100">{p.outcome}</strong>
+                            <span className="text-purple-400 font-mono ml-2">{toPct(p.probabilidade)}</span>
+                          </span>
+                          <button onClick={() => resolverPrevisao(p.id, true)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Aconteceu</button>
+                          <button onClick={() => resolverPrevisao(p.id, false)} className="bg-red-800 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Não aconteceu</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {predictionsLog.filter(p => p.resultado !== null).length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-6">
+                    Ainda não há previsões resolvidas. Registre previsões em alguns confrontos, espere os jogos acontecerem,
+                    e volte aqui pra marcar o resultado — depois de umas 20-30, o diagrama começa a fazer sentido estatístico.
+                  </p>
+                ) : (
+                  <>
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                      Diagrama de Confiabilidade ({predictionsLog.filter(p => p.resultado !== null).length} previsões resolvidas)
+                    </span>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="bg-slate-900 text-slate-400 text-[10px] uppercase tracking-wider">
+                            <th className="p-2">Faixa Prevista</th>
+                            <th className="p-2 text-right">n</th>
+                            <th className="p-2 text-right">Média Prevista</th>
+                            <th className="p-2 text-right">Frequência Real</th>
+                            <th className="p-2 text-right">Diferença</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/50">
+                          {calibracao.filter(f => f.n > 0).map((f, idx) => {
+                            const diff = f.frequenciaReal - f.mediaProvista;
+                            return (
+                              <tr key={idx}>
+                                <td className="p-2 font-mono text-slate-300">{f.label}</td>
+                                <td className="p-2 text-right font-mono text-slate-400">{f.n}</td>
+                                <td className="p-2 text-right font-mono text-purple-400">{toPct(f.mediaProvista)}</td>
+                                <td className="p-2 text-right font-mono text-emerald-400">{toPct(f.frequenciaReal)}</td>
+                                <td className={`p-2 text-right font-mono font-bold ${Math.abs(diff) < 0.1 ? 'text-slate-500' : diff > 0 ? 'text-blue-400' : 'text-orange-400'}`}>
+                                  {diff > 0 ? '+' : ''}{(diff * 100).toFixed(1)}pp
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-3">
+                      "Diferença" positiva (azul) = o modelo está sendo <strong>conservador demais</strong> nessa faixa
+                      (aconteceu mais do que ele previu). Negativa (laranja) = <strong>otimista demais</strong>. Com poucas
+                      previsões por faixa, essas diferenças ainda são só ruído estatístico — não tire conclusões fortes
+                      com menos de ~20 previsões por faixa.
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1446,6 +2442,72 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* METODOLOGIA & FONTES DE DADOS — visível em qualquer aba */}
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 mt-4 shadow-xl">
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <BarChart3 className="text-emerald-400" size={16} /> Metodologia & Fontes de Dados
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+            <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
+              <span className="block text-[10px] text-slate-500 uppercase font-bold">Vantagem de Mando de Campo</span>
+              <span className="block text-lg font-mono font-bold text-emerald-400">casa ×1,10 / fora ×0,90</span>
+              <span className="block text-[11px] text-slate-500">314 jogos reais, 6 torneios</span>
+            </div>
+            <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
+              <span className="block text-[10px] text-slate-500 uppercase font-bold">Correção Dixon-Coles</span>
+              <span className="block text-lg font-mono font-bold text-emerald-400">ρ = −0,042</span>
+              <span className="block text-[11px] text-slate-500">314 jogos reais, 6 torneios</span>
+            </div>
+            <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
+              <span className="block text-[10px] text-slate-500 uppercase font-bold">Multiplicador Temporal (Markov)</span>
+              <span className="block text-lg font-mono font-bold text-emerald-400">últ. 15min ×2,18</span>
+              <span className="block text-[11px] text-slate-500">64 jogos, Copa do Mundo 2022</span>
+            </div>
+            <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
+              <span className="block text-[10px] text-slate-500 uppercase font-bold">Expected Threat (xT)</span>
+              <span className="block text-lg font-mono font-bold text-emerald-400">313 jogos</span>
+              <span className="block text-[11px] text-slate-500">587 mil eventos posicionais</span>
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <span className="text-[11px] text-slate-500 uppercase font-bold tracking-wider block mb-2">
+              Mapa de Expected Threat (xT) — onde no campo o perigo se concentra (referência, não entra nos cálculos)
+            </span>
+            <div className="overflow-x-auto">
+              <div className="inline-block min-w-full">
+                {XT_GRID.map((row, i) => {
+                  const flatMin = Math.min(...XT_GRID.flat());
+                  const flatMax = Math.max(...XT_GRID.flat());
+                  return (
+                    <div key={i} className="flex">
+                      {row.map((v, j) => {
+                        const { background, color } = heatColor(v, flatMin, flatMax);
+                        return (
+                          <div
+                            key={j}
+                            className="flex-1 min-w-6 aspect-[3/2] flex items-center justify-center text-[8px] font-mono font-bold m-px rounded"
+                            style={{ background, color }}
+                            title={`xT: ${(v * 100).toFixed(2)}%`}
+                          >
+                            {(v * 100).toFixed(1)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-1">← Defesa própria · Ataque adversário →</p>
+          </div>
+
+          <p className="text-[11px] text-slate-500 mt-4 pt-4 border-t border-slate-700">
+            Dados brutos: <a href="https://github.com/statsbomb/open-data" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">StatsBomb Open Data</a> (uso livre para pesquisa e análise, conforme licença pública da StatsBomb). Métodos: Dixon-Coles (1997), Expected Threat / Karun Singh (2018), cadeia de Markov absorvente. Scripts de calibração e dados brutos completos disponíveis mediante solicitação.
+          </p>
+        </div>
 
       </div>
     </div>
