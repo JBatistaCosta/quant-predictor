@@ -90,6 +90,34 @@ export default function EventoNovo() {
   const [erro, setErro] = useState('');
   const [sucesso, setSucesso] = useState(false);
 
+  // Fase da competição (opcional): Liga -> Temporada -> Fase, em cascata
+  const [ligas, setLigas] = useState([]);
+  const [temporadas, setTemporadas] = useState([]);
+  const [fases, setFases] = useState([]);
+  const [ligaId, setLigaId] = useState('');
+  const [temporadaId, setTemporadaId] = useState('');
+  const [faseId, setFaseId] = useState('');
+
+  useEffect(() => {
+    if (!supabaseAtivo) return;
+    supabase.from('ligas').select('id, nome').order('nome').then(({ data }) => setLigas(data || []));
+  }, []);
+
+  useEffect(() => {
+    setTemporadaId(''); setFaseId(''); setFases([]);
+    if (!ligaId) { setTemporadas([]); return; }
+    supabase.from('ligas_temporadas').select('id, nome').eq('liga_id', ligaId).order('nome', { ascending: false })
+      .then(({ data }) => setTemporadas(data || []));
+  }, [ligaId]);
+
+  useEffect(() => {
+    setFaseId('');
+    if (!temporadaId) { setFases([]); return; }
+    supabase.from('fases').select('id, nome, tipo').eq('liga_temporada_id', temporadaId).order('ordem')
+      .then(({ data }) => setFases(data || []));
+  }, [temporadaId]);
+
+
   const salvar = async (e) => {
     e.preventDefault();
     setErro('');
@@ -103,6 +131,7 @@ export default function EventoNovo() {
       equipe_visitante_id: visitante.id,
       data_evento: dataEvento || null,
       casa_de_apostas: casaDeApostas || null,
+      fase_id: faseId || null,
       resolvido: false,
     });
     setSalvando(false);
@@ -149,6 +178,30 @@ export default function EventoNovo() {
             <input value={casaDeApostas} onChange={(e) => setCasaDeApostas(e.target.value)} placeholder="Ex: Betano"
               className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
           </div>
+        </div>
+
+        <div className="pt-3 border-t border-slate-700">
+          <span className="block text-xs font-bold text-slate-400 uppercase mb-2">Fase da competição (opcional)</span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <select value={ligaId} onChange={(e) => setLigaId(e.target.value)}
+              className="bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100">
+              <option value="">Liga...</option>
+              {ligas.map(l => <option key={l.id} value={l.id}>{l.nome}</option>)}
+            </select>
+            <select value={temporadaId} onChange={(e) => setTemporadaId(e.target.value)} disabled={!ligaId}
+              className="bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100 disabled:opacity-40">
+              <option value="">Temporada...</option>
+              {temporadas.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
+            </select>
+            <select value={faseId} onChange={(e) => setFaseId(e.target.value)} disabled={!temporadaId}
+              className="bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100 disabled:opacity-40">
+              <option value="">Fase...</option>
+              {fases.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+            </select>
+          </div>
+          {ligas.length === 0 && (
+            <p className="text-[11px] text-slate-500 mt-2">Nenhuma liga cadastrada ainda — cadastre em "Ligas" pra poder ligar eventos a uma fase.</p>
+          )}
         </div>
 
         {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-2.5 rounded-lg">{erro}</div>}
