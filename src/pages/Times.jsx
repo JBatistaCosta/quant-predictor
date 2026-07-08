@@ -1,5 +1,6 @@
 // src/pages/Times.jsx — Cadastro de times/seleções (instituição + equipe por categoria)
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
@@ -308,7 +309,11 @@ export default function Times() {
               <tbody className="divide-y divide-slate-700/50">
                 {equipes.map(eq => (
                   <tr key={eq.id} className="hover:bg-slate-700/20">
-                    <td className="p-3 font-semibold text-slate-200">{eq.nome_popular || "(sem nome)"}</td>
+                    <td className="p-3 font-semibold text-slate-200">
+                      <Link to={`/times/${eq.id}`} className="hover:text-emerald-400 hover:underline">
+                        {eq.nome_popular || "(sem nome)"}
+                      </Link>
+                    </td>
                     <td className="p-3 text-slate-400">
                       {eq.categoria === 'masculino_profissional'
                         ? <span className="text-slate-600 text-xs">— (padrão)</span>
