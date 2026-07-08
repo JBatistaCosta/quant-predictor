@@ -1435,7 +1435,7 @@ export default function App() {
                     {selecoesData.map(t => <option key={`t1-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
                   </select>
 
-                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-700 relative z-10">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700 relative z-10">
                     <div>
                       <label className="block text-[10px] uppercase text-emerald-400 mb-1">xG (Ataque)</label>
                       <input type="number" step="0.1" value={metrics.xg1} onChange={(e) => handleMetricChange('xg1', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100" />
@@ -1474,7 +1474,7 @@ export default function App() {
                     {selecoesData.map(t => <option key={`t2-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
                   </select>
 
-                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-slate-700 relative z-10">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700 relative z-10">
                     <div>
                       <label className="block text-[10px] uppercase text-emerald-400 mb-1">xG (Ataque)</label>
                       <input type="number" step="0.1" value={metrics.xg2} onChange={(e) => handleMetricChange('xg2', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100" />
@@ -1571,7 +1571,7 @@ export default function App() {
             {results && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in zoom-in duration-300">
 
-                <div className="lg:col-span-2 grid grid-cols-3 gap-4 h-max">
+                <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 h-max">
                   <div className="col-span-3 bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                     <span className="text-sm font-semibold text-slate-400 uppercase flex items-center gap-2">
                       Ajuste Definitivo de Força (λ)
@@ -1673,7 +1673,7 @@ export default function App() {
                     <h3 className="text-xs font-bold uppercase text-slate-400 mb-3 text-center flex justify-center items-center gap-2">
                       <Flag size={14} className="text-emerald-400"/> Matriz de Placares Exatos
                     </h3>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(showAllScores ? results.exactScores.slice(0, 12) : results.exactScores.slice(0, 4)).map((score, idx) => (
                         <div key={idx} className="bg-slate-900 px-3 py-2 rounded flex justify-between items-center border border-slate-700/50 hover:border-emerald-500/50 transition-colors">
                           <span className="font-bold text-slate-200">{score.score}</span>
@@ -1931,7 +1931,7 @@ export default function App() {
                   </button>
 
                   {mcResults && (
-                    <div className="mt-6 grid grid-cols-3 gap-4">
+                    <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 text-center">
                         <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t1.name}</span>
                         <span className="text-2xl font-black text-emerald-400 font-mono">{toPct(mcResults.probWin1)}</span>
@@ -2052,7 +2052,7 @@ export default function App() {
 
                   {markovResults && (
                     <>
-                      <div className="mt-6 grid grid-cols-3 gap-4">
+                      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 text-center">
                           <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t1.name}</span>
                           <span className="text-2xl font-black text-emerald-400 font-mono">{toPct(markovResults.probWin1)}</span>
