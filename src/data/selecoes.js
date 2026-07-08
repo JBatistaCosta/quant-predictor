@@ -1,0 +1,58 @@
+// src/data/selecoes.js — lista de seleções (48 times da Copa do Mundo 2026)
+
+export const selecoesData = [
+  // CONCACAF
+  { id: 1, name: 'Canadá', confederation: 'CONCACAF', rating: 1767, type: 'Sede' },
+  { id: 2, name: 'Estados Unidos', confederation: 'CONCACAF', rating: 1780, type: 'Sede' },
+  { id: 3, name: 'México', confederation: 'CONCACAF', rating: 1881, type: 'Sede' },
+  { id: 4, name: 'Curaçao', confederation: 'CONCACAF', rating: 1434, type: 'Classificada' },
+  { id: 5, name: 'Haiti', confederation: 'CONCACAF', rating: 1536, type: 'Classificada' },
+  { id: 6, name: 'Panamá', confederation: 'CONCACAF', rating: 1714, type: 'Classificada' },
+  // AFC
+  { id: 7, name: 'Japão', confederation: 'AFC', rating: 1890, type: 'Classificada' },
+  { id: 8, name: 'Irã', confederation: 'AFC', rating: 1820, type: 'Classificada' },
+  { id: 9, name: 'Uzbequistão', confederation: 'AFC', rating: 1710, type: 'Classificada' },
+  { id: 10, name: 'Coreia do Sul', confederation: 'AFC', rating: 1786, type: 'Classificada' },
+  { id: 11, name: 'Jordânia', confederation: 'AFC', rating: 1650, type: 'Classificada' },
+  { id: 12, name: 'Austrália', confederation: 'AFC', rating: 1839, type: 'Classificada' },
+  { id: 13, name: 'Catar', confederation: 'AFC', rating: 1447, type: 'Classificada' },
+  { id: 14, name: 'Arábia Saudita', confederation: 'AFC', rating: 1630, type: 'Classificada' },
+  { id: 15, name: 'Iraque', confederation: 'AFC', rating: 1650, type: 'Repescagem' },
+  // OFC
+  { id: 16, name: 'Nova Zelândia', confederation: 'OFC', rating: 1560, type: 'Classificada' },
+  // CONMEBOL
+  { id: 17, name: 'Argentina', confederation: 'CONMEBOL', rating: 2119, type: 'Classificada' },
+  { id: 18, name: 'Brasil', confederation: 'CONMEBOL', rating: 1978, type: 'Classificada' },
+  { id: 19, name: 'Equador', confederation: 'CONMEBOL', rating: 1950, type: 'Classificada' },
+  { id: 20, name: 'Uruguai', confederation: 'CONMEBOL', rating: 1913, type: 'Classificada' },
+  { id: 21, name: 'Colômbia', confederation: 'CONMEBOL', rating: 1985, type: 'Classificada' },
+  { id: 22, name: 'Paraguai', confederation: 'CONMEBOL', rating: 1780, type: 'Classificada' },
+  // CAF
+  { id: 23, name: 'Marrocos', confederation: 'CAF', rating: 1840, type: 'Classificada' },
+  { id: 24, name: 'Tunísia', confederation: 'CAF', rating: 1680, type: 'Classificada' },
+  { id: 25, name: 'Egito', confederation: 'CAF', rating: 1690, type: 'Classificada' },
+  { id: 26, name: 'Argélia', confederation: 'CAF', rating: 1772, type: 'Classificada' },
+  { id: 27, name: 'Gana', confederation: 'CAF', rating: 1510, type: 'Classificada' },
+  { id: 28, name: 'Cabo Verde', confederation: 'CAF', rating: 1550, type: 'Classificada' },
+  { id: 29, name: 'África do Sul', confederation: 'CAF', rating: 1511, type: 'Classificada' },
+  { id: 30, name: 'Costa do Marfim', confederation: 'CAF', rating: 1720, type: 'Classificada' },
+  { id: 31, name: 'Senegal', confederation: 'CAF', rating: 1750, type: 'Classificada' },
+  { id: 32, name: 'RD Congo', confederation: 'CAF', rating: 1580, type: 'Repescagem' },
+  // UEFA
+  { id: 33, name: 'Inglaterra', confederation: 'UEFA', rating: 2024, type: 'Classificada' },
+  { id: 34, name: 'França', confederation: 'UEFA', rating: 2028, type: 'Classificada' },
+  { id: 35, name: 'Croácia', confederation: 'UEFA', rating: 1910, type: 'Classificada' },
+  { id: 36, name: 'Portugal', confederation: 'UEFA', rating: 1993, type: 'Classificada' },
+  { id: 37, name: 'Noruega', confederation: 'UEFA', rating: 1770, type: 'Classificada' },
+  { id: 38, name: 'Holanda', confederation: 'UEFA', rating: 1968, type: 'Classificada' },
+  { id: 39, name: 'Alemanha', confederation: 'UEFA', rating: 1914, type: 'Classificada' },
+  { id: 40, name: 'Suíça', confederation: 'UEFA', rating: 1865, type: 'Classificada' },
+  { id: 41, name: 'Áustria', confederation: 'UEFA', rating: 1880, type: 'Classificada' },
+  { id: 42, name: 'Bélgica', confederation: 'UEFA', rating: 1900, type: 'Classificada' },
+  { id: 43, name: 'Espanha', confederation: 'UEFA', rating: 2125, type: 'Classificada' },
+  { id: 44, name: 'Escócia', confederation: 'UEFA', rating: 1794, type: 'Classificada' },
+  { id: 45, name: 'Turquia', confederation: 'UEFA', rating: 1849, type: 'Classificada' },
+  { id: 46, name: 'República Tcheca', confederation: 'UEFA', rating: 1712, type: 'Classificada' },
+  { id: 47, name: 'Suécia', confederation: 'UEFA', rating: 1780, type: 'Classificada' },
+  { id: 48, name: 'Bósnia e Herzegovina', confederation: 'UEFA', rating: 1616, type: 'Classificada' },
+].sort((a, b) => a.name.localeCompare(b.name));
