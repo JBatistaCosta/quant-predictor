@@ -1,72 +1,16 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCheck, Target, Zap, AlertTriangle, Crosshair, Activity, Flag, Scale, FileJson, Check, X, Camera, Loader2, PlayCircle, DollarSign, ScanLine, TrendingUp, Grid3x3 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
-
-const selecoesData = [
-  // CONCACAF
-  { id: 1, name: 'Canadá', confederation: 'CONCACAF', rating: 1767, type: 'Sede' },
-  { id: 2, name: 'Estados Unidos', confederation: 'CONCACAF', rating: 1780, type: 'Sede' },
-  { id: 3, name: 'México', confederation: 'CONCACAF', rating: 1881, type: 'Sede' },
-  { id: 4, name: 'Curaçao', confederation: 'CONCACAF', rating: 1434, type: 'Classificada' },
-  { id: 5, name: 'Haiti', confederation: 'CONCACAF', rating: 1536, type: 'Classificada' },
-  { id: 6, name: 'Panamá', confederation: 'CONCACAF', rating: 1714, type: 'Classificada' },
-  // AFC
-  { id: 7, name: 'Japão', confederation: 'AFC', rating: 1890, type: 'Classificada' },
-  { id: 8, name: 'Irã', confederation: 'AFC', rating: 1820, type: 'Classificada' },
-  { id: 9, name: 'Uzbequistão', confederation: 'AFC', rating: 1710, type: 'Classificada' },
-  { id: 10, name: 'Coreia do Sul', confederation: 'AFC', rating: 1786, type: 'Classificada' },
-  { id: 11, name: 'Jordânia', confederation: 'AFC', rating: 1650, type: 'Classificada' },
-  { id: 12, name: 'Austrália', confederation: 'AFC', rating: 1839, type: 'Classificada' },
-  { id: 13, name: 'Catar', confederation: 'AFC', rating: 1447, type: 'Classificada' },
-  { id: 14, name: 'Arábia Saudita', confederation: 'AFC', rating: 1630, type: 'Classificada' },
-  { id: 15, name: 'Iraque', confederation: 'AFC', rating: 1650, type: 'Repescagem' },
-  // OFC
-  { id: 16, name: 'Nova Zelândia', confederation: 'OFC', rating: 1560, type: 'Classificada' },
-  // CONMEBOL
-  { id: 17, name: 'Argentina', confederation: 'CONMEBOL', rating: 2119, type: 'Classificada' },
-  { id: 18, name: 'Brasil', confederation: 'CONMEBOL', rating: 1978, type: 'Classificada' },
-  { id: 19, name: 'Equador', confederation: 'CONMEBOL', rating: 1950, type: 'Classificada' },
-  { id: 20, name: 'Uruguai', confederation: 'CONMEBOL', rating: 1913, type: 'Classificada' },
-  { id: 21, name: 'Colômbia', confederation: 'CONMEBOL', rating: 1985, type: 'Classificada' },
-  { id: 22, name: 'Paraguai', confederation: 'CONMEBOL', rating: 1780, type: 'Classificada' },
-  // CAF
-  { id: 23, name: 'Marrocos', confederation: 'CAF', rating: 1840, type: 'Classificada' },
-  { id: 24, name: 'Tunísia', confederation: 'CAF', rating: 1680, type: 'Classificada' },
-  { id: 25, name: 'Egito', confederation: 'CAF', rating: 1690, type: 'Classificada' },
-  { id: 26, name: 'Argélia', confederation: 'CAF', rating: 1772, type: 'Classificada' },
-  { id: 27, name: 'Gana', confederation: 'CAF', rating: 1510, type: 'Classificada' },
-  { id: 28, name: 'Cabo Verde', confederation: 'CAF', rating: 1550, type: 'Classificada' },
-  { id: 29, name: 'África do Sul', confederation: 'CAF', rating: 1511, type: 'Classificada' },
-  { id: 30, name: 'Costa do Marfim', confederation: 'CAF', rating: 1720, type: 'Classificada' },
-  { id: 31, name: 'Senegal', confederation: 'CAF', rating: 1750, type: 'Classificada' },
-  { id: 32, name: 'RD Congo', confederation: 'CAF', rating: 1580, type: 'Repescagem' },
-  // UEFA
-  { id: 33, name: 'Inglaterra', confederation: 'UEFA', rating: 2024, type: 'Classificada' },
-  { id: 34, name: 'França', confederation: 'UEFA', rating: 2028, type: 'Classificada' },
-  { id: 35, name: 'Croácia', confederation: 'UEFA', rating: 1910, type: 'Classificada' },
-  { id: 36, name: 'Portugal', confederation: 'UEFA', rating: 1993, type: 'Classificada' },
-  { id: 37, name: 'Noruega', confederation: 'UEFA', rating: 1770, type: 'Classificada' },
-  { id: 38, name: 'Holanda', confederation: 'UEFA', rating: 1968, type: 'Classificada' },
-  { id: 39, name: 'Alemanha', confederation: 'UEFA', rating: 1914, type: 'Classificada' },
-  { id: 40, name: 'Suíça', confederation: 'UEFA', rating: 1865, type: 'Classificada' },
-  { id: 41, name: 'Áustria', confederation: 'UEFA', rating: 1880, type: 'Classificada' },
-  { id: 42, name: 'Bélgica', confederation: 'UEFA', rating: 1900, type: 'Classificada' },
-  { id: 43, name: 'Espanha', confederation: 'UEFA', rating: 2125, type: 'Classificada' },
-  { id: 44, name: 'Escócia', confederation: 'UEFA', rating: 1794, type: 'Classificada' },
-  { id: 45, name: 'Turquia', confederation: 'UEFA', rating: 1849, type: 'Classificada' },
-  { id: 46, name: 'República Tcheca', confederation: 'UEFA', rating: 1712, type: 'Classificada' },
-  { id: 47, name: 'Suécia', confederation: 'UEFA', rating: 1780, type: 'Classificada' },
-  { id: 48, name: 'Bósnia e Herzegovina', confederation: 'UEFA', rating: 1616, type: 'Classificada' },
-].sort((a, b) => a.name.localeCompare(b.name));
+import { selecoesData } from '../data/selecoes';
+import {
+  factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
+  LIGA_MEDIA_MANDANTE, LIGA_MEDIA_VISITANTE, LIGA_MEDIA_GERAL, GAMMA_MANDANTE, GAMMA_VISITANTE,
+  getPoissonRandom,
+} from '../utils/poisson';
+import { XT_GRID } from '../utils/xt';
+import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
-const factorial = (n) => (n <= 1 ? 1 : n * factorial(n - 1));
-const poisson = (lambda, k) => (Math.exp(-lambda) * Math.pow(lambda, k)) / factorial(k);
-const poissonCDF = (lambda, k) => {
-  let sum = 0;
-  for (let i = 0; i <= k; i++) sum += poisson(lambda, i);
-  return sum;
-};
 
 // --- Correção de Dixon-Coles (1997) para placares baixos ---
 // rho calibrado com 314 jogos reais (StatsBomb: Copas 2022/2018, Euro 2024/2020,
@@ -75,59 +19,22 @@ const poissonCDF = (lambda, k) => {
 // Simplificação do modelo original: usa lambda/mu médios da amostra inteira (não por
 // time), então captura o efeito médio de correlação de placar baixo no futebol em
 // geral, não uma correção específica de cada confronto.
-const DIXON_COLES_RHO = -0.042;
 
 // --- MÉDIAS DA LIGA (mesma calibração real, 314 jogos, 6 torneios) ---
 // Usadas pra combinar xG próprio com xGA do adversário de forma MULTIPLICATIVA
 // (Dixon-Coles), em vez de uma média simples, que "dilui" ataques/defesas muito
 // fora da média. Também dá, de graça, um termo real de vantagem de mando de campo.
-const LIGA_MEDIA_MANDANTE = 1.3854;
-const LIGA_MEDIA_VISITANTE = 1.1274;
-const LIGA_MEDIA_GERAL = (LIGA_MEDIA_MANDANTE + LIGA_MEDIA_VISITANTE) / 2; // 1.2564 — baseline neutro
-const GAMMA_MANDANTE = LIGA_MEDIA_MANDANTE / LIGA_MEDIA_GERAL;   // ≈1.1027 — vantagem de jogar em casa
-const GAMMA_VISITANTE = LIGA_MEDIA_VISITANTE / LIGA_MEDIA_GERAL; // ≈0.8973 — desvantagem de jogar fora
 
 // Grade de Expected Threat (xT, Karun Singh 2018) — calibrada com 313 jogos reais
 // (StatsBomb: Copas 2022/2018, Euro 2024/2020, Copa América 2024, Copa Africana 2023),
 // 587 mil eventos posicionais. Só exibida como referência visual — não entra em
 // nenhum cálculo do app (ver calibration/xt_calibration.json e xt_README.md).
-const XT_GRID = [
-  [0.00148, 0.00203, 0.00269, 0.00349, 0.00433, 0.00533, 0.00675, 0.00859, 0.01101, 0.01416, 0.01612, 0.02290],
-  [0.00184, 0.00255, 0.00331, 0.00413, 0.00513, 0.00625, 0.00774, 0.00984, 0.01254, 0.01602, 0.01918, 0.01890],
-  [0.00239, 0.00300, 0.00366, 0.00455, 0.00559, 0.00677, 0.00836, 0.01024, 0.01336, 0.01921, 0.03196, 0.03147],
-  [0.00296, 0.00332, 0.00387, 0.00478, 0.00568, 0.00694, 0.00855, 0.01086, 0.01371, 0.02614, 0.06749, 0.13954],
-  [0.00299, 0.00326, 0.00388, 0.00476, 0.00563, 0.00696, 0.00813, 0.01089, 0.01539, 0.02418, 0.11423, 0.16764],
-  [0.00237, 0.00303, 0.00372, 0.00458, 0.00551, 0.00679, 0.00839, 0.01063, 0.01423, 0.02088, 0.03141, 0.03302],
-  [0.00194, 0.00253, 0.00331, 0.00417, 0.00509, 0.00623, 0.00787, 0.00984, 0.01309, 0.01693, 0.02072, 0.02140],
-  [0.00149, 0.00204, 0.00272, 0.00339, 0.00431, 0.00539, 0.00694, 0.00882, 0.01162, 0.01447, 0.01675, 0.02474],
-];
-const dixonColesTau = (x, y, lam, mu, rho) => {
-  if (x === 0 && y === 0) return 1 - (lam * mu * rho);
-  if (x === 0 && y === 1) return 1 + (lam * rho);
-  if (x === 1 && y === 0) return 1 + (mu * rho);
-  if (x === 1 && y === 1) return 1 - rho;
-  return 1.0;
-};
 
 // Gerador aleatório de Poisson (algoritmo de Knuth) para o Monte Carlo
-const getPoissonRandom = (lambda) => {
-  const L = Math.exp(-lambda);
-  let k = 0;
-  let p = 1;
-  do {
-    k++;
-    p *= Math.random();
-  } while (p > L);
-  return k - 1;
-};
 
 // Converte um valor de input (texto, possivelmente vazio ou parcial como "-" ou ".")
 // em número seguro para cálculo. Texto vazio/inválido vira 0 SÓ na hora de calcular —
 // nunca no campo em si, para não "empurrar" um 0 de volta na caixa enquanto o usuário digita.
-const toNumber = (v) => {
-  const n = parseFloat(v);
-  return Number.isFinite(n) ? n : 0;
-};
 
 // --- PROMPT 1: extração de ESTATÍSTICAS (tabela "Estatística média") ---
 const OCR_STATS_PROMPT = `Você é um extrator de dados de screenshots de apps de estatísticas de futebol (como Betano/SofaScore).
@@ -288,13 +195,6 @@ export default function AnaliseEvento() {
     });
     return filtered;
   }, [searchTerm, filterConfed, sortConfig]);
-
-  const getEloColor = (rating) => {
-    if (rating >= 1950) return 'text-emerald-400';
-    if (rating >= 1800) return 'text-blue-400';
-    if (rating >= 1650) return 'text-yellow-400';
-    return 'text-orange-400';
-  };
 
   const handleMetricChange = (field, value) => {
     setMetrics(prev => {
@@ -1080,8 +980,6 @@ export default function AnaliseEvento() {
     }, 50);
   };
 
-  const toOdd = (prob) => (prob > 0.0001 ? (1 / prob).toFixed(2) : '> 1000');
-  const toPct = (prob) => (prob > 0.00001 ? (prob * 100).toFixed(1) + '%' : '< 0.1%');
 
   const getCustomScoreData = () => {
     if (!results) return { prob: 0, odd: 0 };
@@ -1145,27 +1043,6 @@ export default function AnaliseEvento() {
   }, [results]);
 
   // Interpola a cor de uma célula: 0% da escala = azul, 50% = amarelo, 100% (maior prob) = verde
-  const heatColor = (p, min, max) => {
-    const t = max > min ? (p - min) / (max - min) : 0;
-    const blue = { r: 37, g: 99, b: 235 };    // menor probabilidade
-    const yellow = { r: 250, g: 204, b: 21 }; // probabilidade intermediária
-    const green = { r: 22, g: 163, b: 74 };   // maior probabilidade
-
-    let c1, c2, localT;
-    if (t < 0.5) { c1 = blue; c2 = yellow; localT = t / 0.5; }
-    else { c1 = yellow; c2 = green; localT = (t - 0.5) / 0.5; }
-
-    const r = Math.round(c1.r + (c2.r - c1.r) * localT);
-    const g = Math.round(c1.g + (c2.g - c1.g) * localT);
-    const b = Math.round(c1.b + (c2.b - c1.b) * localT);
-
-    // Luminância aproximada, para decidir se o texto da célula deve ser preto ou branco
-    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-    const textColor = luminance > 150 ? '#0f172a' : '#ffffff';
-
-    return { background: `rgb(${r}, ${g}, ${b})`, color: textColor };
-  };
-
   // --- SCANNER MULTI-MERCADO DE KELLY ---
   // Compara CADA odd importada da casa com a probabilidade do MODELO,
   // calcula o EV e a stake de Kelly de cada mercado, e ranqueia do melhor ao pior.
