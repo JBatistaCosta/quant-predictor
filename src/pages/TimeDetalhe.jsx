@@ -51,10 +51,10 @@ export default function TimeDetalhe() {
         setDetalhes(d);
       }
 
-      // Eventos onde esse time é mandante OU visitante
+      // Eventos onde esse time é mandante OU visitante (já traz o nome da fase, se houver)
       const { data: evData } = await supabase
         .from('eventos')
-        .select('*')
+        .select('*, fases(nome)')
         .or(`equipe_mandante_id.eq.${id},equipe_visitante_id.eq.${id}`)
         .order('data_evento', { ascending: false });
 
@@ -184,9 +184,12 @@ function LinhaEvento({ ev, idAtual }) {
 
   return (
     <div className="flex items-center justify-between bg-slate-900 border border-slate-700/50 rounded-lg px-4 py-3 text-sm">
-      <div className="flex items-center gap-2">
-        <span className="text-slate-500 text-xs">{ehMandante ? 'vs' : '@'}</span>
-        <span className="font-semibold text-slate-200">{adversario || '(desconhecido)'}</span>
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500 text-xs">{ehMandante ? 'vs' : '@'}</span>
+          <span className="font-semibold text-slate-200">{adversario || '(desconhecido)'}</span>
+        </div>
+        {ev.fases?.nome && <span className="text-[11px] text-slate-500 ml-5">{ev.fases.nome}</span>}
       </div>
       <div className="flex items-center gap-3 text-slate-400">
         {ev.data_evento && <span className="text-xs">{new Date(ev.data_evento).toLocaleDateString('pt-BR')}</span>}
