@@ -1,7 +1,7 @@
 // src/components/Layout.jsx
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X } from 'lucide-react';
+import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X, Download } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
@@ -18,6 +18,7 @@ const GRUPOS_MENU = [
     grupo: 'Cadastro',
     itens: [
       { to: '/eventos/novo', label: 'Novo Evento', icone: PlusCircle },
+      { to: '/importar', label: 'Importar Jogos', icone: Download },
       { to: '/times', label: 'Times', icone: Users },
       { to: '/ligas', label: 'Ligas', icone: Trophy },
     ],
