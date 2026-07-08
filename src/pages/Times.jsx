@@ -271,7 +271,11 @@ export default function Times() {
                 {equipes.map(eq => (
                   <tr key={eq.id} className="hover:bg-slate-700/20">
                     <td className="p-3 font-semibold text-slate-200">{eq.nome}</td>
-                    <td className="p-3 text-slate-400">{CATEGORIAS.find(c => c.valor === eq.categoria)?.rotulo || eq.categoria}</td>
+                    <td className="p-3 text-slate-400">
+                      {eq.categoria === 'masculino_profissional'
+                        ? <span className="text-slate-600 text-xs">— (padrão)</span>
+                        : CATEGORIAS.find(c => c.valor === eq.categoria)?.rotulo || eq.categoria}
+                    </td>
                     <td className="p-3 text-slate-400 capitalize">{eq.tipo}</td>
                     <td className="p-3 text-right">
                       <button onClick={() => apagar(eq.id)} className="text-slate-500 hover:text-red-400 text-xs font-bold">Apagar</button>
