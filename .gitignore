@@ -1,0 +1,19 @@
+# Dependências
+node_modules
+
+# Build
+dist
+dist-ssr
+
+# Variáveis de ambiente (chaves e segredos — NUNCA deve ir pro Git)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor/SO
+.vscode
+.DS_Store
