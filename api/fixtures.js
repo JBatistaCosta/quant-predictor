@@ -127,10 +127,9 @@ function normalizarMatchesFootballData(matches) {
     rodada: m.matchday,
     mandante: m.homeTeam?.name,
     visitante: m.awayTeam?.name,
-    placar_mandante: m.score?.fullTime?.homeTeam ?? null,
-    placar_visitante: m.score?.fullTime?.awayTeam ?? null,
+    placar_mandante: m.score?.fullTime?.home ?? null,
+    placar_visitante: m.score?.fullTime?.away ?? null,
     resolvido: m.status === 'FINISHED',
-    _debug_score: m.score, // TEMPORÁRIO — remover depois de diagnosticar
   }));
 }
 
