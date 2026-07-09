@@ -38,13 +38,28 @@ async function buscarViaApiFootball(time, de, ate, apiKey) {
   }
   const teamId = timesEncontrados[0].team.id;
   const fixtures = await chamarApiFootball(`/fixtures?team=${teamId}&from=${formatarData(de)}&to=${formatarData(ate)}`, apiKey);
+  return normalizarFixturesApiFootball(fixtures);
+}
 
+// Busca TODOS os jogos de uma liga inteira numa temporada — não precisa de time nenhum
+async function buscarLigaViaApiFootball(nomeLiga, temporada, apiKey) {
+  const ligasEncontradas = await chamarApiFootball(`/leagues?name=${encodeURIComponent(nomeLiga)}`, apiKey);
+  if (!ligasEncontradas || ligasEncontradas.length === 0) {
+    throw new Error(`Nenhuma liga encontrada pra "${nomeLiga}" na API-Football.`);
+  }
+  const leagueId = ligasEncontradas[0].league.id;
+  const fixtures = await chamarApiFootball(`/fixtures?league=${leagueId}&season=${temporada}`, apiKey);
+  return normalizarFixturesApiFootball(fixtures);
+}
+
+function normalizarFixturesApiFootball(fixtures) {
   return (fixtures || []).map(f => ({
     fixture_id: `af_${f.fixture.id}`,
     data: f.fixture.date?.slice(0, 10),
     status: f.fixture.status?.short,
     liga: f.league?.name,
     temporada: f.league?.season,
+    rodada: f.league?.round,
     mandante: f.teams.home.name,
     visitante: f.teams.away.name,
     placar_mandante: f.goals.home,
@@ -76,12 +91,35 @@ async function buscarViaFootballData(time, de, ate, apiKey) {
     apiKey
   );
 
-  return (dados.matches || []).map(m => ({
+  return normalizarMatchesFootballData(dados.matches);
+}
+
+// As 12 competições do plano grátis da football-data.org — usado pra achar o
+// código a partir do nome digitado (a API deles usa código, não nome, na URL)
+const CODIGOS_FOOTBALL_DATA = {
+  'premier league': 'PL', 'la liga': 'PD', 'bundesliga': 'BL1', 'serie a': 'SA',
+  'ligue 1': 'FL1', 'champions league': 'CL', 'eredivisie': 'DED', 'primeira liga': 'PPL',
+  'championship': 'ELC', 'brasileirao': 'BSA', 'brazil': 'BSA', 'world cup': 'WC', 'copa do mundo': 'WC',
+  'european championship': 'EC', 'euro': 'EC',
+};
+
+async function buscarLigaViaFootballData(nomeLiga, temporada, apiKey) {
+  const codigo = CODIGOS_FOOTBALL_DATA[nomeLiga.toLowerCase().trim()];
+  if (!codigo) {
+    throw new Error(`"${nomeLiga}" não está entre as 12 competições gratuitas da football-data.org.`);
+  }
+  const dados = await chamarFootballData(`/competitions/${codigo}/matches?season=${temporada}`, apiKey);
+  return normalizarMatchesFootballData(dados.matches);
+}
+
+function normalizarMatchesFootballData(matches) {
+  return (matches || []).map(m => ({
     fixture_id: `fd_${m.id}`,
     data: m.utcDate?.slice(0, 10),
     status: m.status,
     liga: m.competition?.name,
     temporada: m.season?.startDate?.slice(0, 4),
+    rodada: m.matchday,
     mandante: m.homeTeam?.name,
     visitante: m.awayTeam?.name,
     placar_mandante: m.score?.fullTime?.homeTeam ?? null,
@@ -94,8 +132,11 @@ export default async function handler(req, res) {
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
   const footballDataKey = process.env.FOOTBALL_DATA_KEY;
 
-  const { time, dias_passado, dias_futuro } = req.query;
-  if (!time) return res.status(400).json({ error: { message: 'Informe ?time=NomeDoTime na URL.' } });
+  const { time, liga, temporada, dias_passado, dias_futuro } = req.query;
+  const modoLiga = !!liga;
+
+  if (!modoLiga && !time) return res.status(400).json({ error: { message: 'Informe ?time=NomeDoTime OU ?liga=NomeDaLiga&temporada=AAAA na URL.' } });
+  if (modoLiga && !temporada) return res.status(400).json({ error: { message: 'No modo liga, informe também ?temporada=AAAA (ex: 2026).' } });
 
   const diasPassado = parseInt(dias_passado, 10) || 30;
   const diasFuturo = parseInt(dias_futuro, 10) || 30;
@@ -108,7 +149,9 @@ export default async function handler(req, res) {
   // Tenta a fonte 1 primeiro
   if (apiFootballKey) {
     try {
-      jogos = await buscarViaApiFootball(time, de, ate, apiFootballKey);
+      jogos = modoLiga
+        ? await buscarLigaViaApiFootball(liga, temporada, apiFootballKey)
+        : await buscarViaApiFootball(time, de, ate, apiFootballKey);
       fonteUsada = 'API-Football';
     } catch (erro1) {
       avisoFallback = `API-Football falhou (${erro1.message}), tentando football-data.org...`;
@@ -120,7 +163,9 @@ export default async function handler(req, res) {
   // Se a 1ª não deu certo, tenta a fonte 2
   if (!jogos && footballDataKey) {
     try {
-      jogos = await buscarViaFootballData(time, de, ate, footballDataKey);
+      jogos = modoLiga
+        ? await buscarLigaViaFootballData(liga, temporada, footballDataKey)
+        : await buscarViaFootballData(time, de, ate, footballDataKey);
       fonteUsada = 'football-data.org';
     } catch (erro2) {
       return res.status(500).json({
@@ -133,5 +178,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: { message: avisoFallback || 'Nenhuma fonte de dados configurada (API_FOOTBALL_KEY ou FOOTBALL_DATA_KEY).' } });
   }
 
-  res.status(200).json({ time_buscado: time, fonte_usada: fonteUsada, aviso: avisoFallback, total: jogos.length, jogos });
+  // No modo liga, filtra pelo intervalo de datas também (API-Football não aceita from/to junto com league+season)
+  if (modoLiga) {
+    const deStr = formatarData(de), ateStr = formatarData(ate);
+    jogos = jogos.filter(j => j.data >= deStr && j.data <= ateStr);
+  }
+
+  res.status(200).json({ busca: modoLiga ? liga : time, modo: modoLiga ? 'liga' : 'time', fonte_usada: fonteUsada, aviso: avisoFallback, total: jogos.length, jogos });
 }
