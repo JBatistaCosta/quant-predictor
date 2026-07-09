@@ -1,20 +1,25 @@
 // api/fixtures.js
 // Roda no SERVIDOR do Vercel. Busca jogos (passados e futuros) de um time.
 //
-// DUAS FONTES, com fallback automático:
-//   1ª) API-Football — tentada primeiro (cobertura maior: 1.200+ ligas)
-//   2ª) football-data.org — só entra em ação se a 1ª falhar (chave inválida,
-//       cota estourada, erro de rede etc.). Limitação conhecida: a busca por
-//       nome do time nessa fonte só cobre as 12 competições do plano grátis
-//       deles — hoje implementada especificamente pra Copa do Mundo (WC),
-//       que é o uso principal do sistema agora. Fora da Copa, o fallback
-//       pode não encontrar o time.
+// TRÊS FONTES, com fallback automático em cascata:
+//   1ª) API-Football — cobertura maior (1.200+ ligas), mas o plano grátis NÃO
+//       dá acesso à temporada atual em muitas competições (só históricas,
+//       tipo 2022-2024) — descoberto na prática, não documentado com clareza.
+//   2ª) football-data.org — busca por time só cobre as 12 competições do
+//       plano grátis deles, implementada aqui especificamente pra Copa do
+//       Mundo (WC). Pode ter a mesma restrição de temporada atual.
+//   3ª) The Odds API (mesma chave usada pra odds) — ao contrário das duas
+//       acima, o plano grátis deles cobre EXATAMENTE a temporada atual (é
+//       o negócio deles: odds só fazem sentido pra jogo que ainda vai
+//       acontecer). Limitação: só volta 3 dias no passado pra jogos já
+//       resolvidos, e só cobre a Copa do Mundo (soccer_fifa_world_cup) hoje.
 //
 // COMO CHAMAR:
 //   /api/fixtures?time=Brazil&dias_passado=30&dias_futuro=60
 
 const API_FOOTBALL_URL = 'https://v3.football.api-sports.io';
 const FOOTBALL_DATA_URL = 'https://api.football-data.org/v4';
+const ODDS_API_URL = 'https://api.the-odds-api.com/v4';
 
 function formatarData(d) {
   return d.toISOString().slice(0, 10);
@@ -128,9 +133,45 @@ function normalizarMatchesFootballData(matches) {
   }));
 }
 
+// --- Fonte 3: The Odds API (mesma chave já usada pras odds) ---
+// Só cobre a Copa do Mundo por enquanto (sport key fixo), e só 3 dias pra trás
+// pra jogos já resolvidos — mas é a única das 3 fontes cujo plano grátis
+// realmente cobre a temporada atual, que é justamente onde as outras falham.
+async function buscarViaTheOddsApi(time, apiKey) {
+  const resposta = await fetch(`${ODDS_API_URL}/sports/soccer_fifa_world_cup/scores/?apiKey=${apiKey}&daysFrom=3`);
+  const dados = await resposta.json();
+  if (!resposta.ok) throw new Error(`The Odds API HTTP ${resposta.status}: ${dados.message || ''}`);
+
+  const normalizar = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const timeNormalizado = normalizar(time);
+
+  const relevantes = (dados || []).filter(j =>
+    normalizar(j.home_team).includes(timeNormalizado) || timeNormalizado.includes(normalizar(j.home_team)) ||
+    normalizar(j.away_team).includes(timeNormalizado) || timeNormalizado.includes(normalizar(j.away_team))
+  );
+
+  return relevantes.map(j => {
+    const placarMandante = j.scores?.find(s => s.name === j.home_team)?.score;
+    const placarVisitante = j.scores?.find(s => s.name === j.away_team)?.score;
+    return {
+      fixture_id: `oa_${j.id}`,
+      data: j.commence_time?.slice(0, 10),
+      status: j.completed ? 'FT' : 'NS',
+      liga: 'FIFA World Cup',
+      temporada: null,
+      mandante: j.home_team,
+      visitante: j.away_team,
+      placar_mandante: placarMandante != null ? Number(placarMandante) : null,
+      placar_visitante: placarVisitante != null ? Number(placarVisitante) : null,
+      resolvido: !!j.completed,
+    };
+  });
+}
+
 export default async function handler(req, res) {
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
   const footballDataKey = process.env.FOOTBALL_DATA_KEY;
+  const oddsApiKey = process.env.ODDS_API_KEY;
 
   const { time, liga, temporada, dias_passado, dias_futuro } = req.query;
   const modoLiga = !!liga;
@@ -145,6 +186,7 @@ export default async function handler(req, res) {
   const ate = new Date(hoje); ate.setDate(ate.getDate() + diasFuturo);
 
   let jogos, fonteUsada, avisoFallback;
+  const avisos = [];
 
   // Tenta a fonte 1 primeiro
   if (apiFootballKey) {
@@ -154,10 +196,10 @@ export default async function handler(req, res) {
         : await buscarViaApiFootball(time, de, ate, apiFootballKey);
       fonteUsada = 'API-Football';
     } catch (erro1) {
-      avisoFallback = `API-Football falhou (${erro1.message}), tentando football-data.org...`;
+      avisos.push(`API-Football falhou (${erro1.message})`);
     }
   } else {
-    avisoFallback = 'API_FOOTBALL_KEY não configurada, tentando football-data.org...';
+    avisos.push('API_FOOTBALL_KEY não configurada');
   }
 
   // Se a 1ª não deu certo, tenta a fonte 2
@@ -168,14 +210,28 @@ export default async function handler(req, res) {
         : await buscarViaFootballData(time, de, ate, footballDataKey);
       fonteUsada = 'football-data.org';
     } catch (erro2) {
-      return res.status(500).json({
-        error: { message: `As duas fontes falharam. ${avisoFallback || ''} football-data.org: ${erro2.message}` }
-      });
+      avisos.push(`football-data.org falhou (${erro2.message})`);
     }
+  } else if (!jogos) {
+    avisos.push('FOOTBALL_DATA_KEY não configurada');
   }
 
+  // Se as duas primeiras falharam, tenta a 3ª (só funciona no modo "time", não "liga")
+  if (!jogos && !modoLiga && oddsApiKey) {
+    try {
+      jogos = await buscarViaTheOddsApi(time, oddsApiKey);
+      fonteUsada = 'The Odds API';
+    } catch (erro3) {
+      avisos.push(`The Odds API falhou (${erro3.message})`);
+    }
+  } else if (!jogos && !modoLiga) {
+    avisos.push('ODDS_API_KEY não configurada');
+  }
+
+  avisoFallback = avisos.length > 0 ? avisos.join(' | ') : undefined;
+
   if (!jogos) {
-    return res.status(500).json({ error: { message: avisoFallback || 'Nenhuma fonte de dados configurada (API_FOOTBALL_KEY ou FOOTBALL_DATA_KEY).' } });
+    return res.status(500).json({ error: { message: `Todas as fontes falharam: ${avisoFallback || 'nenhuma configurada'}.` } });
   }
 
   // No modo liga, filtra pelo intervalo de datas também (API-Football não aceita from/to junto com league+season)
