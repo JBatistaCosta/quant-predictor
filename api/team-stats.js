@@ -55,7 +55,20 @@ async function buscarEstatisticasDoJogo(fixtureId, teamId, apiKey) {
 // Busca de verdade na API-Football (só é chamada quando o cache não serve)
 async function buscarDaApiFootball(nomeTime, quantidadeJogos, apiKey) {
   const teamId = await buscarIdDoTime(nomeTime, apiKey);
-  const jogos = await chamarAPI(`/fixtures?team=${teamId}&last=${quantidadeJogos}`, apiKey);
+
+  // O parâmetro &last=N é bloqueado no plano grátis ("Free plans do not have
+  // access to the Last parameter") — usamos um intervalo de datas no lugar
+  // (esse SIM funciona no grátis), e filtramos os N jogos finalizados mais
+  // recentes manualmente.
+  const hoje = new Date();
+  const de = new Date(hoje); de.setDate(de.getDate() - 120); // margem generosa pra achar N jogos
+  const formatarData = (d) => d.toISOString().slice(0, 10);
+  const todosJogos = await chamarAPI(`/fixtures?team=${teamId}&from=${formatarData(de)}&to=${formatarData(hoje)}`, apiKey);
+
+  const jogos = (todosJogos || [])
+    .filter(j => ['FT', 'AET', 'PEN'].includes(j.fixture.status?.short))
+    .sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date))
+    .slice(0, quantidadeJogos);
 
   const acumulado = { xg: [], xga: [], chutes: [], chutesNoGol: [], escanteios: [] };
   for (const jogo of jogos) {
