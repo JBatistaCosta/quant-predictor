@@ -130,6 +130,7 @@ function normalizarMatchesFootballData(matches) {
     placar_mandante: m.score?.fullTime?.homeTeam ?? null,
     placar_visitante: m.score?.fullTime?.awayTeam ?? null,
     resolvido: m.status === 'FINISHED',
+    _debug_score: m.score, // TEMPORÁRIO — remover depois de diagnosticar
   }));
 }
 
