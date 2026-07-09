@@ -1,14 +1,18 @@
 // src/pages/ImportarJogos.jsx
-// Busca jogos (passados e futuros) de um time na API-Football, tenta casar os
-// adversários com o registro de equipes já cadastrado, e importa os selecionados
-// pra tabela `eventos` — com registro auditado em `importacoes`.
+// Busca jogos (passados e futuros) — de UM time ou de uma LIGA inteira — tenta
+// casar os times com o registro já cadastrado, e importa os selecionados pra
+// tabela `eventos`, com registro auditado em `importacoes`. Reimportar um jogo
+// já existente ATUALIZA o placar/status (upsert de verdade), não só pula.
 import React, { useState } from 'react';
-import { Download, Loader2, AlertTriangle, Check, Info } from 'lucide-react';
+import { Download, Loader2, AlertTriangle, Check, Info, RefreshCw } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import SeletorEquipe from '../components/SeletorEquipe';
 
 export default function ImportarJogos() {
+  const [modo, setModo] = useState('time'); // 'time' | 'liga'
   const [equipe, setEquipe] = useState(null);
+  const [nomeLiga, setNomeLiga] = useState('');
+  const [temporada, setTemporada] = useState(new Date().getFullYear());
   const [diasPassado, setDiasPassado] = useState(30);
   const [diasFuturo, setDiasFuturo] = useState(30);
   const [buscando, setBuscando] = useState(false);
@@ -20,7 +24,8 @@ export default function ImportarJogos() {
   const [fonteInfo, setFonteInfo] = useState(null);
 
   const buscar = async () => {
-    if (!equipe) { setErro('Selecione um time primeiro.'); return; }
+    if (modo === 'time' && !equipe) { setErro('Selecione um time primeiro.'); return; }
+    if (modo === 'liga' && !nomeLiga.trim()) { setErro('Digite o nome da liga.'); return; }
     setErro('');
     setBuscando(true);
     setJogos(null);
@@ -28,31 +33,34 @@ export default function ImportarJogos() {
     setFonteInfo(null);
 
     try {
-      const resp = await fetch(`/api/fixtures?time=${encodeURIComponent(equipe.nome_popular)}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`);
+      const url = modo === 'time'
+        ? `/api/fixtures?time=${encodeURIComponent(equipe.nome_popular)}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`
+        : `/api/fixtures?liga=${encodeURIComponent(nomeLiga)}&temporada=${temporada}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`;
+
+      const resp = await fetch(url);
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
       setFonteInfo({ fonte: data.fonte_usada, aviso: data.aviso });
 
-      const nomesAdversarios = data.jogos.map(j => j.mandante === equipe.nome_popular ? j.visitante : j.mandante);
+      // Casa AMBOS os lados (mandante e visitante) contra o registro — no modo liga
+      // não existe "nosso time" fixo, então os dois precisam ser resolvidos.
+      const todosNomes = new Set();
+      data.jogos.forEach(j => { todosNomes.add(j.mandante); todosNomes.add(j.visitante); });
       let equipesEncontradas = [];
-      if (nomesAdversarios.length > 0) {
-        const { data: vwData } = await supabase.from('vw_equipes_completo').select('id, nome_popular').in('nome_popular', [...new Set(nomesAdversarios)]);
+      if (todosNomes.size > 0) {
+        const { data: vwData } = await supabase.from('vw_equipes_completo').select('id, nome_popular').in('nome_popular', [...todosNomes]);
         equipesEncontradas = vwData || [];
       }
       const idPorNome = {};
       equipesEncontradas.forEach(e => { idPorNome[e.nome_popular] = e.id; });
 
-      const jogosComMatch = data.jogos.map(j => {
-        const ehMandanteOEquipe = j.mandante === equipe.nome_popular;
-        const nomeAdversario = ehMandanteOEquipe ? j.visitante : j.mandante;
-        return {
-          ...j,
-          equipe_mandante_id: ehMandanteOEquipe ? equipe.id : (idPorNome[j.mandante] || null),
-          equipe_visitante_id: ehMandanteOEquipe ? (idPorNome[j.visitante] || null) : equipe.id,
-          adversario_casado: !!idPorNome[nomeAdversario],
-          nome_adversario: nomeAdversario,
-        };
-      });
+      const jogosComMatch = data.jogos.map(j => ({
+        ...j,
+        equipe_mandante_id: idPorNome[j.mandante] || null,
+        equipe_visitante_id: idPorNome[j.visitante] || null,
+        mandante_casado: !!idPorNome[j.mandante],
+        visitante_casado: !!idPorNome[j.visitante],
+      }));
 
       setJogos(jogosComMatch);
       const preSelecao = {};
@@ -74,39 +82,60 @@ export default function ImportarJogos() {
     setErro('');
 
     try {
+      const descricaoBusca = modo === 'time' ? equipe.nome_popular : `liga "${nomeLiga}" (${temporada})`;
       const { error: impErro } = await supabase
         .from('importacoes')
         .insert({
           fonte: fonteInfo?.fonte || 'API-Football',
-          descricao: `${jogosParaImportar.length} jogos de ${equipe.nome_popular} (${diasPassado} dias atrás até ${diasFuturo} dias à frente)`,
+          descricao: `${jogosParaImportar.length} jogos de ${descricaoBusca}`,
           status: 'sucesso',
         });
       if (impErro) throw impErro;
 
-      let duplicados = 0, importados = 0;
+      // Upsert de verdade: jogo novo -> insere; jogo já existente com placar/status
+      // diferente -> atualiza; jogo já existente e idêntico -> não faz nada.
+      let inseridos = 0, atualizados = 0, inalterados = 0;
       for (const j of jogosParaImportar) {
         const { data: existente } = await supabase
           .from('eventos')
-          .select('id')
+          .select('id, resolvido, placar_mandante, placar_visitante')
           .eq('equipe_mandante_id', j.equipe_mandante_id)
           .eq('equipe_visitante_id', j.equipe_visitante_id)
           .eq('data_evento', j.data)
           .maybeSingle();
 
-        if (existente) { duplicados++; continue; }
+        const novoPlacarMandante = j.resolvido ? j.placar_mandante : null;
+        const novoPlacarVisitante = j.resolvido ? j.placar_visitante : null;
 
-        const { error: evErro } = await supabase.from('eventos').insert({
-          equipe_mandante_id: j.equipe_mandante_id,
-          equipe_visitante_id: j.equipe_visitante_id,
-          data_evento: j.data,
+        if (!existente) {
+          const { error } = await supabase.from('eventos').insert({
+            equipe_mandante_id: j.equipe_mandante_id,
+            equipe_visitante_id: j.equipe_visitante_id,
+            data_evento: j.data,
+            resolvido: j.resolvido,
+            placar_mandante: novoPlacarMandante,
+            placar_visitante: novoPlacarVisitante,
+          });
+          if (!error) inseridos++;
+          continue;
+        }
+
+        const mudou = existente.resolvido !== j.resolvido
+          || existente.placar_mandante !== novoPlacarMandante
+          || existente.placar_visitante !== novoPlacarVisitante;
+
+        if (!mudou) { inalterados++; continue; }
+
+        const { error } = await supabase.from('eventos').update({
           resolvido: j.resolvido,
-          placar_mandante: j.resolvido ? j.placar_mandante : null,
-          placar_visitante: j.resolvido ? j.placar_visitante : null,
-        });
-        if (!evErro) importados++;
+          placar_mandante: novoPlacarMandante,
+          placar_visitante: novoPlacarVisitante,
+          resolvido_em: j.resolvido ? new Date().toISOString() : null,
+        }).eq('id', existente.id);
+        if (!error) atualizados++;
       }
 
-      setResultadoImportacao({ importados, duplicados, total: jogosParaImportar.length });
+      setResultadoImportacao({ inseridos, atualizados, inalterados, total: jogosParaImportar.length });
       setJogos(null);
     } catch (e) {
       setErro(e.message);
@@ -130,11 +159,38 @@ export default function ImportarJogos() {
         <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
           <Download className="text-emerald-400" size={28} /> Importar Jogos
         </h1>
-        <p className="text-slate-400 mt-1 text-sm">Busca jogos passados e futuros de um time na API-Football (fonte auditada).</p>
+        <p className="text-slate-400 mt-1 text-sm">Busca jogos passados e futuros, de um time ou de uma liga inteira. Reimportar atualiza placares em vez de duplicar.</p>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4 space-y-4">
-        <SeletorEquipe label="Time" selecionado={equipe} onSelecionar={setEquipe} />
+        <div className="flex gap-2">
+          <button onClick={() => setModo('time')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${modo === 'time' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-900 text-slate-500'}`}>
+            Por Time
+          </button>
+          <button onClick={() => setModo('liga')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${modo === 'liga' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-900 text-slate-500'}`}>
+            Por Liga Inteira
+          </button>
+        </div>
+
+        {modo === 'time' ? (
+          <SeletorEquipe label="Time" selecionado={equipe} onSelecionar={setEquipe} />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Nome da liga (em inglês, ex: World Cup)</label>
+              <input value={nomeLiga} onChange={(e) => setNomeLiga(e.target.value)} placeholder="World Cup"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Temporada (ano)</label>
+              <input type="number" value={temporada} onChange={(e) => setTemporada(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Dias no passado</label>
@@ -147,7 +203,8 @@ export default function ImportarJogos() {
               className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
           </div>
         </div>
-        <button onClick={buscar} disabled={buscando || !equipe}
+
+        <button onClick={buscar} disabled={buscando || (modo === 'time' ? !equipe : !nomeLiga.trim())}
           className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold px-6 py-2.5 rounded-lg flex items-center gap-2">
           {buscando && <Loader2 size={16} className="animate-spin" />} Buscar Jogos
         </button>
@@ -156,7 +213,8 @@ export default function ImportarJogos() {
 
       {resultadoImportacao && (
         <div className="bg-emerald-950/30 border border-emerald-600/40 text-emerald-300 text-sm px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
-          <Check size={16} /> {resultadoImportacao.importados} importado(s), {resultadoImportacao.duplicados} já existiam (pulados).
+          <Check size={16} />
+          {resultadoImportacao.inseridos} novo(s), {resultadoImportacao.atualizados} atualizado(s), {resultadoImportacao.inalterados} já estava(m) em dia.
         </div>
       )}
 
@@ -173,33 +231,36 @@ export default function ImportarJogos() {
             <span className="text-sm font-bold text-slate-300">{jogos.length} jogo(s) encontrado(s)</span>
             <button onClick={importar} disabled={importando}
               className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2">
-              {importando && <Loader2 size={14} className="animate-spin" />} Importar Selecionados
+              {importando ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Importar / Atualizar Selecionados
             </button>
           </div>
 
-          {jogos.some(j => !j.adversario_casado) && (
+          {jogos.some(j => !j.mandante_casado || !j.visitante_casado) && (
             <div className="bg-blue-950/30 border border-blue-600/40 text-blue-300 text-xs px-3 py-2 rounded-lg mb-3 flex items-start gap-2">
               <Info size={14} className="shrink-0 mt-0.5" />
-              Jogos marcados em laranja têm um adversário que não está no seu registro de Times — não dá pra importar até esse time existir em "Times".
+              Jogos marcados em laranja têm pelo menos um time que não está no seu registro de Times — não dá pra importar até esses times existirem em "Times".
             </div>
           )}
 
           <div className="space-y-1.5 max-h-96 overflow-y-auto">
-            {jogos.map(j => (
-              <label key={j.fixture_id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${j.adversario_casado ? 'bg-slate-900' : 'bg-orange-950/20 opacity-60'}`}>
-                <input
-                  type="checkbox"
-                  checked={!!selecionados[j.fixture_id]}
-                  disabled={!j.adversario_casado}
-                  onChange={(e) => setSelecionados(prev => ({ ...prev, [j.fixture_id]: e.target.checked }))}
-                  className="accent-emerald-500"
-                />
-                <span className="text-slate-500 text-xs w-24 shrink-0">{j.data}</span>
-                <span className="flex-1 text-slate-200">{j.mandante} x {j.visitante}</span>
-                {j.resolvido && <span className="font-mono text-slate-300">{j.placar_mandante}-{j.placar_visitante}</span>}
-                <span className="text-[10px] text-slate-500 w-28 shrink-0 text-right">{j.liga}</span>
-              </label>
-            ))}
+            {jogos.map(j => {
+              const casado = j.mandante_casado && j.visitante_casado;
+              return (
+                <label key={j.fixture_id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${casado ? 'bg-slate-900' : 'bg-orange-950/20 opacity-60'}`}>
+                  <input
+                    type="checkbox"
+                    checked={!!selecionados[j.fixture_id]}
+                    disabled={!casado}
+                    onChange={(e) => setSelecionados(prev => ({ ...prev, [j.fixture_id]: e.target.checked }))}
+                    className="accent-emerald-500"
+                  />
+                  <span className="text-slate-500 text-xs w-24 shrink-0">{j.data}</span>
+                  <span className="flex-1 text-slate-200">{j.mandante} x {j.visitante}</span>
+                  {j.resolvido && <span className="font-mono text-slate-300">{j.placar_mandante}-{j.placar_visitante}</span>}
+                  <span className="text-[10px] text-slate-500 w-28 shrink-0 text-right">{j.rodada || j.liga}</span>
+                </label>
+              );
+            })}
           </div>
         </div>
       )}
