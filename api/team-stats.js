@@ -63,7 +63,7 @@ async function buscarDaApiFootball(nomeTime, quantidadeJogos, apiKey) {
   const hoje = new Date();
   const de = new Date(hoje); de.setDate(de.getDate() - 120); // margem generosa pra achar N jogos
   const formatarData = (d) => d.toISOString().slice(0, 10);
-  const todosJogos = await chamarAPI(`/fixtures?team=${teamId}&from=${formatarData(de)}&to=${formatarData(hoje)}`, apiKey);
+  const todosJogos = await chamarAPI(`/fixtures?team=${teamId}&from=${formatarData(de)}&to=${formatarData(hoje)}&season=${hoje.getFullYear()}`, apiKey);
 
   const jogos = (todosJogos || [])
     .filter(j => ['FT', 'AET', 'PEN'].includes(j.fixture.status?.short))
