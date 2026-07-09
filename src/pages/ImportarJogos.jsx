@@ -17,6 +17,7 @@ export default function ImportarJogos() {
   const [selecionados, setSelecionados] = useState({});
   const [importando, setImportando] = useState(false);
   const [resultadoImportacao, setResultadoImportacao] = useState(null);
+  const [fonteInfo, setFonteInfo] = useState(null);
 
   const buscar = async () => {
     if (!equipe) { setErro('Selecione um time primeiro.'); return; }
@@ -24,11 +25,13 @@ export default function ImportarJogos() {
     setBuscando(true);
     setJogos(null);
     setResultadoImportacao(null);
+    setFonteInfo(null);
 
     try {
       const resp = await fetch(`/api/fixtures?time=${encodeURIComponent(equipe.nome_popular)}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`);
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
+      setFonteInfo({ fonte: data.fonte_usada, aviso: data.aviso });
 
       const nomesAdversarios = data.jogos.map(j => j.mandante === equipe.nome_popular ? j.visitante : j.mandante);
       let equipesEncontradas = [];
@@ -74,7 +77,7 @@ export default function ImportarJogos() {
       const { error: impErro } = await supabase
         .from('importacoes')
         .insert({
-          fonte: 'API-Football',
+          fonte: fonteInfo?.fonte || 'API-Football',
           descricao: `${jogosParaImportar.length} jogos de ${equipe.nome_popular} (${diasPassado} dias atrás até ${diasFuturo} dias à frente)`,
           status: 'sucesso',
         });
@@ -154,6 +157,13 @@ export default function ImportarJogos() {
       {resultadoImportacao && (
         <div className="bg-emerald-950/30 border border-emerald-600/40 text-emerald-300 text-sm px-4 py-3 rounded-xl mb-4 flex items-center gap-2">
           <Check size={16} /> {resultadoImportacao.importados} importado(s), {resultadoImportacao.duplicados} já existiam (pulados).
+        </div>
+      )}
+
+      {fonteInfo && (
+        <div className={`text-xs px-4 py-2.5 rounded-xl mb-4 flex items-center gap-2 ${fonteInfo.aviso ? 'bg-orange-950/30 border border-orange-600/40 text-orange-300' : 'bg-slate-800 border border-slate-700 text-slate-400'}`}>
+          {fonteInfo.aviso ? <AlertTriangle size={14} className="shrink-0" /> : <Info size={14} className="shrink-0" />}
+          <span>Fonte usada: <strong>{fonteInfo.fonte}</strong>{fonteInfo.aviso ? ` (fallback — ${fonteInfo.aviso})` : ''}</span>
         </div>
       )}
 
