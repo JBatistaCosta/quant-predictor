@@ -9,6 +9,8 @@ import {
 } from '../utils/poisson';
 import { XT_GRID } from '../utils/xt';
 import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format';
+import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions';
+import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
 
@@ -167,7 +169,30 @@ export default function AnaliseEvento() {
   // Simulação por Cadeia de Markov (minuto a minuto)
   const [markovDynamics, setMarkovDynamics] = useState(false);
   const [dixonColesEnabled, setDixonColesEnabled] = useState(true);
-  const [xgMultiplicativo, setXgMultiplicativo] = useState(true);
+
+  // --- Fórmula do λ (combinação de xG próprio + xGA do adversário) ---
+  const [lambdaFormula, setLambdaFormula] = useState('multiplicativo');
+  const [formulaParams, setFormulaParams] = useState({
+    n: 5, k: 6, xi: 0.2, // shrinkage (n, k) e decay (xi)
+    xgaAdv1: '', xgAdv1: '', xgaAdv2: '', xgAdv2: '', // normalização dinâmica
+  });
+  const setFormulaParam = (id, value) => setFormulaParams(prev => ({ ...prev, [id]: value }));
+
+  // Histórico jogo-a-jogo (mais recente primeiro) — usado pela fórmula "Time Decay".
+  // Preenchido manualmente ou automaticamente (ver useEffect de auto-preenchimento).
+  const historicoVazio = () => Array.from({ length: 5 }, () => ({ xg: '', xga: '' }));
+  const [historico1, setHistorico1] = useState(historicoVazio());
+  const [historico2, setHistorico2] = useState(historicoVazio());
+  const [mostrarHistorico, setMostrarHistorico] = useState(false);
+
+  // --- Modelo de chutes (Binomial: chutes → chutes no gol → gols) ---
+  const [shotsModel, setShotsModel] = useState('informativo'); // 'informativo' | 'precisao' | 'cadeia'
+  const [pConv1, setPConv1] = useState(''); // conversão gol/chute-no-gol — vazio = usa xG/SoT do próprio input
+  const [pConv2, setPConv2] = useState('');
+
+  // --- Modelo de escanteios ---
+  const [cornersModel, setCornersModel] = useState('negbin'); // 'negbin' | 'poisson'
+  const [cornersDisp, setCornersDisp] = useState(10); // parâmetro de forma (r) da Binomial Negativa
   const [markovSimCount, setMarkovSimCount] = useState(20000);
   const [markovResults, setMarkovResults] = useState(null);
   const [markovHeatDisplay, setMarkovHeatDisplay] = useState('pct'); // 'pct' ou 'odd'
@@ -369,6 +394,19 @@ export default function AnaliseEvento() {
             shotsOnTarget2: s2?.chutes_no_gol != null ? String(s2.chutes_no_gol) : prev.shotsOnTarget2,
             corners2: s2?.escanteios != null ? String(s2.escanteios) : prev.corners2,
           }));
+          // Histórico jogo-a-jogo salvo pela API de importação (api/team-stats.js) —
+          // usado pela fórmula de λ "Time Decay". Vazio se essa API nunca rodou pro time.
+          const paraHistoricoState = (historico) => {
+            if (!Array.isArray(historico) || historico.length === 0) return null;
+            return Array.from({ length: 5 }, (_, i) => ({
+              xg: historico[i]?.xg != null ? String(historico[i].xg) : '',
+              xga: historico[i]?.xga != null ? String(historico[i].xga) : '',
+            }));
+          };
+          const hist1Convertido = paraHistoricoState(s1?.historico);
+          const hist2Convertido = paraHistoricoState(s2?.historico);
+          if (hist1Convertido) setHistorico1(hist1Convertido);
+          if (hist2Convertido) setHistorico2(hist2Convertido);
           mensagens.push(`Estatísticas carregadas do banco (${[s1 && t1.name, s2 && t2.name].filter(Boolean).join(', ')})`);
         }
       }
@@ -688,17 +726,56 @@ export default function AnaliseEvento() {
     const eff1 = m.shots1 > 0 ? m.xg1 / m.shots1 : 0;
     const eff2 = m.shots2 > 0 ? m.xg2 / m.shots2 : 0;
 
-    // Combina xG próprio + xGA do adversário: multiplicativo (mais profissional, com
-    // mando de campo real embutido) ou média simples (comportamento antigo, pra comparar).
-    const trueXG_T1 = xgMultiplicativo
-      ? (m.xg1 * m.xga2 / LIGA_MEDIA_GERAL) * GAMMA_MANDANTE
-      : (m.xg1 + m.xga2) / 2;
-    const trueXG_T2 = xgMultiplicativo
-      ? (m.xg2 * m.xga1 / LIGA_MEDIA_GERAL) * GAMMA_VISITANTE
-      : (m.xg2 + m.xga1) / 2;
+    // Combina xG próprio + xGA do adversário no "verdadeiro" xG esperado — a fórmula
+    // usada é selecionável (ver src/utils/lambdaFormulas.js): multiplicativo, média
+    // simples, ataque×defesa clássico, shrinkage bayesiano, time decay ou normalização
+    // dinâmica. Todas devolvem o mesmo formato, então trocar de fórmula é só trocar
+    // qual roda aqui — o resto do pipeline (Poisson, Dixon-Coles, MC, Markov) não muda.
+    const parseHistorico = (hist) => hist.map(h => ({
+      xg: h.xg !== '' ? toNumber(h.xg) : null,
+      xga: h.xga !== '' ? toNumber(h.xga) : null,
+    }));
+    const paramsFormula = {
+      n: Number(formulaParams.n) || 5,
+      k: Number(formulaParams.k) || 6,
+      xi: Number(formulaParams.xi) || 0.2,
+      xgaAdv1: toNumber(formulaParams.xgaAdv1), xgAdv1: toNumber(formulaParams.xgAdv1),
+      xgaAdv2: toNumber(formulaParams.xgaAdv2), xgAdv2: toNumber(formulaParams.xgAdv2),
+    };
+    const formula = getLambdaFormula(lambdaFormula);
+    const resultadoFormula = formula.calc({
+      m, historico1: parseHistorico(historico1), historico2: parseHistorico(historico2), params: paramsFormula,
+    });
+    const trueXG_T1 = resultadoFormula.trueXG1;
+    const trueXG_T2 = resultadoFormula.trueXG2;
+    const avisoFormula = resultadoFormula.aviso;
 
-    const lambda1 = Math.max(0.1, trueXG_T1 * (expectancyT1 / 0.5) * modPoss1);
-    const lambda2 = Math.max(0.1, trueXG_T2 * (expectancyT2 / 0.5) * modPoss2);
+    // Modelo de chutes (Binomial): chutes totais ~ n de tentativas fixo, chutes no
+    // gol = "sucessos" de acertar o alvo (p = precisão), gols = "sucessos" de
+    // converter um chute no gol (p = conversão). Por padrão a conversão é derivada
+    // do próprio trueXG escolhido acima (então trocar pra "cadeia" com os valores
+    // default NÃO muda o resultado — thinning de Poisson continua Poisson, só dá o
+    // detalhamento por chute); editar p_conv manualmente é o que de fato move o λ.
+    const montarPainelChutes = (nChutesBruto, shotsOnTarget, trueXG, pConvTexto) => {
+      const n = Math.max(0, Math.round(nChutesBruto));
+      const pAcc = n > 0 ? Math.min(1, shotsOnTarget / n) : 0;
+      const pConvDerivado = shotsOnTarget > 0 ? Math.min(1, trueXG / shotsOnTarget) : 0;
+      const pConvOverride = pConvTexto !== '' ? toNumber(pConvTexto) : NaN;
+      const pConv = Number.isFinite(pConvOverride) && pConvOverride > 0 ? Math.min(1, pConvOverride) : pConvDerivado;
+      const lambdaChain = n * pAcc * pConv;
+      const nSoTEsperado = Math.max(0, Math.round(n * pAcc));
+      const painelSoT = Array.from({ length: n + 1 }, (_, k) => ({ k, prob: binomialPMF(n, pAcc, k) }));
+      const painelGols = Array.from({ length: nSoTEsperado + 1 }, (_, k) => ({ k, prob: binomialPMF(nSoTEsperado, pConv, k) }));
+      return { n, pAcc, pConv, pConvDerivado, lambdaChain, painelSoT, painelGols };
+    };
+    const chutesPainel1 = montarPainelChutes(m.shots1, m.shotsOnTarget1, trueXG_T1, pConv1);
+    const chutesPainel2 = montarPainelChutes(m.shots2, m.shotsOnTarget2, trueXG_T2, pConv2);
+
+    const trueXG_T1_final = shotsModel === 'cadeia' ? chutesPainel1.lambdaChain : trueXG_T1;
+    const trueXG_T2_final = shotsModel === 'cadeia' ? chutesPainel2.lambdaChain : trueXG_T2;
+
+    const lambda1 = Math.max(0.1, trueXG_T1_final * (expectancyT1 / 0.5) * modPoss1);
+    const lambda2 = Math.max(0.1, trueXG_T2_final * (expectancyT2 / 0.5) * modPoss2);
 
     const maxGoals = 10;
     let probWin1 = 0, probWin2 = 0, probDraw = 0;
@@ -734,10 +811,16 @@ export default function AnaliseEvento() {
     probWin1 /= total; probWin2 /= total; probDraw /= total;
     probBtts /= total;
 
+    // Escanteios: Poisson pura assume que a variância é igual à média — na prática,
+    // escanteios variam mais entre jogos do que isso prevê (jogos "abertos" geram
+    // muito mais que a média, jogos truncados muito menos). A Binomial Negativa tem
+    // a mesma média mas cauda mais gorda (controlada por cornersDisp); disp maior
+    // aproxima da Poisson, disp menor = mais dispersão.
     const lambdaCorners = m.corners1 + m.corners2;
-    const probUnder85Corners = poissonCDF(lambdaCorners, 8);
+    const cornersCDF = (x) => (cornersModel === 'negbin' ? negBinomialCDF(lambdaCorners, cornersDisp, x) : poissonCDF(lambdaCorners, x));
+    const probUnder85Corners = cornersCDF(8);
     const probOver85Corners = 1 - probUnder85Corners;
-    const probOver95Corners = 1 - poissonCDF(lambdaCorners, 9);
+    const probOver95Corners = 1 - cornersCDF(9);
 
     let aiInsight = {};
     if (probWin1 > 0.70) {
@@ -773,6 +856,9 @@ export default function AnaliseEvento() {
     setResults({
       t1, t2, lambda1, lambda2, probWin1, probWin2, probDraw, probOver25, probBtts, aiInsight,
       eff1, eff2, lambdaCorners, probOver85Corners, probOver95Corners,
+      cornersModelUsado: cornersModel, cornersDisp,
+      lambdaFormulaUsada: lambdaFormula, avisoFormula,
+      shotsModel, chutesPainel1, chutesPainel2,
       exactScores: exactScores.sort((a, b) => b.prob - a.prob)
     });
     setShowAllScores(false);
@@ -1107,10 +1193,12 @@ export default function AnaliseEvento() {
       push(`Menos de ${l.linha} golos`, 'Total de Golos', 1 - pOver, l.menos);
     });
 
-    // Total de Escanteios (Poisson dos cantos combinados)
+    // Total de Escanteios (mesmo modelo usado no processamento: Poisson ou Binomial Negativa)
     (o.total_escanteios || []).forEach(l => {
       if (l?.linha == null) return;
-      const pUnder = poissonCDF(results.lambdaCorners, Math.floor(l.linha));
+      const pUnder = results.cornersModelUsado === 'negbin'
+        ? negBinomialCDF(results.lambdaCorners, results.cornersDisp, Math.floor(l.linha))
+        : poissonCDF(results.lambdaCorners, Math.floor(l.linha));
       push(`Mais de ${l.linha} cantos`, 'Escanteios', 1 - pUnder, l.mais);
       push(`Menos de ${l.linha} cantos`, 'Escanteios', pUnder, l.menos);
     });
@@ -1413,24 +1501,146 @@ export default function AnaliseEvento() {
                 </div>
               </div>
 
-              <label className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={xgMultiplicativo}
-                  onChange={(e) => setXgMultiplicativo(e.target.checked)}
-                  className="w-5 h-5 accent-emerald-500"
-                />
-                <div>
-                  <span className="text-sm font-bold text-slate-200 block">Combinação de xG Multiplicativa (com mando de campo real)</span>
-                  <span className="text-xs text-slate-500">
-                    Desligado: xG próprio + xGA do adversário viram uma MÉDIA simples (comportamento antigo — "dilui"
-                    ataques/defesas muito fora do normal). Ligado: combinação multiplicativa (mesmo espírito do
-                    Dixon-Coles profissional), com vantagem de mando de campo real embutida — casa ×1,10, fora ×0,90,
-                    calibrado com os mesmos 314 jogos reais. Times muito acima ou abaixo da média ficam com previsões
-                    mais decisivas, em vez de "amassadas" pela média do adversário.
-                  </span>
+              {/* SELETOR DE FÓRMULA DO λ */}
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4">
+                <label className="text-xs text-slate-500 uppercase font-bold">Fórmula do λ (Gols Esperados)</label>
+                <select
+                  value={lambdaFormula}
+                  onChange={(e) => setLambdaFormula(e.target.value)}
+                  className="w-full bg-slate-800 text-slate-200 p-2 mt-1 rounded font-semibold"
+                >
+                  {LAMBDA_FORMULAS.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                </select>
+                <p className="text-xs text-slate-500 mt-2">{getLambdaFormula(lambdaFormula).descricao}</p>
+
+                {lambdaFormula === 'shrinkage' && (
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">Jogos na amostra (n)</label>
+                      <input type="number" min="1" value={formulaParams.n} onChange={(e) => setFormulaParam('n', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">Força do prior (k)</label>
+                      <input type="number" min="0" value={formulaParams.k} onChange={(e) => setFormulaParam('k', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    </div>
+                  </div>
+                )}
+
+                {lambdaFormula === 'decay' && (
+                  <div className="mt-3">
+                    <label className="text-[10px] text-slate-500 uppercase font-bold">Taxa de decaimento (ξ) — maior = esquece mais rápido</label>
+                    <input type="number" step="0.05" min="0.01" max="1" value={formulaParams.xi} onChange={(e) => setFormulaParam('xi', Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    <button
+                      type="button"
+                      onClick={() => setMostrarHistorico(v => !v)}
+                      className="text-xs text-emerald-400 mt-3 underline underline-offset-2"
+                    >
+                      {mostrarHistorico ? 'Esconder' : 'Preencher'} histórico dos últimos 5 jogos
+                    </button>
+                    {mostrarHistorico && (
+                      <div className="grid grid-cols-2 gap-4 mt-3">
+                        {[
+                          { hist: historico1, setHist: setHistorico1, label: 'Equipa 1 (Mandante)', cor: 'text-emerald-400' },
+                          { hist: historico2, setHist: setHistorico2, label: 'Equipa 2 (Visitante)', cor: 'text-orange-400' },
+                        ].map(({ hist, setHist, label, cor }) => (
+                          <div key={label}>
+                            <span className={`text-[10px] font-bold uppercase ${cor}`}>{label}</span>
+                            <div className="space-y-1 mt-1">
+                              {hist.map((jogo, i) => (
+                                <div key={i} className="grid grid-cols-3 items-center gap-1">
+                                  <span className="text-[10px] text-slate-500">{i === 0 ? 'Últ.' : `-${i}`}</span>
+                                  <input
+                                    type="number" step="0.1" placeholder="xG" value={jogo.xg}
+                                    onChange={(e) => setHist(prev => prev.map((j, idx) => idx === i ? { ...j, xg: e.target.value } : j))}
+                                    className="bg-slate-800 border border-slate-600 rounded p-1 text-xs text-slate-100 w-full"
+                                  />
+                                  <input
+                                    type="number" step="0.1" placeholder="xGA" value={jogo.xga}
+                                    onChange={(e) => setHist(prev => prev.map((j, idx) => idx === i ? { ...j, xga: e.target.value } : j))}
+                                    className="bg-slate-800 border border-slate-600 rounded p-1 text-xs text-slate-100 w-full"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {lambdaFormula === 'dinamica' && (
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">xGA médio dos adversários (Eq. 1)</label>
+                      <input type="number" step="0.01" value={formulaParams.xgaAdv1} onChange={(e) => setFormulaParam('xgaAdv1', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">xG médio dos adversários (Eq. 1)</label>
+                      <input type="number" step="0.01" value={formulaParams.xgAdv1} onChange={(e) => setFormulaParam('xgAdv1', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">xGA médio dos adversários (Eq. 2)</label>
+                      <input type="number" step="0.01" value={formulaParams.xgaAdv2} onChange={(e) => setFormulaParam('xgaAdv2', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase font-bold">xG médio dos adversários (Eq. 2)</label>
+                      <input type="number" step="0.01" value={formulaParams.xgAdv2} onChange={(e) => setFormulaParam('xgAdv2', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* MODELO DE CHUTES (Binomial: chutes → chutes no gol → gols) */}
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4">
+                <label className="text-xs text-slate-500 uppercase font-bold">Modelo de Chutes</label>
+                <select
+                  value={shotsModel}
+                  onChange={(e) => setShotsModel(e.target.value)}
+                  className="w-full bg-slate-800 text-slate-200 p-2 mt-1 rounded font-semibold"
+                >
+                  <option value="informativo">Informativo (não altera o λ)</option>
+                  <option value="precisao">Camada de precisão (mostra chutes no gol, não altera o λ)</option>
+                  <option value="cadeia">Cadeia completa (chutes → chutes no gol → gols substitui o λ)</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-2">
+                  Chutes ~ Binomial(n = chutes totais, p = precisão) → chutes no gol ~ Binomial(n = chutes no gol, p = conversão) → gols.
+                  Por padrão a conversão é derivada da fórmula de λ escolhida acima (trocar pra "Cadeia completa" sem editar os campos abaixo não muda o resultado); editar a conversão manualmente é o que realmente move o λ.
+                </p>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold">Conversão Eq. 1 (opcional)</label>
+                    <input type="number" step="0.01" min="0" max="1" placeholder="auto" value={pConv1} onChange={(e) => setPConv1(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold">Conversão Eq. 2 (opcional)</label>
+                    <input type="number" step="0.01" min="0" max="1" placeholder="auto" value={pConv2} onChange={(e) => setPConv2(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                  </div>
                 </div>
-              </label>
+              </div>
+
+              {/* MODELO DE ESCANTEIOS */}
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4">
+                <label className="text-xs text-slate-500 uppercase font-bold">Modelo de Escanteios</label>
+                <select
+                  value={cornersModel}
+                  onChange={(e) => setCornersModel(e.target.value)}
+                  className="w-full bg-slate-800 text-slate-200 p-2 mt-1 rounded font-semibold"
+                >
+                  <option value="negbin">Binomial Negativa (recomendado — cauda mais realista)</option>
+                  <option value="poisson">Poisson (comportamento antigo)</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-2">
+                  Escanteios variam mais entre jogos do que a Poisson prevê. A Binomial Negativa mantém a mesma média
+                  (soma dos escanteios esperados dos dois times) mas com cauda mais gorda, controlada pela dispersão abaixo.
+                </p>
+                {cornersModel === 'negbin' && (
+                  <div className="mt-3">
+                    <label className="text-[10px] text-slate-500 uppercase font-bold">Dispersão (menor = mais variável)</label>
+                    <input type="number" step="1" min="1" value={cornersDisp} onChange={(e) => setCornersDisp(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                  </div>
+                )}
+              </div>
 
               <label className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4 cursor-pointer select-none">
                 <input
@@ -1511,6 +1721,31 @@ export default function AnaliseEvento() {
                         <span className="text-xs text-yellow-500 font-mono bg-slate-900 p-1.5 rounded">{toPct(results.probOver85Corners)}</span>
                      </div>
                   </div>
+
+                  {results.avisoFormula && (
+                    <div className="col-span-3 bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-xs rounded-lg p-3 flex items-center gap-2">
+                      <AlertTriangle size={14} /> {results.avisoFormula}
+                    </div>
+                  )}
+
+                  {results.shotsModel !== 'informativo' && (
+                    <div className="col-span-3 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Crosshair size={12}/> Painel de Chutes (Binomial)</span>
+                      <div className="grid grid-cols-2 gap-4 mt-2">
+                        {[
+                          { p: results.chutesPainel1, cor: 'text-emerald-400', nome: results.t1.name },
+                          { p: results.chutesPainel2, cor: 'text-orange-400', nome: results.t2.name },
+                        ].map(({ p, cor, nome }) => (
+                          <div key={nome} className="text-xs text-slate-300 space-y-1">
+                            <div className={`font-bold ${cor}`}>{nome}</div>
+                            <div>n chutes: <span className="font-mono">{p.n}</span> · precisão: <span className="font-mono">{toPct(p.pAcc)}</span> · conversão: <span className="font-mono">{toPct(p.pConv)}</span></div>
+                            <div>P(≥1 chute no gol): <span className="font-mono">{toPct(1 - binomialCDF(p.n, p.pAcc, 0))}</span></div>
+                            <div>P(≥1 gol pela cadeia): <span className="font-mono">{toPct(1 - binomialCDF(Math.max(0, Math.round(p.n * p.pAcc)), p.pConv, 0))}</span></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className={`col-span-3 bg-slate-900 border border-slate-700 p-5 rounded-xl relative overflow-hidden mt-2`}>
                     <div className={`absolute top-0 left-0 w-1 h-full bg-current ${results.aiInsight.color}`}></div>

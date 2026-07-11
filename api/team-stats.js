@@ -71,10 +71,16 @@ async function buscarDaApiFootball(nomeTime, quantidadeJogos, apiKey) {
     .slice(0, quantidadeJogos);
 
   const acumulado = { xg: [], xga: [], chutes: [], chutesNoGol: [], escanteios: [] };
+  // Guarda também o valor JOGO A JOGO (não só a média) — usado pelas fórmulas
+  // de lambda "Time Decay" e "Normalização Dinâmica", que precisam saber a
+  // forma recente do time, não só a média da amostra inteira. Fica na mesma
+  // ordem de "jogos" (mais recente primeiro, por causa do sort acima).
+  const historico = [];
   for (const jogo of jogos) {
     const fixtureId = jogo.fixture.id;
     const ehMandante = jogo.teams.home.id === teamId;
     const idAdversario = ehMandante ? jogo.teams.away.id : jogo.teams.home.id;
+    const nomeAdversario = ehMandante ? jogo.teams.away.name : jogo.teams.home.name;
     const statsProprio = await buscarEstatisticasDoJogo(fixtureId, teamId, apiKey);
     const statsAdversario = await buscarEstatisticasDoJogo(fixtureId, idAdversario, apiKey);
     if (!statsProprio) continue;
@@ -89,6 +95,12 @@ async function buscarDaApiFootball(nomeTime, quantidadeJogos, apiKey) {
     if (cng !== null) acumulado.chutesNoGol.push(cng);
     const esc = paraNumero(statsProprio['Corner Kicks']);
     if (esc !== null) acumulado.escanteios.push(esc);
+
+    historico.push({
+      data: jogo.fixture.date?.slice(0, 10),
+      adversario: nomeAdversario,
+      xg, xga, chutes, chutes_no_gol: cng, escanteios: esc,
+    });
   }
 
   const media = (lista) => (lista.length > 0 ? lista.reduce((a, b) => a + b, 0) / lista.length : null);
@@ -99,6 +111,7 @@ async function buscarDaApiFootball(nomeTime, quantidadeJogos, apiKey) {
     chutes_no_gol: media(acumulado.chutesNoGol),
     escanteios: media(acumulado.escanteios),
     aviso_xg_ausente: media(acumulado.xg) === null,
+    historico,
   };
 }
 
@@ -119,6 +132,7 @@ async function buscarTimeComCache(nomeTime, quantidadeJogos, apiKey, supabase) {
         xg_gols_esperados: existente.xg, xga_xg_sofridos: existente.xga,
         chutes: existente.chutes, chutes_no_gol: existente.chutes_no_gol, escanteios: existente.escanteios,
       },
+      historico: existente.historico || [],
       origem: 'cache', idade_horas: Math.round(idadeHoras * 10) / 10,
     };
   }
@@ -127,6 +141,7 @@ async function buscarTimeComCache(nomeTime, quantidadeJogos, apiKey, supabase) {
   await supabase.from('team_stats').upsert({
     team_name: nomeTime, xg: dados.xg, xga: dados.xga,
     chutes: dados.chutes, chutes_no_gol: dados.chutes_no_gol, escanteios: dados.escanteios,
+    historico: dados.historico,
     updated_at: new Date().toISOString(),
   });
 
@@ -135,6 +150,7 @@ async function buscarTimeComCache(nomeTime, quantidadeJogos, apiKey, supabase) {
       xg_gols_esperados: dados.xg, xga_xg_sofridos: dados.xga,
       chutes: dados.chutes, chutes_no_gol: dados.chutes_no_gol, escanteios: dados.escanteios,
     },
+    historico: dados.historico,
     origem: 'api-football', aviso_xg_ausente: dados.aviso_xg_ausente,
   };
 }
@@ -177,8 +193,8 @@ export default async function handler(req, res) {
     res.status(200).json({
       confronto: { equipe_mandante: mandante, equipe_visitante: visitante },
       estatistica_media: {
-        mandante: { metricas: dadosMandante.metricas },
-        visitante: { metricas: dadosVisitante.metricas },
+        mandante: { metricas: dadosMandante.metricas, historico: dadosMandante.historico },
+        visitante: { metricas: dadosVisitante.metricas, historico: dadosVisitante.historico },
       },
       origem: { mandante: dadosMandante.origem, visitante: dadosVisitante.origem },
       avisos: avisos.length > 0 ? avisos : undefined,
