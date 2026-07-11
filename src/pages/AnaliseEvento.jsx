@@ -138,6 +138,11 @@ export default function AnaliseEvento() {
   const [nomeSimulacao, setNomeSimulacao] = useState('');
   const [simMsg, setSimMsg] = useState('');
 
+  // Abas dos blocos "aprofundados" do resultado — evita empilhar Mapa de Calor,
+  // Scanner EV+, Monte Carlo/Markov e Handicap tudo de uma vez (ficava gigante
+  // e apertado em tela estreita).
+  const [resultTab, setResultTab] = useState('heatmap');
+
   const [eloWeight, setEloWeight] = useState(50);
   const [showAllScores, setShowAllScores] = useState(false);
   const [customScore1, setCustomScore1] = useState('2');
@@ -1668,7 +1673,7 @@ export default function AnaliseEvento() {
                       {mostrarHistorico ? 'Esconder' : 'Preencher'} histórico dos últimos 5 jogos
                     </button>
                     {mostrarHistorico && (
-                      <div className="grid grid-cols-2 gap-4 mt-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                         {[
                           { hist: historico1, setHist: setHistorico1, label: 'Equipa 1 (Mandante)', cor: 'text-emerald-400' },
                           { hist: historico2, setHist: setHistorico2, label: 'Equipa 2 (Visitante)', cor: 'text-orange-400' },
@@ -1861,7 +1866,7 @@ export default function AnaliseEvento() {
                   {results.shotsModel !== 'informativo' && (
                     <div className="col-span-3 bg-slate-800 p-4 rounded-xl border border-slate-700">
                       <span className="text-[10px] text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Crosshair size={12}/> Painel de Chutes (Binomial)</span>
-                      <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
                         {[
                           { p: results.chutesPainel1, cor: 'text-emerald-400', nome: results.t1.name },
                           { p: results.chutesPainel2, cor: 'text-orange-400', nome: results.t2.name },
@@ -1950,7 +1955,7 @@ export default function AnaliseEvento() {
                           value={nomeSimulacao}
                           onChange={(e) => setNomeSimulacao(e.target.value)}
                           placeholder="Nome pra identificar essa simulação (ex: Portugal x RD Congo — decay)"
-                          className="flex-1 min-w-[240px] bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100"
+                          className="w-full sm:flex-1 sm:min-w-[240px] bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100"
                         />
                         <button
                           onClick={salvarSimulacao}
@@ -1973,9 +1978,9 @@ export default function AnaliseEvento() {
                     ) : (
                       <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                         {simulacoes.map(sim => (
-                          <div key={sim.id} className="flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-                            <span className="flex-1 text-slate-300 min-w-0">
-                              <strong className="text-slate-100">{sim.nome}</strong>
+                          <div key={sim.id} className="flex items-center justify-between gap-2 flex-wrap bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                            <span className="flex-1 text-slate-300 min-w-0 basis-full sm:basis-auto">
+                              <strong className="text-slate-100 block truncate">{sim.nome}</strong>
                               <span className="text-slate-500 block text-xs truncate">
                                 {sim.equipe_mandante} x {sim.equipe_visitante} · {new Date(sim.criado_em).toLocaleString('pt-BR')}
                               </span>
@@ -2049,8 +2054,27 @@ export default function AnaliseEvento() {
                   </div>
                 </div>
 
+                {/* ABAS: Mapa de Calor / Mercados EV+ / Simulação / Handicap — evita empilhar
+                    tudo de uma vez (ficava gigante e apertado em tela estreita) */}
+                <div className="lg:col-span-3 flex bg-slate-900 rounded-lg p-1 border border-slate-700 flex-wrap gap-1 mt-4">
+                  {[
+                    { id: 'heatmap', label: 'Mapa de Calor', icon: Grid3x3 },
+                    { id: 'mercados', label: 'Mercados EV+', icon: DollarSign },
+                    { id: 'simulacao', label: 'Simulação', icon: Activity },
+                    { id: 'handicap', label: 'Handicap', icon: Scale },
+                  ].map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      onClick={() => setResultTab(id)}
+                      className={`flex-1 min-w-[45%] sm:min-w-0 px-4 py-2.5 rounded-md text-sm font-semibold transition-all flex items-center justify-center gap-2 ${resultTab === id ? 'bg-blue-500/20 text-blue-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                    >
+                      <Icon size={16}/> {label}
+                    </button>
+                  ))}
+                </div>
+
                 {/* MAPA DE CALOR: MATRIZ 7x7 DE PROBABILIDADES POR PLACAR */}
-                {heatmapData && (
+                {resultTab === 'heatmap' && heatmapData && (
                   <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-slate-700 mt-4 shadow-xl">
                     <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2 border-b border-slate-700 pb-3">
                       <Grid3x3 className="text-blue-400" /> Mapa de Calor — Matriz de Placares (0 a 6 golos)
@@ -2108,6 +2132,7 @@ export default function AnaliseEvento() {
                 )}
 
                 {/* SCANNER MULTI-MERCADO DE KELLY */}
+                {resultTab === 'mercados' && (
                 <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-purple-500/30 mt-4 shadow-xl">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-700 pb-3 mb-4 gap-3">
                     <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -2202,8 +2227,11 @@ export default function AnaliseEvento() {
                     </>
                   )}
                 </div>
+                )}
 
-                {/* MOTOR MONTE CARLO & KELLY (mercado único) */}
+                {/* MOTOR MONTE CARLO & KELLY (mercado único) — aba "Simulação" */}
+                {resultTab === 'simulacao' && (
+                <>
                 <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-slate-700 mt-4 shadow-xl">
                   <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2 border-b border-slate-700 pb-3">
                     <Activity className="text-emerald-400" /> Motor Monte Carlo & Critério de Kelly (Mercado Único)
@@ -2535,8 +2563,11 @@ export default function AnaliseEvento() {
                     </>
                   )}
                 </div>
+                </>
+                )}
 
                 {/* COMPARADOR DE HANDICAPS */}
+                {resultTab === 'handicap' && (
                 <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-slate-700 mt-4 shadow-xl">
                   <h3 className="text-lg font-bold text-slate-100 mb-6 flex items-center gap-2 border-b border-slate-700 pb-3">
                     <Scale className="text-blue-400" /> Comparador de Handicap: Asiático vs Europeu
@@ -2618,6 +2649,7 @@ export default function AnaliseEvento() {
                   )}
 
                 </div>
+                )}
 
               </div>
             )}
