@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCheck, Target, Zap, AlertTriangle, Crosshair, Activity, Flag, Scale, FileJson, Check, X, Camera, Loader2, PlayCircle, DollarSign, ScanLine, TrendingUp, Grid3x3 } from 'lucide-react';
+import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCheck, Target, Zap, AlertTriangle, Crosshair, Activity, Flag, Scale, FileJson, Check, X, Camera, Loader2, PlayCircle, DollarSign, ScanLine, TrendingUp, Grid3x3, Copy, ClipboardPaste, Trash2, Undo2, Save, FolderOpen } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
 import {
@@ -131,6 +131,13 @@ export default function AnaliseEvento() {
   const [logMsg, setLogMsg] = useState('');
   const [showCalibration, setShowCalibration] = useState(false);
 
+  // Simulações Salvas — snapshot completo da configuração de cálculo, pra recarregar depois
+  const [simulacoes, setSimulacoes] = useState([]);
+  const [showSimulacoes, setShowSimulacoes] = useState(false);
+  const [showSalvarSimulacao, setShowSalvarSimulacao] = useState(false);
+  const [nomeSimulacao, setNomeSimulacao] = useState('');
+  const [simMsg, setSimMsg] = useState('');
+
   const [eloWeight, setEloWeight] = useState(50);
   const [showAllScores, setShowAllScores] = useState(false);
   const [customScore1, setCustomScore1] = useState('2');
@@ -145,6 +152,10 @@ export default function AnaliseEvento() {
   const [jsonInputData, setJsonInputData] = useState('');
   const [jsonError, setJsonError] = useState('');
   const [jsonSuccess, setJsonSuccess] = useState('');
+  // Undo de 1 nível (não é pilha completa) — guarda o valor de ANTES da última
+  // ação destrutiva (Colar ou Apagar) pra dar pra voltar atrás.
+  const [jsonPrevValue, setJsonPrevValue] = useState(null);
+  const [clipboardMsg, setClipboardMsg] = useState('');
 
   // OCR State (compartilhado pelos dois leitores)
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -338,6 +349,71 @@ export default function AnaliseEvento() {
 
   useEffect(() => { if (showCalibration) buscarPredictionsLog(); }, [showCalibration]);
 
+  // --- Simulações Salvas: snapshot de tudo que runAlgorithm usa como entrada,
+  // pra poder recarregar e recalcular depois (em outra sessão/dispositivo). ---
+  const montarConfigSimulacao = () => ({
+    team1Id, team2Id, metrics, eloWeight,
+    lambdaFormula, formulaParams, historico1, historico2,
+    shotsModel, pConv1, pConv2,
+    cornersModel, cornersDisp, dixonColesEnabled,
+  });
+
+  const salvarSimulacao = async () => {
+    if (!supabaseAtivo) return;
+    if (!nomeSimulacao.trim()) { setSimMsg('Dê um nome pra essa simulação antes de salvar.'); return; }
+    const t1 = selecoesData.find(t => t.id === Number(team1Id));
+    const t2 = selecoesData.find(t => t.id === Number(team2Id));
+    const { error } = await supabase.from('simulacoes').insert({
+      nome: nomeSimulacao.trim(),
+      equipe_mandante: t1?.name || '?',
+      equipe_visitante: t2?.name || '?',
+      config: montarConfigSimulacao(),
+    });
+    if (error) { setSimMsg('Erro ao salvar: ' + error.message); return; }
+    setSimMsg(`Simulação "${nomeSimulacao.trim()}" salva.`);
+    setNomeSimulacao('');
+    setShowSalvarSimulacao(false);
+    setTimeout(() => setSimMsg(''), 4000);
+    if (showSimulacoes) buscarSimulacoes();
+  };
+
+  const buscarSimulacoes = async () => {
+    if (!supabaseAtivo) return;
+    const { data, error } = await supabase.from('simulacoes').select('*').order('criado_em', { ascending: false });
+    if (error) { console.warn('Falha ao buscar simulações:', error.message); return; }
+    setSimulacoes(data || []);
+  };
+
+  // Aplica o snapshot de volta em todo o estado do formulário — não recalcula
+  // sozinho, o usuário clica em "Processar" de novo pra ver os resultados.
+  const carregarSimulacao = (sim) => {
+    const c = sim.config || {};
+    if (c.team1Id != null) setTeam1Id(c.team1Id);
+    if (c.team2Id != null) setTeam2Id(c.team2Id);
+    if (c.metrics) setMetrics(c.metrics);
+    if (c.eloWeight != null) setEloWeight(c.eloWeight);
+    if (c.lambdaFormula) setLambdaFormula(c.lambdaFormula);
+    if (c.formulaParams) setFormulaParams(c.formulaParams);
+    if (c.historico1) setHistorico1(c.historico1);
+    if (c.historico2) setHistorico2(c.historico2);
+    if (c.shotsModel) setShotsModel(c.shotsModel);
+    if (c.pConv1 !== undefined) setPConv1(c.pConv1);
+    if (c.pConv2 !== undefined) setPConv2(c.pConv2);
+    if (c.cornersModel) setCornersModel(c.cornersModel);
+    if (c.cornersDisp != null) setCornersDisp(c.cornersDisp);
+    if (c.dixonColesEnabled != null) setDixonColesEnabled(c.dixonColesEnabled);
+    setSimMsg(`Simulação "${sim.nome}" carregada — clique em "Processar" pra recalcular.`);
+    setTimeout(() => setSimMsg(''), 5000);
+  };
+
+  const excluirSimulacao = async (id) => {
+    const { error } = await supabase.from('simulacoes').delete().eq('id', id);
+    if (error) { console.warn('Falha ao excluir simulação:', error.message); return; }
+    buscarSimulacoes();
+  };
+
+  useEffect(() => { if (showSimulacoes) buscarSimulacoes(); }, [showSimulacoes]);
+
   // Monta o diagrama de confiabilidade: agrupa as previsões RESOLVIDAS em faixas de 10%
   // (0-10%, 10-20%, ..., 90-100%) e compara a probabilidade média prevista de cada faixa
   // com a frequência real de acerto naquela faixa.
@@ -477,6 +553,43 @@ export default function AnaliseEvento() {
       }
     }
     return objects;
+  };
+
+  // --- Toolbar da caixa de JSON: copiar/colar/apagar/desfazer ---
+  const avisarClipboard = (msg) => {
+    setClipboardMsg(msg);
+    setTimeout(() => setClipboardMsg(''), 3000);
+  };
+
+  const copiarJson = async () => {
+    try {
+      await navigator.clipboard.writeText(jsonInputData);
+      avisarClipboard('Copiado para a área de transferência.');
+    } catch {
+      avisarClipboard('Não consegui acessar a área de transferência (permissão negada pelo navegador).');
+    }
+  };
+
+  const colarJson = async () => {
+    try {
+      const texto = await navigator.clipboard.readText();
+      setJsonPrevValue(jsonInputData);
+      setJsonInputData(texto);
+      avisarClipboard('Colado da área de transferência.');
+    } catch {
+      avisarClipboard('Não consegui ler a área de transferência (permissão negada pelo navegador — cole manualmente com Ctrl+V).');
+    }
+  };
+
+  const apagarJson = () => {
+    setJsonPrevValue(jsonInputData);
+    setJsonInputData('');
+  };
+
+  const desfazerJson = () => {
+    if (jsonPrevValue === null) return;
+    setJsonInputData(jsonPrevValue);
+    setJsonPrevValue(null);
   };
 
   // --- IMPORTAÇÃO UNIFICADA: aceita estatísticas, odds, ou os dois colados juntos ---
@@ -1371,9 +1484,26 @@ export default function AnaliseEvento() {
               {/* Área de Importação JSON unificada — aceita estatísticas, odds, ou os dois juntos */}
               {showJsonInput && (
                 <div className="mb-8 p-5 bg-slate-900 border border-blue-500/30 rounded-xl animate-in slide-in-from-top-2 duration-200">
-                  <label className="block text-sm font-bold text-blue-400 mb-2">
-                    Cole aqui o JSON de estatísticas, o de odds, ou os dois colados um após o outro:
-                  </label>
+                  <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+                    <label className="block text-sm font-bold text-blue-400">
+                      Cole aqui o JSON de estatísticas, o de odds, ou os dois colados um após o outro:
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={copiarJson} title="Copiar" className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                        <Copy size={13}/> Copiar
+                      </button>
+                      <button type="button" onClick={colarJson} title="Colar" className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                        <ClipboardPaste size={13}/> Colar
+                      </button>
+                      <button type="button" onClick={apagarJson} title="Apagar" className="flex items-center gap-1 bg-slate-800 hover:bg-red-900/40 border border-slate-600 hover:border-red-500/40 text-slate-300 hover:text-red-300 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                        <Trash2 size={13}/> Apagar
+                      </button>
+                      <button type="button" onClick={desfazerJson} disabled={jsonPrevValue === null} title="Desfazer" className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                        <Undo2 size={13}/> Desfazer
+                      </button>
+                    </div>
+                  </div>
+                  {clipboardMsg && <p className="text-[11px] text-blue-300 mb-2">{clipboardMsg}</p>}
                   <textarea
                     className="w-full h-48 bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-emerald-400 font-mono outline-none focus:border-blue-500"
                     placeholder={'{"confronto": {"equipe_mandante": "Portugal"...}, "estatistica_media": {...}}\n\n{"confronto": {...}, "odds": {"resultado_final": {...}}}'}
@@ -1790,6 +1920,72 @@ export default function AnaliseEvento() {
                     >
                       <BarChart3 size={16}/> {showCalibration ? 'Ocultar' : 'Ver'} Histórico e Calibração
                     </button>
+                  </div>
+                )}
+
+                {supabaseAtivo && (
+                  <div className="col-span-3 bg-slate-900 border border-blue-500/30 rounded-xl p-4 mt-2">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={() => setShowSalvarSimulacao(!showSalvarSimulacao)}
+                        className="flex items-center gap-2 bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      >
+                        <Save size={16}/> Salvar Simulação
+                      </button>
+                      <span className="text-xs text-slate-500 flex-1 min-w-[200px]">
+                        Guarda os times, métricas e todas as fórmulas/modelos escolhidos, pra recuperar e recalcular depois.
+                      </span>
+                      {simMsg && <span className="text-xs text-emerald-400 font-bold flex items-center gap-1"><Check size={13}/> {simMsg}</span>}
+                      <button
+                        onClick={() => setShowSimulacoes(!showSimulacoes)}
+                        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      >
+                        <FolderOpen size={16}/> {showSimulacoes ? 'Ocultar' : 'Ver'} Simulações Salvas
+                      </button>
+                    </div>
+                    {showSalvarSimulacao && (
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-700 flex-wrap">
+                        <input
+                          type="text"
+                          value={nomeSimulacao}
+                          onChange={(e) => setNomeSimulacao(e.target.value)}
+                          placeholder="Nome pra identificar essa simulação (ex: Portugal x RD Congo — decay)"
+                          className="flex-1 min-w-[240px] bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100"
+                        />
+                        <button
+                          onClick={salvarSimulacao}
+                          className="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                        >
+                          Confirmar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {supabaseAtivo && showSimulacoes && (
+                  <div className="col-span-3 bg-slate-800 p-5 rounded-xl border border-blue-500/30">
+                    <h3 className="text-xs font-bold uppercase text-slate-400 mb-3 flex items-center gap-2">
+                      <FolderOpen size={14} className="text-blue-400"/> Simulações Salvas ({simulacoes.length})
+                    </h3>
+                    {simulacoes.length === 0 ? (
+                      <p className="text-sm text-slate-500 text-center py-4">Nenhuma simulação salva ainda.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                        {simulacoes.map(sim => (
+                          <div key={sim.id} className="flex items-center justify-between gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                            <span className="flex-1 text-slate-300 min-w-0">
+                              <strong className="text-slate-100">{sim.nome}</strong>
+                              <span className="text-slate-500 block text-xs truncate">
+                                {sim.equipe_mandante} x {sim.equipe_visitante} · {new Date(sim.criado_em).toLocaleString('pt-BR')}
+                              </span>
+                            </span>
+                            <button onClick={() => carregarSimulacao(sim)} className="bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shrink-0">Carregar</button>
+                            <button onClick={() => excluirSimulacao(sim.id)} className="bg-red-900/40 hover:bg-red-800/60 text-red-300 text-xs font-bold px-3 py-1.5 rounded-lg shrink-0">Excluir</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

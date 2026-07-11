@@ -1,7 +1,7 @@
 // src/components/Layout.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X, Download } from 'lucide-react';
+import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X, Download, StickyNote, Trash2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
@@ -51,6 +51,35 @@ export default function Layout({ children }) {
     navigate('/login');
   };
 
+  // Bloco de notas global — acessível de qualquer página, pra facilitar
+  // anotações que precisam sobreviver entre sessões e dispositivos.
+  const [notaAberta, setNotaAberta] = useState(false);
+  const [notas, setNotas] = useState([]);
+  const [novaNota, setNovaNota] = useState('');
+
+  const buscarNotas = async () => {
+    if (!supabaseAtivo) return;
+    const { data, error } = await supabase.from('notas').select('*').order('criado_em', { ascending: false });
+    if (error) { console.warn('Falha ao buscar notas:', error.message); return; }
+    setNotas(data || []);
+  };
+
+  const salvarNota = async () => {
+    if (!supabaseAtivo || !novaNota.trim()) return;
+    const { error } = await supabase.from('notas').insert({ conteudo: novaNota.trim() });
+    if (error) { console.warn('Falha ao salvar nota:', error.message); return; }
+    setNovaNota('');
+    buscarNotas();
+  };
+
+  const excluirNota = async (id) => {
+    const { error } = await supabase.from('notas').delete().eq('id', id);
+    if (error) { console.warn('Falha ao excluir nota:', error.message); return; }
+    buscarNotas();
+  };
+
+  useEffect(() => { if (notaAberta) buscarNotas(); }, [notaAberta]);
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans">
       {/* Barra superior */}
@@ -80,6 +109,15 @@ export default function Layout({ children }) {
         </nav>
 
         <div className="flex items-center gap-3">
+          {supabaseAtivo && (
+            <button
+              onClick={() => setNotaAberta(true)}
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-yellow-400 transition-colors"
+              title="Bloco de Notas"
+            >
+              <StickyNote size={16} /> <span className="hidden md:inline">Notas</span>
+            </button>
+          )}
           {session?.user?.email && (
             <span className="hidden md:inline text-xs text-slate-500">{session.user.email}</span>
           )}
@@ -90,6 +128,61 @@ export default function Layout({ children }) {
           )}
         </div>
       </div>
+
+      {/* BLOCO DE NOTAS GLOBAL — painel deslizante, acessível de qualquer página */}
+      {notaAberta && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-[59]" onClick={() => setNotaAberta(false)} />
+          <div className="fixed right-0 top-0 h-full w-full sm:w-96 bg-slate-800 border-l border-slate-700 z-[60] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <StickyNote className="text-yellow-400" size={18} /> Bloco de Notas
+              </h2>
+              <button onClick={() => setNotaAberta(false)} className="text-slate-400 hover:text-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-slate-700">
+              <textarea
+                value={novaNota}
+                onChange={(e) => setNovaNota(e.target.value)}
+                placeholder="Escreva uma nota..."
+                className="w-full h-24 bg-slate-900 border border-slate-600 rounded-lg p-3 text-sm text-slate-100 outline-none focus:border-yellow-500/50 resize-none"
+              />
+              <button
+                onClick={salvarNota}
+                disabled={!novaNota.trim()}
+                className="mt-2 w-full bg-yellow-600 hover:bg-yellow-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-sm py-2 rounded-lg transition-colors"
+              >
+                Salvar Nota
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {notas.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-6">Nenhuma nota salva ainda.</p>
+              ) : (
+                notas.map(nota => (
+                  <div key={nota.id} className="bg-slate-900 border border-slate-700 rounded-lg p-3 group">
+                    <p className="text-sm text-slate-200 whitespace-pre-wrap break-words">{nota.conteudo}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-[10px] text-slate-500">{new Date(nota.criado_em).toLocaleString('pt-BR')}</span>
+                      <button
+                        onClick={() => excluirNota(nota.id)}
+                        className="text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Excluir nota"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Menu mobile (expande abaixo da barra), também em dois grupos com título */}
       {menuAberto && (
