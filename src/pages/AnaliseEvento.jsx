@@ -167,6 +167,7 @@ export default function AnaliseEvento() {
   const [ocrError, setOcrError] = useState('');
   const [ocrSuccess, setOcrSuccess] = useState('');
   const [ocrJsonPreview, setOcrJsonPreview] = useState('');
+  const [ocrCopyMsg, setOcrCopyMsg] = useState('');
   const statsInputRef = useRef(null);
   const oddsInputRef = useRef(null);
 
@@ -212,6 +213,7 @@ export default function AnaliseEvento() {
   const [markovSimCount, setMarkovSimCount] = useState(20000);
   const [markovResults, setMarkovResults] = useState(null);
   const [markovHeatDisplay, setMarkovHeatDisplay] = useState('pct'); // 'pct' ou 'odd'
+  const [heatmapDisplay, setHeatmapDisplay] = useState('pct'); // 'pct' ou 'odd' — mapa de calor da Matriz de Placares
   const [markovRunning, setMarkovRunning] = useState(false);
   const [showOnlyEvPlus, setShowOnlyEvPlus] = useState(false);
 
@@ -1480,7 +1482,17 @@ export default function AnaliseEvento() {
                 <div className="mb-6 p-4 bg-slate-950 border border-emerald-500/20 rounded-xl">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1"><FileJson size={12}/> JSON Gerado pela IA</span>
-                    <button onClick={() => setOcrJsonPreview('')} className="text-slate-500 hover:text-slate-300 text-xs">Ocultar</button>
+                    <div className="flex items-center gap-3">
+                      {ocrCopyMsg && <span className="text-[11px] text-emerald-400">{ocrCopyMsg}</span>}
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(ocrJsonPreview); setOcrCopyMsg('Copiado!'); setTimeout(() => setOcrCopyMsg(''), 2000); }}
+                        className="flex items-center gap-1 text-slate-500 hover:text-emerald-300 text-xs"
+                        title="Copiar JSON"
+                      >
+                        <Copy size={12}/> Copiar
+                      </button>
+                      <button onClick={() => setOcrJsonPreview('')} className="text-slate-500 hover:text-slate-300 text-xs">Ocultar</button>
+                    </div>
                   </div>
                   <pre className="text-[11px] text-emerald-300/80 font-mono overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">{ocrJsonPreview}</pre>
                 </div>
@@ -2076,9 +2088,17 @@ export default function AnaliseEvento() {
                 {/* MAPA DE CALOR: MATRIZ 7x7 DE PROBABILIDADES POR PLACAR */}
                 {resultTab === 'heatmap' && heatmapData && (
                   <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-slate-700 mt-4 shadow-xl">
-                    <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2 border-b border-slate-700 pb-3">
-                      <Grid3x3 className="text-blue-400" /> Mapa de Calor — Matriz de Placares (0 a 6 golos)
-                    </h3>
+                    <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-700 pb-3">
+                      <h3 className="text-lg font-bold text-slate-100 mb-1 flex items-center gap-2">
+                        <Grid3x3 className="text-blue-400" /> Mapa de Calor — Matriz de Placares (0 a 6 golos)
+                      </h3>
+                      <button
+                        onClick={() => setHeatmapDisplay(heatmapDisplay === 'pct' ? 'odd' : 'pct')}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        <Scale size={12}/> Mostrar {heatmapDisplay === 'pct' ? 'Odd' : '%'}
+                      </button>
+                    </div>
                     <p className="text-xs text-slate-400 mt-3 mb-5">
                       Cada célula é a probabilidade de exatamente aquele placar acontecer, calculada pela distribuição de Poisson
                       com λ = {results.lambda1.toFixed(2)} ({results.t1.name}) e λ = {results.lambda2.toFixed(2)} ({results.t2.name}).
@@ -2120,7 +2140,7 @@ export default function AnaliseEvento() {
                                   style={{ background, color }}
                                   title={`${results.t1.name} ${i} x ${j} ${results.t2.name}: ${toPct(p)}`}
                                 >
-                                  {(p * 100).toFixed(1)}%
+                                  {heatmapDisplay === 'pct' ? toPct(p) : toOdd(p)}
                                 </div>
                               );
                             })}
