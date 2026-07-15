@@ -1,0 +1,45 @@
+# Contexto do projeto quant-futebol — resumo para Claude Code
+
+## Arquitetura
+- **quant-futebol-dados** (Supabase, projeto `cgurxgfdmpmsnrshqycx`, região sa-east-1): banco de dados e pipelines de ingestão
+- **quant-predictor** (Vercel + GitHub `JBatistaCosta/quant-predictor`, projeto `prj_7fSfP9zv4i55F6qyWUvcv9SJueOk`): aplicação de predição
+
+## Schema do banco (tabelas principais)
+- `leagues`, `teams`, `matches`, `match_stats`, `match_events`, `odds_market`, `model_predictions`
+- `team_strengths`, `league_model_params` — pesos treinados persistidos (ataque/defesa por time, mando/rho por liga)
+- `odds_market.snapshot` — distingue `pre_closing` (capturado dias antes) de `closing` (fechamento real, coluna "C" do football-data.co.uk)
+- View `v_market_edge` — compara odds do modelo com mercado (já devigado), separado por `snapshot`
+
+## Modelo de produção
+- **Dixon-Coles** (`modelo_dixon_coles.py`) — gols, mercados 1X2 e over/under 2.5
+- Treino por liga (`TEMPORADAS_TREINO_POR_LIGA`): Brasileirão = 2023-2024; as 5 europeias (PL/PD/SA/BL1/FL1) = 2022-2024 (2022 melhorou 3 de 5 ligas, validado com log loss real em 2025)
+- Teste sempre em 2025
+- Decaimento temporal: XI=0.0018 (meia-vida ~13 meses) — **fixo, nunca foi calibrado por validação cruzada de verdade**, é um chute inicial razoável
+- `modelo_dixon_coles_walkforward.py` — versão com retreino periódico dentro de 2025. Resultado vs. estático: **empate técnico** (BSA/PD/SA melhoram, PL/BL1/FL1 pioram) — sem vencedor claro, não decidido qual usar em produção
+- `modelo_stats_esperadas.py` — GLM Poisson pra xG/chutes/chutes-no-gol/escanteios, deriva mercados extras do mesmo jeito (over/under por estatística)
+
+## Achados importantes (testados, não repetir investigação)
+1. **Mando por time**: testado com 6 temporadas reais (2019-2024, 5 ligas europeias) — **descartado**. Heterogeneidade que parecia real com pouco dado (Ligue 1 se destacando) era majoritariamente ruído de amostra pequena; com mais dado, virou uma das ligas MAIS homogêneas. Mando único por liga é adequado. Detalhes em `ideias_futuras.md`.
+2. **Filtro bayesiano dinâmico (EKF) pra força dos times**: tentado, **não passou em validação** — bug de deriva de gauge parcialmente corrigido, mas erro residual não resolvido (provavelmente precisa de IEKF, linearização iterada). Pausado, não descartado — candidato a retomar comparando com walk-forward.
+3. **Backtest de edge vs. mercado real (1X2, O/U gols)**: **sem evidência de vantagem** contra Bet365, Pinnacle ou média de mercado — nem em odds pré-fechamento nem em fechamento real. Brier Score do modelo é sistematicamente pior que o do mercado (diferença pequena mas consistente, ~0,005-0,009). Teste de Closing Line Value (correlação entre edge do modelo e movimento de linha) também negativo — modelo não antecipa movimento de mercado. Relatório completo em `relatorio_backtest_edge.md`.
+4. **Escanteios — Brier Score revela overconfidence**: em 2 das 5 ligas (Bundesliga, La Liga) o Brier é PIOR que "chutar 50% sempre" (>0,25). Diagnóstico: calibração boa no meio da distribuição (35-55% previsto), mas excesso de confiança nas pontas (73% previsto → só 52,5% real, com 80 jogos de amostra, não é ruído).
+5. **Causa raiz do overconfidence em escanteios — CONFIRMADA, NÃO IMPLEMENTADA AINDA**: escanteios são superdispersos (variância/média = 1,60-1,76 em todas as ligas) enquanto gols não são (1,04-1,15, Poisson serve bem). O modelo de escanteios usa Poisson (mesma lógica do Dixon-Coles aplicada por estatística, sem covariância entre elas) — **deveria ser binomial negativa**. NÃO IMPLEMENTADO ainda, só diagnosticado.
+
+## PRÓXIMOS PASSOS PENDENTES (ordem sugerida)
+1. **Trocar Poisson por binomial negativa no modelo de escanteios** (`modelo_stats_esperadas.py`, stat="corners"). Validar com dado sintético superdisperso antes de aplicar (mesmo padrão usado pro mando por time: gerar dado sintético com dispersão conhecida, checar se a binomial negativa recupera bem, só depois aplicar nos dados reais).
+2. **Testar pareamento de escanteios com chutes/xG como covariável** — hoje cada estatística (xg, shots, shots_on_target, corners) é modelada isolada; escanteios têm ligação mecânica com chutes bloqueados e pressão ofensiva que está sendo ignorada.
+3. Recalibrar XI (decaimento temporal) por validação cruzada temporal — nunca foi feito, valor atual é chute.
+4. Decidir entre modelo estático vs. walk-forward por liga (resultado empatado, não decidido).
+5. Considerar fonte paga (TheStatsAPI) ou OddsPapi (250 créditos/mês, só viável como coleta gradual daqui pra frente) se quiser odds reais de escanteios.
+6. Fadiga/dias de descanso: precisa de nova tabela de fixtures (todas competições, não só liga doméstica) — não iniciado, só documentado.
+
+## Scripts existentes (pasta local do usuário)
+`ingestao_api_football.py`, `ingestao_football_data_org.py`, `ingestao_stats_fbref.py`, `backfill_xg_understat.py`, `ingestao_odds_footballdata.py`, `ingestao_historico_ligas.py` (2019-2022, 5 ligas europeias), `ingestao_escanteios_footballdata.py` (backfill de escanteios/chutes/cartões via football-data.co.uk), `ingestao_odds_fechamento.py` (odds de fechamento real, colunas "C"), `modelo_dixon_coles.py`, `modelo_dixon_coles_walkforward.py`, `modelo_stats_esperadas.py`.
+
+## Documentação existente
+`modelo_predicao_documentacao.md`, `ideias_futuras.md` (mando por time descartado, fadiga documentada, escanteios com achados parciais), `relatorio_backtest_edge.md`, `forca_dinamica_desenho.md` (filtro bayesiano pausado).
+
+## Ambiente
+- Supabase: `cgurxgfdmpmsnrshqycx`, service_role key trocada em algum momento por exposição prévia — confirmar qual está em uso
+- football-data.org token: `eff3d4a516b74d96a357738d6e2a987f` (⚠️ foi exposto em screenshot antes, considerar trocar)
+- Pasta local: `C:\Users\jbati\AntiGravity\quant-pred\quant-predictor\arquivos_do_claude\` (mudou de path em algum momento da conversa, confirmar qual é atual)
