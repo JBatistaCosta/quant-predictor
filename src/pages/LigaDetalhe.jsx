@@ -73,14 +73,28 @@ export default function LigaDetalhe() {
     })();
   }, [leagueIdPipeline, temporada]);
 
-  // Agrupa por fase (stage) e rodada (round) — jogos sem round (mata-mata sem número
-  // linear) ficam agrupados só pela fase, ordenados por data.
+// Nome do mês em pt-BR, usado como agrupamento aproximado quando não há rodada
+  // real salva (temporadas 2019-2022 das 5 ligas europeias grandes — a
+  // football-data.org só libera rodada de verdade nas 3 temporadas mais
+  // recentes no plano grátis; não vale a pena buscar em outra fonte só por isso).
+  const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+  // Agrupa por fase (stage) e rodada (round) quando existir; sem rodada, agrupa
+  // por mês da partida como aproximação visual.
   const grupos = useMemo(() => {
     const porChave = new Map();
     for (const j of jogos) {
-      const chave = `${j.stage || 'Fase única'}__${j.round ?? '—'}`;
-      if (!porChave.has(chave)) porChave.set(chave, { stage: j.stage || 'Fase única', round: j.round, jogos: [] });
-      porChave.get(chave).jogos.push(j);
+      if (j.round != null) {
+        const chave = `${j.stage || 'Fase única'}__r${j.round}`;
+        if (!porChave.has(chave)) porChave.set(chave, { rotulo: `${j.stage || 'Fase única'} — Rodada ${j.round}`, jogos: [] });
+        porChave.get(chave).jogos.push(j);
+      } else {
+        const data = j.match_date ? new Date(j.match_date) : null;
+        const chaveMes = data ? `${data.getFullYear()}-${data.getMonth()}` : 'sem-data';
+        const rotuloMes = data ? `${j.stage && j.stage !== 'REGULAR_SEASON' ? j.stage + ' — ' : ''}${MESES[data.getMonth()]}/${data.getFullYear()} (sem rodada cadastrada)` : 'Sem data';
+        if (!porChave.has(chaveMes)) porChave.set(chaveMes, { rotulo: rotuloMes, jogos: [] });
+        porChave.get(chaveMes).jogos.push(j);
+      }
     }
     return [...porChave.values()];
   }, [jogos]);
@@ -154,7 +168,7 @@ export default function LigaDetalhe() {
             {gruposPagina.map((g, i) => (
               <div key={i} className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
                 <div className="bg-slate-900 px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  {g.stage}{g.round != null ? ` — Rodada ${g.round}` : ''}
+                  {g.rotulo}
                 </div>
                 <div className="divide-y divide-slate-700/50">
                   {g.jogos.map(j => (
