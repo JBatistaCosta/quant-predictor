@@ -67,6 +67,11 @@ function normalizarFixturesApiFootball(fixtures) {
     rodada: f.league?.round,
     mandante: f.teams.home.name,
     visitante: f.teams.away.name,
+    // IDs da API-Football — hoje não têm ponte salva em nenhuma tabela nossa
+    // (team_source_ids só guarda IDs do fbref), então servem só de referência
+    // visual por enquanto; o casamento automático usa os de football-data.org.
+    mandante_external_id: String(f.teams.home.id),
+    visitante_external_id: String(f.teams.away.id),
     placar_mandante: f.goals.home,
     placar_visitante: f.goals.away,
     resolvido: ['FT', 'AET', 'PEN'].includes(f.fixture.status?.short),
@@ -127,6 +132,10 @@ function normalizarMatchesFootballData(matches) {
     rodada: m.matchday,
     mandante: m.homeTeam?.name,
     visitante: m.awayTeam?.name,
+    // Mesmo ID que public.teams.external_id no pipeline Python (ambos vêm da
+    // football-data.org) — dá pra casar direto por ID em vez de nome de string.
+    mandante_external_id: m.homeTeam?.id != null ? String(m.homeTeam.id) : null,
+    visitante_external_id: m.awayTeam?.id != null ? String(m.awayTeam.id) : null,
     placar_mandante: m.score?.fullTime?.home ?? null,
     placar_visitante: m.score?.fullTime?.away ?? null,
     resolvido: m.status === 'FINISHED',
@@ -240,5 +249,10 @@ export default async function handler(req, res) {
     jogos = jogos.filter(j => j.data >= deStr && j.data <= ateStr);
   }
 
-  res.status(200).json({ busca: modoLiga ? liga : time, modo: modoLiga ? 'liga' : 'time', fonte_usada: fonteUsada, aviso: avisoFallback, total: jogos.length, jogos });
+  // Só o namespace de ID da football-data.org tem ponte salva em teams.external_id
+  // (ver api/fixtures.js topo) — então só nesse caso o front-end pode casar os
+  // times por ID em vez de por nome de string.
+  const fonteIds = fonteUsada === 'football-data.org' ? 'football-data.org' : null;
+
+  res.status(200).json({ busca: modoLiga ? liga : time, modo: modoLiga ? 'liga' : 'time', fonte_usada: fonteUsada, fonte_ids: fonteIds, aviso: avisoFallback, total: jogos.length, jogos });
 }
