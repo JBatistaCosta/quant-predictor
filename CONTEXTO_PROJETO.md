@@ -26,7 +26,7 @@
 5. **Causa raiz do overconfidence em escanteios — CONFIRMADA, NÃO IMPLEMENTADA AINDA**: escanteios são superdispersos (variância/média = 1,60-1,76 em todas as ligas) enquanto gols não são (1,04-1,15, Poisson serve bem). O modelo de escanteios usa Poisson (mesma lógica do Dixon-Coles aplicada por estatística, sem covariância entre elas) — **deveria ser binomial negativa**. NÃO IMPLEMENTADO ainda, só diagnosticado.
 
 ## PRÓXIMOS PASSOS PENDENTES (ordem sugerida)
-1. **Trocar Poisson por binomial negativa no modelo de escanteios** (`modelo_stats_esperadas.py`, stat="corners"). Validar com dado sintético superdisperso antes de aplicar (mesmo padrão usado pro mando por time: gerar dado sintético com dispersão conhecida, checar se a binomial negativa recupera bem, só depois aplicar nos dados reais).
+1. ~~**Trocar Poisson por binomial negativa no modelo de escanteios**~~ — **feito no lado do produto** (não no `modelo_stats_esperadas.py` em si, que continua Poisson): `api/corners-model.js` (Vercel) trata o TOTAL de escanteios do jogo como uma única Binomial Negativa, com `disp_r` calibrado por liga via método dos momentos direto em `match_stats` (16k+ linhas já no Supabase — não precisou esperar o script Python rodar de novo). Parâmetros salvos em `league_model_params` (stat='corners', param_name='disp_r'): Premier League 88.2, La Liga 62.1, Serie A (Itália) 40.1, Bundesliga 68.1, Ligue 1 57.9 — fallback 63.3 (média) pra ligas sem dado calibrado (Brasileirão, Champions, Eurocopa). `AnaliseEvento.jsx` chama esse endpoint automaticamente ao trocar os times e pré-popula `cornersModel='negbin'` + `cornersDisp`. Ainda vale rodar a validação com dado sintético e migrar o próprio GLM pra NB quando o pipeline Python for retreinado — o que está em produção agora é um fit direto na variância real, não uma reestimação do modelo GLM inteiro.
 2. **Testar pareamento de escanteios com chutes/xG como covariável** — hoje cada estatística (xg, shots, shots_on_target, corners) é modelada isolada; escanteios têm ligação mecânica com chutes bloqueados e pressão ofensiva que está sendo ignorada.
 3. Recalibrar XI (decaimento temporal) por validação cruzada temporal — nunca foi feito, valor atual é chute.
 4. Decidir entre modelo estático vs. walk-forward por liga (resultado empatado, não decidido).
@@ -38,6 +38,12 @@
 
 ## Documentação existente
 `modelo_predicao_documentacao.md`, `ideias_futuras.md` (mando por time descartado, fadiga documentada, escanteios com achados parciais), `relatorio_backtest_edge.md`, `forca_dinamica_desenho.md` (filtro bayesiano pausado).
+
+## Front-end (quant-predictor) — dois schemas de "times" coexistindo no mesmo banco
+- `equipes`/`instituicoes` (RLS autenticado, CRUD manual pela tela Times.jsx) — cadastro feito à mão pelo usuário, 48 registros.
+- `teams`/`leagues`/`matches`/`team_strengths` (RLS leitura pública, escrita só via service_role do pipeline Python) — 221 times, 14k+ partidas reais ingeridas.
+- Essas duas tabelas NÃO tinham nenhuma referência cruzada. Adicionada coluna `equipes.pipeline_team_id` (FK pra `teams.id`, nula até vincular manualmente) — a tela Times.jsx agora tem um botão "Vincular" por equipe que busca em `teams` e grava o vínculo; `TimeDetalhe.jsx` mostra `team_strengths` (ataque/defesa treinados) e médias reais de `match_stats` quando o vínculo existe. `team_strengths` está **vazia** até o pipeline Python persistir os pesos treinados lá — até isso acontecer, a seção mostra "ainda não treinado".
+- **RLS estava desabilitado em 11 tabelas do pipeline** (`teams`, `leagues`, `matches`, `match_stats`, `odds_market`, `model_predictions`, `model_stat_estimates`, `team_strengths`, `league_model_params`, `match_events`, `team_source_ids`) — corrigido: RLS habilitado + policy de leitura pública (dado público de futebol, sem PII; escrita continua exclusiva do service_role key usado pelos scripts Python).
 
 ## Ambiente
 - Supabase: `cgurxgfdmpmsnrshqycx`, service_role key trocada em algum momento por exposição prévia — confirmar qual está em uso

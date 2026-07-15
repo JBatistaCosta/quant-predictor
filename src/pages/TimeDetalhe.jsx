@@ -4,7 +4,7 @@
 // que mostra todo jogo oficial, aqui só entra o que você mesmo analisou/salvou.
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Shield, Calendar, ArrowLeft, AlertTriangle, MapPin, Flag } from 'lucide-react';
+import { Shield, Calendar, ArrowLeft, AlertTriangle, MapPin, Flag, BarChart3 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const CATEGORIAS_ROTULO = {
@@ -23,6 +23,12 @@ export default function TimeDetalhe() {
   const [eventos, setEventos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+
+  // Dados do time "real" do pipeline Python (tabela teams), quando vinculado
+  const [timePipeline, setTimePipeline] = useState(null);
+  const [forcas, setForcas] = useState([]);
+  const [mediasReais, setMediasReais] = useState(null);
+  const [carregandoPipeline, setCarregandoPipeline] = useState(false);
 
   useEffect(() => {
     if (!supabaseAtivo) return;
@@ -67,6 +73,40 @@ export default function TimeDetalhe() {
         (vwData || []).forEach(v => { nomesPorEquipe[v.id] = v.nome_popular; });
       }
       setEventos((evData || []).map(e => ({ ...e, nome_mandante: nomesPorEquipe[e.equipe_mandante_id], nome_visitante: nomesPorEquipe[e.equipe_visitante_id] })));
+
+      // Se essa equipe estiver vinculada a um time real do pipeline Python,
+      // busca as forças treinadas (Dixon-Coles/GLM) e as médias reais recentes.
+      if (eq.pipeline_team_id) {
+        setCarregandoPipeline(true);
+        const { data: teamRow } = await supabase.from('teams').select('*').eq('id', eq.pipeline_team_id).maybeSingle();
+        setTimePipeline(teamRow);
+
+        const { data: strengths } = await supabase
+          .from('team_strengths')
+          .select('*')
+          .eq('team_id', eq.pipeline_team_id)
+          .order('updated_at', { ascending: false });
+        setForcas(strengths || []);
+
+        const { data: statsRows } = await supabase
+          .from('match_stats')
+          .select('xg, shots, shots_on_target, corners, match_id, matches!inner(match_date)')
+          .eq('team_id', eq.pipeline_team_id)
+          .order('match_date', { foreignTable: 'matches', ascending: false })
+          .limit(10);
+        if (statsRows && statsRows.length > 0) {
+          const mediaCampo = (campo) => {
+            const vals = statsRows.map(s => s[campo]).filter(v => v !== null && v !== undefined);
+            return vals.length > 0 ? vals.reduce((a, b) => a + Number(b), 0) / vals.length : null;
+          };
+          setMediasReais({
+            xg: mediaCampo('xg'), shots: mediaCampo('shots'),
+            shots_on_target: mediaCampo('shots_on_target'), corners: mediaCampo('corners'),
+            n: statsRows.length,
+          });
+        }
+        setCarregandoPipeline(false);
+      }
 
       setCarregando(false);
     })();
@@ -139,6 +179,71 @@ export default function TimeDetalhe() {
           </div>
         </div>
       </div>
+
+      {/* Dados do modelo (pipeline Python: Dixon-Coles / GLM stats_glm_v1) */}
+      {equipe.pipeline_team_id && (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <BarChart3 className="text-emerald-400" size={18} /> Dados do modelo
+            {timePipeline && <span className="text-slate-500 font-normal normal-case">— vinculado a "{timePipeline.name}"</span>}
+          </h2>
+
+          {carregandoPipeline ? (
+            <p className="text-slate-500 text-sm">Carregando...</p>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">Força treinada (ataque/defesa)</span>
+                {forcas.length === 0 ? (
+                  <p className="text-slate-500 text-sm bg-slate-900 border border-slate-700/50 rounded-lg p-3">
+                    Ainda não treinado — <code className="text-slate-400">team_strengths</code> não tem linha pra esse time.
+                    Rode o pipeline (<code className="text-slate-400">modelo_dixon_coles.py</code> / <code className="text-slate-400">modelo_stats_esperadas.py</code>) e persista o resultado no Supabase.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {forcas.map(f => (
+                      <div key={f.id} className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-sm">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-slate-200">{f.stat || 'gols (Dixon-Coles)'}</span>
+                          <span className="text-[10px] text-slate-500">{f.model_name}</span>
+                        </div>
+                        <div className="flex gap-4 text-slate-400">
+                          <span>Ataque: <b className="text-emerald-400">{Number(f.attack).toFixed(3)}</b></span>
+                          <span>Defesa: <b className="text-red-400">{Number(f.defense).toFixed(3)}</b></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {mediasReais && (
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">Média real — últimas {mediasReais.n} partidas (match_stats)</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+                      <div className="text-slate-500 text-[10px] uppercase">xG</div>
+                      <div className="font-bold text-slate-200">{mediasReais.xg != null ? mediasReais.xg.toFixed(2) : '—'}</div>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+                      <div className="text-slate-500 text-[10px] uppercase">Chutes</div>
+                      <div className="font-bold text-slate-200">{mediasReais.shots != null ? mediasReais.shots.toFixed(1) : '—'}</div>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+                      <div className="text-slate-500 text-[10px] uppercase">No gol</div>
+                      <div className="font-bold text-slate-200">{mediasReais.shots_on_target != null ? mediasReais.shots_on_target.toFixed(1) : '—'}</div>
+                    </div>
+                    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+                      <div className="text-slate-500 text-[10px] uppercase">Escanteios</div>
+                      <div className="font-bold text-slate-200">{mediasReais.corners != null ? mediasReais.corners.toFixed(1) : '—'}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Eventos */}
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
