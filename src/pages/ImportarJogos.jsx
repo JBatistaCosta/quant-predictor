@@ -42,8 +42,27 @@ export default function ImportarJogos() {
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
       setFonteInfo({ fonte: data.fonte_usada, aviso: data.aviso });
 
+      // Casamento por ID externo (mais confiável — "Brazil" da API não bate com
+      // "Brasil" cadastrado, mas o ID numérico é o mesmo). Só existe ponte salva
+      // pro namespace da football-data.org (teams.external_id); ver api/fixtures.js.
+      let idPorExternalId = {};
+      if (data.fonte_ids === 'football-data.org') {
+        const { data: equipesComTeam } = await supabase.from('equipes').select('id, pipeline_team_id').not('pipeline_team_id', 'is', null);
+        const teamIds = (equipesComTeam || []).map(e => e.pipeline_team_id);
+        if (teamIds.length > 0) {
+          const { data: teamsData } = await supabase.from('teams').select('id, external_id').in('id', teamIds).not('external_id', 'is', null);
+          const externalIdPorTeamId = {};
+          (teamsData || []).forEach(t => { externalIdPorTeamId[t.id] = t.external_id; });
+          (equipesComTeam || []).forEach(e => {
+            const ext = externalIdPorTeamId[e.pipeline_team_id];
+            if (ext) idPorExternalId[ext] = e.id;
+          });
+        }
+      }
+
       // Casa AMBOS os lados (mandante e visitante) contra o registro — no modo liga
       // não existe "nosso time" fixo, então os dois precisam ser resolvidos.
+      // Fallback por nome, pra times sem vínculo com o pipeline (tabela teams).
       const todosNomes = new Set();
       data.jogos.forEach(j => { todosNomes.add(j.mandante); todosNomes.add(j.visitante); });
       let equipesEncontradas = [];
@@ -54,13 +73,25 @@ export default function ImportarJogos() {
       const idPorNome = {};
       equipesEncontradas.forEach(e => { idPorNome[e.nome_popular] = e.id; });
 
-      const jogosComMatch = data.jogos.map(j => ({
-        ...j,
-        equipe_mandante_id: idPorNome[j.mandante] || null,
-        equipe_visitante_id: idPorNome[j.visitante] || null,
-        mandante_casado: !!idPorNome[j.mandante],
-        visitante_casado: !!idPorNome[j.visitante],
-      }));
+      const resolverEquipe = (nome, externalId) => {
+        if (externalId && idPorExternalId[externalId]) return { id: idPorExternalId[externalId], por: 'id' };
+        if (idPorNome[nome]) return { id: idPorNome[nome], por: 'nome' };
+        return { id: null, por: null };
+      };
+
+      const jogosComMatch = data.jogos.map(j => {
+        const mandante = resolverEquipe(j.mandante, j.mandante_external_id);
+        const visitante = resolverEquipe(j.visitante, j.visitante_external_id);
+        return {
+          ...j,
+          equipe_mandante_id: mandante.id,
+          equipe_visitante_id: visitante.id,
+          mandante_casado: !!mandante.id,
+          visitante_casado: !!visitante.id,
+          mandante_casado_por: mandante.por,
+          visitante_casado_por: visitante.por,
+        };
+      });
 
       setJogos(jogosComMatch);
       const preSelecao = {};
@@ -241,6 +272,12 @@ export default function ImportarJogos() {
               Jogos marcados em laranja têm pelo menos um time que não está no seu registro de Times — não dá pra importar até esses times existirem em "Times".
             </div>
           )}
+          {jogos.some(j => j.mandante_casado_por === 'id' || j.visitante_casado_por === 'id') && (
+            <div className="bg-emerald-950/30 border border-emerald-600/40 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3 flex items-start gap-2">
+              <Info size={14} className="shrink-0 mt-0.5" />
+              Jogos com <span className="font-mono bg-slate-900 px-1 rounded">ID</span> foram casados pelo ID externo do time (mais confiável que nome) — os com <span className="font-mono bg-slate-900 px-1 rounded">nome</span> caíram no casamento por string.
+            </div>
+          )}
 
           <div className="space-y-1.5 max-h-96 overflow-y-auto">
             {jogos.map(j => {
@@ -256,6 +293,11 @@ export default function ImportarJogos() {
                   />
                   <span className="text-slate-500 text-xs w-24 shrink-0">{j.data}</span>
                   <span className="flex-1 text-slate-200">{j.mandante} x {j.visitante}</span>
+                  {casado && (
+                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded shrink-0 ${(j.mandante_casado_por === 'id' && j.visitante_casado_por === 'id') ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>
+                      {(j.mandante_casado_por === 'id' && j.visitante_casado_por === 'id') ? 'ID' : 'nome'}
+                    </span>
+                  )}
                   {j.resolvido && <span className="font-mono text-slate-300">{j.placar_mandante}-{j.placar_visitante}</span>}
                   <span className="text-[10px] text-slate-500 w-28 shrink-0 text-right">{j.rodada || j.liga}</span>
                 </label>
