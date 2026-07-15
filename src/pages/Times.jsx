@@ -1,7 +1,7 @@
 // src/pages/Times.jsx — Cadastro de times/seleções (instituição + equipe por categoria)
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight, Link2, Unlink } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const CATEGORIAS = [
@@ -43,6 +43,12 @@ export default function Times() {
   const [busca, setBusca] = useState('');           // valor "com debounce" que realmente dispara a consulta
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
+
+  // --- Vínculo com o time "real" do pipeline Python (tabela teams) ---
+  const [equipeVinculando, setEquipeVinculando] = useState(null); // id da equipe com o buscador aberto
+  const [buscaPipeline, setBuscaPipeline] = useState('');
+  const [resultadosPipeline, setResultadosPipeline] = useState([]);
+  const [buscandoPipeline, setBuscandoPipeline] = useState(false);
 
   // Debounce: só atualiza "busca" (e por consequência consulta o banco) 400ms depois
   // que o usuário para de digitar — evita uma consulta a cada tecla.
@@ -136,6 +142,35 @@ export default function Times() {
   const apagar = async (id) => {
     if (!window.confirm('Apagar essa equipe? A instituição continua existindo (isso só remove essa categoria).')) return;
     const { error } = await supabase.from('equipes').delete().eq('id', id);
+    if (error) { setErro(error.message); return; }
+    buscarEquipes();
+  };
+
+  // Busca na tabela `teams` (times reais ingeridos pelo pipeline Python:
+  // API-Football/football-data.org), não em `equipes` (cadastro manual daqui).
+  useEffect(() => {
+    if (!equipeVinculando) return;
+    const timer = setTimeout(async () => {
+      if (!buscaPipeline.trim()) { setResultadosPipeline([]); return; }
+      setBuscandoPipeline(true);
+      const { data } = await supabase.from('teams').select('id, name, country, is_national_team').ilike('name', `%${buscaPipeline.trim()}%`).limit(10);
+      setResultadosPipeline(data || []);
+      setBuscandoPipeline(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [buscaPipeline, equipeVinculando]);
+
+  const vincularTime = async (equipeId, pipelineTeamId) => {
+    const { error } = await supabase.from('equipes').update({ pipeline_team_id: pipelineTeamId }).eq('id', equipeId);
+    if (error) { setErro(error.message); return; }
+    setEquipeVinculando(null);
+    setBuscaPipeline('');
+    setResultadosPipeline([]);
+    buscarEquipes();
+  };
+
+  const desvincularTime = async (equipeId) => {
+    const { error } = await supabase.from('equipes').update({ pipeline_team_id: null }).eq('id', equipeId);
     if (error) { setErro(error.message); return; }
     buscarEquipes();
   };
@@ -303,6 +338,7 @@ export default function Times() {
                   <th className="p-3">Instituição</th>
                   <th className="p-3">Categoria</th>
                   <th className="p-3">Tipo</th>
+                  <th className="p-3">Time do modelo (pipeline)</th>
                   <th className="p-3"></th>
                 </tr>
               </thead>
@@ -320,6 +356,59 @@ export default function Times() {
                         : CATEGORIAS.find(c => c.valor === eq.categoria)?.rotulo || eq.categoria}
                     </td>
                     <td className="p-3 text-slate-400 capitalize">{eq.tipo}</td>
+                    <td className="p-3 relative">
+                      {eq.pipeline_team_id ? (
+                        <div className="flex items-center gap-2">
+                          <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">
+                            <Link2 size={12} /> {eq.pipeline_team_nome || `#${eq.pipeline_team_id}`}
+                          </span>
+                          <button onClick={() => desvincularTime(eq.id)} title="Desvincular" className="text-slate-500 hover:text-red-400">
+                            <Unlink size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEquipeVinculando(eq.id); setBuscaPipeline(eq.nome_popular || ''); setResultadosPipeline([]); }}
+                          className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-emerald-400 border border-dashed border-slate-600 hover:border-emerald-500/50 px-2 py-1 rounded"
+                        >
+                          <Link2 size={12} /> Vincular
+                        </button>
+                      )}
+
+                      {equipeVinculando === eq.id && (
+                        <div className="absolute z-10 top-full left-3 mt-1 w-72 bg-slate-900 border border-emerald-500/40 rounded-lg shadow-xl p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Buscar em teams (pipeline)</span>
+                            <button onClick={() => setEquipeVinculando(null)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                          </div>
+                          <input
+                            autoFocus
+                            value={buscaPipeline}
+                            onChange={(e) => setBuscaPipeline(e.target.value)}
+                            placeholder="Nome do time..."
+                            className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-sm text-slate-100 mb-2"
+                          />
+                          {buscandoPipeline ? (
+                            <p className="text-xs text-slate-500 py-2">Buscando...</p>
+                          ) : resultadosPipeline.length === 0 ? (
+                            <p className="text-xs text-slate-500 py-2">{buscaPipeline ? 'Nenhum time encontrado.' : 'Digite pra buscar.'}</p>
+                          ) : (
+                            <div className="max-h-48 overflow-y-auto space-y-1">
+                              {resultadosPipeline.map(t => (
+                                <button
+                                  key={t.id}
+                                  onClick={() => vincularTime(eq.id, t.id)}
+                                  className="w-full text-left px-2 py-1.5 rounded hover:bg-emerald-500/10 text-sm text-slate-200 flex items-center justify-between"
+                                >
+                                  <span>{t.name}</span>
+                                  <span className="text-[10px] text-slate-500">{t.is_national_team ? 'seleção' : t.country || ''}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="p-3 text-right">
                       <button onClick={() => apagar(eq.id)} className="text-slate-500 hover:text-red-400 text-xs font-bold">Apagar</button>
                     </td>

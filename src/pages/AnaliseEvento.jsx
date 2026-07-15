@@ -209,7 +209,7 @@ export default function AnaliseEvento() {
 
   // --- Modelo de escanteios ---
   const [cornersModel, setCornersModel] = useState('negbin'); // 'negbin' | 'poisson'
-  const [cornersDisp, setCornersDisp] = useState(10); // parâmetro de forma (r) da Binomial Negativa
+  const [cornersDisp, setCornersDisp] = useState(63.3); // parâmetro de forma (r) da Binomial Negativa — 63.3 é a média calibrada nas 5 ligas europeias com dado (ver league_model_params); sobrescrito automaticamente quando o modelo carrega (ver useEffect de auto-load)
   const [markovSimCount, setMarkovSimCount] = useState(20000);
   const [markovResults, setMarkovResults] = useState(null);
   const [markovHeatDisplay, setMarkovHeatDisplay] = useState('pct'); // 'pct' ou 'odd'
@@ -492,6 +492,29 @@ export default function AnaliseEvento() {
           if (hist2Convertido) setHistorico2(hist2Convertido);
           mensagens.push(`Estatísticas carregadas do banco (${[s1 && t1.name, s2 && t2.name].filter(Boolean).join(', ')})`);
         }
+      }
+
+      // Escanteios via modelo de produção (GLM treinado + Binomial Negativa
+      // calibrada por liga, ver api/corners-model.js) — silencioso se o time
+      // não estiver na tabela `teams` do pipeline Python (ex: seleções fora
+      // das 5 ligas europeias com dado calibrado).
+      try {
+        const respCorners = await fetch(`/api/corners-model?mandante=${encodeURIComponent(t1.name)}&visitante=${encodeURIComponent(t2.name)}`);
+        if (respCorners.ok) {
+          const dadosCorners = await respCorners.json();
+          if (!cancelado && dadosCorners?.escanteios_esperados) {
+            setMetrics(prev => ({
+              ...prev,
+              corners1: dadosCorners.escanteios_esperados.mandante.toFixed(2),
+              corners2: dadosCorners.escanteios_esperados.visitante.toFixed(2),
+            }));
+            setCornersModel('negbin');
+            setCornersDisp(dadosCorners.modelo.disp_r);
+            mensagens.push(`Escanteios (Binomial Negativa, modelo) carregados — r=${dadosCorners.modelo.disp_r.toFixed(1)}`);
+          }
+        }
+      } catch (erroCorners) {
+        console.warn('Modelo de escanteios indisponível:', erroCorners.message);
       }
 
       const { data: oddsData, error: oddsErro } = await supabase
