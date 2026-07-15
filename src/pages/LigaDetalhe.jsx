@@ -1,0 +1,200 @@
+// src/pages/LigaDetalhe.jsx
+// Jogos reais (ingeridos pelo pipeline Python) de uma liga cadastrada — só
+// funciona pra ligas vinculadas ao pipeline (ligas.external_id preenchido,
+// que casa com leagues.external_id). Seletor de temporada + separação por
+// fase/rodada + paginação por bloco de rodadas (a lista inteira de uma
+// temporada pode ter 380 jogos, não dá pra jogar tudo na tela de uma vez).
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield } from 'lucide-react';
+import { supabase, supabaseAtivo } from '../supabaseClient';
+
+const RODADAS_POR_PAGINA = 4;
+
+const RESULTADO_COR = (mandante, gm, gv) => {
+  if (gm == null || gv == null) return 'text-slate-500';
+  const empate = gm === gv;
+  const mandanteGanhou = gm > gv;
+  if (empate) return 'text-slate-400';
+  return (mandante && mandanteGanhou) || (!mandante && !mandanteGanhou) ? 'text-emerald-400' : 'text-red-400';
+};
+
+export default function LigaDetalhe() {
+  const { id } = useParams();
+  const [liga, setLiga] = useState(null);
+  const [carregandoLiga, setCarregandoLiga] = useState(true);
+  const [erro, setErro] = useState('');
+
+  const [leagueIdPipeline, setLeagueIdPipeline] = useState(null);
+  const [temporadas, setTemporadas] = useState([]);
+  const [temporada, setTemporada] = useState('');
+  const [jogos, setJogos] = useState([]);
+  const [carregandoJogos, setCarregandoJogos] = useState(false);
+  const [pagina, setPagina] = useState(0);
+
+  // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no pipeline via external_id
+  useEffect(() => {
+    if (!supabaseAtivo) return;
+    (async () => {
+      setCarregandoLiga(true);
+      setErro('');
+      const { data: l, error: lErro } = await supabase.from('ligas').select('*').eq('id', id).single();
+      if (lErro) { setErro('Liga não encontrada.'); setCarregandoLiga(false); return; }
+      setLiga(l);
+
+      if (!l.external_id) { setCarregandoLiga(false); return; }
+
+      const { data: pipelineLiga } = await supabase.from('leagues').select('id').eq('external_id', l.external_id).maybeSingle();
+      if (pipelineLiga) {
+        setLeagueIdPipeline(pipelineLiga.id);
+        const { data: temporadasData } = await supabase.from('matches').select('season').eq('league_id', pipelineLiga.id);
+        const unicas = [...new Set((temporadasData || []).map(t => t.season))].sort().reverse();
+        setTemporadas(unicas);
+        if (unicas.length > 0) setTemporada(unicas[0]);
+      }
+      setCarregandoLiga(false);
+    })();
+  }, [id]);
+
+  // 2) Carrega os jogos da temporada selecionada
+  useEffect(() => {
+    if (!leagueIdPipeline || !temporada) return;
+    (async () => {
+      setCarregandoJogos(true);
+      setPagina(0);
+      const { data } = await supabase
+        .from('matches')
+        .select('id, match_date, home_goals, away_goals, status, round, stage, home:teams!matches_home_team_id_fkey(id, name, crest_url), away:teams!matches_away_team_id_fkey(id, name, crest_url)')
+        .eq('league_id', leagueIdPipeline)
+        .eq('season', temporada)
+        .order('match_date', { ascending: true });
+      setJogos(data || []);
+      setCarregandoJogos(false);
+    })();
+  }, [leagueIdPipeline, temporada]);
+
+  // Agrupa por fase (stage) e rodada (round) — jogos sem round (mata-mata sem número
+  // linear) ficam agrupados só pela fase, ordenados por data.
+  const grupos = useMemo(() => {
+    const porChave = new Map();
+    for (const j of jogos) {
+      const chave = `${j.stage || 'Fase única'}__${j.round ?? '—'}`;
+      if (!porChave.has(chave)) porChave.set(chave, { stage: j.stage || 'Fase única', round: j.round, jogos: [] });
+      porChave.get(chave).jogos.push(j);
+    }
+    return [...porChave.values()];
+  }, [jogos]);
+
+  const totalPaginas = Math.max(1, Math.ceil(grupos.length / RODADAS_POR_PAGINA));
+  const gruposPagina = grupos.slice(pagina * RODADAS_POR_PAGINA, (pagina + 1) * RODADAS_POR_PAGINA);
+
+  if (!supabaseAtivo) {
+    return (
+      <div className="max-w-4xl mx-auto bg-slate-800 border border-red-500/30 rounded-2xl p-6 text-center">
+        <AlertTriangle className="text-red-400 mx-auto mb-2" size={28} />
+        <p className="text-slate-300">Supabase não configurado.</p>
+      </div>
+    );
+  }
+
+  if (carregandoLiga) {
+    return <div className="max-w-4xl mx-auto text-slate-500 text-center py-16 text-sm">Carregando...</div>;
+  }
+
+  if (erro) {
+    return (
+      <div className="max-w-4xl mx-auto bg-slate-800 border border-red-500/30 rounded-2xl p-6 text-center">
+        <AlertTriangle className="text-red-400 mx-auto mb-2" size={28} />
+        <p className="text-slate-300">{erro}</p>
+        <Link to="/ligas" className="text-emerald-400 text-sm hover:underline mt-3 inline-block">← Voltar pra Ligas</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <Link to="/ligas" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-4 w-fit">
+        <ArrowLeft size={16} /> Voltar
+      </Link>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
+          {liga.simbolo_url ? <img src={liga.simbolo_url} alt="" className="w-full h-full object-contain" /> : <Trophy className="text-slate-600" size={24} />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-extrabold text-slate-100">{liga.nome}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{liga.pais || liga.confederacao || '—'}</p>
+        </div>
+        {temporadas.length > 0 && (
+          <select
+            value={temporada}
+            onChange={(e) => setTemporada(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 font-semibold"
+          >
+            {temporadas.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+      </div>
+
+      {!leagueIdPipeline ? (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center">
+          <p className="text-slate-500 text-sm">
+            Essa liga não está vinculada ao pipeline de dados (sem jogos importados) — só ligas com <code className="text-slate-400">external_id</code> preenchido (as espelhadas de <code className="text-slate-400">leagues</code>) têm jogos aqui.
+          </p>
+        </div>
+      ) : carregandoJogos ? (
+        <div className="text-slate-500 text-center py-16 text-sm">Carregando jogos...</div>
+      ) : jogos.length === 0 ? (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center">
+          <p className="text-slate-500 text-sm">Nenhum jogo encontrado pra temporada {temporada}.</p>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-4">
+            {gruposPagina.map((g, i) => (
+              <div key={i} className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
+                <div className="bg-slate-900 px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  {g.stage}{g.round != null ? ` — Rodada ${g.round}` : ''}
+                </div>
+                <div className="divide-y divide-slate-700/50">
+                  {g.jogos.map(j => (
+                    <div key={j.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                      <span className="text-slate-500 text-xs w-20 shrink-0">{j.match_date?.slice(0, 10)}</span>
+                      <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
+                        <span className="truncate text-slate-200">{j.home?.name}</span>
+                        {j.home?.crest_url ? <img src={j.home.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                      </div>
+                      <span className={`font-mono font-bold w-14 text-center shrink-0 ${RESULTADO_COR(true, j.home_goals, j.away_goals)}`}>
+                        {j.home_goals != null ? `${j.home_goals}-${j.away_goals}` : 'x'}
+                      </span>
+                      <div className="flex-1 flex items-center gap-2 min-w-0">
+                        {j.away?.crest_url ? <img src={j.away.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                        <span className="truncate text-slate-200">{j.away?.name}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-between mt-4 text-sm">
+              <span className="text-slate-500">Bloco {pagina + 1} de {totalPaginas} ({grupos.length} rodadas/fases · {jogos.length} jogos)</span>
+              <div className="flex gap-2">
+                <button disabled={pagina === 0} onClick={() => setPagina(p => p - 1)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                  <ChevronLeft size={16} /> Anterior
+                </button>
+                <button disabled={pagina + 1 >= totalPaginas} onClick={() => setPagina(p => p + 1)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                  Próximo <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

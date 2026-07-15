@@ -4,7 +4,7 @@
 // que mostra todo jogo oficial, aqui só entra o que você mesmo analisou/salvou.
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Shield, Calendar, ArrowLeft, AlertTriangle, MapPin, Flag, BarChart3 } from 'lucide-react';
+import { Shield, Calendar, ArrowLeft, AlertTriangle, MapPin, Flag, BarChart3, History, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const CATEGORIAS_ROTULO = {
@@ -30,6 +30,13 @@ export default function TimeDetalhe() {
   const [mediasReais, setMediasReais] = useState(null);
   const [carregandoPipeline, setCarregandoPipeline] = useState(false);
 
+  // Histórico de jogos reais (matches, do pipeline), paginado
+  const TAMANHO_PAGINA_JOGOS = 15;
+  const [jogosPipeline, setJogosPipeline] = useState([]);
+  const [totalJogosPipeline, setTotalJogosPipeline] = useState(0);
+  const [paginaJogos, setPaginaJogos] = useState(0);
+  const [carregandoJogosPipeline, setCarregandoJogosPipeline] = useState(false);
+
   useEffect(() => {
     if (!supabaseAtivo) return;
     (async () => {
@@ -48,6 +55,11 @@ export default function TimeDetalhe() {
 
       const { data: simbolo } = await supabase.from('instituicao_simbolos').select('url').eq('instituicao_id', eq.instituicao_id).is('data_fim', null).limit(1);
       if (simbolo?.[0]) setEscudoUrl(simbolo[0].url);
+      else if (eq.pipeline_team_id) {
+        // Sem escudo cadastrado à mão — usa o do time do pipeline, se o vínculo existir
+        const { data: teamCrest } = await supabase.from('teams').select('crest_url').eq('id', eq.pipeline_team_id).maybeSingle();
+        if (teamCrest?.crest_url) setEscudoUrl(teamCrest.crest_url);
+      }
 
       if (eq.tipo === 'selecao') {
         const { data: d } = await supabase.from('detalhes_selecao').select('*').eq('equipe_id', id).maybeSingle();
@@ -111,6 +123,25 @@ export default function TimeDetalhe() {
       setCarregando(false);
     })();
   }, [id]);
+
+  // Histórico de jogos reais (public.matches) do time vinculado — separado do
+  // efeito principal pra paginar sem recarregar o resto da página.
+  useEffect(() => {
+    if (!equipe?.pipeline_team_id) return;
+    (async () => {
+      setCarregandoJogosPipeline(true);
+      const teamId = equipe.pipeline_team_id;
+      const { data, count } = await supabase
+        .from('matches')
+        .select('id, match_date, home_goals, away_goals, round, stage, season, home:teams!matches_home_team_id_fkey(id, name, crest_url), away:teams!matches_away_team_id_fkey(id, name, crest_url), leagues(name)', { count: 'exact' })
+        .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
+        .order('match_date', { ascending: false })
+        .range(paginaJogos * TAMANHO_PAGINA_JOGOS, paginaJogos * TAMANHO_PAGINA_JOGOS + TAMANHO_PAGINA_JOGOS - 1);
+      setJogosPipeline(data || []);
+      setTotalJogosPipeline(count || 0);
+      setCarregandoJogosPipeline(false);
+    })();
+  }, [equipe?.pipeline_team_id, paginaJogos]);
 
   if (!supabaseAtivo) {
     return (
@@ -241,6 +272,65 @@ export default function TimeDetalhe() {
                 </div>
               )}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Histórico de jogos reais (public.matches), quando o time está vinculado ao pipeline */}
+      {equipe.pipeline_team_id && (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <History className="text-emerald-400" size={18} /> Histórico de Jogos
+          </h2>
+
+          {carregandoJogosPipeline ? (
+            <p className="text-slate-500 text-sm">Carregando...</p>
+          ) : jogosPipeline.length === 0 ? (
+            <p className="text-slate-500 text-sm">Nenhum jogo encontrado pra esse time no pipeline.</p>
+          ) : (
+            <>
+              <div className="divide-y divide-slate-700/50">
+                {jogosPipeline.map(j => {
+                  const ehMandante = j.home?.id === equipe.pipeline_team_id;
+                  const adversario = ehMandante ? j.away : j.home;
+                  const golsTime = ehMandante ? j.home_goals : j.away_goals;
+                  const golsAdversario = ehMandante ? j.away_goals : j.home_goals;
+                  const cor = golsTime == null ? 'text-slate-500'
+                    : golsTime === golsAdversario ? 'text-slate-400'
+                    : golsTime > golsAdversario ? 'text-emerald-400' : 'text-red-400';
+                  return (
+                    <div key={j.id} className="flex items-center gap-3 py-2.5 text-sm">
+                      <span className="text-slate-500 text-xs w-20 shrink-0">{j.match_date?.slice(0, 10)}</span>
+                      <span className="text-slate-600 text-xs w-4 shrink-0">{ehMandante ? 'vs' : '@'}</span>
+                      {adversario?.crest_url ? <img src={adversario.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                      <span className="flex-1 text-slate-200 truncate">{adversario?.name || '(desconhecido)'}</span>
+                      <span className={`font-mono font-bold w-14 text-center shrink-0 ${cor}`}>
+                        {golsTime != null ? `${golsTime}-${golsAdversario}` : 'x'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 w-32 shrink-0 text-right truncate">{j.leagues?.name}{j.round != null ? ` · R${j.round}` : ''}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {totalJogosPipeline > TAMANHO_PAGINA_JOGOS && (
+                <div className="flex items-center justify-between mt-4 text-xs">
+                  <span className="text-slate-500">
+                    {paginaJogos * TAMANHO_PAGINA_JOGOS + 1}–{Math.min((paginaJogos + 1) * TAMANHO_PAGINA_JOGOS, totalJogosPipeline)} de {totalJogosPipeline}
+                  </span>
+                  <div className="flex gap-2">
+                    <button disabled={paginaJogos === 0} onClick={() => setPaginaJogos(p => p - 1)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                      <ChevronLeft size={14} /> Anterior
+                    </button>
+                    <button disabled={(paginaJogos + 1) * TAMANHO_PAGINA_JOGOS >= totalJogosPipeline} onClick={() => setPaginaJogos(p => p + 1)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                      Próxima <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

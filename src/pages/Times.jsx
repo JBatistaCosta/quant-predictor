@@ -346,7 +346,8 @@ export default function Times() {
                 {equipes.map(eq => (
                   <tr key={eq.id} className="hover:bg-slate-700/20">
                     <td className="p-3 font-semibold text-slate-200">
-                      <Link to={`/times/${eq.id}`} className="hover:text-emerald-400 hover:underline">
+                      <Link to={`/times/${eq.id}`} className="flex items-center gap-2 hover:text-emerald-400 hover:underline w-fit">
+                        {eq.pipeline_crest_url && <img src={eq.pipeline_crest_url} alt="" className="w-5 h-5 object-contain shrink-0" />}
                         {eq.nome_popular || "(sem nome)"}
                       </Link>
                     </td>
