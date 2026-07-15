@@ -1,5 +1,6 @@
 // src/pages/Ligas.jsx — Cadastro de ligas/competições
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Trophy, Plus, X, Loader2, AlertTriangle, Search } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
@@ -221,7 +222,12 @@ export default function Ligas() {
               <tbody className="divide-y divide-slate-700/50">
                 {ligas.map(l => (
                   <tr key={l.id} className="hover:bg-slate-700/20">
-                    <td className="p-3 font-semibold text-slate-200">{l.nome}</td>
+                    <td className="p-3 font-semibold text-slate-200">
+                      <Link to={`/ligas/${l.id}`} className="flex items-center gap-2 hover:text-emerald-400 hover:underline w-fit">
+                        {l.simbolo_url && <img src={l.simbolo_url} alt="" className="w-5 h-5 object-contain" />}
+                        {l.nome}
+                      </Link>
+                    </td>
                     <td className="p-3 text-slate-400">{TIPOS_LIGA.find(t => t.valor === l.tipo)?.rotulo || l.tipo}</td>
                     <td className="p-3 text-slate-400">{l.pais || l.confederacao || '—'}</td>
                     <td className="p-3 text-right">
