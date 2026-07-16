@@ -15,6 +15,9 @@
 //   ?tarefa=elo&escopo=geral    -> recalcula o Elo geral (cross-liga, Champions League)
 //   ?tarefa=calibracao          -> reajusta Platt Scaling + Isotonic Regression (todos os combos)
 //   ?tarefa=calibracao&minimo=N -> idem, exigindo N amostras de treino mínimas (padrão 80)
+//   ?tarefa=odds-descobrir      -> FASE 1 do sync de odds (OddsPapi): resolve torneios/mercados/
+//                                   casas uma vez só (precisa de ODDSPAPI_KEY) — ver comentário
+//                                   detalhado na função abaixo antes de rodar (cota é 250 req/mês)
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -321,6 +324,102 @@ async function tarefaCalibracao(supabase, minimo) {
   return resultado;
 }
 
+// ============================================================
+// TAREFA: odds-descobrir — FASE 1 do sync de odds (OddsPapi). Cota grátis é
+// só 250 req/mês, então antes de escrever a lógica de parse "às cegas" (e
+// arriscar queimar cota com tentativa e erro), essa tarefa faz UMA rodada de
+// chamadas de descoberta: lista de torneios, mercados e casas de apostas
+// (3 chamadas, cacheadas em oddspapi_cache pra nunca precisar rechamar), casa
+// os torneios com nossas 6 ligas domésticas por nome (mesma heurística de
+// sobreposição de palavras do sync-clubelo.js), e devolve uma amostra CRUA de
+// odds de UM torneio já resolvido (4ª chamada) — pra inspecionar o formato
+// real da resposta antes de escrever o parser definitivo da tarefa "odds".
+// ============================================================
+
+const ODDSPAPI_BASE = 'https://api.oddspapi.io';
+const SPORT_ID_FUTEBOL = 10;
+const BOOKMAKERS_ALVO = ['pinnacle', 'bet365', 'betano'];
+
+async function chamarOddspapi(caminho, params, apiKey) {
+  const url = new URL(`${ODDSPAPI_BASE}${caminho}`);
+  Object.entries(params).forEach(([k, v]) => { if (v != null) url.searchParams.set(k, v); });
+  url.searchParams.set('apiKey', apiKey);
+  const resposta = await fetch(url.toString());
+  const dados = await resposta.json();
+  if (!resposta.ok) throw new Error(`OddsPapi ${caminho}: HTTP ${resposta.status} — ${JSON.stringify(dados).slice(0, 300)}`);
+  return dados;
+}
+
+function normalizarTexto(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+const STOPWORDS_LIGA = new Set(['de', 'da', 'do', 'a', 'the', 'liga', 'league']);
+function tokensLiga(nome) {
+  return normalizarTexto(nome).split(' ').filter(t => t && !STOPWORDS_LIGA.has(t));
+}
+
+function acharMelhorTorneio(nomeLiga, torneios) {
+  const tokensA = tokensLiga(nomeLiga);
+  if (tokensA.length === 0) return null;
+  let melhor = null, melhorScore = 0;
+  for (const t of torneios) {
+    const tokensB = tokensLiga(t.tournamentName);
+    if (tokensB.length === 0) continue;
+    const intersecao = tokensA.filter(x => tokensB.includes(x)).length;
+    if (intersecao === 0) continue;
+    const score = intersecao / Math.min(tokensA.length, tokensB.length);
+    if (score > melhorScore) { melhorScore = score; melhor = t; }
+  }
+  return melhorScore >= 0.5 ? melhor : null;
+}
+
+async function tarefaOddsDescobrir(supabase, apiKey) {
+  const [torneios, mercados, casas] = await Promise.all([
+    chamarOddspapi('/v4/tournaments', { sportId: SPORT_ID_FUTEBOL }, apiKey),
+    chamarOddspapi('/v4/markets', {}, apiKey),
+    chamarOddspapi('/v4/bookmakers', {}, apiKey),
+  ]);
+
+  const agora = new Date().toISOString();
+  await supabase.from('oddspapi_cache').upsert([
+    { chave: 'tournaments', valor: torneios, atualizado_em: agora },
+    { chave: 'markets', valor: mercados, atualizado_em: agora },
+    { chave: 'bookmakers', valor: casas, atualizado_em: agora },
+  ], { onConflict: 'chave' });
+
+  const { data: ligas } = await supabase.from('leagues').select('id, name').in('id', LIGAS_DOMESTICAS);
+
+  const resultado = { casadas: [], sem_correspondencia: [], casas_encontradas: null, amostra_odds: null };
+
+  for (const liga of ligas || []) {
+    const torneio = acharMelhorTorneio(liga.name, torneios);
+    if (!torneio) { resultado.sem_correspondencia.push(liga.name); continue; }
+    await supabase.from('liga_oddspapi_tournament').upsert({
+      league_id: liga.id, tournament_id: torneio.tournamentId, tournament_name: torneio.tournamentName, resolvido_em: agora,
+    }, { onConflict: 'league_id' });
+    resultado.casadas.push({ liga: liga.name, tournamentId: torneio.tournamentId, tournamentName: torneio.tournamentName });
+  }
+
+  // Confere se os slugs esperados (pinnacle/bet365/betano) existem na lista real de casas
+  const nomesCasas = (casas || []).map(c => ({ nome: c.bookmakerName, slug: c.slug }));
+  resultado.casas_encontradas = BOOKMAKERS_ALVO.map(alvo => {
+    const achado = nomesCasas.find(c => normalizarTexto(c.slug).includes(alvo) || normalizarTexto(c.nome).includes(alvo));
+    return { alvo, encontrado: achado || null };
+  });
+
+  // Amostra crua de odds de UM torneio já casado, pra inspecionar o formato real da resposta
+  if (resultado.casadas.length > 0) {
+    const primeiro = resultado.casadas[0];
+    const amostra = await chamarOddspapi('/v4/odds-by-tournaments', {
+      tournamentIds: primeiro.tournamentId, bookmakers: BOOKMAKERS_ALVO.join(','), oddsFormat: 'decimal', verbosity: 3,
+    }, apiKey);
+    resultado.amostra_odds = { torneio: primeiro.tournamentName, quantidade_fixtures: Array.isArray(amostra) ? amostra.length : null, primeiro_fixture: Array.isArray(amostra) ? amostra[0] : amostra };
+  }
+
+  return resultado;
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
@@ -330,6 +429,12 @@ export default async function handler(req, res) {
   const { tarefa, liga_id, escopo, minimo } = req.query;
 
   try {
+    if (tarefa === 'odds-descobrir') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      return res.status(200).json(await tarefaOddsDescobrir(supabase, apiKey));
+    }
+
     if (tarefa === 'elo') {
       if (liga_id) {
         const ligaIdNum = Number(liga_id);
@@ -347,7 +452,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(400).json({
-      error: { message: 'Especifique ?tarefa=elo (com liga_id ou escopo=geral) ou ?tarefa=calibracao.' },
+      error: { message: 'Especifique ?tarefa=elo (com liga_id ou escopo=geral), ?tarefa=calibracao ou ?tarefa=odds-descobrir.' },
     });
   } catch (erro) {
     res.status(500).json({ error: { message: erro.message } });
