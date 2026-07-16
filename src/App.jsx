@@ -17,6 +17,7 @@ const Times = lazy(() => import('./pages/Times'));
 const TimeDetalhe = lazy(() => import('./pages/TimeDetalhe'));
 const Ligas = lazy(() => import('./pages/Ligas'));
 const LigaDetalhe = lazy(() => import('./pages/LigaDetalhe'));
+const ModelosStats = lazy(() => import('./pages/ModelosStats'));
 
 function CarregandoPagina() {
   return (
@@ -58,6 +59,9 @@ export default function App() {
             } />
             <Route path="/ligas/:id" element={
               <ProtectedRoute><Layout><LigaDetalhe /></Layout></ProtectedRoute>
+            } />
+            <Route path="/modelos" element={
+              <ProtectedRoute><Layout><ModelosStats /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />
