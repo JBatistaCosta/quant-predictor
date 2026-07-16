@@ -6,7 +6,7 @@
     }
   ],
   "functions": {
-    "api/compute-elo.js": { "maxDuration": 60 },
-    "api/fit-calibration.js": { "maxDuration": 60 }
+    "api/model-maintenance.js": { "maxDuration": 60 },
+    "api/backtest-betting.js": { "maxDuration": 30 }
   }
 }
