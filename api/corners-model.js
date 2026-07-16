@@ -7,8 +7,18 @@
 // model_stat_estimates) só que lida com Binomial Negativa em vez de Poisson —
 // escanteios são superdispersos (ver CONTEXTO_PROJETO.md), então tratamos o
 // TOTAL de escanteios do jogo (mandante + visitante) como uma única variável
-// NB, com o parâmetro de forma "r" calibrado por liga (método dos momentos
-// sobre dados reais em match_stats) e salvo em league_model_params.
+// NB, com o parâmetro de forma "r" calibrado por liga e salvo em league_model_params.
+//
+// IMPORTANTE sobre como "r" é calibrado (2ª versão, corrigida): NÃO é
+// mean²/(variância-mean) da distribuição agregada da liga inteira — isso
+// mistura a variação ENTRE jogos (times diferentes = λ esperado diferente,
+// já capturado pelo próprio modelo) com a variação DENTRO de um jogo (o que
+// "r" deveria medir de verdade). Isso super-estimava a dispersão real e
+// inflava demais as probabilidades de "over". A calibração certa usa resíduo
+// de Pearson condicionado no λ de CADA partida: alpha = Σ((real-λ)²-λ) / Σλ²,
+// r = 1/alpha (estimador padrão de dispersão NB2). Validado: com o r
+// corrigido, NB bate Poisson em 18 de 20 combinações liga×linha testadas
+// (vs. o r antigo, que só vencia por acidente em algumas).
 //
 // COMO CHAMAR:
 //   /api/corners-model?mandante=Manchester City&visitante=Arsenal
@@ -18,9 +28,9 @@ import { createClient } from '@supabase/supabase-js';
 import { negBinomialCDF } from './_lib/negbin.js';
 
 // Usado só quando a liga do confronto não tem disp_r calibrado ainda (ex:
-// Brasileirão, Champions, Eurocopa — sem match_stats de escanteios no banco).
-// É a média dos 5 valores calibrados nas ligas europeias que têm dado.
-const DISP_R_PADRAO = 63.3;
+// Brasileirão, Champions, Eurocopa — sem model_stat_estimates de escanteios
+// pra calibrar direito). É a média dos 5 valores calibrados (método corrigido).
+const DISP_R_PADRAO = 65.85;
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
