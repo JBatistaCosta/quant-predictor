@@ -209,7 +209,7 @@ export default function AnaliseEvento() {
 
   // --- Modelo de escanteios ---
   const [cornersModel, setCornersModel] = useState('negbin'); // 'negbin' | 'poisson'
-  const [cornersDisp, setCornersDisp] = useState(63.3); // parâmetro de forma (r) da Binomial Negativa — 63.3 é a média calibrada nas 5 ligas europeias com dado (ver league_model_params); sobrescrito automaticamente quando o modelo carrega (ver useEffect de auto-load)
+  const [cornersDisp, setCornersDisp] = useState(65.85); // parâmetro de forma (r) da Binomial Negativa — 65,85 é a média calibrada nas 5 ligas europeias com dado (ver league_model_params, calibração via resíduo de Pearson); sobrescrito automaticamente quando o modelo carrega (ver useEffect de auto-load)
   const [markovSimCount, setMarkovSimCount] = useState(20000);
   const [markovResults, setMarkovResults] = useState(null);
   const [markovHeatDisplay, setMarkovHeatDisplay] = useState('pct'); // 'pct' ou 'odd'
