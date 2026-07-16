@@ -47,8 +47,21 @@ export default function LigaDetalhe() {
       const { data: pipelineLiga } = await supabase.from('leagues').select('id').eq('external_id', l.external_id).maybeSingle();
       if (pipelineLiga) {
         setLeagueIdPipeline(pipelineLiga.id);
-        const { data: temporadasData } = await supabase.from('matches').select('season').eq('league_id', pipelineLiga.id);
-        const unicas = [...new Set((temporadasData || []).map(t => t.season))].sort().reverse();
+        // O Supabase (PostgREST) corta em 1000 linhas por chamada sem paginar —
+        // uma liga com 8 temporadas facilmente passa de 1000 jogos, e sem
+        // ORDER BY as primeiras 1000 linhas tendem a ser as mais ANTIGAS (ordem
+        // de inserção), fazendo as temporadas mais novas nunca aparecerem no
+        // seletor (só nas páginas de time, que buscam por outro caminho). Pagina
+        // de verdade só a coluna season (leve) até cobrir todos os jogos.
+        const temporadasData = [];
+        let pagina = 0;
+        while (true) {
+          const { data } = await supabase.from('matches').select('season').eq('league_id', pipelineLiga.id).range(pagina * 1000, pagina * 1000 + 999);
+          temporadasData.push(...(data || []));
+          if (!data || data.length < 1000) break;
+          pagina++;
+        }
+        const unicas = [...new Set(temporadasData.map(t => t.season))].sort().reverse();
         setTemporadas(unicas);
         if (unicas.length > 0) setTemporada(unicas[0]);
       }
