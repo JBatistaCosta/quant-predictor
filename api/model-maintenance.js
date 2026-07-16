@@ -556,7 +556,15 @@ async function tarefaOddsSync(supabase, apiKey, ligaId) {
 
   const resultado = { liga_id: ligaId, torneio: mapa.tournament_name, janela_dias: janela.dias, jogos_candidatos: (candidatos || []).length, por_bookmaker: [], linhas_inseridas: 0 };
 
+  let primeiraChamada = true;
   for (const bookmaker of BOOKMAKERS_ALVO) {
+    // Rate limit real da OddsPapi (achado em produção): 429 se as chamadas em
+    // /v4/odds-by-tournaments vierem muito rápido uma atrás da outra — a doc
+    // pública menciona "500ms de cooldown", mas na prática levou 2 das 3
+    // chamadas sequenciais a 429. 800ms de intervalo entre elas resolveu.
+    if (!primeiraChamada) await new Promise(r => setTimeout(r, 800));
+    primeiraChamada = false;
+
     let fixtures;
     try {
       fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: mapa.tournament_id, bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
