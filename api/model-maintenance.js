@@ -354,65 +354,85 @@ function normalizarTexto(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
+// Times de futebol domésticas -> nome do país esperado na OddsPapi (categoryName),
+// pra desambiguar nomes de torneio genéricos que colidem entre países (ex.: "Serie A"
+// existe pra Itália E aparece como sufixo em vários campeonatos estaduais brasileiros;
+// "La Liga"/"a" batia até com "Copa de la Reina" só pela palavra "la"). Achado real
+// testado em produção: sem esse filtro, Brasileirão e Serie A (Itália) colidiam no
+// mesmo torneio, e La Liga casava com uma copa feminina espanhola.
+const PAIS_POR_LIGA = { 1: 'brazil', 4: 'england', 7: 'spain', 10: 'italy', 13: 'germany', 16: 'france' };
+
 const STOPWORDS_LIGA = new Set(['de', 'da', 'do', 'a', 'the', 'liga', 'league']);
 function tokensLiga(nome) {
-  return normalizarTexto(nome).split(' ').filter(t => t && !STOPWORDS_LIGA.has(t));
+  return normalizarTexto(nome).split(' ').filter(t => t && t.length > 2 && !STOPWORDS_LIGA.has(t));
 }
 
-function acharMelhorTorneio(nomeLiga, torneios) {
+function acharMelhorTorneio(nomeLiga, pais, torneios) {
   const tokensA = tokensLiga(nomeLiga);
   if (tokensA.length === 0) return null;
+  // Restringe candidatos ao país esperado quando a categoria bate (evita colisão
+  // entre ligas de países diferentes com nome genérico tipo "Serie A"/"Liga").
+  const candidatos = torneios.filter(t => normalizarTexto(t.categoryName) === pais);
+  const pool = candidatos.length > 0 ? candidatos : torneios;
+
   let melhor = null, melhorScore = 0;
-  for (const t of torneios) {
+  for (const t of pool) {
     const tokensB = tokensLiga(t.tournamentName);
     if (tokensB.length === 0) continue;
     const intersecao = tokensA.filter(x => tokensB.includes(x)).length;
     if (intersecao === 0) continue;
-    const score = intersecao / Math.min(tokensA.length, tokensB.length);
+    const uniao = new Set([...tokensA, ...tokensB]).size;
+    const score = intersecao / uniao; // Jaccard — mais rigoroso que intersecao/min, evita falso-positivo de 1 token só
     if (score > melhorScore) { melhorScore = score; melhor = t; }
   }
-  return melhorScore >= 0.5 ? melhor : null;
+  return melhorScore >= 0.34 ? melhor : null;
 }
 
-async function tarefaOddsDescobrir(supabase, apiKey) {
-  const [torneios, mercados, casas] = await Promise.all([
-    chamarOddspapi('/v4/tournaments', { sportId: SPORT_ID_FUTEBOL }, apiKey),
-    chamarOddspapi('/v4/markets', {}, apiKey),
-    chamarOddspapi('/v4/bookmakers', {}, apiKey),
-  ]);
+async function buscarOuCache(supabase, chave, buscar) {
+  const { data: existente } = await supabase.from('oddspapi_cache').select('valor').eq('chave', chave).maybeSingle();
+  if (existente) return existente.valor;
+  const valor = await buscar();
+  await supabase.from('oddspapi_cache').upsert({ chave, valor, atualizado_em: new Date().toISOString() }, { onConflict: 'chave' });
+  return valor;
+}
+
+async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
+  if (forcar) await supabase.from('oddspapi_cache').delete().in('chave', ['tournaments', 'markets', 'bookmakers']);
+
+  const torneios = await buscarOuCache(supabase, 'tournaments', () => chamarOddspapi('/v4/tournaments', { sportId: SPORT_ID_FUTEBOL }, apiKey));
+  const mercados = await buscarOuCache(supabase, 'markets', () => chamarOddspapi('/v4/markets', {}, apiKey));
+  const casas = await buscarOuCache(supabase, 'bookmakers', () => chamarOddspapi('/v4/bookmakers', {}, apiKey));
 
   const agora = new Date().toISOString();
-  await supabase.from('oddspapi_cache').upsert([
-    { chave: 'tournaments', valor: torneios, atualizado_em: agora },
-    { chave: 'markets', valor: mercados, atualizado_em: agora },
-    { chave: 'bookmakers', valor: casas, atualizado_em: agora },
-  ], { onConflict: 'chave' });
-
   const { data: ligas } = await supabase.from('leagues').select('id, name').in('id', LIGAS_DOMESTICAS);
 
   const resultado = { casadas: [], sem_correspondencia: [], casas_encontradas: null, amostra_odds: null };
 
   for (const liga of ligas || []) {
-    const torneio = acharMelhorTorneio(liga.name, torneios);
+    const torneio = acharMelhorTorneio(liga.name, PAIS_POR_LIGA[liga.id], torneios);
     if (!torneio) { resultado.sem_correspondencia.push(liga.name); continue; }
     await supabase.from('liga_oddspapi_tournament').upsert({
       league_id: liga.id, tournament_id: torneio.tournamentId, tournament_name: torneio.tournamentName, resolvido_em: agora,
     }, { onConflict: 'league_id' });
-    resultado.casadas.push({ liga: liga.name, tournamentId: torneio.tournamentId, tournamentName: torneio.tournamentName });
+    resultado.casadas.push({ liga: liga.name, tournamentId: torneio.tournamentId, tournamentName: torneio.tournamentName, categoryName: torneio.categoryName });
   }
 
   // Confere se os slugs esperados (pinnacle/bet365/betano) existem na lista real de casas
   const nomesCasas = (casas || []).map(c => ({ nome: c.bookmakerName, slug: c.slug }));
   resultado.casas_encontradas = BOOKMAKERS_ALVO.map(alvo => {
-    const achado = nomesCasas.find(c => normalizarTexto(c.slug).includes(alvo) || normalizarTexto(c.nome).includes(alvo));
+    const achado = nomesCasas.find(c => c.slug === alvo);
     return { alvo, encontrado: achado || null };
   });
 
-  // Amostra crua de odds de UM torneio já casado, pra inspecionar o formato real da resposta
+  // Amostra crua de odds de UM torneio já casado, com UM bookmaker só — a API exige
+  // exatamente 1 bookmaker por chamada em /v4/odds-by-tournaments (`bookmaker`,
+  // singular; descoberto testando em produção — a doc pública sugeria lista separada
+  // por vírgula, que não é aceito). Pra pegar as 3 casas, a fase 2 (sync de verdade)
+  // vai precisar de 1 chamada POR bookmaker.
   if (resultado.casadas.length > 0) {
     const primeiro = resultado.casadas[0];
     const amostra = await chamarOddspapi('/v4/odds-by-tournaments', {
-      tournamentIds: primeiro.tournamentId, bookmakers: BOOKMAKERS_ALVO.join(','), oddsFormat: 'decimal', verbosity: 3,
+      tournamentIds: primeiro.tournamentId, bookmaker: 'pinnacle', oddsFormat: 'decimal', verbosity: 3,
     }, apiKey);
     resultado.amostra_odds = { torneio: primeiro.tournamentName, quantidade_fixtures: Array.isArray(amostra) ? amostra.length : null, primeiro_fixture: Array.isArray(amostra) ? amostra[0] : amostra };
   }
@@ -426,13 +446,13 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });
   }
   const supabase = getSupabase();
-  const { tarefa, liga_id, escopo, minimo } = req.query;
+  const { tarefa, liga_id, escopo, minimo, forcar } = req.query;
 
   try {
     if (tarefa === 'odds-descobrir') {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
-      return res.status(200).json(await tarefaOddsDescobrir(supabase, apiKey));
+      return res.status(200).json(await tarefaOddsDescobrir(supabase, apiKey, forcar === 'true'));
     }
 
     if (tarefa === 'elo') {
