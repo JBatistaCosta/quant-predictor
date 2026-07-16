@@ -329,11 +329,23 @@ async function tarefaCalibracao(supabase, minimo) {
 // só 250 req/mês, então antes de escrever a lógica de parse "às cegas" (e
 // arriscar queimar cota com tentativa e erro), essa tarefa faz UMA rodada de
 // chamadas de descoberta: lista de torneios, mercados e casas de apostas
-// (3 chamadas, cacheadas em oddspapi_cache pra nunca precisar rechamar), casa
-// os torneios com nossas 6 ligas domésticas por nome (mesma heurística de
-// sobreposição de palavras do sync-clubelo.js), e devolve uma amostra CRUA de
-// odds de UM torneio já resolvido (4ª chamada) — pra inspecionar o formato
-// real da resposta antes de escrever o parser definitivo da tarefa "odds".
+// (3 chamadas, cacheadas em oddspapi_cache pra nunca precisar rechamar), e
+// devolve uma amostra CRUA de odds de UM torneio já resolvido (4ª chamada) —
+// pra inspecionar o formato real da resposta antes de escrever o parser
+// definitivo da tarefa "odds".
+//
+// IMPORTANTE: NÃO grava mais o mapeamento liga->torneio automaticamente — a
+// heurística por nome errou duas vezes em produção (achados reais: 1. La
+// Liga casou com uma copa feminina espanhola só pela palavra "la"; 2. Serie A
+// Itália e Brasileirão colidiram no mesmo torneio "Serie A" genérico; 3. numa
+// segunda tentativa já com filtro por país, Serie A Itália foi parar em
+// "Coppa Italia Serie C" porque nosso label "(Itália)" batia token com
+// "Italia" do nome do torneio errado). O custo de um mapeamento errado é alto
+// (corrompe todo sync de odds daquela liga), então o mapeamento real das 6
+// ligas foi resolvido manualmente por inspeção direta do cache via SQL e está
+// fixo em liga_oddspapi_tournament — essa tarefa só REPORTA o que a
+// heurística sugeriria (`sugestoes_heuristica`) pra quem ainda não tem
+// mapeamento confirmado, nunca sobrescreve o que já está resolvido.
 // ============================================================
 
 const ODDSPAPI_BASE = 'https://api.oddspapi.io';
@@ -406,15 +418,24 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
   const agora = new Date().toISOString();
   const { data: ligas } = await supabase.from('leagues').select('id, name').in('id', LIGAS_DOMESTICAS);
 
-  const resultado = { casadas: [], sem_correspondencia: [], casas_encontradas: null, amostra_odds: null };
+  // IMPORTANTE: essa tarefa NÃO grava mais em liga_oddspapi_tournament
+  // automaticamente. A heurística por nome já errou duas vezes em produção
+  // pra essas 6 ligas (Brasileirão×Serie A colidindo, La Liga×copa feminina,
+  // depois Serie A×Coppa Italia Serie C) — o custo de um mapeamento errado é
+  // alto (corrompe TODO sync de odds daquela liga), então o mapeamento real
+  // já foi resolvido manualmente por inspeção direta do cache (SQL) e está
+  // fixo na tabela. Aqui só REPORTA o que a heurística acharia, pra
+  // conferência — nunca sobrescreve o que já está confirmado.
+  const { data: jaResolvidas } = await supabase.from('liga_oddspapi_tournament').select('league_id, tournament_id, tournament_name');
+  const resolvidasPorLiga = Object.fromEntries((jaResolvidas || []).map(r => [r.league_id, r]));
+
+  const resultado = { ja_resolvidas: jaResolvidas || [], sugestoes_heuristica: [], sem_correspondencia: [], casas_encontradas: null, amostra_odds: null };
 
   for (const liga of ligas || []) {
+    if (resolvidasPorLiga[liga.id]) continue; // já confirmado manualmente, não precisa de sugestão
     const torneio = acharMelhorTorneio(liga.name, PAIS_POR_LIGA[liga.id], torneios);
     if (!torneio) { resultado.sem_correspondencia.push(liga.name); continue; }
-    await supabase.from('liga_oddspapi_tournament').upsert({
-      league_id: liga.id, tournament_id: torneio.tournamentId, tournament_name: torneio.tournamentName, resolvido_em: agora,
-    }, { onConflict: 'league_id' });
-    resultado.casadas.push({ liga: liga.name, tournamentId: torneio.tournamentId, tournamentName: torneio.tournamentName, categoryName: torneio.categoryName });
+    resultado.sugestoes_heuristica.push({ liga: liga.name, tournamentId: torneio.tournamentId, tournamentName: torneio.tournamentName, categoryName: torneio.categoryName, aviso: 'NÃO gravado automaticamente — confirme manualmente antes de usar.' });
   }
 
   // Confere se os slugs esperados (pinnacle/bet365/betano) existem na lista real de casas
@@ -429,12 +450,12 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
   // singular; descoberto testando em produção — a doc pública sugeria lista separada
   // por vírgula, que não é aceito). Pra pegar as 3 casas, a fase 2 (sync de verdade)
   // vai precisar de 1 chamada POR bookmaker.
-  if (resultado.casadas.length > 0) {
-    const primeiro = resultado.casadas[0];
+  if ((jaResolvidas || []).length > 0) {
+    const primeiro = jaResolvidas[0];
     const amostra = await chamarOddspapi('/v4/odds-by-tournaments', {
-      tournamentIds: primeiro.tournamentId, bookmaker: 'pinnacle', oddsFormat: 'decimal', verbosity: 3,
+      tournamentIds: primeiro.tournament_id, bookmaker: 'pinnacle', oddsFormat: 'decimal', verbosity: 3,
     }, apiKey);
-    resultado.amostra_odds = { torneio: primeiro.tournamentName, quantidade_fixtures: Array.isArray(amostra) ? amostra.length : null, primeiro_fixture: Array.isArray(amostra) ? amostra[0] : amostra };
+    resultado.amostra_odds = { torneio: primeiro.tournament_name, quantidade_fixtures: Array.isArray(amostra) ? amostra.length : null, primeiro_fixture: Array.isArray(amostra) ? amostra[0] : amostra };
   }
 
   return resultado;
