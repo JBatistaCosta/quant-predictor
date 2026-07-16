@@ -152,7 +152,12 @@ export default async function handler(req, res) {
 
     let timesParaProcessar = times;
     if (!forcar) {
-      const { data: jaSincronizados, error: erroSinc } = await supabase.from('team_elo_external').select('team_id');
+      // Usa a view (1 linha por time) em vez de team_elo_external direto: essa
+      // tabela já passa de 100 mil linhas (centenas por time), e o Supabase
+      // (PostgREST) corta em 1000 linhas por chamada sem paginação explícita —
+      // consultar direto pegava só uma fatia arbitrária da tabela, fazendo o
+      // "já sincronizado" ficar incompleto e reprocessar os mesmos times à toa.
+      const { data: jaSincronizados, error: erroSinc } = await supabase.from('vw_team_elo_status').select('team_id');
       if (erroSinc) throw erroSinc;
       const idsSincronizados = new Set((jaSincronizados || []).map(r => r.team_id));
       timesParaProcessar = times.filter(t => !idsSincronizados.has(t.id));
