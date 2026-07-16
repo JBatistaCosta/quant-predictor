@@ -62,6 +62,27 @@ function chaveMercado(m) {
   return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
 }
 
+// O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
+// LIMIT explícito no .select() — sem paginar de verdade, qualquer tabela/junção
+// com mais de 1000 linhas vem cortada em silêncio (foi um bug real aqui: sem
+// filtro, model_predictions tem 22k+ linhas e vinha só 1/22 do dado).
+// Recebe uma FÁBRICA de query (não a query já construída) — cada página
+// precisa de uma instância nova do builder, reaproveitar a mesma após
+// executada não é seguro no supabase-js.
+async function buscarTudoPaginado(criarQuery) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let pagina = 0;
+  while (true) {
+    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    pagina++;
+  }
+  return resultado;
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
@@ -70,47 +91,36 @@ export default async function handler(req, res) {
   const { modelo, mercado, liga_id } = req.query;
 
   try {
-    let query = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
-    if (modelo) query = query.eq('model_name', modelo);
-    if (mercado) query = query.eq('market', mercado);
-    const { data: predicoes, error: predErro } = await query;
-    if (predErro) throw predErro;
+    const predicoes = await buscarTudoPaginado(() => {
+      let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+      if (modelo) q = q.eq('model_name', modelo);
+      if (mercado) q = q.eq('market', mercado);
+      return q;
+    });
     if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [] });
 
-    const matchIds = [...new Set(predicoes.map(p => p.match_id))];
+    const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    // Busca tudo em lotes de 1000 (limite de URL/IN do PostgREST)
-    const matches = [];
-    for (let i = 0; i < matchIds.length; i += 1000) {
-      const lote = matchIds.slice(i, i + 1000);
-      const { data, error } = await supabase.from('matches').select('id, league_id, status, home_goals, away_goals').in('id', lote);
-      if (error) throw error;
-      matches.push(...(data || []));
-    }
-    if (liga_id) {
-      const ligaIdNum = Number(liga_id);
-      matches.forEach((m, i) => { if (m.league_id !== ligaIdNum) matches[i] = null; });
-    }
-    const matchesValidos = matches.filter(Boolean);
+    // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
+    // que o universo de match_ids das previsões) e filtra em JS — bem menos
+    // round-trips do que quebrar em lotes de match_id.
+    const [todasMatches, oddsRowsBrutas, corneragensBrutas] = await Promise.all([
+      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals')),
+      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
+    ]);
+
+    const ligaIdNum = liga_id ? Number(liga_id) : null;
+    const matchesValidos = todasMatches.filter(m => matchIdsSet.has(m.id) && (!ligaIdNum || m.league_id === ligaIdNum));
     const matchIdsValidos = new Set(matchesValidos.map(m => m.id));
 
-    const oddsRows = [];
-    for (let i = 0; i < matchIds.length; i += 1000) {
-      const lote = matchIds.slice(i, i + 1000);
-      const { data, error } = await supabase.from('odds_market').select('match_id, market, selection, odds')
-        .in('match_id', lote).eq('snapshot', 'closing').eq('bookmaker', 'media_mercado');
-      if (error) throw error;
-      oddsRows.push(...(data || []));
-    }
+    const oddsRows = oddsRowsBrutas.filter(r => matchIdsValidos.has(r.match_id));
 
     const corners = {};
-    for (let i = 0; i < matchIds.length; i += 1000) {
-      const lote = matchIds.slice(i, i + 1000);
-      const { data, error } = await supabase.from('match_stats').select('match_id, corners').in('match_id', lote).not('corners', 'is', null);
-      if (error) throw error;
+    {
       const somaPorJogo = {};
       const contPorJogo = {};
-      (data || []).forEach(r => {
+      corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
         somaPorJogo[r.match_id] = (somaPorJogo[r.match_id] || 0) + Number(r.corners);
         contPorJogo[r.match_id] = (contPorJogo[r.match_id] || 0) + 1;
       });
