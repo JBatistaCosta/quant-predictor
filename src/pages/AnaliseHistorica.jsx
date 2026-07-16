@@ -6,10 +6,13 @@
 // confrontos diretos entre os dois times.
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, Swords } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, Swords, Landmark } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const OPCOES_N = [5, 10, 20];
+const CASAS_ROTULO = { pinnacle: 'Pinnacle', bet365: 'Bet365', betano: 'Betano' };
+const MERCADO_ROTULO_ODDS = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols' };
+const SELECAO_ROTULO_ODDS = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
 
 function resultado(golsTime, golsAdversario) {
   if (golsTime == null || golsAdversario == null) return null;
@@ -52,6 +55,98 @@ async function buscarFormaTime(teamId, antesDe, n) {
   (stats || []).filter(s => s.team_id === teamId).forEach(s => { statsPorJogo[s.match_id] = s; });
 
   return jogos.map(j => ({ ...j, stats: statsPorJogo[j.id] || null }));
+}
+
+// Odds de fechamento/pré-jogo de Pinnacle/Bet365/Betano pra essa partida —
+// só a captura mais recente por (casa, mercado, seleção), já que cada
+// sincronização insere uma linha nova (não sobrescreve) pra dar pra montar a
+// curva de movimento de linha com o tempo (não exibida aqui, só o snapshot atual).
+async function buscarOddsComparativas(matchId) {
+  const { data } = await supabase
+    .from('odds_market')
+    .select('bookmaker, market, selection, odds, captured_at')
+    .eq('match_id', matchId)
+    .in('bookmaker', Object.keys(CASAS_ROTULO))
+    .order('captured_at', { ascending: false });
+
+  const maisRecentePorChave = new Map();
+  for (const linha of data || []) {
+    const chave = `${linha.bookmaker}__${linha.market}__${linha.selection}`;
+    if (!maisRecentePorChave.has(chave)) maisRecentePorChave.set(chave, linha);
+  }
+  return [...maisRecentePorChave.values()];
+}
+
+function WidgetOdds({ matchId }) {
+  const [linhas, setLinhas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    setCarregando(true);
+    buscarOddsComparativas(matchId).then(l => { setLinhas(l); setCarregando(false); });
+  }, [matchId]);
+
+  const porMercado = useMemo(() => {
+    const mapa = new Map();
+    for (const l of linhas) {
+      if (!mapa.has(l.market)) mapa.set(l.market, {});
+      if (!mapa.get(l.market)[l.selection]) mapa.get(l.market)[l.selection] = {};
+      mapa.get(l.market)[l.selection][l.bookmaker] = l.odds;
+    }
+    return mapa;
+  }, [linhas]);
+
+  const ultimaAtualizacao = linhas.length > 0 ? linhas.reduce((max, l) => (new Date(l.captured_at) > new Date(max) ? l.captured_at : max), linhas[0].captured_at) : null;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 h-fit">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <Landmark className="text-emerald-400" size={16} /> Odds comparativas
+      </h2>
+
+      {carregando ? (
+        <div className="flex items-center justify-center py-6 text-slate-500 gap-2 text-xs">
+          <Loader2 className="animate-spin" size={16} /> Carregando...
+        </div>
+      ) : porMercado.size === 0 ? (
+        <p className="text-xs text-slate-600">Sem odds sincronizadas pra esse jogo ainda.</p>
+      ) : (
+        <div className="space-y-4">
+          {[...porMercado.entries()].map(([mercado, porSelecao]) => (
+            <div key={mercado}>
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">{MERCADO_ROTULO_ODDS[mercado] || mercado}</span>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500">
+                    <th className="text-left font-normal pb-1"></th>
+                    {Object.keys(CASAS_ROTULO).map(c => <th key={c} className="text-right font-normal pb-1">{CASAS_ROTULO[c]}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(porSelecao).map(([selecao, porCasa]) => {
+                    const melhor = Math.max(...Object.values(porCasa));
+                    return (
+                      <tr key={selecao} className="border-t border-slate-700/50">
+                        <td className="py-1.5 text-slate-300 font-semibold">{SELECAO_ROTULO_ODDS[selecao] || selecao}</td>
+                        {Object.keys(CASAS_ROTULO).map(c => (
+                          <td key={c} className={`py-1.5 text-right font-mono ${porCasa[c] === melhor ? 'text-emerald-400 font-bold' : 'text-slate-400'}`}>
+                            {porCasa[c] != null ? porCasa[c].toFixed(2) : '—'}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          {ultimaAtualizacao && (
+            <p className="text-[10px] text-slate-600">Última captura: {new Date(ultimaAtualizacao).toLocaleString('pt-BR')}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 async function buscarConfrontoDireto(timeA, timeB) {
@@ -206,40 +301,44 @@ export default function AnaliseHistorica() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-5xl mx-auto">
       <Link to="/eventos" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-4 w-fit">
         <ArrowLeft size={16} /> Voltar
       </Link>
 
-      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
-        <p className="text-center text-xs text-slate-500 uppercase tracking-wider mb-1">{jogo.leagues?.name || 'Confronto'}</p>
-        <p className="text-center text-xs text-slate-600 mb-3">{jogo.match_date ? new Date(jogo.match_date).toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' }) : ''}</p>
-        <div className="flex items-center justify-center gap-4">
-          <div className="flex items-center gap-2">
-            <Escudo url={jogo.home?.crest_url} tamanho={32} />
-            <span className="font-bold text-slate-100">{jogo.home?.name}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-2xl p-6">
+          <p className="text-center text-xs text-slate-500 uppercase tracking-wider mb-1">{jogo.leagues?.name || 'Confronto'}</p>
+          <p className="text-center text-xs text-slate-600 mb-3">{jogo.match_date ? new Date(jogo.match_date).toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' }) : ''}</p>
+          <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center gap-2">
+              <Escudo url={jogo.home?.crest_url} tamanho={32} />
+              <span className="font-bold text-slate-100">{jogo.home?.name}</span>
+            </div>
+            <span className="text-slate-500 font-mono">
+              {jogo.status === 'finished' ? `${jogo.home_goals}-${jogo.away_goals}` : 'vs'}
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-100">{jogo.away?.name}</span>
+              <Escudo url={jogo.away?.crest_url} tamanho={32} />
+            </div>
           </div>
-          <span className="text-slate-500 font-mono">
-            {jogo.status === 'finished' ? `${jogo.home_goals}-${jogo.away_goals}` : 'vs'}
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-100">{jogo.away?.name}</span>
-            <Escudo url={jogo.away?.crest_url} tamanho={32} />
+
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <span className="text-xs text-slate-500 mr-1">Últimos:</span>
+            {OPCOES_N.map(opcao => (
+              <button
+                key={opcao}
+                onClick={() => setN(opcao)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold ${n === opcao ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-900 text-slate-500 hover:text-slate-300'}`}
+              >
+                {opcao} jogos
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <span className="text-xs text-slate-500 mr-1">Últimos:</span>
-          {OPCOES_N.map(opcao => (
-            <button
-              key={opcao}
-              onClick={() => setN(opcao)}
-              className={`px-3 py-1 rounded-lg text-xs font-bold ${n === opcao ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-900 text-slate-500 hover:text-slate-300'}`}
-            >
-              {opcao} jogos
-            </button>
-          ))}
-        </div>
+        <WidgetOdds matchId={jogo.id} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
