@@ -10,12 +10,25 @@ import { supabase, supabaseAtivo } from '../supabaseClient';
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
 
-function Metrica({ label, modelo, mercado, menorMelhor = true }) {
+function fmt(v, formato) {
+  return formato === 'pct' ? `${(v * 100).toFixed(1)}%` : v.toFixed(4);
+}
+
+function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }) {
+  if (modelo == null) {
+    return (
+      <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+        <div className="text-[10px] text-slate-500 uppercase">{label}</div>
+        <div className="text-lg font-bold text-slate-600 mt-1">—</div>
+        <div className="text-[10px] text-slate-600 mt-0.5">sem dado suficiente</div>
+      </div>
+    );
+  }
   if (mercado == null) {
     return (
       <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
         <div className="text-[10px] text-slate-500 uppercase">{label}</div>
-        <div className="text-lg font-bold text-slate-200 mt-1">{modelo.toFixed(4)}</div>
+        <div className="text-lg font-bold text-slate-200 mt-1">{fmt(modelo, formato)}</div>
         <div className="text-[10px] text-slate-600 mt-0.5">sem odds pra comparar</div>
       </div>
     );
@@ -25,9 +38,9 @@ function Metrica({ label, modelo, mercado, menorMelhor = true }) {
     <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
       <div className="text-[10px] text-slate-500 uppercase">{label}</div>
       <div className="flex items-center justify-center gap-2 mt-1">
-        <span className={`text-lg font-bold ${modeloMelhor ? 'text-emerald-400' : 'text-red-400'}`}>{modelo.toFixed(4)}</span>
+        <span className={`text-lg font-bold ${modeloMelhor ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(modelo, formato)}</span>
         <span className="text-slate-600 text-xs">vs</span>
-        <span className={`text-lg font-bold ${!modeloMelhor ? 'text-emerald-400' : 'text-red-400'}`}>{mercado.toFixed(4)}</span>
+        <span className={`text-lg font-bold ${!modeloMelhor ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(mercado, formato)}</span>
       </div>
       <div className="text-[10px] text-slate-600 mt-0.5">modelo vs. mercado (fechamento)</div>
     </div>
@@ -62,7 +75,8 @@ function gerarMarkdown(grupos, ligasPorId) {
     md += `## ${g.model_name} — ${MERCADO_ROTULO[g.market] || g.market} — ${ligasPorId[g.league_id] || `Liga #${g.league_id}`}\n\n`;
     md += `- Jogos avaliados: ${g.n_jogos}\n`;
     md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
-    md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n\n`;
+    md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
+    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}\n\n`;
     md += `| Seleção | n | Prob. modelo | Prob. mercado | Edge |\n|---|---|---|---|---|\n`;
     for (const s of g.por_selecao) {
       md += `| ${SELECAO_ROTULO[s.selecao] || s.selecao} | ${s.n} | ${(s.p_modelo_medio * 100).toFixed(1)}% | ${s.p_mercado_medio != null ? (s.p_mercado_medio * 100).toFixed(1) + '%' : '—'} | ${s.edge_medio != null ? (s.edge_medio * 100).toFixed(1) + 'pp' : '—'} |\n`;
@@ -186,9 +200,10 @@ export default function ModelosStats() {
                 <span className="text-xs text-slate-500">{g.n_jogos} jogos avaliados</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-3 gap-3 mb-4">
                 <Metrica label="Log-loss" modelo={g.log_loss_modelo} mercado={g.log_loss_mercado} />
                 <Metrica label="Brier Score" modelo={g.brier_modelo} mercado={g.brier_mercado} />
+                <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" />
               </div>
 
               <div className="overflow-x-auto mb-4">
