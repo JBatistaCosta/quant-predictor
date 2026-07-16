@@ -6,7 +6,7 @@
 // temporada pode ter 380 jogos, não dá pra jogar tudo na tela de uma vez).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const RODADAS_POR_PAGINA = 4;
@@ -18,6 +18,31 @@ const RESULTADO_COR = (mandante, gm, gv) => {
   if (empate) return 'text-slate-400';
   return (mandante && mandanteGanhou) || (!mandante && !mandanteGanhou) ? 'text-emerald-400' : 'text-red-400';
 };
+
+// Classificação calculada em cima dos jogos já carregados da temporada (sem
+// consulta extra) — pontos corridos padrão (V=3, E=1, D=0), desempate por
+// saldo de gols e depois gols pró. Não trata desempate por confronto direto
+// (regra oficial de algumas ligas), simplificação aceitável aqui.
+function calcularClassificacao(jogos) {
+  const tabela = new Map();
+  for (const j of jogos) {
+    if (j.status !== 'finished' || j.home_goals == null || j.away_goals == null) continue;
+    const pares = [
+      [j.home, j.home_goals, j.away_goals],
+      [j.away, j.away_goals, j.home_goals],
+    ];
+    for (const [time, golsPro, golsContra] of pares) {
+      if (!time) continue;
+      if (!tabela.has(time.id)) tabela.set(time.id, { time, j: 0, v: 0, e: 0, d: 0, gp: 0, gc: 0, pts: 0 });
+      const linha = tabela.get(time.id);
+      linha.j++; linha.gp += golsPro; linha.gc += golsContra;
+      if (golsPro > golsContra) { linha.v++; linha.pts += 3; }
+      else if (golsPro === golsContra) { linha.e++; linha.pts += 1; }
+      else { linha.d++; }
+    }
+  }
+  return [...tabela.values()].sort((a, b) => b.pts - a.pts || (b.gp - b.gc) - (a.gp - a.gc) || b.gp - a.gp);
+}
 
 export default function LigaDetalhe() {
   const { id } = useParams();
@@ -31,6 +56,7 @@ export default function LigaDetalhe() {
   const [jogos, setJogos] = useState([]);
   const [carregandoJogos, setCarregandoJogos] = useState(false);
   const [pagina, setPagina] = useState(0);
+  const [aba, setAba] = useState('classificacao');
 
   // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no pipeline via external_id
   useEffect(() => {
@@ -114,6 +140,7 @@ export default function LigaDetalhe() {
 
   const totalPaginas = Math.max(1, Math.ceil(grupos.length / RODADAS_POR_PAGINA));
   const gruposPagina = grupos.slice(pagina * RODADAS_POR_PAGINA, (pagina + 1) * RODADAS_POR_PAGINA);
+  const classificacao = useMemo(() => calcularClassificacao(jogos), [jogos]);
 
   if (!supabaseAtivo) {
     return (
@@ -177,48 +204,114 @@ export default function LigaDetalhe() {
         </div>
       ) : (
         <>
-          <div className="space-y-4">
-            {gruposPagina.map((g, i) => (
-              <div key={i} className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
-                <div className="bg-slate-900 px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  {g.rotulo}
-                </div>
-                <div className="divide-y divide-slate-700/50">
-                  {g.jogos.map(j => (
-                    <div key={j.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                      <span className="text-slate-500 text-xs w-20 shrink-0">{j.match_date?.slice(0, 10)}</span>
-                      <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
-                        <span className="truncate text-slate-200">{j.home?.name}</span>
-                        {j.home?.crest_url ? <img src={j.home.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-                      </div>
-                      <span className={`font-mono font-bold w-14 text-center shrink-0 ${RESULTADO_COR(true, j.home_goals, j.away_goals)}`}>
-                        {j.home_goals != null ? `${j.home_goals}-${j.away_goals}` : 'x'}
-                      </span>
-                      <div className="flex-1 flex items-center gap-2 min-w-0">
-                        {j.away?.crest_url ? <img src={j.away.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-                        <span className="truncate text-slate-200">{j.away?.name}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setAba('classificacao')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${aba === 'classificacao' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 hover:text-slate-300'}`}
+            >
+              <ListOrdered size={14} /> Classificação
+            </button>
+            <button
+              onClick={() => setAba('jogos')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${aba === 'jogos' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500 hover:text-slate-300'}`}
+            >
+              <CalendarRange size={14} /> Jogos
+            </button>
           </div>
 
-          {totalPaginas > 1 && (
-            <div className="flex items-center justify-between mt-4 text-sm">
-              <span className="text-slate-500">Bloco {pagina + 1} de {totalPaginas} ({grupos.length} rodadas/fases · {jogos.length} jogos)</span>
-              <div className="flex gap-2">
-                <button disabled={pagina === 0} onClick={() => setPagina(p => p - 1)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
-                  <ChevronLeft size={16} /> Anterior
-                </button>
-                <button disabled={pagina + 1 >= totalPaginas} onClick={() => setPagina(p => p + 1)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
-                  Próximo <ChevronRight size={16} />
-                </button>
+          {aba === 'classificacao' ? (
+            classificacao.length === 0 ? (
+              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center text-slate-500 text-sm">
+                Nenhum jogo finalizado ainda nessa temporada pra montar a classificação.
               </div>
-            </div>
+            ) : (
+              <div className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase tracking-wider">
+                      <th className="text-left p-2.5 pl-4">#</th>
+                      <th className="text-left p-2.5">Time</th>
+                      <th className="text-center p-2.5">J</th>
+                      <th className="text-center p-2.5">V</th>
+                      <th className="text-center p-2.5">E</th>
+                      <th className="text-center p-2.5">D</th>
+                      <th className="text-center p-2.5">GP</th>
+                      <th className="text-center p-2.5">GC</th>
+                      <th className="text-center p-2.5">SG</th>
+                      <th className="text-center p-2.5 pr-4">Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {classificacao.map((linha, i) => (
+                      <tr key={linha.time.id} className="hover:bg-slate-700/20">
+                        <td className="p-2.5 pl-4 text-slate-500">{i + 1}</td>
+                        <td className="p-2.5">
+                          <Link to={`/times/${linha.time.id}`} className="flex items-center gap-2 hover:text-emerald-400">
+                            {linha.time.crest_url ? <img src={linha.time.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                            <span className="truncate text-slate-200">{linha.time.name}</span>
+                          </Link>
+                        </td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.j}</td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.v}</td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.e}</td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.d}</td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.gp}</td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.gc}</td>
+                        <td className="p-2.5 text-center text-slate-400">{linha.gp - linha.gc}</td>
+                        <td className="p-2.5 pr-4 text-center font-bold text-slate-100">{linha.pts}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : (
+            <>
+              <div className="space-y-4">
+                {gruposPagina.map((g, i) => (
+                  <div key={i} className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
+                    <div className="bg-slate-900 px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      {g.rotulo}
+                    </div>
+                    <div className="divide-y divide-slate-700/50">
+                      {g.jogos.map(j => (
+                        <Link key={j.id} to={`/historico/${j.id}`} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-700/20 transition-colors">
+                          <span className="text-slate-500 text-xs w-20 shrink-0">{j.match_date?.slice(0, 10)}</span>
+                          <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
+                            <span className="truncate text-slate-200">{j.home?.name}</span>
+                            {j.home?.crest_url ? <img src={j.home.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                          </div>
+                          <span className={`font-mono font-bold w-14 text-center shrink-0 ${RESULTADO_COR(true, j.home_goals, j.away_goals)}`}>
+                            {j.home_goals != null ? `${j.home_goals}-${j.away_goals}` : 'x'}
+                          </span>
+                          <div className="flex-1 flex items-center gap-2 min-w-0">
+                            {j.away?.crest_url ? <img src={j.away.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                            <span className="truncate text-slate-200">{j.away?.name}</span>
+                          </div>
+                          <ArrowRight size={14} className="text-slate-600 shrink-0" />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {totalPaginas > 1 && (
+                <div className="flex items-center justify-between mt-4 text-sm">
+                  <span className="text-slate-500">Bloco {pagina + 1} de {totalPaginas} ({grupos.length} rodadas/fases · {jogos.length} jogos)</span>
+                  <div className="flex gap-2">
+                    <button disabled={pagina === 0} onClick={() => setPagina(p => p - 1)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                      <ChevronLeft size={16} /> Anterior
+                    </button>
+                    <button disabled={pagina + 1 >= totalPaginas} onClick={() => setPagina(p => p + 1)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700">
+                      Próximo <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
