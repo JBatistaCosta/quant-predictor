@@ -25,12 +25,19 @@
 // Fórmula: Elo clássico com multiplicador de diferença de gols (mesmo
 // espírito do World Football Elo Ratings pra seleções): G=1 se |dif|<=1,
 // 1.5 se dif=2, (11+dif)/8 se dif>=3. K=20, vantagem de casa=65 pontos.
-// Recomputa do zero a cada chamada (idempotente) — mais simples que estado
-// incremental, e o custo (dezenas de milhares de partidas, aritmética
-// simples) é barato.
 //
-// COMO CHAMAR:
-//   /api/compute-elo   (recalcula tudo, sem parâmetro)
+// RECOMPUTE EM LOTES POR LIGA: processar as 6 ligas domésticas + o escopo
+// geral tudo numa chamada só passava dos 60s do Vercel em runs mais lentos
+// (14k+ partidas). Cada chamada agora recalcula só UM escopo por vez — bem
+// mais rápido (cada liga tem ~1/6 do total de partidas) e sempre idempotente
+// (apaga e regrava só a fatia daquele escopo/liga, não a tabela inteira).
+//
+// COMO CHAMAR (uma chamada por vez, repetir pra cada liga):
+//   /api/compute-elo?liga_id=1     (recalcula só o escopo 'liga' do Brasileirão)
+//   /api/compute-elo?liga_id=4     (idem pra Premier League — repetir pra 4,7,10,13,16)
+//   /api/compute-elo?escopo=geral  (recalcula o escopo 'geral', cross-liga — rodar por último,
+//                                    depois de todas as ligas, não é estritamente necessário
+//                                    mas mantém a ordem lógica)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -51,7 +58,6 @@ function multiplicadorDiferenca(diferenca) {
   return (11 + d) / 8;
 }
 
-// Retorna { novoMandante, novoVisitante }
 function atualizarElo(ratingMandante, ratingVisitante, golsMandante, golsVisitante) {
   const diferenca = golsMandante - golsVisitante;
   const resultadoMandante = diferenca > 0 ? 1 : diferenca < 0 ? 0 : 0.5;
@@ -60,12 +66,12 @@ function atualizarElo(ratingMandante, ratingVisitante, golsMandante, golsVisitan
   return { novoMandante: ratingMandante + delta, novoVisitante: ratingVisitante - delta };
 }
 
-async function buscarTudoPaginado(supabase, criarQuery) {
+async function buscarTudoPaginado(criarQuery) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
   while (true) {
-    const { data, error } = await criarQuery(supabase).range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
     resultado.push(...(data || []));
     if (!data || data.length < TAMANHO_PAGINA) break;
@@ -74,117 +80,135 @@ async function buscarTudoPaginado(supabase, criarQuery) {
   return resultado;
 }
 
+function* fatiar(array, tamanho) {
+  for (let i = 0; i < array.length; i += tamanho) yield array.slice(i, i + tamanho);
+}
+
+async function regravar(supabase, linhasElo, linhasHistorico, filtroDelete) {
+  // .match() vira .eq() por campo — "league_id: null" nunca bate com IS NULL
+  // via eq(), por isso o escopo 'geral' (league_id sempre null) usa só o
+  // filtro por escopo, que já é suficiente pra isolar as linhas certas.
+  const filtro = filtroDelete.league_id === null ? { escopo: filtroDelete.escopo } : filtroDelete;
+  await supabase.from('team_elo_history').delete().match(filtro);
+  await supabase.from('team_elo').delete().match(filtro);
+
+  for (const lote of fatiar(linhasElo, 500)) {
+    const { error } = await supabase.from('team_elo').upsert(lote, { onConflict: 'team_id,escopo,league_id' });
+    if (error) throw error;
+  }
+  for (const lote of fatiar(linhasHistorico, 500)) {
+    const { error } = await supabase.from('team_elo_history').insert(lote);
+    if (error) throw error;
+  }
+}
+
+async function processarLiga(supabase, ligaId) {
+  const partidas = await buscarTudoPaginado(() =>
+    supabase.from('matches').select('id, round, match_date, home_team_id, away_team_id, home_goals, away_goals')
+      .eq('league_id', ligaId).eq('status', 'finished').not('home_goals', 'is', null).not('away_goals', 'is', null)
+  );
+  partidas.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
+
+  const rating = {}, contagem = {};
+  const historico = [];
+
+  for (const p of partidas) {
+    const antesMandante = rating[p.home_team_id] ?? RATING_INICIAL;
+    const antesVisitante = rating[p.away_team_id] ?? RATING_INICIAL;
+    const { novoMandante, novoVisitante } = atualizarElo(antesMandante, antesVisitante, p.home_goals, p.away_goals);
+    rating[p.home_team_id] = novoMandante;
+    rating[p.away_team_id] = novoVisitante;
+    contagem[p.home_team_id] = (contagem[p.home_team_id] || 0) + 1;
+    contagem[p.away_team_id] = (contagem[p.away_team_id] || 0) + 1;
+
+    historico.push(
+      { team_id: p.home_team_id, escopo: 'liga', league_id: ligaId, match_id: p.id, rodada: p.round, rating_antes: antesMandante, rating_depois: novoMandante, match_date: p.match_date },
+      { team_id: p.away_team_id, escopo: 'liga', league_id: ligaId, match_id: p.id, rodada: p.round, rating_antes: antesVisitante, rating_depois: novoVisitante, match_date: p.match_date },
+    );
+  }
+
+  const linhasElo = Object.entries(rating).map(([team_id, r]) => ({
+    team_id: Number(team_id), escopo: 'liga', league_id: ligaId, rating: r, partidas: contagem[team_id], atualizado_em: new Date().toISOString(),
+  }));
+
+  await regravar(supabase, linhasElo, historico, { escopo: 'liga', league_id: ligaId });
+  return { escopo: 'liga', league_id: ligaId, partidas_processadas: partidas.length, times_com_elo: linhasElo.length };
+}
+
+async function processarGeral(supabase) {
+  const [partidasChampions, seedsExternas, partidasDomesticas] = await Promise.all([
+    buscarTudoPaginado(() =>
+      supabase.from('matches').select('id, round, match_date, home_team_id, away_team_id, home_goals, away_goals')
+        .eq('league_id', LIGA_CHAMPIONS_ID).eq('status', 'finished').not('home_goals', 'is', null).not('away_goals', 'is', null)
+    ),
+    buscarTudoPaginado(() => supabase.from('team_elo_external').select('team_id, elo, valido_ate').order('valido_ate', { ascending: false })),
+    buscarTudoPaginado(() => supabase.from('matches').select('home_team_id, away_team_id').in('league_id', LIGAS_DOMESTICAS).eq('status', 'finished')),
+  ]);
+  partidasChampions.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
+
+  const seedPorTime = {};
+  for (const s of seedsExternas) if (!(s.team_id in seedPorTime)) seedPorTime[s.team_id] = Number(s.elo);
+
+  const rating = {}, contagem = {};
+  const historico = [];
+
+  for (const p of partidasChampions) {
+    if (!(p.home_team_id in rating)) { rating[p.home_team_id] = seedPorTime[p.home_team_id] ?? RATING_INICIAL; contagem[p.home_team_id] = 0; }
+    if (!(p.away_team_id in rating)) { rating[p.away_team_id] = seedPorTime[p.away_team_id] ?? RATING_INICIAL; contagem[p.away_team_id] = 0; }
+    const antesMandante = rating[p.home_team_id];
+    const antesVisitante = rating[p.away_team_id];
+    const { novoMandante, novoVisitante } = atualizarElo(antesMandante, antesVisitante, p.home_goals, p.away_goals);
+    rating[p.home_team_id] = novoMandante;
+    rating[p.away_team_id] = novoVisitante;
+    contagem[p.home_team_id]++;
+    contagem[p.away_team_id]++;
+
+    historico.push(
+      { team_id: p.home_team_id, escopo: 'geral', league_id: null, match_id: p.id, rodada: p.round, rating_antes: antesMandante, rating_depois: novoMandante, match_date: p.match_date },
+      { team_id: p.away_team_id, escopo: 'geral', league_id: null, match_id: p.id, rodada: p.round, rating_antes: antesVisitante, rating_depois: novoVisitante, match_date: p.match_date },
+    );
+  }
+
+  // Garante que todo time visto em jogo doméstico tenha entrada no geral
+  // (mesmo sem Champions), semeada do jeito combinado.
+  for (const p of partidasDomesticas) {
+    for (const timeId of [p.home_team_id, p.away_team_id]) {
+      if (!(timeId in rating)) { rating[timeId] = seedPorTime[timeId] ?? RATING_INICIAL; contagem[timeId] = 0; }
+    }
+  }
+
+  const linhasElo = Object.entries(rating).map(([team_id, r]) => ({
+    team_id: Number(team_id), escopo: 'geral', league_id: null, rating: r, partidas: contagem[team_id] || 0, atualizado_em: new Date().toISOString(),
+  }));
+
+  await regravar(supabase, linhasElo, historico, { escopo: 'geral', league_id: null });
+  return { escopo: 'geral', partidas_processadas: partidasChampions.length, times_com_elo: linhasElo.length };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });
   }
   const supabase = getSupabase();
+  const { liga_id, escopo } = req.query;
 
   try {
-    const partidas = await buscarTudoPaginado(supabase, (sb) =>
-      sb.from('matches').select('id, league_id, season, round, match_date, home_team_id, away_team_id, home_goals, away_goals, status')
-        .eq('status', 'finished').not('home_goals', 'is', null).not('away_goals', 'is', null)
-    );
-    partidas.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
-
-    // Semente do escopo geral: média do rating ClubElo mais recente de cada time (quando existe)
-    const seedsExternas = await buscarTudoPaginado(supabase, (sb) => sb.from('team_elo_external').select('team_id, elo, valido_ate').order('valido_ate', { ascending: false }));
-    const seedGeralPorTime = {};
-    for (const s of seedsExternas) {
-      if (!(s.team_id in seedGeralPorTime)) seedGeralPorTime[s.team_id] = Number(s.elo); // primeira ocorrência = mais recente (ordenado desc)
-    }
-
-    const ratingLiga = {};     // `${league_id}__${team_id}` -> rating
-    const partidasLiga = {};   // idem -> contagem
-    const ratingGeral = {};    // team_id -> rating
-    const partidasGeral = {};  // team_id -> contagem
-
-    const historicoLiga = [];
-    const historicoGeral = [];
-
-    for (const p of partidas) {
-      const ehDomestica = LIGAS_DOMESTICAS.includes(p.league_id);
-      const ehChampions = p.league_id === LIGA_CHAMPIONS_ID;
-      if (!ehDomestica && !ehChampions) continue; // Eurocopa etc não entram (seleções, não clubes)
-
-      if (ehDomestica) {
-        const chaveMandante = `${p.league_id}__${p.home_team_id}`;
-        const chaveVisitante = `${p.league_id}__${p.away_team_id}`;
-        const antesMandante = ratingLiga[chaveMandante] ?? RATING_INICIAL;
-        const antesVisitante = ratingLiga[chaveVisitante] ?? RATING_INICIAL;
-        const { novoMandante, novoVisitante } = atualizarElo(antesMandante, antesVisitante, p.home_goals, p.away_goals);
-        ratingLiga[chaveMandante] = novoMandante;
-        ratingLiga[chaveVisitante] = novoVisitante;
-        partidasLiga[chaveMandante] = (partidasLiga[chaveMandante] || 0) + 1;
-        partidasLiga[chaveVisitante] = (partidasLiga[chaveVisitante] || 0) + 1;
-
-        historicoLiga.push(
-          { team_id: p.home_team_id, escopo: 'liga', league_id: p.league_id, match_id: p.id, rodada: p.round, rating_antes: antesMandante, rating_depois: novoMandante, match_date: p.match_date },
-          { team_id: p.away_team_id, escopo: 'liga', league_id: p.league_id, match_id: p.id, rodada: p.round, rating_antes: antesVisitante, rating_depois: novoVisitante, match_date: p.match_date },
-        );
+    if (liga_id) {
+      const ligaIdNum = Number(liga_id);
+      if (!LIGAS_DOMESTICAS.includes(ligaIdNum)) {
+        return res.status(400).json({ error: { message: `liga_id inválido — precisa ser uma das ligas domésticas: ${LIGAS_DOMESTICAS.join(', ')}.` } });
       }
-
-      if (ehChampions) {
-        if (!(p.home_team_id in ratingGeral)) ratingGeral[p.home_team_id] = seedGeralPorTime[p.home_team_id] ?? RATING_INICIAL;
-        if (!(p.away_team_id in ratingGeral)) ratingGeral[p.away_team_id] = seedGeralPorTime[p.away_team_id] ?? RATING_INICIAL;
-        const antesMandante = ratingGeral[p.home_team_id];
-        const antesVisitante = ratingGeral[p.away_team_id];
-        const { novoMandante, novoVisitante } = atualizarElo(antesMandante, antesVisitante, p.home_goals, p.away_goals);
-        ratingGeral[p.home_team_id] = novoMandante;
-        ratingGeral[p.away_team_id] = novoVisitante;
-        partidasGeral[p.home_team_id] = (partidasGeral[p.home_team_id] || 0) + 1;
-        partidasGeral[p.away_team_id] = (partidasGeral[p.away_team_id] || 0) + 1;
-
-        historicoGeral.push(
-          { team_id: p.home_team_id, escopo: 'geral', league_id: null, match_id: p.id, rodada: p.round, rating_antes: antesMandante, rating_depois: novoMandante, match_date: p.match_date },
-          { team_id: p.away_team_id, escopo: 'geral', league_id: null, match_id: p.id, rodada: p.round, rating_antes: antesVisitante, rating_depois: novoVisitante, match_date: p.match_date },
-        );
-      }
+      return res.status(200).json(await processarLiga(supabase, ligaIdNum));
     }
-
-    // Garante que todo time visto em algum jogo doméstico também tenha uma
-    // entrada no escopo geral (mesmo sem nunca ter jogado Champions), semeada
-    // do jeito combinado — assim o "geral" fica consultável pra qualquer time.
-    for (const p of partidas) {
-      if (!LIGAS_DOMESTICAS.includes(p.league_id)) continue;
-      for (const timeId of [p.home_team_id, p.away_team_id]) {
-        if (!(timeId in ratingGeral)) { ratingGeral[timeId] = seedGeralPorTime[timeId] ?? RATING_INICIAL; partidasGeral[timeId] = 0; }
-      }
+    if (escopo === 'geral') {
+      return res.status(200).json(await processarGeral(supabase));
     }
-
-    const linhasEloLiga = Object.entries(ratingLiga).map(([chave, rating]) => {
-      const [league_id, team_id] = chave.split('__').map(Number);
-      return { team_id, escopo: 'liga', league_id, rating, partidas: partidasLiga[chave], atualizado_em: new Date().toISOString() };
-    });
-    const linhasEloGeral = Object.entries(ratingGeral).map(([team_id, rating]) => ({
-      team_id: Number(team_id), escopo: 'geral', league_id: null, rating, partidas: partidasGeral[team_id] || 0, atualizado_em: new Date().toISOString(),
-    }));
-
-    // Limpa e regrava do zero (recompute idempotente)
-    await supabase.from('team_elo_history').delete().neq('id', 0);
-    await supabase.from('team_elo').delete().neq('id', 0);
-
-    for (const lote of fatiar([...linhasEloLiga, ...linhasEloGeral], 500)) {
-      const { error } = await supabase.from('team_elo').upsert(lote, { onConflict: 'team_id,escopo,league_id' });
-      if (error) throw error;
-    }
-    for (const lote of fatiar([...historicoLiga, ...historicoGeral], 500)) {
-      const { error } = await supabase.from('team_elo_history').insert(lote);
-      if (error) throw error;
-    }
-
-    res.status(200).json({
-      partidas_processadas: partidas.length,
-      times_com_elo_liga: linhasEloLiga.length,
-      times_com_elo_geral: linhasEloGeral.length,
-      linhas_historico: historicoLiga.length + historicoGeral.length,
+    return res.status(400).json({
+      error: { message: 'Especifique ?liga_id=X (uma das ligas domésticas) ou ?escopo=geral — recompute em lote único foi removido por estourar o timeout do Vercel.' },
+      ligas_domesticas: LIGAS_DOMESTICAS,
     });
   } catch (erro) {
     res.status(500).json({ error: { message: erro.message } });
   }
-}
-
-function* fatiar(array, tamanho) {
-  for (let i = 0; i < array.length; i += tamanho) yield array.slice(i, i + tamanho);
 }
