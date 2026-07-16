@@ -4,5 +4,9 @@
       "path": "/api/sync-matches",
       "schedule": "0 6 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/compute-elo.js": { "maxDuration": 60 },
+    "api/fit-calibration.js": { "maxDuration": 60 }
+  }
 }

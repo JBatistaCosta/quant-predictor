@@ -69,6 +69,43 @@ function Calibracao({ quintis }) {
   );
 }
 
+function AjusteCalibracao({ g }) {
+  if (!g.calibracao_disponivel) return null;
+  const linhas = [
+    { rotulo: 'Sem ajuste', logLoss: g.log_loss_modelo, brier: g.brier_modelo, acc: g.accuracy_modelo },
+    { rotulo: 'Platt Scaling', logLoss: g.log_loss_platt, brier: g.brier_platt, acc: g.accuracy_platt },
+    { rotulo: 'Isotonic Regression', logLoss: g.log_loss_isotonic, brier: g.brier_isotonic, acc: g.accuracy_isotonic },
+  ];
+  const melhorLogLoss = Math.min(...linhas.filter(l => l.logLoss != null).map(l => l.logLoss));
+  return (
+    <div className="mb-4">
+      <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">Ajuste de calibração (com e sem)</span>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 uppercase text-[10px]">
+              <th className="text-left p-1.5">Método</th>
+              <th className="text-right p-1.5">Log-loss</th>
+              <th className="text-right p-1.5">Brier</th>
+              <th className="text-right p-1.5">Acurácia</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/50">
+            {linhas.map((l, i) => (
+              <tr key={i}>
+                <td className="p-1.5 text-slate-300 font-semibold">{l.rotulo}</td>
+                <td className={`p-1.5 text-right ${l.logLoss === melhorLogLoss ? 'text-emerald-400 font-bold' : 'text-slate-300'}`}>{l.logLoss != null ? l.logLoss.toFixed(4) : '—'}</td>
+                <td className="p-1.5 text-right text-slate-300">{l.brier != null ? l.brier.toFixed(4) : '—'}</td>
+                <td className="p-1.5 text-right text-slate-300">{l.acc != null ? `${(l.acc * 100).toFixed(1)}%` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function gerarMarkdown(grupos, ligasPorId) {
   let md = `# Relatório de estatísticas dos modelos\n\nGerado em ${new Date().toLocaleString('pt-BR')}\n\n`;
   for (const g of grupos) {
@@ -77,6 +114,13 @@ function gerarMarkdown(grupos, ligasPorId) {
     md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
     md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
     md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}\n\n`;
+    if (g.calibracao_disponivel) {
+      md += `**Ajuste de calibração (com e sem)**\n\n`;
+      md += `| Método | Log-loss | Brier | Acurácia |\n|---|---|---|---|\n`;
+      md += `| Sem ajuste | ${g.log_loss_modelo.toFixed(4)} | ${g.brier_modelo.toFixed(4)} | ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'} |\n`;
+      md += `| Platt Scaling | ${g.log_loss_platt != null ? g.log_loss_platt.toFixed(4) : '—'} | ${g.brier_platt != null ? g.brier_platt.toFixed(4) : '—'} | ${g.accuracy_platt != null ? (g.accuracy_platt * 100).toFixed(1) + '%' : '—'} |\n`;
+      md += `| Isotonic Regression | ${g.log_loss_isotonic != null ? g.log_loss_isotonic.toFixed(4) : '—'} | ${g.brier_isotonic != null ? g.brier_isotonic.toFixed(4) : '—'} | ${g.accuracy_isotonic != null ? (g.accuracy_isotonic * 100).toFixed(1) + '%' : '—'} |\n\n`;
+    }
     md += `| Seleção | n | Prob. modelo | Prob. mercado | Edge |\n|---|---|---|---|---|\n`;
     for (const s of g.por_selecao) {
       md += `| ${SELECAO_ROTULO[s.selecao] || s.selecao} | ${s.n} | ${(s.p_modelo_medio * 100).toFixed(1)}% | ${s.p_mercado_medio != null ? (s.p_mercado_medio * 100).toFixed(1) + '%' : '—'} | ${s.edge_medio != null ? (s.edge_medio * 100).toFixed(1) + 'pp' : '—'} |\n`;
@@ -205,6 +249,8 @@ export default function ModelosStats() {
                 <Metrica label="Brier Score" modelo={g.brier_modelo} mercado={g.brier_mercado} />
                 <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" />
               </div>
+
+              <AjusteCalibracao g={g} />
 
               <div className="overflow-x-auto mb-4">
                 <table className="w-full text-xs">
