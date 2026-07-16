@@ -18,8 +18,11 @@
 // resposta em "sem_correspondencia" pra reconciliação manual futura.
 //
 // COMO CHAMAR:
-//   /api/sync-clubelo?limite=15            (processa até 15 times ainda não sincronizados)
-//   /api/sync-clubelo?limite=15&forcar=true (re-processa mesmo quem já tem histórico salvo)
+//   /api/sync-clubelo?limite=15                      (processa até 15 times ainda não sincronizados)
+//   /api/sync-clubelo?limite=15&forcar=true           (re-processa mesmo quem já tem histórico salvo)
+//   /api/sync-clubelo?time_id=63                      (só esse time — tenta casar automaticamente no snapshot)
+//   /api/sync-clubelo?time_id=63&nome_clubelo=Arsenal (só esse time, pulando o casamento automático — usa
+//                                                       o nome exato do ClubElo direto, pra reconciliação manual)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -89,16 +92,60 @@ async function buscarHistoricoDoClube(nomeClubElo) {
   return parseCSV(await resposta.text());
 }
 
+// Sincroniza UM time — usada tanto no modo lote quanto no modo por-time (botão manual).
+// `nomeClubeloForcado`: pula o casamento automático e usa esse nome direto (reconciliação manual).
+async function sincronizarTime(supabase, time, snapshot, nomeClubeloForcado) {
+  const nomeClube = nomeClubeloForcado || acharMelhorCorrespondencia(time.name, snapshot)?.Club;
+  if (!nomeClube) return { time: time.name, time_id: time.id, correspondencia: false };
+
+  const historico = await buscarHistoricoDoClube(nomeClube);
+  const linhas = historico
+    .filter(h => h.Elo && h.From && h.To)
+    .map(h => ({
+      team_id: time.id,
+      clube_nome_externo: h.Club || nomeClube,
+      pais: h.Country || null,
+      elo: Number(h.Elo),
+      valido_de: h.From,
+      valido_ate: h.To,
+      fonte: 'clubelo',
+      atualizado_em: new Date().toISOString(),
+    }));
+
+  if (linhas.length > 0) {
+    const { error: erroUpsert } = await supabase
+      .from('team_elo_external')
+      .upsert(linhas, { onConflict: 'fonte,clube_nome_externo,valido_de' });
+    if (erroUpsert) throw erroUpsert;
+  }
+
+  return { time: time.name, time_id: time.id, correspondencia: true, clubelo: nomeClube, linhas: linhas.length };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });
   }
   const supabase = getSupabase();
-  const limite = Math.min(Number(req.query.limite) || 15, 50);
-  const forcar = req.query.forcar === 'true';
 
   try {
+    // Modo por-time: usado pelo botão manual em Times.jsx, sempre força
+    // (ignora o "já sincronizado"), aceita nome do ClubElo explícito.
+    if (req.query.time_id) {
+      const timeId = Number(req.query.time_id);
+      const { data: time, error: erroTime } = await supabase.from('teams').select('id, name').eq('id', timeId).single();
+      if (erroTime || !time) return res.status(404).json({ error: { message: 'Time não encontrado.' } });
+
+      const snapshot = req.query.nome_clubelo ? null : await buscarSnapshotAtual();
+      const resultado = await sincronizarTime(supabase, time, snapshot, req.query.nome_clubelo || null);
+      return res.status(200).json(resultado);
+    }
+
+    // Modo lote
+    const limite = Math.min(Number(req.query.limite) || 15, 50);
+    const forcar = req.query.forcar === 'true';
+
     const { data: times, error: erroTimes } = await supabase
       .from('teams').select('id, name').or('is_national_team.is.null,is_national_team.eq.false').order('name');
     if (erroTimes) throw erroTimes;
@@ -117,36 +164,13 @@ export default async function handler(req, res) {
     }
 
     const snapshot = await buscarSnapshotAtual();
-
     const resultado = { sincronizados: [], sem_correspondencia: [], erros: [] };
 
     for (const time of timesParaProcessar) {
       try {
-        const correspondencia = acharMelhorCorrespondencia(time.name, snapshot);
-        if (!correspondencia) { resultado.sem_correspondencia.push(time.name); continue; }
-
-        const historico = await buscarHistoricoDoClube(correspondencia.Club);
-        const linhas = historico
-          .filter(h => h.Elo && h.From && h.To)
-          .map(h => ({
-            team_id: time.id,
-            clube_nome_externo: correspondencia.Club,
-            pais: correspondencia.Country || null,
-            elo: Number(h.Elo),
-            valido_de: h.From,
-            valido_ate: h.To,
-            fonte: 'clubelo',
-            atualizado_em: new Date().toISOString(),
-          }));
-
-        if (linhas.length > 0) {
-          const { error: erroUpsert } = await supabase
-            .from('team_elo_external')
-            .upsert(linhas, { onConflict: 'fonte,clube_nome_externo,valido_de' });
-          if (erroUpsert) throw erroUpsert;
-        }
-
-        resultado.sincronizados.push({ time: time.name, clubelo: correspondencia.Club, linhas: linhas.length });
+        const r = await sincronizarTime(supabase, time, snapshot, null);
+        if (!r.correspondencia) resultado.sem_correspondencia.push(time.name);
+        else resultado.sincronizados.push({ time: r.time, clubelo: r.clubelo, linhas: r.linhas });
       } catch (e) {
         resultado.erros.push({ time: time.name, erro: e.message });
       }
