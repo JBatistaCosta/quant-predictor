@@ -1,7 +1,7 @@
 // src/pages/Times.jsx — Cadastro de times/seleções (instituição + equipe por categoria)
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight, Link2, Unlink } from 'lucide-react';
+import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight, Link2, Unlink, TrendingUp, Check } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const CATEGORIAS = [
@@ -43,6 +43,18 @@ export default function Times() {
   const [busca, setBusca] = useState('');           // valor "com debounce" que realmente dispara a consulta
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [filtroSemClubElo, setFiltroSemClubElo] = useState(false);
+
+  // --- Histórico ClubElo (rating externo) ---
+  const [timesComClubElo, setTimesComClubElo] = useState(new Set());
+  const [buscaClubEloAberta, setBuscaClubEloAberta] = useState(null); // id da equipe com o form de busca manual aberto
+  const [nomeClubEloManual, setNomeClubEloManual] = useState('');
+  const [statusClubElo, setStatusClubElo] = useState({}); // { [pipelineTeamId]: { carregando, erro, mensagem } }
+
+  const buscarStatusClubElo = async () => {
+    const { data } = await supabase.from('vw_team_elo_status').select('team_id');
+    setTimesComClubElo(new Set((data || []).map(r => r.team_id)));
+  };
 
   // --- Vínculo com o time "real" do pipeline Python (tabela teams) ---
   const [equipeVinculando, setEquipeVinculando] = useState(null); // id da equipe com o buscador aberto
@@ -63,6 +75,10 @@ export default function Times() {
     if (busca) query = query.ilike('nome_popular', `%${busca}%`);
     if (filtroTipo) query = query.eq('tipo', filtroTipo);
     if (filtroCategoria) query = query.eq('categoria', filtroCategoria);
+    if (filtroSemClubElo) {
+      query = query.not('pipeline_team_id', 'is', null);
+      if (timesComClubElo.size > 0) query = query.not('pipeline_team_id', 'in', `(${[...timesComClubElo].join(',')})`);
+    }
     query = query.order('nome_popular').range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
 
     const { data, error, count } = await query;
@@ -80,8 +96,32 @@ export default function Times() {
     setInstituicoes((instData || []).map(i => ({ id: i.id, nome: nomePorInstituicao[i.id] || `Instituição #${i.id}` })).sort((a, b) => a.nome.localeCompare(b.nome)));
   };
 
-  useEffect(() => { if (supabaseAtivo) buscarEquipes(); }, [pagina, busca, filtroTipo, filtroCategoria]);
+  useEffect(() => { if (supabaseAtivo) buscarEquipes(); }, [pagina, busca, filtroTipo, filtroCategoria, filtroSemClubElo]);
   useEffect(() => { if (supabaseAtivo && mostrarForm) buscarInstituicoesParaForm(); }, [mostrarForm]);
+  useEffect(() => { if (supabaseAtivo) buscarStatusClubElo(); }, []);
+
+  const buscarClubElo = async (pipelineTeamId, nomeManual) => {
+    setStatusClubElo(prev => ({ ...prev, [pipelineTeamId]: { carregando: true } }));
+    try {
+      const params = new URLSearchParams({ time_id: pipelineTeamId });
+      if (nomeManual) params.set('nome_clubelo', nomeManual);
+      const resp = await fetch(`/api/sync-clubelo?${params}`);
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao buscar no ClubElo.');
+
+      if (!dados.correspondencia || dados.linhas === 0) {
+        setStatusClubElo(prev => ({ ...prev, [pipelineTeamId]: { carregando: false, erro: !dados.correspondencia ? 'Sem correspondência automática — tente digitar o nome exato do ClubElo.' : 'Nome encontrado, mas o ClubElo não tem histórico pra ele.' } }));
+        return;
+      }
+
+      setStatusClubElo(prev => ({ ...prev, [pipelineTeamId]: { carregando: false, mensagem: `Casado com "${dados.clubelo}" (${dados.linhas} registros).` } }));
+      setTimesComClubElo(prev => new Set([...prev, pipelineTeamId]));
+      setBuscaClubEloAberta(null);
+      setNomeClubEloManual('');
+    } catch (e) {
+      setStatusClubElo(prev => ({ ...prev, [pipelineTeamId]: { carregando: false, erro: e.message } }));
+    }
+  };
 
   const salvar = async (e) => {
     e.preventDefault();
@@ -323,6 +363,10 @@ export default function Times() {
           <option value="">Todas as categorias</option>
           {CATEGORIAS.map(c => <option key={c.valor} value={c.valor}>{c.rotulo}</option>)}
         </select>
+        <label className="flex items-center gap-2 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-300 cursor-pointer">
+          <input type="checkbox" checked={filtroSemClubElo} onChange={(e) => { setFiltroSemClubElo(e.target.checked); setPagina(0); }} />
+          Vinculados sem ClubElo
+        </label>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
@@ -359,13 +403,54 @@ export default function Times() {
                     <td className="p-3 text-slate-400 capitalize">{eq.tipo}</td>
                     <td className="p-3 relative">
                       {eq.pipeline_team_id ? (
-                        <div className="flex items-center gap-2">
-                          <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">
-                            <Link2 size={12} /> {eq.pipeline_team_nome || `#${eq.pipeline_team_id}`}
-                          </span>
-                          <button onClick={() => desvincularTime(eq.id)} title="Desvincular" className="text-slate-500 hover:text-red-400">
-                            <Unlink size={14} />
-                          </button>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">
+                              <Link2 size={12} /> {eq.pipeline_team_nome || `#${eq.pipeline_team_id}`}
+                            </span>
+                            <button onClick={() => desvincularTime(eq.id)} title="Desvincular" className="text-slate-500 hover:text-red-400">
+                              <Unlink size={14} />
+                            </button>
+                          </div>
+
+                          {timesComClubElo.has(eq.pipeline_team_id) ? (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-blue-400 w-fit">
+                              <Check size={11} /> ClubElo vinculado
+                            </span>
+                          ) : statusClubElo[eq.pipeline_team_id]?.carregando ? (
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500"><Loader2 size={11} className="animate-spin" /> buscando...</span>
+                          ) : (
+                            <button
+                              onClick={() => { setBuscaClubEloAberta(eq.pipeline_team_id); setNomeClubEloManual(''); buscarClubElo(eq.pipeline_team_id, null); }}
+                              className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-blue-400 w-fit"
+                            >
+                              <TrendingUp size={11} /> Buscar ClubElo
+                            </button>
+                          )}
+
+                          {statusClubElo[eq.pipeline_team_id]?.erro && (
+                            <div className="text-[10px] text-amber-400 max-w-[220px]">
+                              {statusClubElo[eq.pipeline_team_id].erro}
+                              {buscaClubEloAberta === eq.pipeline_team_id && (
+                                <div className="flex items-center gap-1 mt-1">
+                                  <input
+                                    autoFocus
+                                    value={nomeClubEloManual}
+                                    onChange={(e) => setNomeClubEloManual(e.target.value)}
+                                    placeholder="Nome exato no ClubElo..."
+                                    className="bg-slate-900 border border-slate-600 rounded px-1.5 py-1 text-[10px] text-slate-100 w-32"
+                                  />
+                                  <button
+                                    disabled={!nomeClubEloManual.trim()}
+                                    onClick={() => buscarClubElo(eq.pipeline_team_id, nomeClubEloManual.trim())}
+                                    className="text-[10px] font-bold text-blue-400 hover:text-blue-300 disabled:opacity-30"
+                                  >
+                                    Tentar
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button
