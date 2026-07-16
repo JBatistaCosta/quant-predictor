@@ -4,7 +4,7 @@
 // calibração — agrupado por modelo + mercado + liga. Dados vêm todos de uma
 // vez de /api/model-stats (poucas dezenas de grupos, filtro é só client-side).
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, AlertTriangle, Loader2, Download } from 'lucide-react';
+import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
@@ -102,6 +102,150 @@ function AjusteCalibracao({ g }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }) {
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [resultado, setResultado] = useState(null);
+  const [edgeMinimo, setEdgeMinimo] = useState(0.02);
+  const [staking, setStaking] = useState('flat');
+  const [fracaoKelly, setFracaoKelly] = useState(0.25);
+  const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
+
+  const rodar = async () => {
+    setCarregando(true);
+    setErro('');
+    try {
+      const params = new URLSearchParams({ edge_minimo: edgeMinimo, staking, usar_calibracao: usarCalibracao });
+      if (staking === 'kelly') params.set('fracao_kelly', fracaoKelly);
+      if (filtroModelo) params.set('modelo', filtroModelo);
+      if (filtroMercado) params.set('mercado', filtroMercado);
+      if (filtroLiga) params.set('liga_id', filtroLiga);
+      const resp = await fetch(`/api/backtest-betting?${params}`);
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao rodar backtest.');
+      setResultado(dados);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <h2 className="text-lg font-extrabold flex items-center gap-2 text-slate-100 mb-1">
+        <TrendingUp className="text-emerald-400" size={22} /> Backtest de apostas simuladas (EV+)
+      </h2>
+      <p className="text-slate-400 text-sm mb-4">
+        Aposta 1 lado só quando <code className="text-slate-300">p_modelo - p_mercado</code> passa do limiar, na odd real de fechamento — ROI com intervalo de confiança 95% via bootstrap. Só considera "significativo" quando o limite inferior do IC fica acima de zero (senão o edge pode ser só ruído de amostra pequena).
+      </p>
+
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Edge mínimo</label>
+          <input type="number" step="0.005" min="0" value={edgeMinimo} onChange={(e) => setEdgeMinimo(e.target.value)}
+            className="w-24 bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Staking</label>
+          <select value={staking} onChange={(e) => setStaking(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100">
+            <option value="flat">Flat (1 unidade)</option>
+            <option value="kelly">Kelly fracionário</option>
+          </select>
+        </div>
+        {staking === 'kelly' && (
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fração Kelly</label>
+            <input type="number" step="0.05" min="0.05" max="1" value={fracaoKelly} onChange={(e) => setFracaoKelly(e.target.value)}
+              className="w-24 bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100" />
+          </div>
+        )}
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Probabilidade</label>
+          <select value={usarCalibracao} onChange={(e) => setUsarCalibracao(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100">
+            <option value="nenhuma">Crua (sem ajuste)</option>
+            <option value="platt">Platt Scaling</option>
+            <option value="isotonic">Isotonic Regression</option>
+          </select>
+        </div>
+        <button onClick={rodar} disabled={carregando}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm">
+          {carregando ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />} Rodar backtest
+        </button>
+      </div>
+
+      {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>}
+
+      {resultado && (
+        resultado.grupos.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">Nenhuma aposta passou do edge mínimo com os filtros atuais.</p>
+        ) : (
+          <>
+            {resultado.resumo_geral && (
+              <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4 mb-4 flex flex-wrap gap-6">
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase">Apostas (todos os grupos)</div>
+                  <div className="text-lg font-bold text-slate-200">{resultado.resumo_geral.n_apostas}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase">ROI geral</div>
+                  <div className={`text-lg font-bold ${resultado.resumo_geral.roi > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(resultado.resumo_geral.roi * 100).toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase">IC 95%</div>
+                  <div className="text-lg font-bold text-slate-300">
+                    {resultado.resumo_geral.roi_ic95_inferior != null ? `${(resultado.resumo_geral.roi_ic95_inferior * 100).toFixed(1)}% a ${(resultado.resumo_geral.roi_ic95_superior * 100).toFixed(1)}%` : '—'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase">Estatisticamente EV+?</div>
+                  <div className={`text-lg font-bold ${resultado.resumo_geral.significativo ? 'text-emerald-400' : 'text-slate-500'}`}>{resultado.resumo_geral.significativo ? 'Sim' : 'Não'}</div>
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-500 uppercase text-[10px]">
+                    <th className="text-left p-1.5">Modelo</th>
+                    <th className="text-left p-1.5">Mercado</th>
+                    <th className="text-left p-1.5">Seleção</th>
+                    <th className="text-left p-1.5">Liga</th>
+                    <th className="text-right p-1.5">n</th>
+                    <th className="text-right p-1.5">Acerto</th>
+                    <th className="text-right p-1.5">ROI</th>
+                    <th className="text-right p-1.5">IC 95%</th>
+                    <th className="text-center p-1.5">EV+?</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50">
+                  {resultado.grupos.map((g, i) => (
+                    <tr key={i} className={g.significativo ? 'bg-emerald-500/5' : ''}>
+                      <td className="p-1.5 text-slate-300">{g.model_name}</td>
+                      <td className="p-1.5 text-slate-400">{MERCADO_ROTULO[g.market] || g.market}</td>
+                      <td className="p-1.5 text-slate-400">{SELECAO_ROTULO[g.selection] || g.selection}</td>
+                      <td className="p-1.5 text-slate-400">{ligasPorId[g.league_id] || `#${g.league_id}`}</td>
+                      <td className="p-1.5 text-right text-slate-400">{g.n_apostas}</td>
+                      <td className="p-1.5 text-right text-slate-400">{(g.taxa_acerto * 100).toFixed(0)}%</td>
+                      <td className={`p-1.5 text-right font-bold ${g.roi > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(g.roi * 100).toFixed(1)}%</td>
+                      <td className="p-1.5 text-right text-slate-500">
+                        {g.roi_ic95_inferior != null ? `${(g.roi_ic95_inferior * 100).toFixed(0)}% / ${(g.roi_ic95_superior * 100).toFixed(0)}%` : '—'}
+                      </td>
+                      <td className="p-1.5 text-center">{g.significativo ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-slate-600">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-2">Linhas destacadas em verde = IC 95% do ROI inteiramente acima de zero (EV+ estatisticamente sustentado nesse histórico, não só edge médio positivo).</p>
+          </>
+        )
+      )}
     </div>
   );
 }
@@ -225,6 +369,10 @@ export default function ModelosStats() {
             {ligas.map(l => <option key={l} value={l}>{ligasPorId[l] || `Liga #${l}`}</option>)}
           </select>
         </div>
+      )}
+
+      {!carregando && grupos.length > 0 && (
+        <BacktestApostas ligasPorId={ligasPorId} filtroModelo={filtroModelo} filtroMercado={filtroMercado} filtroLiga={filtroLiga} />
       )}
 
       {carregando ? (
