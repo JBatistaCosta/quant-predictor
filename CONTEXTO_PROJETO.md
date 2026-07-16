@@ -1,5 +1,13 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
+**Sync de odds OddsPapi — Bet365/Betano com extração de mercado quebrada.** `?tarefa=odds&liga_id=1` (Brasileirão) funciona fim a fim pra **Pinnacle** (4 jogos casados, 12 linhas de 1X2 inseridas), mas **Bet365 e Betano casam os mesmos 4 jogos e inserem 0 linhas** — a extração de mercado (`acharMercadoPorNome` em `api/model-maintenance.js`, procura `marketName === 'Full Time Result'`) não encontra nada nas respostas delas, mesmo com `markets` presente na resposta. Hipótese mais provável: essas casas nomeiam o mercado de 1X2 com texto diferente de "Full Time Result" (o catálogo `/v4/markets` é único pro esporte todo, mas nada garante que toda casa usa o mesmo nome). **Próximo passo sugerido**: gastar 1 chamada de diagnóstico (`bookmaker=bet365`, sem inserir nada, só dumpar o `markets` cru de um fixture) pra ver o `marketName` real, depois generalizar `acharMercadoPorNome` pra aceitar variações (ou casar por `marketType`+heurística de outcomes em vez de nome exato). Cota usada até aqui nesta sessão: ~15-20 de 250/mês — sobra margem, mas seguir gastando com cautela (1 chamada por teste, nunca em loop).
+
+Outras pendências menores (não urgentes):
+- Widget de odds (`WidgetOdds` em `AnaliseHistorica.jsx`) já está pronto pra mostrar Bet365/Betano assim que a extração acima funcionar — nada a mudar nele.
+- Cron `odds-todas` (`vercel.json`, a cada 3 dias) já está ativo — vale monitorar o consumo real de cota nas próximas semanas e ajustar a frequência se necessário.
+- Curva de movimento de linha (múltiplos snapshots de `odds_market` ao longo do tempo) já está sendo guardada (`captured_at`), mas ainda não tem visualização (gráfico) — só o snapshot mais recente aparece no widget hoje.
+
 ## Arquitetura
 - **quant-futebol-dados** (Supabase, projeto `cgurxgfdmpmsnrshqycx`, região sa-east-1): banco de dados e pipelines de ingestão
 - **quant-predictor** (Vercel + GitHub `JBatistaCosta/quant-predictor`, projeto `prj_7fSfP9zv4i55F6qyWUvcv9SJueOk`): aplicação de predição
