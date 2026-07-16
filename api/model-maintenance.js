@@ -18,6 +18,11 @@
 //   ?tarefa=odds-descobrir      -> FASE 1 do sync de odds (OddsPapi): resolve torneios/mercados/
 //                                   casas uma vez só (precisa de ODDSPAPI_KEY) — ver comentário
 //                                   detalhado na função abaixo antes de rodar (cota é 250 req/mês)
+//   ?tarefa=odds&liga_id=X      -> FASE 2: sincroniza odds de verdade de uma liga (3 chamadas,
+//                                   uma por bookmaker) — pula sozinho se não houver jogo
+//                                   suficiente no curto prazo, pra não gastar cota à toa
+//   ?tarefa=odds-todas          -> roda tarefa=odds nas 6 ligas domésticas em sequência
+//                                   (usado pelo cron em vercel.json)
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -461,6 +466,167 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
   return resultado;
 }
 
+// ============================================================
+// TAREFA: odds — FASE 2 do sync de odds (OddsPapi): sincroniza de verdade.
+//
+// Captura o MÁXIMO possível por chamada: /v4/odds-by-tournaments devolve o
+// quadro INTEIRO do torneio (todos os jogos que já têm linha aberta pra
+// aquele bookmaker) numa única chamada — já é o mais eficiente possível, não
+// tem "paginar por jogo". Custo fixo: 1 chamada por bookmaker (3 casas) por
+// liga = 3 chamadas/liga, 18 pra sincronizar as 6 ligas de uma vez. A
+// resposta já traz nome dos times e horário do jogo junto com as odds — não
+// precisa de uma chamada extra em /v4/fixtures.
+//
+// JANELA ADAPTATIVA ("aumentar a base se tiver poucos jogos no prazo"): as
+// casas só abrem linha alguns dias antes do jogo, então nem sempre há muita
+// coisa pra capturar. Antes de gastar as 3 chamadas da liga, conta quantos
+// jogos AGENDADOS existem nos próximos 7 dias (consulta local, sem custo de
+// cota); se vier menos que MINIMO_JOGOS_JANELA, alarga pra 14 e depois 21
+// dias antes de decidir se vale a pena chamar a API — evita gastar cota numa
+// liga que não tem praticamente nada agendado no curto prazo (ex.: parada
+// pra data FIFA).
+//
+// Guarda com timestamp (captured_at, coluna que já existia) SEM sobrescrever
+// o snapshot anterior — cada sync é um INSERT novo, não upsert — pra dar pra
+// montar a curva de movimento de linha ao longo do tempo, como pedido.
+// ============================================================
+
+const MINIMO_JOGOS_JANELA = 3;
+const JANELAS_DIAS = [7, 14, 21];
+
+function normalizarTexto2(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+function nomesBatem(a, b) {
+  const x = normalizarTexto2(a), y = normalizarTexto2(b);
+  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+}
+
+async function acharJanelaComJogos(supabase, ligaId) {
+  for (const dias of JANELAS_DIAS) {
+    const ate = new Date(Date.now() + dias * 86400000).toISOString();
+    const { count } = await supabase.from('matches').select('id', { count: 'exact', head: true })
+      .eq('league_id', ligaId).eq('status', 'scheduled').lte('match_date', ate);
+    if ((count || 0) >= MINIMO_JOGOS_JANELA || dias === JANELAS_DIAS[JANELAS_DIAS.length - 1]) {
+      return { dias, count: count || 0 };
+    }
+  }
+  return { dias: JANELAS_DIAS[JANELAS_DIAS.length - 1], count: 0 };
+}
+
+function acharMercadoPorNome(marketsFixture, mercadosCache, nomeAlvo) {
+  for (const [marketId, market] of Object.entries(marketsFixture || {})) {
+    const info = mercadosCache[marketId];
+    if (info?.marketName === nomeAlvo) return { marketId, market };
+  }
+  return null;
+}
+
+function extrairPrecosSelecoes(market, filtroOutcomeId) {
+  const resultado = {};
+  for (const outcome of Object.values(market.outcomes || {})) {
+    const jogador = outcome.players?.['0'];
+    if (!jogador || jogador.price == null) continue;
+    const id = jogador.bookmakerOutcomeId;
+    if (filtroOutcomeId && !filtroOutcomeId(id)) continue;
+    resultado[id] = Number(jogador.price);
+  }
+  return resultado;
+}
+
+async function tarefaOddsSync(supabase, apiKey, ligaId) {
+  if (!LIGAS_DOMESTICAS.includes(ligaId)) {
+    return { error: `liga_id inválido — precisa ser uma das ligas domésticas: ${LIGAS_DOMESTICAS.join(', ')}.` };
+  }
+
+  const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
+  if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
+
+  const janela = await acharJanelaComJogos(supabase, ligaId);
+  if (janela.count === 0) {
+    return { liga_id: ligaId, torneio: mapa.tournament_name, pulado: true, motivo: `Nenhum jogo agendado nos próximos ${janela.dias} dias — sync pulado pra não gastar cota à toa.` };
+  }
+
+  const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
+  const mercadosCache = Object.fromEntries((mercadosCacheRaw?.valor || []).map(m => [String(m.marketId), m]));
+
+  const janelaAteMs = Date.now() + janela.dias * 86400000;
+  const { data: candidatos } = await supabase.from('matches').select('id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
+    .eq('league_id', ligaId).eq('status', 'scheduled').lte('match_date', new Date(janelaAteMs).toISOString());
+
+  const resultado = { liga_id: ligaId, torneio: mapa.tournament_name, janela_dias: janela.dias, jogos_candidatos: (candidatos || []).length, por_bookmaker: [], linhas_inseridas: 0 };
+
+  for (const bookmaker of BOOKMAKERS_ALVO) {
+    let fixtures;
+    try {
+      fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: mapa.tournament_id, bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+    } catch (e) {
+      resultado.por_bookmaker.push({ bookmaker, erro: e.message });
+      continue;
+    }
+    if (!Array.isArray(fixtures)) { resultado.por_bookmaker.push({ bookmaker, erro: 'resposta inesperada' }); continue; }
+
+    let casados = 0, semCasar = 0;
+    const linhas = [];
+    const agora = new Date().toISOString();
+
+    for (const fx of fixtures) {
+      const dataFixture = fx.startTime ? new Date(fx.startTime) : null;
+      const partida = (candidatos || []).find(m => {
+        if (!dataFixture || !m.match_date) return false;
+        const diffHoras = Math.abs(new Date(m.match_date) - dataFixture) / 3600000;
+        if (diffHoras > 36) return false; // tolerância de fuso/horário de exibição
+        return (nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name));
+      });
+      if (!partida) { semCasar++; continue; }
+      casados++;
+
+      const marketsFixture = fx.bookmakerOdds?.[bookmaker]?.markets;
+      if (!marketsFixture) continue;
+
+      const mercado1x2 = acharMercadoPorNome(marketsFixture, mercadosCache, 'Full Time Result');
+      if (mercado1x2) {
+        const precos = extrairPrecosSelecoes(mercado1x2.market, id => ['home', 'draw', 'away'].includes(id));
+        for (const [selecao, odd] of Object.entries(precos)) {
+          linhas.push({ match_id: partida.id, bookmaker, market: '1X2', selection: selecao, odds: odd, snapshot: 'pre_closing', captured_at: agora });
+        }
+      }
+
+      const mercadoTotals = acharMercadoPorNome(marketsFixture, mercadosCache, 'Over Under Full Time');
+      if (mercadoTotals) {
+        const precos = extrairPrecosSelecoes(mercadoTotals.market, id => id?.startsWith('2.5/'));
+        for (const [id, odd] of Object.entries(precos)) {
+          const selecao = id.endsWith('over') ? 'over' : 'under';
+          linhas.push({ match_id: partida.id, bookmaker, market: 'over_under_2.5', selection: selecao, odds: odd, snapshot: 'pre_closing', captured_at: agora });
+        }
+      }
+    }
+
+    if (linhas.length > 0) {
+      const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
+      if (erroInsert) { resultado.por_bookmaker.push({ bookmaker, erro: erroInsert.message }); continue; }
+    }
+
+    resultado.linhas_inseridas += linhas.length;
+    resultado.por_bookmaker.push({ bookmaker, fixtures_recebidos: fixtures.length, jogos_casados: casados, sem_correspondencia: semCasar, linhas_inseridas: linhas.length });
+  }
+
+  return resultado;
+}
+
+// Roda tarefaOddsSync nas 6 ligas domésticas em sequência — usado pelo cron
+// (vercel.json) e pra sincronizar tudo manualmente numa chamada só. Cada liga
+// já pula sozinha se não tiver jogo suficiente no curto prazo, então o custo
+// real varia (pior caso: 18 chamadas, 3 por liga; normalmente bem menos,
+// já que nem toda liga tem jogo dentro da janela toda vez que o cron roda).
+async function tarefaOddsTodas(supabase, apiKey) {
+  const porLiga = [];
+  for (const ligaId of LIGAS_DOMESTICAS) {
+    porLiga.push(await tarefaOddsSync(supabase, apiKey, ligaId));
+  }
+  return { ligas: porLiga, total_linhas_inseridas: porLiga.reduce((s, r) => s + (r.linhas_inseridas || 0), 0) };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
@@ -474,6 +640,21 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       return res.status(200).json(await tarefaOddsDescobrir(supabase, apiKey, forcar === 'true'));
+    }
+
+    if (tarefa === 'odds') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds precisa de ?liga_id=X.' } });
+      const resultado = await tarefaOddsSync(supabase, apiKey, Number(liga_id));
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'odds-todas') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      return res.status(200).json(await tarefaOddsTodas(supabase, apiKey));
     }
 
     if (tarefa === 'elo') {
@@ -493,7 +674,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(400).json({
-      error: { message: 'Especifique ?tarefa=elo (com liga_id ou escopo=geral), ?tarefa=calibracao ou ?tarefa=odds-descobrir.' },
+      error: { message: 'Especifique ?tarefa=elo (com liga_id ou escopo=geral), ?tarefa=calibracao, ?tarefa=odds-descobrir ou ?tarefa=odds&liga_id=X.' },
     });
   } catch (erro) {
     res.status(500).json({ error: { message: erro.message } });
