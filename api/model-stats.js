@@ -3,12 +3,13 @@
 //   SUPABASE_URL / SUPABASE_KEY  -> mesmas do team-stats.js (leitura pública, RLS)
 //
 // Painel de estatísticas dos modelos de previsão (model_predictions): calcula
-// Brier Score e log-loss do modelo contra o resultado real de cada partida, e
-// compara com a odd de fechamento MÉDIA do mercado (bookmaker='media_mercado',
-// snapshot='closing' em odds_market — a mais precisa disponível, já devigada
-// aqui dentro pra virar probabilidade). Escanteios não têm odds no banco (só
-// existe histórico de odds de gols), então nesse mercado só sai a métrica do
-// modelo, sem comparação.
+// Brier Score, log-loss e acurácia (taxa de acerto do favorito do modelo) do
+// modelo contra o resultado real de cada partida, e compara com a odd de
+// fechamento MÉDIA do mercado (bookmaker='media_mercado', snapshot='closing'
+// em odds_market — a mais precisa disponível, já devigada aqui dentro pra
+// virar probabilidade). Escanteios não têm odds no banco (só existe histórico
+// de odds de gols), então nesse mercado só sai a métrica do modelo, sem
+// comparação.
 //
 // Agrupa por liga (matches.league_id) — filtros opcionais na URL.
 //
@@ -181,6 +182,30 @@ export default async function handler(req, res) {
       const logLossMercado = temOdds ? linhasComOdds.reduce((s, l) => s + logLossTermo(l.p_mercado, 1), 0) / linhasComOdds.length : null;
       const brierMercado = temOdds ? linhasComOdds.reduce((s, l) => s + brierTermo(l.p_mercado, 1), 0) / linhasComOdds.length : null;
 
+      // acurácia: por partida, a seleção de maior probabilidade (modelo e mercado)
+      // é comparada com a seleção real (y=1) — diferente de log-loss/brier, aqui
+      // interessa só o "acertou o vencedor", não a qualidade da probabilidade em si.
+      const porJogo = {};
+      linhas.forEach(l => {
+        if (!porJogo[l.match_id]) porJogo[l.match_id] = [];
+        porJogo[l.match_id].push(l);
+      });
+      let acertosModelo = 0, totalJogosAcc = 0, acertosMercado = 0, totalJogosAccMercado = 0;
+      Object.values(porJogo).forEach(ls => {
+        totalJogosAcc++;
+        const maiorModelo = ls.reduce((a, b) => (b.p_modelo > a.p_modelo ? b : a));
+        if (maiorModelo.y === 1) acertosModelo++;
+
+        const comOdds = ls.filter(l => l.p_mercado != null);
+        if (comOdds.length === ls.length) {
+          totalJogosAccMercado++;
+          const maiorMercado = comOdds.reduce((a, b) => (b.p_mercado > a.p_mercado ? b : a));
+          if (maiorMercado.y === 1) acertosMercado++;
+        }
+      });
+      const accuracyModelo = totalJogosAcc > 0 ? acertosModelo / totalJogosAcc : null;
+      const accuracyMercado = totalJogosAccMercado > 0 ? acertosMercado / totalJogosAccMercado : null;
+
       // edge e calibração por seleção
       const porSelecao = {};
       linhas.forEach(l => {
@@ -221,6 +246,7 @@ export default async function handler(req, res) {
         n_jogos: nJogos,
         log_loss_modelo: logLossModelo, brier_modelo: brierModelo,
         log_loss_mercado: logLossMercado, brier_mercado: brierMercado,
+        accuracy_modelo: accuracyModelo, accuracy_mercado: accuracyMercado,
         tem_odds: temOdds,
         por_selecao: selecoes,
       };
