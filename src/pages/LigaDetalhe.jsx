@@ -11,6 +11,20 @@ import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const RODADAS_POR_PAGINA = 4;
 
+// Widget embutido da the-odds-api.com pro Brasileirão — accessKey é uma chave
+// de widget (feita pra ir direto no HTML público, não uma chave de API server-side).
+function WidgetOddsBrasileirao() {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-3 h-fit lg:sticky lg:top-4">
+      <iframe
+        title="Sports Odds Widget"
+        style={{ width: '20rem', height: '25rem', border: '1px solid black', maxWidth: '100%' }}
+        src="https://widget.the-odds-api.com/v1/sports/soccer_brazil_campeonato/events/?accessKey=wk_291668bca6085fcfe0aafb9d5fcc5f5c&bookmakerKeys=pinnacle&oddsFormat=decimal&markets=h2h%2Cspreads%2Ctotals&marketNames=h2h%3AMoneyline%2Cspreads%3ASpreads%2Ctotals%3AOver%2FUnder"
+      />
+    </div>
+  );
+}
+
 const RESULTADO_COR = (mandante, gm, gv) => {
   if (gm == null || gv == null) return 'text-slate-500';
   const empate = gm === gv;
@@ -165,8 +179,11 @@ export default function LigaDetalhe() {
     );
   }
 
+  const ehBrasileirao = liga?.external_id === 'BSA';
+
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className={ehBrasileirao ? 'max-w-6xl mx-auto flex flex-col lg:flex-row gap-4 items-start' : 'max-w-4xl mx-auto'}>
+    <div className="min-w-0 flex-1">
       <Link to="/ligas" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-4 w-fit">
         <ArrowLeft size={16} /> Voltar
       </Link>
@@ -315,6 +332,8 @@ export default function LigaDetalhe() {
           )}
         </>
       )}
+    </div>
+    {ehBrasileirao && <WidgetOddsBrasileirao />}
     </div>
   );
 }
