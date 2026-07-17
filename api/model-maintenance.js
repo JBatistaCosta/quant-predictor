@@ -683,6 +683,13 @@ async function resolverOuCriarTimeFootballData(supabase, mapaExternalIdParaTeamI
 // leagues (external_id=codigo) — diferente de sync-matches.js, que só
 // mantém a temporada atual. Pensado pra popular histórico de uma competição
 // nova (ex: Libertadores) sem depender do cron diário.
+//
+// Upsert de partidas em LOTE (não uma chamada por jogo) — testado com o
+// Championship inglês (24 times, ~552 jogos/temporada, bem mais que os
+// ~380 das ligas de 20 times) e um upsert por partida estourava os 60s de
+// maxDuration (FUNCTION_INVOCATION_TIMEOUT, com só ~270 de 552 jogos
+// processados). Resolução de time continua sequencial (upsert só quando é
+// time novo, cacheado no mapa — poucos times por temporada, não é o gargalo).
 async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
   const { data: ligaRow } = await supabase.from('leagues').select('id').eq('external_id', codigo).maybeSingle();
   if (!ligaRow) return { error: `Liga não encontrada em leagues (external_id=${codigo}).` };
@@ -693,7 +700,7 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
   const mapaExternalIdParaTeamId = {};
   (timesData || []).forEach(t => { mapaExternalIdParaTeamId[t.external_id] = t.id; });
 
-  let inseridosOuAtualizados = 0;
+  const linhas = [];
   const timesCriados = new Set();
 
   for (const m of dados.matches || []) {
@@ -703,7 +710,7 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
     if (!awayTeamId) timesCriados.add(`falhou: ${m.awayTeam?.name}`);
     if (!homeTeamId || !awayTeamId) continue;
 
-    const { error } = await supabase.from('matches').upsert({
+    linhas.push({
       external_id: `fd_${m.id}`,
       league_id: ligaRow.id,
       season: String(temporada),
@@ -715,8 +722,13 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
       status: MAPA_STATUS_FOOTBALL_DATA[m.status] || 'scheduled',
       round: m.matchday ?? null,
       stage: m.stage ?? null,
-    }, { onConflict: 'external_id' });
-    if (!error) inseridosOuAtualizados++;
+    });
+  }
+
+  let inseridosOuAtualizados = 0;
+  for (const lote of fatiar(linhas, 200)) {
+    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
+    if (!error) inseridosOuAtualizados += lote.length;
   }
 
   return {
