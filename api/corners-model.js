@@ -48,6 +48,20 @@ async function encontrarTime(supabase, nome) {
   return exato || data[0];
 }
 
+// Resolve por ID quando o chamador já sabe qual time é (ex: AnaliseEstatisticaJogo.jsx,
+// que tem o match real) — evita a ambiguidade de nomes duplicados entre clubes
+// diferentes (ex: dois times chamados "Liverpool FC", um inglês e um uruguaio
+// da Libertadores, mesmo nome literal). Nome continua sendo o único jeito
+// disponível pra quem usa a calculadora manual (AnaliseEvento.jsx).
+async function resolverTime(supabase, nome, id) {
+  if (id) {
+    const { data, error } = await supabase.from('teams').select('id, name').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (data) return data;
+  }
+  return encontrarTime(supabase, nome);
+}
+
 async function ligaMaisRecente(supabase, teamId) {
   const { data } = await supabase
     .from('matches')
@@ -120,7 +134,7 @@ export default async function handler(req, res) {
   const supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
 
-  const { mandante, visitante, linhas } = req.query;
+  const { mandante, visitante, linhas, mandante_id, visitante_id } = req.query;
   if (!mandante || !visitante) {
     return res.status(400).json({ error: { message: 'Informe ?mandante=Nome&visitante=Nome na URL.' } });
   }
@@ -132,8 +146,8 @@ export default async function handler(req, res) {
 
   try {
     const [timeMandante, timeVisitante] = await Promise.all([
-      encontrarTime(supabase, mandante),
-      encontrarTime(supabase, visitante),
+      resolverTime(supabase, mandante, mandante_id),
+      resolverTime(supabase, visitante, visitante_id),
     ]);
     if (!timeMandante) return res.status(404).json({ error: { message: `Time "${mandante}" não encontrado na tabela teams (times do pipeline Python).` } });
     if (!timeVisitante) return res.status(404).json({ error: { message: `Time "${visitante}" não encontrado na tabela teams (times do pipeline Python).` } });
