@@ -769,13 +769,27 @@ const MAPA_STATUS_API_FOOTBALL = {
   CANC: 'cancelled', ABD: 'cancelled',
 };
 
+// Normaliza preservando espaços (vira tokens/palavras) em vez de colapsar
+// tudo numa string única — colapsar tudo foi o que causou o bug de
+// "ABC" casando por substring dentro de "Atalanta BC", "ASA" dentro de
+// "Galatasaray SK" etc. (ver CONTEXTO_PROJETO.md). Mesmo padrão usado em
+// arquivos_do_claude/ingestao_stats_fbref.py (normalizar/match_times).
 function normalizarNomeTime(s) {
-  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function nomesBatemTime(a, b) {
   const na = normalizarNomeTime(a), nb = normalizarNomeTime(b);
-  return na.length > 0 && nb.length > 0 && (na.includes(nb) || nb.includes(na));
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const tokensA = new Set(na.split(' '));
+  const tokensB = new Set(nb.split(' '));
+  const subsetOuSuperset = [...tokensA].every(t => tokensB.has(t)) || [...tokensB].every(t => tokensA.has(t));
+  return subsetOuSuperset;
 }
 
 // Resolve um time da API-Football pro nosso team_id: (1) crosswalk já
