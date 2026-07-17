@@ -6,7 +6,7 @@
 // confrontos diretos entre os dois times.
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, Swords, Landmark } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, Swords, Landmark, TrendingUp } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
 
@@ -303,9 +303,17 @@ export default function AnaliseHistorica() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <Link to="/eventos" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-4 w-fit">
-        <ArrowLeft size={16} /> Voltar
-      </Link>
+      <div className="flex items-center justify-between mb-4">
+        <Link to="/eventos" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm w-fit">
+          <ArrowLeft size={16} /> Voltar
+        </Link>
+        <Link
+          to={`/estatisticas/${jogo.id}`}
+          className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+        >
+          <TrendingUp size={14} /> Análise estatística (apostas)
+        </Link>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-2xl p-6">
