@@ -913,12 +913,22 @@ async function tarefaInfoClubes(supabase, apiKey, limite) {
 
   const lote = pendentes.slice(0, limite);
   let atualizados = 0;
+  let processados = 0;
   const semDado = [];
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   for (const time of lote) {
+    if (processados > 0) await esperar(700); // plano free tem rate limit por minuto, não só por dia
+
     const sourceId = sourceIdPorTeamId[time.id];
     const resposta = await fetch(`https://v3.football.api-sports.io/teams?id=${sourceId}`, { headers: { 'x-apisports-key': apiKey } });
     const dados = await resposta.json();
+
+    // rate limit: para o lote aqui (não marca como "sem dado" — city continua
+    // NULL, então o próximo run tenta esses times de novo naturalmente)
+    if (dados.errors?.rateLimit) break;
+
+    processados++;
     const item = dados.response?.[0];
     if (!item) { semDado.push(time.name); continue; }
 
@@ -935,10 +945,10 @@ async function tarefaInfoClubes(supabase, apiKey, limite) {
 
   return {
     pendentes_no_total: pendentes.length,
-    processados_agora: lote.length,
+    processados_agora: processados,
     atualizados,
     sem_dado: semDado.length > 0 ? semDado : undefined,
-    restantes: pendentes.length - lote.length,
+    restantes: pendentes.length - processados,
   };
 }
 
