@@ -885,6 +885,16 @@ async function tarefaDiagnosticoTime(apiKey, apiFootballId) {
   return dados;
 }
 
+// Mesma ideia, mas pra TheStatsAPI (chave trial de 7 dias, THE_STATSAPI_KEY):
+// proxy genérico de QUALQUER caminho (?caminho=/football/competitions?search=brazil),
+// dumpando a resposta crua sem escrever nada — descobrir o shape real e os IDs
+// de competição/time antes de generalizar qualquer parser.
+async function tarefaDiagnosticoStatsApi(apiKey, caminho) {
+  const resposta = await fetch(`https://api.thestatsapi.com/api${caminho}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  const dados = await resposta.json().catch(() => ({ erro_parse: true, status: resposta.status, texto: null }));
+  return { status_http: resposta.status, dados };
+}
+
 // Popula teams.city/stadium/country via API-Football (/teams?id=X), só pros
 // times que JÁ têm um id da API-Football confirmado em team_source_ids
 // (source='api_football') — ou seja, zero matching por nome nessa tarefa,
@@ -984,6 +994,13 @@ export default async function handler(req, res) {
       if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
       if (!api_football_id) return res.status(400).json({ error: { message: 'tarefa=af-diagnostico-time precisa de ?api_football_id=X.' } });
       return res.status(200).json(await tarefaDiagnosticoTime(apiKey, api_football_id));
+    }
+
+    if (tarefa === 'statsapi-diagnostico') {
+      const apiKey = process.env.THE_STATSAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'THE_STATSAPI_KEY não configurada.' } });
+      if (!req.query.caminho) return res.status(400).json({ error: { message: 'tarefa=statsapi-diagnostico precisa de ?caminho=/football/... (ex: /football/competitions?search=brazil).' } });
+      return res.status(200).json(await tarefaDiagnosticoStatsApi(apiKey, req.query.caminho));
     }
 
     if (tarefa === 'info-clubes') {
