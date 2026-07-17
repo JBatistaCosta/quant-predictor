@@ -32,6 +32,51 @@ function escalaLinear(dominio, alcance) {
   return (v) => a0 + (v - d0) * fator;
 }
 
+function hojeISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function deslocarDias(dataISO, dias) {
+  const d = new Date(`${dataISO}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+// Reconstrói o ranking "como estava" numa data: pra cada time do roster, pega
+// o rating_depois da partida mais recente até essa data (sem partida ainda =
+// 1500, valor inicial de todo time no Elo). Só busca até 300 linhas mais
+// recentes (ordenado desc) — como cada rodada já cobre todos os times da liga
+// de uma vez, isso é sempre suficiente pra achar o rating mais recente de
+// cada um sem precisar paginar o histórico inteiro.
+async function buscarRankingNaData(escopoAtual, ligaIdAtual, dataAlvo, roster) {
+  let query = supabase
+    .from('team_elo_history')
+    .select('team_id, match_date, rating_depois')
+    .eq('escopo', escopoAtual)
+    .lte('match_date', dataAlvo)
+    .order('match_date', { ascending: false })
+    .limit(300);
+  query = escopoAtual === 'liga' ? query.eq('league_id', ligaIdAtual) : query;
+  const { data } = await query;
+
+  const maisRecentePorTime = new Map();
+  for (const l of data || []) {
+    if (!maisRecentePorTime.has(l.team_id)) maisRecentePorTime.set(l.team_id, l);
+  }
+
+  return roster
+    .map(r => {
+      const h = maisRecentePorTime.get(r.team_id);
+      return {
+        team_id: r.team_id,
+        teams: r.teams,
+        rating: h ? Number(h.rating_depois) : 1500,
+        referencia: h ? h.match_date : null,
+      };
+    })
+    .sort((a, b) => b.rating - a.rating);
+}
+
 function EloTimelineChart({ series }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null); // { x, dataAlvo }
@@ -149,8 +194,12 @@ export default function RatingClubes() {
   const [escopo, setEscopo] = useState('liga');
   const [ligas, setLigas] = useState([]);
   const [ligaId, setLigaId] = useState('');
-  const [ranking, setRanking] = useState([]);
+  const [ranking, setRanking] = useState([]); // roster + rating atual (team_elo)
   const [carregandoRanking, setCarregandoRanking] = useState(false);
+  const [modoRanking, setModoRanking] = useState('atual'); // 'atual' | 'data'
+  const [dataSelecionada, setDataSelecionada] = useState(hojeISO());
+  const [rankingNaData, setRankingNaData] = useState([]);
+  const [carregandoRankingData, setCarregandoRankingData] = useState(false);
   const [selecionados, setSelecionados] = useState([]);
   const [historico, setHistorico] = useState([]); // { team_id, match_date, rating_depois }
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
@@ -184,6 +233,19 @@ export default function RatingClubes() {
       setCarregandoRanking(false);
     })();
   }, [escopo, ligaId]);
+
+  // Ranking reconstruído numa data escolhida — só roda quando o modo "nessa
+  // data" está ativo, usa o roster (nomes/escudos) já carregado no efeito acima.
+  useEffect(() => {
+    if (!supabaseAtivo || modoRanking !== 'data' || ranking.length === 0) return;
+    if (escopo === 'liga' && !ligaId) return;
+    (async () => {
+      setCarregandoRankingData(true);
+      const linhas = await buscarRankingNaData(escopo, ligaId, dataSelecionada, ranking);
+      setRankingNaData(linhas);
+      setCarregandoRankingData(false);
+    })();
+  }, [modoRanking, dataSelecionada, escopo, ligaId, ranking]);
 
   // Histórico dos times selecionados (paginado — pode passar de 1000 linhas
   // pra uma liga com histórico longo + vários times marcados).
@@ -273,48 +335,97 @@ export default function RatingClubes() {
         <span className="text-xs text-slate-600">Clique num time na tabela pra incluir/remover da timeline (até {MAX_SELECIONADOS}).</span>
       </div>
 
+      {/* Ranking por data — segunda linha de filtro, só afeta a tabela (a timeline continua com o histórico completo) */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+          {[['atual', 'Rating atual'], ['data', 'Rating numa data']].map(([v, rotulo]) => (
+            <button
+              key={v}
+              onClick={() => setModoRanking(v)}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${modoRanking === v ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+
+        {modoRanking === 'data' && (
+          <>
+            <button
+              onClick={() => setDataSelecionada(d => deslocarDias(d, -30))}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300 hover:bg-slate-700"
+            >
+              ◀ 30 dias
+            </button>
+            <input
+              type="date"
+              value={dataSelecionada}
+              onChange={(e) => setDataSelecionada(e.target.value)}
+              className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-100"
+            />
+            <button
+              onClick={() => setDataSelecionada(d => deslocarDias(d, 30))}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300 hover:bg-slate-700"
+            >
+              30 dias ▶
+            </button>
+            <button
+              onClick={() => setDataSelecionada(hojeISO())}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-emerald-400"
+            >
+              Hoje
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Ranking */}
         <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden h-fit">
-          {carregandoRanking ? (
-            <div className="text-slate-500 text-center py-10 text-sm">Carregando...</div>
-          ) : ranking.length === 0 ? (
-            <div className="text-slate-500 text-center py-10 text-sm">Sem rating calculado ainda pra esse recorte.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase tracking-wider">
-                  <th className="text-left p-2.5 pl-4">#</th>
-                  <th className="text-left p-2.5">Time</th>
-                  <th className="text-center p-2.5">Rating</th>
-                  <th className="text-center p-2.5 pr-4">Jogos</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/50">
-                {ranking.map((linha, i) => {
-                  const marcado = selecionados.includes(linha.team_id);
-                  return (
-                    <tr
-                      key={linha.team_id}
-                      onClick={() => alternarTime(linha.team_id)}
-                      className={`cursor-pointer transition-colors ${marcado ? 'bg-emerald-500/10' : 'hover:bg-slate-700/20'}`}
-                    >
-                      <td className="p-2.5 pl-4 text-slate-500">{i + 1}</td>
-                      <td className="p-2.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {marcado && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: corDoTime(linha.team_id) }} />}
-                          {linha.teams?.crest_url ? <img src={linha.teams.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-                          <span className="truncate text-slate-200">{linha.teams?.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-2.5 text-center font-bold text-slate-100 tabular-nums">{Math.round(linha.rating)}</td>
-                      <td className="p-2.5 pr-4 text-center text-slate-400 tabular-nums">{linha.partidas}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+          {(() => {
+            const emDataMode = modoRanking === 'data';
+            const linhasExibidas = emDataMode ? rankingNaData : ranking;
+            const carregando = emDataMode ? carregandoRankingData : carregandoRanking;
+            if (carregando) return <div className="text-slate-500 text-center py-10 text-sm">Carregando...</div>;
+            if (linhasExibidas.length === 0) return <div className="text-slate-500 text-center py-10 text-sm">Sem rating calculado ainda pra esse recorte.</div>;
+            return (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase tracking-wider">
+                    <th className="text-left p-2.5 pl-4">#</th>
+                    <th className="text-left p-2.5">Time</th>
+                    <th className="text-center p-2.5">Rating</th>
+                    <th className="text-center p-2.5 pr-4">{emDataMode ? 'Ref.' : 'Jogos'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/50">
+                  {linhasExibidas.map((linha, i) => {
+                    const marcado = selecionados.includes(linha.team_id);
+                    return (
+                      <tr
+                        key={linha.team_id}
+                        onClick={() => alternarTime(linha.team_id)}
+                        className={`cursor-pointer transition-colors ${marcado ? 'bg-emerald-500/10' : 'hover:bg-slate-700/20'}`}
+                      >
+                        <td className="p-2.5 pl-4 text-slate-500">{i + 1}</td>
+                        <td className="p-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {marcado && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: corDoTime(linha.team_id) }} />}
+                            {linha.teams?.crest_url ? <img src={linha.teams.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                            <span className="truncate text-slate-200">{linha.teams?.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-2.5 text-center font-bold text-slate-100 tabular-nums">{Math.round(linha.rating)}</td>
+                        <td className="p-2.5 pr-4 text-center text-slate-400 tabular-nums text-xs">
+                          {emDataMode ? (linha.referencia ? linha.referencia.slice(0, 10) : 'sem jogo') : linha.partidas}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
 
         {/* Timeline */}
