@@ -34,6 +34,20 @@
 //                                   libera as ~4 temporadas mais recentes de cada competição
 //                                   (temporada mais antiga retorna 403) — testado com Libertadores:
 //                                   2023-2026 acessíveis, 2022 bloqueado.
+//   ?tarefa=backfill-api-football&api_football_id=73&temporada=2023
+//                               -> mesma ideia, mas pra competições que só existem na API-Football
+//                                   (não na football-data.org — ex: Copa do Brasil). Resolve a liga
+//                                   via liga_fonte_externa (sistema='api_football'), não via
+//                                   leagues.external_id (esse continua reservado pro código da
+//                                   football-data.org). Times casados/criados via team_source_ids
+//                                   (source='api_football', mesmo padrão do crosswalk usado pro
+//                                   fbref/understat) — nomes de time da API-Football não têm
+//                                   nenhuma relação com os external_id de football-data.org já
+//                                   salvos em teams, por isso o crosswalk separado. Custo de API:
+//                                   1 chamada por liga+temporada (/fixtures já traz tudo, sem
+//                                   chamada extra por time). Conta free da API-Football só libera
+//                                   temporadas 2022-2024 (oposto da restrição da football-data.org,
+//                                   que bloqueia temporadas antigas) — testado com Copa do Brasil.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -737,13 +751,112 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
   };
 }
 
+// ============================================================
+// TAREFA: backfill-api-football — igual backfill-competicao, mas pra
+// competições que só existem na API-Football (Copa do Brasil e afins,
+// não cobertas pela football-data.org).
+// ============================================================
+const MAPA_STATUS_API_FOOTBALL = {
+  NS: 'scheduled', TBD: 'scheduled',
+  '1H': 'live', HT: 'live', '2H': 'live', ET: 'live', BT: 'live', P: 'live',
+  FT: 'finished', AET: 'finished', PEN: 'finished', AWD: 'finished', WO: 'finished',
+  PST: 'postponed', SUSP: 'postponed', INT: 'postponed',
+  CANC: 'cancelled', ABD: 'cancelled',
+};
+
+function normalizarNomeTime(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+function nomesBatemTime(a, b) {
+  const na = normalizarNomeTime(a), nb = normalizarNomeTime(b);
+  return na.length > 0 && nb.length > 0 && (na.includes(nb) || nb.includes(na));
+}
+
+// Resolve um time da API-Football pro nosso team_id: (1) crosswalk já
+// conhecido (team_source_ids, source='api_football'); (2) casamento por
+// nome com time já existente; (3) cria time novo (sem external_id — esse
+// campo é reservado pro código da football-data.org, não faz sentido
+// misturar namespaces de ID diferentes na mesma coluna). Sempre grava o
+// crosswalk no fim, pra próxima raspagem dessa competição nunca mais
+// precisar casar por nome pra esse time.
+async function resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes, timeApi) {
+  const apiId = String(timeApi.id);
+  if (crosswalk[apiId]) return crosswalk[apiId];
+
+  const candidato = todosOsTimes.find(t => nomesBatemTime(t.name, timeApi.name));
+  let teamId;
+  if (candidato) {
+    teamId = candidato.id;
+  } else {
+    const { data: novo, error } = await supabase.from('teams').insert({ name: timeApi.name, crest_url: timeApi.logo || null }).select('id').single();
+    if (error || !novo) return null;
+    teamId = novo.id;
+    todosOsTimes.push({ id: teamId, name: timeApi.name }); // evita recriar duplicado dentro do mesmo run
+  }
+
+  await supabase.from('team_source_ids').upsert(
+    { source: 'api_football', source_id: apiId, team_id: teamId, source_name: timeApi.name },
+    { onConflict: 'source,source_id' }
+  );
+  crosswalk[apiId] = teamId;
+  return teamId;
+}
+
+async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, temporada) {
+  const { data: fonteRow } = await supabase
+    .from('liga_fonte_externa').select('league_id')
+    .eq('sistema', 'api_football').eq('identificador', String(apiFootballLeagueId)).maybeSingle();
+  if (!fonteRow) return { error: `Nenhuma liga em liga_fonte_externa com sistema=api_football e identificador=${apiFootballLeagueId}. Cadastre em leagues/ligas/liga_fonte_externa antes.` };
+
+  const resposta = await fetch(`https://v3.football.api-sports.io/fixtures?league=${apiFootballLeagueId}&season=${temporada}`, { headers: { 'x-apisports-key': apiKey } });
+  const dados = await resposta.json();
+  if (dados.errors && Object.keys(dados.errors).length > 0) return { error: `API-Football: ${JSON.stringify(dados.errors)}` };
+  const fixtures = dados.response || [];
+
+  const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'api_football');
+  const crosswalk = {};
+  (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
+
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+
+  const linhas = [];
+  for (const f of fixtures) {
+    const homeTeamId = await resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes, f.teams.home);
+    const awayTeamId = await resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes, f.teams.away);
+    if (!homeTeamId || !awayTeamId) continue;
+
+    linhas.push({
+      external_id: `af_${f.fixture.id}`,
+      league_id: fonteRow.league_id,
+      season: String(temporada),
+      match_date: f.fixture.date,
+      home_team_id: homeTeamId,
+      away_team_id: awayTeamId,
+      home_goals: f.goals?.home ?? null,
+      away_goals: f.goals?.away ?? null,
+      status: MAPA_STATUS_API_FOOTBALL[f.fixture.status?.short] || 'scheduled',
+      round: null,
+      stage: f.league?.round ?? null, // texto ("1st Round", "Quarterfinals"...) — não é numérico como football-data.org
+    });
+  }
+
+  let sincronizados = 0;
+  for (const lote of fatiar(linhas, 200)) {
+    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
+    if (!error) sincronizados += lote.length;
+  }
+
+  return { api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length, sincronizados };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });
   }
   const supabase = getSupabase();
-  const { tarefa, liga_id, escopo, minimo, forcar, codigo, temporada } = req.query;
+  const { tarefa, liga_id, escopo, minimo, forcar, codigo, temporada, api_football_id } = req.query;
 
   try {
     if (tarefa === 'backfill-competicao') {
@@ -751,6 +864,15 @@ export default async function handler(req, res) {
       if (!apiKey) return res.status(500).json({ error: { message: 'FOOTBALL_DATA_KEY não configurada.' } });
       if (!codigo || !temporada) return res.status(400).json({ error: { message: 'tarefa=backfill-competicao precisa de ?codigo=XX&temporada=AAAA.' } });
       const resultado = await tarefaBackfillCompeticao(supabase, apiKey, codigo, Number(temporada));
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'backfill-api-football') {
+      const apiKey = process.env.API_FOOTBALL_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
+      if (!api_football_id || !temporada) return res.status(400).json({ error: { message: 'tarefa=backfill-api-football precisa de ?api_football_id=X&temporada=AAAA.' } });
+      const resultado = await tarefaBackfillApiFootball(supabase, apiKey, api_football_id, Number(temporada));
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
