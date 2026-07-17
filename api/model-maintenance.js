@@ -53,6 +53,13 @@
 //                                   chamada extra por time). Conta free da API-Football só libera
 //                                   temporadas 2022-2024 (oposto da restrição da football-data.org,
 //                                   que bloqueia temporadas antigas) — testado com Copa do Brasil.
+//   ?tarefa=info-clubes&limite=N -> popula teams.city/stadium/country via API-Football (/teams?id=X),
+//                                   só pros times que já têm id da API-Football confirmado em
+//                                   team_source_ids (zero matching por nome nessa tarefa). Roda em
+//                                   lotes (padrão 20) — 1 chamada de API por time.
+//   ?tarefa=af-diagnostico-time&api_football_id=X
+//                               -> dumpa a resposta crua de /teams?id=X (não escreve nada), pra
+//                                   inspecionar o shape antes de confiar num parser novo.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -869,13 +876,79 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
   return { api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length, sincronizados };
 }
 
+// Dumpa a resposta crua de /teams?id=X pra inspecionar o shape real antes de
+// generalizar o parser (disciplina do projeto: nunca adivinhar formato de API
+// paga/limitada). Não escreve nada no banco.
+async function tarefaDiagnosticoTime(apiKey, apiFootballId) {
+  const resposta = await fetch(`https://v3.football.api-sports.io/teams?id=${apiFootballId}`, { headers: { 'x-apisports-key': apiKey } });
+  const dados = await resposta.json();
+  return dados;
+}
+
+// Popula teams.city/stadium/country via API-Football (/teams?id=X), só pros
+// times que JÁ têm um id da API-Football confirmado em team_source_ids
+// (source='api_football') — ou seja, zero matching por nome nessa tarefa,
+// reaproveita só o crosswalk que já foi resolvido com segurança em outra
+// importação (Copa do Brasil). Times sem esse crosswalk ficam de fora por
+// enquanto (resolver por busca de nome é mais arriscado, ver CONTEXTO_PROJETO.md).
+// 1 chamada de API por time — roda em lotes (?limite=N, padrão 20) pra não
+// estourar cota do plano grátis (100 req/dia).
+async function tarefaInfoClubes(supabase, apiKey, limite) {
+  const { data: crosswalkRows } = await supabase.from('team_source_ids').select('team_id, source_id').eq('source', 'api_football');
+  if (!crosswalkRows || crosswalkRows.length === 0) {
+    return { mensagem: 'Nenhum time com crosswalk api_football em team_source_ids ainda — rode backfill-api-football antes.' };
+  }
+  const sourceIdPorTeamId = {};
+  crosswalkRows.forEach(r => { sourceIdPorTeamId[r.team_id] = r.source_id; });
+
+  const { data: pendentes } = await supabase
+    .from('teams')
+    .select('id, name')
+    .in('id', crosswalkRows.map(r => r.team_id))
+    .is('city', null);
+
+  if (!pendentes || pendentes.length === 0) {
+    return { mensagem: 'Todos os times com crosswalk api_football já têm cidade/estádio preenchidos.' };
+  }
+
+  const lote = pendentes.slice(0, limite);
+  let atualizados = 0;
+  const semDado = [];
+
+  for (const time of lote) {
+    const sourceId = sourceIdPorTeamId[time.id];
+    const resposta = await fetch(`https://v3.football.api-sports.io/teams?id=${sourceId}`, { headers: { 'x-apisports-key': apiKey } });
+    const dados = await resposta.json();
+    const item = dados.response?.[0];
+    if (!item) { semDado.push(time.name); continue; }
+
+    const patch = {
+      country: item.team?.country || null,
+      city: item.venue?.city || null,
+      stadium: item.venue?.name || null,
+    };
+    if (!patch.country && !patch.city && !patch.stadium) { semDado.push(time.name); continue; }
+
+    const { error } = await supabase.from('teams').update(patch).eq('id', time.id);
+    if (!error) atualizados++;
+  }
+
+  return {
+    pendentes_no_total: pendentes.length,
+    processados_agora: lote.length,
+    atualizados,
+    sem_dado: semDado.length > 0 ? semDado : undefined,
+    restantes: pendentes.length - lote.length,
+  };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });
   }
   const supabase = getSupabase();
-  const { tarefa, liga_id, escopo, minimo, forcar, codigo, temporada, api_football_id } = req.query;
+  const { tarefa, liga_id, escopo, minimo, forcar, codigo, temporada, api_football_id, limite } = req.query;
 
   try {
     if (tarefa === 'backfill-competicao') {
@@ -894,6 +967,19 @@ export default async function handler(req, res) {
       const resultado = await tarefaBackfillApiFootball(supabase, apiKey, api_football_id, Number(temporada));
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'af-diagnostico-time') {
+      const apiKey = process.env.API_FOOTBALL_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
+      if (!api_football_id) return res.status(400).json({ error: { message: 'tarefa=af-diagnostico-time precisa de ?api_football_id=X.' } });
+      return res.status(200).json(await tarefaDiagnosticoTime(apiKey, api_football_id));
+    }
+
+    if (tarefa === 'info-clubes') {
+      const apiKey = process.env.API_FOOTBALL_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
+      return res.status(200).json(await tarefaInfoClubes(supabase, apiKey, Number(limite) || 20));
     }
 
     if (tarefa === 'odds-descobrir') {
