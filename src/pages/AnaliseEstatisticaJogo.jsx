@@ -169,9 +169,15 @@ function estimarMercadosGols(mediasMandante, mediasVisitante) {
 
 // Reaproveita api/corners-model.js (mesma Binomial Negativa calibrada por liga
 // já usada em AnaliseEvento.jsx) em vez de reimplementar a calibração aqui.
-async function buscarEstimativaEscanteios(nomeMandante, nomeVisitante) {
+// Manda os IDs junto (já sabemos exatamente qual time é, diferente da
+// calculadora manual) — evita pegar o time errado quando dois clubes
+// diferentes têm o mesmo nome literal (ex: "Liverpool FC" inglês x uruguaio).
+async function buscarEstimativaEscanteios(nomeMandante, nomeVisitante, idMandante, idVisitante) {
   try {
-    const resposta = await fetch(`/api/corners-model?mandante=${encodeURIComponent(nomeMandante)}&visitante=${encodeURIComponent(nomeVisitante)}&linhas=9.5`);
+    const params = new URLSearchParams({ mandante: nomeMandante, visitante: nomeVisitante, linhas: '9.5' });
+    if (idMandante) params.set('mandante_id', idMandante);
+    if (idVisitante) params.set('visitante_id', idVisitante);
+    const resposta = await fetch(`/api/corners-model?${params.toString()}`);
     if (!resposta.ok) return null;
     const dados = await resposta.json();
     return dados.error ? null : dados;
@@ -487,7 +493,7 @@ export default function AnaliseEstatisticaJogo() {
         buscarPrecisaoModelo(j.league_id),
         buscarMediasModelo(j.home_team_id, referencia, n),
         buscarMediasModelo(j.away_team_id, referencia, n),
-        buscarEstimativaEscanteios(j.home?.name, j.away?.name),
+        buscarEstimativaEscanteios(j.home?.name, j.away?.name, j.home_team_id, j.away_team_id),
       ]);
       setTendenciasMandante(tM);
       setTendenciasVisitante(tV);
