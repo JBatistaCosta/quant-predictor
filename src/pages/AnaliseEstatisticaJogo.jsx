@@ -3,7 +3,7 @@
 // partir de AnaliseHistorica.jsx (/historico/:matchId). Diferente daquela
 // página (forma recente + confronto direto) e de AnaliseEvento.jsx (calculadora
 // manual com modelo Dixon-Coles rodado à mão), aqui TUDO é importado
-// automaticamente do pipeline — nada de entrada manual/OCR:
+// automaticamente do pipeline por padrão:
 //   1. Tendências de mercado por time (Over 2.5%, Ambas Marcam%, médias de
 //      escanteios/cartões nos últimos N jogos) — o "cheat sheet" de apostador.
 //   2. Comparação modelo (model_predictions) vs mercado (odds_market devigada)
@@ -12,18 +12,44 @@
 //      liga/mercado dessa partida, como contexto de confiabilidade.
 //   4. Estimativa própria do modelo (1X2/Over-Under/Ambas Marcam/Escanteios) —
 //      MESMO motor matemático de AnaliseEvento.jsx (poisson.js/lambdaFormulas.js,
-//      fórmula "multiplicativo" padrão + correção Dixon-Coles), só que auto-
-//      alimentado pela média real de xG/xGA (Understat, quando existe) ou por
-//      gols reais como fallback (ligas sem xG) — sem digitar/colar nada à mão.
-//      Escanteios reaproveita api/corners-model.js (mesmo NB calibrado por liga
-//      já usado em AnaliseEvento). Cobre partidas SEM previsão salva em
-//      model_predictions (que só existem pra season 2025 hoje).
-import React, { useState, useEffect, useMemo } from 'react';
+//      fórmula "multiplicativo" padrão + correção Dixon-Coles), auto-alimentado
+//      pela média real de xG/xGA (Understat, quando existe) ou por gols reais
+//      como fallback (ligas sem xG). Escanteios reaproveita api/corners-model.js
+//      (mesmo NB calibrado por liga já usado em AnaliseEvento). Cobre partidas
+//      SEM previsão salva em model_predictions (só existem pra season 2025 hoje).
+//      OPCIONAL: dá pra sobrescrever o xG/xGA auto-importado colando um
+//      screenshot de "Estatística média" (Betano/SofaScore) — mesmo OCR de
+//      AnaliseEvento.jsx (api/ocr.js + src/utils/ocr.js) — útil pras ligas sem
+//      xG real no banco (Brasileirão e quase tudo fora das 5 europeias).
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History, Calculator } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History, Calculator, Camera, ScanLine } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { poisson, dixonColesTau, DIXON_COLES_RHO } from '../utils/poisson';
 import { getLambdaFormula } from '../utils/lambdaFormulas';
+import { extractJsonFromImage } from '../utils/ocr';
+
+// Mesmo prompt de AnaliseEvento.jsx (OCR_STATS_PROMPT) — extrai xG/xGA/chutes/
+// escanteios dos DOIS times de uma vez a partir da tabela "Estatística média".
+const OCR_STATS_PROMPT = `Você é um extrator de dados de screenshots de apps de estatísticas de futebol (como Betano/SofaScore).
+A imagem mostra uma tabela "Estatística média" com duas colunas de valores: a coluna da ESQUERDA pertence à equipe mandante (primeira bandeira, à esquerda no topo) e a coluna da DIREITA pertence à equipe visitante.
+
+Extraia os dados e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
+{
+  "confronto": {
+    "equipe_mandante": "NomeDaEquipe1",
+    "equipe_visitante": "NomeDaEquipe2"
+  },
+  "estatistica_media": {
+    "mandante": { "metricas": { "xg_gols_esperados": 0.0, "xga_xg_sofridos": 0.0, "chutes": 0.0, "chutes_no_gol": 0.0, "escanteios": 0.0 } },
+    "visitante": { "metricas": { "xg_gols_esperados": 0.0, "xga_xg_sofridos": 0.0, "chutes": 0.0, "chutes_no_gol": 0.0, "escanteios": 0.0 } }
+  }
+}
+
+Regras:
+- "Gols esperados (xG)" -> xg_gols_esperados; "xG sofridos" -> xga_xg_sofridos; "Chutes" -> chutes; "Chutes no gol" -> chutes_no_gol; "Escanteios" -> escanteios
+- Escreva os nomes das seleções em português (ex: "Austrália", "Egito", "Brasil").
+- Se algum valor não estiver visível, use null.`;
 
 // Paleta categórica já validada no projeto (ver RatingClubes.jsx) — ordem fixa.
 const COR_MODELO = '#3987e5';   // azul (PALETA[0])
@@ -135,6 +161,23 @@ async function buscarMediasModelo(teamId, antesDe, n) {
   };
 }
 
+// Aplica o override do OCR (se o usuário colou um screenshot) por cima da
+// média auto-importada — xg_gols_esperados/xga_xg_sofridos têm prioridade
+// sobre o que veio do banco quando presentes, campo a campo (não é tudo ou
+// nada: se só um dos dois times foi lido, o outro continua automático).
+function aplicarOverrideOcr(medias, metricasOcr) {
+  if (!metricasOcr) return medias;
+  const xg = Number(metricasOcr.xg_gols_esperados);
+  const xga = Number(metricasOcr.xga_xg_sofridos);
+  return {
+    ...medias,
+    xgUsado: Number.isFinite(xg) ? xg : medias.xgUsado,
+    xgaUsado: Number.isFinite(xga) ? xga : medias.xgaUsado,
+    xgReal: (Number.isFinite(xg) || medias.xgReal) && (Number.isFinite(xga) || medias.xgReal),
+    origemOcr: Number.isFinite(xg) || Number.isFinite(xga),
+  };
+}
+
 // Estimativa 1X2/Over-Under/Ambas Marcam com o mesmo motor de AnaliseEvento.jsx
 // (fórmula "multiplicativo" padrão + correção Dixon-Coles, ambos em utils/).
 function estimarMercadosGols(mediasMandante, mediasVisitante) {
@@ -164,6 +207,7 @@ function estimarMercadosGols(mediasMandante, mediasVisitante) {
     probHome: probWin1 / total, probDraw: probDraw / total, probAway: probWin2 / total,
     probOver25: probOver25 / total, probBtts: probBtts / total,
     xgRealMandante: mediasMandante.xgReal, xgRealVisitante: mediasVisitante.xgReal,
+    origemOcr: !!(mediasMandante.origemOcr || mediasVisitante.origemOcr),
   };
 }
 
@@ -326,12 +370,35 @@ function LinhaModeloMercado({ selecao, pModelo, pMercado }) {
   );
 }
 
-function PainelEstimativaModelo({ estimativa, escanteios, mandante, visitante }) {
+function PainelEstimativaModelo({ estimativa, escanteios, mandante, visitante, onOcrUpload, ocrLoading, ocrError, ocrSuccess, temOverrideOcr, onLimparOcr }) {
+  const inputRef = useRef(null);
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
-      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-        <Calculator className="text-emerald-400" size={16} /> Estimativa do modelo
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <Calculator className="text-emerald-400" size={16} /> Estimativa do modelo
+        </h2>
+        <div className="flex items-center gap-2">
+          {temOverrideOcr && (
+            <button onClick={onLimparOcr} className="text-[10px] text-slate-500 hover:text-slate-300 underline">
+              limpar OCR
+            </button>
+          )}
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onOcrUpload} />
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={ocrLoading}
+            title="Colar screenshot de 'Estatística média' (Betano/SofaScore) pra sobrescrever o xG auto-importado"
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {ocrLoading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+            {ocrLoading ? 'Lendo...' : 'Importar screenshot (OCR)'}
+          </button>
+        </div>
+      </div>
+
+      {ocrError && <p className="text-[10px] text-red-400 mb-2 flex items-center gap-1"><AlertTriangle size={11} /> {ocrError}</p>}
+      {ocrSuccess && !ocrError && <p className="text-[10px] text-emerald-400 mb-2 flex items-center gap-1"><ScanLine size={11} /> {ocrSuccess}</p>}
 
       {!estimativa ? (
         <p className="text-xs text-slate-600">Sem jogos recentes suficientes pra estimar.</p>
@@ -363,7 +430,7 @@ function PainelEstimativaModelo({ estimativa, escanteios, mandante, visitante })
 
           <p className="text-[10px] text-slate-600">
             λ {mandante.split(' ')[0]}={estimativa.lambda1.toFixed(2)} / {visitante.split(' ')[0]}={estimativa.lambda2.toFixed(2)} ·
-            {' '}xG {estimativa.xgRealMandante && estimativa.xgRealVisitante ? 'real (Understat)' : 'aproximado por gols (xG indisponível pra essa liga)'} ·
+            {' '}xG {estimativa.origemOcr ? 'com dado do screenshot importado' : estimativa.xgRealMandante && estimativa.xgRealVisitante ? 'real (Understat)' : 'aproximado por gols (xG indisponível pra essa liga)'} ·
             {' '}fórmula multiplicativa + Dixon-Coles, mesmo motor de Análise de Eventos.
           </p>
         </div>
@@ -466,8 +533,12 @@ export default function AnaliseEstatisticaJogo() {
   const [tendenciasVisitante, setTendenciasVisitante] = useState(null);
   const [comparacaoModelo, setComparacaoModelo] = useState([]);
   const [precisaoModelo, setPrecisaoModelo] = useState([]);
-  const [estimativaModelo, setEstimativaModelo] = useState(null);
+  const [mediasBrutas, setMediasBrutas] = useState(null); // { mandante, visitante } antes de qualquer override de OCR
   const [estimativaEscanteios, setEstimativaEscanteios] = useState(null);
+  const [ocrOverride, setOcrOverride] = useState(null); // { mandante: metricas|null, visitante: metricas|null }
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState('');
+  const [ocrSuccess, setOcrSuccess] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
@@ -498,8 +569,11 @@ export default function AnaliseEstatisticaJogo() {
       setTendenciasMandante(tM);
       setTendenciasVisitante(tV);
       setComparacaoModelo(comparacao);
-      setEstimativaModelo(mediasMandante && mediasVisitante ? estimarMercadosGols(mediasMandante, mediasVisitante) : null);
+      setMediasBrutas(mediasMandante && mediasVisitante ? { mandante: mediasMandante, visitante: mediasVisitante } : null);
       setEstimativaEscanteios(escanteios);
+      setOcrOverride(null);
+      setOcrError('');
+      setOcrSuccess('');
 
       const mercadosDaPartida = new Set(comparacao.map(c => c.market));
       const modelosDaPartida = new Set(comparacao.map(c => c.model_name));
@@ -508,6 +582,32 @@ export default function AnaliseEstatisticaJogo() {
       setCarregando(false);
     })();
   }, [matchId, n]);
+
+  const estimativaModelo = useMemo(() => {
+    if (!mediasBrutas) return null;
+    const mandante = aplicarOverrideOcr(mediasBrutas.mandante, ocrOverride?.mandante);
+    const visitante = aplicarOverrideOcr(mediasBrutas.visitante, ocrOverride?.visitante);
+    return estimarMercadosGols(mandante, visitante);
+  }, [mediasBrutas, ocrOverride]);
+
+  const handleOcrUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setOcrError(''); setOcrSuccess(''); setOcrLoading(true);
+    try {
+      const parsed = await extractJsonFromImage(file, OCR_STATS_PROMPT);
+      const mMandante = parsed?.estatistica_media?.mandante?.metricas;
+      const mVisitante = parsed?.estatistica_media?.visitante?.metricas;
+      if (!mMandante && !mVisitante) throw new Error('Não consegui identificar a tabela de estatísticas nessa imagem.');
+      setOcrOverride({ mandante: mMandante || null, visitante: mVisitante || null });
+      setOcrSuccess(`Estatísticas de ${parsed.confronto?.equipe_mandante || 'mandante'} x ${parsed.confronto?.equipe_visitante || 'visitante'} importadas — conferindo se batem com o confronto certo antes de usar.`);
+    } catch (error) {
+      setOcrError(error.message || 'Não foi possível extrair as estatísticas dessa imagem.');
+    } finally {
+      setOcrLoading(false);
+      event.target.value = '';
+    }
+  };
 
   if (!supabaseAtivo) {
     return (
@@ -578,7 +678,18 @@ export default function AnaliseEstatisticaJogo() {
       </div>
 
       <div className="mb-4">
-        <PainelEstimativaModelo estimativa={estimativaModelo} escanteios={estimativaEscanteios} mandante={jogo.home?.name} visitante={jogo.away?.name} />
+        <PainelEstimativaModelo
+          estimativa={estimativaModelo}
+          escanteios={estimativaEscanteios}
+          mandante={jogo.home?.name}
+          visitante={jogo.away?.name}
+          onOcrUpload={handleOcrUpload}
+          ocrLoading={ocrLoading}
+          ocrError={ocrError}
+          ocrSuccess={ocrSuccess}
+          temOverrideOcr={!!ocrOverride}
+          onLimparOcr={() => { setOcrOverride(null); setOcrSuccess(''); setOcrError(''); }}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
