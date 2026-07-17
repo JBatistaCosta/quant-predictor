@@ -23,6 +23,17 @@
 //                                   suficiente no curto prazo, pra não gastar cota à toa
 //   ?tarefa=odds-todas          -> roda tarefa=odds nas 6 ligas domésticas em sequência
 //                                   (usado pelo cron em vercel.json)
+//   ?tarefa=backfill-competicao&codigo=CLI&temporada=2023
+//                               -> importa TODAS as partidas de uma temporada específica de
+//                                   uma competição já cadastrada em leagues (external_id=codigo),
+//                                   via football-data.org (precisa de FOOTBALL_DATA_KEY). Cria
+//                                   times novos por upsert (external_id), igual sync-matches.js —
+//                                   mas esse sincroniza só a temporada ATUAL; essa tarefa é pra
+//                                   backfill histórico manual (ex: popular temporadas passadas de
+//                                   uma competição nova). O plano grátis da football-data.org só
+//                                   libera as ~4 temporadas mais recentes de cada competição
+//                                   (temporada mais antiga retorna 403) — testado com Libertadores:
+//                                   2023-2026 acessíveis, 2022 bloqueado.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -635,15 +646,103 @@ async function tarefaOddsTodas(supabase, apiKey) {
   return { ligas: porLiga, total_linhas_inseridas: porLiga.reduce((s, r) => s + (r.linhas_inseridas || 0), 0) };
 }
 
+const FOOTBALL_DATA_BASE_URL = 'https://api.football-data.org/v4';
+const MAPA_STATUS_FOOTBALL_DATA = {
+  SCHEDULED: 'scheduled', TIMED: 'scheduled',
+  IN_PLAY: 'live', PAUSED: 'live',
+  FINISHED: 'finished',
+  POSTPONED: 'postponed', SUSPENDED: 'postponed',
+  CANCELLED: 'cancelled',
+};
+
+async function chamarFootballData(caminho, apiKey) {
+  const resposta = await fetch(`${FOOTBALL_DATA_BASE_URL}${caminho}`, { headers: { 'X-Auth-Token': apiKey } });
+  const dados = await resposta.json();
+  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}: ${dados.message || ''}`);
+  return dados;
+}
+
+// Mesma lógica de resolverOuCriarTime do sync-matches.js — upsert por
+// external_id, cria o time na hora se for a primeira vez que aparece.
+async function resolverOuCriarTimeFootballData(supabase, mapaExternalIdParaTeamId, timeApi) {
+  const externalId = String(timeApi?.id ?? '');
+  if (!externalId) return null;
+  if (mapaExternalIdParaTeamId[externalId]) return mapaExternalIdParaTeamId[externalId];
+
+  const { data: novoTime, error } = await supabase
+    .from('teams')
+    .upsert({ external_id: externalId, name: timeApi.name, crest_url: `https://crests.football-data.org/${externalId}.png` }, { onConflict: 'external_id' })
+    .select('id')
+    .single();
+  if (error || !novoTime) return null;
+  mapaExternalIdParaTeamId[externalId] = novoTime.id;
+  return novoTime.id;
+}
+
+// Backfill de UMA temporada específica de uma competição já cadastrada em
+// leagues (external_id=codigo) — diferente de sync-matches.js, que só
+// mantém a temporada atual. Pensado pra popular histórico de uma competição
+// nova (ex: Libertadores) sem depender do cron diário.
+async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
+  const { data: ligaRow } = await supabase.from('leagues').select('id').eq('external_id', codigo).maybeSingle();
+  if (!ligaRow) return { error: `Liga não encontrada em leagues (external_id=${codigo}).` };
+
+  const dados = await chamarFootballData(`/competitions/${codigo}/matches?season=${temporada}`, apiKey);
+
+  const { data: timesData } = await supabase.from('teams').select('id, external_id').not('external_id', 'is', null);
+  const mapaExternalIdParaTeamId = {};
+  (timesData || []).forEach(t => { mapaExternalIdParaTeamId[t.external_id] = t.id; });
+
+  let inseridosOuAtualizados = 0;
+  const timesCriados = new Set();
+
+  for (const m of dados.matches || []) {
+    const homeTeamId = await resolverOuCriarTimeFootballData(supabase, mapaExternalIdParaTeamId, m.homeTeam);
+    const awayTeamId = await resolverOuCriarTimeFootballData(supabase, mapaExternalIdParaTeamId, m.awayTeam);
+    if (!homeTeamId) timesCriados.add(`falhou: ${m.homeTeam?.name}`);
+    if (!awayTeamId) timesCriados.add(`falhou: ${m.awayTeam?.name}`);
+    if (!homeTeamId || !awayTeamId) continue;
+
+    const { error } = await supabase.from('matches').upsert({
+      external_id: `fd_${m.id}`,
+      league_id: ligaRow.id,
+      season: String(temporada),
+      match_date: m.utcDate,
+      home_team_id: homeTeamId,
+      away_team_id: awayTeamId,
+      home_goals: m.score?.fullTime?.home ?? null,
+      away_goals: m.score?.fullTime?.away ?? null,
+      status: MAPA_STATUS_FOOTBALL_DATA[m.status] || 'scheduled',
+      round: m.matchday ?? null,
+      stage: m.stage ?? null,
+    }, { onConflict: 'external_id' });
+    if (!error) inseridosOuAtualizados++;
+  }
+
+  return {
+    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: inseridosOuAtualizados,
+    times_com_problema: timesCriados.size > 0 ? [...timesCriados] : undefined,
+  };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });
   }
   const supabase = getSupabase();
-  const { tarefa, liga_id, escopo, minimo, forcar } = req.query;
+  const { tarefa, liga_id, escopo, minimo, forcar, codigo, temporada } = req.query;
 
   try {
+    if (tarefa === 'backfill-competicao') {
+      const apiKey = process.env.FOOTBALL_DATA_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'FOOTBALL_DATA_KEY não configurada.' } });
+      if (!codigo || !temporada) return res.status(400).json({ error: { message: 'tarefa=backfill-competicao precisa de ?codigo=XX&temporada=AAAA.' } });
+      const resultado = await tarefaBackfillCompeticao(supabase, apiKey, codigo, Number(temporada));
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
     if (tarefa === 'odds-descobrir') {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });

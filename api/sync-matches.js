@@ -12,7 +12,7 @@
 //     servidor Vercel, e marcá-la como "Sensitive" lá nas configurações).
 //
 // Mantém public.matches atualizada com a temporada ATUAL de cada liga já
-// ingerida pelo pipeline (as 8 com `leagues.external_id` preenchido) — isso
+// ingerida pelo pipeline (as 9 com `leagues.external_id` preenchido) — isso
 // inclui tanto jogos já disputados (atualiza placar/status) quanto jogos
 // futuros ainda não jogados (status='scheduled', sem placar), que é o que
 // faz esses jogos aparecerem em LigaDetalhe.jsx/TimeDetalhe.jsx.
@@ -23,7 +23,7 @@
 // europeias são ago-mai).
 //
 // COMO CHAMAR:
-//   /api/sync-matches                (todas as 8 ligas)
+//   /api/sync-matches                (todas as 9 ligas/competições)
 //   /api/sync-matches?liga=PL        (só uma, pelo código football-data.org)
 //
 // Pensado pra rodar via Vercel Cron (ver vercel.json) — mas também pode ser
@@ -32,7 +32,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const BASE_URL = 'https://api.football-data.org/v4';
-const LIGAS_PIPELINE = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'BSA', 'EC'];
+const LIGAS_PIPELINE = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'BSA', 'EC', 'CLI'];
 
 const MAPA_STATUS = {
   SCHEDULED: 'scheduled', TIMED: 'scheduled',
