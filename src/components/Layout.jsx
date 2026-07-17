@@ -1,7 +1,7 @@
 // src/components/Layout.jsx
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X, Download, StickyNote, Trash2, Copy, ChevronLeft, ChevronRight, BarChart3 } from 'lucide-react';
+import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X, Download, StickyNote, Trash2, Copy, ChevronLeft, ChevronRight, BarChart3, TrendingUp } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
@@ -13,6 +13,7 @@ const GRUPOS_MENU = [
       { to: '/eventos', label: 'Eventos', icone: Calendar },
       { to: '/analise', label: 'Análise de Evento', icone: Calculator },
       { to: '/modelos', label: 'Estatísticas dos Modelos', icone: BarChart3 },
+      { to: '/ratings', label: 'Rating dos Clubes', icone: TrendingUp },
     ],
   },
   {

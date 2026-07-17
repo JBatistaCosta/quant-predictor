@@ -19,6 +19,7 @@ const Ligas = lazy(() => import('./pages/Ligas'));
 const LigaDetalhe = lazy(() => import('./pages/LigaDetalhe'));
 const ModelosStats = lazy(() => import('./pages/ModelosStats'));
 const AnaliseHistorica = lazy(() => import('./pages/AnaliseHistorica'));
+const RatingClubes = lazy(() => import('./pages/RatingClubes'));
 
 function CarregandoPagina() {
   return (
@@ -66,6 +67,9 @@ export default function App() {
             } />
             <Route path="/historico/:matchId" element={
               <ProtectedRoute><Layout><AnaliseHistorica /></Layout></ProtectedRoute>
+            } />
+            <Route path="/ratings" element={
+              <ProtectedRoute><Layout><RatingClubes /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />
