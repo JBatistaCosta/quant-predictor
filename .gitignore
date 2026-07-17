@@ -17,3 +17,8 @@ npm-debug.log*
 # Editor/SO
 .vscode
 .DS_Store
+
+# Relatórios gerados localmente (arquivos_do_claude/descobrir_campeonatos_disponiveis.py)
+arquivos_do_claude/campeonatos_disponiveis.json
+__pycache__/
+*.pyc
