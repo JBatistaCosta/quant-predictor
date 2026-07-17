@@ -13,6 +13,11 @@
 // COMO CHAMAR:
 //   ?tarefa=elo&liga_id=X       -> recalcula o Elo interno de UMA liga doméstica (1,4,7,10,13,16)
 //   ?tarefa=elo&escopo=geral    -> recalcula o Elo geral (cross-liga, Champions League)
+//   ?tarefa=elo-rotativo        -> versão pro cron diário: processa só 1 escopo por dia,
+//                                   revezando entre as 6 ligas domésticas + geral (dia do
+//                                   ano mod 7) — ciclo completo fecha em ~1 semana. Existe
+//                                   porque processar tudo numa chamada só já deu timeout
+//                                   antes (testado, ver CONTEXTO_PROJETO.md).
 //   ?tarefa=calibracao          -> reajusta Platt Scaling + Isotonic Regression (todos os combos)
 //   ?tarefa=calibracao&minimo=N -> idem, exigindo N amostras de treino mínimas (padrão 80)
 //   ?tarefa=odds-descobrir      -> FASE 1 do sync de odds (OddsPapi): resolve torneios/mercados/
@@ -908,6 +913,19 @@ export default async function handler(req, res) {
       }
       if (escopo === 'geral') return res.status(200).json(await eloProcessarGeral(supabase));
       return res.status(400).json({ error: { message: 'tarefa=elo precisa de ?liga_id=X ou ?escopo=geral.' }, ligas_domesticas: LIGAS_DOMESTICAS });
+    }
+
+    // Pensada pro cron diário: processa só UM escopo por dia, revezando entre
+    // as 6 ligas domésticas + geral (dia do ano mod 7) — já testado antes que
+    // rodar tudo numa chamada só estoura os 60s do Vercel mesmo com
+    // maxDuration configurado, então cada slot fica um dia sem recompute
+    // novo, mas o ciclo completo (todos os 7 escopos) fecha em ~1 semana.
+    if (tarefa === 'elo-rotativo') {
+      const ESCOPOS_ROTACAO = [...LIGAS_DOMESTICAS, 'geral'];
+      const diaDoAno = Math.floor((Date.now() - new Date(new Date().getUTCFullYear(), 0, 0)) / 86400000);
+      const slot = ESCOPOS_ROTACAO[diaDoAno % ESCOPOS_ROTACAO.length];
+      const resultado = slot === 'geral' ? await eloProcessarGeral(supabase) : await eloProcessarLiga(supabase, slot);
+      return res.status(200).json({ slot_de_hoje: slot, ...resultado });
     }
 
     if (tarefa === 'calibracao') {
