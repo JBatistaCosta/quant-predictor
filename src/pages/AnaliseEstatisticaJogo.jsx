@@ -10,10 +10,20 @@
 //      pra essa partida específica, com o edge calculado.
 //   3. Histórico de precisão do modelo (api/model-stats.js) filtrado pra
 //      liga/mercado dessa partida, como contexto de confiabilidade.
+//   4. Estimativa própria do modelo (1X2/Over-Under/Ambas Marcam/Escanteios) —
+//      MESMO motor matemático de AnaliseEvento.jsx (poisson.js/lambdaFormulas.js,
+//      fórmula "multiplicativo" padrão + correção Dixon-Coles), só que auto-
+//      alimentado pela média real de xG/xGA (Understat, quando existe) ou por
+//      gols reais como fallback (ligas sem xG) — sem digitar/colar nada à mão.
+//      Escanteios reaproveita api/corners-model.js (mesmo NB calibrado por liga
+//      já usado em AnaliseEvento). Cobre partidas SEM previsão salva em
+//      model_predictions (que só existem pra season 2025 hoje).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History, Calculator } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { poisson, dixonColesTau, DIXON_COLES_RHO } from '../utils/poisson';
+import { getLambdaFormula } from '../utils/lambdaFormulas';
 
 // Paleta categórica já validada no projeto (ver RatingClubes.jsx) — ordem fixa.
 const COR_MODELO = '#3987e5';   // azul (PALETA[0])
@@ -74,6 +84,100 @@ async function buscarTendenciasTime(teamId, antesDe, n) {
     mediaCorners: nCorners > 0 ? somaCorners / nCorners : null,
     mediaCartoes: nCartoes > 0 ? somaCartoes / nCartoes : null,
   };
+}
+
+// Média de gols pró/contra e xG próprio/xGA (xG do ADVERSÁRIO nas mesmas
+// partidas — xGA não é coluna própria, ver CONTEXTO_PROJETO.md) dos últimos N
+// jogos do time. xg/xga só existem via Understat (5 ligas europeias); nas
+// outras, o chamador cai pro gol real como aproximação.
+async function buscarMediasModelo(teamId, antesDe, n) {
+  const { data: jogos } = await supabase
+    .from('matches')
+    .select('id, home_team_id, away_team_id, home_goals, away_goals')
+    .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
+    .eq('status', 'finished')
+    .lt('match_date', antesDe)
+    .order('match_date', { ascending: false })
+    .limit(n);
+
+  if (!jogos || jogos.length === 0) return null;
+
+  const matchIds = jogos.map(j => j.id);
+  const oponentePorJogo = {};
+  jogos.forEach(j => { oponentePorJogo[j.id] = j.home_team_id === teamId ? j.away_team_id : j.home_team_id; });
+
+  const { data: stats } = await supabase.from('match_stats').select('match_id, team_id, xg').in('match_id', matchIds);
+
+  let somaGolsPro = 0, somaGolsContra = 0;
+  jogos.forEach(j => {
+    const mandante = j.home_team_id === teamId;
+    somaGolsPro += mandante ? (j.home_goals ?? 0) : (j.away_goals ?? 0);
+    somaGolsContra += mandante ? (j.away_goals ?? 0) : (j.home_goals ?? 0);
+  });
+
+  let somaXg = 0, nXg = 0, somaXga = 0, nXga = 0;
+  (stats || []).forEach(s => {
+    if (s.xg == null) return;
+    if (s.team_id === teamId) { somaXg += Number(s.xg); nXg++; }
+    else if (s.team_id === oponentePorJogo[s.match_id]) { somaXga += Number(s.xg); nXga++; }
+  });
+
+  const mediaGolsPro = somaGolsPro / jogos.length;
+  const mediaGolsContra = somaGolsContra / jogos.length;
+  const mediaXg = nXg > 0 ? somaXg / nXg : null;
+  const mediaXga = nXga > 0 ? somaXga / nXga : null;
+
+  return {
+    n: jogos.length,
+    xgUsado: mediaXg ?? mediaGolsPro,
+    xgaUsado: mediaXga ?? mediaGolsContra,
+    xgReal: mediaXg != null && mediaXga != null,
+  };
+}
+
+// Estimativa 1X2/Over-Under/Ambas Marcam com o mesmo motor de AnaliseEvento.jsx
+// (fórmula "multiplicativo" padrão + correção Dixon-Coles, ambos em utils/).
+function estimarMercadosGols(mediasMandante, mediasVisitante) {
+  const formula = getLambdaFormula('multiplicativo');
+  const { trueXG1, trueXG2 } = formula.calc({
+    m: { xg1: mediasMandante.xgUsado, xga2: mediasVisitante.xgaUsado, xg2: mediasVisitante.xgUsado, xga1: mediasMandante.xgaUsado },
+  });
+  const lambda1 = Math.max(0.1, trueXG1);
+  const lambda2 = Math.max(0.1, trueXG2);
+
+  const maxGoals = 10;
+  let probWin1 = 0, probWin2 = 0, probDraw = 0, probOver25 = 0, probBtts = 0;
+  for (let i = 0; i <= maxGoals; i++) {
+    for (let j = 0; j <= maxGoals; j++) {
+      let p = poisson(lambda1, i) * poisson(lambda2, j);
+      p *= dixonColesTau(i, j, lambda1, lambda2, DIXON_COLES_RHO);
+      if (i > j) probWin1 += p;
+      else if (i < j) probWin2 += p;
+      else probDraw += p;
+      if (i + j > 2.5) probOver25 += p;
+      if (i > 0 && j > 0) probBtts += p;
+    }
+  }
+  const total = probWin1 + probWin2 + probDraw;
+  return {
+    lambda1, lambda2,
+    probHome: probWin1 / total, probDraw: probDraw / total, probAway: probWin2 / total,
+    probOver25: probOver25 / total, probBtts: probBtts / total,
+    xgRealMandante: mediasMandante.xgReal, xgRealVisitante: mediasVisitante.xgReal,
+  };
+}
+
+// Reaproveita api/corners-model.js (mesma Binomial Negativa calibrada por liga
+// já usada em AnaliseEvento.jsx) em vez de reimplementar a calibração aqui.
+async function buscarEstimativaEscanteios(nomeMandante, nomeVisitante) {
+  try {
+    const resposta = await fetch(`/api/corners-model?mandante=${encodeURIComponent(nomeMandante)}&visitante=${encodeURIComponent(nomeVisitante)}&linhas=9.5`);
+    if (!resposta.ok) return null;
+    const dados = await resposta.json();
+    return dados.error ? null : dados;
+  } catch {
+    return null;
+  }
 }
 
 function devigar(oddsPorSelecao) {
@@ -216,6 +320,52 @@ function LinhaModeloMercado({ selecao, pModelo, pMercado }) {
   );
 }
 
+function PainelEstimativaModelo({ estimativa, escanteios, mandante, visitante }) {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <Calculator className="text-emerald-400" size={16} /> Estimativa do modelo
+      </h2>
+
+      {!estimativa ? (
+        <p className="text-xs text-slate-600">Sem jogos recentes suficientes pra estimar.</p>
+      ) : (
+        <div className="space-y-4">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">Resultado final (1X2)</span>
+            <div className="grid grid-cols-3 gap-2">
+              <CardTendencia titulo={mandante} valor={(estimativa.probHome * 100).toFixed(0)} sufixo="%" pct={estimativa.probHome} cor={COR_MODELO} />
+              <CardTendencia titulo="Empate" valor={(estimativa.probDraw * 100).toFixed(0)} sufixo="%" pct={estimativa.probDraw} cor={COR_MODELO} />
+              <CardTendencia titulo={visitante} valor={(estimativa.probAway * 100).toFixed(0)} sufixo="%" pct={estimativa.probAway} cor={COR_MODELO} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <CardTendencia titulo="Over 2,5 gols" valor={(estimativa.probOver25 * 100).toFixed(0)} sufixo="%" pct={estimativa.probOver25} cor="#10b981" />
+            <CardTendencia titulo="Ambas marcam" valor={(estimativa.probBtts * 100).toFixed(0)} sufixo="%" pct={estimativa.probBtts} cor="#10b981" />
+          </div>
+
+          {escanteios?.mercados?.[0] && (
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">Escanteios (linha 9,5)</span>
+              <div className="grid grid-cols-2 gap-2">
+                <CardTendencia titulo="Over 9,5" valor={(escanteios.mercados[0].prob_over * 100).toFixed(0)} sufixo="%" pct={escanteios.mercados[0].prob_over} cor="#10b981" />
+                <CardTendencia titulo="Under 9,5" valor={(escanteios.mercados[0].prob_under * 100).toFixed(0)} sufixo="%" pct={escanteios.mercados[0].prob_under} cor="#10b981" />
+              </div>
+            </div>
+          )}
+
+          <p className="text-[10px] text-slate-600">
+            λ {mandante.split(' ')[0]}={estimativa.lambda1.toFixed(2)} / {visitante.split(' ')[0]}={estimativa.lambda2.toFixed(2)} ·
+            {' '}xG {estimativa.xgRealMandante && estimativa.xgRealVisitante ? 'real (Understat)' : 'aproximado por gols (xG indisponível pra essa liga)'} ·
+            {' '}fórmula multiplicativa + Dixon-Coles, mesmo motor de Análise de Eventos.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PainelModeloMercado({ grupos }) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
@@ -310,6 +460,8 @@ export default function AnaliseEstatisticaJogo() {
   const [tendenciasVisitante, setTendenciasVisitante] = useState(null);
   const [comparacaoModelo, setComparacaoModelo] = useState([]);
   const [precisaoModelo, setPrecisaoModelo] = useState([]);
+  const [estimativaModelo, setEstimativaModelo] = useState(null);
+  const [estimativaEscanteios, setEstimativaEscanteios] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
@@ -328,15 +480,20 @@ export default function AnaliseEstatisticaJogo() {
       setJogo(j);
 
       const referencia = j.match_date || new Date().toISOString();
-      const [tM, tV, comparacao, precisao] = await Promise.all([
+      const [tM, tV, comparacao, precisao, mediasMandante, mediasVisitante, escanteios] = await Promise.all([
         buscarTendenciasTime(j.home_team_id, referencia, n),
         buscarTendenciasTime(j.away_team_id, referencia, n),
         buscarComparacaoModeloMercado(j.id),
         buscarPrecisaoModelo(j.league_id),
+        buscarMediasModelo(j.home_team_id, referencia, n),
+        buscarMediasModelo(j.away_team_id, referencia, n),
+        buscarEstimativaEscanteios(j.home?.name, j.away?.name),
       ]);
       setTendenciasMandante(tM);
       setTendenciasVisitante(tV);
       setComparacaoModelo(comparacao);
+      setEstimativaModelo(mediasMandante && mediasVisitante ? estimarMercadosGols(mediasMandante, mediasVisitante) : null);
+      setEstimativaEscanteios(escanteios);
 
       const mercadosDaPartida = new Set(comparacao.map(c => c.market));
       const modelosDaPartida = new Set(comparacao.map(c => c.model_name));
@@ -412,6 +569,10 @@ export default function AnaliseEstatisticaJogo() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <PainelTendencias nome={jogo.home?.name} crestUrl={jogo.home?.crest_url} tendencias={tendenciasMandante} ladoEsquerda />
         <PainelTendencias nome={jogo.away?.name} crestUrl={jogo.away?.crest_url} tendencias={tendenciasVisitante} ladoEsquerda={false} />
+      </div>
+
+      <div className="mb-4">
+        <PainelEstimativaModelo estimativa={estimativaModelo} escanteios={estimativaEscanteios} mandante={jogo.home?.name} visitante={jogo.away?.name} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
