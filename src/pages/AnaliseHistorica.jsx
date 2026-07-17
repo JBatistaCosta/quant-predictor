@@ -8,6 +8,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Shield, Loader2, Swords, Landmark } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
 
 const OPCOES_N = [5, 10, 20];
 const CASAS_ROTULO = { pinnacle: 'Pinnacle', bet365: 'Bet365', betano: 'Betano' };
@@ -240,7 +241,7 @@ export default function AnaliseHistorica() {
       setErro('');
       const { data: j, error: erroJogo } = await supabase
         .from('matches')
-        .select('id, match_date, league_id, home_team_id, away_team_id, home_goals, away_goals, status, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
+        .select('id, match_date, league_id, home_team_id, away_team_id, home_goals, away_goals, status, leagues(name, external_id), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
         .eq('id', matchId)
         .single();
 
@@ -338,7 +339,10 @@ export default function AnaliseHistorica() {
           </div>
         </div>
 
-        <WidgetOdds matchId={jogo.id} />
+        <div className="flex flex-col gap-4">
+          <WidgetOdds matchId={jogo.id} />
+          {jogo.leagues?.external_id === 'BSA' && <WidgetOddsTheOddsAPI />}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
