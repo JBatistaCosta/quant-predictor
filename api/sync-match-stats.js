@@ -11,12 +11,19 @@
 // Usa a API-Football, que tem esse dado, mas o preço é: (1) sem ponte de ID
 // salva com nossas partidas (matches.external_id é do formato football-data,
 // não bate com o id da API-Football) — o casamento é por DATA + nome do time
-// aproximado; (2) 2 chamadas de API por partida (uma por time), então processa
-// em lotes pequenos (?limite=N) pra não estourar cota do plano grátis.
+// aproximado (matching por TOKEN de palavra, não substring — ver
+// CONTEXTO_PROJETO.md sobre o bug de colisão corrigido nesse padrão);
+// (2) 2 chamadas de API por partida (uma por time), então processa em lotes
+// pequenos (?limite=N, padrão 4) espaçados (13s entre partidas) pra respeitar
+// o rate limit POR MINUTO do plano grátis (~10 chamadas), não só o diário
+// (100/dia) — se bater o limite no meio do lote, para sem marcar nada como
+// "sem casamento" (os jogos continuam pendentes, a próxima chamada retoma).
+// "Pendente" = falta escanteios OU xG, não só falta a linha inteira — cobre
+// ligas que já têm outros campos preenchidos por outra fonte.
 //
 // COMO CHAMAR:
-//   /api/sync-match-stats?liga_id=1&temporada=2026&limite=20
-//   (liga_id = id em public.leagues; sem limite, processa até 20 por vez)
+//   /api/sync-match-stats?liga_id=1&temporada=2026&limite=4
+//   (liga_id = id em public.leagues; sem limite, processa até 4 por vez)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -35,13 +42,25 @@ async function chamarAPI(caminho, apiKey) {
   return dados.response;
 }
 
+// Normaliza preservando espaços (vira tokens) em vez de colapsar tudo numa
+// string única — colapsar tudo foi o que causou colisão por substring em
+// api/model-maintenance.js (ver CONTEXTO_PROJETO.md, ex: "ABC" batendo com
+// "Atalanta BC"). Mesmo padrão usado lá e em ingestao_stats_fbref.py.
 function normalizar(s) {
-  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function nomesBatem(nomeA, nomeB) {
   const a = normalizar(nomeA), b = normalizar(nomeB);
-  return a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const tokensA = new Set(a.split(' '));
+  const tokensB = new Set(b.split(' '));
+  return [...tokensA].every(t => tokensB.has(t)) || [...tokensB].every(t => tokensA.has(t));
 }
 
 // Acha o id da liga na API-Football pelo nome cadastrado em public.leagues
@@ -84,7 +103,7 @@ export default async function handler(req, res) {
 
   const { liga_id, temporada, limite } = req.query;
   if (!liga_id || !temporada) return res.status(400).json({ error: { message: 'Informe ?liga_id=ID (de public.leagues) e ?temporada=AAAA na URL.' } });
-  const limiteJogos = parseInt(limite, 10) || 20;
+  const limiteJogos = parseInt(limite, 10) || 4; // 2 chamadas/jogo + espaçamento de 13s p/ rate limit — 4 cabe dentro de maxDuration=60
 
   const supabase = getSupabase();
 
@@ -105,12 +124,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ mensagem: 'Nenhum jogo finalizado encontrado pra essa liga/temporada.' });
     }
 
-    const { data: idsComStats } = await supabase.from('match_stats').select('match_id').in('match_id', jogosSemStats.map(j => j.id));
-    const jaTemStats = new Set((idsComStats || []).map(r => r.match_id));
-    const pendentes = jogosSemStats.filter(j => !jaTemStats.has(j.id)).slice(0, limiteJogos);
+    // "Pendente" = falta QUALQUER campo de estatística, não só falta a linha
+    // inteira — algumas ligas (ex: Brasileirão) já têm chutes/posse/cartões
+    // preenchidos por outra fonte mas ficaram com escanteios/xG null, porque
+    // a resposta da API-Football pra essas partidas não trouxe esse tipo de
+    // stat (ou porque essa tarefa nunca rodou de fato pra essa liga).
+    const { data: statsExistentes } = await supabase.from('match_stats').select('match_id, corners, xg').in('match_id', jogosSemStats.map(j => j.id));
+    const idsCompletos = new Set(
+      (statsExistentes || []).filter(r => r.corners !== null || r.xg !== null).map(r => r.match_id)
+    );
+    const pendentes = jogosSemStats.filter(j => !idsCompletos.has(j.id)).slice(0, limiteJogos);
 
     if (pendentes.length === 0) {
-      return res.status(200).json({ mensagem: 'Todos os jogos dessa liga/temporada já têm estatística salva.', total_finalizados: jogosSemStats.length });
+      return res.status(200).json({ mensagem: 'Todos os jogos dessa liga/temporada já têm escanteios ou xG salvos.', total_finalizados: jogosSemStats.length });
     }
 
     const ligaIdApiFootball = await acharLigaNaApiFootball(ligaRow.name, apiKey);
@@ -120,21 +146,36 @@ export default async function handler(req, res) {
 
     let processados = 0, comStats = 0;
     const semCasamento = [];
+    const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    let paradoPorRateLimit = false;
 
     for (const jogo of pendentes) {
+      // cada jogo gasta 2 chamadas (home+away) — plano free tem rate limit
+      // por MINUTO (~10 chamadas), não só por dia (ver CONTEXTO_PROJETO.md),
+      // por isso o espaçamento generoso em vez de 1 chamada por vez
+      if (processados > 0) await esperar(13000);
+
       const dataJogo = jogo.match_date?.slice(0, 10);
       const fixture = (fixturesApiFootball || []).find(f =>
         f.fixture.date?.slice(0, 10) === dataJogo &&
         nomesBatem(f.teams.home.name, jogo.home?.name) &&
         nomesBatem(f.teams.away.name, jogo.away?.name)
       );
-      processados++;
-      if (!fixture) { semCasamento.push(`${jogo.home?.name} x ${jogo.away?.name} (${dataJogo})`); continue; }
+      if (!fixture) { processados++; semCasamento.push(`${jogo.home?.name} x ${jogo.away?.name} (${dataJogo})`); continue; }
 
-      const [statsHome, statsAway] = await Promise.all([
-        buscarEstatisticasDoTime(fixture.fixture.id, fixture.teams.home.id, apiKey),
-        buscarEstatisticasDoTime(fixture.fixture.id, fixture.teams.away.id, apiKey),
-      ]);
+      let statsHome, statsAway;
+      try {
+        [statsHome, statsAway] = await Promise.all([
+          buscarEstatisticasDoTime(fixture.fixture.id, fixture.teams.home.id, apiKey),
+          buscarEstatisticasDoTime(fixture.fixture.id, fixture.teams.away.id, apiKey),
+        ]);
+      } catch (erro) {
+        // rate limit (por minuto ou diário): para o lote sem marcar nada como
+        // sem-casamento — o jogo continua pendente e a próxima chamada tenta de novo
+        if (/rate ?limit|limit for the day|request limit/i.test(erro.message)) { paradoPorRateLimit = true; break; }
+        throw erro;
+      }
+      processados++;
 
       if (statsHome) {
         const { error } = await supabase.from('match_stats').upsert({ match_id: jogo.id, team_id: jogo.home_team_id, ...statsHome, xg_source: statsHome.xg != null ? 'api-football' : null }, { onConflict: 'match_id,team_id' });
@@ -149,10 +190,11 @@ export default async function handler(req, res) {
     res.status(200).json({
       liga: ligaRow.name, temporada,
       total_finalizados: jogosSemStats.length,
-      ja_tinham_stats: jaTemStats.size,
+      ja_completos: idsCompletos.size,
       processados_agora: processados,
       linhas_de_stats_gravadas: comStats,
-      restantes: jogosSemStats.length - jaTemStats.size - processados,
+      restantes: jogosSemStats.length - idsCompletos.size - processados,
+      parado_por_rate_limit: paradoPorRateLimit || undefined,
       sem_casamento: semCasamento.length > 0 ? semCasamento : undefined,
     });
   } catch (erro) {
