@@ -283,42 +283,66 @@ function atualizarRatingJogador(ratingAtual, indice) {
 }
 
 async function tarefaPlayerElo(supabase, limite) {
-  const LIMITE_PARTIDAS = limite || 300;
+  const LIMITE_PARTIDAS = limite || 200;
 
-  const [historicoExistente, statsTodos, partidasTodas, ratingsAtuais] = await Promise.all([
-    buscarTudoPaginado(() => supabase.from('player_rating_history').select('match_id')),
-    buscarTudoPaginado(() =>
-      supabase.from('match_player_stats_fotmob')
-        .select('match_id, player_id, rating, minutes_played, goals, assists, xg, xa, chances_created')
-        .not('player_id', 'is', null)
-    ),
-    buscarTudoPaginado(() => supabase.from('matches').select('id, match_date')),
+  // A 1ª versão carregava TODAS as ~200k linhas de match_player_stats_fotmob
+  // por chamada (200 páginas REST sequenciais) — FUNCTION_INVOCATION_TIMEOUT
+  // garantido, mesma classe do timeout já visto no Elo de time. Reestruturado
+  // pra cursor: como o processamento é estritamente cronológico (ordem
+  // determinística por (match_date, match_id)), a ÚLTIMA linha inserida em
+  // player_rating_history identifica o ponto de retomada — só as partidas
+  // depois dela entram, e as estatísticas são buscadas APENAS pros ids do
+  // lote (.in), nunca a tabela inteira. Implicação documentada: se uma
+  // partida ANTIGA for sincronizada no FotMob depois do cursor já ter
+  // passado por ela, ela não entra sozinha — reprocesso completo = truncar
+  // player_ratings/player_rating_history e re-rodar do zero.
+  const [{ data: ultimaLinha }, partidasFotmob, ratingsAtuais] = await Promise.all([
+    supabase.from('player_rating_history').select('match_id').order('id', { ascending: false }).limit(1).maybeSingle(),
+    buscarTudoPaginado(() => supabase.from('match_source_ids').select('match_id').eq('source', 'fotmob')),
     buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas')),
   ]);
 
-  const matchIdsProcessados = new Set(historicoExistente.map(r => r.match_id));
+  const idsFotmob = partidasFotmob.map(r => r.match_id);
   const dataPorMatch = {};
-  partidasTodas.forEach(p => { dataPorMatch[p.id] = p.match_date; });
+  for (const loteIds of fatiar(idsFotmob, 200)) {
+    const { data, error } = await supabase.from('matches').select('id, match_date').in('id', loteIds);
+    if (error) throw error;
+    (data || []).forEach(p => { dataPorMatch[p.id] = p.match_date; });
+  }
 
-  const ratingPorJogador = {}, contagemPorJogador = {};
-  ratingsAtuais.forEach(r => { ratingPorJogador[r.player_id] = Number(r.rating); contagemPorJogador[r.player_id] = r.n_partidas; });
+  const ordenadas = idsFotmob
+    .filter(id => dataPorMatch[id])
+    .sort((a, b) => (new Date(dataPorMatch[a]) - new Date(dataPorMatch[b])) || (a - b));
 
-  const pendentes = statsTodos
-    .filter(s => !matchIdsProcessados.has(s.match_id) && dataPorMatch[s.match_id] && (s.minutes_played ?? 0) >= PLAYER_MINUTOS_MINIMOS)
-    .sort((a, b) => new Date(dataPorMatch[a.match_id]) - new Date(dataPorMatch[b.match_id]));
+  let inicio = 0;
+  if (ultimaLinha?.match_id != null) {
+    const posCursor = ordenadas.indexOf(ultimaLinha.match_id);
+    if (posCursor === -1) throw new Error(`Cursor aponta pra match_id ${ultimaLinha.match_id}, que não está na lista de partidas FotMob — estado inconsistente, investigar antes de continuar.`);
+    inicio = posCursor + 1;
+  }
 
-  if (pendentes.length === 0) {
+  const idsLote = ordenadas.slice(inicio, inicio + LIMITE_PARTIDAS);
+  if (idsLote.length === 0) {
     return { mensagem: 'Nenhuma partida pendente.', partidas_processadas: 0, partidas_restantes: 0 };
   }
 
-  // Lote por Número de PARTIDAS distintas (não linhas) — processa todos os
-  // jogadores de uma partida juntos, nunca corta uma partida no meio.
-  const idsPartidasSet = new Set();
-  for (const s of pendentes) {
-    if (idsPartidasSet.size >= LIMITE_PARTIDAS) break;
-    idsPartidasSet.add(s.match_id);
+  const stats = [];
+  for (const loteIds of fatiar(idsLote, 100)) {
+    const linhas = await buscarTudoPaginado(() =>
+      supabase.from('match_player_stats_fotmob')
+        .select('match_id, player_id, rating, minutes_played, goals, assists, xg, xa, chances_created')
+        .in('match_id', loteIds).not('player_id', 'is', null)
+    );
+    stats.push(...linhas);
   }
-  const lote = pendentes.filter(s => idsPartidasSet.has(s.match_id));
+
+  const posicaoNoLote = new Map(idsLote.map((id, i) => [id, i]));
+  const lote = stats
+    .filter(s => (s.minutes_played ?? 0) >= PLAYER_MINUTOS_MINIMOS)
+    .sort((a, b) => posicaoNoLote.get(a.match_id) - posicaoNoLote.get(b.match_id));
+
+  const ratingPorJogador = {}, contagemPorJogador = {};
+  ratingsAtuais.forEach(r => { ratingPorJogador[r.player_id] = Number(r.rating); contagemPorJogador[r.player_id] = r.n_partidas; });
 
   const historico = [];
   for (const s of lote) {
@@ -333,7 +357,17 @@ async function tarefaPlayerElo(supabase, limite) {
     });
   }
 
-  const jogadoresTocados = [...new Set(lote.map(s => s.player_id))];
+  // O cursor efetivo é a última linha gravada em player_rating_history, ou
+  // seja, a última partida do lote COM dado válido. Partidas sem nenhum
+  // jogador válido no FIM do lote ficam depois do cursor e são re-escaneadas
+  // na chamada seguinte junto com partidas novas — redundância barata, sem
+  // risco de loop. O único caso degenerado é o lote INTEIRO vir vazio (cursor
+  // não anda): reportado pro operador em vez de fingir progresso.
+  if (historico.length === 0) {
+    return { mensagem: 'Lote inteiro sem estatística de jogador válida — cursor não avançou, rode com ?limite maior pra pular o trecho vazio.', partidas_no_lote: idsLote.length, partidas_restantes: ordenadas.length - inicio - idsLote.length };
+  }
+
+  const jogadoresTocados = [...new Set(historico.map(h => h.player_id))];
   const linhasRating = jogadoresTocados.map(pid => ({
     player_id: pid, rating: ratingPorJogador[pid], n_partidas: contagemPorJogador[pid], updated_at: new Date().toISOString(),
   }));
@@ -348,10 +382,10 @@ async function tarefaPlayerElo(supabase, limite) {
   }
 
   return {
-    partidas_processadas: idsPartidasSet.size,
-    linhas_processadas: lote.length,
+    partidas_processadas: idsLote.length,
+    linhas_processadas: historico.length,
     jogadores_atualizados: linhasRating.length,
-    partidas_restantes: pendentes.length - lote.length,
+    partidas_restantes: ordenadas.length - inicio - idsLote.length,
   };
 }
 
