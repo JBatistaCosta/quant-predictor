@@ -104,7 +104,7 @@ export default function LigaDetalhe() {
       setPagina(0);
       const { data } = await supabase
         .from('matches')
-        .select('id, match_date, home_goals, away_goals, status, round, stage, home:teams!matches_home_team_id_fkey(id, name, crest_url), away:teams!matches_away_team_id_fkey(id, name, crest_url)')
+        .select('id, match_date, home_goals, away_goals, status, round, stage, home:teams!matches_home_team_id_fkey(id, name, crest_url, equipes!equipes_pipeline_team_id_fkey(id)), away:teams!matches_away_team_id_fkey(id, name, crest_url, equipes!equipes_pipeline_team_id_fkey(id))')
         .eq('league_id', leagueIdPipeline)
         .eq('season', temporada)
         .order('match_date', { ascending: true });
@@ -250,10 +250,17 @@ export default function LigaDetalhe() {
                       <tr key={linha.time.id} className="hover:bg-slate-700/20">
                         <td className="p-2.5 pl-4 text-slate-500">{i + 1}</td>
                         <td className="p-2.5">
-                          <Link to={`/times/${linha.time.id}`} className="flex items-center gap-2 hover:text-emerald-400">
-                            {linha.time.crest_url ? <img src={linha.time.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-                            <span className="truncate text-slate-200">{linha.time.name}</span>
-                          </Link>
+                          {linha.time.equipes?.[0]?.id ? (
+                            <Link to={`/times/${linha.time.equipes[0].id}`} className="flex items-center gap-2 hover:text-emerald-400">
+                              {linha.time.crest_url ? <img src={linha.time.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                              <span className="truncate text-slate-200">{linha.time.name}</span>
+                            </Link>
+                          ) : (
+                            <span className="flex items-center gap-2" title="Esse time ainda não tem vínculo com o cadastro manual (equipes)">
+                              {linha.time.crest_url ? <img src={linha.time.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                              <span className="truncate text-slate-200">{linha.time.name}</span>
+                            </span>
+                          )}
                         </td>
                         <td className="p-2.5 text-center text-slate-400">{linha.j}</td>
                         <td className="p-2.5 text-center text-slate-400">{linha.v}</td>
