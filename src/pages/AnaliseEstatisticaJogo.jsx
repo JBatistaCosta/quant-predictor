@@ -28,6 +28,7 @@ import { supabase, supabaseAtivo } from '../supabaseClient';
 import { poisson, dixonColesTau, DIXON_COLES_RHO } from '../utils/poisson';
 import { getLambdaFormula } from '../utils/lambdaFormulas';
 import { extractJsonFromImage } from '../utils/ocr';
+import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 
 // Mesmo prompt de AnaliseEvento.jsx (OCR_STATS_PROMPT) — extrai xG/xGA/chutes/
 // escanteios dos DOIS times de uma vez a partir da tabela "Estatística média".
@@ -243,13 +244,24 @@ function devigar(oddsPorSelecao) {
 }
 
 // Previsões do modelo pra essa partida + a melhor fonte de odds disponível
-// (prioriza a média de mercado no fechamento; sem isso, cai pra qualquer casa).
+// (prioriza a média de mercado no fechamento; sem isso, cai pra qualquer casa)
+// + calibração Platt/Isotonic já ajustada (model_calibration) — aplicada aqui
+// em cima da probabilidade crua, escolhendo por combinação o método com menor
+// log-loss medido no teste (ver src/utils/calibration.js). O edge exibido usa
+// a probabilidade CALIBRADA quando disponível, já que o achado documentado é
+// que o modelo bruto é sistematicamente overconfident nos mercados binários —
+// um edge calculado sobre probabilidade não calibrada superestima a vantagem
+// real. Cai pra crua (sem calibração) só quando a combinação nunca teve
+// amostra suficiente pra calibrar.
 async function buscarComparacaoModeloMercado(matchId) {
-  const [{ data: previsoes }, { data: oddsRows }] = await Promise.all([
+  const [{ data: previsoes }, { data: oddsRows }, { data: calibracaoRows }] = await Promise.all([
     supabase.from('model_predictions').select('model_name, market, selection, probability').eq('match_id', matchId),
     supabase.from('odds_market').select('bookmaker, market, selection, odds, snapshot, captured_at').eq('match_id', matchId).order('captured_at', { ascending: false }),
+    supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_calibrado, n_teste'),
   ]);
   if (!previsoes || previsoes.length === 0) return [];
+
+  const indiceCalibracao = indexarCalibracao(calibracaoRows);
 
   const porMercado = {};
   (oddsRows || []).forEach(r => {
@@ -273,9 +285,14 @@ async function buscarComparacaoModeloMercado(matchId) {
   previsoes.forEach(p => {
     const chave = `${p.model_name}__${p.market}`;
     if (!porModeloMercado[chave]) porModeloMercado[chave] = { model_name: p.model_name, market: p.market, selecoes: [] };
+    const pModelo = Number(p.probability);
+    const calibrado = calibrarProbabilidade(pModelo, indiceCalibracao, p.model_name, p.market, p.selection);
     porModeloMercado[chave].selecoes.push({
       selecao: p.selection,
-      pModelo: Number(p.probability),
+      pModelo,
+      pCalibrado: calibrado?.probabilidade ?? null,
+      metodoCalibracao: calibrado?.metodo ?? null,
+      nTesteCalibracao: calibrado?.nTeste ?? null,
       pMercado: probMercadoPorMercado[p.market]?.[p.selection] ?? null,
     });
   });
@@ -340,8 +357,13 @@ function PainelTendencias({ nome, crestUrl, tendencias, ladoEsquerda }) {
   );
 }
 
-function LinhaModeloMercado({ selecao, pModelo, pMercado }) {
-  const edge = pMercado != null ? pModelo - pMercado : null;
+function LinhaModeloMercado({ selecao, pModelo, pCalibrado, metodoCalibracao, pMercado }) {
+  // Edge "de verdade" usa a probabilidade CALIBRADA quando existe (o modelo
+  // bruto é sistematicamente overconfident nos mercados binários, ver
+  // src/utils/calibration.js) — só cai pra crua se essa combinação nunca foi
+  // calibrada (amostra insuficiente).
+  const pParaEdge = pCalibrado ?? pModelo;
+  const edge = pMercado != null ? pParaEdge - pMercado : null;
   return (
     <div className="py-2">
       <div className="flex items-center justify-between text-xs mb-1">
@@ -354,10 +376,16 @@ function LinhaModeloMercado({ selecao, pModelo, pMercado }) {
       </div>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-slate-500 w-14 shrink-0">Modelo</span>
-          <BarraProgresso pct={pModelo} cor={COR_MODELO} />
-          <span className="text-[11px] font-mono text-slate-400 w-10 text-right shrink-0">{(pModelo * 100).toFixed(0)}%</span>
+          <span className="text-[10px] text-slate-500 w-14 shrink-0">{pCalibrado != null ? 'Modelo*' : 'Modelo'}</span>
+          <BarraProgresso pct={pParaEdge} cor={COR_MODELO} />
+          <span className="text-[11px] font-mono text-slate-400 w-10 text-right shrink-0">{(pParaEdge * 100).toFixed(0)}%</span>
         </div>
+        {pCalibrado != null && (
+          <div className="flex items-center gap-2 opacity-60">
+            <span className="text-[10px] text-slate-600 w-14 shrink-0">Cru</span>
+            <span className="text-[10px] text-slate-600">{(pModelo * 100).toFixed(0)}% sem calibração</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-slate-500 w-14 shrink-0">Mercado</span>
           {pMercado != null
@@ -366,6 +394,9 @@ function LinhaModeloMercado({ selecao, pModelo, pMercado }) {
           <span className="text-[11px] font-mono text-slate-400 w-10 text-right shrink-0">{pMercado != null ? `${(pMercado * 100).toFixed(0)}%` : '—'}</span>
         </div>
       </div>
+      {pCalibrado != null && (
+        <p className="text-[9px] text-slate-600 mt-1">*calibrado ({metodoCalibracao === 'platt' ? 'Platt Scaling' : 'Isotonic Regression'})</p>
+      )}
     </div>
   );
 }
@@ -458,6 +489,9 @@ function PainelModeloMercado({ grupos }) {
         <p className="text-xs text-slate-600">Sem previsão do modelo salva pra essa partida ainda.</p>
       ) : (
         <div className="space-y-4">
+          <p className="text-[10px] text-slate-600 -mt-2">
+            Quando marcado com *, "Modelo" já é a probabilidade calibrada (Platt/Isotonic ajustados em cima do histórico real — ver /modelos) em vez da crua; o edge usa essa versão calibrada.
+          </p>
           {grupos.map(g => (
             <div key={`${g.model_name}__${g.market}`}>
               <div className="flex items-center justify-between mb-1">
