@@ -45,6 +45,32 @@ function FotoJogador({ url, nome }) {
   );
 }
 
+// `teams.id` (pipeline) e `equipes.id` (cadastro manual, o que a rota
+// /times/:id espera) são numerações DIFERENTES — só existe link de verdade
+// pros times que já têm o vínculo `equipes.pipeline_team_id` preenchido
+// (ver Times.jsx). Linkar direto com teams.id levava pra um clube errado
+// (a mesma numeração calhava de existir em equipes, mas de outro time).
+function TimeCelula({ time }) {
+  const equipeId = time.equipes?.[0]?.id;
+  const conteudo = (
+    <>
+      {time.crest_url
+        ? <img src={time.crest_url} alt="" className="w-4 h-4 object-contain shrink-0" />
+        : <Shield size={14} className="text-slate-700 shrink-0" />}
+      <span className="truncate max-w-[10rem]">{time.name}</span>
+    </>
+  );
+  return equipeId ? (
+    <Link to={`/times/${equipeId}`} className="flex items-center gap-1.5 hover:text-emerald-400 hover:underline w-fit">
+      {conteudo}
+    </Link>
+  ) : (
+    <span className="flex items-center gap-1.5 w-fit" title="Esse time ainda não tem vínculo com o cadastro manual (equipes)">
+      {conteudo}
+    </span>
+  );
+}
+
 export default function Jogadores() {
   const [jogadores, setJogadores] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -70,7 +96,7 @@ export default function Jogadores() {
 
       let query = supabase
         .from('players')
-        .select('id, name, photo_url, age, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url)', { count: 'exact' });
+        .select('id, name, photo_url, age, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))', { count: 'exact' });
 
       if (busca) query = query.ilike('name', `%${busca}%`);
       query = query
@@ -160,12 +186,7 @@ export default function Jogadores() {
                     </td>
                     <td className="p-3 text-slate-400">
                       {j.last_team ? (
-                        <Link to={`/times/${j.last_team.id}`} className="flex items-center gap-1.5 hover:text-emerald-400 hover:underline w-fit">
-                          {j.last_team.crest_url
-                            ? <img src={j.last_team.crest_url} alt="" className="w-4 h-4 object-contain shrink-0" />
-                            : <Shield size={14} className="text-slate-700 shrink-0" />}
-                          <span className="truncate max-w-[10rem]">{j.last_team.name}</span>
-                        </Link>
+                        <TimeCelula time={j.last_team} />
                       ) : '—'}
                     </td>
                     <td className="p-3 text-slate-400">

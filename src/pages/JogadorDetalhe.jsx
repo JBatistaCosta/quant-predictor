@@ -81,7 +81,7 @@ export default function JogadorDetalhe() {
 
       const { data: j, error: erroJogador } = await supabase
         .from('players')
-        .select('id, name, photo_url, age, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url)')
+        .select('id, name, photo_url, age, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))')
         .eq('id', id)
         .single();
 
@@ -178,9 +178,17 @@ export default function JogadorDetalhe() {
           <h1 className="text-xl font-extrabold text-slate-100">{jogador.name}</h1>
           <div className="flex items-center gap-3 text-sm text-slate-400 mt-1 flex-wrap">
             {jogador.last_team && (
-              <Link to={`/times/${jogador.last_team.id}`} className="flex items-center gap-1.5 hover:text-emerald-400 hover:underline">
-                <Escudo url={jogador.last_team.crest_url} /> {jogador.last_team.name}
-              </Link>
+              // teams.id (pipeline) != equipes.id (o que /times/:id espera) — só
+              // linka quando o vínculo equipes.pipeline_team_id existir de verdade.
+              jogador.last_team.equipes?.[0]?.id ? (
+                <Link to={`/times/${jogador.last_team.equipes[0].id}`} className="flex items-center gap-1.5 hover:text-emerald-400 hover:underline">
+                  <Escudo url={jogador.last_team.crest_url} /> {jogador.last_team.name}
+                </Link>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Escudo url={jogador.last_team.crest_url} /> {jogador.last_team.name}
+                </span>
+              )
             )}
             {jogador.country_name && <span>{jogador.country_name}</span>}
             {jogador.age != null && <span>{jogador.age} anos</span>}
