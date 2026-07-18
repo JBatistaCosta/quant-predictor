@@ -5,7 +5,11 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
   1. Busca odds de mercado (Pinnacle / Betfair Exchange) e salva em
      `market_odds` via UPSERT.
   2. Roda 4 modelos de predição 1X2 (dixon_coles_v1, catboost_v1,
-     xgboost_v1, lightgbm_v1) para as mesmas partidas.
+     xgboost_v1, lightgbm_v1) para as mesmas partidas -- cada um treinado
+     com a janela de dado histórico apropriada pra sua família (ver
+     `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas + decaimento
+     temporal; os 3 modelos de árvore usam um dataset "Feature Stacked" de
+     5-8 temporadas empilhadas das 5 ligas de elite europeias).
   3. Calcula o edge de cada modelo contra a melhor odd capturada e persiste
      tudo em `predicoes`, diferenciado por `model_name`.
 
@@ -27,6 +31,8 @@ from scipy.stats import poisson
 from supabase import Client, create_client
 from xgboost import XGBClassifier
 
+import dados_historicos
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -34,6 +40,52 @@ logging.basicConfig(
 logger = logging.getLogger("rodar_predicoes")
 
 RESULTADO_HOME, RESULTADO_DRAW, RESULTADO_AWAY = 0, 1, 2
+
+# Janelas de dado histórico (Requisito 5 -- futebol é não-estacionário, cada
+# família de modelo usa uma janela diferente, ver dados_historicos.py):
+JANELA_DIXON_COLES_TEMPORADAS = 3  # as duas últimas completas + a atual
+JANELA_ML_ANOS = 6  # dentro do range pedido de 5-8 temporadas por liga
+
+# IDs reais em `teams`/`matches` pros 4 times do mock de fixtures
+# (confirmado por consulta direta ao Supabase, não adivinhado) -- só serve
+# pro cenário de demonstração; numa integração real da The-Odds-API, esse
+# mapeamento viria do casamento evento->match_id (`buscar_odds_mercado_real`).
+MOCK_TEAM_ID = {
+    "Palmeiras": 1,
+    "Flamengo": 17,
+    "Arsenal": 63,
+    "Chelsea": 77,
+}
+
+# sport_key da The-Odds-API -> league_id real do pipeline (Brasileirão=1,
+# Premier League=4, La Liga=7, Serie A=10, Bundesliga=13, Ligue 1=16 --
+# conferir contra /v4/sports antes de ligar a chamada real da API).
+SPORT_KEY_PARA_LEAGUE_ID = {
+    "soccer_brazil_campeonato": 1,
+    "soccer_epl": 4,
+    "soccer_spain_la_liga": 7,
+    "soccer_italy_serie_a": 10,
+    "soccer_germany_bundesliga1": 13,
+    "soccer_france_ligue_one": 16,
+}
+
+# sport_key -> nome de liga EXATAMENTE como usado em
+# `dados_historicos.LIGAS_ELITE_EUROPEIAS` (precisa bater pra alinhar com a
+# categoria "liga" vista no treino). Brasileirão não faz parte do dataset
+# "Feature Stacked" (só as 5 ligas de elite europeias, por pedido explícito
+# do Requisito 5) -- fica None de propósito, tratado como categoria
+# desconhecida pelos modelos de ML (o Dixon-Coles não usa esse mapeamento).
+SPORT_KEY_PARA_LIGA_NOME = {
+    "soccer_epl": "Premier League",
+    "soccer_spain_la_liga": "La Liga",
+    "soccer_italy_serie_a": "Serie A (Itália)",
+    "soccer_germany_bundesliga1": "Bundesliga",
+    "soccer_france_ligue_one": "Ligue 1",
+}
+
+ELO_PADRAO = 1500.0
+FORMA_PADRAO = {"media_gols_marcados": 1.3, "media_gols_sofridos": 1.3}
+FORCA_PADRAO = {"ataque": 1.0, "defesa": 1.0}
 
 
 # =============================================================================
@@ -210,13 +262,6 @@ def salvar_odds_mercado(supabase: Client, linhas: list[dict]) -> None:
 # =============================================================================
 
 # --- Modelo 1: dixon_coles_v1 (Poisson bivariado com correção Dixon-Coles) ---
-FORCA_TIMES_MOCK = {
-    "Palmeiras": {"ataque": 1.35, "defesa": 0.85},
-    "Flamengo": {"ataque": 1.30, "defesa": 0.90},
-    "Arsenal": {"ataque": 1.45, "defesa": 0.75},
-    "Chelsea": {"ataque": 1.20, "defesa": 0.95},
-    "_default": {"ataque": 1.00, "defesa": 1.00},
-}
 MANDO_CASA = 1.15  # multiplicador de vantagem de jogar em casa
 RHO_DIXON_COLES = -0.05  # correção de baixo placar (0x0, 1x0, 0x1, 1x1)
 MAX_GOLS_SIMULADOS = 8
@@ -237,14 +282,35 @@ def tau_dixon_coles(gols_casa: int, gols_fora: int, lambda_casa: float, lambda_f
     return 1.0
 
 
-def prever_dixon_coles_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, float]]:
-    """Placeholder estruturado: força ataque/defesa vem de `FORCA_TIMES_MOCK`.
-    Em produção, essas forças devem vir de `team_strengths` (já modelada no
-    schema do projeto, hoje ainda vazia até o pipeline treinado gravar lá)."""
+def prever_dixon_coles_v1(fixtures: pd.DataFrame, supabase: Client) -> dict[int, dict[str, float]]:
+    """Janela CURTA (Requisito 5): `dados_historicos.montar_janela_dixon_coles`
+    carrega só as `JANELA_DIXON_COLES_TEMPORADAS` temporadas mais recentes
+    da liga de cada partida, com peso de decaimento temporal já aplicado
+    (`XI_DECAIMENTO`); `estimar_forcas_dixon_coles` deriva ataque/defesa por
+    time em cima dessa janela ponderada. Times sem força calculável (jogo
+    de liga não mapeada, ou time sem histórico na janela) caem no fallback
+    neutro `FORCA_PADRAO`."""
     predicoes = {}
+    forcas_por_liga: dict[int, dict[int, dict[str, float]]] = {}
+
     for _, jogo in fixtures.iterrows():
-        forca_casa = FORCA_TIMES_MOCK.get(jogo["home_team"], FORCA_TIMES_MOCK["_default"])
-        forca_fora = FORCA_TIMES_MOCK.get(jogo["away_team"], FORCA_TIMES_MOCK["_default"])
+        league_id = jogo.get("league_id")
+        if pd.isna(league_id):
+            logger.warning("Fixture %s sem league_id mapeado (sport_key desconhecido) -- usando força neutra.", jogo["match_id"])
+        else:
+            league_id = int(league_id)
+            if league_id not in forcas_por_liga:
+                janela = dados_historicos.montar_janela_dixon_coles(
+                    supabase, league_id, n_temporadas=JANELA_DIXON_COLES_TEMPORADAS
+                )
+                forcas_por_liga[league_id] = dados_historicos.estimar_forcas_dixon_coles(janela)
+
+        forcas = forcas_por_liga.get(league_id, {}) if not pd.isna(league_id) else {}
+        id_casa = MOCK_TEAM_ID.get(jogo["home_team"])
+        id_fora = MOCK_TEAM_ID.get(jogo["away_team"])
+        forca_casa = forcas.get(id_casa, FORCA_PADRAO)
+        forca_fora = forcas.get(id_fora, FORCA_PADRAO)
+
         lambda_casa = forca_casa["ataque"] * forca_fora["defesa"] * MANDO_CASA
         lambda_fora = forca_fora["ataque"] * forca_casa["defesa"]
 
@@ -273,73 +339,61 @@ def prever_dixon_coles_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, float]]
 
 
 # --- Modelos 2-4: gradient boosting (CatBoost / XGBoost / LightGBM) ---
+# Nomes de coluna alinhados com `dados_historicos.montar_dataset_ml_empilhado`
+# -- treino (dado real, 5-8 temporadas empilhadas) e inferência (fixtures)
+# precisam da mesma forma pra `predict_proba` funcionar.
 FEATURES_NUMERICAS = [
     "elo_home",
     "elo_away",
-    "gols_marcados_media_home",
-    "gols_sofridos_media_home",
-    "gols_marcados_media_away",
-    "gols_sofridos_media_away",
+    "media_gols_marcados_5j_home",
+    "media_gols_sofridos_5j_home",
+    "media_gols_marcados_5j_away",
+    "media_gols_sofridos_5j_away",
 ]
 CAT_FEATURES = ["liga"]
 FEATURES = FEATURES_NUMERICAS + CAT_FEATURES
 
 
-def gerar_dataset_treino_mock(n_amostras: int = 500) -> pd.DataFrame:
-    """Placeholder estruturado do dataset de treino.
-
-    Gera dados sintéticos com o mesmo formato (colunas + tipos) que o
-    dataset real teria -- a fonte real seria uma consulta ao Supabase
-    cruzando `matches` + `team_strengths`/`team_elo` + médias de
-    `match_stats`. O sinal é gerado a partir de uma diferença de Elo (não é
-    ruído puro), só pra dar aos 3 modelos algo consistente pra aprender
-    enquanto o dataset real não é conectado.
-    """
-    rng = np.random.default_rng(42)
-    n = n_amostras
-    df = pd.DataFrame(
-        {
-            "elo_home": rng.normal(1550, 120, n),
-            "elo_away": rng.normal(1500, 120, n),
-            "gols_marcados_media_home": rng.gamma(3.0, 0.5, n),
-            "gols_sofridos_media_home": rng.gamma(2.5, 0.5, n),
-            "gols_marcados_media_away": rng.gamma(2.7, 0.5, n),
-            "gols_sofridos_media_away": rng.gamma(2.8, 0.5, n),
-            "liga": rng.choice(["brasileirao", "premier_league", "la_liga"], n),
-        }
+def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.DataFrame:
+    """Monta as features dos jogos a prever com dado REAL (elo atual +
+    forma recente) pros 4 times conhecidos do mock (`MOCK_TEAM_ID`); times
+    fora desse mapeamento caem no fallback neutro (`ELO_PADRAO`/`FORMA_PADRAO`).
+    `liga` vem de `SPORT_KEY_PARA_LIGA_NOME` -- fixtures de ligas fora do
+    dataset "Feature Stacked" (ex.: Brasileirão) ficam com `liga=None`,
+    tratado como categoria desconhecida pelos 3 modelos de ML."""
+    ids_conhecidos = sorted(
+        {MOCK_TEAM_ID[nome] for nome in pd.concat([fixtures["home_team"], fixtures["away_team"]]).unique() if nome in MOCK_TEAM_ID}
     )
+    elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
+    forma_recente = dados_historicos.obter_forma_recente(supabase, ids_conhecidos)
 
-    diff_elo_com_mando = (df["elo_home"] - df["elo_away"]) + 65
-    prob_home_sintetica = 1 / (1 + np.exp(-diff_elo_com_mando / 200))
-    sorteio = rng.random(n)
-    df["resultado"] = np.where(
-        sorteio < prob_home_sintetica * 0.75,
-        RESULTADO_HOME,
-        np.where(sorteio < prob_home_sintetica * 0.75 + 0.25, RESULTADO_DRAW, RESULTADO_AWAY),
-    )
-    return df
-
-
-def montar_features_fixtures(fixtures: pd.DataFrame) -> pd.DataFrame:
-    """Mesma fonte de força mock usada pelo Dixon-Coles, reaproveitada aqui
-    só pra dar às árvores de decisão algo coerente pra prever em cima."""
     linhas = []
     for _, jogo in fixtures.iterrows():
-        forca_casa = FORCA_TIMES_MOCK.get(jogo["home_team"], FORCA_TIMES_MOCK["_default"])
-        forca_fora = FORCA_TIMES_MOCK.get(jogo["away_team"], FORCA_TIMES_MOCK["_default"])
+        id_casa = MOCK_TEAM_ID.get(jogo["home_team"])
+        id_fora = MOCK_TEAM_ID.get(jogo["away_team"])
+        forma_casa = forma_recente.get(id_casa, FORMA_PADRAO)
+        forma_fora = forma_recente.get(id_fora, FORMA_PADRAO)
         linhas.append(
             {
                 "match_id": jogo["match_id"],
-                "elo_home": 1500 + forca_casa["ataque"] * 100,
-                "elo_away": 1500 + forca_fora["ataque"] * 100,
-                "gols_marcados_media_home": forca_casa["ataque"] * 1.4,
-                "gols_sofridos_media_home": forca_casa["defesa"] * 1.1,
-                "gols_marcados_media_away": forca_fora["ataque"] * 1.3,
-                "gols_sofridos_media_away": forca_fora["defesa"] * 1.15,
-                "liga": "brasileirao",
+                "elo_home": elo_atual.get(id_casa, ELO_PADRAO),
+                "elo_away": elo_atual.get(id_fora, ELO_PADRAO),
+                "media_gols_marcados_5j_home": forma_casa["media_gols_marcados"],
+                "media_gols_sofridos_5j_home": forma_casa["media_gols_sofridos"],
+                "media_gols_marcados_5j_away": forma_fora["media_gols_marcados"],
+                "media_gols_sofridos_5j_away": forma_fora["media_gols_sofridos"],
+                "liga": SPORT_KEY_PARA_LIGA_NOME.get(jogo.get("sport_key")),
             }
         )
     return pd.DataFrame(linhas)
+
+
+def _alinhar_categoria_liga(serie: pd.Series, categorias_treino) -> pd.Categorical:
+    """Garante que a coluna `liga` da predição use exatamente as categorias
+    vistas no treino -- um valor não visto (liga fora do dataset "Feature
+    Stacked", ou None) vira categoria ausente em vez de quebrar o modelo ou
+    gerar um código de categoria fora do intervalo treinado."""
+    return pd.Categorical(serie, categories=categorias_treino)
 
 
 def _empacotar_predicoes(match_ids, probs: np.ndarray, classes) -> dict[int, dict[str, float]]:
@@ -356,8 +410,17 @@ def _empacotar_predicoes(match_ids, probs: np.ndarray, classes) -> dict[int, dic
     return resultado
 
 
-def treinar_e_prever_catboost_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, float]]:
-    dataset = gerar_dataset_treino_mock()
+def _preparar_liga_para_catboost(df: pd.DataFrame) -> pd.DataFrame:
+    """CatBoost aceita string ou int em feature categórica, mas não NaN cru
+    (erro `bad object for id: nan`) -- fixtures de liga fora do dataset
+    "Feature Stacked" (`liga=None`, ver `montar_features_fixtures`) precisam
+    virar uma string sentinela antes de entrar no Pool."""
+    df = df.copy()
+    df["liga"] = df["liga"].fillna("desconhecida").astype(str)
+    return df
+
+
+def treinar_e_prever_catboost_v1(features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame) -> dict[int, dict[str, float]]:
     modelo = CatBoostClassifier(
         loss_function="MultiClass",
         thread_count=2,
@@ -368,16 +431,18 @@ def treinar_e_prever_catboost_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, 
         random_seed=42,
         verbose=False,
     )
-    modelo.fit(dataset[FEATURES], dataset["resultado"])
+    # CatBoost lida nativamente com string categórica (inclusive valor novo
+    # visto só na predição) -- não precisa dummy-encoding nem category dtype.
+    dataset_treino = _preparar_liga_para_catboost(dataset_treino)
+    modelo.fit(dataset_treino[FEATURES], dataset_treino["resultado"])
 
-    features_fixtures = montar_features_fixtures(fixtures)
+    features_fixtures = _preparar_liga_para_catboost(features_fixtures)
     probs = modelo.predict_proba(features_fixtures[FEATURES])
     return _empacotar_predicoes(features_fixtures["match_id"], probs, modelo.classes_)
 
 
-def treinar_e_prever_xgboost_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, float]]:
-    dataset = gerar_dataset_treino_mock()
-    dataset_encoded = pd.get_dummies(dataset[FEATURES], columns=CAT_FEATURES)
+def treinar_e_prever_xgboost_v1(features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame) -> dict[int, dict[str, float]]:
+    dataset_encoded = pd.get_dummies(dataset_treino[FEATURES], columns=CAT_FEATURES)
 
     modelo = XGBClassifier(
         objective="multi:softprob",
@@ -388,25 +453,26 @@ def treinar_e_prever_xgboost_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, f
         eval_metric="mlogloss",
         random_state=42,
     )
-    modelo.fit(dataset_encoded, dataset["resultado"])
+    modelo.fit(dataset_encoded, dataset_treino["resultado"])
 
-    features_fixtures = montar_features_fixtures(fixtures)
     features_fixtures_encoded = pd.get_dummies(features_fixtures[FEATURES], columns=CAT_FEATURES)
-    # garante as mesmas colunas (mesma ordem) vistas no treino, mesmo se uma
-    # liga não aparecer nas fixtures da rodada atual
+    # garante as mesmas colunas (mesma ordem) vistas no treino -- uma liga
+    # do treino ausente nas fixtures, ou uma liga nas fixtures fora do
+    # dataset "Feature Stacked", vira coluna de zeros (sem informação de
+    # liga) em vez de quebrar o predict_proba
     features_fixtures_encoded = features_fixtures_encoded.reindex(columns=dataset_encoded.columns, fill_value=0)
 
     probs = modelo.predict_proba(features_fixtures_encoded)
     return _empacotar_predicoes(features_fixtures["match_id"], probs, modelo.classes_)
 
 
-def treinar_e_prever_lightgbm_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, float]]:
+def treinar_e_prever_lightgbm_v1(features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame) -> dict[int, dict[str, float]]:
     """Configuração deliberadamente leve/rápida (poucas árvores, folhas
     rasas) -- é o modelo mais barato dos 4 em custo de CPU no runner do
     GitHub Actions."""
-    dataset = gerar_dataset_treino_mock()
-    dataset_lgbm = dataset.copy()
-    dataset_lgbm["liga"] = dataset_lgbm["liga"].astype("category")
+    dataset_lgbm = dataset_treino.copy()
+    categorias_liga = sorted(dataset_lgbm["liga"].dropna().unique())
+    dataset_lgbm["liga"] = pd.Categorical(dataset_lgbm["liga"], categories=categorias_liga)
 
     modelo = LGBMClassifier(
         objective="multiclass",
@@ -420,14 +486,13 @@ def treinar_e_prever_lightgbm_v1(fixtures: pd.DataFrame) -> dict[int, dict[str, 
     )
     modelo.fit(dataset_lgbm[FEATURES], dataset_lgbm["resultado"], categorical_feature=CAT_FEATURES)
 
-    features_fixtures = montar_features_fixtures(fixtures)
-    features_fixtures["liga"] = features_fixtures["liga"].astype("category")
+    features_fixtures = features_fixtures.copy()
+    features_fixtures["liga"] = _alinhar_categoria_liga(features_fixtures["liga"], categorias_liga)
     probs = modelo.predict_proba(features_fixtures[FEATURES])
     return _empacotar_predicoes(features_fixtures["match_id"], probs, modelo.classes_)
 
 
-MODELOS = {
-    "dixon_coles_v1": prever_dixon_coles_v1,
+MODELOS_ML = {
     "catboost_v1": treinar_e_prever_catboost_v1,
     "xgboost_v1": treinar_e_prever_xgboost_v1,
     "lightgbm_v1": treinar_e_prever_lightgbm_v1,
@@ -516,7 +581,13 @@ def main() -> None:
     fixtures = (
         pd.DataFrame(
             [
-                {"match_id": e["match_id"], "home_team": e["home_team"], "away_team": e["away_team"]}
+                {
+                    "match_id": e["match_id"],
+                    "home_team": e["home_team"],
+                    "away_team": e["away_team"],
+                    "sport_key": e.get("sport_key"),
+                    "league_id": SPORT_KEY_PARA_LEAGUE_ID.get(e.get("sport_key")),
+                }
                 for e in eventos_raw
             ]
         )
@@ -529,21 +600,43 @@ def main() -> None:
 
     melhor_odd_por_partida = calcular_melhor_odd_por_partida(supabase, fixtures["match_id"].astype(int).tolist())
 
-    # 2. Rodar os 4 modelos em sequência -- cada um isolado por try/except
-    # pra uma falha não derrubar os outros 3 (e não deixar a tabela num
-    # estado parcial silencioso). Sequencial em vez de paralelo de propósito:
-    # CatBoost/LightGBM já usam thread_count=2 internamente, então rodar em
-    # paralelo só disputaria os mesmos 2 núcleos do runner do GitHub Actions.
+    # 2. Rodar os 4 modelos -- cada um isolado por try/except pra uma falha
+    # não derrubar os outros 3 (e não deixar a tabela num estado parcial
+    # silencioso).
     todas_as_linhas: list[dict] = []
-    for nome_modelo, funcao_modelo in MODELOS.items():
-        try:
-            logger.info("Rodando modelo %s...", nome_modelo)
-            predicoes_modelo = funcao_modelo(fixtures)
-            linhas = montar_linhas_predicoes(nome_modelo, predicoes_modelo, melhor_odd_por_partida)
-            todas_as_linhas.extend(linhas)
-            logger.info("%s: %d predição(ões) geradas.", nome_modelo, len(linhas))
-        except Exception:
-            logger.exception("Falha ao rodar o modelo %s -- pulando, os outros modelos continuam.", nome_modelo)
+
+    try:
+        logger.info("Rodando modelo dixon_coles_v1 (janela de %d temporadas + decaimento temporal)...", JANELA_DIXON_COLES_TEMPORADAS)
+        predicoes_dixon_coles = prever_dixon_coles_v1(fixtures, supabase)
+        linhas = montar_linhas_predicoes("dixon_coles_v1", predicoes_dixon_coles, melhor_odd_por_partida)
+        todas_as_linhas.extend(linhas)
+        logger.info("dixon_coles_v1: %d predição(ões) geradas.", len(linhas))
+    except Exception:
+        logger.exception("Falha ao rodar dixon_coles_v1 -- pulando, os outros modelos continuam.")
+
+    # Os 3 modelos de árvore compartilham o mesmo dataset "Feature Stacked"
+    # (Requisito 5: 5-8 temporadas empilhadas das 5 ligas de elite) e o
+    # mesmo conjunto de features das fixtures -- montados uma única vez
+    # aqui, em vez de 3x (uma por modelo), pra não repetir consulta ao
+    # Supabase à toa. Sequencial em vez de paralelo de propósito: CatBoost/
+    # LightGBM já usam thread_count=2 internamente, então rodar em paralelo
+    # só disputaria os mesmos 2 núcleos do runner do GitHub Actions.
+    dataset_treino = dados_historicos.montar_dataset_ml_empilhado(supabase, anos_por_liga=JANELA_ML_ANOS)
+    if dataset_treino.empty:
+        logger.warning("Dataset de treino (ligas de elite) veio vazio -- pulando catboost_v1/xgboost_v1/lightgbm_v1.")
+    else:
+        logger.info("Dataset de treino: %d linhas, ligas=%s.", len(dataset_treino), sorted(dataset_treino["liga"].unique()))
+        features_fixtures = montar_features_fixtures(fixtures, supabase)
+
+        for nome_modelo, funcao_modelo in MODELOS_ML.items():
+            try:
+                logger.info("Rodando modelo %s...", nome_modelo)
+                predicoes_modelo = funcao_modelo(features_fixtures, dataset_treino)
+                linhas = montar_linhas_predicoes(nome_modelo, predicoes_modelo, melhor_odd_por_partida)
+                todas_as_linhas.extend(linhas)
+                logger.info("%s: %d predição(ões) geradas.", nome_modelo, len(linhas))
+            except Exception:
+                logger.exception("Falha ao rodar o modelo %s -- pulando, os outros modelos continuam.", nome_modelo)
 
     # 3. Persistir tudo de uma vez
     salvar_predicoes(supabase, todas_as_linhas)
