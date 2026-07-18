@@ -71,7 +71,12 @@ function nomesBatem(nomeA, nomeB) {
 // liga_fonte_externa (mesma tabela usada por backfill-api-football) — busca
 // por nome falha pra ligas cujo nome interno diverge do nome real da API
 // (ex: "Brasileirão Série A" aqui x "Serie A"/país Brazil lá, achado testando
-// em produção). Só cai pra busca por nome quando não há crosswalk salvo.
+// em produção). Só cai pra busca por nome quando não há crosswalk salvo — e
+// SÓ aceita o resultado se houver exatamente UM nome exato batendo. Existem
+// várias ligas homônimas na API (ex: "Championship" tem Escócia/Inglaterra/
+// Irlanda do Norte) — pegar "o primeiro" nesse caso já causou 0/40 partidas
+// casando silenciosamente (resolveu pra liga errada). Preferir erro claro a
+// adivinhar (mesma disciplina do projeto pra qualquer mapeamento crítico).
 async function acharLigaNaApiFootball(supabase, ligaId, nomeLiga, apiKey) {
   const { data: fonteRow } = await supabase
     .from('liga_fonte_externa').select('identificador')
@@ -80,9 +85,13 @@ async function acharLigaNaApiFootball(supabase, ligaId, nomeLiga, apiKey) {
 
   const resultados = await chamarAPI(`/leagues?search=${encodeURIComponent(nomeLiga)}`, apiKey);
   if (!resultados || resultados.length === 0) return null;
-  // prioriza o resultado cujo nome bate mais de perto (evita pegar copa/torneio homônimo)
-  const exato = resultados.find(r => normalizar(r.league.name) === normalizar(nomeLiga));
-  return (exato || resultados[0]).league.id;
+  const exatos = resultados.filter(r => normalizar(r.league.name) === normalizar(nomeLiga));
+  if (exatos.length === 1) return exatos[0].league.id;
+  if (exatos.length > 1) {
+    throw new Error(`"${nomeLiga}" bate com ${exatos.length} ligas diferentes na API-Football (países: ${exatos.map(r => r.country?.name).join(', ')}) — cadastre o crosswalk certo em liga_fonte_externa (sistema=api_football) em vez de adivinhar.`);
+  }
+  if (resultados.length === 1) return resultados[0].league.id;
+  throw new Error(`"${nomeLiga}" não bateu exato com nenhuma liga da API-Football — ${resultados.length} resultados parecidos encontrados, cadastre o crosswalk certo em liga_fonte_externa (sistema=api_football).`);
 }
 
 function paraNumero(v) {
