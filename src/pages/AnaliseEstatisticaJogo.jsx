@@ -29,6 +29,7 @@ import { poisson, dixonColesTau, DIXON_COLES_RHO } from '../utils/poisson';
 import { getLambdaFormula } from '../utils/lambdaFormulas';
 import { extractJsonFromImage } from '../utils/ocr';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
+import { negBinomialPMF } from '../utils/distributions';
 
 // Mesmo prompt de AnaliseEvento.jsx (OCR_STATS_PROMPT) — extrai xG/xGA/chutes/
 // escanteios dos DOIS times de uma vez a partir da tabela "Estatística média".
@@ -179,8 +180,16 @@ function aplicarOverrideOcr(medias, metricasOcr) {
   };
 }
 
+// Faixas de total de gols exibidas (bandas fechadas, a última é "6+") — mesma
+// segmentação usada em casas de apostas pro mercado "Total de gols por faixa".
+const FAIXAS_GOLS = [{ min: 0, max: 1, label: '0-1' }, { min: 2, max: 3, label: '2-3' }, { min: 4, max: 5, label: '4-5' }, { min: 6, max: Infinity, label: '6+' }];
+
 // Estimativa 1X2/Over-Under/Ambas Marcam com o mesmo motor de AnaliseEvento.jsx
 // (fórmula "multiplicativo" padrão + correção Dixon-Coles, ambos em utils/).
+// Faixas de total de gols são acumuladas na MESMA grade Poisson×Dixon-Coles já
+// calculada aqui (sem custo extra, sem endpoint novo) — não é um mercado
+// diferente, é a mesma distribuição de placares já usada pro Over/Under 2.5,
+// só reagrupada em bandas mais informativas que um único corte binário.
 function estimarMercadosGols(mediasMandante, mediasVisitante) {
   const formula = getLambdaFormula('multiplicativo');
   const { trueXG1, trueXG2 } = formula.calc({
@@ -191,6 +200,7 @@ function estimarMercadosGols(mediasMandante, mediasVisitante) {
 
   const maxGoals = 10;
   let probWin1 = 0, probWin2 = 0, probDraw = 0, probOver25 = 0, probBtts = 0;
+  const somaFaixas = FAIXAS_GOLS.map(() => 0);
   for (let i = 0; i <= maxGoals; i++) {
     for (let j = 0; j <= maxGoals; j++) {
       let p = poisson(lambda1, i) * poisson(lambda2, j);
@@ -200,6 +210,9 @@ function estimarMercadosGols(mediasMandante, mediasVisitante) {
       else probDraw += p;
       if (i + j > 2.5) probOver25 += p;
       if (i > 0 && j > 0) probBtts += p;
+      const totalGols = i + j;
+      const idxFaixa = FAIXAS_GOLS.findIndex(f => totalGols >= f.min && totalGols <= f.max);
+      if (idxFaixa !== -1) somaFaixas[idxFaixa] += p;
     }
   }
   const total = probWin1 + probWin2 + probDraw;
@@ -207,6 +220,7 @@ function estimarMercadosGols(mediasMandante, mediasVisitante) {
     lambda1, lambda2,
     probHome: probWin1 / total, probDraw: probDraw / total, probAway: probWin2 / total,
     probOver25: probOver25 / total, probBtts: probBtts / total,
+    faixasGols: FAIXAS_GOLS.map((f, idx) => ({ label: f.label, prob: somaFaixas[idx] / total })),
     xgRealMandante: mediasMandante.xgReal, xgRealVisitante: mediasVisitante.xgReal,
     origemOcr: !!(mediasMandante.origemOcr || mediasVisitante.origemOcr),
   };
@@ -229,6 +243,22 @@ async function buscarEstimativaEscanteios(nomeMandante, nomeVisitante, idMandant
   } catch {
     return null;
   }
+}
+
+// Faixas de total de escanteios (mesma ideia das faixas de gols) — reaproveita
+// o total esperado (mandante+visitante) e o disp_r já devolvidos por
+// api/corners-model.js (escanteios_esperados.total / modelo.disp_r), somando a
+// PMF da Binomial Negativa em cada banda. Sem chamada extra: os dois números
+// já vêm na mesma resposta usada pras linhas Over/Under 9,5 existentes.
+const FAIXAS_ESCANTEIOS = [{ min: 0, max: 8, label: '≤8' }, { min: 9, max: 10, label: '9-10' }, { min: 11, max: 12, label: '11-12' }, { min: 13, max: 40, label: '13+' }];
+
+function calcularFaixasEscanteios(mediaTotal, dispR) {
+  if (mediaTotal == null || !dispR) return null;
+  return FAIXAS_ESCANTEIOS.map(f => {
+    let soma = 0;
+    for (let x = f.min; x <= f.max; x++) soma += negBinomialPMF(mediaTotal, dispR, x);
+    return { label: f.label, prob: soma };
+  });
 }
 
 function devigar(oddsPorSelecao) {
@@ -401,7 +431,7 @@ function LinhaModeloMercado({ selecao, pModelo, pCalibrado, metodoCalibracao, pM
   );
 }
 
-function PainelEstimativaModelo({ estimativa, escanteios, mandante, visitante, onOcrUpload, ocrLoading, ocrError, ocrSuccess, temOverrideOcr, onLimparOcr }) {
+function PainelEstimativaModelo({ estimativa, escanteios, faixasEscanteios, mandante, visitante, onOcrUpload, ocrLoading, ocrError, ocrSuccess, temOverrideOcr, onLimparOcr }) {
   const inputRef = useRef(null);
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
@@ -449,12 +479,34 @@ function PainelEstimativaModelo({ estimativa, escanteios, mandante, visitante, o
             <CardTendencia titulo="Ambas marcam" valor={(estimativa.probBtts * 100).toFixed(0)} sufixo="%" pct={estimativa.probBtts} cor="#10b981" />
           </div>
 
+          {estimativa.faixasGols && (
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">Faixas de total de gols</span>
+              <div className="grid grid-cols-4 gap-2">
+                {estimativa.faixasGols.map(f => (
+                  <CardTendencia key={f.label} titulo={f.label} valor={(f.prob * 100).toFixed(0)} sufixo="%" pct={f.prob} cor="#3987e5" />
+                ))}
+              </div>
+            </div>
+          )}
+
           {escanteios?.mercados?.[0] && (
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">Escanteios (linha 9,5)</span>
               <div className="grid grid-cols-2 gap-2">
                 <CardTendencia titulo="Over 9,5" valor={(escanteios.mercados[0].prob_over * 100).toFixed(0)} sufixo="%" pct={escanteios.mercados[0].prob_over} cor="#10b981" />
                 <CardTendencia titulo="Under 9,5" valor={(escanteios.mercados[0].prob_under * 100).toFixed(0)} sufixo="%" pct={escanteios.mercados[0].prob_under} cor="#10b981" />
+              </div>
+            </div>
+          )}
+
+          {faixasEscanteios && (
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">Faixas de total de escanteios</span>
+              <div className="grid grid-cols-4 gap-2">
+                {faixasEscanteios.map(f => (
+                  <CardTendencia key={f.label} titulo={f.label} valor={(f.prob * 100).toFixed(0)} sufixo="%" pct={f.prob} cor="#3987e5" />
+                ))}
               </div>
             </div>
           )}
@@ -624,6 +676,11 @@ export default function AnaliseEstatisticaJogo() {
     return estimarMercadosGols(mandante, visitante);
   }, [mediasBrutas, ocrOverride]);
 
+  const faixasEscanteios = useMemo(
+    () => calcularFaixasEscanteios(estimativaEscanteios?.escanteios_esperados?.total, estimativaEscanteios?.modelo?.disp_r),
+    [estimativaEscanteios]
+  );
+
   const handleOcrUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -715,6 +772,7 @@ export default function AnaliseEstatisticaJogo() {
         <PainelEstimativaModelo
           estimativa={estimativaModelo}
           escanteios={estimativaEscanteios}
+          faixasEscanteios={faixasEscanteios}
           mandante={jogo.home?.name}
           visitante={jogo.away?.name}
           onOcrUpload={handleOcrUpload}
