@@ -4,7 +4,7 @@
 // calibração — agrupado por modelo + mercado + liga. Dados vêm todos de uma
 // vez de /api/model-stats (poucas dezenas de grupos, filtro é só client-side).
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle } from 'lucide-react';
+import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
@@ -250,6 +250,167 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   );
 }
 
+// Configuração editável do modelo de rating de jogador (player_elo_v1):
+// cada parâmetro tem um peso E uma chave de ativar/desativar — pedido do
+// usuário pra poder testar combinações e comparar qual configuração rende
+// o melhor modelo. Leitura/gravação via api/model-maintenance
+// (?tarefa=config-get / config-set) porque a tabela model_config só aceita
+// escrita via service role (a UI não escreve direto no banco).
+// IMPORTANTE: mudança de config só vale pra partidas processadas DEPOIS
+// dela — reprocessar o histórico inteiro com os pesos novos exige o reset.
+const PARAMETROS_PLAYER_ELO = [
+  { chaveAtivo: 'ativo_gols', chavePeso: 'peso_gols', rotulo: 'Gols', descricao: '+peso por gol (até 3)' },
+  { chaveAtivo: 'ativo_assistencias', chavePeso: 'peso_assistencias', rotulo: 'Assistências', descricao: '+peso por assistência (até 3)' },
+  { chaveAtivo: 'ativo_finalizacao', chavePeso: 'peso_finalizacao', rotulo: 'Finalização (gols − xG)', descricao: '±peso pela diferença entre gols e xG' },
+  { chaveAtivo: 'ativo_criacao', chavePeso: 'peso_criacao', rotulo: 'Criação (xA + chances)', descricao: '+peso por xA e chances criadas' },
+];
+
+function ConfigPlayerElo() {
+  const [config, setConfig] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [processando, setProcessando] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [erro, setErro] = useState('');
+  const [aberto, setAberto] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await fetch('/api/model-maintenance?tarefa=config-get&model_name=player_elo_v1');
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar config.');
+        setConfig(dados.config);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  const setCampo = (chave, valor) => setConfig(prev => ({ ...prev, [chave]: valor }));
+
+  const salvar = async () => {
+    setSalvando(true); setMsg(''); setErro('');
+    try {
+      const resp = await fetch('/api/model-maintenance?tarefa=config-set&model_name=player_elo_v1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao salvar.');
+      setConfig(dados.config);
+      setMsg('Configuração salva. Ela vale pra partidas processadas daqui pra frente — pra reprocessar o histórico inteiro com os pesos novos, use "Resetar e reprocessar".');
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const resetarEReprocessar = async () => {
+    if (!window.confirm('Isso apaga TODOS os ratings de jogador e o histórico, e reprocessa do zero com a configuração atual (~20 lotes). Continuar?')) return;
+    setProcessando(true); setMsg(''); setErro('');
+    try {
+      const respReset = await fetch('/api/model-maintenance?tarefa=player-elo-reset');
+      if (!respReset.ok) throw new Error('Falha no reset.');
+      let restantes = null;
+      for (let i = 0; i < 40; i++) {
+        const resp = await fetch('/api/model-maintenance?tarefa=player-elo&limite=200');
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
+        restantes = dados.partidas_restantes;
+        setMsg(`Reprocessando... ${restantes ?? '?'} partidas restantes.`);
+        if (!restantes) break;
+      }
+      setMsg('Reprocessamento concluído com a configuração atual.');
+    } catch (e) {
+      setErro(`${e.message} — o reprocesso pode ser retomado sem perder progresso chamando ?tarefa=player-elo de novo.`);
+    } finally {
+      setProcessando(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <button onClick={() => setAberto(a => !a)} className="w-full flex items-center justify-between text-left">
+        <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+          <Settings2 className="text-emerald-400" size={16} /> Configuração — Rating de jogador (player_elo_v1)
+        </h2>
+        <span className="text-xs text-slate-500">{aberto ? 'fechar' : 'abrir'}</span>
+      </button>
+
+      {aberto && (carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-4"><Loader2 className="animate-spin" size={14} /> Carregando...</div>
+      ) : config && (
+        <div className="mt-4 space-y-4">
+          <p className="text-[11px] text-slate-500">
+            Âncora: nota da partida do FotMob (holística). Cada parâmetro abaixo pode ser desligado ou ter o peso ajustado — a config vale pra partidas processadas dali em diante; reprocessar o histórico inteiro exige o reset. Pesos default são um chute inicial não calibrado (mesmo status do decaimento XI do Dixon-Coles).
+          </p>
+
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={!!config.usar_nota_fotmob} onChange={e => setCampo('usar_nota_fotmob', e.target.checked)} />
+            Usar nota do FotMob como âncora (desligado = só os bônus abaixo movem o rating)
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {PARAMETROS_PLAYER_ELO.map(p => (
+              <div key={p.chavePeso} className={`bg-slate-900 rounded-lg p-3 ${config[p.chaveAtivo] ? '' : 'opacity-50'}`}>
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                  <input type="checkbox" checked={!!config[p.chaveAtivo]} onChange={e => setCampo(p.chaveAtivo, e.target.checked)} />
+                  {p.rotulo}
+                </label>
+                <p className="text-[10px] text-slate-500 mt-0.5 mb-1.5">{p.descricao}</p>
+                <input
+                  type="number" step="0.05" min="0" max="2"
+                  value={config[p.chavePeso] ?? ''}
+                  disabled={!config[p.chaveAtivo]}
+                  onChange={e => setCampo(p.chavePeso, parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 disabled:opacity-50"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">K (velocidade)</label>
+              <input type="number" step="1" min="1" max="100" value={config.k ?? ''} onChange={e => setCampo('k', parseFloat(e.target.value) || 20)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">Nota neutra</label>
+              <input type="number" step="0.1" min="5" max="8" value={config.nota_neutra ?? ''} onChange={e => setCampo('nota_neutra', parseFloat(e.target.value) || 6.8)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">Minutos mínimos</label>
+              <input type="number" step="5" min="0" max="90" value={config.minutos_minimos ?? ''} onChange={e => setCampo('minutos_minimos', parseInt(e.target.value, 10) || 0)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+            </div>
+          </div>
+
+          {msg && <p className="text-xs text-emerald-400">{msg}</p>}
+          {erro && <p className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {erro}</p>}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={salvar} disabled={salvando || processando}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-3 py-2 rounded-lg text-xs">
+              {salvando ? <Loader2 className="animate-spin" size={13} /> : <Save size={13} />} Salvar configuração
+            </button>
+            <button onClick={resetarEReprocessar} disabled={salvando || processando}
+              className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-200 font-bold px-3 py-2 rounded-lg text-xs">
+              {processando ? <Loader2 className="animate-spin" size={13} /> : <RotateCcw size={13} />} Resetar e reprocessar histórico
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function gerarMarkdown(grupos, ligasPorId) {
   let md = `# Relatório de estatísticas dos modelos\n\nGerado em ${new Date().toLocaleString('pt-BR')}\n\n`;
   for (const g of grupos) {
@@ -353,6 +514,8 @@ export default function ModelosStats() {
       </div>
 
       {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>}
+
+      <ConfigPlayerElo />
 
       {!carregando && grupos.length > 0 && (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap gap-3">
