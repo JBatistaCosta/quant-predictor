@@ -150,13 +150,13 @@ def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id:
                 "fouls_committed": pegar(grupo_por_chave, "discipline", "fouls", lado),
                 "yellow_cards": pegar(grupo_por_chave, "discipline", "yellow_cards", lado),
                 "red_cards": pegar(grupo_por_chave, "discipline", "red_cards", lado),
+                "stats_raw": stats_periods,
             }
             for c in INT_COLS_TEAM_STATS:
                 if row.get(c) is not None:
                     row[c] = int(round(row[c]))
             team_rows.append(row)
 
-    fotmob_to_internal = {}  # preenchido pelo chamador antes de invocar parse_match_details
     return team_rows, content
 
 
@@ -283,6 +283,7 @@ def main():
                 "chances_created": extrair_stat_jogador(top_g, "Chances created"),
                 "accurate_passes": (top_g.get("Accurate passes") or {}).get("stat", {}).get("value"),
                 "touches": (attack_g.get("Touches") or {}).get("stat", {}).get("value"),
+                "stats_raw": pdata.get("stats"),
             }
             player_rows.append(row)
         if player_rows:
