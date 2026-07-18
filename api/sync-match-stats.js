@@ -12,7 +12,10 @@
 // salva com nossas partidas (matches.external_id é do formato football-data,
 // não bate com o id da API-Football) — o casamento é por DATA + nome do time
 // aproximado (matching por TOKEN de palavra, não substring — ver
-// CONTEXTO_PROJETO.md sobre o bug de colisão corrigido nesse padrão);
+// CONTEXTO_PROJETO.md sobre o bug de colisão corrigido nesse padrão). A liga
+// em si é resolvida via liga_fonte_externa (sistema='api_football') quando
+// já confirmada — buscar por nome falha pra ligas cujo nome interno diverge
+// do nome real na API (Brasileirão -> "Serie A"/Brazil lá, achado em produção);
 // (2) 2 chamadas de API por partida (uma por time), então processa em lotes
 // pequenos (?limite=N, padrão 4) espaçados (13s entre partidas) pra respeitar
 // o rate limit POR MINUTO do plano grátis (~10 chamadas), não só o diário
@@ -63,8 +66,17 @@ function nomesBatem(nomeA, nomeB) {
   return [...tokensA].every(t => tokensB.has(t)) || [...tokensB].every(t => tokensA.has(t));
 }
 
-// Acha o id da liga na API-Football pelo nome cadastrado em public.leagues
-async function acharLigaNaApiFootball(nomeLiga, apiKey) {
+// Acha o id da liga na API-Football. Prioriza o crosswalk já confirmado em
+// liga_fonte_externa (mesma tabela usada por backfill-api-football) — busca
+// por nome falha pra ligas cujo nome interno diverge do nome real da API
+// (ex: "Brasileirão Série A" aqui x "Serie A"/país Brazil lá, achado testando
+// em produção). Só cai pra busca por nome quando não há crosswalk salvo.
+async function acharLigaNaApiFootball(supabase, ligaId, nomeLiga, apiKey) {
+  const { data: fonteRow } = await supabase
+    .from('liga_fonte_externa').select('identificador')
+    .eq('league_id', ligaId).eq('sistema', 'api_football').maybeSingle();
+  if (fonteRow) return Number(fonteRow.identificador);
+
   const resultados = await chamarAPI(`/leagues?search=${encodeURIComponent(nomeLiga)}`, apiKey);
   if (!resultados || resultados.length === 0) return null;
   // prioriza o resultado cujo nome bate mais de perto (evita pegar copa/torneio homônimo)
@@ -139,7 +151,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ mensagem: 'Todos os jogos dessa liga/temporada já têm escanteios ou xG salvos.', total_finalizados: jogosSemStats.length });
     }
 
-    const ligaIdApiFootball = await acharLigaNaApiFootball(ligaRow.name, apiKey);
+    const ligaIdApiFootball = await acharLigaNaApiFootball(supabase, liga_id, ligaRow.name, apiKey);
     if (!ligaIdApiFootball) return res.status(404).json({ error: { message: `Liga "${ligaRow.name}" não encontrada na API-Football.` } });
 
     const fixturesApiFootball = await chamarAPI(`/fixtures?league=${ligaIdApiFootball}&season=${temporada}`, apiKey);
