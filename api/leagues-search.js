@@ -41,6 +41,7 @@ export default async function handler(req, res) {
     }
 
     const resultados = (dados.response || []).slice(0, 10).map(r => ({
+      id: r.league.id,
       nome: r.league.name,
       tipo: inferirTipo(r.league.type, r.league.name, r.country?.name),
       pais: r.country?.name !== 'World' ? r.country?.name : null,
