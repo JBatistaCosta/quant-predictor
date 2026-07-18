@@ -56,7 +56,7 @@
 //   ?tarefa=info-clubes&limite=N -> popula teams.city/stadium/country via API-Football (/teams?id=X),
 //                                   só pros times que já têm id da API-Football confirmado em
 //                                   team_source_ids (zero matching por nome nessa tarefa). Roda em
-//                                   lotes (padrão 20) — 1 chamada de API por time.
+//                                   lotes (padrão 40) — 1 chamada de API por time.
 //   ?tarefa=af-diagnostico-time&api_football_id=X
 //                               -> dumpa a resposta crua de /teams?id=X (não escreve nada), pra
 //                                   inspecionar o shape antes de confiar num parser novo.
@@ -901,8 +901,7 @@ async function tarefaDiagnosticoStatsApi(apiKey, caminho) {
 // reaproveita só o crosswalk que já foi resolvido com segurança em outra
 // importação (Copa do Brasil). Times sem esse crosswalk ficam de fora por
 // enquanto (resolver por busca de nome é mais arriscado, ver CONTEXTO_PROJETO.md).
-// 1 chamada de API por time — roda em lotes (?limite=N, padrão 20) pra não
-// estourar cota do plano grátis (100 req/dia).
+// 1 chamada de API por time — roda em lotes (?limite=N, padrão 40).
 async function tarefaInfoClubes(supabase, apiKey, limite) {
   const { data: crosswalkRows } = await supabase.from('team_source_ids').select('team_id, source_id').eq('source', 'api_football');
   if (!crosswalkRows || crosswalkRows.length === 0) {
@@ -928,7 +927,7 @@ async function tarefaInfoClubes(supabase, apiKey, limite) {
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   for (const time of lote) {
-    if (processados > 0) await esperar(700); // plano free tem rate limit por minuto, não só por dia
+    if (processados > 0) await esperar(200); // plano pago (300 req/min) — pacing modesto, deteccao de rate limit abaixo cobre o resto
 
     const sourceId = sourceIdPorTeamId[time.id];
     const resposta = await fetch(`https://v3.football.api-sports.io/teams?id=${sourceId}`, { headers: { 'x-apisports-key': apiKey } });
@@ -1006,7 +1005,7 @@ export default async function handler(req, res) {
     if (tarefa === 'info-clubes') {
       const apiKey = process.env.API_FOOTBALL_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
-      return res.status(200).json(await tarefaInfoClubes(supabase, apiKey, Number(limite) || 20));
+      return res.status(200).json(await tarefaInfoClubes(supabase, apiKey, Number(limite) || 40));
     }
 
     if (tarefa === 'odds-descobrir') {
