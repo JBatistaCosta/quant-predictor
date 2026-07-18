@@ -340,6 +340,15 @@ def main():
             for grupo in ("starters", "subs"):
                 for p in team.get(grupo) or []:
                     pid = str(p.get("id"))
+                    if pid == "0":
+                        # placeholder do FotMob pra jogador sem perfil vinculado
+                        # (visto em jovens/estreantes) — NÃO é identificador
+                        # único, várias pessoas diferentes compartilham "0".
+                        # Upsertar aqui misturaria pessoas distintas num só
+                        # registro. Fica de fora de `players`; a linha de
+                        # estatística em match_player_stats_fotmob continua
+                        # normal, só a dimensão de jogador pula esse caso.
+                        continue
                     player_dim_rows.append({
                         "fotmob_player_id": pid,
                         "name": p.get("name"),
