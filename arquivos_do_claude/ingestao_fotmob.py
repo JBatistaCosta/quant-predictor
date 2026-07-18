@@ -42,6 +42,14 @@ INSTRUÇÕES DE CROSSWALK (pra expandir a outras ligas):
 Idempotente: já-sincronizados ficam registrados em match_source_ids
 (source='fotmob'), pulados em reruns a menos que --forcar seja passado.
 
+Também popula `match_context_fotmob` (estádio com lat/long, árbitro, público e
+clima observado — temperatura/vento/umidade/precipitação/cobertura de nuvens)
+a partir do MESMO matchDetails já buscado acima, sem chamada de API extra.
+Achado por inspeção direta do JSON: Stadium existe pra quase toda partida
+(até 2023), mas weather só vem preenchido pra temporada atual/mais recente de
+cada competição — partidas antigas ficam com as colunas weather_* NULL, não é
+bug.
+
 Também popula/atualiza a tabela `players` (dimensão de jogador — nome, foto,
 idade, país, valor de mercado) a partir do bloco `lineup` de cada partida
 processada. É um SNAPSHOT (upsert por fotmob_player_id), não histórico —
@@ -110,6 +118,46 @@ def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
     if not item:
         return None
     return item["stat"].get("value")
+
+
+def parse_contexto_jogo(d: dict, match_id: int, fotmob_match_id):
+    """Estádio (nome/cidade/país/lat/long) e clima observado (temperatura/vento/
+    umidade/precipitação/etc), extraídos de content.matchFacts.infoBox.Stadium e
+    content.weather — MESMO payload de matchDetails já buscado pra stats/jogadores,
+    zero chamada de API extra. Achado por inspeção direta do JSON real (mesma
+    disciplina de sempre neste script): Stadium existe pra praticamente toda
+    partida (até as de 2023), mas weather só vem preenchido pra temporada
+    atual/mais recente de cada competição — partidas antigas retornam
+    content.weather ausente (None), não é bug, é limitação real da fonte."""
+    content = d.get("content") or {}
+    info_box = ((content.get("matchFacts") or {}).get("infoBox")) or {}
+    stadium = info_box.get("Stadium") or {}
+    weather = content.get("weather") or {}
+    referee = (info_box.get("Referee") or {}).get("text")
+    attendance = info_box.get("Attendance")
+
+    return {
+        "match_id": match_id,
+        "fotmob_match_id": str(fotmob_match_id),
+        "stadium_name": stadium.get("name"),
+        "stadium_city": stadium.get("city"),
+        "stadium_country": stadium.get("country"),
+        "stadium_lat": stadium.get("lat"),
+        "stadium_long": stadium.get("long"),
+        "attendance": attendance if isinstance(attendance, int) else None,
+        "referee": referee,
+        "weather_temperature_c": weather.get("temperature"),
+        "weather_wind_speed": weather.get("windSpeed"),
+        "weather_wind_direction": weather.get("windDirectionCardinal"),
+        "weather_humidity": weather.get("relativeHumidity"),
+        "weather_precipitation": weather.get("precipitation"),
+        "weather_snow": weather.get("snow"),
+        "weather_cloud_cover": weather.get("cloudCover"),
+        "weather_description": weather.get("description"),
+        "weather_api_used": weather.get("apiUsed"),
+        "weather_last_updated": weather.get("lastUpdated"),
+        "stats_raw": {"stadium": stadium or None, "weather": weather or None, "referee": referee, "attendance": attendance},
+    }
 
 
 def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id: int):
@@ -272,6 +320,9 @@ def main():
 
         if team_rows:
             supabase.table("match_stats_fotmob").upsert(team_rows, on_conflict="match_id,team_id").execute()
+
+        contexto_row = parse_contexto_jogo(d, match_id, fx["id"])
+        supabase.table("match_context_fotmob").upsert(contexto_row, on_conflict="match_id").execute()
 
         # Dimensão de jogador (players) processada ANTES das tabelas de stats
         # pra já ter o mapa fotmob_player_id -> players.id (nosso id interno)
