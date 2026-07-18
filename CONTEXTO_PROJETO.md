@@ -1,7 +1,20 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
-**Sync de odds OddsPapi — Bet365/Betano com extração de mercado quebrada.** `?tarefa=odds&liga_id=1` (Brasileirão) funciona fim a fim pra **Pinnacle** (4 jogos casados, 12 linhas de 1X2 inseridas), mas **Bet365 e Betano casam os mesmos 4 jogos e inserem 0 linhas** — a extração de mercado (`acharMercadoPorNome` em `api/model-maintenance.js`, procura `marketName === 'Full Time Result'`) não encontra nada nas respostas delas, mesmo com `markets` presente na resposta. Hipótese mais provável: essas casas nomeiam o mercado de 1X2 com texto diferente de "Full Time Result" (o catálogo `/v4/markets` é único pro esporte todo, mas nada garante que toda casa usa o mesmo nome). **Próximo passo sugerido**: gastar 1 chamada de diagnóstico (`bookmaker=bet365`, sem inserir nada, só dumpar o `markets` cru de um fixture) pra ver o `marketName` real, depois generalizar `acharMercadoPorNome` pra aceitar variações (ou casar por `marketType`+heurística de outcomes em vez de nome exato). Cota usada até aqui nesta sessão: ~15-20 de 250/mês — sobra margem, mas seguir gastando com cautela (1 chamada por teste, nunca em loop).
+**Backfill de escanteios/xG via `sync-match-stats.js` pras 7 competições fora do Brasileirão — em andamento, parou por bater o limite DIÁRIO do plano pago (7.500 req/dia).** Usuário contratou o plano pago da API-Football (7.500/dia, 300/min) nesta sessão — dois bugs de ambiguidade corrigidos no caminho (times homônimos, PR #48; ligas homônimas — 3 ligas chamadas "Championship" na API, PR #54) e o pacing foi liberado (PR #53). Status por competição/temporada no fim da sessão (jogos com escanteios OU xG preenchidos / total):
+- **Eredivisie: 306/306 nas 3 temporadas (2023-2025) — CONCLUÍDO.**
+- Champions League: 2023 93/125, 2024 164/189, 2025 64/189 (temporada atual tem vários clubes novos na competição cujo nome não está casando — ver achado abaixo).
+- Copa Libertadores: 2023 72/155, 2024 100/155, 2025 109/154, 2026 66/125.
+- Championship: 2023 199/557, 2024 128/557, 2025 118/557 (taxa de casamento baixa, a confirmar se é nome de clube ou outra causa — ver achado abaixo).
+- Primeira Liga: 2023 86/306, 2024 85/306, 2025 47/306.
+- Copa do Mundo FIFA 2026: 95/102 — praticamente completo.
+- Eurocopa 2024: 46/51 — praticamente completo.
+- Copa do Brasil: 2022 5/122 (baixo, a investigar), 2023 47/122 (parcial, script ainda tinha margem quando bateu a cota), 2024 0/122 (não chegou a rodar).
+- Brasileirão: **não tem esse dado na API-Football** (achado confirmado antes, ver mais abaixo) — não faz parte desse backfill.
+
+**Achado sobre taxa de casamento baixa em algumas competições**: o casamento de partida (`sync-match-stats.js`) é por DATA + nome de time (token-subset). Times com grafia/transliteração divergente entre nosso banco e a API-Football (clubes sul-americanos com acentos/abreviação diferente, seleções como "Turkey"/"Türkiye" ou "United States"/"USA", clubes recém-promovidos a competições europeias) ficam em `sem_casamento` pra sempre (a partida nunca fica "completa" já que corners/xg continuam NULL) — isso NÃO corrompe dado (o matching seguro por token já garante isso), só deixa essas partidas específicas sem estatística. Não investigado a fundo ainda; se quiser aumentar a cobertura, o próximo passo seria uma rotina de reconciliação manual (reportar `sem_casamento` agregado por competição, revisar nomes divergentes um a um) — não vale automatizar mais heurística de nome sem supervisão (mesma disciplina já documentada várias vezes nesse arquivo).
+
+**Retomar**: rodar `?tarefa=sync-match-stats&liga_id=X&temporada=AAAA&limite=40` de novo pras combinações acima quando a cota diária resetar — a lógica de "pendente" já retoma sozinha de onde parou (só escanteios/xG NULL entram na fila).
 
 Outras pendências menores (não urgentes):
 - Widget de odds (`WidgetOdds` em `AnaliseHistorica.jsx`) já está pronto pra mostrar Bet365/Betano assim que a extração acima funcionar — nada a mudar nele.
