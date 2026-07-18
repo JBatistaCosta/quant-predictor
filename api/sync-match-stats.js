@@ -17,16 +17,17 @@
 // já confirmada — buscar por nome falha pra ligas cujo nome interno diverge
 // do nome real na API (Brasileirão -> "Serie A"/Brazil lá, achado em produção);
 // (2) 2 chamadas de API por partida (uma por time), então processa em lotes
-// pequenos (?limite=N, padrão 4) espaçados (13s entre partidas) pra respeitar
-// o rate limit POR MINUTO do plano grátis (~10 chamadas), não só o diário
-// (100/dia) — se bater o limite no meio do lote, para sem marcar nada como
-// "sem casamento" (os jogos continuam pendentes, a próxima chamada retoma).
+// (?limite=N, padrão 40) espaçados (400ms entre partidas) — plano pago
+// contratado depois (300 req/min, 7500/dia), bem folgado; ainda assim mantém
+// pacing e detecção de rate limit como rede de segurança (se bater o limite
+// no meio do lote, para sem marcar nada como "sem casamento" — os jogos
+// continuam pendentes, a próxima chamada retoma).
 // "Pendente" = falta escanteios OU xG, não só falta a linha inteira — cobre
 // ligas que já têm outros campos preenchidos por outra fonte.
 //
 // COMO CHAMAR:
-//   /api/sync-match-stats?liga_id=1&temporada=2026&limite=4
-//   (liga_id = id em public.leagues; sem limite, processa até 4 por vez)
+//   /api/sync-match-stats?liga_id=1&temporada=2026&limite=40
+//   (liga_id = id em public.leagues; sem limite, processa até 40 por vez)
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
 
   const { liga_id, temporada, limite } = req.query;
   if (!liga_id || !temporada) return res.status(400).json({ error: { message: 'Informe ?liga_id=ID (de public.leagues) e ?temporada=AAAA na URL.' } });
-  const limiteJogos = parseInt(limite, 10) || 4; // 2 chamadas/jogo + espaçamento de 13s p/ rate limit — 4 cabe dentro de maxDuration=60
+  const limiteJogos = parseInt(limite, 10) || 40; // 2 chamadas/jogo + espaçamento de 400ms — cabe dentro de maxDuration=60 no plano pago
 
   const supabase = getSupabase();
 
@@ -162,10 +163,10 @@ export default async function handler(req, res) {
     let paradoPorRateLimit = false;
 
     for (const jogo of pendentes) {
-      // cada jogo gasta 2 chamadas (home+away) — plano free tem rate limit
-      // por MINUTO (~10 chamadas), não só por dia (ver CONTEXTO_PROJETO.md),
-      // por isso o espaçamento generoso em vez de 1 chamada por vez
-      if (processados > 0) await esperar(13000);
+      // cada jogo gasta 2 chamadas (home+away) — plano pago permite 300/min,
+      // pacing modesto só como rede de segurança (detecção de rate limit abaixo
+      // cobre o resto)
+      if (processados > 0) await esperar(400);
 
       const dataJogo = jogo.match_date?.slice(0, 10);
       const fixture = (fixturesApiFootball || []).find(f =>
