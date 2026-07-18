@@ -22,6 +22,7 @@ const AnaliseHistorica = lazy(() => import('./pages/AnaliseHistorica'));
 const AnaliseEstatisticaJogo = lazy(() => import('./pages/AnaliseEstatisticaJogo'));
 const RatingClubes = lazy(() => import('./pages/RatingClubes'));
 const Jogadores = lazy(() => import('./pages/Jogadores'));
+const JogadorDetalhe = lazy(() => import('./pages/JogadorDetalhe'));
 
 function CarregandoPagina() {
   return (
@@ -78,6 +79,9 @@ export default function App() {
             } />
             <Route path="/jogadores" element={
               <ProtectedRoute><Layout><Jogadores /></Layout></ProtectedRoute>
+            } />
+            <Route path="/jogadores/:id" element={
+              <ProtectedRoute><Layout><JogadorDetalhe /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />
