@@ -153,10 +153,10 @@ export default function Jogadores() {
                 {jogadores.map(j => (
                   <tr key={j.id} className="hover:bg-slate-700/20">
                     <td className="p-3 font-semibold text-slate-200">
-                      <div className="flex items-center gap-2.5">
+                      <Link to={`/jogadores/${j.id}`} className="flex items-center gap-2.5 hover:text-emerald-400 hover:underline w-fit">
                         <FotoJogador url={j.photo_url} nome={j.name} />
                         <span className="truncate">{j.name || '(sem nome)'}</span>
-                      </div>
+                      </Link>
                     </td>
                     <td className="p-3 text-slate-400">
                       {j.last_team ? (
