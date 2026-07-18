@@ -6,7 +6,7 @@
 // consciente de escopo, ver CONTEXTO_PROJETO.md).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar, Zap } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 
 const OPCOES_N = [10, 20, 40];
@@ -68,6 +68,7 @@ function GraficoForma({ partidas }) {
 export default function JogadorDetalhe() {
   const { id } = useParams();
   const [jogador, setJogador] = useState(null);
+  const [ratingElo, setRatingElo] = useState(null);
   const [partidas, setPartidas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -87,6 +88,13 @@ export default function JogadorDetalhe() {
 
       if (erroJogador || !j) { setErro('Jogador não encontrado.'); setCarregando(false); return; }
       setJogador(j);
+
+      // Rating Elo-like próprio (player_ratings, ver api/model-maintenance.js
+      // ?tarefa=player-elo) — ainda não calibrado de verdade (chute inicial
+      // razoável, mesmo status do XI do Dixon-Coles), null até a tarefa rodar
+      // pra esse jogador (partidas recentes o suficiente pra entrar no lote).
+      const { data: elo } = await supabase.from('player_ratings').select('rating, n_partidas').eq('player_id', id).maybeSingle();
+      setRatingElo(elo || null);
 
       const { data: hist, error: erroHist } = await supabase
         .from('match_player_stats_fotmob')
@@ -198,6 +206,13 @@ export default function JogadorDetalhe() {
           <div className="text-[10px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Landmark size={11} /> Valor de mercado</div>
           <div className="text-sm font-bold text-emerald-400">{formatarValorMercado(jogador.market_value)}</div>
         </div>
+        {ratingElo && (
+          <div className="bg-slate-900 rounded-xl px-4 py-2 text-center shrink-0" title="Rating Elo-like próprio, pesos ainda não calibrados (ver /modelos)">
+            <div className="text-[10px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Zap size={11} /> Rating</div>
+            <div className="text-sm font-bold text-amber-400">{Math.round(ratingElo.rating)}</div>
+            <div className="text-[9px] text-slate-600">{ratingElo.n_partidas} jogos</div>
+          </div>
+        )}
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
