@@ -104,12 +104,12 @@ def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
 
 
 def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id: int):
-    content = d.get("content", {})
+    content = d.get("content") or {}
     team_rows = []
     player_rows = []
     shot_rows = []
 
-    stats_periods = content.get("stats", {}).get("Periods", {}).get("All", {}).get("stats")
+    stats_periods = (((content.get("stats") or {}).get("Periods") or {}).get("All") or {}).get("stats")
     if stats_periods:
         grupo_por_chave = {}
         for grupo in stats_periods:
@@ -253,13 +253,19 @@ def main():
             time.sleep(PACING_SEGUNDOS)
             continue
 
-        team_rows, content = parse_match_details(d, match_id, home_team_id, away_team_id)
+        try:
+            team_rows, content = parse_match_details(d, match_id, home_team_id, away_team_id)
+        except Exception as e:
+            print(f"  falha de parse em matchId={fx['id']}: {e}")
+            n_falha += 1
+            time.sleep(PACING_SEGUNDOS)
+            continue
 
         if team_rows:
             supabase.table("match_stats_fotmob").upsert(team_rows, on_conflict="match_id,team_id").execute()
 
         player_rows = []
-        for pid, pdata in content.get("playerStats", {}).items():
+        for pid, pdata in (content.get("playerStats") or {}).items():
             team_id = fotmob_to_internal.get(str(pdata.get("teamId")))
             if team_id is None:
                 continue
@@ -290,7 +296,7 @@ def main():
             supabase.table("match_player_stats_fotmob").upsert(player_rows, on_conflict="match_id,fotmob_player_id").execute()
 
         shot_rows = []
-        for s in content.get("shotmap", {}).get("shots", []):
+        for s in (content.get("shotmap") or {}).get("shots") or []:
             team_id = fotmob_to_internal.get(str(s.get("teamId")))
             if team_id is None:
                 continue
