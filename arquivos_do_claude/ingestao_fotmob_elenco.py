@@ -160,7 +160,15 @@ def main():
 
         transfs = parse_transferencias(payload, c["team_id"], player_id_por_fotmob)
         if transfs:
-            supabase.table("team_transfers_fotmob").upsert(transfs, on_conflict="team_id,direction,fotmob_player_id,transfer_date").execute()
+            # Deduplicação DENTRO do lote: o FotMob pode listar a mesma
+            # transferência duas vezes na mesma janela (visto em produção —
+            # "ON CONFLICT DO UPDATE command cannot affect row a second time").
+            # Mantém a última ocorrência de cada chave natural.
+            vistos = {}
+            for t in transfs:
+                chave = (t["direction"], t["fotmob_player_id"] or t["player_name"], t["transfer_date"])
+                vistos[chave] = t
+            supabase.table("team_transfers_fotmob").upsert(list(vistos.values()), on_conflict="team_id,direction,fotmob_player_id,transfer_date").execute()
 
         ok += 1
         if (i + 1) % 20 == 0:
