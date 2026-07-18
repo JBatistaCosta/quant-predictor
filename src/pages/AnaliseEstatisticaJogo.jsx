@@ -344,6 +344,17 @@ async function buscarPrecisaoModelo(ligaId) {
   }
 }
 
+// Estádio (com lat/long) e clima observado, extraídos do FotMob por
+// ingestao_fotmob.py (match_context_fotmob) — mesmo payload já usado pra
+// stats/jogadores, sem chamada de API própria daqui. Clima só existe pra
+// partidas da temporada atual/mais recente de cada competição (achado
+// confirmado por inspeção direta: FotMob não guarda clima histórico de
+// temporadas passadas) — null nesse caso não é erro, é ausência real de dado.
+async function buscarContextoJogo(matchId) {
+  const { data } = await supabase.from('match_context_fotmob').select('*').eq('match_id', matchId).maybeSingle();
+  return data || null;
+}
+
 function BarraProgresso({ pct, cor = '#10b981' }) {
   return (
     <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
@@ -358,6 +369,39 @@ function CardTendencia({ titulo, valor, sufixo = '', pct = null, cor = '#10b981'
       <div className="text-[10px] text-slate-500 uppercase mb-1">{titulo}</div>
       <div className="text-lg font-bold text-slate-200 mb-1.5">{valor != null ? `${valor}${sufixo}` : '—'}</div>
       {pct != null && <BarraProgresso pct={pct} cor={cor} />}
+    </div>
+  );
+}
+
+function PainelContextoJogo({ contexto }) {
+  if (!contexto) return null;
+  const temClima = contexto.weather_temperature_c != null;
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <Target className="text-emerald-400" size={16} /> Estádio e clima
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <CardTendencia titulo="Estádio" valor={contexto.stadium_name || '—'} />
+        <CardTendencia titulo="Cidade" valor={contexto.stadium_city || '—'} />
+        {temClima ? (
+          <>
+            <CardTendencia titulo="Temperatura" valor={contexto.weather_temperature_c} sufixo="°C" />
+            <CardTendencia titulo="Condição" valor={contexto.weather_description || '—'} />
+          </>
+        ) : (
+          <div className="col-span-2 flex items-center text-[10px] text-slate-600 px-1">
+            Clima indisponível (FotMob só guarda condição observada da temporada atual/mais recente de cada competição).
+          </div>
+        )}
+      </div>
+      {temClima && (
+        <p className="text-[10px] text-slate-600 mt-2">
+          Vento {contexto.weather_wind_speed} km/h ({contexto.weather_wind_direction}) · Umidade {contexto.weather_humidity}% · Nuvens {contexto.weather_cloud_cover}%
+          {contexto.weather_precipitation > 0 && ` · Precipitação ${contexto.weather_precipitation}mm`}
+          {contexto.attendance != null && ` · Público ${contexto.attendance.toLocaleString('pt-BR')}`}
+        </p>
+      )}
     </div>
   );
 }
@@ -621,6 +665,7 @@ export default function AnaliseEstatisticaJogo() {
   const [precisaoModelo, setPrecisaoModelo] = useState([]);
   const [mediasBrutas, setMediasBrutas] = useState(null); // { mandante, visitante } antes de qualquer override de OCR
   const [estimativaEscanteios, setEstimativaEscanteios] = useState(null);
+  const [contextoJogo, setContextoJogo] = useState(null);
   const [ocrOverride, setOcrOverride] = useState(null); // { mandante: metricas|null, visitante: metricas|null }
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState('');
@@ -643,7 +688,7 @@ export default function AnaliseEstatisticaJogo() {
       setJogo(j);
 
       const referencia = j.match_date || new Date().toISOString();
-      const [tM, tV, comparacao, precisao, mediasMandante, mediasVisitante, escanteios] = await Promise.all([
+      const [tM, tV, comparacao, precisao, mediasMandante, mediasVisitante, escanteios, contexto] = await Promise.all([
         buscarTendenciasTime(j.home_team_id, referencia, n),
         buscarTendenciasTime(j.away_team_id, referencia, n),
         buscarComparacaoModeloMercado(j.id),
@@ -651,12 +696,14 @@ export default function AnaliseEstatisticaJogo() {
         buscarMediasModelo(j.home_team_id, referencia, n),
         buscarMediasModelo(j.away_team_id, referencia, n),
         buscarEstimativaEscanteios(j.home?.name, j.away?.name, j.home_team_id, j.away_team_id),
+        buscarContextoJogo(j.id),
       ]);
       setTendenciasMandante(tM);
       setTendenciasVisitante(tV);
       setComparacaoModelo(comparacao);
       setMediasBrutas(mediasMandante && mediasVisitante ? { mandante: mediasMandante, visitante: mediasVisitante } : null);
       setEstimativaEscanteios(escanteios);
+      setContextoJogo(contexto);
       setOcrOverride(null);
       setOcrError('');
       setOcrSuccess('');
@@ -762,6 +809,8 @@ export default function AnaliseEstatisticaJogo() {
           ))}
         </div>
       </div>
+
+      <PainelContextoJogo contexto={contextoJogo} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <PainelTendencias nome={jogo.home?.name} crestUrl={jogo.home?.crest_url} tendencias={tendenciasMandante} ladoEsquerda />
