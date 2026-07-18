@@ -60,6 +60,13 @@
 //   ?tarefa=af-diagnostico-time&api_football_id=X
 //                               -> dumpa a resposta crua de /teams?id=X (não escreve nada), pra
 //                                   inspecionar o shape antes de confiar num parser novo.
+//   ?tarefa=player-elo&limite=N -> rating Elo-like por jogador (padrão N=300 partidas por
+//                                   chamada), a partir de match_player_stats_fotmob (nota do
+//                                   FotMob + gols/assistências/xG/xA). Global/cross-competição,
+//                                   acumulativo — processa só partidas pendentes em ordem
+//                                   cronológica, idempotente (retoma sozinho de onde parou).
+//                                   Pesos do índice de partida são um chute inicial, não
+//                                   calibrado — ver comentário detalhado na função abaixo.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -217,6 +224,135 @@ async function eloProcessarGeral(supabase) {
 
   await regravarElo(supabase, linhasElo, historico, { escopo: 'geral', league_id: null });
   return { escopo: 'geral', partidas_processadas: partidasChampions.length, times_com_elo: linhasElo.length };
+}
+
+// ============================================================
+// TAREFA: player-elo — rating Elo-like por JOGADOR (não confundir com o
+// team_elo acima), a partir de match_player_stats_fotmob (nota do FotMob +
+// gols/assistências/xG/xA/chances criadas). Ancorado na nota do próprio
+// FotMob (0-10, holística — já pondera posição/minutos implicitamente
+// dentro do próprio modelo deles), com pequenos bônus/penalidades por
+// contribuição direta de gol e qualidade de finalização/criação.
+//
+// IMPORTANTE — pesos são um CHUTE INICIAL, mesmo status "não calibrado"
+// já documentado pro decaimento temporal (XI) do Dixon-Coles: dá pra rodar
+// hoje e já ter um rating razoável, mas calibrar os pesos de verdade (ex:
+// achar a combinação que melhor prevê o resultado real de partidas quando
+// usado como ajuste de força de time) é um passo futuro, não feito ainda.
+//
+// Diferente do Elo de TIME (que reprocessa a liga inteira do zero a cada
+// chamada, delete-e-regrava por escopo): rating de jogador é GLOBAL
+// (cross-competição — um jogador pode jogar liga doméstica e Libertadores
+// na mesma janela) e ACUMULATIVO — cada chamada só processa partidas que
+// ainda não têm linha em player_rating_history, em ordem cronológica,
+// continuando de onde a chamada anterior parou (rating atual persiste em
+// player_ratings). Isso evita o timeout que forçou o Elo de time a ser
+// batelado por liga — aqui o lote é por ?limite=N partidas (padrão 300).
+// ============================================================
+
+const PLAYER_RATING_INICIAL = 1500;
+const PLAYER_K = 20;
+const PLAYER_NOTA_NEUTRA = 6.8; // aproximação da nota "neutra" mais comum do FotMob
+const PLAYER_MINUTOS_MINIMOS = 20; // cameo curto demais não entra (ruído de amostra)
+
+const clampNum = (v, min, max) => Math.max(min, Math.min(max, v));
+
+// Índice de desempenho na partida (escala parecida com a nota do FotMob,
+// ~0-10) — ver comentário da tarefa acima sobre os pesos serem um chute
+// inicial. `xg` cai pro próprio número de gols quando não existe (ligas sem
+// xG do FotMob nessa partida), o que zera o bônus/penalidade de finalização
+// nesse caso (não favorece nem penaliza por falta de dado).
+function indicePartidaJogador(s) {
+  const nota = s.rating != null ? Number(s.rating) : PLAYER_NOTA_NEUTRA;
+  const gols = Number(s.goals) || 0;
+  const assistencias = Number(s.assists) || 0;
+  const xg = s.xg != null ? Number(s.xg) : gols;
+  const xa = Number(s.xa) || 0;
+  const chancesCriadas = Number(s.chances_created) || 0;
+
+  const bonusGols = Math.min(gols, 3) * 0.3;
+  const bonusAssistencias = Math.min(assistencias, 3) * 0.2;
+  const bonusFinalizacao = clampNum(gols - xg, -1, 1) * 0.3;
+  const bonusCriacao = Math.min(xa + chancesCriadas * 0.05, 1) * 0.2;
+
+  return nota + bonusGols + bonusAssistencias + bonusFinalizacao + bonusCriacao;
+}
+
+function atualizarRatingJogador(ratingAtual, indice) {
+  return ratingAtual + PLAYER_K * ((indice - PLAYER_NOTA_NEUTRA) / 3);
+}
+
+async function tarefaPlayerElo(supabase, limite) {
+  const LIMITE_PARTIDAS = limite || 300;
+
+  const [historicoExistente, statsTodos, partidasTodas, ratingsAtuais] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('player_rating_history').select('match_id')),
+    buscarTudoPaginado(() =>
+      supabase.from('match_player_stats_fotmob')
+        .select('match_id, player_id, rating, minutes_played, goals, assists, xg, xa, chances_created')
+        .not('player_id', 'is', null)
+    ),
+    buscarTudoPaginado(() => supabase.from('matches').select('id, match_date')),
+    buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas')),
+  ]);
+
+  const matchIdsProcessados = new Set(historicoExistente.map(r => r.match_id));
+  const dataPorMatch = {};
+  partidasTodas.forEach(p => { dataPorMatch[p.id] = p.match_date; });
+
+  const ratingPorJogador = {}, contagemPorJogador = {};
+  ratingsAtuais.forEach(r => { ratingPorJogador[r.player_id] = Number(r.rating); contagemPorJogador[r.player_id] = r.n_partidas; });
+
+  const pendentes = statsTodos
+    .filter(s => !matchIdsProcessados.has(s.match_id) && dataPorMatch[s.match_id] && (s.minutes_played ?? 0) >= PLAYER_MINUTOS_MINIMOS)
+    .sort((a, b) => new Date(dataPorMatch[a.match_id]) - new Date(dataPorMatch[b.match_id]));
+
+  if (pendentes.length === 0) {
+    return { mensagem: 'Nenhuma partida pendente.', partidas_processadas: 0, partidas_restantes: 0 };
+  }
+
+  // Lote por Número de PARTIDAS distintas (não linhas) — processa todos os
+  // jogadores de uma partida juntos, nunca corta uma partida no meio.
+  const idsPartidasSet = new Set();
+  for (const s of pendentes) {
+    if (idsPartidasSet.size >= LIMITE_PARTIDAS) break;
+    idsPartidasSet.add(s.match_id);
+  }
+  const lote = pendentes.filter(s => idsPartidasSet.has(s.match_id));
+
+  const historico = [];
+  for (const s of lote) {
+    const antes = ratingPorJogador[s.player_id] ?? PLAYER_RATING_INICIAL;
+    const indice = indicePartidaJogador(s);
+    const depois = atualizarRatingJogador(antes, indice);
+    ratingPorJogador[s.player_id] = depois;
+    contagemPorJogador[s.player_id] = (contagemPorJogador[s.player_id] || 0) + 1;
+    historico.push({
+      player_id: s.player_id, match_id: s.match_id, rating_antes: antes, rating_depois: depois,
+      indice_partida: indice, fotmob_rating: s.rating, minutes_played: s.minutes_played,
+    });
+  }
+
+  const jogadoresTocados = [...new Set(lote.map(s => s.player_id))];
+  const linhasRating = jogadoresTocados.map(pid => ({
+    player_id: pid, rating: ratingPorJogador[pid], n_partidas: contagemPorJogador[pid], updated_at: new Date().toISOString(),
+  }));
+
+  for (const l of fatiar(linhasRating, 500)) {
+    const { error } = await supabase.from('player_ratings').upsert(l, { onConflict: 'player_id' });
+    if (error) throw error;
+  }
+  for (const l of fatiar(historico, 500)) {
+    const { error } = await supabase.from('player_rating_history').upsert(l, { onConflict: 'player_id,match_id' });
+    if (error) throw error;
+  }
+
+  return {
+    partidas_processadas: idsPartidasSet.size,
+    linhas_processadas: lote.length,
+    jogadores_atualizados: linhasRating.length,
+    partidas_restantes: pendentes.length - lote.length,
+  };
 }
 
 // ============================================================
@@ -1052,6 +1188,10 @@ export default async function handler(req, res) {
       const slot = ESCOPOS_ROTACAO[diaDoAno % ESCOPOS_ROTACAO.length];
       const resultado = slot === 'geral' ? await eloProcessarGeral(supabase) : await eloProcessarLiga(supabase, slot);
       return res.status(200).json({ slot_de_hoje: slot, ...resultado });
+    }
+
+    if (tarefa === 'player-elo') {
+      return res.status(200).json(await tarefaPlayerElo(supabase, Number(limite) || 300));
     }
 
     if (tarefa === 'calibracao') {
