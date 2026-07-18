@@ -198,11 +198,13 @@ export default function TimeDetalhe() {
             {equipe.tipo === 'selecao' && detalhes?.pais_territorio && (
               <span className="flex items-center gap-1.5"><MapPin size={14} /> {detalhes.pais_territorio}</span>
             )}
-            {equipe.tipo === 'clube' && detalhes?.cidade_sede && (
-              <span className="flex items-center gap-1.5"><MapPin size={14} /> {detalhes.cidade_sede}{detalhes.pais ? `, ${detalhes.pais}` : ''}</span>
+            {equipe.tipo === 'clube' && (detalhes?.cidade_sede || timePipeline?.city) && (
+              <span className="flex items-center gap-1.5">
+                <MapPin size={14} /> {detalhes?.cidade_sede || timePipeline?.city}{(detalhes?.pais || timePipeline?.country) ? `, ${detalhes?.pais || timePipeline?.country}` : ''}
+              </span>
             )}
-            {equipe.tipo === 'clube' && detalhes?.estadio && (
-              <span>🏟️ {detalhes.estadio}</span>
+            {equipe.tipo === 'clube' && (detalhes?.estadio || timePipeline?.stadium) && (
+              <span>🏟️ {detalhes?.estadio || timePipeline?.stadium}</span>
             )}
             {instituicao?.data_fundacao && (
               <span>Fundado em {new Date(instituicao.data_fundacao).toLocaleDateString('pt-BR')}</span>
