@@ -273,18 +273,64 @@ def main():
         if team_rows:
             supabase.table("match_stats_fotmob").upsert(team_rows, on_conflict="match_id,team_id").execute()
 
+        # Dimensão de jogador (players) processada ANTES das tabelas de stats
+        # pra já ter o mapa fotmob_player_id -> players.id (nosso id interno)
+        # disponível na hora de montar player_rows/shot_rows (FK player_id).
+        player_dim_rows = []
+        lineup = content.get("lineup") or {}
+        for side in ("homeTeam", "awayTeam"):
+            team = lineup.get(side) or {}
+            team_id = fotmob_to_internal.get(str(team.get("id")))
+            for grupo in ("starters", "subs"):
+                for p in team.get(grupo) or []:
+                    pid = str(p.get("id"))
+                    if pid in ("0", "-1"):
+                        # placeholders do FotMob pra jogador sem perfil
+                        # vinculado (visto em jovens/estreantes) — NÃO são
+                        # identificador único, várias pessoas diferentes
+                        # compartilham "0"/"-1". Upsertar aqui misturaria
+                        # pessoas distintas num só registro. Fica de fora de
+                        # `players`; as linhas de estatística continuam
+                        # normais, só sem FK (player_id fica NULL).
+                        continue
+                    player_dim_rows.append({
+                        "fotmob_player_id": pid,
+                        "name": p.get("name"),
+                        "first_name": p.get("firstName") or None,
+                        "last_name": p.get("lastName") or None,
+                        "shirt_number": p.get("shirtNumber"),
+                        "country_name": p.get("countryName"),
+                        "country_code": p.get("countryCode"),
+                        "age": p.get("age"),
+                        "market_value": p.get("marketValue"),
+                        "usual_position_id": p.get("usualPlayingPositionId"),
+                        "photo_url": f"https://images.fotmob.com/image_resources/playerimages/{pid}.png",
+                        "last_team_id": team_id,
+                        "last_seen_match_id": match_id,
+                        "raw_lineup": p,
+                        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    })
+
+        fotmob_to_player_id = {}
+        if player_dim_rows:
+            resp = supabase.table("players").upsert(player_dim_rows, on_conflict="fotmob_player_id").execute()
+            for row in resp.data:
+                fotmob_to_player_id[row["fotmob_player_id"]] = row["id"]
+
         player_rows = []
         for pid, pdata in (content.get("playerStats") or {}).items():
             team_id = fotmob_to_internal.get(str(pdata.get("teamId")))
             if team_id is None:
                 continue
+            fotmob_player_id = str(pdata.get("id"))
             stats_by_group = {g["key"]: g["stats"] for g in pdata.get("stats", [])}
             top_g = stats_by_group.get("top_stats", {})
             attack_g = stats_by_group.get("attack", {})
             row = {
                 "match_id": match_id,
                 "team_id": team_id,
-                "fotmob_player_id": str(pdata.get("id")),
+                "fotmob_player_id": fotmob_player_id,
+                "player_id": fotmob_to_player_id.get(fotmob_player_id),
                 "player_name": pdata.get("name"),
                 "is_goalkeeper": pdata.get("isGoalkeeper", False),
                 "rating": extrair_stat_jogador(top_g, "FotMob rating"),
@@ -309,11 +355,13 @@ def main():
             team_id = fotmob_to_internal.get(str(s.get("teamId")))
             if team_id is None:
                 continue
+            fotmob_player_id = str(s.get("playerId")) if s.get("playerId") else None
             shot_rows.append({
                 "fotmob_shot_id": s["id"],
                 "match_id": match_id,
                 "team_id": team_id,
-                "fotmob_player_id": str(s.get("playerId")) if s.get("playerId") else None,
+                "fotmob_player_id": fotmob_player_id,
+                "player_id": fotmob_to_player_id.get(fotmob_player_id) if fotmob_player_id else None,
                 "player_name": s.get("playerName") or s.get("fullName"),
                 "minute": s.get("min"),
                 "minute_added": s.get("minAdded"),
@@ -331,43 +379,6 @@ def main():
             })
         if shot_rows:
             supabase.table("match_shots_fotmob").upsert(shot_rows, on_conflict="fotmob_shot_id").execute()
-
-        player_dim_rows = []
-        lineup = content.get("lineup") or {}
-        for side in ("homeTeam", "awayTeam"):
-            team = lineup.get(side) or {}
-            team_id = fotmob_to_internal.get(str(team.get("id")))
-            for grupo in ("starters", "subs"):
-                for p in team.get(grupo) or []:
-                    pid = str(p.get("id"))
-                    if pid == "0":
-                        # placeholder do FotMob pra jogador sem perfil vinculado
-                        # (visto em jovens/estreantes) — NÃO é identificador
-                        # único, várias pessoas diferentes compartilham "0".
-                        # Upsertar aqui misturaria pessoas distintas num só
-                        # registro. Fica de fora de `players`; a linha de
-                        # estatística em match_player_stats_fotmob continua
-                        # normal, só a dimensão de jogador pula esse caso.
-                        continue
-                    player_dim_rows.append({
-                        "fotmob_player_id": pid,
-                        "name": p.get("name"),
-                        "first_name": p.get("firstName") or None,
-                        "last_name": p.get("lastName") or None,
-                        "shirt_number": p.get("shirtNumber"),
-                        "country_name": p.get("countryName"),
-                        "country_code": p.get("countryCode"),
-                        "age": p.get("age"),
-                        "market_value": p.get("marketValue"),
-                        "usual_position_id": p.get("usualPlayingPositionId"),
-                        "photo_url": f"https://images.fotmob.com/image_resources/playerimages/{pid}.png",
-                        "last_team_id": team_id,
-                        "last_seen_match_id": match_id,
-                        "raw_lineup": p,
-                        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                    })
-        if player_dim_rows:
-            supabase.table("players").upsert(player_dim_rows, on_conflict="fotmob_player_id").execute()
 
         supabase.table("match_source_ids").upsert(
             {
