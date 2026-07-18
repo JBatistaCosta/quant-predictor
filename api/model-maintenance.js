@@ -60,13 +60,17 @@
 //   ?tarefa=af-diagnostico-time&api_football_id=X
 //                               -> dumpa a resposta crua de /teams?id=X (não escreve nada), pra
 //                                   inspecionar o shape antes de confiar num parser novo.
-//   ?tarefa=player-elo&limite=N -> rating Elo-like por jogador (padrão N=300 partidas por
+//   ?tarefa=player-elo&limite=N -> rating Elo-like por jogador (padrão N=200 partidas por
 //                                   chamada), a partir de match_player_stats_fotmob (nota do
 //                                   FotMob + gols/assistências/xG/xA). Global/cross-competição,
 //                                   acumulativo — processa só partidas pendentes em ordem
 //                                   cronológica, idempotente (retoma sozinho de onde parou).
-//                                   Pesos do índice de partida são um chute inicial, não
-//                                   calibrado — ver comentário detalhado na função abaixo.
+//                                   Pesos configuráveis via model_config (ver config-get/set);
+//                                   default é um chute inicial, não calibrado.
+//   ?tarefa=player-elo-reset    -> zera player_ratings/player_rating_history pra reprocessar
+//                                   do zero (necessário depois de mudar pesos na config).
+//   ?tarefa=config-get&model_name=X -> lê a config de um modelo em model_config.
+//   ?tarefa=config-set&model_name=X (POST, corpo JSON) -> faz merge do corpo na config salva.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -251,35 +255,57 @@ async function eloProcessarGeral(supabase) {
 // ============================================================
 
 const PLAYER_RATING_INICIAL = 1500;
-const PLAYER_K = 20;
-const PLAYER_NOTA_NEUTRA = 6.8; // aproximação da nota "neutra" mais comum do FotMob
-const PLAYER_MINUTOS_MINIMOS = 20; // cameo curto demais não entra (ruído de amostra)
+
+// Defaults usados quando model_config não tem linha pro player_elo_v1 —
+// mesmos valores da seed da migration. Cada parâmetro tem um peso E uma
+// flag ativo_* (pedido do usuário: poder ligar/desligar a importância de
+// cada parâmetro e comparar configurações), editáveis via ?tarefa=config-set
+// e pela seção de configuração em /modelos.
+const PLAYER_ELO_CONFIG_PADRAO = {
+  k: 20,
+  nota_neutra: 6.8, // aproximação da nota "neutra" mais comum do FotMob
+  minutos_minimos: 20, // cameo curto demais não entra (ruído de amostra)
+  usar_nota_fotmob: true,
+  peso_gols: 0.3,
+  peso_assistencias: 0.2,
+  peso_finalizacao: 0.3,
+  peso_criacao: 0.2,
+  ativo_gols: true,
+  ativo_assistencias: true,
+  ativo_finalizacao: true,
+  ativo_criacao: true,
+};
 
 const clampNum = (v, min, max) => Math.max(min, Math.min(max, v));
+
+async function lerConfigModelo(supabase, modelName, padrao) {
+  const { data } = await supabase.from('model_config').select('config').eq('model_name', modelName).maybeSingle();
+  return { ...padrao, ...(data?.config || {}) };
+}
 
 // Índice de desempenho na partida (escala parecida com a nota do FotMob,
 // ~0-10) — ver comentário da tarefa acima sobre os pesos serem um chute
 // inicial. `xg` cai pro próprio número de gols quando não existe (ligas sem
 // xG do FotMob nessa partida), o que zera o bônus/penalidade de finalização
 // nesse caso (não favorece nem penaliza por falta de dado).
-function indicePartidaJogador(s) {
-  const nota = s.rating != null ? Number(s.rating) : PLAYER_NOTA_NEUTRA;
+function indicePartidaJogador(s, cfg) {
+  const nota = cfg.usar_nota_fotmob && s.rating != null ? Number(s.rating) : cfg.nota_neutra;
   const gols = Number(s.goals) || 0;
   const assistencias = Number(s.assists) || 0;
   const xg = s.xg != null ? Number(s.xg) : gols;
   const xa = Number(s.xa) || 0;
   const chancesCriadas = Number(s.chances_created) || 0;
 
-  const bonusGols = Math.min(gols, 3) * 0.3;
-  const bonusAssistencias = Math.min(assistencias, 3) * 0.2;
-  const bonusFinalizacao = clampNum(gols - xg, -1, 1) * 0.3;
-  const bonusCriacao = Math.min(xa + chancesCriadas * 0.05, 1) * 0.2;
+  const bonusGols = cfg.ativo_gols ? Math.min(gols, 3) * cfg.peso_gols : 0;
+  const bonusAssistencias = cfg.ativo_assistencias ? Math.min(assistencias, 3) * cfg.peso_assistencias : 0;
+  const bonusFinalizacao = cfg.ativo_finalizacao ? clampNum(gols - xg, -1, 1) * cfg.peso_finalizacao : 0;
+  const bonusCriacao = cfg.ativo_criacao ? Math.min(xa + chancesCriadas * 0.05, 1) * cfg.peso_criacao : 0;
 
   return nota + bonusGols + bonusAssistencias + bonusFinalizacao + bonusCriacao;
 }
 
-function atualizarRatingJogador(ratingAtual, indice) {
-  return ratingAtual + PLAYER_K * ((indice - PLAYER_NOTA_NEUTRA) / 3);
+function atualizarRatingJogador(ratingAtual, indice, cfg) {
+  return ratingAtual + cfg.k * ((indice - cfg.nota_neutra) / 3);
 }
 
 async function tarefaPlayerElo(supabase, limite) {
@@ -296,10 +322,11 @@ async function tarefaPlayerElo(supabase, limite) {
   // partida ANTIGA for sincronizada no FotMob depois do cursor já ter
   // passado por ela, ela não entra sozinha — reprocesso completo = truncar
   // player_ratings/player_rating_history e re-rodar do zero.
-  const [{ data: ultimaLinha }, partidasFotmob, ratingsAtuais] = await Promise.all([
+  const [{ data: ultimaLinha }, partidasFotmob, ratingsAtuais, cfg] = await Promise.all([
     supabase.from('player_rating_history').select('match_id').order('id', { ascending: false }).limit(1).maybeSingle(),
     buscarTudoPaginado(() => supabase.from('match_source_ids').select('match_id').eq('source', 'fotmob')),
     buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas')),
+    lerConfigModelo(supabase, 'player_elo_v1', PLAYER_ELO_CONFIG_PADRAO),
   ]);
 
   const idsFotmob = partidasFotmob.map(r => r.match_id);
@@ -338,7 +365,7 @@ async function tarefaPlayerElo(supabase, limite) {
 
   const posicaoNoLote = new Map(idsLote.map((id, i) => [id, i]));
   const lote = stats
-    .filter(s => (s.minutes_played ?? 0) >= PLAYER_MINUTOS_MINIMOS)
+    .filter(s => (s.minutes_played ?? 0) >= cfg.minutos_minimos)
     .sort((a, b) => posicaoNoLote.get(a.match_id) - posicaoNoLote.get(b.match_id));
 
   const ratingPorJogador = {}, contagemPorJogador = {};
@@ -347,8 +374,8 @@ async function tarefaPlayerElo(supabase, limite) {
   const historico = [];
   for (const s of lote) {
     const antes = ratingPorJogador[s.player_id] ?? PLAYER_RATING_INICIAL;
-    const indice = indicePartidaJogador(s);
-    const depois = atualizarRatingJogador(antes, indice);
+    const indice = indicePartidaJogador(s, cfg);
+    const depois = atualizarRatingJogador(antes, indice, cfg);
     ratingPorJogador[s.player_id] = depois;
     contagemPorJogador[s.player_id] = (contagemPorJogador[s.player_id] || 0) + 1;
     historico.push({
@@ -386,7 +413,50 @@ async function tarefaPlayerElo(supabase, limite) {
     linhas_processadas: historico.length,
     jogadores_atualizados: linhasRating.length,
     partidas_restantes: ordenadas.length - inicio - idsLote.length,
+    config_usada: cfg,
   };
+}
+
+// Apaga TODO o estado do rating de jogador (player_ratings +
+// player_rating_history) pra reprocessar do zero — necessário depois de
+// mudar a configuração de pesos (mudança de config só vale pra partidas
+// novas; o histórico já processado fica com os pesos antigos até um reset).
+// Custo do reprocesso: ~16-20 chamadas de ?tarefa=player-elo em sequência.
+async function tarefaPlayerEloReset(supabase) {
+  const { error: e1 } = await supabase.from('player_rating_history').delete().gte('id', 0);
+  if (e1) throw e1;
+  const { error: e2 } = await supabase.from('player_ratings').delete().gte('player_id', 0);
+  if (e2) throw e2;
+  return { mensagem: 'player_ratings e player_rating_history zerados — rode ?tarefa=player-elo repetidamente pra reprocessar com a config atual.' };
+}
+
+// Lê/grava model_config (pesos, flags de ativar/desativar parâmetro,
+// metodologia) — a UI de /modelos usa isso pra editar a configuração sem
+// precisar de acesso de escrita direto no banco (RLS só permite leitura
+// pública; escrita passa por aqui, com service role).
+async function tarefaConfigGet(supabase, modelName) {
+  if (modelName === 'player_elo_v1' || !modelName) {
+    const cfg = await lerConfigModelo(supabase, 'player_elo_v1', PLAYER_ELO_CONFIG_PADRAO);
+    return { model_name: 'player_elo_v1', config: cfg, padrao: PLAYER_ELO_CONFIG_PADRAO };
+  }
+  const { data } = await supabase.from('model_config').select('model_name, config, updated_at').eq('model_name', modelName).maybeSingle();
+  return data || { model_name: modelName, config: null };
+}
+
+async function tarefaConfigSet(supabase, modelName, configBody) {
+  if (!modelName || !configBody || typeof configBody !== 'object' || Array.isArray(configBody)) {
+    return { error: 'Envie model_name na query e um objeto JSON de config no corpo (POST).' };
+  }
+  // Merge por cima da config atual (não substitui o objeto inteiro): permite
+  // a UI mandar só o campo alterado sem apagar o resto.
+  const atual = await lerConfigModelo(supabase, modelName, modelName === 'player_elo_v1' ? PLAYER_ELO_CONFIG_PADRAO : {});
+  const nova = { ...atual, ...configBody };
+  const { error } = await supabase.from('model_config').upsert(
+    { model_name: modelName, config: nova, updated_at: new Date().toISOString() },
+    { onConflict: 'model_name' },
+  );
+  if (error) throw error;
+  return { model_name: modelName, config: nova };
 }
 
 // ============================================================
@@ -1225,7 +1295,21 @@ export default async function handler(req, res) {
     }
 
     if (tarefa === 'player-elo') {
-      return res.status(200).json(await tarefaPlayerElo(supabase, Number(limite) || 300));
+      return res.status(200).json(await tarefaPlayerElo(supabase, Number(limite) || 200));
+    }
+
+    if (tarefa === 'player-elo-reset') {
+      return res.status(200).json(await tarefaPlayerEloReset(supabase));
+    }
+
+    if (tarefa === 'config-get') {
+      return res.status(200).json(await tarefaConfigGet(supabase, req.query.model_name));
+    }
+
+    if (tarefa === 'config-set') {
+      const resultado = await tarefaConfigSet(supabase, req.query.model_name, req.body);
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
     }
 
     if (tarefa === 'calibracao') {
