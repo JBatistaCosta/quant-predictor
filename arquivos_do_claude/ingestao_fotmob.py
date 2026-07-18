@@ -250,21 +250,51 @@ def main():
     print(f"Jogos finalizados no FotMob: {len(finished)}")
 
     if not args.forcar:
-        ja_sync = supabase.table("match_source_ids").select("source_id").eq("source", "fotmob").execute()
-        ja_sync_ids = {row["source_id"] for row in ja_sync.data}
+        # Mesma paginação explícita do fetch de matches acima — essa tabela já
+        # passa de 3.000 linhas; sem .range(), o corte silencioso de 1000 faria
+        # jogos já sincronizados parecerem pendentes (re-sync inútil, idempotente
+        # mas desperdiçando horas de pacing).
+        ja_sync_ids = set()
+        _pagina_sync = 0
+        while True:
+            _chunk_sync = (
+                supabase.table("match_source_ids")
+                .select("source_id")
+                .eq("source", "fotmob")
+                .range(_pagina_sync * 1000, _pagina_sync * 1000 + 999)
+                .execute()
+                .data
+            )
+            ja_sync_ids.update(row["source_id"] for row in _chunk_sync)
+            if len(_chunk_sync) < 1000:
+                break
+            _pagina_sync += 1
         finished = [fx for fx in finished if str(fx["id"]) not in ja_sync_ids]
         print(f"Ainda não sincronizados: {len(finished)}")
 
     if args.limite:
         finished = finished[: args.limite]
 
-    matches_internos = (
-        supabase.table("matches")
-        .select("id, home_team_id, away_team_id, match_date")
-        .eq("league_id", args.liga_id)
-        .execute()
-        .data
-    )
+    # Paginação explícita — .execute() sem .range() corta em 1000 linhas EM
+    # SILÊNCIO (bug clássico já documentado várias vezes no projeto): ligas
+    # com 8 temporadas têm ~3.000 partidas, e o corte fazia o índice de
+    # casamento só enxergar as 1.000 mais antigas — temporadas mais novas
+    # caíam 100% em "sem par em matches".
+    matches_internos = []
+    _pagina = 0
+    while True:
+        _chunk = (
+            supabase.table("matches")
+            .select("id, home_team_id, away_team_id, match_date")
+            .eq("league_id", args.liga_id)
+            .range(_pagina * 1000, _pagina * 1000 + 999)
+            .execute()
+            .data
+        )
+        matches_internos.extend(_chunk)
+        if len(_chunk) < 1000:
+            break
+        _pagina += 1
     idx = {}
     for m in matches_internos:
         idx.setdefault((m["home_team_id"], m["away_team_id"]), []).append(m)
