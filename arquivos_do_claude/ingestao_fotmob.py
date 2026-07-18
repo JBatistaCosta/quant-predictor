@@ -41,6 +41,15 @@ INSTRUÇÕES DE CROSSWALK (pra expandir a outras ligas):
 
 Idempotente: já-sincronizados ficam registrados em match_source_ids
 (source='fotmob'), pulados em reruns a menos que --forcar seja passado.
+
+Também popula/atualiza a tabela `players` (dimensão de jogador — nome, foto,
+idade, país, valor de mercado) a partir do bloco `lineup` de cada partida
+processada. É um SNAPSHOT (upsert por fotmob_player_id), não histórico —
+idade/valor de mercado refletem a última vez que o jogador foi visto em
+campo, não uma série temporal. photo_url é construído deterministicamente
+(padrão confirmado: images.fotmob.com/image_resources/playerimages/{id}.png,
+não precisa buscar). Bandeira de país não tem URL própria confirmada no CDN
+do FotMob (testado, 403) — só country_code (ISO) fica disponível.
 """
 
 import argparse
@@ -322,6 +331,34 @@ def main():
             })
         if shot_rows:
             supabase.table("match_shots_fotmob").upsert(shot_rows, on_conflict="fotmob_shot_id").execute()
+
+        player_dim_rows = []
+        lineup = content.get("lineup") or {}
+        for side in ("homeTeam", "awayTeam"):
+            team = lineup.get(side) or {}
+            team_id = fotmob_to_internal.get(str(team.get("id")))
+            for grupo in ("starters", "subs"):
+                for p in team.get(grupo) or []:
+                    pid = str(p.get("id"))
+                    player_dim_rows.append({
+                        "fotmob_player_id": pid,
+                        "name": p.get("name"),
+                        "first_name": p.get("firstName") or None,
+                        "last_name": p.get("lastName") or None,
+                        "shirt_number": p.get("shirtNumber"),
+                        "country_name": p.get("countryName"),
+                        "country_code": p.get("countryCode"),
+                        "age": p.get("age"),
+                        "market_value": p.get("marketValue"),
+                        "usual_position_id": p.get("usualPlayingPositionId"),
+                        "photo_url": f"https://images.fotmob.com/image_resources/playerimages/{pid}.png",
+                        "last_team_id": team_id,
+                        "last_seen_match_id": match_id,
+                        "raw_lineup": p,
+                        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    })
+        if player_dim_rows:
+            supabase.table("players").upsert(player_dim_rows, on_conflict="fotmob_player_id").execute()
 
         supabase.table("match_source_ids").upsert(
             {
