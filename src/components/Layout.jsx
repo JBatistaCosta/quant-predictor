@@ -15,6 +15,7 @@ const GRUPOS_MENU = [
       { to: '/modelos', label: 'Estatísticas dos Modelos', icone: BarChart3 },
       { to: '/ratings', label: 'Rating dos Clubes', icone: TrendingUp },
       { to: '/jogadores', label: 'Jogadores', icone: UserRound },
+      { to: '/model-benchmarking', label: 'Model Benchmarking', icone: Zap },
     ],
   },
   {
