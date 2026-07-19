@@ -1,45 +1,29 @@
-name: Model Benchmarking - Sync Valor de Mercado (Transfermarkt)
+name: Model Benchmarking - Sync Valor de Mercado (FotMob)
 
 # Fase 1 do enriquecimento de valor de jogador discutido pro Model
-# Benchmarking: casa jogador interno <-> Transfermarkt e faz backfill do
-# histórico de valor de mercado (marketValueHistory). Só workflow_dispatch
-# (não entra no cron) -- é scraping não-oficial (zona cinzenta de ToS, sem
-# SLA), então cada rodada é disparada manualmente e acompanhada,
-# processando um lote por vez (mesmo padrão de ?tarefa=player-elo em
-# api/model-maintenance.js: idempotente, retoma sozinho de onde parou via
-# o que já existe em player_source_ids/player_market_value_history).
+# Benchmarking. Pivô de abordagem: a 1ª versão tentava casar jogador
+# interno com o Transfermarkt via crosswalk (nome+clube+idade) -- rodando
+# de verdade em produção, o IP do runner do GitHub Actions apanhava
+# bloqueio da defesa anti-scraping do Transfermarkt (15/15 buscas com HTTP
+# 500). Trocado pelo FotMob: já tem série temporal de valor de mercado em
+# euros dentro do próprio payload do jogador
+# (`GET https://www.fotmob.com/api/data/playerData?id={fotmob_player_id}`
+# campo `marketValues.values`), mesmo endpoint já usado em produção neste
+# projeto (arquivos_do_claude/ingestao_fotmob_elenco.py) sem indício de
+# bloqueio de IP -- e `players.fotmob_player_id` já existe e já está 100%
+# populado no escopo, então não precisa de crosswalk nenhum.
 #
-# IMPORTANTE -- por que a transfermarkt-api NÃO sobe dentro deste job (como
-# na 1ª versão): testado em produção, o IP do runner do GitHub Actions
-# (faixa compartilhada Azure/GitHub) apanha bloqueio/rate-limit da defesa
-# anti-scraping do Transfermarkt -- 15/15 buscas vieram HTTP 500, enquanto
-# as MESMAS buscas, mesmo código, de um IP não-datacenter funcionaram
-# 13/13. IP de datacenter compartilhado é reconhecidamente mais visado por
-# proteção anti-bot que IP residencial/pessoal.
-#
-# Por isso a transfermarkt-api roda em infraestrutura PRÓPRIA (fora do GitHub
-# Actions) e este workflow só CHAMA essa instância via TRANSFERMARKT_API_URL
-# (secret, ex.: um túnel Cloudflare apontando pro seu servidor local). Ver
-# README/comentário abaixo pra como subir isso.
-#
-# Setup necessário (uma vez):
-#   1. No seu servidor/máquina própria: clonar felipeall/transfermarkt-api,
-#      `docker build -t transfermarkt-api . && docker run -d -p 8000:8000 transfermarkt-api`
-#      (ou `python app/main.py` direto, sem Docker).
-#   2. Expor publicamente com HTTPS estável, ex. Cloudflare Tunnel (grátis):
-#      `cloudflared tunnel --url http://localhost:8000` (túnel rápido) ou um
-#      túnel nomeado persistente se quiser a mesma URL sempre.
-#   3. Cadastrar a URL resultante como secret TRANSFERMARKT_API_URL no repo
-#      (Settings -> Secrets and variables -> Actions).
-#   4. Garantir que a instância esteja no ar antes de disparar este workflow
-#      manualmente (ele falha rápido, sem gastar nada, se não conseguir
-#      alcançar a URL).
+# Só workflow_dispatch por enquanto (não entra no cron) -- primeira rodada
+# real em produção ainda não confirmada. Processa um lote por vez (mesmo
+# padrão de ?tarefa=player-elo em api/model-maintenance.js: idempotente,
+# retoma sozinho de onde parou via o que já existe em
+# player_market_value_history).
 
 on:
   workflow_dispatch:
     inputs:
       limite_jogadores:
-        description: "Quantos jogadores processar nesta rodada (por script) -- lote pequeno de propósito, rode de novo pra continuar."
+        description: "Quantos jogadores processar nesta rodada -- lote pequeno de propósito, rode de novo pra continuar."
         required: false
         default: "30"
 
@@ -59,35 +43,12 @@ jobs:
           cache: "pip"
           cache-dependency-path: scripts/requirements.txt
 
-      - name: Instalar dependências do projeto
+      - name: Instalar dependências
         run: pip install -r scripts/requirements.txt
 
-      - name: Checar se a transfermarkt-api própria está acessível
-        env:
-          TRANSFERMARKT_API_URL: ${{ secrets.TRANSFERMARKT_API_URL }}
-        run: |
-          if [ -z "$TRANSFERMARKT_API_URL" ]; then
-            echo "Secret TRANSFERMARKT_API_URL não configurada -- ver comentário no topo deste workflow pra como subir sua própria instância."
-            exit 1
-          fi
-          if ! curl -sS -m 10 "$TRANSFERMARKT_API_URL/openapi.json" -o /dev/null; then
-            echo "Não consegui alcançar $TRANSFERMARKT_API_URL -- confirme que sua instância/túnel está no ar antes de rodar de novo."
-            exit 1
-          fi
-          echo "transfermarkt-api própria respondendo."
-
-      - name: Casar jogadores com o Transfermarkt
+      - name: Backfill do histórico de valor de mercado (FotMob)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           LIMITE_JOGADORES: ${{ github.event.inputs.limite_jogadores }}
-          TRANSFERMARKT_API_BASE: ${{ secrets.TRANSFERMARKT_API_URL }}
-        run: python scripts/matching_transfermarkt.py
-
-      - name: Backfill do histórico de valor de mercado
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          LIMITE_JOGADORES: ${{ github.event.inputs.limite_jogadores }}
-          TRANSFERMARKT_API_BASE: ${{ secrets.TRANSFERMARKT_API_URL }}
         run: python scripts/backfill_valor_mercado.py
