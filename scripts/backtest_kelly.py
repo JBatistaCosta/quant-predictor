@@ -429,6 +429,212 @@ def imprimir_relatorio_qualidade(linhas_qualidade: list[dict]) -> None:
 
 
 # =============================================================================
+# Comparação PAREADA com o mercado -- superioridade / inferioridade /
+# não-inferioridade (bootstrap da DIFERENÇA partida a partida, não de cada
+# lado isolado -- cancela ruído comum, mesmo espírito do teste de
+# Diebold-Mariano pra comparar previsões)
+# =============================================================================
+MARGEM_NAO_INFERIORIDADE_LOG_LOSS = 0.01  # ajustável -- não há um valor "certo" objetivo sem uma referência de EV
+AMOSTRA_MINIMA_CLV = 30  # pares (partida, seleção) mínimos pra confiar na correlação de Closing Line Value
+
+
+def _perdas_por_partida(
+    predicoes: dict[int, dict[str, float]], resultados_reais: dict[int, int], match_ids_ordenados: list[int]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Log-loss e Brier POR PARTIDA (não a média) -- necessário pro
+    bootstrap pareado, que precisa subtrair perda-a-perda na MESMA ordem
+    de partida entre modelo e mercado."""
+    codigo_para_campo = {
+        dados_historicos.RESULTADO_HOME: "prob_home",
+        dados_historicos.RESULTADO_DRAW: "prob_draw",
+        dados_historicos.RESULTADO_AWAY: "prob_away",
+    }
+    perdas_log, briers = [], []
+    for match_id in match_ids_ordenados:
+        probs = predicoes[match_id]
+        resultado_real = resultados_reais[match_id]
+        p_real = max(probs[codigo_para_campo[resultado_real]], 1e-15)
+        perdas_log.append(-np.log(p_real))
+        briers.append(
+            sum((probs[campo] - (1.0 if codigo == resultado_real else 0.0)) ** 2 for codigo, campo in codigo_para_campo.items())
+        )
+    return np.array(perdas_log), np.array(briers)
+
+
+def comparar_pareado_com_mercado(
+    perdas_modelo: np.ndarray,
+    perdas_mercado: np.ndarray,
+    margem: float = MARGEM_NAO_INFERIORIDADE_LOG_LOSS,
+    n_reamostragens: int = N_REAMOSTRAGENS_BOOTSTRAP,
+    seed: int = SEED,
+) -> dict:
+    """Bootstrap PAREADO da diferença (perda do modelo - perda do mercado)
+    partida a partida -- a MESMA reamostra de partidas é usada nos dois
+    lados a cada iteração, então ruído compartilhado (jogos "difíceis" pros
+    dois) se cancela, deixando o teste mais sensível que dois IC
+    independentes comparados visualmente.
+
+    - `modelo_supera_mercado`: limite SUPERIOR do IC < 0 (modelo
+      confiavelmente MELHOR, perda menor).
+    - `mercado_supera_modelo`: limite INFERIOR do IC > 0 (mercado
+      confiavelmente melhor).
+    - `nao_inferior`: limite SUPERIOR do IC < `margem` -- não-inferioridade
+      de verdade (ensaio de não-inferioridade: define uma margem de
+      tolerância a priori e testa se o pior cenário dentro do IC não
+      ultrapassa ela), mais forte que só "não deu diferença significativa".
+    """
+    diffs = perdas_modelo - perdas_mercado
+    rng = np.random.default_rng(seed)
+    n = len(diffs)
+    diffs_bootstrap = [rng.choice(diffs, size=n, replace=True).mean() for _ in range(n_reamostragens)]
+    ic_inferior, ic_superior = np.percentile(diffs_bootstrap, [2.5, 97.5])
+    return {
+        "n": n,
+        "diferenca_media": float(diffs.mean()),
+        "ic95_inferior": float(ic_inferior),
+        "ic95_superior": float(ic_superior),
+        "modelo_supera_mercado": bool(ic_superior < 0),
+        "mercado_supera_modelo": bool(ic_inferior > 0),
+        "nao_inferior": bool(ic_superior < margem),
+    }
+
+
+def imprimir_relatorio_pareado(linhas_pareadas: list[dict], margem: float = MARGEM_NAO_INFERIORIDADE_LOG_LOSS) -> None:
+    if not linhas_pareadas:
+        return
+    linhas_ordenadas = sorted(linhas_pareadas, key=lambda r: r["comparacao"]["diferenca_media"])
+    logger.info("=" * 86)
+    logger.info("COMPARAÇÃO PAREADA COM O MERCADO (log-loss, bootstrap) -- margem de não-inferioridade: %.4f", margem)
+    logger.info("=" * 86)
+    for r in linhas_ordenadas:
+        c = r["comparacao"]
+        if c["modelo_supera_mercado"]:
+            veredito = "MODELO SUPERIOR (IC95% < 0)"
+        elif c["mercado_supera_modelo"]:
+            veredito = "MERCADO SUPERIOR (IC95% > 0)"
+        elif c["nao_inferior"]:
+            veredito = "NÃO-INFERIOR (limite sup. do IC < margem)"
+        else:
+            veredito = "INCONCLUSIVO (IC cruza a margem)"
+        logger.info(
+            "%-34s | %4d partidas | diferença %+7.4f | IC95%% [%+7.4f, %+7.4f] | %s",
+            r["nome"], c["n"], c["diferenca_media"], c["ic95_inferior"], c["ic95_superior"], veredito,
+        )
+    logger.info("=" * 86)
+
+
+# =============================================================================
+# Closing Line Value -- o edge do modelo (contra a odd de ABERTURA) prevê
+# pra que lado a linha se move até o FECHAMENTO? Já testado uma vez neste
+# projeto pro Dixon-Coles de produção e deu negativo (ver
+# CONTEXTO_PROJETO.md) -- aqui mede de novo pro pipeline novo.
+# =============================================================================
+def _carregar_pinnacle_devigada_por_snapshot(supabase, match_ids: list[int], snapshot: str) -> dict[int, dict[str, float]]:
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("odds_market")
+            .select("match_id, selection, odds")
+            .in_("match_id", lote)
+            .eq("market", "1X2")
+            .eq("bookmaker", "pinnacle")
+            .eq("snapshot", snapshot)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids)
+    odds_por_partida: dict[int, dict[str, float]] = {}
+    for linha in linhas:
+        odds_por_partida.setdefault(linha["match_id"], {})[linha["selection"]] = linha["odds"]
+
+    devigadas: dict[int, dict[str, float]] = {}
+    for match_id, odds in odds_por_partida.items():
+        if not all(odds.get(s) for s in ("home", "draw", "away")):
+            continue
+        probs_brutas = {s: 1 / odds[s] for s in ("home", "draw", "away")}
+        overround = sum(probs_brutas.values())
+        devigadas[match_id] = {f"prob_{s}": probs_brutas[s] / overround for s in ("home", "draw", "away")}
+    return devigadas
+
+
+def testar_closing_line_value(
+    supabase,
+    match_ids: list[int],
+    predicoes_por_variante: dict[str, dict[int, dict[str, float]]],
+    n_reamostragens: int = N_REAMOSTRAGENS_BOOTSTRAP,
+    seed: int = SEED,
+) -> dict[str, dict]:
+    """Pra cada (partida, seleção): `edge = prob_modelo - prob_abertura` e
+    `movimento = prob_fechamento - prob_abertura` (as duas devigadas).
+    Correlação positiva e significativa entre os dois sugeriria que o
+    modelo "acerta" a direção que a linha vai se mover -- ou seja, apostar
+    na odd de abertura, antes do mercado incorporar a mesma informação,
+    teria valor esperado positivo. Bootstrap (reamostragem dos pares) pra
+    IC 95% da correlação."""
+    abertura = _carregar_pinnacle_devigada_por_snapshot(supabase, match_ids, "pre_closing")
+    fechamento = _carregar_pinnacle_devigada_por_snapshot(supabase, match_ids, "closing")
+    match_ids_com_movimento = sorted(set(abertura) & set(fechamento))
+    if not match_ids_com_movimento:
+        return {}
+
+    resultados: dict[str, dict] = {}
+    for nome_variante, predicoes in predicoes_por_variante.items():
+        edges, movimentos = [], []
+        for match_id in match_ids_com_movimento:
+            probs_modelo = predicoes.get(match_id)
+            if probs_modelo is None:
+                continue
+            for selecao in ("home", "draw", "away"):
+                campo = f"prob_{selecao}"
+                edges.append(probs_modelo[campo] - abertura[match_id][campo])
+                movimentos.append(fechamento[match_id][campo] - abertura[match_id][campo])
+
+        if len(edges) < AMOSTRA_MINIMA_CLV:
+            continue
+        edges_arr, movimentos_arr = np.array(edges), np.array(movimentos)
+        if edges_arr.std() == 0 or movimentos_arr.std() == 0:
+            continue
+        correlacao = float(np.corrcoef(edges_arr, movimentos_arr)[0, 1])
+
+        rng = np.random.default_rng(seed)
+        n = len(edges_arr)
+        correlacoes_bootstrap = []
+        for _ in range(n_reamostragens):
+            idx = rng.integers(0, n, n)
+            amostra_e, amostra_m = edges_arr[idx], movimentos_arr[idx]
+            if amostra_e.std() == 0 or amostra_m.std() == 0:
+                continue
+            correlacoes_bootstrap.append(np.corrcoef(amostra_e, amostra_m)[0, 1])
+        if not correlacoes_bootstrap:
+            continue
+        ic_inferior, ic_superior = np.percentile(correlacoes_bootstrap, [2.5, 97.5])
+        resultados[nome_variante] = {
+            "n_pares": n,
+            "correlacao": correlacao,
+            "ic95_inferior": float(ic_inferior),
+            "ic95_superior": float(ic_superior),
+            "significativo": bool(ic_inferior > 0),
+        }
+    return resultados
+
+
+def imprimir_relatorio_clv(resultados_clv: dict[str, dict]) -> None:
+    if not resultados_clv:
+        logger.info("Sem dado suficiente pra testar Closing Line Value (poucos pares partida+seleção com abertura E fechamento da Pinnacle).")
+        return
+    logger.info("=" * 86)
+    logger.info("CLOSING LINE VALUE -- o edge do modelo (vs. odd de ABERTURA) antecipa o movimento da linha até o FECHAMENTO?")
+    logger.info("=" * 86)
+    for nome, r in sorted(resultados_clv.items(), key=lambda kv: kv[1]["ic95_inferior"], reverse=True):
+        flag = "SIGNIFICATIVO (antecipa movimento)" if r["significativo"] else "sem evidência de antecipação"
+        logger.info(
+            "%-34s | %4d pares | correlação %+.3f | IC95%% [%+.3f, %+.3f] | %s",
+            nome, r["n_pares"], r["correlacao"], r["ic95_inferior"], r["ic95_superior"], flag,
+        )
+    logger.info("=" * 86)
+
+
+# =============================================================================
 # Orquestração
 # =============================================================================
 def main() -> None:
@@ -513,7 +719,7 @@ def main() -> None:
     try:
         logger.info("Comparando qualidade de probabilidade com o mercado (Pinnacle sem vig)...")
         pinnacle_devigada = carregar_odds_pinnacle_devigadas(supabase, match_ids_teste)
-        match_ids_validos = set(pinnacle_devigada.keys())
+        match_ids_validos = set(pinnacle_devigada.keys()) & set(resultados_reais.keys())
         if not match_ids_validos:
             logger.warning("Nenhuma odd da Pinnacle encontrada pro Test Set -- pulando comparação de qualidade.")
         else:
@@ -524,8 +730,31 @@ def main() -> None:
                 log_loss_m, brier_m, n_m = _metricas_probabilisticas(preds, resultados_reais, match_ids_validos)
                 linhas_qualidade.append({"nome": nome_variante, "log_loss": log_loss_m, "brier": brier_m, "n": n_m})
             imprimir_relatorio_qualidade(linhas_qualidade)
+
+            # --- comparação PAREADA (superioridade / inferioridade / não-inferioridade) ---
+            logger.info("Testando superioridade/não-inferioridade PAREADA contra o mercado...")
+            match_ids_ordenados = sorted(match_ids_validos)
+            perdas_mercado_log, _ = _perdas_por_partida(pinnacle_devigada, resultados_reais, match_ids_ordenados)
+            linhas_pareadas = []
+            for nome_variante, preds in todas_as_predicoes_teste.items():
+                match_ids_com_pred = [mid for mid in match_ids_ordenados if mid in preds]
+                if len(match_ids_com_pred) < AMOSTRA_MINIMA_CLV:
+                    continue
+                perdas_modelo_log, _ = _perdas_por_partida(preds, resultados_reais, match_ids_com_pred)
+                perdas_mercado_alinhada, _ = _perdas_por_partida(pinnacle_devigada, resultados_reais, match_ids_com_pred)
+                comparacao = comparar_pareado_com_mercado(perdas_modelo_log, perdas_mercado_alinhada)
+                linhas_pareadas.append({"nome": nome_variante, "comparacao": comparacao})
+            imprimir_relatorio_pareado(linhas_pareadas)
     except Exception:
         logger.exception("Falha ao comparar qualidade de probabilidade com o mercado -- pulando essa seção do relatório.")
+
+    # --- Closing Line Value: o edge (vs. abertura) antecipa o movimento até o fechamento? ---
+    try:
+        logger.info("Testando Closing Line Value (abertura vs. fechamento da Pinnacle)...")
+        resultados_clv = testar_closing_line_value(supabase, match_ids_teste, todas_as_predicoes_teste)
+        imprimir_relatorio_clv(resultados_clv)
+    except Exception:
+        logger.exception("Falha ao testar Closing Line Value -- pulando essa seção do relatório.")
 
 
 if __name__ == "__main__":
