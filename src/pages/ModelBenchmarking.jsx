@@ -39,14 +39,36 @@ function fmtPctSigned(v) {
   return v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
 }
 
-// Painel de backtest (ROI/Kelly/IC95%/EV+) equivalente ao "Backtest de
-// apostas simuladas (EV+)" de Estatísticas dos Modelos, mas lendo o
-// resultado JÁ PERSISTIDO por scripts/backtest_kelly.py (via
-// model_benchmarking_backtest/_liga) em vez de calcular na hora -- o
-// backtest de verdade (grid search + tuning) é caro demais pra rodar
-// dentro de uma função serverless, então roda no GitHub Actions
-// (backtest_kelly.yml, disparado por ?tarefa=disparar-backtest) e só o
-// resultado final é lido aqui.
+function fmtNum(v, casas = 4) {
+  return v == null ? '—' : Number(v).toFixed(casas);
+}
+
+function fmtPeriodo(inicio, fim) {
+  if (!inicio || !fim) return '—';
+  const f = (d) => new Date(d).toLocaleDateString('pt-BR');
+  return `${f(inicio)} – ${f(fim)}`;
+}
+
+const MERCADOS_BACKTEST = [
+  { chave: '1X2', rotulo: '1X2' },
+  { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
+];
+const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
+
+// Painel de backtest (log-loss/Brier/Acurácia vs. Pinnacle sem vig + ROI/
+// Kelly/IC95%/EV+) equivalente ao "Backtest de apostas simuladas (EV+)" de
+// Estatísticas dos Modelos, mas lendo o resultado JÁ PERSISTIDO por
+// scripts/backtest_kelly.py (via model_benchmarking_backtest/_liga) em vez
+// de calcular na hora -- o backtest de verdade (grid search + tuning, 2
+// mercados x 4 modelos) é caro demais pra rodar dentro de uma função
+// serverless, então roda no GitHub Actions (backtest_kelly.yml, disparado
+// por ?tarefa=disparar-backtest) e só o resultado final é lido aqui.
+//
+// Dois blocos de ROI por modelo: "fechamento" usa a melhor odd real
+// disponível entre TODOS os bookmakers (mesmo teste original), "abertura"
+// usa especificamente a odd de abertura da Pinnacle -- são universos de
+// apostas diferentes (edge mínimo aplicado em cada odd separadamente), não
+// comparáveis diretamente entre si.
 function BacktestModelBenchmarking({ session }) {
   const [relatorio, setRelatorio] = useState([]);
   const [relatorioPorLiga, setRelatorioPorLiga] = useState([]);
@@ -55,6 +77,7 @@ function BacktestModelBenchmarking({ session }) {
   const [disparando, setDisparando] = useState(false);
   const [mensagemDisparo, setMensagemDisparo] = useState(null);
   const [expandido, setExpandido] = useState(null);
+  const [mercado, setMercado] = useState('1X2');
 
   const carregar = useCallback(async () => {
     if (!supabaseAtivo) { setErro('Supabase não configurado.'); setCarregando(false); return; }
@@ -67,7 +90,7 @@ function BacktestModelBenchmarking({ session }) {
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
-      setRelatorio((principal || []).sort((a, b) => b.roi_ic95_inferior - a.roi_ic95_inferior));
+      setRelatorio(principal || []);
       setRelatorioPorLiga(porLiga || []);
     } catch (e) {
       setErro(e.message);
@@ -90,7 +113,7 @@ function BacktestModelBenchmarking({ session }) {
       if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
       setMensagemDisparo({
         tipo: 'ok',
-        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 4 modelos -- é bem mais pesado que as predições diárias, pode levar uns 15-30 minutos. Volte depois e clique em "Recarregar".',
+        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 4 modelos, em 2 mercados (1X2 e Over/Under 2.5) -- é bem mais pesado que as predições diárias, pode levar 30-60 minutos. Volte depois e clique em "Recarregar".',
       });
     } catch (e) {
       setMensagemDisparo({ tipo: 'erro', texto: e.message });
@@ -99,13 +122,20 @@ function BacktestModelBenchmarking({ session }) {
     }
   }
 
+  const relatorioMercado = relatorio.filter((r) => (r.mercado || '1X2') === mercado);
+  const relatorioPorLigaMercado = relatorioPorLiga.filter((r) => (r.mercado || '1X2') === mercado);
+  const referenciaMercado = relatorioMercado.find((r) => r.model_name === MODEL_NAME_MERCADO_REF);
+  const relatorioModelos = relatorioMercado
+    .filter((r) => r.model_name !== MODEL_NAME_MERCADO_REF)
+    .sort((a, b) => (b.roi_ic95_inferior ?? -Infinity) - (a.roi_ic95_inferior ?? -Infinity));
   const ultimaExecucao = relatorio.reduce((max, r) => (r.executado_em > max ? r.executado_em : max), '');
+  const periodo = referenciaMercado || relatorioModelos[0];
 
   return (
     <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
         <h2 className="text-lg font-extrabold flex items-center gap-2 text-slate-100">
-          <TrendingUp className="text-emerald-400" size={22} /> Backtest de apostas simuladas (EV+)
+          <TrendingUp className="text-emerald-400" size={22} /> Backtest completo (qualidade + EV+)
         </h2>
         <div className="flex items-center gap-2">
           <button onClick={carregar} disabled={carregando}
@@ -119,12 +149,26 @@ function BacktestModelBenchmarking({ session }) {
           </button>
         </div>
       </div>
-      <p className="text-slate-400 text-sm mb-4">
-        Test Set out-of-sample (nunca visto pelo treino/tuning): simula banca com Kelly fracionário 25%,
-        edge mínimo 2pp, na odd real de fechamento. ROI com IC 95% via bootstrap (2000 reamostragens) --
-        só considera "EV+" quando o limite inferior do IC fica acima de zero.
+      <p className="text-slate-400 text-sm mb-3">
+        Test Set out-of-sample (nunca visto pelo treino/tuning). Qualidade (log-loss/Brier/Acurácia) comparada com a
+        Pinnacle sem vig (odds justas, devigadas). ROI simulado com Kelly fracionário 25% e edge mínimo 2pp, em dois
+        testes separados: contra a <strong>melhor odd real de fechamento</strong> (qualquer bookmaker) e contra a{' '}
+        <strong>odd de abertura da Pinnacle</strong> especificamente — IC 95% via bootstrap (2000 reamostragens), só
+        considera "EV+" quando o limite inferior do IC fica acima de zero.
         {ultimaExecucao && <span className="text-slate-500"> Última rodada: {new Date(ultimaExecucao).toLocaleString('pt-BR')}.</span>}
       </p>
+
+      <div className="flex items-center gap-2 mb-4">
+        {MERCADOS_BACKTEST.map((m) => (
+          <button key={m.chave} onClick={() => setMercado(m.chave)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${mercado === m.chave ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>
+            {m.rotulo}
+          </button>
+        ))}
+        {periodo?.periodo_inicio && (
+          <span className="text-[11px] text-slate-500 ml-2">Período de teste: {fmtPeriodo(periodo.periodo_inicio, periodo.periodo_fim)}</span>
+        )}
+      </div>
 
       {mensagemDisparo && (
         <div className={`rounded-lg border p-3 text-sm mb-4 ${mensagemDisparo.tipo === 'ok' ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-red-950/40 border-red-800 text-red-300'}`}>
@@ -142,9 +186,10 @@ function BacktestModelBenchmarking({ session }) {
         <div className="flex items-center gap-2 text-slate-500 text-sm py-8 justify-center">
           <Loader2 size={16} className="animate-spin" /> Carregando backtest...
         </div>
-      ) : relatorio.length === 0 ? (
+      ) : relatorioMercado.length === 0 ? (
         <p className="text-sm text-slate-500 text-center py-6">
-          Nenhum backtest rodado ainda — clique em "Rodar backtest" (leva uns 15-30 minutos, roda em background no GitHub Actions).
+          Nenhum backtest rodado ainda pra {MERCADOS_BACKTEST.find((m) => m.chave === mercado)?.rotulo} — clique em
+          "Rodar backtest" (leva uns 30-60 minutos, roda em background no GitHub Actions).
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -153,42 +198,73 @@ function BacktestModelBenchmarking({ session }) {
               <tr className="text-slate-500 uppercase text-[10px]">
                 <th className="text-left p-1.5"></th>
                 <th className="text-left p-1.5">Modelo</th>
-                <th className="text-right p-1.5">Apostas</th>
-                <th className="text-right p-1.5">ROI médio</th>
-                <th className="text-right p-1.5">IC 95%</th>
+                <th className="text-right p-1.5">Log-loss</th>
+                <th className="text-right p-1.5">Brier</th>
+                <th className="text-right p-1.5">Acurácia</th>
+                <th className="text-right p-1.5">Apostas (fech.)</th>
+                <th className="text-right p-1.5">ROI (fech.)</th>
+                <th className="text-right p-1.5">IC 95% (fech.)</th>
+                <th className="text-center p-1.5">EV+?</th>
+                <th className="text-right p-1.5">Apostas (abert.)</th>
+                <th className="text-right p-1.5">ROI (abert.)</th>
+                <th className="text-right p-1.5">IC 95% (abert.)</th>
                 <th className="text-center p-1.5">EV+?</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {relatorio.map((r) => {
-                const ligasDoModelo = relatorioPorLiga.filter((l) => l.model_name === r.model_name);
-                const aberto = expandido === r.model_name;
+              {referenciaMercado && (
+                <tr className="bg-sky-500/5 italic">
+                  <td className="p-1.5"></td>
+                  <td className="p-1.5 text-sky-300">Pinnacle sem vig (mercado)</td>
+                  <td className="p-1.5 text-right text-sky-200">{fmtNum(referenciaMercado.log_loss)}</td>
+                  <td className="p-1.5 text-right text-sky-200">{fmtNum(referenciaMercado.brier)}</td>
+                  <td className="p-1.5 text-right text-sky-200">{fmtPct(referenciaMercado.accuracy)}</td>
+                  <td className="p-1.5 text-right text-slate-700" colSpan={8}>— (referência, sem ROI)</td>
+                </tr>
+              )}
+              {relatorioModelos.map((r) => {
+                const ligasDoModelo = relatorioPorLigaMercado.filter((l) => l.model_name === r.model_name);
+                const aberto = expandido === `${mercado}:${r.model_name}`;
                 return (
                   <React.Fragment key={r.model_name}>
-                    <tr className={r.significativo ? 'bg-emerald-500/5' : ''}>
+                    <tr className={r.significativo || r.significativo_abertura ? 'bg-emerald-500/5' : ''}>
                       <td className="p-1.5">
                         {ligasDoModelo.length > 0 && (
-                          <button onClick={() => setExpandido(aberto ? null : r.model_name)} className="text-slate-500 hover:text-slate-300">
+                          <button onClick={() => setExpandido(aberto ? null : `${mercado}:${r.model_name}`)} className="text-slate-500 hover:text-slate-300">
                             {aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </button>
                         )}
                       </td>
                       <td className="p-1.5 text-slate-300">{r.model_name}</td>
+                      <td className="p-1.5 text-right text-slate-400">{fmtNum(r.log_loss)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{fmtNum(r.brier)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{fmtPct(r.accuracy)}</td>
                       <td className="p-1.5 text-right text-slate-400">{r.n_apostas}</td>
                       <td className={`p-1.5 text-right font-bold ${r.roi_medio > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPctSigned(r.roi_medio)}</td>
-                      <td className="p-1.5 text-right text-slate-500">
-                        [{fmtPctSigned(r.roi_ic95_inferior)}, {fmtPctSigned(r.roi_ic95_superior)}]
-                      </td>
+                      <td className="p-1.5 text-right text-slate-500">[{fmtPctSigned(r.roi_ic95_inferior)}, {fmtPctSigned(r.roi_ic95_superior)}]</td>
                       <td className="p-1.5 text-center">{r.significativo ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-slate-600">—</span>}</td>
+                      <td className="p-1.5 text-right text-slate-400">{r.n_apostas_abertura}</td>
+                      <td className={`p-1.5 text-right font-bold ${r.roi_abertura_medio > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPctSigned(r.roi_abertura_medio)}</td>
+                      <td className="p-1.5 text-right text-slate-500">[{fmtPctSigned(r.roi_abertura_ic95_inferior)}, {fmtPctSigned(r.roi_abertura_ic95_superior)}]</td>
+                      <td className="p-1.5 text-center">{r.significativo_abertura ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-slate-600">—</span>}</td>
                     </tr>
                     {aberto && ligasDoModelo.map((l) => (
                       <tr key={l.liga} className="bg-slate-950/40">
                         <td className="p-1.5"></td>
-                        <td className="p-1.5 pl-6 text-slate-500">{l.liga}</td>
+                        <td className="p-1.5 pl-6 text-slate-500">
+                          {l.liga} {l.periodo_inicio && <span className="text-slate-700">({fmtPeriodo(l.periodo_inicio, l.periodo_fim)})</span>}
+                        </td>
+                        <td className="p-1.5 text-right text-slate-500">{fmtNum(l.log_loss)}</td>
+                        <td className="p-1.5 text-right text-slate-500">{fmtNum(l.brier)}</td>
+                        <td className="p-1.5 text-right text-slate-500">{fmtPct(l.accuracy)}</td>
                         <td className="p-1.5 text-right text-slate-500">{l.n_apostas}</td>
                         <td className={`p-1.5 text-right ${l.roi_medio > 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>{fmtPctSigned(l.roi_medio)}</td>
                         <td className="p-1.5 text-right text-slate-600">[{fmtPctSigned(l.roi_ic95_inferior)}, {fmtPctSigned(l.roi_ic95_superior)}]</td>
                         <td className="p-1.5 text-center">{l.significativo ? <span className="text-emerald-500/80 font-bold">✓</span> : <span className="text-slate-700">—</span>}</td>
+                        <td className="p-1.5 text-right text-slate-500">{l.n_apostas_abertura}</td>
+                        <td className={`p-1.5 text-right ${l.roi_abertura_medio > 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>{fmtPctSigned(l.roi_abertura_medio)}</td>
+                        <td className="p-1.5 text-right text-slate-600">[{fmtPctSigned(l.roi_abertura_ic95_inferior)}, {fmtPctSigned(l.roi_abertura_ic95_superior)}]</td>
+                        <td className="p-1.5 text-center">{l.significativo_abertura ? <span className="text-emerald-500/80 font-bold">✓</span> : <span className="text-slate-700">—</span>}</td>
                       </tr>
                     ))}
                   </React.Fragment>
@@ -197,8 +273,10 @@ function BacktestModelBenchmarking({ session }) {
             </tbody>
           </table>
           <p className="text-[10px] text-slate-600 mt-2">
-            Linhas verdes = IC 95% do ROI inteiramente acima de zero (EV+ estatisticamente sustentado no Test Set, não só edge médio positivo).
-            Clique na seta pra ver a quebra por liga (só disponível pra variante crua de cada modelo).
+            Linhas verdes = IC 95% do ROI inteiramente acima de zero em pelo menos um dos dois testes (EV+ estatisticamente
+            sustentado, não só edge médio positivo). "Fech." = melhor odd real de fechamento entre todos os bookmakers;
+            "Abert." = odd de abertura da Pinnacle especificamente. Clique na seta pra ver a quebra por liga (só disponível
+            pra variante crua de cada modelo).
           </p>
         </div>
       )}

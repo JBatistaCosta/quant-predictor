@@ -22,7 +22,25 @@ from catboost import CatBoostClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
-from dados_historicos import CAT_FEATURES, FEATURES, RESULTADO_AWAY, RESULTADO_DRAW, RESULTADO_HOME
+from dados_historicos import (
+    CAT_FEATURES,
+    FEATURES,
+    RESULTADO_AWAY,
+    RESULTADO_DRAW,
+    RESULTADO_HOME,
+    RESULTADO_OVER25,
+    RESULTADO_UNDER25,
+)
+
+# Rótulo de saída por código de classe -- usado por `empacotar_predicoes`
+# pra virar {match_id: {prob_*}} sem hardcoded 1X2. `resultado` (3 classes)
+# e `resultado_over25` (2 classes, mercado Over/Under 2.5 gols) usam o
+# MESMO treino/predição por baixo (`TREINADORES`), só muda a coluna-alvo e
+# esse mapeamento de rótulo.
+ROTULOS_SAIDA = {
+    "resultado": {RESULTADO_HOME: "prob_home", RESULTADO_DRAW: "prob_draw", RESULTADO_AWAY: "prob_away"},
+    "resultado_over25": {RESULTADO_UNDER25: "prob_under", RESULTADO_OVER25: "prob_over"},
+}
 
 # Hiperparâmetros default -- usados pelo treino diário em produção, sem
 # tuning (`backtest_kelly.py` faz grid search em cima dessas mesmas funções
@@ -54,21 +72,20 @@ def alinhar_categoria_liga(serie: pd.Series, categorias_treino) -> pd.Categorica
     return pd.Categorical(serie, categories=categorias_treino)
 
 
-def empacotar_predicoes(match_ids, probs: np.ndarray, classes) -> dict[int, dict[str, float]]:
-    """Mapeia a matriz (N, 3) de predict_proba pra {match_id: {prob_*}},
-    respeitando a ordem real de `classes_` do modelo (nem sempre é [0,1,2])."""
+def empacotar_predicoes(match_ids, probs: np.ndarray, classes, coluna_alvo: str = "resultado") -> dict[int, dict[str, float]]:
+    """Mapeia a matriz (N, n_classes) de predict_proba pra
+    {match_id: {prob_*}}, respeitando a ordem real de `classes_` do modelo
+    (nem sempre é [0,1,...]) -- `coluna_alvo` escolhe o mapeamento código->
+    nome de saída certo em `ROTULOS_SAIDA` (1X2 ou Over/Under 2.5)."""
+    rotulos = ROTULOS_SAIDA[coluna_alvo]
     indice_da_classe = {int(rotulo): i for i, rotulo in enumerate(np.ravel(classes))}
     resultado = {}
     for match_id, linha_probs in zip(match_ids, probs):
-        resultado[match_id] = {
-            "prob_home": float(linha_probs[indice_da_classe[RESULTADO_HOME]]),
-            "prob_draw": float(linha_probs[indice_da_classe[RESULTADO_DRAW]]),
-            "prob_away": float(linha_probs[indice_da_classe[RESULTADO_AWAY]]),
-        }
+        resultado[match_id] = {nome: float(linha_probs[indice_da_classe[codigo]]) for codigo, nome in rotulos.items()}
     return resultado
 
 
-def treinar_catboost(params: dict, train_df: pd.DataFrame):
+def treinar_catboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado"):
     modelo = CatBoostClassifier(
         loss_function="MultiClass",
         thread_count=2,
@@ -79,7 +96,7 @@ def treinar_catboost(params: dict, train_df: pd.DataFrame):
         **params,
     )
     treino = preparar_liga_para_catboost(train_df)
-    modelo.fit(treino[FEATURES], treino["resultado"])
+    modelo.fit(treino[FEATURES], treino[coluna_alvo])
     return modelo, None
 
 
@@ -88,17 +105,17 @@ def prever_catboost(modelo, _extra, df: pd.DataFrame):
     return modelo.predict_proba(df[FEATURES]), modelo.classes_
 
 
-def treinar_xgboost(params: dict, train_df: pd.DataFrame):
+def treinar_xgboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado"):
     treino_encoded = pd.get_dummies(train_df[FEATURES], columns=CAT_FEATURES)
     modelo = XGBClassifier(
         objective="multi:softprob",
-        num_class=3,
+        num_class=train_df[coluna_alvo].nunique(),
         n_estimators=200,
         eval_metric="mlogloss",
         random_state=42,
         **params,
     )
-    modelo.fit(treino_encoded, train_df["resultado"])
+    modelo.fit(treino_encoded, train_df[coluna_alvo])
     return modelo, treino_encoded.columns
 
 
@@ -110,7 +127,7 @@ def prever_xgboost(modelo, colunas_treino, df: pd.DataFrame):
     return modelo.predict_proba(encoded), modelo.classes_
 
 
-def treinar_lightgbm(params: dict, train_df: pd.DataFrame):
+def treinar_lightgbm(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado"):
     """Configuração deliberadamente leve/rápida (poucas árvores, folhas
     rasas por padrão) -- é o modelo mais barato dos 3 em custo de CPU no
     runner do GitHub Actions."""
@@ -119,14 +136,14 @@ def treinar_lightgbm(params: dict, train_df: pd.DataFrame):
     treino["liga"] = pd.Categorical(treino["liga"], categories=categorias_liga)
     modelo = LGBMClassifier(
         objective="multiclass",
-        num_class=3,
+        num_class=treino[coluna_alvo].nunique(),
         n_estimators=80,
         min_child_samples=10,
         random_state=42,
         verbosity=-1,
         **params,
     )
-    modelo.fit(treino[FEATURES], treino["resultado"], categorical_feature=CAT_FEATURES)
+    modelo.fit(treino[FEATURES], treino[coluna_alvo], categorical_feature=CAT_FEATURES)
     return modelo, categorias_liga
 
 

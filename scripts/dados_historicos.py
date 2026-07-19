@@ -43,6 +43,9 @@ logger = logging.getLogger("dados_historicos")
 # `backtest_kelly.py`.
 RESULTADO_HOME, RESULTADO_DRAW, RESULTADO_AWAY = 0, 1, 2
 
+# Códigos do alvo binário `resultado_over25` (mercado Over/Under 2.5 gols).
+RESULTADO_UNDER25, RESULTADO_OVER25 = 0, 1
+
 TAMANHO_PAGINA = 1000
 
 # Tamanho seguro de lista dentro de um `.in_()` -- uma lista de milhares de
@@ -498,13 +501,17 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         [RESULTADO_HOME, RESULTADO_DRAW],
         default=RESULTADO_AWAY,
     )
+    # Alvo binário pro mercado Over/Under 2.5 gols -- mesmas features de
+    # `resultado` (elo/forma/xG pré-jogo), só troca o alvo. RESULTADO_OVER25
+    # = 1 quando total de gols > 2.5.
+    dataset["resultado_over25"] = (dataset["home_goals"] + dataset["away_goals"] > 2.5).astype(int)
     dataset = dataset.merge(elo_home[["id", "home_team_id", "elo_home"]], on=["id", "home_team_id"], how="left")
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
     dataset = dataset.join(forma_gols, on="id")
     dataset = dataset.join(forma_xg, on="id")
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS, "resultado"]]
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS, "resultado", "resultado_over25"]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM

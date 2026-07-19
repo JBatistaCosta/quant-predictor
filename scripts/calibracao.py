@@ -100,19 +100,26 @@ _AJUSTADORES = {"platt": _ajustar_platt, "isotonic": _ajustar_isotonic}
 
 
 def ajustar_calibracao(
-    predicoes_val: dict[int, dict[str, float]], resultados_val: dict[int, int], metodo: str = "platt"
+    predicoes_val: dict[int, dict[str, float]],
+    resultados_val: dict[int, int],
+    metodo: str = "platt",
+    codigo_por_selecao: dict[str, int] | None = None,
 ) -> dict[str, Calibrador]:
-    """Ajusta um calibrador por seleção (one-vs-rest: home/draw/away cada
-    um como problema binário independente), usando as predições CRUAS do
-    modelo no Validation Set -- nunca no Train (senão a calibração só
-    mediria overfitting do próprio modelo) nem no Test (senão deixaria de
-    ser out-of-sample de verdade)."""
+    """Ajusta um calibrador por seleção (one-vs-rest: cada seleção como
+    problema binário independente), usando as predições CRUAS do modelo no
+    Validation Set -- nunca no Train (senão a calibração só mediria
+    overfitting do próprio modelo) nem no Test (senão deixaria de ser
+    out-of-sample de verdade). `codigo_por_selecao` default é 1X2
+    (`CODIGO_POR_SELECAO`) -- outros mercados (ex.: Over/Under 2.5,
+    `{"under": 0, "over": 1}`) passam o próprio mapeamento, mesma mecânica
+    one-vs-rest funciona igual pra 2 ou 3 seleções."""
     if metodo not in _AJUSTADORES:
         raise ValueError(f"método de calibração desconhecido: {metodo!r} (esperado um de {METODOS})")
     ajustar = _AJUSTADORES[metodo]
+    mapeamento = codigo_por_selecao or CODIGO_POR_SELECAO
 
     calibradores: dict[str, Calibrador] = {}
-    for selecao, codigo in CODIGO_POR_SELECAO.items():
+    for selecao, codigo in mapeamento.items():
         probs, alvo = [], []
         for match_id, p in predicoes_val.items():
             resultado_real = resultados_val.get(match_id)
@@ -129,13 +136,18 @@ def ajustar_calibracao(
     return calibradores
 
 
-def aplicar_calibracao(probs: dict[str, float], calibradores: dict[str, Calibrador]) -> dict[str, float]:
+def aplicar_calibracao(
+    probs: dict[str, float], calibradores: dict[str, Calibrador], selecoes: tuple[str, ...] | None = None
+) -> dict[str, float]:
     """Aplica o calibrador de cada seleção e RENORMALIZA pra somar 1 -- o
     ajuste one-vs-rest calibra cada seleção de forma independente, então a
-    soma das 3 não vem garantida em 1 depois da transformação."""
+    soma não vem garantida em 1 depois da transformação. `selecoes` default
+    é 1X2 (`SELECOES`); outros mercados passam a própria tupla (ex.:
+    `("under", "over")`)."""
+    quais_selecoes = selecoes or SELECOES
     calibradas = {}
-    for selecao in SELECOES:
+    for selecao in quais_selecoes:
         calibrador = calibradores.get(selecao, CalibradorIdentidade())
         calibradas[selecao] = calibrador.aplicar(probs[f"prob_{selecao}"])
     total = sum(calibradas.values())
-    return {f"prob_{selecao}": calibradas[selecao] / total for selecao in SELECOES}
+    return {f"prob_{selecao}": calibradas[selecao] / total for selecao in quais_selecoes}
