@@ -107,7 +107,10 @@ FORCA_PADRAO = {"ataque": 1.0, "defesa": 1.0}
 # Setup
 # =============================================================================
 def obter_env_obrigatoria(nome: str) -> str:
-    valor = os.environ.get(nome)
+    # .strip() -- secrets do GitHub Actions colados via copy-paste às vezes
+    # carregam um '\n' final, que quebra o parser de URL do httpx com
+    # "Invalid non-printable ASCII character in URL" na criação do client
+    valor = (os.environ.get(nome) or "").strip()
     if not valor:
         logger.error("Variável de ambiente obrigatória ausente: %s", nome)
         sys.exit(1)
