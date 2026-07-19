@@ -1,20 +1,17 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
-**Backfill de escanteios/xG via `sync-match-stats.js` pras 7 competições fora do Brasileirão — em andamento, parou por bater o limite DIÁRIO do plano pago (7.500 req/dia).** Usuário contratou o plano pago da API-Football (7.500/dia, 300/min) nesta sessão — dois bugs de ambiguidade corrigidos no caminho (times homônimos, PR #48; ligas homônimas — 3 ligas chamadas "Championship" na API, PR #54) e o pacing foi liberado (PR #53). Status por competição/temporada no fim da sessão (jogos com escanteios OU xG preenchidos / total):
-- **Eredivisie: 306/306 nas 3 temporadas (2023-2025) — CONCLUÍDO.**
-- Champions League: 2023 93/125, 2024 164/189, 2025 64/189 (temporada atual tem vários clubes novos na competição cujo nome não está casando — ver achado abaixo).
-- Copa Libertadores: 2023 72/155, 2024 100/155, 2025 109/154, 2026 66/125.
-- Championship: 2023 199/557, 2024 128/557, 2025 118/557 (taxa de casamento baixa, a confirmar se é nome de clube ou outra causa — ver achado abaixo).
-- Primeira Liga: 2023 86/306, 2024 85/306, 2025 47/306.
-- Copa do Mundo FIFA 2026: 95/102 — praticamente completo.
-- Eurocopa 2024: 46/51 — praticamente completo.
-- Copa do Brasil: 2022 5/122 (baixo, a investigar), 2023 47/122 (parcial, script ainda tinha margem quando bateu a cota), 2024 0/122 (não chegou a rodar).
-- Brasileirão: **não tem esse dado na API-Football** (achado confirmado antes, ver mais abaixo) — não faz parte desse backfill.
+**Backfill de escanteios/xG via `sync-match-stats.js` pras 7 competições fora do Brasileirão — ENCERRADO POR ORA, atingiu o teto do que o matching automático consegue.** Usuário contratou o plano pago da API-Football (7.500/dia, 300/min) — dois bugs de ambiguidade corrigidos no caminho (times homônimos, PR #48; ligas homônimas — 3 ligas chamadas "Championship" na API, PR #54) e o pacing foi liberado (PR #53). Rodado em 2 dias (1º dia bateu cota diária, 2º dia rodou TODAS as combinações pendentes até o fim sem bater cota de novo — ou seja, o que sobrou não é mais problema de cota, é problema de nome não casando). Status final (jogos com escanteios OU xG preenchidos / total):
+- **Eredivisie: 306/306 nas 3 temporadas (2023-2025) — 100% CONCLUÍDO.**
+- Copa do Mundo FIFA 2026: 95/102, Eurocopa 2024: 46/51 — praticamente completos (resto são seleções com nome divergente, ex: "Turkey"/"Türkiye").
+- Champions League: 2023 93/125, 2024 164/189, 2025 64/189 (2025 tem vários clubes novos na competição cujo nome não está casando).
+- Copa Libertadores: 2023 72/155, 2024 100/155, 2025 109/154, 2026 66/125 (clubes sul-americanos com acento/abreviação divergente).
+- Championship: 2023 204/557, 2024 128/557, 2025 118/557 (taxa de casamento baixa persistente — mais investigação necessária, não é só sotaque/acento como nos outros casos).
+- Primeira Liga: 2023 86/306, 2024 85/306, 2025 85/306.
+- Copa do Brasil: 2022 5/122, 2023 47/122 (chegou no limite de rodadas, não em "sem progresso" — pode ter mais margem), 2024 66/122.
+- Brasileirão: **não tem esse dado na API-Football** (achado confirmado antes) — não faz parte desse backfill.
 
-**Achado sobre taxa de casamento baixa em algumas competições**: o casamento de partida (`sync-match-stats.js`) é por DATA + nome de time (token-subset). Times com grafia/transliteração divergente entre nosso banco e a API-Football (clubes sul-americanos com acentos/abreviação diferente, seleções como "Turkey"/"Türkiye" ou "United States"/"USA", clubes recém-promovidos a competições europeias) ficam em `sem_casamento` pra sempre (a partida nunca fica "completa" já que corners/xg continuam NULL) — isso NÃO corrompe dado (o matching seguro por token já garante isso), só deixa essas partidas específicas sem estatística. Não investigado a fundo ainda; se quiser aumentar a cobertura, o próximo passo seria uma rotina de reconciliação manual (reportar `sem_casamento` agregado por competição, revisar nomes divergentes um a um) — não vale automatizar mais heurística de nome sem supervisão (mesma disciplina já documentada várias vezes nesse arquivo).
-
-**Retomar**: rodar `?tarefa=sync-match-stats&liga_id=X&temporada=AAAA&limite=40` de novo pras combinações acima quando a cota diária resetar — a lógica de "pendente" já retoma sozinha de onde parou (só escanteios/xG NULL entram na fila).
+**Achado sobre taxa de casamento baixa**: o casamento de partida (`sync-match-stats.js`) é por DATA + nome de time (token-subset). Times com grafia/transliteração divergente entre nosso banco e a API-Football (clubes sul-americanos com acentos/abreviação diferente, seleções como "Turkey"/"Türkiye" ou "United States"/"USA", clubes recém-promovidos a competições europeias) ficam em `sem_casamento` pra sempre (a partida nunca fica "completa" já que corners/xg continuam NULL) — isso NÃO corrompe dado (o matching seguro por token já garante isso), só deixa essas partidas específicas sem estatística. **Confirmado no 2º dia: rodar de novo não ajuda mais** — as mesmas partidas continuam em `sem_casamento`, é teto de matching, não de cota. Championship é o caso mais grave proporcionalmente (~perto de 40% do teto, bem abaixo do resto) e vale investigar primeiro se quiser aumentar cobertura. **Próximo passo, se quiser mais cobertura**: rotina de reconciliação manual (reportar `sem_casamento` agregado por competição, revisar nomes divergentes um a um, talvez com um alias manual tipo `ALIASES_MANUAIS` já usado em `ingestao_stats_fbref.py`) — não vale automatizar mais heurística de nome sem supervisão (mesma disciplina já documentada várias vezes nesse arquivo). Não é urgente — cobertura já é substancial em 6 das 7 competições.
 
 Outras pendências menores (não urgentes):
 - Widget de odds (`WidgetOdds` em `AnaliseHistorica.jsx`) já está pronto pra mostrar Bet365/Betano assim que a extração acima funcionar — nada a mudar nele.
