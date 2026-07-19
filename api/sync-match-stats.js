@@ -46,16 +46,31 @@ async function chamarAPI(caminho, apiKey) {
   return dados.response;
 }
 
+// Apelidos confirmados manualmente pra nomes curtos que a API-Football usa e
+// que NÃO batem por token-subset com o nome completo do nosso banco (ex:
+// "QPR" não compartilha nenhuma palavra com "Queens Park Rangers FC"; "West
+// Brom" ≠ "West Bromwich Albion FC" — "brom" não é "bromwich"). Achado
+// investigando por que o Championship tinha taxa de casamento bem mais baixa
+// que as outras competições (?diagnostico=nomes, ver CONTEXTO_PROJETO.md) —
+// todo o resto dos clubes já casa via primeira-palavra em comum, só esses
+// dois usam abreviação sem raiz comum. Mesmo espírito do ALIASES_MANUAIS em
+// ingestao_stats_fbref.py: supervisionado, nunca heurística automática.
+const ALIASES_MANUAIS = {
+  'qpr': 'queens park rangers',
+  'west brom': 'west bromwich albion',
+};
+
 // Normaliza preservando espaços (vira tokens) em vez de colapsar tudo numa
 // string única — colapsar tudo foi o que causou colisão por substring em
 // api/model-maintenance.js (ver CONTEXTO_PROJETO.md, ex: "ABC" batendo com
 // "Atalanta BC"). Mesmo padrão usado lá e em ingestao_stats_fbref.py.
 function normalizar(s) {
-  return (s || '')
+  const base = (s || '')
     .toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+  return ALIASES_MANUAIS[base] || base;
 }
 
 function nomesBatem(nomeA, nomeB) {
