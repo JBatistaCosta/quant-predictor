@@ -245,11 +245,18 @@ def tau_dixon_coles(gols_casa: int, gols_fora: int, lambda_casa: float, lambda_f
 def _prever_probs_dixon_coles(forca_casa: dict[str, float], forca_fora: dict[str, float]) -> dict[str, float]:
     """Núcleo puro do cálculo (sem I/O) -- reaproveitado tanto pra prever a
     fixture de verdade quanto pra gerar as predições do Validation Set que
-    calibram o modelo (`_calibrar_dixon_coles`)."""
+    calibram o modelo (`_calibrar_dixon_coles`).
+
+    Devolve 1X2 E Over/Under 2.5 do MESMO grid de placares (o Dixon-Coles já
+    simula todo o placar cheio pra tirar 1X2 -- Over/Under é só somar as
+    mesmas células por total de gols em vez de por vencedor, sem custo
+    adicional de simulação nem retreino nenhum, ao contrário dos modelos de
+    árvore)."""
     lambda_casa = forca_casa["ataque"] * forca_fora["defesa"] * MANDO_CASA
     lambda_fora = forca_fora["ataque"] * forca_casa["defesa"]
 
     prob_home = prob_draw = prob_away = 0.0
+    prob_over25 = prob_under25 = 0.0
     for gc in range(MAX_GOLS_SIMULADOS):
         for gf in range(MAX_GOLS_SIMULADOS):
             p = (
@@ -264,8 +271,19 @@ def _prever_probs_dixon_coles(forca_casa: dict[str, float], forca_fora: dict[str
             else:
                 prob_away += p
 
-    total = prob_home + prob_draw + prob_away  # normaliza o corte da soma infinita
-    return {"prob_home": prob_home / total, "prob_draw": prob_draw / total, "prob_away": prob_away / total}
+            if gc + gf > 2.5:
+                prob_over25 += p
+            else:
+                prob_under25 += p
+
+    total = prob_home + prob_draw + prob_away  # normaliza o corte da soma infinita (mesmo total das duas partições)
+    return {
+        "prob_home": prob_home / total,
+        "prob_draw": prob_draw / total,
+        "prob_away": prob_away / total,
+        "prob_over": prob_over25 / total,
+        "prob_under": prob_under25 / total,
+    }
 
 
 def _resultado_codigo(home_goals: int, away_goals: int) -> int:
