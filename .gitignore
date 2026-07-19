@@ -22,3 +22,6 @@ npm-debug.log*
 arquivos_do_claude/campeonatos_disponiveis.json
 __pycache__/
 *.pyc
+
+# Artefato gerado pelo CatBoost ao treinar localmente (scripts/rodar_predicoes.py)
+catboost_info/
