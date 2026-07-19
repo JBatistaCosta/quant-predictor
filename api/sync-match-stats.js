@@ -58,6 +58,7 @@ async function chamarAPI(caminho, apiKey) {
 const ALIASES_MANUAIS = {
   'qpr': 'queens park rangers',
   'west brom': 'west bromwich albion',
+  'sheffield utd': 'sheffield united',
 };
 
 // Normaliza preservando espaços (vira tokens) em vez de colapsar tudo numa
