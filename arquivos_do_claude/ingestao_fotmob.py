@@ -429,7 +429,16 @@ def main():
             }
             player_rows.append(row)
         if player_rows:
-            supabase.table("match_player_stats_fotmob").upsert(player_rows, on_conflict="match_id,fotmob_player_id").execute()
+            # Deduplicação por fotmob_player_id: a chave do dict content.playerStats
+            # nem sempre bate com pdata["id"] (mesmo padrão de placeholder "0"/"-1"
+            # já documentado em `players` — aqui sem filtro, pode colidir duas
+            # chaves diferentes no mesmo id re-derivado) — sem isso, o upsert
+            # falhava com "ON CONFLICT DO UPDATE command cannot affect row a
+            # second time" e derrubava o backfill da temporada inteira no meio.
+            vistos = {}
+            for row in player_rows:
+                vistos[row["fotmob_player_id"]] = row
+            supabase.table("match_player_stats_fotmob").upsert(list(vistos.values()), on_conflict="match_id,fotmob_player_id").execute()
 
         shot_rows = []
         for s in (content.get("shotmap") or {}).get("shots") or []:
