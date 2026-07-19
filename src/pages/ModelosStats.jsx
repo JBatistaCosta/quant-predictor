@@ -311,21 +311,34 @@ function ConfigPlayerElo() {
   };
 
   const resetarEReprocessar = async () => {
-    if (!window.confirm('Isso apaga TODOS os ratings de jogador e o histórico, e reprocessa do zero com a configuração atual (~20 lotes). Continuar?')) return;
+    if (!window.confirm('Isso apaga TODOS os ratings de jogador e o histórico, e reprocessa do zero com a configuração atual (pode levar dezenas de lotes, alguns minutos). Continuar?')) return;
     setProcessando(true); setMsg(''); setErro('');
     try {
       const respReset = await fetch('/api/model-maintenance?tarefa=player-elo-reset');
       if (!respReset.ok) throw new Error('Falha no reset.');
       let restantes = null;
-      for (let i = 0; i < 40; i++) {
+      let rodada = 0;
+      // SEM cap arbitrário de rodadas — um limite fixo (usado antes, 40)
+      // já causou reset incompleto em produção quando o volume de partidas
+      // cresceu (backfill europeu) além do que o cap suportava, e ainda
+      // por cima reportava "concluído" mesmo parando pela metade. O loop
+      // real termina quando a API diz que não há mais nada pendente;
+      // 500 rodadas (~100k partidas) é só uma rede de segurança contra
+      // loop infinito em caso de erro real na API, nunca deveria ser
+      // atingido em uso normal.
+      for (rodada = 1; rodada <= 500; rodada++) {
         const resp = await fetch('/api/model-maintenance?tarefa=player-elo&limite=200');
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
         restantes = dados.partidas_restantes;
-        setMsg(`Reprocessando... ${restantes ?? '?'} partidas restantes.`);
+        setMsg(`Reprocessando... rodada ${rodada}, ${restantes ?? '?'} partidas restantes.`);
         if (!restantes) break;
       }
-      setMsg('Reprocessamento concluído com a configuração atual.');
+      if (restantes) {
+        setErro(`Parou depois de ${rodada} rodadas com ${restantes} partidas ainda restantes (limite de segurança atingido) — clique em "Resetar e reprocessar" de novo pra continuar, ou reporte se isso persistir.`);
+      } else {
+        setMsg(`Reprocessamento concluído com a configuração atual (${rodada} rodadas).`);
+      }
     } catch (e) {
       setErro(`${e.message} — o reprocesso pode ser retomado sem perder progresso chamando ?tarefa=player-elo de novo.`);
     } finally {
