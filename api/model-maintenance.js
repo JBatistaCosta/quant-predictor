@@ -1448,8 +1448,6 @@ function mapaStatusFotmob(fx) {
 // `fm_<id>`).
 async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, nome, pais, confederacao, tipo, simboloUrl }) {
   if (!fotmobLeagueId || !temporada) return { error: 'Informe fotmob_league_id e temporada.' };
-  const tipoLeagues = MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE[tipo];
-  if (!tipoLeagues) return { error: `tipo inválido — use um de: ${Object.keys(MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE).join(', ')}.` };
 
   const fmIdStr = String(fotmobLeagueId);
   let ligaCriada = false;
@@ -1461,7 +1459,13 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
   let leagueId = fonteExistente?.league_id;
 
   if (!leagueId) {
+    // tipo só é obrigatório quando a liga ainda não existe (precisa mapear
+    // pro leagues.type na hora de criar) — chamadas seguintes pra outra
+    // temporada da MESMA liga (já resolvida via liga_fonte_externa acima)
+    // não precisam informar de novo.
     if (!nome) return { error: 'Liga ainda não cadastrada pra esse fotmob_league_id — informe nome (e pais/tipo) pra criar.' };
+    const tipoLeagues = MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE[tipo];
+    if (!tipoLeagues) return { error: `tipo inválido — use um de: ${Object.keys(MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE).join(', ')}.` };
     const { data: novaLeague, error: erroLeague } = await supabase
       .from('leagues').insert({ name: nome, country: pais || null, type: tipoLeagues }).select('id').single();
     if (erroLeague || !novaLeague) return { error: `Falha ao criar leagues: ${erroLeague?.message}` };
