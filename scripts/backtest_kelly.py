@@ -220,11 +220,11 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int]) -> dict[in
     ampla de odds históricas reais neste banco (achado documentado em
     CONTEXTO_PROJETO.md: `closing` só cobre 1 temporada)."""
 
-    def factory(inicio, fim):
+    def factory(lote, inicio, fim):
         return (
             supabase.table("odds_market")
             .select("match_id, bookmaker, selection, odds")
-            .in_("match_id", match_ids)
+            .in_("match_id", lote)
             .eq("market", "1X2")
             .eq("snapshot", "pre_closing")
             .neq("bookmaker", "media_mercado")
@@ -232,7 +232,7 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int]) -> dict[in
             .range(inicio, fim)
         )
 
-    linhas = dados_historicos._paginar(factory)
+    linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids)
     campo_por_selecao = {"home": "odd_home", "draw": "odd_draw", "away": "odd_away"}
 
     melhor: dict[int, dict[str, float]] = {}

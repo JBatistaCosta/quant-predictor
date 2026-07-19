@@ -39,6 +39,14 @@ logger = logging.getLogger("dados_historicos")
 
 TAMANHO_PAGINA = 1000
 
+# Tamanho seguro de lista dentro de um `.in_()` -- uma lista de milhares de
+# IDs (ex.: os ~8-9 mil match_id de Train+Val no dataset "Feature Stacked")
+# gera uma URL longa demais e o Cloudflare da Supabase devolve HTTP 520
+# antes mesmo da consulta chegar no Postgres. Confirmado rodando o backtest
+# de verdade: `.in_("id", match_ids)` com a lista inteira falhava com 520;
+# em lotes de 500 funciona.
+TAMANHO_LOTE_IDS = 500
+
 # Decaimento temporal do Dixon-Coles: meia-vida de ~13 meses (mesmo valor
 # usado no pipeline de produção deste projeto, `modelo_dixon_coles.py`) --
 # nunca foi recalibrado por validação cruzada de verdade, é um chute
@@ -73,6 +81,28 @@ def _paginar(query_builder_factory: Callable[[int, int], object], tamanho_pagina
         if len(linhas) < tamanho_pagina:
             break
         pagina += 1
+    return todas_as_linhas
+
+
+def _dividir_em_lotes(itens: list, tamanho: int = TAMANHO_LOTE_IDS):
+    """Quebra uma lista grande em lotes menores -- usado antes de qualquer
+    `.in_()` cuja lista de IDs pode chegar a milhares de itens (ver
+    `TAMANHO_LOTE_IDS`)."""
+    for inicio in range(0, len(itens), tamanho):
+        yield itens[inicio : inicio + tamanho]
+
+
+def _paginar_por_lotes_de_id(
+    query_builder_factory: Callable[[list, int, int], object], ids: list, tamanho_pagina: int = TAMANHO_PAGINA
+) -> list[dict]:
+    """Combina lote de IDs (evita URL longa demais / HTTP 520) com paginação
+    por `.range()` dentro de cada lote (evita o corte de 1000 linhas -- um
+    lote de IDs ainda pode devolver mais de 1000 linhas se a tabela tiver
+    várias linhas por ID, ex. várias casas de apostas por partida).
+    `query_builder_factory(lote, inicio, fim)` devolve o query builder."""
+    todas_as_linhas: list[dict] = []
+    for lote in _dividir_em_lotes(ids):
+        todas_as_linhas.extend(_paginar(lambda inicio, fim, lote=lote: query_builder_factory(lote, inicio, fim), tamanho_pagina))
     return todas_as_linhas
 
 
@@ -126,16 +156,16 @@ def carregar_partidas_por_id(supabase: Client, match_ids: list[int]) -> pd.DataF
     if not match_ids:
         return pd.DataFrame()
 
-    def factory(inicio, fim):
+    def factory(lote, inicio, fim):
         return (
             supabase.table("matches")
             .select("id, match_date, home_team_id, away_team_id, home_goals, away_goals")
-            .in_("id", match_ids)
+            .in_("id", lote)
             .order("id")
             .range(inicio, fim)
         )
 
-    linhas = _paginar(factory)
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
     df = pd.DataFrame(linhas)
     if not df.empty:
         df["match_date"] = pd.to_datetime(df["match_date"], utc=True)
