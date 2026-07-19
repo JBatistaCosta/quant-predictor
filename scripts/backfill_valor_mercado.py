@@ -132,7 +132,9 @@ def rodar_backfill(supabase: Client, api_base: str, limite: int, pausa_segundos:
 
 def main() -> None:
     limite = int(os.environ.get("LIMITE_JOGADORES", "150"))
-    api_base = os.environ.get("TRANSFERMARKT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    # .strip() antes do .rstrip("/") -- mesma proteção contra newline/espaço
+    # residual em secret que já mordeu SUPABASE_URL nesta sessão.
+    api_base = (os.environ.get("TRANSFERMARKT_API_BASE") or "http://127.0.0.1:8000").strip().rstrip("/")
     supabase = get_supabase_client()
 
     resultado = rodar_backfill(supabase, api_base, limite)
