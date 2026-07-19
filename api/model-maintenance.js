@@ -71,6 +71,12 @@
 //                                   do zero (necessário depois de mudar pesos na config).
 //   ?tarefa=config-get&model_name=X -> lê a config de um modelo em model_config.
 //   ?tarefa=config-set&model_name=X (POST, corpo JSON) -> faz merge do corpo na config salva.
+//   ?tarefa=jogador-perfil&player_id=X -> sync sob demanda de 1 jogador (valor de mercado
+//                                   histórico, carreira, títulos, altura/pé/contrato/traits) via
+//                                   /api/data/playerData do FotMob (endpoint POR JOGADOR, 1 chamada
+//                                   externa só — rápido o bastante pro frontend chamar direto).
+//                                   Backfill em massa é via script Python separado
+//                                   (arquivos_do_claude/ingestao_fotmob_perfil_jogador.py).
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -457,6 +463,159 @@ async function tarefaConfigSet(supabase, modelName, configBody) {
   );
   if (error) throw error;
   return { model_name: modelName, config: nova };
+}
+
+// ============================================================
+// TAREFA: jogador-perfil — sync SOB DEMANDA de 1 jogador (endpoint
+// /api/data/playerData?id=X do FotMob, diferente do matchDetails usado no
+// resto do pipeline — esse é POR JOGADOR, não por partida). Rápido o
+// bastante (1 chamada externa) pra ser chamado direto do frontend, ao
+// contrário do backfill em massa (ver arquivos_do_claude/
+// ingestao_fotmob_perfil_jogador.py, script Python separado pra popular a
+// base inteira — ~7.900 jogadores levaria horas, não cabe numa chamada
+// serverless de 60s).
+//
+// Popula: player_market_value_history (série temporal, upsert incremental
+// — nunca apaga o que já existe), player_career_history_fotmob,
+// player_trophies_fotmob (essas duas via delete-and-regrow do jogador, já
+// que são a lista COMPLETA vinda da fonte a cada chamada) e
+// player_details_fotmob (snapshot, upsert simples).
+// ============================================================
+
+function parseDataFotmob(s) {
+  if (!s) return null;
+  return String(s).slice(0, 10);
+}
+
+function extrairValorPlayerInfo(tituloAlvo, playerInformation) {
+  for (const item of playerInformation || []) {
+    if (item.title === tituloAlvo) return item.value || {};
+  }
+  return {};
+}
+
+function montarLinhasPerfilJogador(playerId, payload) {
+  const agora = new Date().toISOString();
+
+  const valoresMercado = ((payload.marketValues || {}).values || [])
+    .map(v => ({
+      player_id: playerId,
+      value_date: parseDataFotmob(v.date),
+      value_eur: v.value ?? null,
+      lower_bound_eur: v.lowerBound ?? null,
+      upper_bound_eur: v.upperBound ?? null,
+      source: v.source ?? null,
+      team_fotmob_id: v.teamId != null ? String(v.teamId) : null,
+      team_name: v.teamName ?? null,
+      is_period_start: !!v.isPeriodStart,
+      captured_at: agora,
+    }))
+    .filter(v => v.value_date);
+
+  const senior = (((payload.careerHistory || {}).careerItems || {}).senior || {});
+  const carreira = (senior.teamEntries || [])
+    .map(t => ({
+      player_id: playerId,
+      team_fotmob_id: t.teamId != null ? String(t.teamId) : null,
+      team_name: t.team ?? null,
+      start_date: parseDataFotmob(t.startDate),
+      end_date: parseDataFotmob(t.endDate),
+      active: !!t.active,
+      transfer_type: (t.transferType || {}).text ?? null,
+      appearances: /^\d+$/.test(String(t.appearances ?? '')) ? parseInt(t.appearances, 10) : null,
+      goals: /^\d+$/.test(String(t.goals ?? '')) ? parseInt(t.goals, 10) : null,
+      assists: /^\d+$/.test(String(t.assists ?? '')) ? parseInt(t.assists, 10) : null,
+      captured_at: agora,
+    }))
+    .filter(t => t.start_date);
+
+  const titulos = [];
+  for (const timeTrofeus of (payload.trophies || {}).playerTrophies || []) {
+    for (const torneio of timeTrofeus.tournaments || []) {
+      const base = {
+        player_id: playerId,
+        team_fotmob_id: timeTrofeus.teamId != null ? String(timeTrofeus.teamId) : null,
+        team_name: timeTrofeus.teamName ?? null,
+        league_fotmob_id: torneio.leagueId != null ? String(torneio.leagueId) : null,
+        league_name: torneio.leagueName ?? null,
+        country_code: timeTrofeus.ccode ?? null,
+        captured_at: agora,
+      };
+      for (const temporada of torneio.seasonsWon || []) titulos.push({ ...base, season: temporada, result: 'won' });
+      for (const temporada of torneio.seasonsRunnerUp || []) titulos.push({ ...base, season: temporada, result: 'runner_up' });
+    }
+  }
+
+  const playerInformation = payload.playerInformation;
+  const altura = extrairValorPlayerInfo('Height', playerInformation).numberValue ?? null;
+  const pe = extrairValorPlayerInfo('Preferred foot', playerInformation).key ?? null;
+  const contratoInfo = extrairValorPlayerInfo('Contract expires', playerInformation).dateValue
+    ?? extrairValorPlayerInfo('Contract end', playerInformation).dateValue ?? null;
+  const valorAtual = extrairValorPlayerInfo('Market value', playerInformation).numberValue ?? null;
+
+  const posDesc = payload.positionDescription || {};
+  const posicaoPrincipal = (posDesc.primaryPosition || {}).label ?? null;
+
+  const detalhes = {
+    player_id: playerId,
+    height_cm: altura,
+    preferred_foot: pe,
+    contract_end: parseDataFotmob(contratoInfo),
+    current_market_value_eur: valorAtual,
+    primary_position: posicaoPrincipal,
+    all_positions: posDesc.positions ?? null,
+    traits: payload.traits ?? null,
+    captured_at: agora,
+  };
+
+  return { valoresMercado, carreira, titulos, detalhes };
+}
+
+async function tarefaJogadorPerfil(supabase, playerIdInterno) {
+  if (!playerIdInterno) return { error: 'Informe ?player_id=X (players.id interno).' };
+
+  const { data: jogador, error: erroJogador } = await supabase
+    .from('players').select('id, fotmob_player_id, name').eq('id', playerIdInterno).maybeSingle();
+  if (erroJogador) throw erroJogador;
+  if (!jogador) return { error: `players.id=${playerIdInterno} não encontrado.` };
+  if (!jogador.fotmob_player_id || jogador.fotmob_player_id === '0' || jogador.fotmob_player_id === '-1') {
+    return { error: `Jogador "${jogador.name}" sem fotmob_player_id válido — não é possível sincronizar.` };
+  }
+
+  const resp = await fetch(`https://www.fotmob.com/api/data/playerData?id=${jogador.fotmob_player_id}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' },
+  });
+  if (!resp.ok) return { error: `FotMob respondeu ${resp.status} pra fotmob_player_id=${jogador.fotmob_player_id}.` };
+  const payload = await resp.json();
+  if (!payload) return { error: 'FotMob não retornou dado pra esse jogador (payload vazio).' };
+
+  const { valoresMercado, carreira, titulos, detalhes } = montarLinhasPerfilJogador(jogador.id, payload);
+
+  if (valoresMercado.length) {
+    const { error } = await supabase.from('player_market_value_history').upsert(valoresMercado, { onConflict: 'player_id,value_date,team_fotmob_id' });
+    if (error) throw error;
+  }
+  // Carreira/troféus: a fonte já devolve a lista COMPLETA a cada chamada —
+  // delete-and-regrow em vez de upsert acumulativo evita duplicar entradas
+  // se algum campo de data mudar de formato entre syncs.
+  await supabase.from('player_career_history_fotmob').delete().eq('player_id', jogador.id);
+  if (carreira.length) {
+    const { error } = await supabase.from('player_career_history_fotmob').insert(carreira);
+    if (error) throw error;
+  }
+  await supabase.from('player_trophies_fotmob').delete().eq('player_id', jogador.id);
+  if (titulos.length) {
+    const { error } = await supabase.from('player_trophies_fotmob').insert(titulos);
+    if (error) throw error;
+  }
+  const { error: erroDetalhes } = await supabase.from('player_details_fotmob').upsert(detalhes, { onConflict: 'player_id' });
+  if (erroDetalhes) throw erroDetalhes;
+
+  return {
+    player_id: jogador.id, nome: jogador.name,
+    pontos_valor_mercado: valoresMercado.length, clubes_carreira: carreira.length, titulos: titulos.length,
+    detalhes_atualizados: true,
+  };
 }
 
 // ============================================================
@@ -1308,6 +1467,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'config-set') {
       const resultado = await tarefaConfigSet(supabase, req.query.model_name, req.body);
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'jogador-perfil') {
+      const resultado = await tarefaJogadorPerfil(supabase, req.query.player_id ? Number(req.query.player_id) : null);
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
