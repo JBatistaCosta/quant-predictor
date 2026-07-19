@@ -480,6 +480,19 @@ async function tarefaConfigSet(supabase, modelName, configBody) {
 // player_trophies_fotmob (essas duas via delete-and-regrow do jogador, já
 // que são a lista COMPLETA vinda da fonte a cada chamada) e
 // player_details_fotmob (snapshot, upsert simples).
+//
+// NÃO popula heatmap/shotmap (mapa de toques / chute a chute) — mesmo
+// payload tem em firstSeasonStats, mas ficou de fora por decisão
+// consciente. Achado confirmado inspecionando dado real (Mbappé):
+// "firstSeasonStats" NÃO é a carreira inteira, é só a competição/temporada
+// mais recente mostrada por padrão na página do jogador no FotMob (no
+// teste, só ~41 chutes de ~1 mês — Copa do Mundo 2026, nem a temporada de
+// clube). Carreira completa existe só como ÍNDICE em `statSeasons`
+// (temporada×competição com um entryId cada) — puxar heatmap/shotmap
+// histórico exigiria descobrir um sub-endpoint por entryId, não
+// explorado ainda. Custo se retomado: 1 chamada POR TEMPORADA POR
+// JOGADOR (não 1 por jogador), ordem de grandeza maior — validar com
+// 1-2 chamadas de descoberta antes de generalizar.
 // ============================================================
 
 function parseDataFotmob(s) {

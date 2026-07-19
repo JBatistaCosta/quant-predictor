@@ -24,6 +24,20 @@ parcialmente redundante com o que já existe): firstSeasonStats.heatmap
 (mapa de toques) e firstSeasonStats.shotmap (chute a chute — já coberto
 pra partidas do pipeline via match_shots_fotmob).
 
+ACHADO IMPORTANTE sobre esses dois campos (confirmado inspecionando o dado
+real do Mbappé): "firstSeasonStats" NÃO é a carreira inteira, é só a
+competição/temporada mais recente mostrada por padrão na página do
+jogador no FotMob (no caso testado, só ~41 chutes, todos de um período de
+~1 mês — a Copa do Mundo 2026, nem a temporada de clube). A carreira
+completa existe só como ÍNDICE em `statSeasons` (lista temporada×
+competição com um `entryId` por combinação, ex: "2025/2026"+LaLiga =
+"1-0") — puxar heatmap/shotmap de uma temporada ESPECÍFICA exigiria
+descobrir um sub-endpoint por entryId que não foi explorado ainda. Se
+algum dia for retomado: o custo vira 1 chamada POR TEMPORADA POR JOGADOR
+(não 1 por jogador), ordem de grandeza maior que o já caro backfill deste
+script — validar com 1-2 chamadas de descoberta antes de generalizar,
+mesma disciplina de sempre.
+
 CUSTO: 1 chamada de API por jogador (bem mais caro que os scripts
 anteriores, que gastavam 1 chamada por PARTIDA ou por TIME). Com ~7.900
 jogadores na base hoje, rodar tudo de uma vez leva bem mais tempo — por
