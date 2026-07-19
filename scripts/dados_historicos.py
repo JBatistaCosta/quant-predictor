@@ -37,6 +37,12 @@ from supabase import Client
 
 logger = logging.getLogger("dados_historicos")
 
+# Códigos de resultado usados em `resultado` (dataset ML) e em
+# `predict_proba`/`empacotar_predicoes` (`scripts/modelos_ml.py`) -- fonte
+# única pra evitar import circular entre `rodar_predicoes.py` e
+# `backtest_kelly.py`.
+RESULTADO_HOME, RESULTADO_DRAW, RESULTADO_AWAY = 0, 1, 2
+
 TAMANHO_PAGINA = 1000
 
 # Tamanho seguro de lista dentro de um `.in_()` -- uma lista de milhares de
@@ -183,31 +189,72 @@ def obter_elo_atual(supabase: Client, team_ids: list[int], escopo: str = "liga")
     return {linha["team_id"]: linha["rating"] for linha in (resposta.data or [])}
 
 
-def obter_forma_recente(supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML) -> dict[int, dict[str, float]]:
-    """Média de gols marcados/sofridos nos últimos `ultimos_n` jogos
-    finalizados de cada time (qualquer competição) -- pra montar a feature
-    de forma recente de um jogo FUTURO. Sem risco de vazamento aqui: o jogo
-    que se está prevendo ainda nem aconteceu, então "os últimos N jogos até
-    agora" é exatamente a informação disponível no momento da previsão."""
+def _xg_marcado_sofrido(supabase: Client, match_ids: list[int], team_id: int) -> dict[str, float]:
+    """xG marcado/sofrido do `team_id` num punhado de partidas (`match_ids`,
+    tipicamente os últimos 5 jogos de casa OU de fora de um time só) --
+    escala pequena o bastante pra não precisar de lote/paginação."""
+    if not match_ids:
+        return {"marcado": np.nan, "sofrido": np.nan}
+    linhas = supabase.table("match_stats").select("match_id, team_id, xg").in_("match_id", match_ids).execute().data or []
+    marcado = [l["xg"] for l in linhas if l["team_id"] == team_id and l["xg"] is not None]
+    sofrido = [l["xg"] for l in linhas if l["team_id"] != team_id and l["xg"] is not None]
+    return {
+        "marcado": float(np.mean(marcado)) if marcado else np.nan,
+        "sofrido": float(np.mean(sofrido)) if sofrido else np.nan,
+    }
+
+
+def obter_forma_recente_por_mando(
+    supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
+) -> dict[int, dict[str, float]]:
+    """Forma recente (gols e xG, marcado/sofrido) calculada SEPARADAMENTE
+    pro histórico de mando de cada time -- últimos `ultimos_n` jogos EM
+    CASA pra feature "_home", últimos `ultimos_n` jogos FORA pra "_away".
+    Mando importa (um time pode ser bem melhor em casa do que fora, ou o
+    contrário), e é a mesma lógica usada em `montar_dataset_ml_empilhado`
+    pro dataset de treino -- aqui pra montar a feature de um jogo FUTURO
+    (sem risco de vazamento: o jogo previsto ainda nem aconteceu).
+
+    xG (`match_stats.xg`, Understat/FBref) só cobre 2022+ nas 5 ligas de
+    elite europeias -- fica NaN pra times/ligas sem essa fonte (ex.:
+    Brasileirão), sem quebrar nada (CatBoost/XGBoost/LightGBM lidam
+    nativamente com NaN numérico)."""
     forma: dict[int, dict[str, float]] = {}
     for team_id in team_ids:
-        resposta = (
+        jogos_casa = (
             supabase.table("matches")
-            .select("home_team_id, away_team_id, home_goals, away_goals, match_date")
+            .select("id, home_goals, away_goals")
             .eq("status", "finished")
-            .or_(f"home_team_id.eq.{int(team_id)},away_team_id.eq.{int(team_id)}")
+            .eq("home_team_id", int(team_id))
             .order("match_date", desc=True)
             .limit(ultimos_n)
             .execute()
+            .data
+            or []
         )
-        jogos = resposta.data or []
-        if not jogos:
-            continue
-        marcados = [j["home_goals"] if j["home_team_id"] == team_id else j["away_goals"] for j in jogos]
-        sofridos = [j["away_goals"] if j["home_team_id"] == team_id else j["home_goals"] for j in jogos]
+        jogos_fora = (
+            supabase.table("matches")
+            .select("id, home_goals, away_goals")
+            .eq("status", "finished")
+            .eq("away_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(ultimos_n)
+            .execute()
+            .data
+            or []
+        )
+        xg_casa = _xg_marcado_sofrido(supabase, [j["id"] for j in jogos_casa], team_id)
+        xg_fora = _xg_marcado_sofrido(supabase, [j["id"] for j in jogos_fora], team_id)
+
         forma[team_id] = {
-            "media_gols_marcados": float(np.mean(marcados)),
-            "media_gols_sofridos": float(np.mean(sofridos)),
+            "media_gols_marcados_5j_home": float(np.mean([j["home_goals"] for j in jogos_casa])) if jogos_casa else np.nan,
+            "media_gols_sofridos_5j_home": float(np.mean([j["away_goals"] for j in jogos_casa])) if jogos_casa else np.nan,
+            "media_gols_marcados_5j_away": float(np.mean([j["away_goals"] for j in jogos_fora])) if jogos_fora else np.nan,
+            "media_gols_sofridos_5j_away": float(np.mean([j["home_goals"] for j in jogos_fora])) if jogos_fora else np.nan,
+            "media_xg_5j_home": xg_casa["marcado"],
+            "media_xg_sofrido_5j_home": xg_casa["sofrido"],
+            "media_xg_5j_away": xg_fora["marcado"],
+            "media_xg_sofrido_5j_away": xg_fora["sofrido"],
         }
     return forma
 
@@ -311,27 +358,93 @@ def _carregar_elo_pre_jogo(supabase: Client, league_ids: list[int]) -> pd.DataFr
     return pd.DataFrame(linhas)
 
 
-def _calcular_medias_moveis_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
-    """Média móvel dos últimos `JANELA_ROLLING_ML` jogos de cada time
-    (gols marcados/sofridos), calculada ANTES do jogo atual (`.shift(1)`).
-    Sem o shift, a média incluiria o placar do próprio jogo que se está
-    tentando prever -- vazamento de dado clássico em backtest de esporte."""
-    long_casa = partidas[["id", "match_date", "home_team_id", "home_goals", "away_goals"]].rename(
-        columns={"home_team_id": "team_id", "home_goals": "gols_marcados", "away_goals": "gols_sofridos"}
-    )
-    long_fora = partidas[["id", "match_date", "away_team_id", "away_goals", "home_goals"]].rename(
-        columns={"away_team_id": "team_id", "away_goals": "gols_marcados", "home_goals": "gols_sofridos"}
-    )
-    long_formato = pd.concat([long_casa, long_fora], ignore_index=True).sort_values(["team_id", "match_date"])
+def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str]) -> pd.DataFrame:
+    """Média móvel pré-jogo (`.shift(1)` antes do `.rolling()` -- sem isso a
+    média incluiria o próprio jogo que se está tentando prever, vazamento
+    clássico em backtest de esporte), calculada SEPARADAMENTE pro histórico
+    de mando de cada time: a feature "_home" de uma partida só olha os
+    jogos ANTERIORES em que aquele time jogou EM CASA; a "_away" só os
+    jogos anteriores em que jogou FORA. Mando importa (um time pode ser bem
+    melhor em casa do que fora), então misturar os dois contextos numa
+    média só perde informação.
 
-    grupo = long_formato.groupby("team_id")
-    long_formato["media_gols_marcados"] = grupo["gols_marcados"].transform(
+    `col_home`/`col_away` são as colunas de `partidas` com o valor do time
+    da casa e do time de fora NAQUELA partida (ex.: `home_goals`/
+    `away_goals`, ou `xg_home`/`xg_away`) -- serve tanto pra gols quanto
+    pra xG com a mesma função, já que em ambos os casos "o que o adversário
+    fez" é exatamente "o que o time sofreu"."""
+    casa = partidas[["id", "match_date", "home_team_id", col_home, col_away]].sort_values(["home_team_id", "match_date"]).copy()
+    casa[saida["marcado_home"]] = casa.groupby("home_team_id")[col_home].transform(
         lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
     )
-    long_formato["media_gols_sofridos"] = grupo["gols_sofridos"].transform(
+    casa[saida["sofrido_home"]] = casa.groupby("home_team_id")[col_away].transform(
         lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
     )
-    return long_formato[["id", "team_id", "media_gols_marcados", "media_gols_sofridos"]]
+
+    fora = partidas[["id", "match_date", "away_team_id", col_home, col_away]].sort_values(["away_team_id", "match_date"]).copy()
+    fora[saida["marcado_away"]] = fora.groupby("away_team_id")[col_away].transform(
+        lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
+    )
+    fora[saida["sofrido_away"]] = fora.groupby("away_team_id")[col_home].transform(
+        lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
+    )
+
+    return casa.set_index("id")[[saida["marcado_home"], saida["sofrido_home"]]].join(
+        fora.set_index("id")[[saida["marcado_away"], saida["sofrido_away"]]]
+    )
+
+
+def _anexar_xg_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Busca o xG observado (`match_stats.xg`, Understat/FBref) de cada
+    partida e anexa como colunas `xg_home`/`xg_away`. Só cobre 2022+ nas 5
+    ligas de elite europeias (confirmado por consulta direta antes de usar
+    -- 2019-2021 não têm NENHUMA linha em `match_stats` pra essas ligas, e
+    2022 tem chutes mas não xG) -- fica NaN fora dessa cobertura, sem
+    quebrar nada."""
+    match_ids = partidas["id"].astype(int).tolist()
+
+    def factory(lote, inicio, fim):
+        return supabase.table("match_stats").select("match_id, team_id, xg").in_("match_id", lote).order("match_id").range(inicio, fim)
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+    if not linhas:
+        partidas["xg_home"] = np.nan
+        partidas["xg_away"] = np.nan
+        return partidas
+
+    stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
+    stats_home = stats.rename(columns={"team_id": "home_team_id", "xg": "xg_home"})
+    stats_away = stats.rename(columns={"team_id": "away_team_id", "xg": "xg_away"})
+
+    partidas = partidas.merge(stats_home[["id", "home_team_id", "xg_home"]], on=["id", "home_team_id"], how="left")
+    partidas = partidas.merge(stats_away[["id", "away_team_id", "xg_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
+COLUNAS_FORMA_GOLS = {
+    "marcado_home": "media_gols_marcados_5j_home",
+    "sofrido_home": "media_gols_sofridos_5j_home",
+    "marcado_away": "media_gols_marcados_5j_away",
+    "sofrido_away": "media_gols_sofridos_5j_away",
+}
+COLUNAS_FORMA_XG = {
+    "marcado_home": "media_xg_5j_home",
+    "sofrido_home": "media_xg_sofrido_5j_home",
+    "marcado_away": "media_xg_5j_away",
+    "sofrido_away": "media_xg_sofrido_5j_away",
+}
+
+# Colunas de feature dos modelos de árvore (usado também por
+# `scripts/modelos_ml.py` pra garantir treino e predição com o mesmo shape).
+FEATURES_NUMERICAS = [
+    "elo_home",
+    "elo_away",
+    *COLUNAS_FORMA_GOLS.values(),
+    *COLUNAS_FORMA_XG.values(),
+]
+CAT_FEATURES = ["liga"]
+FEATURES = FEATURES_NUMERICAS + CAT_FEATURES
 
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
@@ -344,9 +457,9 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     sempre relativo à própria liga).
 
     Features (todas calculadas SEM olhar o resultado do próprio jogo):
-    `elo_home`/`elo_away` (rating pré-jogo, `team_elo_history`),
-    `media_gols_marcados_5j_home`/`_away` e `media_gols_sofridos_5j_home`/
-    `_away` (média móvel pré-jogo), `liga` (categórica).
+    `elo_home`/`elo_away` (rating pré-jogo, `team_elo_history`), forma de
+    gols e de xG dos últimos `JANELA_ROLLING_ML` jogos -- SEPARADA por
+    mando (`_home`/`_away`, ver `_forma_por_mando`) -- e `liga` (categórica).
     """
     ligas = obter_ids_ligas(supabase, LIGAS_ELITE_EUROPEIAS)
     if not ligas:
@@ -366,49 +479,38 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         partidas_recortadas.append(grupo[grupo["season"].isin(temporadas_recentes)])
     partidas = pd.concat(partidas_recortadas, ignore_index=True).sort_values("match_date").reset_index(drop=True)
 
-    medias_moveis = _calcular_medias_moveis_pre_jogo(partidas).set_index(["id", "team_id"])
+    partidas = _anexar_xg_por_partida(supabase, partidas)
+    forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
+    forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
+
     elo = _carregar_elo_pre_jogo(supabase, league_ids)
-    elo_por_partida_time = elo.set_index(["match_id", "team_id"])["rating_antes"] if not elo.empty else pd.Series(dtype=float)
+    if not elo.empty:
+        elo_home = elo.rename(columns={"match_id": "id", "team_id": "home_team_id", "rating_antes": "elo_home"})
+        elo_away = elo.rename(columns={"match_id": "id", "team_id": "away_team_id", "rating_antes": "elo_away"})
+    else:
+        elo_home = pd.DataFrame(columns=["id", "home_team_id", "elo_home"])
+        elo_away = pd.DataFrame(columns=["id", "away_team_id", "elo_away"])
 
-    linhas = []
-    for partida in partidas.itertuples():
-        try:
-            media_casa = medias_moveis.loc[(partida.id, partida.home_team_id)]
-            media_fora = medias_moveis.loc[(partida.id, partida.away_team_id)]
-        except KeyError:
-            continue
+    dataset = partidas[["id", "match_date", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals"]].copy()
+    dataset["liga"] = dataset["league_id"].map(nome_da_liga)
+    dataset["resultado"] = np.select(
+        [dataset["home_goals"] > dataset["away_goals"], dataset["home_goals"] == dataset["away_goals"]],
+        [RESULTADO_HOME, RESULTADO_DRAW],
+        default=RESULTADO_AWAY,
+    )
+    dataset = dataset.merge(elo_home[["id", "home_team_id", "elo_home"]], on=["id", "home_team_id"], how="left")
+    dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
+    dataset = dataset.join(forma_gols, on="id")
+    dataset = dataset.join(forma_xg, on="id")
+    dataset = dataset.rename(columns={"id": "match_id"})
 
-        if partida.home_goals > partida.away_goals:
-            resultado = 0
-        elif partida.home_goals == partida.away_goals:
-            resultado = 1
-        else:
-            resultado = 2
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS, "resultado"]]
 
-        linhas.append(
-            {
-                "match_id": partida.id,
-                "match_date": partida.match_date,
-                "liga": nome_da_liga[partida.league_id],
-                "elo_home": elo_por_partida_time.get((partida.id, partida.home_team_id), np.nan),
-                "elo_away": elo_por_partida_time.get((partida.id, partida.away_team_id), np.nan),
-                "media_gols_marcados_5j_home": media_casa["media_gols_marcados"],
-                "media_gols_sofridos_5j_home": media_casa["media_gols_sofridos"],
-                "media_gols_marcados_5j_away": media_fora["media_gols_marcados"],
-                "media_gols_sofridos_5j_away": media_fora["media_gols_sofridos"],
-                "resultado": resultado,
-            }
-        )
-
-    dataset = pd.DataFrame(linhas)
-    if dataset.empty:
-        return dataset
-
-    # NaN em elo (times sem histórico calculado ainda) fica como está --
-    # CatBoost/XGBoost/LightGBM lidam nativamente com NaN numérico. Só
-    # removemos as linhas sem média móvel (estreia do time NESSE dataset,
-    # sem nenhum jogo anterior pra calcular média) -- essas, sim, não têm
-    # informação nenhuma pra dar ao modelo.
+    # NaN em elo/xG (times/temporadas sem essa fonte -- ver
+    # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM
+    # lidam nativamente com NaN numérico. Só removemos as linhas sem forma
+    # de GOLS (estreia do time NESSE dataset, sem nenhum jogo anterior pra
+    # calcular média) -- essas, sim, não têm informação nenhuma pro modelo.
     return dataset.dropna(subset=["media_gols_marcados_5j_home", "media_gols_marcados_5j_away"]).reset_index(drop=True)
 
 
@@ -433,8 +535,13 @@ def split_cronologico(
 
     ordenado = df.sort_values(col_data).reset_index(drop=True)
     n = len(ordenado)
-    corte_treino = int(n * treino)
-    corte_validacao = corte_treino + int(n * validacao)
+    # cortes cumulativos (não dois `int()` truncados separados e somados)
+    # -- senão sobra sistematicamente 1 linha "perdida" no teste mesmo
+    # quando `teste=0.0` (ex.: n=128, treino=0.8→102, validacao=0.2→25,
+    # 102+25=127 ≠ 128). Com corte cumulativo, teste=0.0 vira
+    # corte_validacao=round(n*1.0)=n, ou seja test_df fica vazio de verdade.
+    corte_treino = round(n * treino)
+    corte_validacao = round(n * (treino + validacao))
 
     train_df = ordenado.iloc[:corte_treino]
     val_df = ordenado.iloc[corte_treino:corte_validacao]

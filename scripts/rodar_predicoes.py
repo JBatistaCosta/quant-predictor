@@ -9,9 +9,14 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      com a janela de dado histórico apropriada pra sua família (ver
      `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas + decaimento
      temporal; os 3 modelos de árvore usam um dataset "Feature Stacked" de
-     5-8 temporadas empilhadas das 5 ligas de elite europeias).
-  3. Calcula o edge de cada modelo contra a melhor odd capturada e persiste
-     tudo em `predicoes`, diferenciado por `model_name`.
+     5-8 temporadas empilhadas das 5 ligas de elite europeias, com
+     features de gols e xG separadas por mando -- ver `dados_historicos.
+     _forma_por_mando`).
+  3. Cada modelo ganha uma variante CALIBRADA (Platt one-vs-rest, ajustada
+     num Validation Set que o modelo base não treinou -- ver
+     `calibracao.py`), persistida ao lado da crua com `model_name` sufixado
+     `_calibrado`. Calcula o edge de cada uma (crua e calibrada) contra a
+     melhor odd capturada e persiste tudo em `predicoes`.
 
 Variáveis de ambiente obrigatórias: SUPABASE_URL, SUPABASE_KEY (service_role
 -- as tabelas têm RLS habilitado e só aceitam escrita dessa chave).
@@ -23,15 +28,13 @@ import logging
 import os
 import sys
 
-import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier
 from scipy.stats import poisson
 from supabase import Client, create_client
-from xgboost import XGBClassifier
 
+import calibracao
 import dados_historicos
+import modelos_ml
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,12 +42,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("rodar_predicoes")
 
-RESULTADO_HOME, RESULTADO_DRAW, RESULTADO_AWAY = 0, 1, 2
-
 # Janelas de dado histórico (Requisito 5 -- futebol é não-estacionário, cada
 # família de modelo usa uma janela diferente, ver dados_historicos.py):
 JANELA_DIXON_COLES_TEMPORADAS = 3  # as duas últimas completas + a atual
 JANELA_ML_ANOS = 6  # dentro do range pedido de 5-8 temporadas por liga
+
+# Fração do dataset reservada pra Validation Set -- usada só pra ajustar a
+# calibração (Platt) de cada modelo, nunca pra escolher hiperparâmetro em
+# produção (isso é papel do grid search em `backtest_kelly.py`). O modelo
+# final que prevê as fixtures do dia é sempre refeito no dataset INTEIRO
+# (treino + validação), depois de já ter ajustado a calibração.
+FRACAO_VALIDACAO_CALIBRACAO = 0.2
 
 # IDs reais em `teams`/`matches` pros 4 times do mock de fixtures
 # (confirmado por consulta direta ao Supabase, não adivinhado) -- só serve
@@ -84,7 +92,6 @@ SPORT_KEY_PARA_LIGA_NOME = {
 }
 
 ELO_PADRAO = 1500.0
-FORMA_PADRAO = {"media_gols_marcados": 1.3, "media_gols_sofridos": 1.3}
 FORCA_PADRAO = {"ataque": 1.0, "defesa": 1.0}
 
 
@@ -282,82 +289,122 @@ def tau_dixon_coles(gols_casa: int, gols_fora: int, lambda_casa: float, lambda_f
     return 1.0
 
 
-def prever_dixon_coles_v1(fixtures: pd.DataFrame, supabase: Client) -> dict[int, dict[str, float]]:
+def _prever_probs_dixon_coles(forca_casa: dict[str, float], forca_fora: dict[str, float]) -> dict[str, float]:
+    """Núcleo puro do cálculo (sem I/O) -- reaproveitado tanto pra prever a
+    fixture de verdade quanto pra gerar as predições do Validation Set que
+    calibram o modelo (`_calibrar_dixon_coles`)."""
+    lambda_casa = forca_casa["ataque"] * forca_fora["defesa"] * MANDO_CASA
+    lambda_fora = forca_fora["ataque"] * forca_casa["defesa"]
+
+    prob_home = prob_draw = prob_away = 0.0
+    for gc in range(MAX_GOLS_SIMULADOS):
+        for gf in range(MAX_GOLS_SIMULADOS):
+            p = (
+                poisson.pmf(gc, lambda_casa)
+                * poisson.pmf(gf, lambda_fora)
+                * tau_dixon_coles(gc, gf, lambda_casa, lambda_fora, RHO_DIXON_COLES)
+            )
+            if gc > gf:
+                prob_home += p
+            elif gc == gf:
+                prob_draw += p
+            else:
+                prob_away += p
+
+    total = prob_home + prob_draw + prob_away  # normaliza o corte da soma infinita
+    return {"prob_home": prob_home / total, "prob_draw": prob_draw / total, "prob_away": prob_away / total}
+
+
+def _resultado_codigo(home_goals: int, away_goals: int) -> int:
+    if home_goals > away_goals:
+        return dados_historicos.RESULTADO_HOME
+    if home_goals == away_goals:
+        return dados_historicos.RESULTADO_DRAW
+    return dados_historicos.RESULTADO_AWAY
+
+
+def _calibrar_dixon_coles(supabase: Client, league_ids: set[int]) -> dict[str, tuple[float, float]]:
+    """Ajusta a calibração do dixon_coles_v1 num Validation Set: pra cada
+    liga presente nas fixtures, separa a janela curta em treino/validação
+    (80/20 cronológico), estima força só no treino e gera previsão pro
+    trecho de validação -- as previsões de TODAS as ligas entram juntas num
+    único ajuste de Platt por seleção (mesma granularidade de
+    `model_calibration` em produção: por modelo+seleção, não por liga)."""
+    predicoes_val: dict[int, dict[str, float]] = {}
+    resultados_val: dict[int, int] = {}
+
+    for league_id in league_ids:
+        janela = dados_historicos.montar_janela_dixon_coles(supabase, league_id, n_temporadas=JANELA_DIXON_COLES_TEMPORADAS)
+        if janela.empty:
+            continue
+        treino_liga, val_liga, _ = dados_historicos.split_cronologico(
+            janela, treino=1 - FRACAO_VALIDACAO_CALIBRACAO, validacao=FRACAO_VALIDACAO_CALIBRACAO, teste=0.0
+        )
+        if val_liga.empty:
+            continue
+        forcas_treino = dados_historicos.estimar_forcas_dixon_coles(treino_liga)
+
+        for partida in val_liga.itertuples():
+            forca_casa = forcas_treino.get(partida.home_team_id, FORCA_PADRAO)
+            forca_fora = forcas_treino.get(partida.away_team_id, FORCA_PADRAO)
+            predicoes_val[partida.id] = _prever_probs_dixon_coles(forca_casa, forca_fora)
+            resultados_val[partida.id] = _resultado_codigo(partida.home_goals, partida.away_goals)
+
+    return calibracao.ajustar_calibracao(predicoes_val, resultados_val)
+
+
+def prever_dixon_coles_v1(
+    fixtures: pd.DataFrame, supabase: Client
+) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, float]]]:
     """Janela CURTA (Requisito 5): `dados_historicos.montar_janela_dixon_coles`
     carrega só as `JANELA_DIXON_COLES_TEMPORADAS` temporadas mais recentes
     da liga de cada partida, com peso de decaimento temporal já aplicado
     (`XI_DECAIMENTO`); `estimar_forcas_dixon_coles` deriva ataque/defesa por
-    time em cima dessa janela ponderada. Times sem força calculável (jogo
-    de liga não mapeada, ou time sem histórico na janela) caem no fallback
-    neutro `FORCA_PADRAO`."""
-    predicoes = {}
-    forcas_por_liga: dict[int, dict[int, dict[str, float]]] = {}
+    time em cima dessa janela ponderada (usando a janela INTEIRA -- treino+
+    validação -- já que aqui é pra prever de verdade, não pra medir
+    calibração). Times sem força calculável (liga não mapeada, ou time sem
+    histórico na janela) caem no fallback neutro `FORCA_PADRAO`.
 
+    Devolve `(predicoes_cruas, predicoes_calibradas)` -- a calibração é
+    ajustada separadamente em `_calibrar_dixon_coles`, num Validation Set
+    dentro da mesma janela."""
+    league_ids_fixtures = {int(lid) for lid in fixtures["league_id"].dropna().unique()}
+
+    forcas_por_liga: dict[int, dict[int, dict[str, float]]] = {}
+    for league_id in league_ids_fixtures:
+        janela = dados_historicos.montar_janela_dixon_coles(supabase, league_id, n_temporadas=JANELA_DIXON_COLES_TEMPORADAS)
+        forcas_por_liga[league_id] = dados_historicos.estimar_forcas_dixon_coles(janela)
+
+    coeficientes = _calibrar_dixon_coles(supabase, league_ids_fixtures) if league_ids_fixtures else {}
+
+    predicoes_raw: dict[int, dict[str, float]] = {}
+    predicoes_calibradas: dict[int, dict[str, float]] = {}
     for _, jogo in fixtures.iterrows():
         league_id = jogo.get("league_id")
         if pd.isna(league_id):
             logger.warning("Fixture %s sem league_id mapeado (sport_key desconhecido) -- usando força neutra.", jogo["match_id"])
+            forcas: dict[int, dict[str, float]] = {}
         else:
-            league_id = int(league_id)
-            if league_id not in forcas_por_liga:
-                janela = dados_historicos.montar_janela_dixon_coles(
-                    supabase, league_id, n_temporadas=JANELA_DIXON_COLES_TEMPORADAS
-                )
-                forcas_por_liga[league_id] = dados_historicos.estimar_forcas_dixon_coles(janela)
+            forcas = forcas_por_liga.get(int(league_id), {})
 
-        forcas = forcas_por_liga.get(league_id, {}) if not pd.isna(league_id) else {}
         id_casa = MOCK_TEAM_ID.get(jogo["home_team"])
         id_fora = MOCK_TEAM_ID.get(jogo["away_team"])
         forca_casa = forcas.get(id_casa, FORCA_PADRAO)
         forca_fora = forcas.get(id_fora, FORCA_PADRAO)
 
-        lambda_casa = forca_casa["ataque"] * forca_fora["defesa"] * MANDO_CASA
-        lambda_fora = forca_fora["ataque"] * forca_casa["defesa"]
+        probs = _prever_probs_dixon_coles(forca_casa, forca_fora)
+        predicoes_raw[jogo["match_id"]] = probs
+        predicoes_calibradas[jogo["match_id"]] = calibracao.aplicar_calibracao(probs, coeficientes) if coeficientes else probs
 
-        prob_home = prob_draw = prob_away = 0.0
-        for gc in range(MAX_GOLS_SIMULADOS):
-            for gf in range(MAX_GOLS_SIMULADOS):
-                p = (
-                    poisson.pmf(gc, lambda_casa)
-                    * poisson.pmf(gf, lambda_fora)
-                    * tau_dixon_coles(gc, gf, lambda_casa, lambda_fora, RHO_DIXON_COLES)
-                )
-                if gc > gf:
-                    prob_home += p
-                elif gc == gf:
-                    prob_draw += p
-                else:
-                    prob_away += p
-
-        total = prob_home + prob_draw + prob_away  # normaliza o corte da soma infinita
-        predicoes[jogo["match_id"]] = {
-            "prob_home": prob_home / total,
-            "prob_draw": prob_draw / total,
-            "prob_away": prob_away / total,
-        }
-    return predicoes
+    return predicoes_raw, predicoes_calibradas
 
 
 # --- Modelos 2-4: gradient boosting (CatBoost / XGBoost / LightGBM) ---
-# Nomes de coluna alinhados com `dados_historicos.montar_dataset_ml_empilhado`
-# -- treino (dado real, 5-8 temporadas empilhadas) e inferência (fixtures)
-# precisam da mesma forma pra `predict_proba` funcionar.
-FEATURES_NUMERICAS = [
-    "elo_home",
-    "elo_away",
-    "media_gols_marcados_5j_home",
-    "media_gols_sofridos_5j_home",
-    "media_gols_marcados_5j_away",
-    "media_gols_sofridos_5j_away",
-]
-CAT_FEATURES = ["liga"]
-FEATURES = FEATURES_NUMERICAS + CAT_FEATURES
-
-
 def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.DataFrame:
-    """Monta as features dos jogos a prever com dado REAL (elo atual +
-    forma recente) pros 4 times conhecidos do mock (`MOCK_TEAM_ID`); times
-    fora desse mapeamento caem no fallback neutro (`ELO_PADRAO`/`FORMA_PADRAO`).
+    """Monta as features dos jogos a prever com dado REAL (elo atual + forma
+    recente, separada por mando + xG -- `dados_historicos.
+    obter_forma_recente_por_mando`) pros 4 times conhecidos do mock
+    (`MOCK_TEAM_ID`); times fora desse mapeamento caem no fallback neutro.
     `liga` vem de `SPORT_KEY_PARA_LIGA_NOME` -- fixtures de ligas fora do
     dataset "Feature Stacked" (ex.: Brasileirão) ficam com `liga=None`,
     tratado como categoria desconhecida pelos 3 modelos de ML."""
@@ -365,138 +412,65 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         {MOCK_TEAM_ID[nome] for nome in pd.concat([fixtures["home_team"], fixtures["away_team"]]).unique() if nome in MOCK_TEAM_ID}
     )
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
-    forma_recente = dados_historicos.obter_forma_recente(supabase, ids_conhecidos)
+    forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
+    forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
 
     linhas = []
     for _, jogo in fixtures.iterrows():
         id_casa = MOCK_TEAM_ID.get(jogo["home_team"])
         id_fora = MOCK_TEAM_ID.get(jogo["away_team"])
-        forma_casa = forma_recente.get(id_casa, FORMA_PADRAO)
-        forma_fora = forma_recente.get(id_fora, FORMA_PADRAO)
+        forma_casa = forma_recente.get(id_casa, forma_padrao)
+        forma_fora = forma_recente.get(id_fora, forma_padrao)
         linhas.append(
             {
                 "match_id": jogo["match_id"],
                 "elo_home": elo_atual.get(id_casa, ELO_PADRAO),
                 "elo_away": elo_atual.get(id_fora, ELO_PADRAO),
-                "media_gols_marcados_5j_home": forma_casa["media_gols_marcados"],
-                "media_gols_sofridos_5j_home": forma_casa["media_gols_sofridos"],
-                "media_gols_marcados_5j_away": forma_fora["media_gols_marcados"],
-                "media_gols_sofridos_5j_away": forma_fora["media_gols_sofridos"],
+                "media_gols_marcados_5j_home": forma_casa.get("media_gols_marcados_5j_home"),
+                "media_gols_sofridos_5j_home": forma_casa.get("media_gols_sofridos_5j_home"),
+                "media_gols_marcados_5j_away": forma_fora.get("media_gols_marcados_5j_away"),
+                "media_gols_sofridos_5j_away": forma_fora.get("media_gols_sofridos_5j_away"),
+                "media_xg_5j_home": forma_casa.get("media_xg_5j_home"),
+                "media_xg_sofrido_5j_home": forma_casa.get("media_xg_sofrido_5j_home"),
+                "media_xg_5j_away": forma_fora.get("media_xg_5j_away"),
+                "media_xg_sofrido_5j_away": forma_fora.get("media_xg_sofrido_5j_away"),
                 "liga": SPORT_KEY_PARA_LIGA_NOME.get(jogo.get("sport_key")),
             }
         )
     return pd.DataFrame(linhas)
 
 
-def _alinhar_categoria_liga(serie: pd.Series, categorias_treino) -> pd.Categorical:
-    """Garante que a coluna `liga` da predição use exatamente as categorias
-    vistas no treino -- um valor não visto (liga fora do dataset "Feature
-    Stacked", ou None) vira categoria ausente em vez de quebrar o modelo ou
-    gerar um código de categoria fora do intervalo treinado."""
-    return pd.Categorical(serie, categories=categorias_treino)
+def prever_ml_com_calibracao(
+    nome_modelo: str, features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame
+) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, float]]]:
+    """Treina/prevê um modelo de árvore com sua variante calibrada
+    "conjugada": treina só no Train, ajusta o Platt no Validation (nunca
+    visto pelo treino), depois refita no dataset INTEIRO (treino+validação)
+    pra prever as fixtures de verdade, aplicando a calibração já ajustada.
+    Devolve `(predicoes_cruas, predicoes_calibradas)`."""
+    treinar, prever = modelos_ml.TREINADORES[nome_modelo]
+    params = modelos_ml.PARAMS_DEFAULT[nome_modelo]
 
-
-def _empacotar_predicoes(match_ids, probs: np.ndarray, classes) -> dict[int, dict[str, float]]:
-    """Mapeia a matriz (N, 3) de predict_proba pra {match_id: {prob_*}},
-    respeitando a ordem real de `classes_` do modelo (nem sempre é [0,1,2])."""
-    indice_da_classe = {int(rotulo): i for i, rotulo in enumerate(np.ravel(classes))}
-    resultado = {}
-    for match_id, linha_probs in zip(match_ids, probs):
-        resultado[match_id] = {
-            "prob_home": float(linha_probs[indice_da_classe[RESULTADO_HOME]]),
-            "prob_draw": float(linha_probs[indice_da_classe[RESULTADO_DRAW]]),
-            "prob_away": float(linha_probs[indice_da_classe[RESULTADO_AWAY]]),
-        }
-    return resultado
-
-
-def _preparar_liga_para_catboost(df: pd.DataFrame) -> pd.DataFrame:
-    """CatBoost aceita string ou int em feature categórica, mas não NaN cru
-    (erro `bad object for id: nan`) -- fixtures de liga fora do dataset
-    "Feature Stacked" (`liga=None`, ver `montar_features_fixtures`) precisam
-    virar uma string sentinela antes de entrar no Pool."""
-    df = df.copy()
-    df["liga"] = df["liga"].fillna("desconhecida").astype(str)
-    return df
-
-
-def treinar_e_prever_catboost_v1(features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame) -> dict[int, dict[str, float]]:
-    modelo = CatBoostClassifier(
-        loss_function="MultiClass",
-        thread_count=2,
-        iterations=200,
-        depth=6,
-        learning_rate=0.05,
-        cat_features=CAT_FEATURES,
-        random_seed=42,
-        verbose=False,
+    train_df, val_df, _ = dados_historicos.split_cronologico(
+        dataset_treino, treino=1 - FRACAO_VALIDACAO_CALIBRACAO, validacao=FRACAO_VALIDACAO_CALIBRACAO, teste=0.0
     )
-    # CatBoost lida nativamente com string categórica (inclusive valor novo
-    # visto só na predição) -- não precisa dummy-encoding nem category dtype.
-    dataset_treino = _preparar_liga_para_catboost(dataset_treino)
-    modelo.fit(dataset_treino[FEATURES], dataset_treino["resultado"])
 
-    features_fixtures = _preparar_liga_para_catboost(features_fixtures)
-    probs = modelo.predict_proba(features_fixtures[FEATURES])
-    return _empacotar_predicoes(features_fixtures["match_id"], probs, modelo.classes_)
+    coeficientes: dict[str, tuple[float, float]] = {}
+    if not val_df.empty and not train_df.empty:
+        modelo_val, extra_val = treinar(params, train_df)
+        probs_val, classes_val = prever(modelo_val, extra_val, val_df)
+        preds_val = modelos_ml.empacotar_predicoes(val_df["match_id"].tolist(), probs_val, classes_val)
+        resultados_val = dict(zip(val_df["match_id"], val_df["resultado"]))
+        coeficientes = calibracao.ajustar_calibracao(preds_val, resultados_val)
 
+    modelo_final, extra_final = treinar(params, dataset_treino)
+    probs_fixtures, classes_fixtures = prever(modelo_final, extra_final, features_fixtures)
+    predicoes_raw = modelos_ml.empacotar_predicoes(features_fixtures["match_id"].tolist(), probs_fixtures, classes_fixtures)
 
-def treinar_e_prever_xgboost_v1(features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame) -> dict[int, dict[str, float]]:
-    dataset_encoded = pd.get_dummies(dataset_treino[FEATURES], columns=CAT_FEATURES)
-
-    modelo = XGBClassifier(
-        objective="multi:softprob",
-        num_class=3,
-        n_estimators=200,
-        max_depth=4,
-        learning_rate=0.08,
-        eval_metric="mlogloss",
-        random_state=42,
+    predicoes_calibradas = (
+        {mid: calibracao.aplicar_calibracao(p, coeficientes) for mid, p in predicoes_raw.items()} if coeficientes else predicoes_raw
     )
-    modelo.fit(dataset_encoded, dataset_treino["resultado"])
-
-    features_fixtures_encoded = pd.get_dummies(features_fixtures[FEATURES], columns=CAT_FEATURES)
-    # garante as mesmas colunas (mesma ordem) vistas no treino -- uma liga
-    # do treino ausente nas fixtures, ou uma liga nas fixtures fora do
-    # dataset "Feature Stacked", vira coluna de zeros (sem informação de
-    # liga) em vez de quebrar o predict_proba
-    features_fixtures_encoded = features_fixtures_encoded.reindex(columns=dataset_encoded.columns, fill_value=0)
-
-    probs = modelo.predict_proba(features_fixtures_encoded)
-    return _empacotar_predicoes(features_fixtures["match_id"], probs, modelo.classes_)
-
-
-def treinar_e_prever_lightgbm_v1(features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame) -> dict[int, dict[str, float]]:
-    """Configuração deliberadamente leve/rápida (poucas árvores, folhas
-    rasas) -- é o modelo mais barato dos 4 em custo de CPU no runner do
-    GitHub Actions."""
-    dataset_lgbm = dataset_treino.copy()
-    categorias_liga = sorted(dataset_lgbm["liga"].dropna().unique())
-    dataset_lgbm["liga"] = pd.Categorical(dataset_lgbm["liga"], categories=categorias_liga)
-
-    modelo = LGBMClassifier(
-        objective="multiclass",
-        num_class=3,
-        n_estimators=80,
-        num_leaves=15,
-        learning_rate=0.1,
-        min_child_samples=10,
-        random_state=42,
-        verbosity=-1,
-    )
-    modelo.fit(dataset_lgbm[FEATURES], dataset_lgbm["resultado"], categorical_feature=CAT_FEATURES)
-
-    features_fixtures = features_fixtures.copy()
-    features_fixtures["liga"] = _alinhar_categoria_liga(features_fixtures["liga"], categorias_liga)
-    probs = modelo.predict_proba(features_fixtures[FEATURES])
-    return _empacotar_predicoes(features_fixtures["match_id"], probs, modelo.classes_)
-
-
-MODELOS_ML = {
-    "catboost_v1": treinar_e_prever_catboost_v1,
-    "xgboost_v1": treinar_e_prever_xgboost_v1,
-    "lightgbm_v1": treinar_e_prever_lightgbm_v1,
-}
+    return predicoes_raw, predicoes_calibradas
 
 
 # =============================================================================
@@ -565,6 +539,23 @@ def salvar_predicoes(supabase: Client, linhas: list[dict]) -> None:
     supabase.table("predicoes").upsert(linhas, on_conflict="match_id,model_name").execute()
 
 
+def _persistir_par_cru_e_calibrado(
+    nome_modelo: str,
+    predicoes_raw: dict[int, dict[str, float]],
+    predicoes_calibradas: dict[int, dict[str, float]],
+    melhor_odd_por_partida: dict[int, dict[str, float]],
+    todas_as_linhas: list[dict],
+) -> None:
+    """Item 3 -- calibração como modelo "conjugado": toda predição crua
+    ganha uma linha irmã `{nome_modelo}_calibrado` em `predicoes`, lado a
+    lado no painel de benchmarking."""
+    linhas_raw = montar_linhas_predicoes(nome_modelo, predicoes_raw, melhor_odd_por_partida)
+    linhas_calibradas = montar_linhas_predicoes(f"{nome_modelo}_calibrado", predicoes_calibradas, melhor_odd_por_partida)
+    todas_as_linhas.extend(linhas_raw)
+    todas_as_linhas.extend(linhas_calibradas)
+    logger.info("%s: %d predição(ões) cruas + %d calibradas.", nome_modelo, len(linhas_raw), len(linhas_calibradas))
+
+
 # =============================================================================
 # Orquestração
 # =============================================================================
@@ -602,15 +593,14 @@ def main() -> None:
 
     # 2. Rodar os 4 modelos -- cada um isolado por try/except pra uma falha
     # não derrubar os outros 3 (e não deixar a tabela num estado parcial
-    # silencioso).
+    # silencioso). Cada modelo grava uma linha crua + uma calibrada
+    # (Item 3 -- "modelo extra conjugado").
     todas_as_linhas: list[dict] = []
 
     try:
         logger.info("Rodando modelo dixon_coles_v1 (janela de %d temporadas + decaimento temporal)...", JANELA_DIXON_COLES_TEMPORADAS)
-        predicoes_dixon_coles = prever_dixon_coles_v1(fixtures, supabase)
-        linhas = montar_linhas_predicoes("dixon_coles_v1", predicoes_dixon_coles, melhor_odd_por_partida)
-        todas_as_linhas.extend(linhas)
-        logger.info("dixon_coles_v1: %d predição(ões) geradas.", len(linhas))
+        preds_raw, preds_calibradas = prever_dixon_coles_v1(fixtures, supabase)
+        _persistir_par_cru_e_calibrado("dixon_coles_v1", preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
     except Exception:
         logger.exception("Falha ao rodar dixon_coles_v1 -- pulando, os outros modelos continuam.")
 
@@ -628,13 +618,11 @@ def main() -> None:
         logger.info("Dataset de treino: %d linhas, ligas=%s.", len(dataset_treino), sorted(dataset_treino["liga"].unique()))
         features_fixtures = montar_features_fixtures(fixtures, supabase)
 
-        for nome_modelo, funcao_modelo in MODELOS_ML.items():
+        for nome_modelo in modelos_ml.TREINADORES:
             try:
-                logger.info("Rodando modelo %s...", nome_modelo)
-                predicoes_modelo = funcao_modelo(features_fixtures, dataset_treino)
-                linhas = montar_linhas_predicoes(nome_modelo, predicoes_modelo, melhor_odd_por_partida)
-                todas_as_linhas.extend(linhas)
-                logger.info("%s: %d predição(ões) geradas.", nome_modelo, len(linhas))
+                logger.info("Rodando modelo %s (+ calibração conjugada)...", nome_modelo)
+                preds_raw, preds_calibradas = prever_ml_com_calibracao(nome_modelo, features_fixtures, dataset_treino)
+                _persistir_par_cru_e_calibrado(nome_modelo, preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
             except Exception:
                 logger.exception("Falha ao rodar o modelo %s -- pulando, os outros modelos continuam.", nome_modelo)
 
