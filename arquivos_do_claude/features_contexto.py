@@ -200,11 +200,28 @@ def main():
     jogadores = buscar_paginado(supabase, "players", "id, country_name")
     pais_jogador = {j["id"]: (j["country_name"] or "").lower() for j in jogadores}
 
-    # Minutos por (team, match) -> {player: min} carregados UMA vez (o run
-    # completo faria ~30k queries se buscasse por partida — inviável; aqui é
-    # um script local em lote, memória e tempo de carga são aceitáveis).
-    print("Carregando minutos de jogador (match_player_stats_fotmob, pode demorar ~2-4 min)...")
-    stats_all = buscar_paginado(supabase, "match_player_stats_fotmob", "team_id, match_id, player_id, minutes_played")
+    # Minutos por (team, match) -> {player: min}, carregados só pros match_ids
+    # que ENTRAM na janela de 10 jogos anteriores de algum time-alvo — a
+    # tabela inteira (match_player_stats_fotmob) já passa de 250k linhas
+    # depois da expansão europeia e um .range() sem filtro dava timeout no
+    # Postgres (statement timeout), mesmo paginado. Filtrar por match_id
+    # relevante reduz o volume em ordens de grandeza sem perder nada (só os
+    # jogos de 10-em-10 anteriores a cada partida-alvo importam pro proxy).
+    match_ids_relevantes = set()
+    for m in alvo:
+        for team_id in (m["home_team_id"], m["away_team_id"]):
+            pos = posicao.get(team_id, {}).get(m["id"])
+            if pos:
+                for _, mid, _ in agenda[team_id][max(0, pos - 10):pos]:
+                    match_ids_relevantes.add(mid)
+    match_ids_relevantes = list(match_ids_relevantes)
+    print(f"Carregando minutos de jogador pra {len(match_ids_relevantes)} partidas relevantes...")
+    stats_all = []
+    for lote_ids in [match_ids_relevantes[i:i + 500] for i in range(0, len(match_ids_relevantes), 500)]:
+        stats_all.extend(buscar_paginado(
+            supabase, "match_player_stats_fotmob", "team_id, match_id, player_id, minutes_played",
+            in_filtros={"match_id": lote_ids},
+        ))
     minutos_por_time_jogo = defaultdict(dict)
     for s in stats_all:
         if s["player_id"] is not None:
