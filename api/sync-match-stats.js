@@ -166,6 +166,22 @@ export default async function handler(req, res) {
 
     const fixturesApiFootball = await chamarAPI(`/fixtures?league=${ligaIdApiFootball}&season=${temporada}`, apiKey);
 
+    // Modo diagnóstico (?diagnostico=nomes): dumpa os nomes de time que a
+    // API-Football usa nessa liga/temporada, pra comparar manualmente contra
+    // os nossos e achar divergências de grafia sem gastar cota tentando casar
+    // partida por partida. Não grava nada.
+    if (req.query.diagnostico === 'nomes') {
+      const nomesApi = new Set();
+      (fixturesApiFootball || []).forEach(f => { nomesApi.add(f.teams.home.name); nomesApi.add(f.teams.away.name); });
+      const nomesNossos = new Set();
+      (jogosSemStats || []).forEach(j => { nomesNossos.add(j.home?.name); nomesNossos.add(j.away?.name); });
+      return res.status(200).json({
+        liga_api_football_id: ligaIdApiFootball,
+        nomes_api_football: [...nomesApi].sort(),
+        nomes_nosso_banco: [...nomesNossos].sort(),
+      });
+    }
+
     let processados = 0, comStats = 0;
     const semCasamento = [];
     const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
