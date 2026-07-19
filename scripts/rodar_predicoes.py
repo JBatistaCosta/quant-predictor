@@ -2,8 +2,11 @@
 """Rotina unificada de Model Benchmarking, executada pelo GitHub Actions.
 
 Passo a passo (ver README do PR pra visão geral da arquitetura):
-  1. Busca odds de mercado (Pinnacle / Betfair Exchange) e salva em
-     `market_odds` via UPSERT.
+  1. Escolhe as próximas partidas agendadas (6 ligas) que já têm odds
+     capturadas, lendo `odds_market` (alimentada em produção via OddsPapi,
+     `api/model-maintenance.js ?tarefa=odds-todas`) -- pega o snapshot mais
+     recente por casa/seleção e salva em `market_odds` via UPSERT. Não faz
+     chamada de API própria: reaproveita odds reais que já existem.
   2. Roda 4 modelos de predição 1X2 (dixon_coles_v1, catboost_v1,
      xgboost_v1, lightgbm_v1) para as mesmas partidas -- cada um treinado
      com a janela de dado histórico apropriada pra sua família (ver
@@ -62,42 +65,18 @@ FRACAO_VALIDACAO_CALIBRACAO = 0.2
 # `backtest_kelly.py` (ver `calibracao.py`).
 METODOS_CALIBRACAO = calibracao.METODOS
 
-# IDs reais em `teams`/`matches` pros 4 times do mock de fixtures
-# (confirmado por consulta direta ao Supabase, não adivinhado) -- só serve
-# pro cenário de demonstração; numa integração real da The-Odds-API, esse
-# mapeamento viria do casamento evento->match_id (`buscar_odds_mercado_real`).
-MOCK_TEAM_ID = {
-    "Palmeiras": 1,
-    "Flamengo": 17,
-    "Arsenal": 63,
-    "Chelsea": 77,
-}
+# As 6 ligas do Model Benchmarking (5 de elite europeias + Brasileirão) --
+# mesmo escopo já usado em outras partes do pipeline (ex.: crosswalk de
+# jogador). Brasileirão não faz parte do dataset "Feature Stacked" dos
+# modelos de ML (só as 5 ligas de elite europeias, por pedido explícito do
+# Requisito 5) -- fica de fora de `dados_historicos.LIGAS_ELITE_EUROPEIAS`
+# de propósito, tratado como categoria desconhecida pelos modelos de ML (o
+# Dixon-Coles não depende desse mapeamento, usa league_id direto).
+LIGAS_ESCOPO = [1, 4, 7, 10, 13, 16]
 
-# sport_key da The-Odds-API -> league_id real do pipeline (Brasileirão=1,
-# Premier League=4, La Liga=7, Serie A=10, Bundesliga=13, Ligue 1=16 --
-# conferir contra /v4/sports antes de ligar a chamada real da API).
-SPORT_KEY_PARA_LEAGUE_ID = {
-    "soccer_brazil_campeonato": 1,
-    "soccer_epl": 4,
-    "soccer_spain_la_liga": 7,
-    "soccer_italy_serie_a": 10,
-    "soccer_germany_bundesliga1": 13,
-    "soccer_france_ligue_one": 16,
-}
-
-# sport_key -> nome de liga EXATAMENTE como usado em
-# `dados_historicos.LIGAS_ELITE_EUROPEIAS` (precisa bater pra alinhar com a
-# categoria "liga" vista no treino). Brasileirão não faz parte do dataset
-# "Feature Stacked" (só as 5 ligas de elite europeias, por pedido explícito
-# do Requisito 5) -- fica None de propósito, tratado como categoria
-# desconhecida pelos modelos de ML (o Dixon-Coles não usa esse mapeamento).
-SPORT_KEY_PARA_LIGA_NOME = {
-    "soccer_epl": "Premier League",
-    "soccer_spain_la_liga": "La Liga",
-    "soccer_italy_serie_a": "Serie A (Itália)",
-    "soccer_germany_bundesliga1": "Bundesliga",
-    "soccer_france_ligue_one": "Ligue 1",
-}
+# Quantas partidas futuras (mais próximas) prever por rodada -- lote pequeno
+# de propósito, roda diariamente via cron (ver predict.yml).
+LIMITE_FIXTURES = 10
 
 ELO_PADRAO = 1500.0
 FORCA_PADRAO = {"ataque": 1.0, "defesa": 1.0}
@@ -124,149 +103,112 @@ def get_supabase_client() -> Client:
 
 
 # =============================================================================
-# Passo 1 — Odds de mercado (The-Odds-API)
+# Passo 1 — Fixtures + odds de mercado (dado REAL, já capturado pelo
+# pipeline de produção via OddsPapi -- `api/model-maintenance.js
+# ?tarefa=odds-todas`, tabela `odds_market`)
 # =============================================================================
-def mock_the_odds_api_response() -> list[dict]:
-    """Estrutura de mock no formato real da The-Odds-API
-    (GET /v4/sports/{sport}/odds?regions=eu&markets=h2h).
-
-    Cada evento carrega `match_id` -- na integração real esse campo não vem
-    da API (ela não conhece nosso banco); precisa de um passo de casamento
-    por time+data contra `matches`, no mesmo espírito do matching já usado
-    em `sync-match-stats.js`/`sync-clubelo.js` no restante do projeto. Não
-    implementado aqui de propósito -- ver `buscar_odds_mercado_real` abaixo.
-    """
-    return [
-        {
-            "id": "mock_evt_1",
-            "sport_key": "soccer_brazil_campeonato",
-            "commence_time": "2026-07-19T21:00:00Z",
-            "match_id": 1,
-            "home_team": "Palmeiras",
-            "away_team": "Flamengo",
-            "bookmakers": [
-                {
-                    "key": "pinnacle",
-                    "title": "Pinnacle",
-                    "markets": [
-                        {
-                            "key": "h2h",
-                            "outcomes": [
-                                {"name": "Palmeiras", "price": 2.10},
-                                {"name": "Draw", "price": 3.40},
-                                {"name": "Flamengo", "price": 3.60},
-                            ],
-                        }
-                    ],
-                },
-                {
-                    "key": "betfair_ex_eu",
-                    "title": "Betfair Exchange",
-                    "markets": [
-                        {
-                            "key": "h2h",
-                            "outcomes": [
-                                {"name": "Palmeiras", "price": 2.14},
-                                {"name": "Draw", "price": 3.45},
-                                {"name": "Flamengo", "price": 3.55},
-                            ],
-                        }
-                    ],
-                },
-            ],
-        },
-        {
-            "id": "mock_evt_2",
-            "sport_key": "soccer_epl",
-            "commence_time": "2026-07-19T16:30:00Z",
-            "match_id": 2,
-            "home_team": "Arsenal",
-            "away_team": "Chelsea",
-            "bookmakers": [
-                {
-                    "key": "pinnacle",
-                    "title": "Pinnacle",
-                    "markets": [
-                        {
-                            "key": "h2h",
-                            "outcomes": [
-                                {"name": "Arsenal", "price": 1.95},
-                                {"name": "Draw", "price": 3.60},
-                                {"name": "Chelsea", "price": 3.90},
-                            ],
-                        }
-                    ],
-                },
-                {
-                    "key": "betfair_ex_eu",
-                    "title": "Betfair Exchange",
-                    "markets": [
-                        {
-                            "key": "h2h",
-                            "outcomes": [
-                                {"name": "Arsenal", "price": 1.98},
-                                {"name": "Draw", "price": 3.65},
-                                {"name": "Chelsea", "price": 3.85},
-                            ],
-                        }
-                    ],
-                },
-            ],
-        },
-    ]
-
-
-def buscar_odds_mercado_real(sport_key: str, api_key: str, regions: str = "eu", markets: str = "h2h") -> list[dict]:
-    """Chamada real à The-Odds-API -- não usada em `main()` ainda.
-
-    Fica scaffolded (imports e assinatura prontos) pra troca direta assim
-    que o casamento evento->match_id estiver resolvido. Seguindo a
-    disciplina já estabelecida no projeto pra APIs de cota limitada: gastar
-    1-2 chamadas de descoberta primeiro e inspecionar o JSON real antes de
-    generalizar o parser, nunca adivinhar o formato.
-    """
-    import requests
-
-    resp = requests.get(
-        f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds",
-        params={
-            "apiKey": api_key,
-            "regions": regions,
-            "markets": markets,
-            "bookmakers": "pinnacle,betfair_ex_eu",
-        },
-        timeout=15,
+# `market_odds`/`predicoes` continuam tabelas propositalmente separadas de
+# `odds_market`/`model_predictions` (não fazem upsert cruzado com elas) --
+# mas não faz sentido pagar por uma integração nova (The-Odds-API) quando o
+# pipeline de produção já mantém odds reais e atualizadas das mesmas 6
+# ligas. `market_odds` passa a ser abastecida por LEITURA de `odds_market`
+# (o snapshot mais recente por casa/seleção), não por uma chamada de API
+# própria.
+def buscar_fixtures_reais(supabase: Client, limite: int = LIMITE_FIXTURES) -> pd.DataFrame:
+    """Partidas agendadas mais próximas, nas 6 ligas do benchmarking, que já
+    têm pelo menos uma odd capturada em `odds_market` -- sem isso não dá pra
+    calcular edge nenhum. `match_date >= hoje` filtra partidas com `status`
+    desatualizado (agendada mas já no passado, problema de qualidade de
+    dado em outra parte do pipeline, não deste script)."""
+    agora = pd.Timestamp.now(tz="UTC").isoformat()
+    candidatas = (
+        supabase.table("matches")
+        .select("id, league_id, home_team_id, away_team_id, match_date")
+        .eq("status", "scheduled")
+        .in_("league_id", LIGAS_ESCOPO)
+        .gte("match_date", agora)
+        .order("match_date")
+        .limit(500)  # sobra suficiente pra filtrar por quem tem odds sem paginar
+        .execute()
+        .data
+        or []
     )
-    resp.raise_for_status()
-    return resp.json()
+    if not candidatas:
+        return pd.DataFrame(columns=["match_id", "league_id", "home_team_id", "away_team_id", "match_date", "liga"])
+
+    ids_candidatos = [c["id"] for c in candidatas]
+    com_odds = set()
+    for i in range(0, len(ids_candidatos), 500):
+        lote = ids_candidatos[i : i + 500]
+        linhas = supabase.table("odds_market").select("match_id").in_("match_id", lote).execute().data or []
+        com_odds.update(l["match_id"] for l in linhas)
+
+    selecionadas = [c for c in candidatas if c["id"] in com_odds][:limite]
+    if not selecionadas:
+        return pd.DataFrame(columns=["match_id", "league_id", "home_team_id", "away_team_id", "match_date", "liga"])
+
+    ligas = supabase.table("leagues").select("id, name").in_("id", LIGAS_ESCOPO).execute().data or []
+    nome_liga_por_id = {l["id"]: l["name"] for l in ligas}
+
+    return pd.DataFrame(
+        [
+            {
+                "match_id": c["id"],
+                "league_id": c["league_id"],
+                "home_team_id": c["home_team_id"],
+                "away_team_id": c["away_team_id"],
+                "match_date": c["match_date"],
+                # nome EXATO de `leagues.name` -- precisa bater com
+                # `dados_historicos.LIGAS_ELITE_EUROPEIAS` pra alinhar com a
+                # categoria "liga" vista no treino dos modelos de ML.
+                "liga": nome_liga_por_id.get(c["league_id"]),
+            }
+            for c in selecionadas
+        ]
+    )
 
 
-def buscar_odds_mercado() -> list[dict]:
-    the_odds_api_key = os.environ.get("THE_ODDS_API_KEY")
-    if the_odds_api_key:
-        logger.warning(
-            "THE_ODDS_API_KEY presente, mas buscar_odds_mercado_real() ainda não está "
-            "ligada em main() -- usando mock até o casamento evento->match_id ser resolvido."
+def buscar_odds_mais_recentes(supabase: Client, match_ids: list[int]) -> list[dict]:
+    """Pega o snapshot mais recente de odds (mercado 1X2) por
+    (match_id, bookmaker) em `odds_market` -- essa tabela é um LOG (cada
+    sync é um INSERT novo, não upsert, pra dar pra montar a curva de
+    movimento de linha), então precisa filtrar pro ponto mais recente antes
+    de achatar em `odd_home`/`odd_draw`/`odd_away` pro formato de
+    `market_odds`."""
+    if not match_ids:
+        return []
+
+    linhas_odds = []
+    for i in range(0, len(match_ids), 500):
+        lote = match_ids[i : i + 500]
+        linhas_odds.extend(
+            supabase.table("odds_market")
+            .select("match_id, bookmaker, selection, odds, captured_at")
+            .eq("market", "1X2")
+            .in_("match_id", lote)
+            .execute()
+            .data
+            or []
         )
-    return mock_the_odds_api_response()
 
+    # Mantém só a linha mais recente por (match_id, bookmaker, selection).
+    mais_recente: dict[tuple, dict] = {}
+    for linha in linhas_odds:
+        chave = (linha["match_id"], linha["bookmaker"], linha["selection"])
+        atual = mais_recente.get(chave)
+        if atual is None or linha["captured_at"] > atual["captured_at"]:
+            mais_recente[chave] = linha
 
-def normalizar_odds(eventos_raw: list[dict]) -> list[dict]:
-    """Achata os eventos da API em linhas prontas pra UPSERT em `market_odds`."""
-    linhas = []
-    for evento in eventos_raw:
-        for bookmaker in evento["bookmakers"]:
-            outcomes = {o["name"]: o["price"] for o in bookmaker["markets"][0]["outcomes"]}
-            linhas.append(
-                {
-                    "match_id": evento["match_id"],
-                    "bookmaker": bookmaker["key"],
-                    "odd_home": outcomes.get(evento["home_team"]),
-                    "odd_draw": outcomes.get("Draw"),
-                    "odd_away": outcomes.get(evento["away_team"]),
-                }
-            )
-    return linhas
+    achatado: dict[tuple, dict] = {}
+    campo_por_selecao = {"home": "odd_home", "draw": "odd_draw", "away": "odd_away"}
+    for (match_id, bookmaker, selecao), linha in mais_recente.items():
+        campo = campo_por_selecao.get(selecao)
+        if not campo:
+            continue
+        registro = achatado.setdefault((match_id, bookmaker), {"match_id": match_id, "bookmaker": bookmaker})
+        registro[campo] = float(linha["odds"])
+
+    return list(achatado.values())
 
 
 def salvar_odds_mercado(supabase: Client, linhas: list[dict]) -> None:
@@ -405,10 +347,8 @@ def prever_dixon_coles_v1(
         else:
             forcas = forcas_por_liga.get(int(league_id), {})
 
-        id_casa = MOCK_TEAM_ID.get(jogo["home_team"])
-        id_fora = MOCK_TEAM_ID.get(jogo["away_team"])
-        forca_casa = forcas.get(id_casa, FORCA_PADRAO)
-        forca_fora = forcas.get(id_fora, FORCA_PADRAO)
+        forca_casa = forcas.get(jogo["home_team_id"], FORCA_PADRAO)
+        forca_fora = forcas.get(jogo["away_team_id"], FORCA_PADRAO)
 
         probs = _prever_probs_dixon_coles(forca_casa, forca_fora)
         predicoes_raw[jogo["match_id"]] = probs
@@ -423,22 +363,21 @@ def prever_dixon_coles_v1(
 def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.DataFrame:
     """Monta as features dos jogos a prever com dado REAL (elo atual + forma
     recente, separada por mando + xG -- `dados_historicos.
-    obter_forma_recente_por_mando`) pros 4 times conhecidos do mock
-    (`MOCK_TEAM_ID`); times fora desse mapeamento caem no fallback neutro.
-    `liga` vem de `SPORT_KEY_PARA_LIGA_NOME` -- fixtures de ligas fora do
-    dataset "Feature Stacked" (ex.: Brasileirão) ficam com `liga=None`,
-    tratado como categoria desconhecida pelos 3 modelos de ML."""
-    ids_conhecidos = sorted(
-        {MOCK_TEAM_ID[nome] for nome in pd.concat([fixtures["home_team"], fixtures["away_team"]]).unique() if nome in MOCK_TEAM_ID}
-    )
+    obter_forma_recente_por_mando`) pros times de `fixtures`. `liga` já vem
+    de `buscar_fixtures_reais` (nome real de `leagues.name`) -- fixtures de
+    ligas fora do dataset "Feature Stacked" (Brasileirão) ficam com
+    `liga=None` naturalmente (não está em
+    `dados_historicos.LIGAS_ELITE_EUROPEIAS`), tratado como categoria
+    desconhecida pelos 3 modelos de ML."""
+    ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
 
     linhas = []
     for _, jogo in fixtures.iterrows():
-        id_casa = MOCK_TEAM_ID.get(jogo["home_team"])
-        id_fora = MOCK_TEAM_ID.get(jogo["away_team"])
+        id_casa = jogo["home_team_id"]
+        id_fora = jogo["away_team_id"]
         forma_casa = forma_recente.get(id_casa, forma_padrao)
         forma_fora = forma_recente.get(id_fora, forma_padrao)
         linhas.append(
@@ -454,7 +393,7 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "media_xg_sofrido_5j_home": forma_casa.get("media_xg_sofrido_5j_home"),
                 "media_xg_5j_away": forma_fora.get("media_xg_5j_away"),
                 "media_xg_sofrido_5j_away": forma_fora.get("media_xg_sofrido_5j_away"),
-                "liga": SPORT_KEY_PARA_LIGA_NOME.get(jogo.get("sport_key")),
+                "liga": jogo["liga"],
             }
         )
     return pd.DataFrame(linhas)
@@ -596,31 +535,17 @@ def main() -> None:
     logger.info("Iniciando rotina de predições (model benchmarking)...")
     supabase = get_supabase_client()
 
-    # 1. Odds de mercado
-    eventos_raw = buscar_odds_mercado()
-    linhas_odds = normalizar_odds(eventos_raw)
-    salvar_odds_mercado(supabase, linhas_odds)
-    logger.info("%d linha(s) de odds salvas em market_odds.", len(linhas_odds))
-
-    fixtures = (
-        pd.DataFrame(
-            [
-                {
-                    "match_id": e["match_id"],
-                    "home_team": e["home_team"],
-                    "away_team": e["away_team"],
-                    "sport_key": e.get("sport_key"),
-                    "league_id": SPORT_KEY_PARA_LEAGUE_ID.get(e.get("sport_key")),
-                }
-                for e in eventos_raw
-            ]
-        )
-        .drop_duplicates(subset="match_id")
-        .reset_index(drop=True)
-    )
+    # 1. Fixtures futuras (6 ligas) que já têm odds capturadas + o snapshot
+    # mais recente dessas odds -- dado real, lido de `odds_market`
+    # (alimentada pelo pipeline de produção via OddsPapi), não mais mock.
+    fixtures = buscar_fixtures_reais(supabase)
     if fixtures.empty:
-        logger.warning("Nenhuma partida para prever nessa rodada. Encerrando.")
+        logger.warning("Nenhuma partida futura com odds capturadas nas 6 ligas. Encerrando.")
         return
+
+    linhas_odds = buscar_odds_mais_recentes(supabase, fixtures["match_id"].astype(int).tolist())
+    salvar_odds_mercado(supabase, linhas_odds)
+    logger.info("%d partida(s) selecionada(s), %d linha(s) de odds salvas em market_odds.", len(fixtures), len(linhas_odds))
 
     melhor_odd_por_partida = calcular_melhor_odd_por_partida(supabase, fixtures["match_id"].astype(int).tolist())
 
