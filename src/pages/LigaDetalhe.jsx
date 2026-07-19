@@ -1,9 +1,12 @@
 // src/pages/LigaDetalhe.jsx
-// Jogos reais (ingeridos pelo pipeline Python) de uma liga cadastrada — só
-// funciona pra ligas vinculadas ao pipeline (ligas.external_id preenchido,
-// que casa com leagues.external_id). Seletor de temporada + separação por
-// fase/rodada + paginação por bloco de rodadas (a lista inteira de uma
-// temporada pode ter 380 jogos, não dá pra jogar tudo na tela de uma vez).
+// Jogos reais (ingeridos pelo pipeline) de uma liga cadastrada — só funciona
+// pra ligas vinculadas ao pipeline: via ligas.pipeline_league_id (vínculo
+// direto, padrão pra ligas novas) ou, em ligas mais antigas que nunca
+// ganharam esse vínculo, por ligas.external_id = leagues.external_id
+// (fallback, só cobre ligas vindas da football-data.org). Seletor de
+// temporada + separação por fase/rodada + paginação por bloco de rodadas (a
+// lista inteira de uma temporada pode ter 380 jogos, não dá pra jogar tudo
+// na tela de uma vez).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange } from 'lucide-react';
@@ -59,7 +62,12 @@ export default function LigaDetalhe() {
   const [pagina, setPagina] = useState(0);
   const [aba, setAba] = useState('classificacao');
 
-  // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no pipeline via external_id
+  // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no
+  // pipeline — via pipeline_league_id (vínculo direto, preenchido por padrão
+  // pra ligas novas desde a importação via FotMob) com fallback pro
+  // casamento antigo por external_id (ligas mais antigas, vindas da
+  // football-data.org, que nunca ganharam o vínculo direto — ver migration
+  // add_pipeline_league_id_ligas).
   useEffect(() => {
     if (!supabaseAtivo) return;
     (async () => {
@@ -69,29 +77,32 @@ export default function LigaDetalhe() {
       if (lErro) { setErro('Liga não encontrada.'); setCarregandoLiga(false); return; }
       setLiga(l);
 
-      if (!l.external_id) { setCarregandoLiga(false); return; }
-
-      const { data: pipelineLiga } = await supabase.from('leagues').select('id').eq('external_id', l.external_id).maybeSingle();
-      if (pipelineLiga) {
-        setLeagueIdPipeline(pipelineLiga.id);
-        // O Supabase (PostgREST) corta em 1000 linhas por chamada sem paginar —
-        // uma liga com 8 temporadas facilmente passa de 1000 jogos, e sem
-        // ORDER BY as primeiras 1000 linhas tendem a ser as mais ANTIGAS (ordem
-        // de inserção), fazendo as temporadas mais novas nunca aparecerem no
-        // seletor (só nas páginas de time, que buscam por outro caminho). Pagina
-        // de verdade só a coluna season (leve) até cobrir todos os jogos.
-        const temporadasData = [];
-        let pagina = 0;
-        while (true) {
-          const { data } = await supabase.from('matches').select('season').eq('league_id', pipelineLiga.id).range(pagina * 1000, pagina * 1000 + 999);
-          temporadasData.push(...(data || []));
-          if (!data || data.length < 1000) break;
-          pagina++;
-        }
-        const unicas = [...new Set(temporadasData.map(t => t.season))].sort().reverse();
-        setTemporadas(unicas);
-        if (unicas.length > 0) setTemporada(unicas[0]);
+      let pipelineLigaId = l.pipeline_league_id || null;
+      if (!pipelineLigaId && l.external_id) {
+        const { data: pipelineLiga } = await supabase.from('leagues').select('id').eq('external_id', l.external_id).maybeSingle();
+        pipelineLigaId = pipelineLiga?.id || null;
       }
+
+      if (!pipelineLigaId) { setCarregandoLiga(false); return; }
+
+      setLeagueIdPipeline(pipelineLigaId);
+      // O Supabase (PostgREST) corta em 1000 linhas por chamada sem paginar —
+      // uma liga com 8 temporadas facilmente passa de 1000 jogos, e sem
+      // ORDER BY as primeiras 1000 linhas tendem a ser as mais ANTIGAS (ordem
+      // de inserção), fazendo as temporadas mais novas nunca aparecerem no
+      // seletor (só nas páginas de time, que buscam por outro caminho). Pagina
+      // de verdade só a coluna season (leve) até cobrir todos os jogos.
+      const temporadasData = [];
+      let pagina = 0;
+      while (true) {
+        const { data } = await supabase.from('matches').select('season').eq('league_id', pipelineLigaId).range(pagina * 1000, pagina * 1000 + 999);
+        temporadasData.push(...(data || []));
+        if (!data || data.length < 1000) break;
+        pagina++;
+      }
+      const unicas = [...new Set(temporadasData.map(t => t.season))].sort().reverse();
+      setTemporadas(unicas);
+      if (unicas.length > 0) setTemporada(unicas[0]);
       setCarregandoLiga(false);
     })();
   }, [id]);
@@ -197,7 +208,7 @@ export default function LigaDetalhe() {
       {!leagueIdPipeline ? (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center">
           <p className="text-slate-500 text-sm">
-            Essa liga não está vinculada ao pipeline de dados (sem jogos importados) — só ligas com <code className="text-slate-400">external_id</code> preenchido (as espelhadas de <code className="text-slate-400">leagues</code>) têm jogos aqui.
+            Essa liga não está vinculada ao pipeline de dados (sem jogos importados) — use "Importar do FotMob" em <Link to="/ligas" className="text-emerald-400 hover:underline">Ligas</Link> pra trazer os jogos de uma temporada.
           </p>
         </div>
       ) : carregandoJogos ? (

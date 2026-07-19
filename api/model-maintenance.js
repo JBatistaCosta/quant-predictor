@@ -88,6 +88,19 @@
 //                                   externa só — rápido o bastante pro frontend chamar direto).
 //                                   Backfill em massa é via script Python separado
 //                                   (arquivos_do_claude/ingestao_fotmob_perfil_jogador.py).
+//   ?tarefa=fotmob-liga-buscar&termo=X -> busca liga por nome no FotMob (apigw.fotmob.com/
+//                                   searchapi/suggest), devolve nome/fotmob_league_id/país pra
+//                                   preencher o formulário de importação. Não escreve nada.
+//   ?tarefa=backfill-fotmob-liga&fotmob_league_id=X&temporada=AAAA[&nome=&pais=&confederacao=&tipo=]
+//                               -> onboarding de liga NOVA a partir do FotMob: cria leagues +
+//                                   liga_fonte_externa (sistema='fotmob') + ligas (cadastro,
+//                                   pipeline_league_id já vinculado) na primeira chamada — nome/
+//                                   pais/tipo só são obrigatórios nessa primeira vez, chamadas
+//                                   seguintes (outra temporada da mesma liga) reaproveitam pelo
+//                                   fotmob_league_id. Times resolvidos por nome ou criados na hora
+//                                   (mesmo padrão de backfill-api-football — liga nova não tem
+//                                   ambiguidade de crosswalk entre fontes). temporada no formato
+//                                   do FotMob (ex: "2024" ou "2024/2025", igual ao site).
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -1355,6 +1368,168 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
   return { api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length, sincronizados };
 }
 
+// ============================================================
+// TAREFA: fotmob-liga-buscar / backfill-fotmob-liga — onboarding de liga
+// NOVA a partir do FotMob (raspagem), disparável direto do botão "+Nova
+// Liga" no frontend (Ligas.jsx). Diferente de ingestao_fotmob.py (que só
+// ENRIQUECE ligas que já têm partidas de outra fonte, com crosswalk de
+// time resolvido manualmente por disciplina do projeto) — aqui a liga é
+// nova, então não há ambiguidade de casar times de fontes diferentes: os
+// times são criados direto a partir do nome que o próprio FotMob dá,
+// mesmo padrão de resolverOuCriarTimeApiFootball (casa por nome com time
+// já existente OU cria).
+//
+// Endpoint de busca (`apigw.fotmob.com/searchapi/suggest`), diferente do
+// domínio usado pro resto da raspagem (`www.fotmob.com/api/data/*`) —
+// descoberto por inspeção, mesmo espírito não-oficial já documentado.
+// ============================================================
+
+const FOTMOB_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' };
+const MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE = {
+  liga_domestica: 'league', copa_nacional: 'cup', copa_continental: 'cup', torneio_internacional: 'international',
+};
+
+async function tarefaFotmobLigaBuscar(termo) {
+  const resposta = await fetch(`https://apigw.fotmob.com/searchapi/suggest?term=${encodeURIComponent(termo)}&lang=en`, { headers: FOTMOB_HEADERS });
+  if (!resposta.ok) return { error: `FotMob respondeu ${resposta.status} na busca.` };
+  const dados = await resposta.json();
+  const opcoes = (dados.leagueSuggest || []).flatMap(grupo => grupo.options || []);
+  const resultados = opcoes.slice(0, 15).map(o => {
+    const [nome, id] = (o.text || '').split('|');
+    return {
+      nome: nome || o.text,
+      fotmob_league_id: o.payload?.id || id,
+      pais_code: o.payload?.countryCode || null,
+      simbolo_url: `https://images.fotmob.com/image_resources/logo/leaguelogo/${o.payload?.id || id}.png`,
+    };
+  });
+  return { resultados };
+}
+
+// Mesmo padrão de resolverOuCriarTimeApiFootball: crosswalk conhecido (source
+// = 'fotmob') > casamento por nome com time já existente > cria novo. Único
+// pra times, não pra jogadores (não confundir com o crosswalk de player).
+async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, timeFm) {
+  const fmId = String(timeFm.id);
+  if (crosswalk[fmId]) return crosswalk[fmId];
+
+  const candidato = todosOsTimes.find(t => nomesBatemTime(t.name, timeFm.name));
+  let teamId;
+  if (candidato) {
+    teamId = candidato.id;
+  } else {
+    const { data: novo, error } = await supabase.from('teams').insert({ name: timeFm.name, crest_url: `https://images.fotmob.com/image_resources/logo/teamlogo/${fmId}_xsmall.png` }).select('id').single();
+    if (error || !novo) return null;
+    teamId = novo.id;
+    todosOsTimes.push({ id: teamId, name: timeFm.name });
+  }
+
+  await supabase.from('team_source_ids').upsert(
+    { source: 'fotmob', source_id: fmId, team_id: teamId, source_name: timeFm.name },
+    { onConflict: 'source,source_id' }
+  );
+  crosswalk[fmId] = teamId;
+  return teamId;
+}
+
+function mapaStatusFotmob(fx) {
+  if (fx.status?.cancelled) return 'cancelled';
+  if (fx.status?.finished) return 'finished';
+  if (fx.status?.started) return 'live';
+  return 'scheduled';
+}
+
+// Cria (se ainda não existir) a liga em `leagues` + `liga_fonte_externa`
+// (sistema='fotmob') + a linha correspondente em `ligas` (cadastro manual,
+// com pipeline_league_id já vinculado — ver migration add_pipeline_league_id_ligas)
+// e importa os confrontos de UMA temporada via /api/data/fixtures. Idempotente
+// por fotmob_league_id: rodar de novo (mesma ou outra temporada) reaproveita a
+// liga já criada em vez de duplicar — só faz upsert de partidas (external_id
+// `fm_<id>`).
+async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, nome, pais, confederacao, tipo, simboloUrl }) {
+  if (!fotmobLeagueId || !temporada) return { error: 'Informe fotmob_league_id e temporada.' };
+  const tipoLeagues = MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE[tipo];
+  if (!tipoLeagues) return { error: `tipo inválido — use um de: ${Object.keys(MAPA_TIPO_LIGA_PARA_LEAGUES_TYPE).join(', ')}.` };
+
+  const fmIdStr = String(fotmobLeagueId);
+  let ligaCriada = false;
+
+  const { data: fonteExistente } = await supabase
+    .from('liga_fonte_externa').select('league_id')
+    .eq('sistema', 'fotmob').eq('identificador', fmIdStr).maybeSingle();
+
+  let leagueId = fonteExistente?.league_id;
+
+  if (!leagueId) {
+    if (!nome) return { error: 'Liga ainda não cadastrada pra esse fotmob_league_id — informe nome (e pais/tipo) pra criar.' };
+    const { data: novaLeague, error: erroLeague } = await supabase
+      .from('leagues').insert({ name: nome, country: pais || null, type: tipoLeagues }).select('id').single();
+    if (erroLeague || !novaLeague) return { error: `Falha ao criar leagues: ${erroLeague?.message}` };
+    leagueId = novaLeague.id;
+    await supabase.from('liga_fonte_externa').insert({ league_id: leagueId, sistema: 'fotmob', identificador: fmIdStr });
+    ligaCriada = true;
+  }
+
+  const { data: ligaCadastroExistente } = await supabase.from('ligas').select('id').eq('pipeline_league_id', leagueId).maybeSingle();
+  let ligaCadastroId = ligaCadastroExistente?.id;
+  if (!ligaCadastroId) {
+    const { data: novaLigaCadastro, error: erroLigaCadastro } = await supabase
+      .from('ligas')
+      .insert({
+        nome: nome || `Liga FotMob ${fmIdStr}`, tipo, pais: pais || null, confederacao: confederacao || null,
+        simbolo_url: simboloUrl || `https://images.fotmob.com/image_resources/logo/leaguelogo/${fmIdStr}.png`,
+        pipeline_league_id: leagueId,
+      })
+      .select('id').single();
+    if (!erroLigaCadastro && novaLigaCadastro) ligaCadastroId = novaLigaCadastro.id;
+  }
+
+  const respFixtures = await fetch(`https://www.fotmob.com/api/data/fixtures?id=${fmIdStr}&season=${encodeURIComponent(temporada)}`, { headers: FOTMOB_HEADERS });
+  if (!respFixtures.ok) return { error: `FotMob respondeu ${respFixtures.status} em /fixtures — league_id ou temporada podem estar errados (formato esperado: "2024" ou "2024/2025", igual ao site).` };
+  const fixtures = await respFixtures.json();
+  if (!Array.isArray(fixtures) || fixtures.length === 0) {
+    return { league_id: leagueId, liga_id: ligaCadastroId, liga_criada: ligaCriada, total_jogos: 0, sincronizados: 0, aviso: 'FotMob não retornou nenhum confronto pra essa liga/temporada — confira o formato da temporada.' };
+  }
+
+  const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
+  const crosswalk = {};
+  (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+
+  const linhas = [];
+  for (const fx of fixtures) {
+    const homeTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.home);
+    const awayTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.away);
+    if (!homeTeamId || !awayTeamId) continue;
+
+    const finalizado = fx.status?.finished && !fx.status?.cancelled;
+    linhas.push({
+      external_id: `fm_${fx.id}`,
+      league_id: leagueId,
+      season: String(temporada),
+      match_date: fx.status?.utcTime,
+      home_team_id: homeTeamId,
+      away_team_id: awayTeamId,
+      home_goals: finalizado ? fx.home?.score ?? null : null,
+      away_goals: finalizado ? fx.away?.score ?? null : null,
+      status: mapaStatusFotmob(fx),
+      round: null,
+      stage: fx.tournament?.stage || null,
+    });
+  }
+
+  let sincronizados = 0;
+  for (const lote of fatiar(linhas, 200)) {
+    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
+    if (!error) sincronizados += lote.length;
+  }
+
+  return {
+    league_id: leagueId, liga_id: ligaCadastroId, liga_criada: ligaCriada,
+    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados,
+  };
+}
+
 // Dumpa a resposta crua de /teams?id=X pra inspecionar o shape real antes de
 // generalizar o parser (disciplina do projeto: nunca adivinhar formato de API
 // paga/limitada). Não escreve nada no banco.
@@ -1559,6 +1734,21 @@ export default async function handler(req, res) {
 
     if (tarefa === 'calibracao') {
       return res.status(200).json(await tarefaCalibracao(supabase, Number(minimo) || 80));
+    }
+
+    if (tarefa === 'fotmob-liga-buscar') {
+      if (!req.query.termo) return res.status(400).json({ error: { message: 'tarefa=fotmob-liga-buscar precisa de ?termo=NomeDaLiga.' } });
+      const resultado = await tarefaFotmobLigaBuscar(req.query.termo);
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'backfill-fotmob-liga') {
+      const { fotmob_league_id, nome, pais, confederacao, tipo, simbolo_url } = req.query;
+      if (!fotmob_league_id || !temporada) return res.status(400).json({ error: { message: 'tarefa=backfill-fotmob-liga precisa de ?fotmob_league_id=X&temporada=AAAA (formato FotMob, ex: 2024 ou 2024/2025).' } });
+      const resultado = await tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId: fotmob_league_id, temporada, nome, pais, confederacao, tipo, simboloUrl: simbolo_url });
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
     }
 
     if (tarefa === 'disparar-predicoes') {
