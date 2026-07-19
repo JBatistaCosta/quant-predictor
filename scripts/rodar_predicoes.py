@@ -12,11 +12,14 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      5-8 temporadas empilhadas das 5 ligas de elite europeias, com
      features de gols e xG separadas por mando -- ver `dados_historicos.
      _forma_por_mando`).
-  3. Cada modelo ganha uma variante CALIBRADA (Platt one-vs-rest, ajustada
-     num Validation Set que o modelo base não treinou -- ver
-     `calibracao.py`), persistida ao lado da crua com `model_name` sufixado
-     `_calibrado`. Calcula o edge de cada uma (crua e calibrada) contra a
-     melhor odd capturada e persiste tudo em `predicoes`.
+  3. Cada modelo ganha DUAS variantes CALIBRADAS (Platt e Isotonic
+     Regression, ajustadas num Validation Set que o modelo base não
+     treinou -- ver `calibracao.py`), persistidas ao lado da crua com
+     `model_name` sufixado `_calibrado_platt`/`_calibrado_isotonic` (nenhum
+     método substitui o outro -- a comparação é sempre empírica, feita em
+     `backtest_kelly.py`). Calcula o edge de cada uma (crua e as 2
+     calibradas) contra a melhor odd capturada e persiste tudo em
+     `predicoes`.
 
 Variáveis de ambiente obrigatórias: SUPABASE_URL, SUPABASE_KEY (service_role
 -- as tabelas têm RLS habilitado e só aceitam escrita dessa chave).
@@ -48,11 +51,16 @@ JANELA_DIXON_COLES_TEMPORADAS = 3  # as duas últimas completas + a atual
 JANELA_ML_ANOS = 6  # dentro do range pedido de 5-8 temporadas por liga
 
 # Fração do dataset reservada pra Validation Set -- usada só pra ajustar a
-# calibração (Platt) de cada modelo, nunca pra escolher hiperparâmetro em
-# produção (isso é papel do grid search em `backtest_kelly.py`). O modelo
-# final que prevê as fixtures do dia é sempre refeito no dataset INTEIRO
-# (treino + validação), depois de já ter ajustado a calibração.
+# calibração de cada modelo, nunca pra escolher hiperparâmetro em produção
+# (isso é papel do grid search em `backtest_kelly.py`). O modelo final que
+# prevê as fixtures do dia é sempre refeito no dataset INTEIRO (treino +
+# validação), depois de já ter ajustado a calibração.
 FRACAO_VALIDACAO_CALIBRACAO = 0.2
+
+# As duas técnicas de calibração ficam disponíveis lado a lado -- nenhuma
+# substitui a outra, a comparação empírica é sempre feita em
+# `backtest_kelly.py` (ver `calibracao.py`).
+METODOS_CALIBRACAO = calibracao.METODOS
 
 # IDs reais em `teams`/`matches` pros 4 times do mock de fixtures
 # (confirmado por consulta direta ao Supabase, não adivinhado) -- só serve
@@ -328,8 +336,11 @@ def _calibrar_dixon_coles(supabase: Client, league_ids: set[int]) -> dict[str, t
     liga presente nas fixtures, separa a janela curta em treino/validação
     (80/20 cronológico), estima força só no treino e gera previsão pro
     trecho de validação -- as previsões de TODAS as ligas entram juntas num
-    único ajuste de Platt por seleção (mesma granularidade de
-    `model_calibration` em produção: por modelo+seleção, não por liga)."""
+    único ajuste por seleção (mesma granularidade de `model_calibration` em
+    produção: por modelo+seleção, não por liga). Ajusta os dois métodos
+    (`METODOS_CALIBRACAO`) a partir do MESMO Validation Set -- Platt e
+    Isotonic ficam disponíveis lado a lado pra comparação, nunca um
+    substitui o outro (ver `calibracao.py`)."""
     predicoes_val: dict[int, dict[str, float]] = {}
     resultados_val: dict[int, int] = {}
 
@@ -350,12 +361,14 @@ def _calibrar_dixon_coles(supabase: Client, league_ids: set[int]) -> dict[str, t
             predicoes_val[partida.id] = _prever_probs_dixon_coles(forca_casa, forca_fora)
             resultados_val[partida.id] = _resultado_codigo(partida.home_goals, partida.away_goals)
 
-    return calibracao.ajustar_calibracao(predicoes_val, resultados_val)
+    return {
+        metodo: calibracao.ajustar_calibracao(predicoes_val, resultados_val, metodo=metodo) for metodo in METODOS_CALIBRACAO
+    }
 
 
 def prever_dixon_coles_v1(
     fixtures: pd.DataFrame, supabase: Client
-) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, float]]]:
+) -> tuple[dict[int, dict[str, float]], dict[str, dict[int, dict[str, float]]]]:
     """Janela CURTA (Requisito 5): `dados_historicos.montar_janela_dixon_coles`
     carrega só as `JANELA_DIXON_COLES_TEMPORADAS` temporadas mais recentes
     da liga de cada partida, com peso de decaimento temporal já aplicado
@@ -365,9 +378,9 @@ def prever_dixon_coles_v1(
     calibração). Times sem força calculável (liga não mapeada, ou time sem
     histórico na janela) caem no fallback neutro `FORCA_PADRAO`.
 
-    Devolve `(predicoes_cruas, predicoes_calibradas)` -- a calibração é
-    ajustada separadamente em `_calibrar_dixon_coles`, num Validation Set
-    dentro da mesma janela."""
+    Devolve `(predicoes_cruas, predicoes_calibradas_por_metodo)` -- a
+    calibração é ajustada separadamente em `_calibrar_dixon_coles`, num
+    Validation Set dentro da mesma janela, uma vez por método."""
     league_ids_fixtures = {int(lid) for lid in fixtures["league_id"].dropna().unique()}
 
     forcas_por_liga: dict[int, dict[int, dict[str, float]]] = {}
@@ -375,10 +388,12 @@ def prever_dixon_coles_v1(
         janela = dados_historicos.montar_janela_dixon_coles(supabase, league_id, n_temporadas=JANELA_DIXON_COLES_TEMPORADAS)
         forcas_por_liga[league_id] = dados_historicos.estimar_forcas_dixon_coles(janela)
 
-    coeficientes = _calibrar_dixon_coles(supabase, league_ids_fixtures) if league_ids_fixtures else {}
+    calibradores_por_metodo = (
+        _calibrar_dixon_coles(supabase, league_ids_fixtures) if league_ids_fixtures else {m: {} for m in METODOS_CALIBRACAO}
+    )
 
     predicoes_raw: dict[int, dict[str, float]] = {}
-    predicoes_calibradas: dict[int, dict[str, float]] = {}
+    predicoes_calibradas: dict[str, dict[int, dict[str, float]]] = {metodo: {} for metodo in METODOS_CALIBRACAO}
     for _, jogo in fixtures.iterrows():
         league_id = jogo.get("league_id")
         if pd.isna(league_id):
@@ -394,7 +409,9 @@ def prever_dixon_coles_v1(
 
         probs = _prever_probs_dixon_coles(forca_casa, forca_fora)
         predicoes_raw[jogo["match_id"]] = probs
-        predicoes_calibradas[jogo["match_id"]] = calibracao.aplicar_calibracao(probs, coeficientes) if coeficientes else probs
+        for metodo in METODOS_CALIBRACAO:
+            coef = calibradores_por_metodo.get(metodo, {})
+            predicoes_calibradas[metodo][jogo["match_id"]] = calibracao.aplicar_calibracao(probs, coef) if coef else probs
 
     return predicoes_raw, predicoes_calibradas
 
@@ -442,12 +459,13 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
 
 def prever_ml_com_calibracao(
     nome_modelo: str, features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame
-) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, float]]]:
-    """Treina/prevê um modelo de árvore com sua variante calibrada
-    "conjugada": treina só no Train, ajusta o Platt no Validation (nunca
-    visto pelo treino), depois refita no dataset INTEIRO (treino+validação)
-    pra prever as fixtures de verdade, aplicando a calibração já ajustada.
-    Devolve `(predicoes_cruas, predicoes_calibradas)`."""
+) -> tuple[dict[int, dict[str, float]], dict[str, dict[int, dict[str, float]]]]:
+    """Treina/prevê um modelo de árvore com suas variantes calibradas
+    "conjugadas" (Platt e Isotonic, lado a lado): treina só no Train,
+    ajusta os dois métodos no Validation (nunca visto pelo treino), depois
+    refita no dataset INTEIRO (treino+validação) pra prever as fixtures de
+    verdade, aplicando cada calibração já ajustada. Devolve
+    `(predicoes_cruas, predicoes_calibradas_por_metodo)`."""
     treinar, prever = modelos_ml.TREINADORES[nome_modelo]
     params = modelos_ml.PARAMS_DEFAULT[nome_modelo]
 
@@ -455,21 +473,24 @@ def prever_ml_com_calibracao(
         dataset_treino, treino=1 - FRACAO_VALIDACAO_CALIBRACAO, validacao=FRACAO_VALIDACAO_CALIBRACAO, teste=0.0
     )
 
-    coeficientes: dict[str, tuple[float, float]] = {}
+    calibradores_por_metodo: dict[str, dict] = {metodo: {} for metodo in METODOS_CALIBRACAO}
     if not val_df.empty and not train_df.empty:
         modelo_val, extra_val = treinar(params, train_df)
         probs_val, classes_val = prever(modelo_val, extra_val, val_df)
         preds_val = modelos_ml.empacotar_predicoes(val_df["match_id"].tolist(), probs_val, classes_val)
         resultados_val = dict(zip(val_df["match_id"], val_df["resultado"]))
-        coeficientes = calibracao.ajustar_calibracao(preds_val, resultados_val)
+        for metodo in METODOS_CALIBRACAO:
+            calibradores_por_metodo[metodo] = calibracao.ajustar_calibracao(preds_val, resultados_val, metodo=metodo)
 
     modelo_final, extra_final = treinar(params, dataset_treino)
     probs_fixtures, classes_fixtures = prever(modelo_final, extra_final, features_fixtures)
     predicoes_raw = modelos_ml.empacotar_predicoes(features_fixtures["match_id"].tolist(), probs_fixtures, classes_fixtures)
 
-    predicoes_calibradas = (
-        {mid: calibracao.aplicar_calibracao(p, coeficientes) for mid, p in predicoes_raw.items()} if coeficientes else predicoes_raw
-    )
+    predicoes_calibradas: dict[str, dict[int, dict[str, float]]] = {}
+    for metodo, coef in calibradores_por_metodo.items():
+        predicoes_calibradas[metodo] = (
+            {mid: calibracao.aplicar_calibracao(p, coef) for mid, p in predicoes_raw.items()} if coef else predicoes_raw
+        )
     return predicoes_raw, predicoes_calibradas
 
 
@@ -539,21 +560,30 @@ def salvar_predicoes(supabase: Client, linhas: list[dict]) -> None:
     supabase.table("predicoes").upsert(linhas, on_conflict="match_id,model_name").execute()
 
 
-def _persistir_par_cru_e_calibrado(
+def _persistir_cru_e_calibrados(
     nome_modelo: str,
     predicoes_raw: dict[int, dict[str, float]],
-    predicoes_calibradas: dict[int, dict[str, float]],
+    predicoes_calibradas_por_metodo: dict[str, dict[int, dict[str, float]]],
     melhor_odd_por_partida: dict[int, dict[str, float]],
     todas_as_linhas: list[dict],
 ) -> None:
     """Item 3 -- calibração como modelo "conjugado": toda predição crua
-    ganha uma linha irmã `{nome_modelo}_calibrado` em `predicoes`, lado a
-    lado no painel de benchmarking."""
+    ganha uma linha irmã `{nome_modelo}_calibrado_{metodo}` por método
+    (Platt e Isotonic, lado a lado -- nenhum substitui o outro) em
+    `predicoes`, lado a lado no painel de benchmarking."""
     linhas_raw = montar_linhas_predicoes(nome_modelo, predicoes_raw, melhor_odd_por_partida)
-    linhas_calibradas = montar_linhas_predicoes(f"{nome_modelo}_calibrado", predicoes_calibradas, melhor_odd_por_partida)
     todas_as_linhas.extend(linhas_raw)
-    todas_as_linhas.extend(linhas_calibradas)
-    logger.info("%s: %d predição(ões) cruas + %d calibradas.", nome_modelo, len(linhas_raw), len(linhas_calibradas))
+
+    total_calibradas = 0
+    for metodo, predicoes_calibradas in predicoes_calibradas_por_metodo.items():
+        linhas_calibradas = montar_linhas_predicoes(f"{nome_modelo}_calibrado_{metodo}", predicoes_calibradas, melhor_odd_por_partida)
+        todas_as_linhas.extend(linhas_calibradas)
+        total_calibradas += len(linhas_calibradas)
+
+    logger.info(
+        "%s: %d predição(ões) cruas + %d calibradas (%s).",
+        nome_modelo, len(linhas_raw), total_calibradas, ", ".join(predicoes_calibradas_por_metodo),
+    )
 
 
 # =============================================================================
@@ -600,7 +630,7 @@ def main() -> None:
     try:
         logger.info("Rodando modelo dixon_coles_v1 (janela de %d temporadas + decaimento temporal)...", JANELA_DIXON_COLES_TEMPORADAS)
         preds_raw, preds_calibradas = prever_dixon_coles_v1(fixtures, supabase)
-        _persistir_par_cru_e_calibrado("dixon_coles_v1", preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
+        _persistir_cru_e_calibrados("dixon_coles_v1", preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
     except Exception:
         logger.exception("Falha ao rodar dixon_coles_v1 -- pulando, os outros modelos continuam.")
 
@@ -622,7 +652,7 @@ def main() -> None:
             try:
                 logger.info("Rodando modelo %s (+ calibração conjugada)...", nome_modelo)
                 preds_raw, preds_calibradas = prever_ml_com_calibracao(nome_modelo, features_fixtures, dataset_treino)
-                _persistir_par_cru_e_calibrado(nome_modelo, preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
+                _persistir_cru_e_calibrados(nome_modelo, preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
             except Exception:
                 logger.exception("Falha ao rodar o modelo %s -- pulando, os outros modelos continuam.", nome_modelo)
 

@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Calibração Platt (one-vs-rest) pros modelos do Model Benchmarking.
+"""Calibração (Platt e Isotonic Regression, one-vs-rest) pros modelos do
+Model Benchmarking.
 
-Mesma técnica já validada em produção neste projeto (`model_calibration`,
-achado documentado em CONTEXTO_PROJETO.md: coeficiente `a` sempre < 1,
-confirmando que os modelos crus tendem a ser confiantes demais) -- aqui
-aplicada como uma variante "conjugada" de cada modelo (`{nome}_calibrado`),
-persistida lado a lado com a versão crua em `predicoes`.
+Mesmas duas técnicas já validadas em produção neste projeto
+(`model_calibration`, achado documentado em CONTEXTO_PROJETO.md:
+coeficiente `a` do Platt sempre < 1, confirmando que os modelos crus
+tendem a ser confiantes demais; Isotonic com resultado misto -- ajuda em
+alguns casos, mas com amostra pequena é mais propensa a overfit que o
+Platt, que só tem 2 parâmetros). As duas ficam disponíveis lado a lado
+(`ajustar_calibracao(..., metodo="platt"|"isotonic")`) -- a decisão de
+qual usar em produção é sempre comparada empiricamente (`backtest_kelly.py`),
+nunca assumida.
+
+Cada modelo ganha DUAS variantes "conjugadas" (`{nome}_calibrado_platt`,
+`{nome}_calibrado_isotonic`), persistidas lado a lado com a versão crua em
+`predicoes`.
 
 Regra que não pode ser quebrada: a calibração é sempre ajustada num
 conjunto de dado que o modelo BASE não usou pra treinar (aqui, o
@@ -15,12 +24,16 @@ artificialmente e não mediria nada de real.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 import numpy as np
+from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 SELECOES = ("home", "draw", "away")
 CODIGO_POR_SELECAO = {"home": 0, "draw": 1, "away": 2}
-AMOSTRA_MINIMA = 30  # abaixo disso, o ajuste de Platt é ruído -- usa identidade (sem calibrar)
+METODOS = ("platt", "isotonic")
+AMOSTRA_MINIMA = 30  # abaixo disso, o ajuste é ruído -- usa identidade (sem calibrar)
 
 
 def _logit(p: np.ndarray) -> np.ndarray:
@@ -28,25 +41,77 @@ def _logit(p: np.ndarray) -> np.ndarray:
     return np.log(p / (1 - p))
 
 
-def ajustar_platt_selecao(probs: np.ndarray, alvo_binario: np.ndarray) -> tuple[float, float]:
-    """Ajusta a=coeficiente/b=intercepto de `sigmoid(a*logit(p)+b)` via
-    regressão logística de 1 variável (`sklearn.LogisticRegression`, já é
-    dependência transitiva do XGBoost -- não precisa de lib nova)."""
+class Calibrador(Protocol):
+    """Interface comum -- `aplicar_calibracao` não precisa saber qual dos
+    dois métodos está por trás."""
+
+    def aplicar(self, p: float) -> float: ...
+
+
+class CalibradorIdentidade:
+    """Fallback quando a amostra de validação é pequena/degenerada demais
+    (`AMOSTRA_MINIMA`) pra confiar num ajuste -- devolve a probabilidade
+    crua sem alterar."""
+
+    def aplicar(self, p: float) -> float:
+        return p
+
+
+class CalibradorPlatt:
+    """`sigmoid(a*logit(p)+b)` -- só 2 parâmetros, menos propenso a overfit
+    com amostra pequena que o Isotonic."""
+
+    def __init__(self, a: float, b: float):
+        self.a = a
+        self.b = b
+
+    def aplicar(self, p: float) -> float:
+        z = self.a * _logit(np.array([p]))[0] + self.b
+        return float(1 / (1 + np.exp(-z)))
+
+
+class CalibradorIsotonic:
+    """Regressão isotônica (Pool Adjacent Violators) -- mapeamento monótono
+    não-paramétrico, mais flexível que o Platt (não assume a forma
+    sigmoide), mas com mais parâmetros efetivos -- mais sensível a
+    overfitting quando a amostra de validação é pequena."""
+
+    def __init__(self, modelo: IsotonicRegression):
+        self.modelo = modelo
+
+    def aplicar(self, p: float) -> float:
+        return float(self.modelo.predict([p])[0])
+
+
+def _ajustar_platt(probs: np.ndarray, alvo_binario: np.ndarray) -> CalibradorPlatt:
     x = _logit(probs).reshape(-1, 1)
     modelo = LogisticRegression(solver="lbfgs")
     modelo.fit(x, alvo_binario)
-    return float(modelo.coef_[0][0]), float(modelo.intercept_[0])
+    return CalibradorPlatt(float(modelo.coef_[0][0]), float(modelo.intercept_[0]))
+
+
+def _ajustar_isotonic(probs: np.ndarray, alvo_binario: np.ndarray) -> CalibradorIsotonic:
+    modelo = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    modelo.fit(probs, alvo_binario)
+    return CalibradorIsotonic(modelo)
+
+
+_AJUSTADORES = {"platt": _ajustar_platt, "isotonic": _ajustar_isotonic}
 
 
 def ajustar_calibracao(
-    predicoes_val: dict[int, dict[str, float]], resultados_val: dict[int, int]
-) -> dict[str, tuple[float, float]]:
-    """Ajusta um Platt por seleção (one-vs-rest: home/draw/away cada um
-    como problema binário independente), usando as predições CRUAS do
+    predicoes_val: dict[int, dict[str, float]], resultados_val: dict[int, int], metodo: str = "platt"
+) -> dict[str, Calibrador]:
+    """Ajusta um calibrador por seleção (one-vs-rest: home/draw/away cada
+    um como problema binário independente), usando as predições CRUAS do
     modelo no Validation Set -- nunca no Train (senão a calibração só
     mediria overfitting do próprio modelo) nem no Test (senão deixaria de
     ser out-of-sample de verdade)."""
-    coeficientes: dict[str, tuple[float, float]] = {}
+    if metodo not in _AJUSTADORES:
+        raise ValueError(f"método de calibração desconhecido: {metodo!r} (esperado um de {METODOS})")
+    ajustar = _AJUSTADORES[metodo]
+
+    calibradores: dict[str, Calibrador] = {}
     for selecao, codigo in CODIGO_POR_SELECAO.items():
         probs, alvo = [], []
         for match_id, p in predicoes_val.items():
@@ -58,21 +123,19 @@ def ajustar_calibracao(
 
         alvo_arr = np.array(alvo)
         if len(probs) < AMOSTRA_MINIMA or len(np.unique(alvo_arr)) < 2:
-            coeficientes[selecao] = (1.0, 0.0)  # identidade -- amostra pequena/degenerada demais pra confiar
+            calibradores[selecao] = CalibradorIdentidade()
             continue
-        coeficientes[selecao] = ajustar_platt_selecao(np.array(probs), alvo_arr)
-    return coeficientes
+        calibradores[selecao] = ajustar(np.array(probs), alvo_arr)
+    return calibradores
 
 
-def aplicar_calibracao(probs: dict[str, float], coeficientes: dict[str, tuple[float, float]]) -> dict[str, float]:
-    """Aplica o Platt em cada seleção e RENORMALIZA pra somar 1 -- o ajuste
-    one-vs-rest calibra cada seleção de forma independente, então a soma
-    das 3 não vem garantida em 1 depois da transformação."""
+def aplicar_calibracao(probs: dict[str, float], calibradores: dict[str, Calibrador]) -> dict[str, float]:
+    """Aplica o calibrador de cada seleção e RENORMALIZA pra somar 1 -- o
+    ajuste one-vs-rest calibra cada seleção de forma independente, então a
+    soma das 3 não vem garantida em 1 depois da transformação."""
     calibradas = {}
     for selecao in SELECOES:
-        a, b = coeficientes.get(selecao, (1.0, 0.0))
-        p = probs[f"prob_{selecao}"]
-        z = a * _logit(np.array([p]))[0] + b
-        calibradas[selecao] = float(1 / (1 + np.exp(-z)))
+        calibrador = calibradores.get(selecao, CalibradorIdentidade())
+        calibradas[selecao] = calibrador.aplicar(probs[f"prob_{selecao}"])
     total = sum(calibradas.values())
     return {f"prob_{selecao}": calibradas[selecao] / total for selecao in SELECOES}
