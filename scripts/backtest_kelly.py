@@ -352,6 +352,57 @@ def imprimir_relatorio_por_liga(relatorio_por_liga: list[dict]) -> None:
     logger.info("=" * 86)
 
 
+def salvar_relatorio(supabase, relatorio: list[dict]) -> None:
+    """Persiste o relatório principal (ROI/Kelly/IC95%/EV+) em
+    `model_benchmarking_backtest` -- painel equivalente ao "Backtest de
+    apostas simuladas (EV+)" já existente em Estatísticas dos Modelos, mas
+    pros modelos do Model Benchmarking. Cada rodada SUBSTITUI o resultado
+    anterior por completo (delete-e-regrava, não upsert incremental) -- é
+    sempre um resultado fim-a-fim contra o Test Set inteiro."""
+    if not relatorio:
+        return
+    linhas = [
+        {
+            "model_name": r["model_name"],
+            "n_apostas": r["n_apostas"],
+            "roi_medio": round(r["roi_medio"], 5),
+            "roi_ic95_inferior": round(r["roi_ic95_inferior"], 5),
+            "roi_ic95_superior": round(r["roi_ic95_superior"], 5),
+            "significativo": r["significativo"],
+            "hiperparametros": r["hiperparametros"],
+        }
+        for r in relatorio
+    ]
+    supabase.table("model_benchmarking_backtest").delete().neq("model_name", "").execute()
+    supabase.table("model_benchmarking_backtest").upsert(linhas, on_conflict="model_name").execute()
+    logger.info("Relatório principal salvo em model_benchmarking_backtest (%d linha(s)).", len(linhas))
+
+
+def salvar_relatorio_por_liga(supabase, relatorio_por_liga: list[dict]) -> None:
+    """Persiste a quebra por liga em `model_benchmarking_backtest_liga` --
+    `model_name` vem como `"{modelo} / {liga}"` (ver `resumir_por_liga`),
+    precisa separar de volta antes de gravar."""
+    if not relatorio_por_liga:
+        return
+    linhas = []
+    for r in relatorio_por_liga:
+        modelo, _, liga = r["model_name"].partition(" / ")
+        linhas.append(
+            {
+                "model_name": modelo,
+                "liga": liga,
+                "n_apostas": r["n_apostas"],
+                "roi_medio": round(r["roi_medio"], 5),
+                "roi_ic95_inferior": round(r["roi_ic95_inferior"], 5),
+                "roi_ic95_superior": round(r["roi_ic95_superior"], 5),
+                "significativo": r["significativo"],
+            }
+        )
+    supabase.table("model_benchmarking_backtest_liga").delete().neq("model_name", "").execute()
+    supabase.table("model_benchmarking_backtest_liga").upsert(linhas, on_conflict="model_name,liga").execute()
+    logger.info("Relatório por liga salvo em model_benchmarking_backtest_liga (%d linha(s)).", len(linhas))
+
+
 # =============================================================================
 # Comparação com o mercado -- Pinnacle sem vig (log-loss / Brier Score)
 # =============================================================================
@@ -714,6 +765,8 @@ def main() -> None:
 
     imprimir_relatorio(relatorio)
     imprimir_relatorio_por_liga(relatorio_por_liga)
+    salvar_relatorio(supabase, relatorio)
+    salvar_relatorio_por_liga(supabase, relatorio_por_liga)
 
     # --- qualidade de probabilidade vs. mercado (Pinnacle sem vig) ---
     try:

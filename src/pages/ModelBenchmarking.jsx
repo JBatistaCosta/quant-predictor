@@ -6,7 +6,7 @@
 // (RLS pública) -- só o disparo exige login (Authorization: Bearer do
 // access_token do Supabase Auth, verificado no servidor).
 import React, { useState, useEffect, useCallback } from 'react';
-import { Zap, Loader2, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
@@ -33,6 +33,177 @@ async function buscarPaginado(query) {
 
 function fmtPct(v) {
   return v == null ? '—' : `${(v * 100).toFixed(1)}%`;
+}
+
+function fmtPctSigned(v) {
+  return v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
+}
+
+// Painel de backtest (ROI/Kelly/IC95%/EV+) equivalente ao "Backtest de
+// apostas simuladas (EV+)" de Estatísticas dos Modelos, mas lendo o
+// resultado JÁ PERSISTIDO por scripts/backtest_kelly.py (via
+// model_benchmarking_backtest/_liga) em vez de calcular na hora -- o
+// backtest de verdade (grid search + tuning) é caro demais pra rodar
+// dentro de uma função serverless, então roda no GitHub Actions
+// (backtest_kelly.yml, disparado por ?tarefa=disparar-backtest) e só o
+// resultado final é lido aqui.
+function BacktestModelBenchmarking({ session }) {
+  const [relatorio, setRelatorio] = useState([]);
+  const [relatorioPorLiga, setRelatorioPorLiga] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(null);
+  const [disparando, setDisparando] = useState(false);
+  const [mensagemDisparo, setMensagemDisparo] = useState(null);
+  const [expandido, setExpandido] = useState(null);
+
+  const carregar = useCallback(async () => {
+    if (!supabaseAtivo) { setErro('Supabase não configurado.'); setCarregando(false); return; }
+    setCarregando(true);
+    setErro(null);
+    try {
+      const [{ data: principal, error: e1 }, { data: porLiga, error: e2 }] = await Promise.all([
+        supabase.from('model_benchmarking_backtest').select('*'),
+        supabase.from('model_benchmarking_backtest_liga').select('*'),
+      ]);
+      if (e1) throw e1;
+      if (e2) throw e2;
+      setRelatorio((principal || []).sort((a, b) => b.roi_ic95_inferior - a.roi_ic95_inferior));
+      setRelatorioPorLiga(porLiga || []);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function dispararBacktest() {
+    setDisparando(true);
+    setMensagemDisparo(null);
+    try {
+      const resp = await fetch('/api/model-maintenance?tarefa=disparar-backtest', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session?.access_token || ''}` },
+      });
+      const corpo = await resp.json();
+      if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
+      setMensagemDisparo({
+        tipo: 'ok',
+        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 4 modelos -- é bem mais pesado que as predições diárias, pode levar uns 15-30 minutos. Volte depois e clique em "Recarregar".',
+      });
+    } catch (e) {
+      setMensagemDisparo({ tipo: 'erro', texto: e.message });
+    } finally {
+      setDisparando(false);
+    }
+  }
+
+  const ultimaExecucao = relatorio.reduce((max, r) => (r.executado_em > max ? r.executado_em : max), '');
+
+  return (
+    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-4 md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+        <h2 className="text-lg font-extrabold flex items-center gap-2 text-slate-100">
+          <TrendingUp className="text-emerald-400" size={22} /> Backtest de apostas simuladas (EV+)
+        </h2>
+        <div className="flex items-center gap-2">
+          <button onClick={carregar} disabled={carregando}
+            className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm border border-slate-700 disabled:opacity-50">
+            Recarregar
+          </button>
+          <button onClick={dispararBacktest} disabled={disparando || !session}
+            title={!session ? 'Faça login pra disparar o backtest.' : ''}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-4 py-2 rounded-lg text-sm">
+            {disparando ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />} Rodar backtest
+          </button>
+        </div>
+      </div>
+      <p className="text-slate-400 text-sm mb-4">
+        Test Set out-of-sample (nunca visto pelo treino/tuning): simula banca com Kelly fracionário 25%,
+        edge mínimo 2pp, na odd real de fechamento. ROI com IC 95% via bootstrap (2000 reamostragens) --
+        só considera "EV+" quando o limite inferior do IC fica acima de zero.
+        {ultimaExecucao && <span className="text-slate-500"> Última rodada: {new Date(ultimaExecucao).toLocaleString('pt-BR')}.</span>}
+      </p>
+
+      {mensagemDisparo && (
+        <div className={`rounded-lg border p-3 text-sm mb-4 ${mensagemDisparo.tipo === 'ok' ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-red-950/40 border-red-800 text-red-300'}`}>
+          {mensagemDisparo.texto}
+        </div>
+      )}
+
+      {erro && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-800 bg-red-950/40 p-3 text-sm text-red-300 mb-4">
+          <AlertTriangle size={16} /> {erro}
+        </div>
+      )}
+
+      {carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-8 justify-center">
+          <Loader2 size={16} className="animate-spin" /> Carregando backtest...
+        </div>
+      ) : relatorio.length === 0 ? (
+        <p className="text-sm text-slate-500 text-center py-6">
+          Nenhum backtest rodado ainda — clique em "Rodar backtest" (leva uns 15-30 minutos, roda em background no GitHub Actions).
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 uppercase text-[10px]">
+                <th className="text-left p-1.5"></th>
+                <th className="text-left p-1.5">Modelo</th>
+                <th className="text-right p-1.5">Apostas</th>
+                <th className="text-right p-1.5">ROI médio</th>
+                <th className="text-right p-1.5">IC 95%</th>
+                <th className="text-center p-1.5">EV+?</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {relatorio.map((r) => {
+                const ligasDoModelo = relatorioPorLiga.filter((l) => l.model_name === r.model_name);
+                const aberto = expandido === r.model_name;
+                return (
+                  <React.Fragment key={r.model_name}>
+                    <tr className={r.significativo ? 'bg-emerald-500/5' : ''}>
+                      <td className="p-1.5">
+                        {ligasDoModelo.length > 0 && (
+                          <button onClick={() => setExpandido(aberto ? null : r.model_name)} className="text-slate-500 hover:text-slate-300">
+                            {aberto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </button>
+                        )}
+                      </td>
+                      <td className="p-1.5 text-slate-300">{r.model_name}</td>
+                      <td className="p-1.5 text-right text-slate-400">{r.n_apostas}</td>
+                      <td className={`p-1.5 text-right font-bold ${r.roi_medio > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPctSigned(r.roi_medio)}</td>
+                      <td className="p-1.5 text-right text-slate-500">
+                        [{fmtPctSigned(r.roi_ic95_inferior)}, {fmtPctSigned(r.roi_ic95_superior)}]
+                      </td>
+                      <td className="p-1.5 text-center">{r.significativo ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-slate-600">—</span>}</td>
+                    </tr>
+                    {aberto && ligasDoModelo.map((l) => (
+                      <tr key={l.liga} className="bg-slate-950/40">
+                        <td className="p-1.5"></td>
+                        <td className="p-1.5 pl-6 text-slate-500">{l.liga}</td>
+                        <td className="p-1.5 text-right text-slate-500">{l.n_apostas}</td>
+                        <td className={`p-1.5 text-right ${l.roi_medio > 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>{fmtPctSigned(l.roi_medio)}</td>
+                        <td className="p-1.5 text-right text-slate-600">[{fmtPctSigned(l.roi_ic95_inferior)}, {fmtPctSigned(l.roi_ic95_superior)}]</td>
+                        <td className="p-1.5 text-center">{l.significativo ? <span className="text-emerald-500/80 font-bold">✓</span> : <span className="text-slate-700">—</span>}</td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-[10px] text-slate-600 mt-2">
+            Linhas verdes = IC 95% do ROI inteiramente acima de zero (EV+ estatisticamente sustentado no Test Set, não só edge médio positivo).
+            Clique na seta pra ver a quebra por liga (só disponível pra variante crua de cada modelo).
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ModelBenchmarking() {
@@ -222,6 +393,8 @@ export default function ModelBenchmarking() {
         Cada modelo também grava variantes calibradas (Platt/Isotonic) em <code>predicoes</code>
         (sufixo <code>_calibrado_platt</code>/<code>_calibrado_isotonic</code>) — não mostradas aqui pra manter o painel legível.
       </p>
+
+      <BacktestModelBenchmarking session={session} />
     </div>
   );
 }

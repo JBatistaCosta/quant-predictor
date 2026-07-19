@@ -82,6 +82,9 @@
 //                                   verdade no servidor (ProtectedRoute no frontend é só cosmético,
 //                                   não protege a API). Requer a secret GITHUB_ACTIONS_PAT (PAT
 //                                   fine-grained, permissão Actions=Read and write, só neste repo).
+//   ?tarefa=disparar-backtest (POST) -> mesmo mecanismo de disparar-predicoes, dispara
+//                                   backtest_kelly.yml (grid search + tuning + ROI simulado Kelly
+//                                   dos 4 modelos) em vez de predict.yml. Também exige autenticação.
 //   ?tarefa=jogador-perfil&player_id=X -> sync sob demanda de 1 jogador (valor de mercado
 //                                   histórico, carreira, títulos, altura/pé/contrato/traits) via
 //                                   /api/data/playerData do FotMob (endpoint POR JOGADOR, 1 chamada
@@ -505,6 +508,7 @@ async function tarefaConfigSet(supabase, modelName, configBody) {
 const GITHUB_REPO_OWNER = 'JBatistaCosta';
 const GITHUB_REPO_NAME = 'quant-predictor';
 const GITHUB_WORKFLOW_FILE = 'predict.yml';
+const GITHUB_WORKFLOW_FILE_BACKTEST = 'backtest_kelly.yml';
 
 async function verificarUsuarioLogado(supabase, authHeader) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
@@ -514,15 +518,15 @@ async function verificarUsuarioLogado(supabase, authHeader) {
   return data.user;
 }
 
-async function tarefaDispararPredicoes(supabase, authHeader) {
+async function dispararWorkflow(supabase, authHeader, arquivoWorkflow) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
-  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar as predições.' };
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar.' };
 
   const pat = process.env.GITHUB_ACTIONS_PAT;
   if (!pat) return { status: 500, error: 'GITHUB_ACTIONS_PAT não configurada -- ver comentário no topo deste arquivo.' };
 
   const resposta = await fetch(
-    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${arquivoWorkflow}/dispatches`,
     {
       method: 'POST',
       headers: {
@@ -543,6 +547,17 @@ async function tarefaDispararPredicoes(supabase, authHeader) {
   }
 
   return { status: 200, disparado_por: usuario.email, disparado_em: new Date().toISOString() };
+}
+
+function tarefaDispararPredicoes(supabase, authHeader) {
+  return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE);
+}
+
+// Mesmo mecanismo de disparo/autenticação de disparar-predicoes, workflow
+// diferente (backtest_kelly.yml -- grid search + tuning + simulação Kelly,
+// bem mais caro em CPU, por isso é sempre manual, nunca no cron).
+function tarefaDispararBacktest(supabase, authHeader) {
+  return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_BACKTEST);
 }
 
 // ============================================================
@@ -1757,6 +1772,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'disparar-predicoes') {
       const resultado = await tarefaDispararPredicoes(supabase, req.headers.authorization);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'disparar-backtest') {
+      const resultado = await tarefaDispararBacktest(supabase, req.headers.authorization);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
