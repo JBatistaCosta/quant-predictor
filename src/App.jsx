@@ -23,6 +23,7 @@ const AnaliseEstatisticaJogo = lazy(() => import('./pages/AnaliseEstatisticaJogo
 const RatingClubes = lazy(() => import('./pages/RatingClubes'));
 const Jogadores = lazy(() => import('./pages/Jogadores'));
 const JogadorDetalhe = lazy(() => import('./pages/JogadorDetalhe'));
+const ModelBenchmarking = lazy(() => import('./pages/ModelBenchmarking'));
 
 function CarregandoPagina() {
   return (
@@ -82,6 +83,9 @@ export default function App() {
             } />
             <Route path="/jogadores/:id" element={
               <ProtectedRoute><Layout><JogadorDetalhe /></Layout></ProtectedRoute>
+            } />
+            <Route path="/model-benchmarking" element={
+              <ProtectedRoute><Layout><ModelBenchmarking /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />

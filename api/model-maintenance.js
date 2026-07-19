@@ -71,6 +71,17 @@
 //                                   do zero (necessário depois de mudar pesos na config).
 //   ?tarefa=config-get&model_name=X -> lê a config de um modelo em model_config.
 //   ?tarefa=config-set&model_name=X (POST, corpo JSON) -> faz merge do corpo na config salva.
+//   ?tarefa=disparar-predicoes (POST) -> dispara o workflow_dispatch do predict.yml no GitHub
+//                                   Actions (Model Benchmarking: dixon_coles_v1/catboost_v1/
+//                                   xgboost_v1/lightgbm_v1 rodam de verdade, gravam em
+//                                   market_odds/predicoes). ÚNICA tarefa deste arquivo que exige
+//                                   autenticação (header Authorization: Bearer <access_token do
+//                                   Supabase Auth>) -- as outras são só chamadas manualmente/por
+//                                   cron, nunca pelo frontend; esta é clicável em
+//                                   /model-benchmarking, então precisa de verificação de sessão de
+//                                   verdade no servidor (ProtectedRoute no frontend é só cosmético,
+//                                   não protege a API). Requer a secret GITHUB_ACTIONS_PAT (PAT
+//                                   fine-grained, permissão Actions=Read and write, só neste repo).
 //   ?tarefa=jogador-perfil&player_id=X -> sync sob demanda de 1 jogador (valor de mercado
 //                                   histórico, carreira, títulos, altura/pé/contrato/traits) via
 //                                   /api/data/playerData do FotMob (endpoint POR JOGADOR, 1 chamada
@@ -463,6 +474,62 @@ async function tarefaConfigSet(supabase, modelName, configBody) {
   );
   if (error) throw error;
   return { model_name: modelName, config: nova };
+}
+
+// ============================================================
+// TAREFA: disparar-predicoes — dispara o workflow_dispatch do predict.yml
+// (Model Benchmarking) direto do frontend, autenticado.
+//
+// Diferente de todas as outras tarefas deste arquivo (chamadas manualmente
+// via curl, nunca pelo frontend): esta é clicável em /model-benchmarking,
+// então PRECISA verificar a sessão de verdade no servidor -- o
+// ProtectedRoute do frontend só esconde o botão de quem não está logado,
+// não impede uma chamada direta à API. `verificarUsuarioLogado` usa
+// `supabase.auth.getUser(token)`, que valida o JWT contra o Supabase Auth
+// (funciona com qualquer client, não precisa ser o client com a anon key).
+// ============================================================
+
+const GITHUB_REPO_OWNER = 'JBatistaCosta';
+const GITHUB_REPO_NAME = 'quant-predictor';
+const GITHUB_WORKFLOW_FILE = 'predict.yml';
+
+async function verificarUsuarioLogado(supabase, authHeader) {
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
+  if (!token) return null;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return null;
+  return data.user;
+}
+
+async function tarefaDispararPredicoes(supabase, authHeader) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar as predições.' };
+
+  const pat = process.env.GITHUB_ACTIONS_PAT;
+  if (!pat) return { status: 500, error: 'GITHUB_ACTIONS_PAT não configurada -- ver comentário no topo deste arquivo.' };
+
+  const resposta = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${GITHUB_WORKFLOW_FILE}/dispatches`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${pat}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    },
+  );
+
+  // workflow_dispatch bem-sucedido devolve 204 sem corpo -- não tem run_id
+  // na resposta (a API do GitHub não devolve isso de forma síncrona), então
+  // o frontend só confirma "disparado", sem acompanhar o progresso aqui.
+  if (resposta.status !== 204) {
+    const corpo = await resposta.text();
+    return { status: 502, error: `GitHub Actions recusou o disparo (HTTP ${resposta.status}): ${corpo.slice(0, 300)}` };
+  }
+
+  return { status: 200, disparado_por: usuario.email, disparado_em: new Date().toISOString() };
 }
 
 // ============================================================
@@ -1492,6 +1559,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'calibracao') {
       return res.status(200).json(await tarefaCalibracao(supabase, Number(minimo) || 80));
+    }
+
+    if (tarefa === 'disparar-predicoes') {
+      const resultado = await tarefaDispararPredicoes(supabase, req.headers.authorization);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
 
     return res.status(400).json({
