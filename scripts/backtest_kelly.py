@@ -67,17 +67,20 @@ SEED = 42
 # =============================================================================
 # Grid search pequeno (Val) + refit final (Train+Val) por modelo de árvore
 # =============================================================================
-# v2 (parâmetros de jogador, ver dados_historicos.FEATURES_V2) reaproveita
-# a MESMA grade da v1 -- só a lista de features muda (modelos_ml.
-# FEATURES_POR_MODELO), não faz sentido duplicar a grade de tuning.
+# v2/v3 (parâmetros de jogador/fadiga, ver dados_historicos.FEATURES_V2/
+# FEATURES_V3) reaproveitam a MESMA grade da v1 -- só a lista de features
+# muda (modelos_ml.FEATURES_POR_MODELO), não faz sentido duplicar a grade
+# de tuning.
 GRADE_HIPERPARAMETROS = {
     "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([4, 6, 8], [0.03, 0.05, 0.1])],
     "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.08, 0.15])],
     "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([15, 31, 63], [0.05, 0.1, 0.2])],
 }
-GRADE_HIPERPARAMETROS["catboost_v2"] = GRADE_HIPERPARAMETROS["catboost_v1"]
-GRADE_HIPERPARAMETROS["xgboost_v2"] = GRADE_HIPERPARAMETROS["xgboost_v1"]
-GRADE_HIPERPARAMETROS["lightgbm_v2"] = GRADE_HIPERPARAMETROS["lightgbm_v1"]
+for _sufixo in ("_v2", "_v3"):
+    GRADE_HIPERPARAMETROS[f"catboost{_sufixo}"] = GRADE_HIPERPARAMETROS["catboost_v1"]
+    GRADE_HIPERPARAMETROS[f"xgboost{_sufixo}"] = GRADE_HIPERPARAMETROS["xgboost_v1"]
+    GRADE_HIPERPARAMETROS[f"lightgbm{_sufixo}"] = GRADE_HIPERPARAMETROS["lightgbm_v1"]
+del _sufixo
 
 # =============================================================================
 # Mercados cobertos por esta análise -- 1X2 (3 seleções) e Over/Under 2.5
