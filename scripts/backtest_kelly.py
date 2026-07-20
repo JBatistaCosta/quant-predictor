@@ -67,11 +67,17 @@ SEED = 42
 # =============================================================================
 # Grid search pequeno (Val) + refit final (Train+Val) por modelo de árvore
 # =============================================================================
+# v2 (parâmetros de jogador, ver dados_historicos.FEATURES_V2) reaproveita
+# a MESMA grade da v1 -- só a lista de features muda (modelos_ml.
+# FEATURES_POR_MODELO), não faz sentido duplicar a grade de tuning.
 GRADE_HIPERPARAMETROS = {
     "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([4, 6, 8], [0.03, 0.05, 0.1])],
     "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.08, 0.15])],
     "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([15, 31, 63], [0.05, 0.1, 0.2])],
 }
+GRADE_HIPERPARAMETROS["catboost_v2"] = GRADE_HIPERPARAMETROS["catboost_v1"]
+GRADE_HIPERPARAMETROS["xgboost_v2"] = GRADE_HIPERPARAMETROS["xgboost_v1"]
+GRADE_HIPERPARAMETROS["lightgbm_v2"] = GRADE_HIPERPARAMETROS["lightgbm_v1"]
 
 # =============================================================================
 # Mercados cobertos por esta análise -- 1X2 (3 seleções) e Over/Under 2.5
@@ -139,19 +145,20 @@ def tunar_treinar_e_calibrar(
     coluna_alvo = MERCADOS[mercado]["coluna_alvo"]
     codigo_por_selecao = MERCADOS[mercado]["codigo_por_selecao"]
     treinar, prever = modelos_ml.TREINADORES[nome_modelo]
+    features = modelos_ml.FEATURES_POR_MODELO[nome_modelo]
     melhor_params, melhor_log_loss = None, np.inf
     melhor_modelo_val, melhor_extra_val = None, None
 
     for params in GRADE_HIPERPARAMETROS[nome_modelo]:
-        modelo, extra = treinar(params, train_df, coluna_alvo=coluna_alvo)
-        probs_val, classes = prever(modelo, extra, val_df)
+        modelo, extra = treinar(params, train_df, coluna_alvo=coluna_alvo, features=features)
+        probs_val, classes = prever(modelo, extra, val_df, features=features)
         log_loss = _log_loss_multiclasse(val_df[coluna_alvo].to_numpy(), probs_val, classes)
         logger.info("  %s [%s] params=%s -> log-loss(val)=%.4f", nome_modelo, mercado, params, log_loss)
         if log_loss < melhor_log_loss:
             melhor_log_loss, melhor_params = log_loss, params
             melhor_modelo_val, melhor_extra_val = modelo, extra
 
-    probs_val_melhor, classes_val_melhor = prever(melhor_modelo_val, melhor_extra_val, val_df)
+    probs_val_melhor, classes_val_melhor = prever(melhor_modelo_val, melhor_extra_val, val_df, features=features)
     preds_val = modelos_ml.empacotar_predicoes(
         val_df["match_id"].tolist(), probs_val_melhor, classes_val_melhor, coluna_alvo=coluna_alvo
     )
@@ -168,7 +175,7 @@ def tunar_treinar_e_calibrar(
         melhor_params,
         melhor_log_loss,
     )
-    modelo_final, extra_final = treinar(melhor_params, train_mais_val_df, coluna_alvo=coluna_alvo)
+    modelo_final, extra_final = treinar(melhor_params, train_mais_val_df, coluna_alvo=coluna_alvo, features=features)
     return modelo_final, extra_final, melhor_params, coeficientes_por_metodo
 
 
@@ -985,7 +992,7 @@ def main() -> None:
                 )
                 _, prever = modelos_ml.TREINADORES[nome_modelo]
 
-                probs_teste, classes = prever(modelo, extra, test_df)
+                probs_teste, classes = prever(modelo, extra, test_df, features=modelos_ml.FEATURES_POR_MODELO[nome_modelo])
                 preds_raw = modelos_ml.empacotar_predicoes(
                     test_df["match_id"].tolist(), probs_teste, classes, coluna_alvo=coluna_alvo
                 )

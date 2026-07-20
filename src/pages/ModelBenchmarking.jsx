@@ -1,21 +1,34 @@
 // src/pages/ModelBenchmarking.jsx — rota /model-benchmarking
-// Painel dos 4 modelos do Model Benchmarking (dixon_coles_v1/catboost_v1/
-// xgboost_v1/lightgbm_v1) competindo lado a lado, com o botão que dispara o
-// workflow_dispatch do predict.yml no GitHub Actions (api/model-maintenance
-// ?tarefa=disparar-predicoes). Leitura direta de `predicoes`/`market_odds`
-// (RLS pública) -- só o disparo exige login (Authorization: Bearer do
-// access_token do Supabase Auth, verificado no servidor).
+// Painel dos modelos do Model Benchmarking (dixon_coles_v1 + catboost/
+// xgboost/lightgbm em v1 e v2) competindo lado a lado, com o botão que
+// dispara o workflow_dispatch do predict.yml no GitHub Actions
+// (api/model-maintenance ?tarefa=disparar-predicoes). Leitura direta de
+// `predicoes`/`market_odds` (RLS pública) -- só o disparo exige login
+// (Authorization: Bearer do access_token do Supabase Auth, verificado no
+// servidor).
+//
+// v2 soma força do elenco (rating Elo-like por jogador, ver
+// scripts/dados_historicos.py) às mesmas features de time da v1 --
+// dixon_coles_v1 não tem v2 (modelo Poisson de força de time, não aceita
+// feature de jogador).
 import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
-const MODELOS_BASE = ['dixon_coles_v1', 'catboost_v1', 'xgboost_v1', 'lightgbm_v1'];
+const MODELOS_BASE = [
+  'dixon_coles_v1',
+  'catboost_v1', 'xgboost_v1', 'lightgbm_v1',
+  'catboost_v2', 'xgboost_v2', 'lightgbm_v2',
+];
 const ROTULO_MODELO = {
   dixon_coles_v1: 'Dixon-Coles',
-  catboost_v1: 'CatBoost',
-  xgboost_v1: 'XGBoost',
-  lightgbm_v1: 'LightGBM',
+  catboost_v1: 'CatBoost v1',
+  xgboost_v1: 'XGBoost v1',
+  lightgbm_v1: 'LightGBM v1',
+  catboost_v2: 'CatBoost v2 (+ elenco)',
+  xgboost_v2: 'XGBoost v2 (+ elenco)',
+  lightgbm_v2: 'LightGBM v2 (+ elenco)',
 };
 
 async function buscarPaginado(query) {
@@ -60,7 +73,7 @@ const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
 // Estatísticas dos Modelos, mas lendo o resultado JÁ PERSISTIDO por
 // scripts/backtest_kelly.py (via model_benchmarking_backtest/_liga) em vez
 // de calcular na hora -- o backtest de verdade (grid search + tuning, 2
-// mercados x 4 modelos) é caro demais pra rodar dentro de uma função
+// mercados x 7 modelos) é caro demais pra rodar dentro de uma função
 // serverless, então roda no GitHub Actions (backtest_kelly.yml, disparado
 // por ?tarefa=disparar-backtest) e só o resultado final é lido aqui.
 //
@@ -113,7 +126,7 @@ function BacktestModelBenchmarking({ session }) {
       if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
       setMensagemDisparo({
         tipo: 'ok',
-        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 4 modelos, em 2 mercados (1X2 e Over/Under 2.5) -- é bem mais pesado que as predições diárias, pode levar 30-60 minutos. Volte depois e clique em "Recarregar".',
+        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 7 modelos (v1 e v2), em 2 mercados (1X2 e Over/Under 2.5) -- é bem mais pesado que as predições diárias, pode levar 30-60 minutos. Volte depois e clique em "Recarregar".',
       });
     } catch (e) {
       setMensagemDisparo({ tipo: 'erro', texto: e.message });
@@ -358,7 +371,7 @@ export default function ModelBenchmarking() {
       if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
       setMensagemDisparo({
         tipo: 'ok',
-        texto: 'Disparado! O GitHub Actions roda os 4 modelos em background -- volte aqui em alguns minutos e clique em "Recarregar" pra ver o resultado.',
+        texto: 'Disparado! O GitHub Actions roda os modelos em background -- volte aqui em alguns minutos e clique em "Recarregar" pra ver o resultado.',
       });
     } catch (e) {
       setMensagemDisparo({ tipo: 'erro', texto: e.message });
@@ -373,7 +386,7 @@ export default function ModelBenchmarking() {
         <div>
           <h1 className="text-xl font-bold text-slate-100">Model Benchmarking</h1>
           <p className="text-sm text-slate-500">
-            4 modelos (Dixon-Coles, CatBoost, XGBoost, LightGBM) competindo lado a lado —
+            Dixon-Coles + CatBoost/XGBoost/LightGBM (v1 e v2, v2 soma força do elenco) competindo lado a lado —
             dados gerados de forma assíncrona pelo GitHub Actions (<code>scripts/rodar_predicoes.py</code>).
           </p>
         </div>

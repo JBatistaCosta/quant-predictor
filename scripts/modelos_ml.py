@@ -25,6 +25,7 @@ from xgboost import XGBClassifier
 from dados_historicos import (
     CAT_FEATURES,
     FEATURES,
+    FEATURES_V2,
     RESULTADO_AWAY,
     RESULTADO_DRAW,
     RESULTADO_HOME,
@@ -47,10 +48,30 @@ ROTULOS_SAIDA = {
 # de treino pra escolher profundidade/learning_rate melhores no Validation
 # Set). `n_estimators` do LightGBM fica fixo em 80 (não entra na grade de
 # tuning) -- é a config "leve e rápida" pedida originalmente pro modelo.
+#
+# v2 (parâmetros de jogador, ver dados_historicos.FEATURES_V2) reaproveita
+# os mesmos defaults da v1 como ponto de partida -- ainda não passou por
+# tuning dedicado, `backtest_kelly.py` faz grid search igual pras duas.
 PARAMS_DEFAULT = {
     "catboost_v1": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v1": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v1": {"num_leaves": 15, "learning_rate": 0.1},
+    "catboost_v2": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v2": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v2": {"num_leaves": 15, "learning_rate": 0.1},
+}
+
+# Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
+# v2 usa `FEATURES_V2` (tudo da v1 + força do elenco, ver
+# `dados_historicos.FEATURES_V2`). dixon_coles_v1 não entra aqui (não é um
+# modelo baseado em `TREINADORES`/lista de features -- é Poisson puro).
+FEATURES_POR_MODELO = {
+    "catboost_v1": FEATURES,
+    "xgboost_v1": FEATURES,
+    "lightgbm_v1": FEATURES,
+    "catboost_v2": FEATURES_V2,
+    "xgboost_v2": FEATURES_V2,
+    "lightgbm_v2": FEATURES_V2,
 }
 
 
@@ -85,7 +106,7 @@ def empacotar_predicoes(match_ids, probs: np.ndarray, classes, coluna_alvo: str 
     return resultado
 
 
-def treinar_catboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado"):
+def treinar_catboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado", features: list[str] = FEATURES):
     modelo = CatBoostClassifier(
         loss_function="MultiClass",
         thread_count=2,
@@ -96,17 +117,17 @@ def treinar_catboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "r
         **params,
     )
     treino = preparar_liga_para_catboost(train_df)
-    modelo.fit(treino[FEATURES], treino[coluna_alvo])
+    modelo.fit(treino[features], treino[coluna_alvo])
     return modelo, None
 
 
-def prever_catboost(modelo, _extra, df: pd.DataFrame):
+def prever_catboost(modelo, _extra, df: pd.DataFrame, features: list[str] = FEATURES):
     df = preparar_liga_para_catboost(df)
-    return modelo.predict_proba(df[FEATURES]), modelo.classes_
+    return modelo.predict_proba(df[features]), modelo.classes_
 
 
-def treinar_xgboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado"):
-    treino_encoded = pd.get_dummies(train_df[FEATURES], columns=CAT_FEATURES)
+def treinar_xgboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado", features: list[str] = FEATURES):
+    treino_encoded = pd.get_dummies(train_df[features], columns=CAT_FEATURES)
     modelo = XGBClassifier(
         objective="multi:softprob",
         num_class=train_df[coluna_alvo].nunique(),
@@ -119,15 +140,15 @@ def treinar_xgboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "re
     return modelo, treino_encoded.columns
 
 
-def prever_xgboost(modelo, colunas_treino, df: pd.DataFrame):
+def prever_xgboost(modelo, colunas_treino, df: pd.DataFrame, features: list[str] = FEATURES):
     # garante as mesmas colunas (mesma ordem) vistas no treino -- uma liga
     # do treino ausente na predição, ou uma liga na predição fora do
     # dataset "Feature Stacked", vira coluna de zeros em vez de quebrar
-    encoded = pd.get_dummies(df[FEATURES], columns=CAT_FEATURES).reindex(columns=colunas_treino, fill_value=0)
+    encoded = pd.get_dummies(df[features], columns=CAT_FEATURES).reindex(columns=colunas_treino, fill_value=0)
     return modelo.predict_proba(encoded), modelo.classes_
 
 
-def treinar_lightgbm(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado"):
+def treinar_lightgbm(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado", features: list[str] = FEATURES):
     """Configuração deliberadamente leve/rápida (poucas árvores, folhas
     rasas por padrão) -- é o modelo mais barato dos 3 em custo de CPU no
     runner do GitHub Actions."""
@@ -143,19 +164,26 @@ def treinar_lightgbm(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "r
         verbosity=-1,
         **params,
     )
-    modelo.fit(treino[FEATURES], treino[coluna_alvo], categorical_feature=CAT_FEATURES)
+    modelo.fit(treino[features], treino[coluna_alvo], categorical_feature=CAT_FEATURES)
     return modelo, categorias_liga
 
 
-def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame):
+def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame, features: list[str] = FEATURES):
     df = df.copy()
     df["liga"] = alinhar_categoria_liga(df["liga"], categorias_liga)
-    return modelo.predict_proba(df[FEATURES]), modelo.classes_
+    return modelo.predict_proba(df[features]), modelo.classes_
 
 
-# treinar(params, train_df) -> (modelo, extra) | prever(modelo, extra, df) -> (probs, classes)
+# treinar(params, train_df, coluna_alvo=..., features=...) -> (modelo, extra)
+# | prever(modelo, extra, df, features=...) -> (probs, classes)
+# v2 reaproveita as MESMAS funções de treino/predição da v1 (só a lista de
+# features muda, ver `FEATURES_POR_MODELO` -- passada explicitamente pelo
+# chamador em cada call, não fica implícita no dict).
 TREINADORES = {
     "catboost_v1": (treinar_catboost, prever_catboost),
     "xgboost_v1": (treinar_xgboost, prever_xgboost),
     "lightgbm_v1": (treinar_lightgbm, prever_lightgbm),
+    "catboost_v2": (treinar_catboost, prever_catboost),
+    "xgboost_v2": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v2": (treinar_lightgbm, prever_lightgbm),
 }
