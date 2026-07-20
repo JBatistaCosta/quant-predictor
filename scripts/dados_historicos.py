@@ -192,6 +192,76 @@ def obter_elo_atual(supabase: Client, team_ids: list[int], escopo: str = "liga")
     return {linha["team_id"]: linha["rating"] for linha in (resposta.data or [])}
 
 
+# Quantos jogadores do elenco atual entram na média de força (v2, ver
+# `obter_squad_rating_atual`) -- tamanho aproximado de um elenco de
+# matchday (titulares + banco), pra não diluir o rating do time com
+# reservas que quase não jogam.
+TOP_N_ELENCO_SQUAD_RATING = 18
+
+
+def obter_squad_rating_atual(supabase: Client, team_ids: list[int], top_n: int = TOP_N_ELENCO_SQUAD_RATING) -> dict[int, float]:
+    """Força do ELENCO atual de cada time (v2, feature `squad_rating_home`/
+    `_away`) -- média do rating Elo-like por jogador (`player_ratings`,
+    calculado a partir de `match_player_stats_fotmob`), ponderada por
+    `n_partidas` (proxy de "titular regular" -- jogador com poucas
+    partidas pesa pouco) e limitada aos `top_n` mais usados do elenco
+    (`players.last_team_id`).
+
+    EXCLUI jogadores marcados como lesionados agora (`player_availability_
+    fotmob.injured=true`) do cálculo -- é a única forma honesta de trazer
+    desfalque pra essa feature: não existe histórico de lesão no banco (só
+    o snapshot atual, ver CONTEXTO_PROJETO.md), então esse sinal só pode
+    entrar nas predições AO VIVO (fixtures futuras), nunca no treino/
+    backtest (`_carregar_squad_rating_pre_jogo` já reflete quem jogou de
+    verdade em cada partida histórica -- um jogador lesionado simplesmente
+    não aparece no elenco daquela partida, sem precisar de tratamento
+    especial)."""
+    if not team_ids:
+        return {}
+    ids = [int(t) for t in team_ids]
+
+    jogadores = supabase.table("players").select("id, last_team_id").in_("last_team_id", ids).execute().data or []
+    if not jogadores:
+        return {}
+    player_ids = [j["id"] for j in jogadores]
+    time_por_jogador = {j["id"]: j["last_team_id"] for j in jogadores}
+
+    lesionados: set = set()
+    for lote in _dividir_em_lotes(player_ids):
+        linhas = (
+            supabase.table("player_availability_fotmob")
+            .select("player_id")
+            .in_("player_id", lote)
+            .eq("injured", True)
+            .execute()
+            .data
+            or []
+        )
+        lesionados.update(l["player_id"] for l in linhas)
+
+    ratings: list[dict] = []
+    for lote in _dividir_em_lotes(player_ids):
+        linhas = supabase.table("player_ratings").select("player_id, rating, n_partidas").in_("player_id", lote).execute().data or []
+        ratings.extend(linhas)
+    if not ratings:
+        return {}
+
+    df = pd.DataFrame(ratings)
+    df = df[~df["player_id"].isin(lesionados)]
+    if df.empty:
+        return {}
+    df["team_id"] = df["player_id"].map(time_por_jogador)
+
+    resultado: dict[int, float] = {}
+    for team_id, grupo in df.groupby("team_id"):
+        grupo_top = grupo.sort_values("n_partidas", ascending=False).head(top_n)
+        pesos = grupo_top["n_partidas"]
+        resultado[int(team_id)] = (
+            float(np.average(grupo_top["rating"], weights=pesos)) if pesos.sum() > 0 else float(grupo_top["rating"].mean())
+        )
+    return resultado
+
+
 def _xg_marcado_sofrido(supabase: Client, match_ids: list[int], team_id: int) -> dict[str, float]:
     """xG marcado/sofrido do `team_id` num punhado de partidas (`match_ids`,
     tipicamente os últimos 5 jogos de casa OU de fora de um time só) --
@@ -361,6 +431,67 @@ def _carregar_elo_pre_jogo(supabase: Client, league_ids: list[int]) -> pd.DataFr
     return pd.DataFrame(linhas)
 
 
+def _carregar_squad_rating_pre_jogo(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
+    """Força do ELENCO que efetivamente jogou cada partida histórica (v2,
+    feature `squad_rating_home`/`_away`) -- média do rating Elo-like de
+    cada jogador (`player_rating_history.rating_antes`, valor ANTES
+    daquela partida específica -- mesmo ponto-no-tempo real de
+    `elo_home`/`elo_away`, ver `_carregar_elo_pre_jogo`) ponderada pelos
+    minutos jogados NAQUELA partida (`match_player_stats_fotmob`, que
+    também dá o `team_id` -- `player_rating_history` não guarda time).
+
+    Sem vazamento e sem precisar de tratamento especial pra desfalque: um
+    jogador lesionado/suspenso simplesmente não tem linha em
+    `match_player_stats_fotmob` pra essa partida (não jogou), então não
+    entra na média -- ao contrário da versão AO VIVO (`obter_squad_rating_
+    atual`), que precisa excluir lesionados explicitamente porque usa o
+    elenco atual inteiro, não uma escalação real."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
+
+    def factory_escalacao(lote, inicio, fim):
+        return (
+            supabase.table("match_player_stats_fotmob")
+            .select("match_id, team_id, player_id, minutes_played")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    escalacoes = pd.DataFrame(_paginar_por_lotes_de_id(factory_escalacao, match_ids))
+    if escalacoes.empty:
+        return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
+
+    def factory_ratings(lote, inicio, fim):
+        return (
+            supabase.table("player_rating_history")
+            .select("match_id, player_id, rating_antes")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    ratings = pd.DataFrame(_paginar_por_lotes_de_id(factory_ratings, match_ids))
+    if ratings.empty:
+        return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
+
+    escalacoes = escalacoes.merge(ratings, on=["match_id", "player_id"], how="inner")
+    escalacoes = escalacoes[escalacoes["minutes_played"].fillna(0) > 0]
+    if escalacoes.empty:
+        return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
+
+    def _media_ponderada(grupo: pd.DataFrame) -> float:
+        pesos = grupo["minutes_played"]
+        return float(np.average(grupo["rating_antes"], weights=pesos)) if pesos.sum() > 0 else float(grupo["rating_antes"].mean())
+
+    agregado = (
+        escalacoes.groupby(["match_id", "team_id"])
+        .apply(_media_ponderada, include_groups=False)
+        .reset_index(name="squad_rating_antes")
+    )
+    return agregado
+
+
 def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str]) -> pd.DataFrame:
     """Média móvel pré-jogo (`.shift(1)` antes do `.rolling()` -- sem isso a
     média incluiria o próprio jogo que se está tentando prever, vazamento
@@ -449,6 +580,13 @@ FEATURES_NUMERICAS = [
 CAT_FEATURES = ["liga"]
 FEATURES = FEATURES_NUMERICAS + CAT_FEATURES
 
+# v2 (parâmetros de jogador): tudo da v1 + força do elenco (`squad_rating_
+# home`/`_away`, ver `_carregar_squad_rating_pre_jogo`/`obter_squad_rating_
+# atual`) -- dixon_coles_v1 não ganha v2 (é um modelo Poisson de força de
+# TIME, não aceita feature arbitrária de jogador sem virar outro modelo).
+FEATURES_NUMERICAS_V2 = FEATURES_NUMERICAS + ["squad_rating_home", "squad_rating_away"]
+FEATURES_V2 = FEATURES_NUMERICAS_V2 + CAT_FEATURES
+
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
@@ -462,7 +600,12 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     Features (todas calculadas SEM olhar o resultado do próprio jogo):
     `elo_home`/`elo_away` (rating pré-jogo, `team_elo_history`), forma de
     gols e de xG dos últimos `JANELA_ROLLING_ML` jogos -- SEPARADA por
-    mando (`_home`/`_away`, ver `_forma_por_mando`) -- e `liga` (categórica).
+    mando (`_home`/`_away`, ver `_forma_por_mando`) -- `liga` (categórica),
+    e `squad_rating_home`/`_away` (v2 -- força do elenco que jogou,
+    `_carregar_squad_rating_pre_jogo`). Fica NaN-tolerante igual elo/xG:
+    cobre >99,9% das partidas das 5 ligas de elite (checado direto no
+    banco), mas não é bloqueante -- os modelos de árvore lidam com NaN
+    numérico nativamente, e só os modelos v2 de fato usam essa coluna.
     """
     ligas = obter_ids_ligas(supabase, LIGAS_ELITE_EUROPEIAS)
     if not ligas:
@@ -509,9 +652,20 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
     dataset = dataset.join(forma_gols, on="id")
     dataset = dataset.join(forma_xg, on="id")
+
+    squad_rating = _carregar_squad_rating_pre_jogo(supabase, partidas["id"].astype(int).tolist())
+    if not squad_rating.empty:
+        squad_home = squad_rating.rename(columns={"match_id": "id", "team_id": "home_team_id", "squad_rating_antes": "squad_rating_home"})
+        squad_away = squad_rating.rename(columns={"match_id": "id", "team_id": "away_team_id", "squad_rating_antes": "squad_rating_away"})
+    else:
+        squad_home = pd.DataFrame(columns=["id", "home_team_id", "squad_rating_home"])
+        squad_away = pd.DataFrame(columns=["id", "away_team_id", "squad_rating_away"])
+    dataset = dataset.merge(squad_home[["id", "home_team_id", "squad_rating_home"]], on=["id", "home_team_id"], how="left")
+    dataset = dataset.merge(squad_away[["id", "away_team_id", "squad_rating_away"]], on=["id", "away_team_id"], how="left")
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS, "resultado", "resultado_over25"]]
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V2, "resultado", "resultado_over25"]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM

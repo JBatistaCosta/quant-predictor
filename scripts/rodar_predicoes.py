@@ -7,14 +7,18 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      `api/model-maintenance.js ?tarefa=odds-todas`) -- pega o snapshot mais
      recente por casa/seleção e salva em `market_odds` via UPSERT. Não faz
      chamada de API própria: reaproveita odds reais que já existem.
-  2. Roda 4 modelos de predição 1X2 (dixon_coles_v1, catboost_v1,
-     xgboost_v1, lightgbm_v1) para as mesmas partidas -- cada um treinado
-     com a janela de dado histórico apropriada pra sua família (ver
+  2. Roda os modelos de predição 1X2 (dixon_coles_v1 + catboost/xgboost/
+     lightgbm em v1 e v2) para as mesmas partidas -- cada um treinado com a
+     janela de dado histórico apropriada pra sua família (ver
      `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas + decaimento
-     temporal; os 3 modelos de árvore usam um dataset "Feature Stacked" de
+     temporal; os modelos de árvore usam um dataset "Feature Stacked" de
      5-8 temporadas empilhadas das 5 ligas de elite europeias, com
      features de gols e xG separadas por mando -- ver `dados_historicos.
-     _forma_por_mando`).
+     _forma_por_mando`). A v2 (`modelos_ml.FEATURES_POR_MODELO`) soma força
+     do elenco (rating Elo-like por jogador, `dados_historicos.
+     obter_squad_rating_atual`/`_carregar_squad_rating_pre_jogo`) às
+     mesmas features da v1 -- dixon_coles_v1 não tem v2 (modelo Poisson de
+     força de time, não aceita feature de jogador).
   3. Cada modelo ganha DUAS variantes CALIBRADAS (Platt e Isotonic
      Regression, ajustadas num Validation Set que o modelo base não
      treinou -- ver `calibracao.py`), persistidas ao lado da crua com
@@ -218,7 +222,7 @@ def salvar_odds_mercado(supabase: Client, linhas: list[dict]) -> None:
 
 
 # =============================================================================
-# Passo 2 — Os 4 modelos
+# Passo 2 — Os modelos (dixon_coles_v1 + árvores v1/v2)
 # =============================================================================
 
 # --- Modelo 1: dixon_coles_v1 (Poisson bivariado com correção Dixon-Coles) ---
@@ -381,15 +385,18 @@ def prever_dixon_coles_v1(
 def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.DataFrame:
     """Monta as features dos jogos a prever com dado REAL (elo atual + forma
     recente, separada por mando + xG -- `dados_historicos.
-    obter_forma_recente_por_mando`) pros times de `fixtures`. `liga` já vem
-    de `buscar_fixtures_reais` (nome real de `leagues.name`) -- fixtures de
-    ligas fora do dataset "Feature Stacked" (Brasileirão) ficam com
-    `liga=None` naturalmente (não está em
+    obter_forma_recente_por_mando` -- e força do elenco atual pros modelos
+    v2, `dados_historicos.obter_squad_rating_atual`, que já exclui
+    lesionados/suspensos do cálculo) pros times de `fixtures`. `liga` já
+    vem de `buscar_fixtures_reais` (nome real de `leagues.name`) --
+    fixtures de ligas fora do dataset "Feature Stacked" (Brasileirão) ficam
+    com `liga=None` naturalmente (não está em
     `dados_historicos.LIGAS_ELITE_EUROPEIAS`), tratado como categoria
-    desconhecida pelos 3 modelos de ML."""
+    desconhecida pelos modelos de ML."""
     ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
+    squad_rating_atual = dados_historicos.obter_squad_rating_atual(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
 
     linhas = []
@@ -411,6 +418,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "media_xg_sofrido_5j_home": forma_casa.get("media_xg_sofrido_5j_home"),
                 "media_xg_5j_away": forma_fora.get("media_xg_5j_away"),
                 "media_xg_sofrido_5j_away": forma_fora.get("media_xg_sofrido_5j_away"),
+                "squad_rating_home": squad_rating_atual.get(id_casa, float("nan")),
+                "squad_rating_away": squad_rating_atual.get(id_fora, float("nan")),
                 "liga": jogo["liga"],
             }
         )
@@ -428,6 +437,7 @@ def prever_ml_com_calibracao(
     `(predicoes_cruas, predicoes_calibradas_por_metodo)`."""
     treinar, prever = modelos_ml.TREINADORES[nome_modelo]
     params = modelos_ml.PARAMS_DEFAULT[nome_modelo]
+    features = modelos_ml.FEATURES_POR_MODELO[nome_modelo]
 
     train_df, val_df, _ = dados_historicos.split_cronologico(
         dataset_treino, treino=1 - FRACAO_VALIDACAO_CALIBRACAO, validacao=FRACAO_VALIDACAO_CALIBRACAO, teste=0.0
@@ -435,15 +445,15 @@ def prever_ml_com_calibracao(
 
     calibradores_por_metodo: dict[str, dict] = {metodo: {} for metodo in METODOS_CALIBRACAO}
     if not val_df.empty and not train_df.empty:
-        modelo_val, extra_val = treinar(params, train_df)
-        probs_val, classes_val = prever(modelo_val, extra_val, val_df)
+        modelo_val, extra_val = treinar(params, train_df, features=features)
+        probs_val, classes_val = prever(modelo_val, extra_val, val_df, features=features)
         preds_val = modelos_ml.empacotar_predicoes(val_df["match_id"].tolist(), probs_val, classes_val)
         resultados_val = dict(zip(val_df["match_id"], val_df["resultado"]))
         for metodo in METODOS_CALIBRACAO:
             calibradores_por_metodo[metodo] = calibracao.ajustar_calibracao(preds_val, resultados_val, metodo=metodo)
 
-    modelo_final, extra_final = treinar(params, dataset_treino)
-    probs_fixtures, classes_fixtures = prever(modelo_final, extra_final, features_fixtures)
+    modelo_final, extra_final = treinar(params, dataset_treino, features=features)
+    probs_fixtures, classes_fixtures = prever(modelo_final, extra_final, features_fixtures, features=features)
     predicoes_raw = modelos_ml.empacotar_predicoes(features_fixtures["match_id"].tolist(), probs_fixtures, classes_fixtures)
 
     predicoes_calibradas: dict[str, dict[int, dict[str, float]]] = {}
@@ -567,7 +577,7 @@ def main() -> None:
 
     melhor_odd_por_partida = calcular_melhor_odd_por_partida(supabase, fixtures["match_id"].astype(int).tolist())
 
-    # 2. Rodar os 4 modelos -- cada um isolado por try/except pra uma falha
+    # 2. Rodar os modelos -- cada um isolado por try/except pra uma falha
     # não derrubar os outros 3 (e não deixar a tabela num estado parcial
     # silencioso). Cada modelo grava uma linha crua + uma calibrada
     # (Item 3 -- "modelo extra conjugado").
