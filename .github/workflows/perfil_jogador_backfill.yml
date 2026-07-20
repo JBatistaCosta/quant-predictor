@@ -1,0 +1,56 @@
+name: Perfil avançado de jogador - Backfill (FotMob)
+
+# Roda arquivos_do_claude/ingestao_fotmob_perfil_jogador.py -- popula
+# player_market_value_history/player_career_history_fotmob/
+# player_trophies_fotmob/player_details_fotmob (1 chamada de API POR
+# JOGADOR no endpoint /api/data/playerData, mais caro que os outros
+# scripts FotMob, que gastam 1 chamada por PARTIDA ou por TIME).
+#
+# Só workflow_dispatch, disparado MANUALMENTE em lotes (`limite`) --
+# cobertura real hoje é baixa (174/11.438 jogadores, ~1,5%) e o backfill
+# completo (~11 mil chamadas) nunca foi testado nessa escala a partir do
+# IP compartilhado do runner do GitHub Actions (risco de rate-limit/
+# bloqueio não documentado -- ver CONTEXTO_PROJETO.md). Primeira rodada
+# deve ser um lote pequeno (`limite` baixo, ex.: 300-500) pra confirmar que
+# não há bloqueio antes de rodar o backfill completo em lotes maiores.
+on:
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Processa só os N primeiros jogadores pendentes (vazio = todos -- CUIDADO, ~11 mil chamadas)"
+        required: false
+        type: string
+      forcar:
+        description: "Reprocessa mesmo quem já tem player_details_fotmob"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  backfill-perfil-jogador:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backfill de perfil de jogador
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+          if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          python arquivos_do_claude/ingestao_fotmob_perfil_jogador.py $ARGS
