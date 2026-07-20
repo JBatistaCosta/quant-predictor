@@ -602,42 +602,64 @@ function extrairValorPlayerInfo(tituloAlvo, playerInformation) {
   return {};
 }
 
+// Deduplica por uma chave equivalente à constraint única de destino. O
+// payload do FotMob às vezes repete a mesma linha (torneio listado 2x pro
+// mesmo time, período de valor de mercado duplicado etc.) — um insert/upsert
+// em lote com chave repetida DENTRO do mesmo lote quebra a chamada INTEIRA
+// ("duplicate key value violates unique constraint" no insert simples,
+// "ON CONFLICT DO UPDATE command cannot affect row a second time" no
+// upsert), o que impedia player_details_fotmob de ser gravado no fim da
+// função e deixava o jogador pra sempre como "não importado" — voltando a
+// ser escolhido em todo clique de "Importar em massa" (sempre no topo da
+// fila por valor de mercado, mesmo erro se repetindo pra sempre).
+function dedupPorChave(linhas, chaveFn) {
+  const porChave = new Map();
+  for (const linha of linhas) porChave.set(chaveFn(linha), linha);
+  return [...porChave.values()];
+}
+
 function montarLinhasPerfilJogador(playerId, payload) {
   const agora = new Date().toISOString();
 
-  const valoresMercado = ((payload.marketValues || {}).values || [])
-    .map(v => ({
-      player_id: playerId,
-      value_date: parseDataFotmob(v.date),
-      value_eur: v.value ?? null,
-      lower_bound_eur: v.lowerBound ?? null,
-      upper_bound_eur: v.upperBound ?? null,
-      source: v.source ?? null,
-      team_fotmob_id: v.teamId != null ? String(v.teamId) : null,
-      team_name: v.teamName ?? null,
-      is_period_start: !!v.isPeriodStart,
-      captured_at: agora,
-    }))
-    .filter(v => v.value_date);
+  const valoresMercado = dedupPorChave(
+    ((payload.marketValues || {}).values || [])
+      .map(v => ({
+        player_id: playerId,
+        value_date: parseDataFotmob(v.date),
+        value_eur: v.value ?? null,
+        lower_bound_eur: v.lowerBound ?? null,
+        upper_bound_eur: v.upperBound ?? null,
+        source: v.source ?? null,
+        team_fotmob_id: v.teamId != null ? String(v.teamId) : null,
+        team_name: v.teamName ?? null,
+        is_period_start: !!v.isPeriodStart,
+        captured_at: agora,
+      }))
+      .filter(v => v.value_date),
+    v => `${v.value_date}|${v.team_fotmob_id}`
+  );
 
   const senior = (((payload.careerHistory || {}).careerItems || {}).senior || {});
-  const carreira = (senior.teamEntries || [])
-    .map(t => ({
-      player_id: playerId,
-      team_fotmob_id: t.teamId != null ? String(t.teamId) : null,
-      team_name: t.team ?? null,
-      start_date: parseDataFotmob(t.startDate),
-      end_date: parseDataFotmob(t.endDate),
-      active: !!t.active,
-      transfer_type: (t.transferType || {}).text ?? null,
-      appearances: /^\d+$/.test(String(t.appearances ?? '')) ? parseInt(t.appearances, 10) : null,
-      goals: /^\d+$/.test(String(t.goals ?? '')) ? parseInt(t.goals, 10) : null,
-      assists: /^\d+$/.test(String(t.assists ?? '')) ? parseInt(t.assists, 10) : null,
-      captured_at: agora,
-    }))
-    .filter(t => t.start_date);
+  const carreira = dedupPorChave(
+    (senior.teamEntries || [])
+      .map(t => ({
+        player_id: playerId,
+        team_fotmob_id: t.teamId != null ? String(t.teamId) : null,
+        team_name: t.team ?? null,
+        start_date: parseDataFotmob(t.startDate),
+        end_date: parseDataFotmob(t.endDate),
+        active: !!t.active,
+        transfer_type: (t.transferType || {}).text ?? null,
+        appearances: /^\d+$/.test(String(t.appearances ?? '')) ? parseInt(t.appearances, 10) : null,
+        goals: /^\d+$/.test(String(t.goals ?? '')) ? parseInt(t.goals, 10) : null,
+        assists: /^\d+$/.test(String(t.assists ?? '')) ? parseInt(t.assists, 10) : null,
+        captured_at: agora,
+      }))
+      .filter(t => t.start_date),
+    t => `${t.team_fotmob_id}|${t.start_date}`
+  );
 
-  const titulos = [];
+  const titulosBrutos = [];
   for (const timeTrofeus of (payload.trophies || {}).playerTrophies || []) {
     for (const torneio of timeTrofeus.tournaments || []) {
       const base = {
@@ -649,10 +671,11 @@ function montarLinhasPerfilJogador(playerId, payload) {
         country_code: timeTrofeus.ccode ?? null,
         captured_at: agora,
       };
-      for (const temporada of torneio.seasonsWon || []) titulos.push({ ...base, season: temporada, result: 'won' });
-      for (const temporada of torneio.seasonsRunnerUp || []) titulos.push({ ...base, season: temporada, result: 'runner_up' });
+      for (const temporada of torneio.seasonsWon || []) titulosBrutos.push({ ...base, season: temporada, result: 'won' });
+      for (const temporada of torneio.seasonsRunnerUp || []) titulosBrutos.push({ ...base, season: temporada, result: 'runner_up' });
     }
   }
+  const titulos = dedupPorChave(titulosBrutos, t => `${t.team_fotmob_id}|${t.league_fotmob_id}|${t.season}|${t.result}`);
 
   const playerInformation = payload.playerInformation;
   const altura = extrairValorPlayerInfo('Height', playerInformation).numberValue ?? null;
