@@ -104,6 +104,17 @@
 //                                   (mesmo padrão de backfill-api-football — liga nova não tem
 //                                   ambiguidade de crosswalk entre fontes). temporada no formato
 //                                   do FotMob (ex: "2024" ou "2024/2025", igual ao site).
+//   ?tarefa=partidas-fotmob&liga_id=X&temporada=AAAA[&limite=N]
+//                               -> enriquece partidas JÁ EXISTENTES de uma liga/temporada (que
+//                                   precisa ter crosswalk em liga_fonte_externa, sistema='fotmob')
+//                                   com o detalhe completo do FotMob matchDetails: stats por time,
+//                                   por jogador (+ dimensão players), mapa de chutes com xG/xGOT e
+//                                   coordenadas, e contexto de estádio/clima. Idempotente via
+//                                   match_source_ids (source='fotmob'). Custo alto por partida (1
+//                                   chamada pesada + ~5 escritas) — processa no máximo
+//                                   MAX_PARTIDAS_POR_CHAMADA_FOTMOB (15) por chamada, mesmo que
+//                                   ?limite peça mais; o frontend (/ligas/:id) faz rounds sucessivos
+//                                   pra completar o lote escolhido (20/50/100/200).
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -1572,6 +1583,374 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
   };
 }
 
+// ============================================================
+// TAREFA: partidas-fotmob — enriquece partidas de UMA temporada JÁ
+// EXISTENTES em `matches` (criadas por sync-matches.js/backfill-competicao/
+// tarefaBackfillFotmobLiga) com o detalhe completo do FotMob matchDetails:
+// estatística por time (match_stats_fotmob), por jogador
+// (match_player_stats_fotmob, populando também a dimensão `players`), mapa
+// de chutes com xG/xGOT e coordenadas (match_shots_fotmob) e contexto de
+// estádio/clima (match_context_fotmob). Idempotente via match_source_ids
+// (source='fotmob') — jogo com linha lá já é pulado.
+//
+// Descoberto por inspeção direta do JSON real (matchId de teste na
+// Brasileirão 2026) antes de generalizar, disciplina do resto do projeto:
+// - content.stats.Periods.All.stats é uma lista de GRUPOS (top_stats, shots,
+//   expected_goals, passes, defence, duels, discipline), cada um com uma
+//   lista de sub-stats {key, stats:[home,away]} nessa ORDEM fixa (não
+//   depende do campo `highlighted`). yellow_cards aparece em top_stats
+//   SEMPRE null (campo morto, mesmo bug já visto em jogador-perfil) e de
+//   novo em discipline com o valor real — o flatten processa os grupos em
+//   ordem e deixa o ÚLTIMO valor de cada key vencer, então discipline (que
+//   vem depois) automaticamente sobrescreve o null de top_stats.
+// - Chaves reais divergem do título em vários casos: "Tackles" ->
+//   matchstats.headers.tackles, "Duels won" -> duel_won, "Fouls committed"
+//   -> fouls, "Big chances missed" -> big_chance_missed_title.
+// - playerStats tem formato diferente (stats é OBJETO por título, não
+//   array) — cada entrada tem {key, stat:{value, total, type}}.
+// - Casamento fixture FotMob <-> nosso `matches`: por ID de time via
+//   crosswalk (team_source_ids/resolverOuCriarTimeFotmob, reaproveitado de
+//   tarefaBackfillFotmobLiga) + mesmo dia — muito mais confiável que o
+//   fuzzy-matching por nome usado com a API-Football (sync-match-stats.js),
+//   porque o crosswalk já resolve apelido/abreviação.
+// - Temporada: Brasileirão/Libertadores/MLS usam ano único no FotMob
+//   ("2024", igual ao nosso `matches.season`); testado ao vivo que as 5
+//   ligas europeias (calendário ago-mai) EXIGEM intervalo ("2024/2025" —
+//   "2024" sozinho devolve 0 fixtures) — convertido automaticamente pra
+//   essas ligas via LIGAS_TEMPORADA_PARTIDA_FOTMOB.
+// - Custo por partida é alto (payload de matchDetails ~250KB + ~5 escritas
+//   no banco) — processamento real por chamada é limitado a
+//   MAX_PARTIDAS_POR_CHAMADA (independente do `limite` pedido) pra caber no
+//   maxDuration de 60s do Vercel; o frontend faz rounds sucessivos (mesmo
+//   padrão de resetarERecalcularRating em Jogadores.jsx) até atingir o lote
+//   escolhido ou esgotar os jogos pendentes.
+// ============================================================
+
+const LIGAS_TEMPORADA_PARTIDA_FOTMOB = new Set([4, 7, 10, 13, 16]); // Premier League, La Liga, Serie A, Bundesliga, Ligue 1
+const MAX_PARTIDAS_POR_CHAMADA_FOTMOB = 15;
+
+function temporadaFotmob(ligaId, temporada) {
+  if (!LIGAS_TEMPORADA_PARTIDA_FOTMOB.has(Number(ligaId))) return String(temporada);
+  const ano = parseInt(temporada, 10);
+  return Number.isFinite(ano) ? `${ano}/${ano + 1}` : String(temporada);
+}
+
+function extrairIntValor(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return Math.round(v);
+  const m = String(v).match(/-?\d+(\.\d+)?/);
+  return m ? Math.round(parseFloat(m[0])) : null;
+}
+
+function extrairFloatValor(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return v;
+  const m = String(v).match(/-?\d+(\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+// coluna em match_stats_fotmob -> [chave real no payload, parser]
+const MAPA_STATS_TIME = {
+  possession: ['BallPossesion', extrairFloatValor],
+  xg: ['expected_goals', extrairFloatValor],
+  xg_open_play: ['expected_goals_open_play', extrairFloatValor],
+  xg_set_play: ['expected_goals_set_play', extrairFloatValor],
+  xg_non_penalty: ['expected_goals_non_penalty', extrairFloatValor],
+  xgot: ['expected_goals_on_target', extrairFloatValor],
+  total_shots: ['total_shots', extrairIntValor],
+  shots_on_target: ['ShotsOnTarget', extrairIntValor],
+  shots_off_target: ['ShotsOffTarget', extrairIntValor],
+  shots_blocked: ['blocked_shots', extrairIntValor],
+  shots_inside_box: ['shots_inside_box', extrairIntValor],
+  shots_outside_box: ['shots_outside_box', extrairIntValor],
+  big_chances: ['big_chance', extrairIntValor],
+  big_chances_missed: ['big_chance_missed_title', extrairIntValor],
+  touches_opp_box: ['touches_opp_box', extrairIntValor],
+  accurate_passes: ['accurate_passes', extrairIntValor],
+  accurate_passes_total: ['passes', extrairIntValor],
+  accurate_long_balls: ['long_balls_accurate', extrairIntValor],
+  accurate_crosses: ['accurate_crosses', extrairIntValor],
+  corners: ['corners', extrairIntValor],
+  tackles: ['matchstats.headers.tackles', extrairIntValor],
+  interceptions: ['interceptions', extrairIntValor],
+  blocks: ['shot_blocks', extrairIntValor],
+  clearances: ['clearances', extrairIntValor],
+  keeper_saves: ['keeper_saves', extrairIntValor],
+  duels_won: ['duel_won', extrairIntValor],
+  aerial_duels_won: ['aerials_won', extrairIntValor],
+  successful_dribbles: ['dribbles_succeeded', extrairIntValor],
+  fouls_committed: ['fouls', extrairIntValor],
+  yellow_cards: ['yellow_cards', extrairIntValor],
+  red_cards: ['red_cards', extrairIntValor],
+};
+
+function montarStatsTime(statsPayload) {
+  const grupos = (((statsPayload || {}).Periods || {}).All || {}).stats || [];
+  const porChave = {};
+  for (const grupo of grupos) {
+    for (const s of grupo.stats || []) {
+      if (Array.isArray(s.stats) && s.stats.length === 2) porChave[s.key] = s.stats;
+    }
+  }
+  const linha = (indice) => {
+    const out = {};
+    for (const [coluna, [chave, parser]] of Object.entries(MAPA_STATS_TIME)) {
+      const par = porChave[chave];
+      out[coluna] = par ? parser(par[indice]) : null;
+    }
+    return out;
+  };
+  return { home: linha(0), away: linha(1) };
+}
+
+function montarLinhasStatsTime(matchIdInterno, statsPayload, homeTeamId, awayTeamId) {
+  const { home, away } = montarStatsTime(statsPayload);
+  return [
+    { match_id: matchIdInterno, team_id: homeTeamId, ...home, stats_raw: statsPayload },
+    { match_id: matchIdInterno, team_id: awayTeamId, ...away, stats_raw: statsPayload },
+  ];
+}
+
+// coluna em match_player_stats_fotmob -> [chave real, parser]
+const MAPA_STATS_JOGADOR = {
+  rating: ['rating_title', extrairFloatValor],
+  minutes_played: ['minutes_played', extrairIntValor],
+  goals: ['goals', extrairIntValor],
+  assists: ['assists', extrairIntValor],
+  xg: ['expected_goals', extrairFloatValor],
+  xa: ['expected_assists', extrairFloatValor],
+  xgot: ['expected_goals_on_target_variant', extrairFloatValor],
+  total_shots: ['total_shots', extrairIntValor],
+  accurate_passes: ['accurate_passes', extrairIntValor],
+  chances_created: ['chances_created', extrairIntValor],
+  touches: ['touches', extrairIntValor],
+};
+
+function montarStatsJogador(statsGrupos) {
+  const porChave = {};
+  for (const grupo of statsGrupos || []) {
+    for (const info of Object.values(grupo.stats || {})) {
+      if (info && info.key) porChave[info.key] = info.stat;
+    }
+  }
+  const out = {};
+  for (const [coluna, [chave, parser]] of Object.entries(MAPA_STATS_JOGADOR)) {
+    const stat = porChave[chave];
+    out[coluna] = stat && stat.value != null ? parser(stat.value) : null;
+  }
+  return out;
+}
+
+// Upsert simples da dimensão `players` a partir de quem jogou essa partida —
+// só os campos que o matchDetails realmente traz (nome/time/última partida
+// vista/foto determinística); idade/valor de mercado continuam exclusivos
+// de jogador-perfil (payload diferente, sob demanda). Ids placeholder "0"/
+// "-1" (jogador sem perfil vinculado no FotMob) ficam de fora, mesmo padrão
+// já usado em jogador-perfil e no crosswalk de player.
+async function upsertJogadoresDoJogo(supabase, matchIdInterno, playerStatsPayload, crosswalkTimes) {
+  const linhas = Object.values(playerStatsPayload || {})
+    .filter(p => p.id != null && String(p.id) !== '0' && String(p.id) !== '-1')
+    .map(p => ({
+      fotmob_player_id: String(p.id),
+      name: p.name || null,
+      last_team_id: crosswalkTimes[String(p.teamId)] || null,
+      last_seen_match_id: matchIdInterno,
+      photo_url: `https://images.fotmob.com/image_resources/playerimages/${p.id}.png`,
+      updated_at: new Date().toISOString(),
+    }));
+  if (!linhas.length) return {};
+  const { data, error } = await supabase.from('players').upsert(linhas, { onConflict: 'fotmob_player_id' }).select('id, fotmob_player_id');
+  const mapa = {};
+  if (!error) (data || []).forEach(r => { mapa[r.fotmob_player_id] = r.id; });
+  return mapa;
+}
+
+function montarLinhasPlayerStats(matchIdInterno, playerStatsPayload, crosswalkTimes, mapaPlayerIdInterno) {
+  return Object.values(playerStatsPayload || {}).map(p => ({
+    match_id: matchIdInterno,
+    team_id: crosswalkTimes[String(p.teamId)] || null,
+    fotmob_player_id: String(p.id),
+    player_name: p.name || null,
+    is_goalkeeper: !!p.isGoalkeeper,
+    ...montarStatsJogador(p.stats),
+    player_id: mapaPlayerIdInterno[String(p.id)] || null,
+    stats_raw: p,
+  }));
+}
+
+function montarLinhasShots(matchIdInterno, shotmapPayload, crosswalkTimes, mapaPlayerIdInterno) {
+  const shots = (shotmapPayload || {}).shots || [];
+  return shots.map(s => ({
+    fotmob_shot_id: s.id,
+    match_id: matchIdInterno,
+    team_id: crosswalkTimes[String(s.teamId)] || null,
+    fotmob_player_id: s.playerId != null ? String(s.playerId) : null,
+    player_id: s.playerId != null ? (mapaPlayerIdInterno[String(s.playerId)] || null) : null,
+    player_name: s.playerName || null,
+    minute: s.min ?? null,
+    minute_added: s.minAdded ?? null,
+    x: s.x ?? null,
+    y: s.y ?? null,
+    xg: s.expectedGoals ?? null,
+    xgot: s.expectedGoalsOnTarget ?? null,
+    shot_type: s.shotType || null,
+    situation: s.situation || null,
+    event_type: s.eventType || null,
+    is_on_target: !!s.isOnTarget,
+    is_blocked: !!s.isBlocked,
+    is_own_goal: !!s.isOwnGoal,
+    period: s.period || null,
+  }));
+}
+
+function montarContexto(matchIdInterno, fotmobMatchId, matchFacts, weather) {
+  const infoBox = (matchFacts || {}).infoBox || {};
+  const stadium = infoBox.Stadium || {};
+  return {
+    match_id: matchIdInterno,
+    fotmob_match_id: String(fotmobMatchId),
+    stadium_name: stadium.name || null,
+    stadium_city: stadium.city || null,
+    stadium_country: stadium.country || null,
+    stadium_lat: stadium.lat ?? null,
+    stadium_long: stadium.long ?? null,
+    attendance: infoBox.Attendance ?? null,
+    referee: (infoBox.Referee || {}).text || null,
+    weather_temperature_c: weather?.temperature ?? null,
+    weather_wind_speed: weather?.windSpeed ?? null,
+    weather_wind_direction: weather?.windDirectionCardinal ?? null,
+    weather_humidity: weather?.relativeHumidity ?? null,
+    weather_precipitation: weather?.precipitation ?? null,
+    weather_snow: weather?.snow ?? null,
+    weather_cloud_cover: weather?.cloudCover ?? null,
+    weather_description: weather?.description ?? null,
+    weather_api_used: weather?.apiUsed ?? null,
+    weather_last_updated: weather?.lastUpdated || null,
+    stats_raw: matchFacts,
+    captured_at: new Date().toISOString(),
+  };
+}
+
+async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite }) {
+  if (!ligaId || !temporada) return { error: 'Informe ?liga_id=X (de public.leagues) e ?temporada=AAAA.' };
+  const limiteJogos = Math.min(parseInt(limite, 10) || MAX_PARTIDAS_POR_CHAMADA_FOTMOB, MAX_PARTIDAS_POR_CHAMADA_FOTMOB);
+
+  const { data: ligaRow } = await supabase.from('leagues').select('id, name').eq('id', ligaId).maybeSingle();
+  if (!ligaRow) return { error: 'Liga não encontrada em leagues.' };
+
+  const { data: fonte } = await supabase
+    .from('liga_fonte_externa').select('identificador')
+    .eq('league_id', ligaId).eq('sistema', 'fotmob').maybeSingle();
+  if (!fonte) {
+    return { error: `"${ligaRow.name}" ainda não tem crosswalk FotMob cadastrado (liga_fonte_externa, sistema=fotmob) — importe/vincule a liga via "Importar do FotMob" em /ligas antes de enriquecer partidas.` };
+  }
+  const fotmobLeagueId = fonte.identificador;
+
+  const { data: jogosFinalizados } = await supabase
+    .from('matches')
+    .select('id, match_date, home_team_id, away_team_id')
+    .eq('league_id', ligaId).eq('season', temporada).eq('status', 'finished')
+    .order('match_date', { ascending: true });
+  if (!jogosFinalizados || jogosFinalizados.length === 0) {
+    return { mensagem: 'Nenhum jogo finalizado encontrado pra essa liga/temporada.' };
+  }
+
+  const { data: jaSincronizados } = await supabase
+    .from('match_source_ids').select('match_id').eq('source', 'fotmob')
+    .in('match_id', jogosFinalizados.map(j => j.id));
+  const idsProntos = new Set((jaSincronizados || []).map(r => r.match_id));
+  const pendentes = jogosFinalizados.filter(j => !idsProntos.has(j.id)).slice(0, limiteJogos);
+
+  if (pendentes.length === 0) {
+    return { mensagem: 'Todos os jogos finalizados dessa liga/temporada já têm detalhe FotMob importado.', total_finalizados: jogosFinalizados.length, ja_importados: idsProntos.size };
+  }
+
+  const temporadaFm = temporadaFotmob(ligaId, temporada);
+  const respFixtures = await fetch(`https://www.fotmob.com/api/data/fixtures?id=${fotmobLeagueId}&season=${encodeURIComponent(temporadaFm)}`, { headers: FOTMOB_HEADERS });
+  if (!respFixtures.ok) return { error: `FotMob respondeu ${respFixtures.status} em /fixtures (temporada enviada: "${temporadaFm}").` };
+  const fixtures = await respFixtures.json();
+  if (!Array.isArray(fixtures) || fixtures.length === 0) {
+    return { error: `FotMob não retornou confrontos pra league_id=${fotmobLeagueId}, temporada="${temporadaFm}" — confira o formato da temporada.` };
+  }
+
+  const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
+  const crosswalk = {};
+  (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+
+  // Casa cada fixture do FotMob com nosso jogo por ID DE TIME (via
+  // crosswalk, resolvendo/criando time se necessário) + mesmo dia — muito
+  // mais confiável que fuzzy-matching por nome.
+  const porChaveFixture = new Map();
+  for (const fx of fixtures) {
+    if (!fx.status?.finished) continue;
+    const homeTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.home);
+    const awayTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.away);
+    if (!homeTeamId || !awayTeamId) continue;
+    const dia = fx.status?.utcTime?.slice(0, 10);
+    porChaveFixture.set(`${dia}|${homeTeamId}|${awayTeamId}`, fx.id);
+  }
+
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let processados = 0, sucesso = 0;
+  const semCasamentoOuFalha = [];
+
+  for (const jogo of pendentes) {
+    if (processados > 0) await esperar(700);
+    processados++;
+
+    const dia = jogo.match_date?.slice(0, 10);
+    const fotmobMatchId = porChaveFixture.get(`${dia}|${jogo.home_team_id}|${jogo.away_team_id}`);
+    if (!fotmobMatchId) { semCasamentoOuFalha.push({ match_id: jogo.id, motivo: 'sem_casamento' }); continue; }
+
+    try {
+      const resp = await fetch(`https://www.fotmob.com/api/data/matchDetails?matchId=${fotmobMatchId}`, { headers: FOTMOB_HEADERS });
+      if (!resp.ok) { semCasamentoOuFalha.push({ match_id: jogo.id, motivo: `http_${resp.status}` }); continue; }
+      const payload = await resp.json();
+      const content = payload.content || {};
+
+      await supabase.from('match_stats_fotmob').upsert(
+        montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
+        { onConflict: 'match_id,team_id' }
+      );
+
+      const mapaPlayerIdInterno = await upsertJogadoresDoJogo(supabase, jogo.id, content.playerStats, crosswalk);
+      const linhasJogadores = montarLinhasPlayerStats(jogo.id, content.playerStats, crosswalk, mapaPlayerIdInterno);
+      if (linhasJogadores.length) {
+        await supabase.from('match_player_stats_fotmob').upsert(linhasJogadores, { onConflict: 'match_id,fotmob_player_id' });
+      }
+
+      const linhasShots = montarLinhasShots(jogo.id, content.shotmap, crosswalk, mapaPlayerIdInterno);
+      for (const lote of fatiar(linhasShots, 200)) {
+        await supabase.from('match_shots_fotmob').upsert(lote, { onConflict: 'fotmob_shot_id' });
+      }
+
+      await supabase.from('match_context_fotmob').upsert(
+        montarContexto(jogo.id, fotmobMatchId, content.matchFacts, content.weather),
+        { onConflict: 'match_id' }
+      );
+
+      await supabase.from('match_source_ids').upsert(
+        { match_id: jogo.id, source: 'fotmob', source_id: String(fotmobMatchId), source_name: content.general?.matchName || null },
+        { onConflict: 'match_id,source' }
+      );
+      sucesso++;
+    } catch (erro) {
+      semCasamentoOuFalha.push({ match_id: jogo.id, motivo: erro.message });
+    }
+  }
+
+  return {
+    liga: ligaRow.name, temporada, temporada_fotmob: temporadaFm,
+    total_finalizados: jogosFinalizados.length,
+    ja_importados: idsProntos.size,
+    processados_agora: processados,
+    sucesso,
+    sem_casamento_ou_falha: semCasamentoOuFalha.length ? semCasamentoOuFalha : undefined,
+    restantes: jogosFinalizados.length - idsProntos.size - processados,
+  };
+}
+
 // Dumpa a resposta crua de /teams?id=X pra inspecionar o shape real antes de
 // generalizar o parser (disciplina do projeto: nunca adivinhar formato de API
 // paga/limitada). Não escreve nada no banco.
@@ -1789,6 +2168,12 @@ export default async function handler(req, res) {
       const { fotmob_league_id, nome, pais, confederacao, tipo, simbolo_url } = req.query;
       if (!fotmob_league_id || !temporada) return res.status(400).json({ error: { message: 'tarefa=backfill-fotmob-liga precisa de ?fotmob_league_id=X&temporada=AAAA (formato FotMob, ex: 2024 ou 2024/2025).' } });
       const resultado = await tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId: fotmob_league_id, temporada, nome, pais, confederacao, tipo, simboloUrl: simbolo_url });
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'partidas-fotmob') {
+      const resultado = await tarefaPartidasFotmob(supabase, { ligaId: liga_id, temporada, limite });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }

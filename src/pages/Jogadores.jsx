@@ -22,7 +22,7 @@ const ORDENACOES = [
   { valor: 'age.desc', rotulo: 'Idade (maior)', coluna: 'age', asc: false },
 ];
 
-const LOTES_IMPORTACAO = [20, 50, 100];
+const LOTES_IMPORTACAO = [20, 50, 100, 200];
 const PACING_IMPORTACAO_MS = 1300; // mesmo espaçamento usado nos scripts de backfill, evita bloqueio de IP pelo FotMob
 
 function formatarValorMercado(v) {

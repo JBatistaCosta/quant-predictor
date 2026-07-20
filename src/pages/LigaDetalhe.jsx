@@ -9,11 +9,17 @@
 // na tela de uma vez).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange, UploadCloud, Loader2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
 
 const RODADAS_POR_PAGINA = 4;
+const LOTES_IMPORTACAO_PARTIDAS = [20, 50, 100, 200];
+// Limite seguro por CHAMADA (não por clique) — cada partida gasta 1-2
+// chamadas externas + várias escritas no banco, e o Vercel corta em 60s.
+// O lote escolhido na UI é o alvo total; o loop de rodadas abaixo soma até
+// chegar lá (mesmo padrão de "Resetar/recalcular rating" em Jogadores.jsx).
+const LIMITE_POR_RODADA = { 'api-football': 30, fotmob: 15 };
 
 const RESULTADO_COR = (mandante, gm, gv) => {
   if (gm == null || gv == null) return 'text-slate-500';
@@ -61,6 +67,11 @@ export default function LigaDetalhe() {
   const [carregandoJogos, setCarregandoJogos] = useState(false);
   const [pagina, setPagina] = useState(0);
   const [aba, setAba] = useState('classificacao');
+
+  const [loteImportacao, setLoteImportacao] = useState(LOTES_IMPORTACAO_PARTIDAS[0]);
+  const [importando, setImportando] = useState(null); // 'api-football' | 'fotmob' | null
+  const [msgImportacao, setMsgImportacao] = useState('');
+  const [erroImportacao, setErroImportacao] = useState('');
 
   // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no
   // pipeline — via pipeline_league_id (vínculo direto, preenchido por padrão
@@ -123,6 +134,46 @@ export default function LigaDetalhe() {
       setCarregandoJogos(false);
     })();
   }, [leagueIdPipeline, temporada]);
+
+  // Importa/enriquece as partidas da temporada selecionada em lotes — o
+  // seletor (20/50/100/200) é o ALVO total do clique, mas cada partida gasta
+  // chamada(s) externa(s) pesada(s) + várias escritas no banco, então o
+  // Vercel corta bem antes de chegar em 200 numa chamada só. O loop abaixo
+  // faz rodadas sucessivas (limite seguro por rodada em LIMITE_POR_RODADA)
+  // até acumular o alvo ou a API confirmar que não sobrou mais nada
+  // pendente — mesmo padrão de "Resetar/recalcular rating" em Jogadores.jsx.
+  const importarPartidas = async (fonte) => {
+    if (!leagueIdPipeline || !temporada) return;
+    setImportando(fonte); setMsgImportacao(''); setErroImportacao('');
+    const rodadaLimite = LIMITE_POR_RODADA[fonte];
+    const url = fonte === 'fotmob'
+      ? `/api/model-maintenance?tarefa=partidas-fotmob&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}`
+      : `/api/sync-match-stats?liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}`;
+    try {
+      let totalProcessado = 0;
+      let rodada = 0;
+      const maxRodadas = Math.ceil(loteImportacao / rodadaLimite) + 3; // rede de segurança contra loop preso
+      while (totalProcessado < loteImportacao && rodada < maxRodadas) {
+        rodada++;
+        const resp = await fetch(`${url}&limite=${rodadaLimite}`);
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Falha no lote.');
+        if (dados.mensagem) { setMsgImportacao(dados.mensagem); break; }
+        totalProcessado += dados.processados_agora || 0;
+        setMsgImportacao(
+          `Rodada ${rodada}: ${totalProcessado}/${loteImportacao} processados` +
+          (dados.restantes != null ? ` (restantes na temporada: ${dados.restantes})` : '') +
+          (dados.parado_por_rate_limit ? ' — parado por rate limit, retome depois' : '') + '...'
+        );
+        if (dados.parado_por_rate_limit || !dados.restantes || dados.restantes <= 0 || !dados.processados_agora) break;
+      }
+      setMsgImportacao(`Importação concluída (${fonte === 'fotmob' ? 'FotMob' : 'API-Football'}): ${totalProcessado} jogo(s) processado(s) na temporada ${temporada}.`);
+    } catch (e) {
+      setErroImportacao(e.message);
+    } finally {
+      setImportando(null);
+    }
+  };
 
 // Nome do mês em pt-BR, usado como agrupamento aproximado quando não há rodada
   // real salva (temporadas 2019-2022 das 5 ligas europeias grandes — a
@@ -204,6 +255,44 @@ export default function LigaDetalhe() {
           </select>
         )}
       </div>
+
+      {leagueIdPipeline && temporadas.length > 0 && (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={loteImportacao}
+              onChange={(e) => setLoteImportacao(Number(e.target.value))}
+              disabled={!!importando}
+              className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100"
+            >
+              {LOTES_IMPORTACAO_PARTIDAS.map(n => <option key={n} value={n}>{n}/{n}</option>)}
+            </select>
+            <button
+              onClick={() => importarPartidas('api-football')}
+              disabled={!!importando}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={`Importa/completa chutes, posse, escanteios, faltas, cartões e xG (via API-Football) da temporada ${temporada}`}
+            >
+              {importando === 'api-football' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+              Importar partidas (API-Football)
+            </button>
+            <button
+              onClick={() => importarPartidas('fotmob')}
+              disabled={!!importando}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={`Importa o máximo de detalhe (stats por time/jogador, mapa de chutes, estádio/clima, via FotMob) da temporada ${temporada}`}
+            >
+              {importando === 'fotmob' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+              Importar partidas (FotMob)
+            </button>
+          </div>
+        </div>
+      )}
+      {(msgImportacao || erroImportacao) && (
+        <div className={`text-sm px-4 py-3 rounded-xl mb-4 ${erroImportacao ? 'bg-red-950/30 border border-red-600/40 text-red-300' : 'bg-emerald-950/20 border border-emerald-600/30 text-emerald-300'}`}>
+          {erroImportacao || msgImportacao}
+        </div>
+      )}
 
       {!leagueIdPipeline ? (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center">
