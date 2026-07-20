@@ -115,6 +115,18 @@
 //                                   MAX_PARTIDAS_POR_CHAMADA_FOTMOB (15) por chamada, mesmo que
 //                                   ?limite peça mais; o frontend (/ligas/:id) faz rounds sucessivos
 //                                   pra completar o lote escolhido (20/50/100/200).
+//   ?tarefa=importar-jogos-api-football&liga_id=X&temporada=AAAA
+//   ?tarefa=importar-jogos-fotmob&liga_id=X&temporada=AAAA
+//                               -> CRIAM os próprios jogos (data/placar/times) de uma temporada
+//                                   que ainda não está em `matches`, pra uma liga já cadastrada no
+//                                   pipeline — diferente de partidas-fotmob/sync-match-stats acima,
+//                                   que só enriquecem jogo que já existe. Wrappers finos em cima de
+//                                   tarefaBackfillApiFootball/tarefaBackfillFotmobLiga (resolvem o
+//                                   id externo via liga_fonte_externa a partir do liga_id interno).
+//                                   temporada sempre no formato ÚNICO de matches.season (ex:
+//                                   "2024") — a versão fotmob converte automaticamente pro formato
+//                                   "2024/2025" só na chamada externa, nunca no que é gravado.
+//                                   Sem lote: 1 chamada externa já traz a temporada inteira.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -1495,8 +1507,16 @@ function mapaStatusFotmob(fx) {
 // por fotmob_league_id: rodar de novo (mesma ou outra temporada) reaproveita a
 // liga já criada em vez de duplicar — só faz upsert de partidas (external_id
 // `fm_<id>`).
-async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, nome, pais, confederacao, tipo, simboloUrl }) {
+async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, nome, pais, confederacao, tipo, simboloUrl, temporadaArmazenada }) {
   if (!fotmobLeagueId || !temporada) return { error: 'Informe fotmob_league_id e temporada.' };
+  // temporadaArmazenada: valor gravado em matches.season, quando difere do
+  // formato que a API do FotMob exige (ex: chamador converteu "2024" pro
+  // formato "2024/2025" das ligas europeias só pra bater com a API, mas
+  // matches.season dessa liga precisa continuar no formato único que o
+  // resto do pipeline usa) — ver tarefaImportarJogosFotmob abaixo. Default:
+  // grava exatamente o que foi passado em `temporada` (comportamento
+  // original, usado pelo formulário "+Nova Liga").
+  const temporadaParaGravar = temporadaArmazenada ?? temporada;
 
   const fmIdStr = String(fotmobLeagueId);
   let ligaCriada = false;
@@ -1559,7 +1579,7 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
     linhas.push({
       external_id: `fm_${fx.id}`,
       league_id: leagueId,
-      season: String(temporada),
+      season: String(temporadaParaGravar),
       match_date: fx.status?.utcTime,
       home_team_id: homeTeamId,
       away_team_id: awayTeamId,
@@ -1951,6 +1971,50 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite }) {
   };
 }
 
+// ============================================================
+// TAREFAS: importar-jogos-api-football / importar-jogos-fotmob — criam os
+// PRÓPRIOS jogos (data, placar, times) de uma temporada que ainda não está
+// em `matches`, pra uma liga JÁ cadastrada no pipeline (tem
+// ligas.pipeline_league_id). Diferente de partidas-fotmob/sync-match-stats
+// acima, que só ENRIQUECEM jogos que já existem — essas duas criam. São
+// wrappers finos em cima de tarefaBackfillApiFootball/tarefaBackfillFotmobLiga
+// (que já existiam, chamadas manualmente por curl) só pra aceitar o
+// `liga_id` interno (que o frontend já tem) em vez do id externo (que o
+// frontend não tem sem uma consulta a mais) — resolve o id externo via
+// liga_fonte_externa antes de delegar.
+//
+// Sem paginação/lote: trazer os jogos de uma temporada é uma única chamada
+// externa (a fixture list já vem inteira) + upsert em lotes de 200 já feito
+// dentro de tarefaBackfillApiFootball/tarefaBackfillFotmobLiga — cabe
+// tranquilo no maxDuration de 60s pra uma temporada inteira (~155-560 jogos
+// testados em produção), diferente do enriquecimento por partida acima.
+// ============================================================
+
+async function tarefaImportarJogosApiFootball(supabase, apiKey, ligaId, temporada) {
+  if (!ligaId || !temporada) return { error: 'Informe ?liga_id=X (de public.leagues) e ?temporada=AAAA.' };
+  const { data: fonte } = await supabase
+    .from('liga_fonte_externa').select('identificador')
+    .eq('league_id', ligaId).eq('sistema', 'api_football').maybeSingle();
+  if (!fonte) return { error: `Liga id=${ligaId} ainda não tem crosswalk API-Football cadastrado (liga_fonte_externa, sistema=api_football).` };
+  return tarefaBackfillApiFootball(supabase, apiKey, fonte.identificador, temporada);
+}
+
+async function tarefaImportarJogosFotmob(supabase, ligaId, temporada) {
+  if (!ligaId || !temporada) return { error: 'Informe ?liga_id=X (de public.leagues) e ?temporada=AAAA.' };
+  const { data: fonte } = await supabase
+    .from('liga_fonte_externa').select('identificador')
+    .eq('league_id', ligaId).eq('sistema', 'fotmob').maybeSingle();
+  if (!fonte) return { error: `Liga id=${ligaId} ainda não tem crosswalk FotMob cadastrado (liga_fonte_externa, sistema=fotmob) — use "+Nova Liga > Importar do FotMob" em /ligas se essa liga nunca foi vinculada.` };
+  // temporada aqui é sempre no formato ÚNICO já usado em matches.season
+  // (ex: "2024") — temporadaFotmob() converte só pra chamada externa nas 5
+  // ligas europeias (calendário ago-mai, FotMob exige "2024/2025"), mas o
+  // valor GRAVADO continua no formato único (temporadaArmazenada), pra não
+  // fraturar o agrupamento por temporada que o resto do app já usa pra essa
+  // liga (ver achado em tarefaPartidasFotmob acima).
+  const temporadaApi = temporadaFotmob(ligaId, temporada);
+  return tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId: fonte.identificador, temporada: temporadaApi, temporadaArmazenada: temporada });
+}
+
 // Dumpa a resposta crua de /teams?id=X pra inspecionar o shape real antes de
 // generalizar o parser (disciplina do projeto: nunca adivinhar formato de API
 // paga/limitada). Não escreve nada no banco.
@@ -2174,6 +2238,20 @@ export default async function handler(req, res) {
 
     if (tarefa === 'partidas-fotmob') {
       const resultado = await tarefaPartidasFotmob(supabase, { ligaId: liga_id, temporada, limite });
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'importar-jogos-api-football') {
+      const apiKey = process.env.API_FOOTBALL_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
+      const resultado = await tarefaImportarJogosApiFootball(supabase, apiKey, liga_id, temporada);
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'importar-jogos-fotmob') {
+      const resultado = await tarefaImportarJogosFotmob(supabase, liga_id, temporada);
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
