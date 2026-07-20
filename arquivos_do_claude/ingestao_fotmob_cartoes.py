@@ -47,8 +47,12 @@ import time
 
 import requests
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+# .strip() -- secrets do GitHub Actions colados via copy-paste às vezes
+# carregam um '\n' final, que quebra o parser de URL do httpx com
+# "Invalid non-printable ASCII character in URL" na criação do client
+# (mesmo bug já documentado/corrigido em rodar_predicoes.py).
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
+SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
 
 BASE = "https://www.fotmob.com/api/data"
 HEADERS = {

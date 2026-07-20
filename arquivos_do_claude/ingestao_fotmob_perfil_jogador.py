@@ -62,8 +62,13 @@ import time
 import requests
 from supabase import create_client
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+# .strip() -- secrets do GitHub Actions colados via copy-paste às vezes
+# carregam um '\n' final, que quebra o parser de URL do httpx com
+# "Invalid non-printable ASCII character in URL" na criação do client
+# (mesmo bug já documentado/corrigido em rodar_predicoes.py) -- achado
+# rodando este script via Actions pela 1ª vez (antes só era rodado local).
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
+SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
 
 BASE = "https://www.fotmob.com/api/data"
 HEADERS = {
