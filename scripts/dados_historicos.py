@@ -492,6 +492,77 @@ def _carregar_squad_rating_pre_jogo(supabase: Client, match_ids: list[int]) -> p
     return agregado
 
 
+# Mesmos limiares de `arquivos_do_claude/features_contexto.py` (script que
+# pré-computa `match_features_contexto`) -- reaproveitados aqui pra
+# `obter_fadiga_atual` (v3, predição AO VIVO) bater exatamente com a
+# semântica da versão histórica já persistida.
+DIAS_DESCANSO_PADRAO = 7.0  # estreia do time no histórico -- sem jogo anterior pra calcular descanso
+LIMIAR_MIDWEEK_HORAS = 72  # < 3 dias de descanso = jogo "no meio de semana" (turnaround apertado)
+
+
+def _carregar_fadiga_pre_jogo(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
+    """Descanso pré-jogo (v3, features `days_since_last_match_home`/`_away`
+    + `is_midweek_fatigue_home`/`_away`) -- já PRÉ-COMPUTADO por
+    `arquivos_do_claude/features_contexto.py` em `match_features_contexto`
+    (100% de cobertura nas 5 ligas de elite dos últimos 6 anos, checado
+    direto no banco antes de usar), então aqui é só leitura + pivot por
+    (match_id, team_id) -- sem recálculo, sem risco de divergir da
+    semântica original (dias desde o último jogo do time em QUALQUER
+    competição presente no banco, `is_midweek_fatigue`=1 quando < 72h)."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "team_id", "days_since_last_match", "is_midweek_fatigue"])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_features_contexto")
+            .select("match_id, team_id, days_since_last_match, is_midweek_fatigue")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    return pd.DataFrame(linhas) if linhas else pd.DataFrame(columns=["match_id", "team_id", "days_since_last_match", "is_midweek_fatigue"])
+
+
+def obter_fadiga_atual(supabase: Client, team_ids: list[int]) -> dict[int, pd.Timestamp]:
+    """Data do último jogo TERMINADO de cada time (qualquer competição
+    presente no banco, casa ou fora) -- base pra calcular o descanso de uma
+    fixture futura (`fixture.match_date - obter_fadiga_atual()[team_id]`,
+    ver `montar_features_fixtures`). Ao contrário de `obter_elo_atual`, não
+    devolve um valor "atual" pronto: cada fixture tem sua própria data de
+    referência, então o cálculo do delta fica pro chamador -- só a data do
+    último jogo é reaproveitável entre fixtures do mesmo time."""
+    ultimo_jogo: dict[int, pd.Timestamp] = {}
+    for team_id in team_ids:
+        jogos_casa = (
+            supabase.table("matches")
+            .select("match_date")
+            .eq("status", "finished")
+            .eq("home_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        jogos_fora = (
+            supabase.table("matches")
+            .select("match_date")
+            .eq("status", "finished")
+            .eq("away_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        candidatos = [pd.to_datetime(j["match_date"], utc=True) for j in (jogos_casa + jogos_fora)]
+        if candidatos:
+            ultimo_jogo[int(team_id)] = max(candidatos)
+    return ultimo_jogo
+
+
 def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str]) -> pd.DataFrame:
     """Média móvel pré-jogo (`.shift(1)` antes do `.rolling()` -- sem isso a
     média incluiria o próprio jogo que se está tentando prever, vazamento
@@ -587,6 +658,18 @@ FEATURES = FEATURES_NUMERICAS + CAT_FEATURES
 FEATURES_NUMERICAS_V2 = FEATURES_NUMERICAS + ["squad_rating_home", "squad_rating_away"]
 FEATURES_V2 = FEATURES_NUMERICAS_V2 + CAT_FEATURES
 
+# v3 (parâmetros de fadiga): tudo da v2 + descanso pré-jogo (dias desde o
+# último jogo + flag de turnaround apertado, ver `_carregar_fadiga_pre_
+# jogo`/`obter_fadiga_atual`) -- mesma razão de dixon_coles_v1 ficar de
+# fora da v2 vale aqui.
+FEATURES_NUMERICAS_V3 = FEATURES_NUMERICAS_V2 + [
+    "days_since_last_match_home",
+    "days_since_last_match_away",
+    "is_midweek_fatigue_home",
+    "is_midweek_fatigue_away",
+]
+FEATURES_V3 = FEATURES_NUMERICAS_V3 + CAT_FEATURES
+
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
@@ -663,9 +746,28 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.merge(squad_home[["id", "home_team_id", "squad_rating_home"]], on=["id", "home_team_id"], how="left")
     dataset = dataset.merge(squad_away[["id", "away_team_id", "squad_rating_away"]], on=["id", "away_team_id"], how="left")
 
+    fadiga = _carregar_fadiga_pre_jogo(supabase, partidas["id"].astype(int).tolist())
+    colunas_fadiga = ["days_since_last_match", "is_midweek_fatigue"]
+    if not fadiga.empty:
+        fadiga_home = fadiga.rename(columns={"match_id": "id", "team_id": "home_team_id"}).rename(
+            columns={c: f"{c}_home" for c in colunas_fadiga}
+        )
+        fadiga_away = fadiga.rename(columns={"match_id": "id", "team_id": "away_team_id"}).rename(
+            columns={c: f"{c}_away" for c in colunas_fadiga}
+        )
+    else:
+        fadiga_home = pd.DataFrame(columns=["id", "home_team_id", *[f"{c}_home" for c in colunas_fadiga]])
+        fadiga_away = pd.DataFrame(columns=["id", "away_team_id", *[f"{c}_away" for c in colunas_fadiga]])
+    dataset = dataset.merge(
+        fadiga_home[["id", "home_team_id", *[f"{c}_home" for c in colunas_fadiga]]], on=["id", "home_team_id"], how="left"
+    )
+    dataset = dataset.merge(
+        fadiga_away[["id", "away_team_id", *[f"{c}_away" for c in colunas_fadiga]]], on=["id", "away_team_id"], how="left"
+    )
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V2, "resultado", "resultado_over25"]]
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3, "resultado", "resultado_over25"]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM

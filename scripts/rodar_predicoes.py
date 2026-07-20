@@ -397,6 +397,7 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
     squad_rating_atual = dados_historicos.obter_squad_rating_atual(supabase, ids_conhecidos)
+    ultimo_jogo_por_time = dados_historicos.obter_fadiga_atual(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
 
     linhas = []
@@ -405,6 +406,9 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         id_fora = jogo["away_team_id"]
         forma_casa = forma_recente.get(id_casa, forma_padrao)
         forma_fora = forma_recente.get(id_fora, forma_padrao)
+        data_jogo = pd.to_datetime(jogo["match_date"], utc=True)
+        dias_casa, midweek_casa = _fadiga_da_fixture(data_jogo, ultimo_jogo_por_time.get(id_casa))
+        dias_fora, midweek_fora = _fadiga_da_fixture(data_jogo, ultimo_jogo_por_time.get(id_fora))
         linhas.append(
             {
                 "match_id": jogo["match_id"],
@@ -420,10 +424,26 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "media_xg_sofrido_5j_away": forma_fora.get("media_xg_sofrido_5j_away"),
                 "squad_rating_home": squad_rating_atual.get(id_casa, float("nan")),
                 "squad_rating_away": squad_rating_atual.get(id_fora, float("nan")),
+                "days_since_last_match_home": dias_casa,
+                "days_since_last_match_away": dias_fora,
+                "is_midweek_fatigue_home": midweek_casa,
+                "is_midweek_fatigue_away": midweek_fora,
                 "liga": jogo["liga"],
             }
         )
     return pd.DataFrame(linhas)
+
+
+def _fadiga_da_fixture(data_jogo: pd.Timestamp, data_ultimo_jogo: pd.Timestamp | None) -> tuple[float, int]:
+    """Descanso (dias) e flag de turnaround apertado (<72h) pra uma fixture
+    específica -- mesmos limiares de `arquivos_do_claude/features_contexto.
+    py` (`dados_historicos.DIAS_DESCANSO_PADRAO`/`LIMIAR_MIDWEEK_HORAS`).
+    Sem jogo anterior no histórico (estreia do time) cai no mesmo fallback
+    da versão histórica: `DIAS_DESCANSO_PADRAO` dias, sem fadiga."""
+    if data_ultimo_jogo is None:
+        return dados_historicos.DIAS_DESCANSO_PADRAO, 0
+    horas = (data_jogo - data_ultimo_jogo).total_seconds() / 3600
+    return round(horas / 24, 2), (1 if horas < dados_historicos.LIMIAR_MIDWEEK_HORAS else 0)
 
 
 def prever_ml_com_calibracao(

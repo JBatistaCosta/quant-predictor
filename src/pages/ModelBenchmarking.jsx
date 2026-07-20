@@ -1,6 +1,6 @@
 // src/pages/ModelBenchmarking.jsx — rota /model-benchmarking
 // Painel dos modelos do Model Benchmarking (dixon_coles_v1 + catboost/
-// xgboost/lightgbm em v1 e v2) competindo lado a lado, com o botão que
+// xgboost/lightgbm em v1, v2 e v3) competindo lado a lado, com o botão que
 // dispara o workflow_dispatch do predict.yml no GitHub Actions
 // (api/model-maintenance ?tarefa=disparar-predicoes). Leitura direta de
 // `predicoes`/`market_odds` (RLS pública) -- só o disparo exige login
@@ -8,9 +8,10 @@
 // servidor).
 //
 // v2 soma força do elenco (rating Elo-like por jogador, ver
-// scripts/dados_historicos.py) às mesmas features de time da v1 --
-// dixon_coles_v1 não tem v2 (modelo Poisson de força de time, não aceita
-// feature de jogador).
+// scripts/dados_historicos.py) às mesmas features de time da v1; v3 soma
+// descanso pré-jogo/fadiga (dias desde o último jogo + turnaround
+// apertado) à v2 -- dixon_coles_v1 não tem v2/v3 (modelo Poisson de força
+// de time, não aceita feature de jogador/fadiga).
 import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
@@ -20,6 +21,7 @@ const MODELOS_BASE = [
   'dixon_coles_v1',
   'catboost_v1', 'xgboost_v1', 'lightgbm_v1',
   'catboost_v2', 'xgboost_v2', 'lightgbm_v2',
+  'catboost_v3', 'xgboost_v3', 'lightgbm_v3',
 ];
 const ROTULO_MODELO = {
   dixon_coles_v1: 'Dixon-Coles',
@@ -29,6 +31,9 @@ const ROTULO_MODELO = {
   catboost_v2: 'CatBoost v2 (+ elenco)',
   xgboost_v2: 'XGBoost v2 (+ elenco)',
   lightgbm_v2: 'LightGBM v2 (+ elenco)',
+  catboost_v3: 'CatBoost v3 (+ fadiga)',
+  xgboost_v3: 'XGBoost v3 (+ fadiga)',
+  lightgbm_v3: 'LightGBM v3 (+ fadiga)',
 };
 
 async function buscarPaginado(query) {
@@ -73,7 +78,7 @@ const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
 // Estatísticas dos Modelos, mas lendo o resultado JÁ PERSISTIDO por
 // scripts/backtest_kelly.py (via model_benchmarking_backtest/_liga) em vez
 // de calcular na hora -- o backtest de verdade (grid search + tuning, 2
-// mercados x 7 modelos) é caro demais pra rodar dentro de uma função
+// mercados x 10 modelos) é caro demais pra rodar dentro de uma função
 // serverless, então roda no GitHub Actions (backtest_kelly.yml, disparado
 // por ?tarefa=disparar-backtest) e só o resultado final é lido aqui.
 //
@@ -126,7 +131,7 @@ function BacktestModelBenchmarking({ session }) {
       if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
       setMensagemDisparo({
         tipo: 'ok',
-        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 7 modelos (v1 e v2), em 2 mercados (1X2 e Over/Under 2.5) -- é bem mais pesado que as predições diárias, pode levar 30-60 minutos. Volte depois e clique em "Recarregar".',
+        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 10 modelos (v1, v2 e v3), em 2 mercados (1X2 e Over/Under 2.5) -- é bem mais pesado que as predições diárias, pode levar 30-60 minutos. Volte depois e clique em "Recarregar".',
       });
     } catch (e) {
       setMensagemDisparo({ tipo: 'erro', texto: e.message });
