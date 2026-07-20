@@ -563,6 +563,395 @@ def obter_fadiga_atual(supabase: Client, team_ids: list[int]) -> dict[int, pd.Ti
     return ultimo_jogo
 
 
+# =============================================================================
+# v4 (parâmetro de disciplina): risco de suspensão por acúmulo de cartões
+# amarelos -- `match_events` (gap confirmado antes de implementar: existia
+# desde o schema original mas tinha 0 linhas), populada via
+# `arquivos_do_claude/ingestao_fotmob_cartoes.py` (MESMO payload matchDetails
+# já usado pro resto do pipeline FotMob, `content.matchFacts.events.events`,
+# confirmado por inspeção direta da resposta real da API antes de desenhar o
+# schema -- não adivinhado).
+# =============================================================================
+# Regra de "quantos cartões amarelos viram suspensão por acúmulo" -- varia
+# por competição de verdade, PESQUISADA uma a uma (não adivinhada):
+#   - Premier League: FA -- 5 cautions nos primeiros 19 jogos = 1 jogo de
+#     suspensão; 10 até o 32º jogo = 2 jogos; 15 na temporada = 3 jogos.
+#     Como 5/10/15 é uma progressão aritmética de passo 5, um modelo de
+#     "reset a cada 5" (limiar constante) produz o MESMO sinal de "faltam
+#     quantos cartões pro próximo limiar" que a regra real (cumulativa, sem
+#     reset) -- simplificação exata, não aproximada, pra evitar modelar o
+#     corte por Nº de jogos (19/32) que não muda esse resultado.
+#   - La Liga: RFEF -- 5 amarelos na mesma temporada/competição = 1 jogo;
+#     zera e reinicia um novo ciclo idêntico depois de cumprida.
+#   - Bundesliga: DFB -- toda 5ª amarela (cumulativa, mesmo espírito de
+#     progressão aritmética de passo 5 do caso inglês) = 1 jogo de "Gelbsperre".
+#   - Ligue 1: regra NOVA da LFP pra 2025/26 em diante -- 5 amarelos na
+#     temporada = 1 jogo (substituiu a regra anterior de "3 amarelos numa
+#     janela móvel de 10 jogos"). Aplicamos a regra atual (limiar 5) pra
+#     toda a janela de treino -- simplificação aceita, mesmo espírito do
+#     `XI_DECAIMENTO` (nunca recalibrado por temporada): não vale a
+#     complexidade de reimplementar uma janela móvel histórica só pra
+#     temporadas anteriores a 2025/26 numa feature heurística de ML.
+#   - Serie A (Itália): FIGC -- 1º ciclo em 5 amarelos; reincidência com
+#     limiar decrescente (5, 4, 3, 2, 1, e a partir daí sempre 1) --
+#     sistema de "diffida"/squalifica progressiva, mais granular que as
+#     outras 4 ligas.
+#   - Brasileirão: CBF -- 3 amarelos em jogos DIFERENTES = 1 jogo; zera e
+#     reinicia (mesmo espírito de La Liga/Bundesliga, só que limiar 3 em
+#     vez de 5). Fora do dataset "Feature Stacked" (só ligas europeias),
+#     mas usado pela predição AO VIVO (`rodar_predicoes.py` cobre as 6
+#     ligas, Brasileirão incluso).
+# Cada valor é um int (limiar constante, todo ciclo de reincidência usa o
+# mesmo número) ou uma lista de int (limiar por ciclo, índice = nº de
+# suspensões já cumpridas NA TEMPORADA, clampado no último valor da lista
+# pra ciclos além do que foi pesquisado).
+CARTAO_LIMIAR_POR_LIGA: dict[str, int | list[int]] = {
+    "Premier League": 5,
+    "La Liga": 5,
+    "Serie A (Itália)": [5, 5, 4, 3, 2, 1],
+    "Bundesliga": 5,
+    "Ligue 1": 5,
+    "Brasileirão Série A": 3,
+}
+LIMIAR_CARTAO_PADRAO = 5  # fallback pra liga fora do dict acima (não pesquisada)
+
+# Tamanho do elenco considerado "titulares prováveis" pro cálculo AO VIVO
+# (fixture futura, sem escalação real ainda) -- mesmo padrão de
+# `TOP_N_ELENCO_SQUAD_RATING`.
+TOP_N_ELENCO_CARTOES = TOP_N_ELENCO_SQUAD_RATING
+
+# Tipos de evento que contam pro acúmulo de amarelos -- cartão vermelho
+# DIRETO não entra (nenhuma das 6 competições pesquisadas conta reds
+# diretos pro limiar de suspensão por cartões, só amarelos -- incluindo o
+# segundo amarelo de uma expulsão por 2 cartões, que É um amarelo de
+# verdade emitido pelo árbitro).
+TIPOS_EVENTO_CARTAO_AMARELO = ("yellow_card", "second_yellow_card")
+
+
+def _limiar_do_ciclo(regra: int | list[int], n_suspensoes_cumpridas: int) -> int:
+    """Limiar de cartões do ciclo de reincidência atual -- `regra` é um int
+    (mesmo limiar sempre) ou uma lista (limiar por ciclo, ver
+    `CARTAO_LIMIAR_POR_LIGA`, caso da Serie A)."""
+    if isinstance(regra, int):
+        return regra
+    indice = min(n_suspensoes_cumpridas, len(regra) - 1)
+    return regra[indice]
+
+
+def _estado_apos_cada_cartao(datas_ordenadas: list, regra: int | list[int]) -> list[tuple]:
+    """Aplica a regra de reset da liga a uma sequência ORDENADA (por data)
+    de cartões amarelos de UM jogador numa liga+temporada, devolvendo o
+    estado (cartoes_no_ciclo, n_suspensoes) IMEDIATAMENTE APÓS cada cartão
+    -- usado depois via `merge_asof` pra achar o estado ANTES de cada
+    partida subsequente do jogador (nunca vaza o cartão do PRÓPRIO jogo que
+    se está tentando prever: só cartões de partidas ANTERIORES contam)."""
+    estados = []
+    cartoes_no_ciclo, n_suspensoes = 0, 0
+    for _ in datas_ordenadas:
+        cartoes_no_ciclo += 1
+        limiar_atual = _limiar_do_ciclo(regra, n_suspensoes)
+        if cartoes_no_ciclo >= limiar_atual:
+            cartoes_no_ciclo = 0
+            n_suspensoes += 1
+        estados.append((cartoes_no_ciclo, n_suspensoes))
+    return estados
+
+
+def _historico_cartoes_por_jogador(supabase: Client, match_ids: list[int], partidas_meta: pd.DataFrame) -> pd.DataFrame:
+    """Eventos de cartão amarelo (`match_events`) dos `match_ids` informados,
+    já com (league_id, season, match_date) anexados via `partidas_meta`
+    (colunas `id`/`league_id`/`season`/`match_date`) -- base compartilhada
+    por `_carregar_cartoes_pre_jogo` (treino) e por quem quiser reconstruir
+    o histórico completo de um jogador."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "player_id", "match_date", "league_id", "season"])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_events")
+            .select("match_id, player_id, event_type")
+            .in_("match_id", lote)
+            .in_("event_type", list(TIPOS_EVENTO_CARTAO_AMARELO))
+            .eq("source", "fotmob")
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    eventos = pd.DataFrame(_paginar_por_lotes_de_id(factory, match_ids))
+    if eventos.empty or "player_id" not in eventos.columns:
+        return pd.DataFrame(columns=["match_id", "player_id", "match_date", "league_id", "season"])
+    eventos = eventos[eventos["player_id"].notna()].copy()
+    eventos["player_id"] = eventos["player_id"].astype(int)
+
+    eventos = eventos.merge(
+        partidas_meta[["id", "league_id", "season", "match_date"]].rename(columns={"id": "match_id"}),
+        on="match_id",
+        how="inner",
+    )
+    return eventos
+
+
+def _carregar_cartoes_pre_jogo(
+    supabase: Client, partidas: pd.DataFrame, nome_da_liga: dict[int, str]
+) -> pd.DataFrame:
+    """Risco de suspensão por acúmulo de cartões amarelos ANTES de cada
+    partida (v4, features `jogadores_pendurados_home`/`_away` +
+    `cartoes_acumulados_home`/`_away`) -- ponto-no-tempo real: só conta
+    cartão de partida ANTERIOR (mesma liga+temporada, ordem cronológica),
+    aplicando a regra de reset/limiar específica da liga
+    (`CARTAO_LIMIAR_POR_LIGA`). Calculado sobre o elenco que REALMENTE jogou
+    cada partida (`match_player_stats_fotmob`, mesmo padrão de
+    `_carregar_squad_rating_pre_jogo`) -- um jogador suspenso simplesmente
+    não aparece na escalação daquela partida, sem precisar de tratamento
+    especial (mesma lógica já validada pro rating de elenco v2)."""
+    colunas_saida = ["match_id", "team_id", "cartoes_acumulados_antes", "jogadores_pendurados_antes"]
+    if partidas.empty:
+        return pd.DataFrame(columns=colunas_saida)
+
+    match_ids = partidas["id"].astype(int).tolist()
+    partidas_meta = partidas[["id", "league_id", "season", "match_date"]]
+
+    def factory_escalacao(lote, inicio, fim):
+        return (
+            supabase.table("match_player_stats_fotmob")
+            .select("match_id, team_id, player_id, minutes_played")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    escalacoes = pd.DataFrame(_paginar_por_lotes_de_id(factory_escalacao, match_ids))
+    escalacoes = escalacoes[escalacoes["player_id"].notna()] if not escalacoes.empty else escalacoes
+    if escalacoes.empty:
+        return pd.DataFrame(columns=colunas_saida)
+    escalacoes = escalacoes[escalacoes["minutes_played"].fillna(0) > 0].copy()
+    escalacoes["player_id"] = escalacoes["player_id"].astype(int)
+    escalacoes = escalacoes.merge(partidas_meta.rename(columns={"id": "match_id"}), on="match_id", how="inner")
+
+    eventos = _historico_cartoes_por_jogador(supabase, match_ids, partidas_meta)
+    if eventos.empty:
+        escalacoes["cartoes_no_ciclo_antes"] = 0
+        escalacoes["n_suspensoes_antes"] = 0
+    else:
+        # Estado (cartoes_no_ciclo, n_suspensoes) IMEDIATAMENTE APÓS cada
+        # cartão, por (jogador, liga, temporada) -- aplica a regra de reset
+        # específica da liga em ordem cronológica.
+        eventos = eventos.sort_values("match_date")
+        estados_por_grupo = []
+        for (_player_id, _league_id, _season), grupo in eventos.groupby(["player_id", "league_id", "season"]):
+            regra = CARTAO_LIMIAR_POR_LIGA.get(nome_da_liga.get(_league_id), LIMIAR_CARTAO_PADRAO)
+            estados = _estado_apos_cada_cartao(grupo["match_date"].tolist(), regra)
+            grupo = grupo.copy()
+            grupo["cartoes_no_ciclo"] = [e[0] for e in estados]
+            grupo["n_suspensoes"] = [e[1] for e in estados]
+            estados_por_grupo.append(grupo)
+        eventos_com_estado = pd.concat(estados_por_grupo, ignore_index=True).sort_values("match_date")
+
+        # `merge_asof` pra achar, pra cada (jogador, partida a prever), o
+        # estado do cartão mais recente ANTES da data daquela partida --
+        # `allow_exact_matches=False` garante que o cartão da PRÓPRIA
+        # partida (mesma data) nunca entra no "antes" (sem vazamento).
+        escalacoes_ordenadas = escalacoes.sort_values("match_date")
+        combinado = pd.merge_asof(
+            escalacoes_ordenadas,
+            eventos_com_estado[["player_id", "league_id", "season", "match_date", "cartoes_no_ciclo", "n_suspensoes"]].sort_values(
+                "match_date"
+            ),
+            on="match_date",
+            by=["player_id", "league_id", "season"],
+            direction="backward",
+            allow_exact_matches=False,
+        )
+        combinado["cartoes_no_ciclo_antes"] = combinado["cartoes_no_ciclo"].fillna(0).astype(int)
+        combinado["n_suspensoes_antes"] = combinado["n_suspensoes"].fillna(0).astype(int)
+        escalacoes = combinado
+
+    escalacoes["limiar_atual"] = escalacoes.apply(
+        lambda linha: _limiar_do_ciclo(
+            CARTAO_LIMIAR_POR_LIGA.get(nome_da_liga.get(linha["league_id"]), LIMIAR_CARTAO_PADRAO), linha["n_suspensoes_antes"]
+        ),
+        axis=1,
+    )
+    escalacoes["pendurado"] = escalacoes["cartoes_no_ciclo_antes"] == (escalacoes["limiar_atual"] - 1)
+
+    agregado = (
+        escalacoes.groupby(["match_id", "team_id"])
+        .agg(cartoes_acumulados_antes=("cartoes_no_ciclo_antes", "sum"), jogadores_pendurados_antes=("pendurado", "sum"))
+        .reset_index()
+    )
+    agregado["jogadores_pendurados_antes"] = agregado["jogadores_pendurados_antes"].astype(int)
+    return agregado
+
+
+def obter_cartoes_atuais(supabase: Client, team_ids: list[int], nome_da_liga: dict[int, str], league_id_por_time: dict[int, int]) -> dict[int, dict[str, float]]:
+    """Versão AO VIVO (v4) de `_carregar_cartoes_pre_jogo` -- calcula o
+    acúmulo de cartões ATUAL (temporada corrente) do elenco REGULAR de cada
+    time (`players.last_team_id` + `TOP_N_ELENCO_CARTOES` mais usados,
+    mesmo padrão de `obter_squad_rating_atual`), já que uma fixture futura
+    não tem escalação real ainda. `league_id_por_time` resolve em que liga
+    (pra escolher a regra certa em `CARTAO_LIMIAR_POR_LIGA`) cada time
+    disputa a temporada atual -- normalmente a liga da própria fixture."""
+    if not team_ids:
+        return {}
+    ids = [int(t) for t in team_ids]
+
+    jogadores = supabase.table("players").select("id, last_team_id").in_("last_team_id", ids).execute().data or []
+    if not jogadores:
+        return {}
+    player_ids = [j["id"] for j in jogadores]
+    time_por_jogador = {j["id"]: j["last_team_id"] for j in jogadores}
+
+    # Elenco regular = top N por minutos recentes -- reaproveita
+    # `player_ratings.n_partidas` (proxy de "titular regular" já usado por
+    # `obter_squad_rating_atual`) só pra RECORTAR o elenco, não pro cálculo
+    # de cartão em si.
+    ratings: list[dict] = []
+    for lote in _dividir_em_lotes(player_ids):
+        linhas = supabase.table("player_ratings").select("player_id, n_partidas").in_("player_id", lote).execute().data or []
+        ratings.extend(linhas)
+    df_regulares = pd.DataFrame(ratings) if ratings else pd.DataFrame(columns=["player_id", "n_partidas"])
+    df_regulares["team_id"] = df_regulares["player_id"].map(time_por_jogador)
+
+    elenco_regular: dict[int, list[int]] = {}
+    for team_id, grupo in df_regulares.groupby("team_id"):
+        elenco_regular[int(team_id)] = grupo.sort_values("n_partidas", ascending=False).head(TOP_N_ELENCO_CARTOES)["player_id"].tolist()
+    # Times sem `player_ratings` (nunca processados pelo Elo de jogador) --
+    # cai pro elenco inteiro conhecido em `players` como fallback, ainda
+    # melhor que ficar sem nenhum jogador.
+    for team_id in ids:
+        if team_id not in elenco_regular:
+            elenco_regular[team_id] = [j["id"] for j in jogadores if j["last_team_id"] == team_id][:TOP_N_ELENCO_CARTOES]
+
+    todos_ids_regulares = sorted({pid for lst in elenco_regular.values() for pid in lst})
+    if not todos_ids_regulares:
+        return {}
+
+    # Temporada corrente por liga -- maior valor de `season` já visto em
+    # `matches` daquela liga (mesma ideia de "temporada atual" usada em
+    # outras partes do pipeline, sem depender de um relógio de calendário
+    # esportivo específico por competição).
+    temporada_atual_por_liga: dict[int, str] = {}
+    for league_id in set(league_id_por_time.values()):
+        resp = (
+            supabase.table("matches").select("season").eq("league_id", league_id).order("season", desc=True).limit(1).execute().data
+        )
+        if resp:
+            temporada_atual_por_liga[league_id] = resp[0]["season"]
+
+    eventos: list[dict] = []
+    for lote in _dividir_em_lotes(todos_ids_regulares):
+        linhas = (
+            supabase.table("match_events")
+            .select("match_id, player_id, event_type")
+            .in_("player_id", lote)
+            .in_("event_type", list(TIPOS_EVENTO_CARTAO_AMARELO))
+            .eq("source", "fotmob")
+            .execute()
+            .data
+            or []
+        )
+        eventos.extend(linhas)
+    if not eventos:
+        eventos_df = pd.DataFrame(columns=["match_id", "player_id", "event_type"])
+    else:
+        eventos_df = pd.DataFrame(eventos)
+
+    match_ids_eventos = eventos_df["match_id"].unique().tolist() if not eventos_df.empty else []
+    partidas_meta = pd.DataFrame(columns=["id", "league_id", "season", "match_date"])
+    if match_ids_eventos:
+
+        def factory(lote, inicio, fim):
+            return supabase.table("matches").select("id, league_id, season, match_date").in_("id", lote).range(inicio, fim)
+
+        partidas_meta = pd.DataFrame(_paginar_por_lotes_de_id(factory, match_ids_eventos))
+        if not partidas_meta.empty:
+            partidas_meta["match_date"] = pd.to_datetime(partidas_meta["match_date"], utc=True)
+
+    resultado: dict[int, dict[str, float]] = {}
+    for team_id in ids:
+        elenco = elenco_regular.get(team_id, [])
+        league_id = league_id_por_time.get(team_id)
+        temporada = temporada_atual_por_liga.get(league_id)
+        regra = CARTAO_LIMIAR_POR_LIGA.get(nome_da_liga.get(league_id), LIMIAR_CARTAO_PADRAO)
+
+        cartoes_acumulados, jogadores_pendurados = 0, 0
+        for player_id in elenco:
+            if eventos_df.empty or partidas_meta.empty or temporada is None:
+                continue
+            eventos_jogador = eventos_df[eventos_df["player_id"] == player_id].merge(partidas_meta, left_on="match_id", right_on="id")
+            eventos_jogador = eventos_jogador[(eventos_jogador["league_id"] == league_id) & (eventos_jogador["season"] == temporada)]
+            if eventos_jogador.empty:
+                continue
+            estados = _estado_apos_cada_cartao(eventos_jogador.sort_values("match_date")["match_date"].tolist(), regra)
+            cartoes_no_ciclo, n_suspensoes = estados[-1]
+            limiar_atual = _limiar_do_ciclo(regra, n_suspensoes)
+            cartoes_acumulados += cartoes_no_ciclo
+            if cartoes_no_ciclo == limiar_atual - 1:
+                jogadores_pendurados += 1
+
+        resultado[team_id] = {
+            "cartoes_acumulados": float(cartoes_acumulados),
+            "jogadores_pendurados": float(jogadores_pendurados),
+        }
+    return resultado
+
+
+# =============================================================================
+# Estádio provável de fixtures futuras (investigação -- fecha o gap
+# documentado de `travel_distance_km` só existir pra partidas já
+# finalizadas). Achado: `match_context_fotmob.stadium_lat/long` já cobre
+# 98%+ das partidas finalizadas, mas só 8/3139 partidas AGENDADAS (times
+# ainda não têm o próprio estádio "conhecido" registrado pra elas). Times
+# raramente mudam de estádio DENTRO de uma temporada -- confirmado direto
+# no banco (`match_context_fotmob` join `matches`): a maioria dos times tem
+# 1 estádio dominante nos jogos de casa recentes, com exceções reais
+# (reforma, jogo fora de sede por decisão de mando) capturadas como
+# minoria. Usar o estádio de casa mais RECENTE do próprio time como
+# aproximação fecha 210/... times conhecidos, cobrindo 1.908/3.139 (60,8%)
+# das partidas agendadas hoje SEM nenhuma chamada de API nova (só leitura
+# do que já foi capturado em `match_context_fotmob`). Wiring completo em
+# `match_features_contexto`/features de modelo (fadiga/técnico têm colunas
+# NOT NULL que exigiriam replicar o resto de `features_contexto.py`) fica
+# documentado como próximo passo -- fora do escopo desta rodada (cartões é
+# o pedido principal), esta função é o bloco de construção pronto pra isso.
+# =============================================================================
+def obter_estadio_provavel_mandante(supabase: Client, team_ids: list[int]) -> dict[int, dict[str, float]]:
+    """Estádio mais provável de cada time (`team_ids`) pra uma partida em
+    que jogue como mandante -- o estádio de CASA mais recente já capturado
+    em `match_context_fotmob` (qualquer status de partida, ordenado por
+    data desc). Sem chamada de API: só leitura de dado já ingerido."""
+    if not team_ids:
+        return {}
+    ids = [int(t) for t in team_ids]
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("matches")
+            .select("id, home_team_id, match_date, match_context_fotmob(stadium_lat, stadium_long, stadium_name)")
+            .in_("home_team_id", lote)
+            .order("match_date", desc=True)
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, ids)
+    resultado: dict[int, dict[str, float]] = {}
+    for linha in linhas:
+        team_id = linha["home_team_id"]
+        if team_id in resultado:
+            continue
+        contexto = linha.get("match_context_fotmob")
+        if isinstance(contexto, list):
+            contexto = contexto[0] if contexto else None
+        if not contexto or contexto.get("stadium_lat") is None:
+            continue
+        resultado[team_id] = {
+            "stadium_lat": float(contexto["stadium_lat"]),
+            "stadium_long": float(contexto["stadium_long"]),
+            "stadium_name": contexto.get("stadium_name"),
+        }
+    return resultado
+
+
 def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str]) -> pd.DataFrame:
     """Média móvel pré-jogo (`.shift(1)` antes do `.rolling()` -- sem isso a
     média incluiria o próprio jogo que se está tentando prever, vazamento
@@ -670,6 +1059,20 @@ FEATURES_NUMERICAS_V3 = FEATURES_NUMERICAS_V2 + [
 ]
 FEATURES_V3 = FEATURES_NUMERICAS_V3 + CAT_FEATURES
 
+# v4 (parâmetro de disciplina): tudo da v3 + risco de suspensão por
+# acúmulo de cartões amarelos (`cartoes_acumulados_home`/`_away` -- soma de
+# cartões no ciclo atual do elenco; `jogadores_pendurados_home`/`_away` --
+# quantos desses jogadores estão a 1 cartão da suspensão, ver
+# `_carregar_cartoes_pre_jogo`/`obter_cartoes_atuais`) -- mesma razão de
+# dixon_coles_v1 ficar de fora da v2/v3 vale aqui.
+FEATURES_NUMERICAS_V4 = FEATURES_NUMERICAS_V3 + [
+    "cartoes_acumulados_home",
+    "cartoes_acumulados_away",
+    "jogadores_pendurados_home",
+    "jogadores_pendurados_away",
+]
+FEATURES_V4 = FEATURES_NUMERICAS_V4 + CAT_FEATURES
+
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
@@ -765,9 +1168,27 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         fadiga_away[["id", "away_team_id", *[f"{c}_away" for c in colunas_fadiga]]], on=["id", "away_team_id"], how="left"
     )
 
+    cartoes = _carregar_cartoes_pre_jogo(supabase, partidas, nome_da_liga)
+    if not cartoes.empty:
+        cartoes_home = cartoes.rename(columns={"match_id": "id", "team_id": "home_team_id"}).rename(
+            columns={"cartoes_acumulados_antes": "cartoes_acumulados_home", "jogadores_pendurados_antes": "jogadores_pendurados_home"}
+        )
+        cartoes_away = cartoes.rename(columns={"match_id": "id", "team_id": "away_team_id"}).rename(
+            columns={"cartoes_acumulados_antes": "cartoes_acumulados_away", "jogadores_pendurados_antes": "jogadores_pendurados_away"}
+        )
+    else:
+        cartoes_home = pd.DataFrame(columns=["id", "home_team_id", "cartoes_acumulados_home", "jogadores_pendurados_home"])
+        cartoes_away = pd.DataFrame(columns=["id", "away_team_id", "cartoes_acumulados_away", "jogadores_pendurados_away"])
+    dataset = dataset.merge(
+        cartoes_home[["id", "home_team_id", "cartoes_acumulados_home", "jogadores_pendurados_home"]], on=["id", "home_team_id"], how="left"
+    )
+    dataset = dataset.merge(
+        cartoes_away[["id", "away_team_id", "cartoes_acumulados_away", "jogadores_pendurados_away"]], on=["id", "away_team_id"], how="left"
+    )
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3, "resultado", "resultado_over25"]]
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V4, "resultado", "resultado_over25"]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM

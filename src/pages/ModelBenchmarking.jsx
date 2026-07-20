@@ -22,6 +22,7 @@ const MODELOS_BASE = [
   'catboost_v1', 'xgboost_v1', 'lightgbm_v1',
   'catboost_v2', 'xgboost_v2', 'lightgbm_v2',
   'catboost_v3', 'xgboost_v3', 'lightgbm_v3',
+  'catboost_v4', 'xgboost_v4', 'lightgbm_v4',
 ];
 const ROTULO_MODELO = {
   dixon_coles_v1: 'Dixon-Coles',
@@ -34,6 +35,9 @@ const ROTULO_MODELO = {
   catboost_v3: 'CatBoost v3 (+ fadiga)',
   xgboost_v3: 'XGBoost v3 (+ fadiga)',
   lightgbm_v3: 'LightGBM v3 (+ fadiga)',
+  catboost_v4: 'CatBoost v4 (+ cartões)',
+  xgboost_v4: 'XGBoost v4 (+ cartões)',
+  lightgbm_v4: 'LightGBM v4 (+ cartões)',
 };
 
 async function buscarPaginado(query) {
@@ -391,8 +395,9 @@ export default function ModelBenchmarking() {
         <div>
           <h1 className="text-xl font-bold text-slate-100">Model Benchmarking</h1>
           <p className="text-sm text-slate-500">
-            Dixon-Coles + CatBoost/XGBoost/LightGBM (v1 e v2, v2 soma força do elenco) competindo lado a lado —
-            dados gerados de forma assíncrona pelo GitHub Actions (<code>scripts/rodar_predicoes.py</code>).
+            Dixon-Coles + CatBoost/XGBoost/LightGBM (v1 a v4 — v2 soma força do elenco, v3 soma fadiga, v4 soma
+            risco de suspensão por cartão) competindo lado a lado — dados gerados de forma assíncrona pelo
+            GitHub Actions (<code>scripts/rodar_predicoes.py</code>).
           </p>
         </div>
         <div className="flex items-center gap-2">
