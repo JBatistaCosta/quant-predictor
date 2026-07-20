@@ -8,17 +8,19 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      recente por casa/seleção e salva em `market_odds` via UPSERT. Não faz
      chamada de API própria: reaproveita odds reais que já existem.
   2. Roda os modelos de predição 1X2 (dixon_coles_v1 + catboost/xgboost/
-     lightgbm em v1 e v2) para as mesmas partidas -- cada um treinado com a
-     janela de dado histórico apropriada pra sua família (ver
-     `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas + decaimento
-     temporal; os modelos de árvore usam um dataset "Feature Stacked" de
-     5-8 temporadas empilhadas das 5 ligas de elite europeias, com
-     features de gols e xG separadas por mando -- ver `dados_historicos.
+     lightgbm em v1, v2, v3 e v4) para as mesmas partidas -- cada um
+     treinado com a janela de dado histórico apropriada pra sua família
+     (ver `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas +
+     decaimento temporal; os modelos de árvore usam um dataset "Feature
+     Stacked" de 5-8 temporadas empilhadas das 5 ligas de elite europeias,
+     com features de gols e xG separadas por mando -- ver `dados_historicos.
      _forma_por_mando`). A v2 (`modelos_ml.FEATURES_POR_MODELO`) soma força
      do elenco (rating Elo-like por jogador, `dados_historicos.
-     obter_squad_rating_atual`/`_carregar_squad_rating_pre_jogo`) às
-     mesmas features da v1 -- dixon_coles_v1 não tem v2 (modelo Poisson de
-     força de time, não aceita feature de jogador).
+     obter_squad_rating_atual`/`_carregar_squad_rating_pre_jogo`), a v3 soma
+     descanso pré-jogo/fadiga, e a v4 soma risco de suspensão por acúmulo de
+     cartão (`dados_historicos.obter_cartoes_atuais`/`_carregar_cartoes_pre_
+     jogo`) às features da versão anterior -- dixon_coles_v1 não tem v2/v3/
+     v4 (modelo Poisson de força de time, não aceita feature de jogador).
   3. Cada modelo ganha DUAS variantes CALIBRADAS (Platt e Isotonic
      Regression, ajustadas num Validation Set que o modelo base não
      treinou -- ver `calibracao.py`), persistidas ao lado da crua com
@@ -392,7 +394,11 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     fixtures de ligas fora do dataset "Feature Stacked" (Brasileirão) ficam
     com `liga=None` naturalmente (não está em
     `dados_historicos.LIGAS_ELITE_EUROPEIAS`), tratado como categoria
-    desconhecida pelos modelos de ML."""
+    desconhecida pelos modelos de ML. v4 (risco de suspensão por cartão,
+    `dados_historicos.obter_cartoes_atuais`) roda pras 6 ligas do
+    benchmarking (inclusive Brasileirão -- `CARTAO_LIMIAR_POR_LIGA` já tem
+    a regra da CBF), diferente de `liga`/`squad_rating`, que só fazem
+    sentido pro dataset "Feature Stacked" europeu."""
     ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
@@ -400,12 +406,26 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     ultimo_jogo_por_time = dados_historicos.obter_fadiga_atual(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
 
+    league_id_por_time: dict[int, int] = {}
+    nome_por_league_id: dict[int, str] = {}
+    for _, jogo in fixtures.iterrows():
+        if pd.isna(jogo.get("league_id")):
+            continue
+        league_id = int(jogo["league_id"])
+        league_id_por_time[jogo["home_team_id"]] = league_id
+        league_id_por_time[jogo["away_team_id"]] = league_id
+        nome_por_league_id[league_id] = jogo["liga"]
+    cartoes_atuais = dados_historicos.obter_cartoes_atuais(supabase, ids_conhecidos, nome_por_league_id, league_id_por_time)
+    cartoes_padrao = {"cartoes_acumulados": float("nan"), "jogadores_pendurados": float("nan")}
+
     linhas = []
     for _, jogo in fixtures.iterrows():
         id_casa = jogo["home_team_id"]
         id_fora = jogo["away_team_id"]
         forma_casa = forma_recente.get(id_casa, forma_padrao)
         forma_fora = forma_recente.get(id_fora, forma_padrao)
+        cartoes_casa = cartoes_atuais.get(id_casa, cartoes_padrao)
+        cartoes_fora = cartoes_atuais.get(id_fora, cartoes_padrao)
         data_jogo = pd.to_datetime(jogo["match_date"], utc=True)
         dias_casa, midweek_casa = _fadiga_da_fixture(data_jogo, ultimo_jogo_por_time.get(id_casa))
         dias_fora, midweek_fora = _fadiga_da_fixture(data_jogo, ultimo_jogo_por_time.get(id_fora))
@@ -428,6 +448,10 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "days_since_last_match_away": dias_fora,
                 "is_midweek_fatigue_home": midweek_casa,
                 "is_midweek_fatigue_away": midweek_fora,
+                "cartoes_acumulados_home": cartoes_casa.get("cartoes_acumulados"),
+                "cartoes_acumulados_away": cartoes_fora.get("cartoes_acumulados"),
+                "jogadores_pendurados_home": cartoes_casa.get("jogadores_pendurados"),
+                "jogadores_pendurados_away": cartoes_fora.get("jogadores_pendurados"),
                 "liga": jogo["liga"],
             }
         )
