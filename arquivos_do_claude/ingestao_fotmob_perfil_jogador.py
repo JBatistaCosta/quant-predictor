@@ -105,6 +105,21 @@ def extrair_valor_playerinfo(campo_titulo, player_information):
     return {}
 
 
+def _deduplicar_por_chave(linhas, colunas_chave):
+    """Mantém só a última ocorrência por `colunas_chave` -- sem isso, um
+    upsert com 2 linhas de mesma chave de conflito quebra com "ON CONFLICT
+    DO UPDATE command cannot affect row a second time" (mesmo bug já
+    documentado/corrigido em ingestao_fotmob.py pro upsert de
+    match_player_stats_fotmob/team_transfers_fotmob -- achado aqui rodando
+    o backfill de perfil em lote pela 1ª vez via GitHub Actions: um jogador
+    real do lote de teste tem 2 "seasonsWon" que colidem na mesma chave de
+    conflito de player_trophies_fotmob)."""
+    vistos = {}
+    for linha in linhas:
+        vistos[tuple(linha.get(c) for c in colunas_chave)] = linha
+    return list(vistos.values())
+
+
 def montar_linhas(player_id, payload):
     valores_mercado = []
     for v in (payload.get("marketValues") or {}).get("values") or []:
@@ -250,19 +265,33 @@ def main():
             time.sleep(PACING_SEGUNDOS)
             continue
 
-        if valores_mercado:
-            supabase.table("player_market_value_history").upsert(
-                valores_mercado, on_conflict="player_id,value_date,team_fotmob_id"
-            ).execute()
-        if carreira:
-            supabase.table("player_career_history_fotmob").upsert(
-                carreira, on_conflict="player_id,team_fotmob_id,start_date"
-            ).execute()
-        if titulos:
-            supabase.table("player_trophies_fotmob").upsert(
-                titulos, on_conflict="player_id,team_fotmob_id,league_fotmob_id,season,result"
-            ).execute()
-        supabase.table("player_details_fotmob").upsert(detalhes, on_conflict="player_id").execute()
+        try:
+            if valores_mercado:
+                valores_mercado = _deduplicar_por_chave(valores_mercado, ["player_id", "value_date", "team_fotmob_id"])
+                supabase.table("player_market_value_history").upsert(
+                    valores_mercado, on_conflict="player_id,value_date,team_fotmob_id"
+                ).execute()
+            if carreira:
+                carreira = _deduplicar_por_chave(carreira, ["player_id", "team_fotmob_id", "start_date"])
+                supabase.table("player_career_history_fotmob").upsert(
+                    carreira, on_conflict="player_id,team_fotmob_id,start_date"
+                ).execute()
+            if titulos:
+                titulos = _deduplicar_por_chave(titulos, ["player_id", "team_fotmob_id", "league_fotmob_id", "season", "result"])
+                supabase.table("player_trophies_fotmob").upsert(
+                    titulos, on_conflict="player_id,team_fotmob_id,league_fotmob_id,season,result"
+                ).execute()
+            supabase.table("player_details_fotmob").upsert(detalhes, on_conflict="player_id").execute()
+        except Exception as e:
+            # 1 jogador com dado inesperado não pode derrubar o backfill
+            # inteiro (mesma disciplina de "try/except por item" já usada
+            # em ingestao_fotmob.py/sync-match-stats.js) -- achado real
+            # rodando este script via Actions pela 1ª vez: sem isso, uma
+            # falha de upsert no jogador 1 de 400 perdia o lote inteiro.
+            print(f"  falha de upsert player_id={p['id']} ({p['name']}): {e}")
+            falhas += 1
+            time.sleep(PACING_SEGUNDOS)
+            continue
 
         ok += 1
         if (i + 1) % 20 == 0:
