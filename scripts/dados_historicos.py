@@ -1400,6 +1400,170 @@ def obter_arbitro_atual(supabase: Client, match_ids: list[int]) -> dict[int, dic
     return resultado
 
 
+def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Força do XI TITULAR confirmado de cada partida histórica (v3B,
+    feature `titular_rating_home`/`_away` + `titular_valor_mercado_home`/
+    `_away`) -- ao contrário de `_carregar_squad_rating_pre_jogo` (v2, usa
+    TODO o elenco que jogou, ponderado por minutos, inclusive quem entrou
+    do banco), aqui é estritamente quem começou (`match_lineup_fotmob.
+    is_starter=true`) -- o sinal que estaria disponível pra quem visse a
+    escalação confirmada ANTES do apito inicial, sem misturar impacto de
+    substituição.
+
+    Rating: `player_rating_history.rating_antes` (mesmo ponto-no-tempo real
+    de `_carregar_squad_rating_pre_jogo`) -- média simples do XI (sem peso
+    de minutos: um titular é um titular, não tem "menos titular").
+
+    Valor de mercado NA DATA DO JOGO (não o valor atual/mais recente, que
+    vazaria valorização/desvalorização POSTERIOR à partida): `merge_asof`
+    pareia cada jogador com o snapshot de `player_market_value_history`
+    mais recente com `value_date <= match_date`, agrupado por `player_id`
+    -- mesmo princípio de ponto-no-tempo já usado em todo o resto deste
+    módulo, aplicado a uma série temporal em vez de um valor "antes desta
+    partida" pré-calculado. Soma (não média) do XI -- valor de mercado é
+    aditivo por natureza (patrimônio do elenco em campo), diferente de
+    rating (nota de habilidade por jogador)."""
+    vazio = pd.DataFrame(columns=["match_id", "team_id", "titular_rating_antes", "titular_valor_mercado_antes"])
+    match_ids = partidas["id"].astype(int).tolist()
+    if not match_ids:
+        return vazio
+
+    def factory_lineup(lote, inicio, fim):
+        return (
+            supabase.table("match_lineup_fotmob")
+            .select("match_id, team_id, player_id")
+            .eq("is_starter", True)
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    lineup = pd.DataFrame(_paginar_por_lotes_de_id(factory_lineup, match_ids))
+    if lineup.empty or "player_id" not in lineup.columns:
+        return vazio
+    lineup = lineup[lineup["player_id"].notna()].copy()
+    if lineup.empty:
+        return vazio
+    lineup["player_id"] = lineup["player_id"].astype(int)
+
+    def factory_ratings(lote, inicio, fim):
+        return (
+            supabase.table("player_rating_history")
+            .select("match_id, player_id, rating_antes")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    ratings = pd.DataFrame(_paginar_por_lotes_de_id(factory_ratings, match_ids))
+    if not ratings.empty:
+        lineup = lineup.merge(ratings, on=["match_id", "player_id"], how="left")
+    else:
+        lineup["rating_antes"] = np.nan
+
+    player_ids = lineup["player_id"].unique().tolist()
+
+    def factory_valores(lote, inicio, fim):
+        return (
+            supabase.table("player_market_value_history")
+            .select("player_id, value_date, value_eur")
+            .in_("player_id", lote)
+            .order("player_id")
+            .range(inicio, fim)
+        )
+
+    valores = pd.DataFrame(_paginar_por_lotes_de_id(factory_valores, player_ids))
+
+    lineup = lineup.merge(partidas[["id", "match_date"]].rename(columns={"id": "match_id"}), on="match_id", how="left")
+    lineup["match_date"] = pd.to_datetime(lineup["match_date"], utc=True)
+
+    if not valores.empty:
+        valores = valores.dropna(subset=["value_date"]).copy()
+        valores["value_date"] = pd.to_datetime(valores["value_date"], utc=True)
+        valores = valores.sort_values("value_date")
+        lineup = lineup.sort_values("match_date")
+        lineup = pd.merge_asof(
+            lineup, valores, left_on="match_date", right_on="value_date", by="player_id", direction="backward"
+        )
+    else:
+        lineup["value_eur"] = np.nan
+
+    agregado = (
+        lineup.groupby(["match_id", "team_id"])
+        .agg(titular_rating_antes=("rating_antes", "mean"), titular_valor_mercado_antes=("value_eur", "sum"))
+        .reset_index()
+    )
+    return agregado
+
+
+def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict[int, dict]]:
+    """Força do XI titular pra fixtures futuras -- BEST-EFFORT: escalação
+    confirmada só costuma sair ~1h antes do apito inicial, então isso fica
+    sem dado (dict vazio) pra quase toda fixture agendada com dias de
+    antecedência -- mesma limitação de fonte já aceita em
+    `obter_arbitro_atual` (não é bug, é o `predict.yml` rodando de dias
+    antes do jogo, mas a escalação só existir perto da hora). Quando JÁ
+    está confirmada (rara), usa `player_ratings.rating` (rating ATUAL,
+    mesmo dado de `obter_squad_rating_atual`) e o valor de mercado mais
+    recente conhecido de cada titular (não precisa de ponto-no-tempo
+    histórico aqui -- "agora" é a única referência que importa pra uma
+    fixture futura). Devolve `{match_id: {team_id: {...}}}` -- o caller
+    (`montar_features_fixtures`) escolhe o lado (casa/fora) por partida."""
+    resultado: dict[int, dict[int, dict]] = {}
+    if not match_ids:
+        return resultado
+
+    lineup = (
+        supabase.table("match_lineup_fotmob")
+        .select("match_id, team_id, player_id")
+        .eq("is_starter", True)
+        .in_("match_id", match_ids)
+        .execute()
+        .data
+        or []
+    )
+    lineup = [l for l in lineup if l.get("player_id") is not None]
+    if not lineup:
+        return resultado
+
+    player_ids = list({l["player_id"] for l in lineup})
+    ratings = (
+        supabase.table("player_ratings").select("player_id, rating").in_("player_id", player_ids).execute().data or []
+    )
+    rating_por_jogador = {r["player_id"]: r["rating"] for r in ratings}
+
+    valores = (
+        supabase.table("player_market_value_history")
+        .select("player_id, value_date, value_eur")
+        .in_("player_id", player_ids)
+        .execute()
+        .data
+        or []
+    )
+    valor_mais_recente: dict[int, tuple[str, float]] = {}
+    for v in valores:
+        if v.get("value_date") is None or v.get("value_eur") is None:
+            continue
+        atual = valor_mais_recente.get(v["player_id"])
+        if atual is None or v["value_date"] > atual[0]:
+            valor_mais_recente[v["player_id"]] = (v["value_date"], float(v["value_eur"]))
+
+    por_match_team: dict[tuple[int, int], list[dict]] = {}
+    for l in lineup:
+        por_match_team.setdefault((l["match_id"], l["team_id"]), []).append(l)
+
+    for (match_id, team_id), jogadores in por_match_team.items():
+        ratings_xi = [rating_por_jogador[j["player_id"]] for j in jogadores if j["player_id"] in rating_por_jogador]
+        valores_xi = [valor_mais_recente[j["player_id"]][1] for j in jogadores if j["player_id"] in valor_mais_recente]
+        if not ratings_xi and not valores_xi:
+            continue
+        resultado.setdefault(match_id, {})[team_id] = {
+            "titular_rating": float(np.mean(ratings_xi)) if ratings_xi else float("nan"),
+            "titular_valor_mercado": float(np.sum(valores_xi)) if valores_xi else float("nan"),
+        }
+    return resultado
+
+
 # v5 (contexto de campeonato): tudo da v4 + classificação
 # (`pontos_por_jogo`/`saldo_por_jogo`/`posicao`/`jogos_disputados`,
 # ver `_calcular_classificacao_pre_jogo`/`obter_classificacao_atual`) +
@@ -1426,6 +1590,30 @@ FEATURES_NUMERICAS_V5 = FEATURES_NUMERICAS_V4 + [
     "arbitro_n_jogos",
 ]
 FEATURES_V5 = FEATURES_NUMERICAS_V5 + CAT_FEATURES
+
+# v3B (XI titular): tudo da v5 + força do XI CONFIRMADO titular (não o
+# elenco inteiro usado como proxy pela v2) -- `titular_rating_home`/`_away`
+# (rating médio do XI, `_carregar_titular_pre_jogo`/`obter_titular_atual`)
+# + `titular_valor_mercado_home`/`_away` (soma do valor de mercado do XI
+# NA DATA DO JOGO, mesmas funções). O nome "v3B" vem do PR #114 (só a
+# migração/captura, sem os modelos) -- mantido por já estar estabelecido
+# no repo, mas o conjunto de features aqui é v5 + XI titular, não v2 + XI
+# titular (não faria sentido competir no benchmarking sem já carregar
+# classificação/H2H/árbitro, que são features de custo zero já provadas).
+# Cobertura de treino depende do escopo do backfill de `match_lineup_
+# fotmob` (parcial: 1-2 temporadas recentes, decisão explícita do usuário
+# -- ver arquivos_do_claude/ingestao_fotmob_lineup_backfill.py) -- fora
+# desse recorte fica NaN, mesmo espírito tolerante de elo/xG/squad_rating.
+# Ao vivo fica NaN quase sempre (mesma limitação do árbitro: escalação
+# confirmada só sai perto do apito) -- dixon_coles_v1 não ganha v3B pela
+# mesma razão de v2/v3/v4/v5.
+FEATURES_NUMERICAS_V3B = FEATURES_NUMERICAS_V5 + [
+    "titular_rating_home",
+    "titular_rating_away",
+    "titular_valor_mercado_home",
+    "titular_valor_mercado_away",
+]
+FEATURES_V3B = FEATURES_NUMERICAS_V3B + CAT_FEATURES
 
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
@@ -1573,9 +1761,28 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         arbitro = arbitro.rename(columns={"match_id": "id"})
     dataset = dataset.merge(arbitro, on="id", how="left")
 
+    titular = _carregar_titular_pre_jogo(supabase, partidas)
+    colunas_titular = ["titular_rating_antes", "titular_valor_mercado_antes"]
+    if not titular.empty:
+        titular_home = titular.rename(columns={"match_id": "id", "team_id": "home_team_id"}).rename(
+            columns={c: f"{c.replace('_antes', '')}_home" for c in colunas_titular}
+        )
+        titular_away = titular.rename(columns={"match_id": "id", "team_id": "away_team_id"}).rename(
+            columns={c: f"{c.replace('_antes', '')}_away" for c in colunas_titular}
+        )
+    else:
+        titular_home = pd.DataFrame(columns=["id", "home_team_id", "titular_rating_home", "titular_valor_mercado_home"])
+        titular_away = pd.DataFrame(columns=["id", "away_team_id", "titular_rating_away", "titular_valor_mercado_away"])
+    dataset = dataset.merge(
+        titular_home[["id", "home_team_id", "titular_rating_home", "titular_valor_mercado_home"]], on=["id", "home_team_id"], how="left"
+    )
+    dataset = dataset.merge(
+        titular_away[["id", "away_team_id", "titular_rating_away", "titular_valor_mercado_away"]], on=["id", "away_team_id"], how="left"
+    )
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V5, "resultado", "resultado_over25"]]
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3B, "resultado", "resultado_over25"]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM
