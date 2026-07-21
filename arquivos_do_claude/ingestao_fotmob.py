@@ -58,6 +58,14 @@ campo, não uma série temporal. photo_url é construído deterministicamente
 (padrão confirmado: images.fotmob.com/image_resources/playerimages/{id}.png,
 não precisa buscar). Bandeira de país não tem URL própria confirmada no CDN
 do FotMob (testado, 403) — só country_code (ISO) fica disponível.
+
+Também popula `match_lineup_fotmob` -- ao contrário de `players.raw_lineup`
+(snapshot, sobrescrito a cada partida), essa tabela guarda um HISTÓRICO por
+partida de quem começou titular vs. reserva (content.lineup.{home,away}Team.
+{starters,subs}), base pra features de "XI titular" (v3B do Model
+Benchmarking). Só aplica a partidas processadas DAQUI PRA FRENTE (ou
+reprocessadas com --forcar) -- partidas já sincronizadas antes desta mudança
+não têm linha aqui.
 """
 
 import argparse
@@ -357,12 +365,16 @@ def main():
         # Dimensão de jogador (players) processada ANTES das tabelas de stats
         # pra já ter o mapa fotmob_player_id -> players.id (nosso id interno)
         # disponível na hora de montar player_rows/shot_rows (FK player_id).
+        # `lineup_rows` guarda o HISTÓRICO por partida (titular vs. reserva,
+        # ver match_lineup_fotmob) -- ao contrário de `player_dim_rows`, que
+        # só atualiza o "último visto" (sobrescrito a cada partida).
         player_dim_rows = []
+        lineup_rows = []
         lineup = content.get("lineup") or {}
         for side in ("homeTeam", "awayTeam"):
             team = lineup.get(side) or {}
             team_id = fotmob_to_internal.get(str(team.get("id")))
-            for grupo in ("starters", "subs"):
+            for grupo, is_starter in (("starters", True), ("subs", False)):
                 for p in team.get(grupo) or []:
                     pid = str(p.get("id"))
                     if pid in ("0", "-1"):
@@ -371,8 +383,9 @@ def main():
                         # identificador único, várias pessoas diferentes
                         # compartilham "0"/"-1". Upsertar aqui misturaria
                         # pessoas distintas num só registro. Fica de fora de
-                        # `players`; as linhas de estatística continuam
-                        # normais, só sem FK (player_id fica NULL).
+                        # `players`/`match_lineup_fotmob`; as linhas de
+                        # estatística continuam normais, só sem FK (player_id
+                        # fica NULL).
                         continue
                     player_dim_rows.append({
                         "fotmob_player_id": pid,
@@ -391,12 +404,28 @@ def main():
                         "raw_lineup": p,
                         "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                     })
+                    if team_id is not None:
+                        lineup_rows.append({
+                            "match_id": match_id,
+                            "team_id": team_id,
+                            "fotmob_player_id": pid,
+                            "is_starter": is_starter,
+                            "shirt_number": p.get("shirtNumber"),
+                            "position_id": p.get("positionId"),
+                            "raw": p,
+                            "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                        })
 
         fotmob_to_player_id = {}
         if player_dim_rows:
             resp = supabase.table("players").upsert(player_dim_rows, on_conflict="fotmob_player_id").execute()
             for row in resp.data:
                 fotmob_to_player_id[row["fotmob_player_id"]] = row["id"]
+
+        if lineup_rows:
+            for row in lineup_rows:
+                row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"])
+            supabase.table("match_lineup_fotmob").upsert(lineup_rows, on_conflict="match_id,team_id,fotmob_player_id").execute()
 
         player_rows = []
         for pid, pdata in (content.get("playerStats") or {}).items():
