@@ -1340,7 +1340,19 @@ def obter_arbitro_atual(supabase: Client, match_ids: list[int]) -> dict[int, dic
     arbitros = list(set(nomes.values()))
     linhas_contexto = supabase.table("match_context_fotmob").select("match_id, referee").in_("referee", arbitros).execute().data or []
     referee_por_match = {l["match_id"]: l["referee"] for l in linhas_contexto}
-    match_ids_historico = list(referee_por_match.keys())
+    # Exclui TODO o lote de fixtures sendo previsto do próprio histórico --
+    # `status='scheduled'` normalmente implica que `match_stats_fotmob`
+    # ainda não existe pra essa partida (cartão/falta só existe depois do
+    # jogo), mas já foi confirmado direto no banco que ~8 partidas têm
+    # `status` desatualizado (jogo já aconteceu, `match_stats_fotmob`
+    # completo, `status` nunca virou `finished`) -- sem essa exclusão
+    # explícita, uma fixture com esse problema vazaria o próprio resultado
+    # pra dentro da própria média (a suposição de "scheduled = sem stats
+    # ainda" deixaria de proteger). Excluir o LOTE inteiro (não só a
+    # própria fixture) também evita uma partida do lote contaminar a média
+    # usada pra outra do mesmo lote, mesmo problema de outro ângulo.
+    ids_do_lote = set(match_ids)
+    match_ids_historico = [m for m in referee_por_match if m not in ids_do_lote]
     linhas_stats = (
         (
             supabase.table("match_stats_fotmob")
