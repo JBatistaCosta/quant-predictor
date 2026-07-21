@@ -1,0 +1,63 @@
+name: Model Benchmarking v3B - Backfill de escalação (FotMob)
+
+# Roda arquivos_do_claude/ingestao_fotmob_lineup_backfill.py -- popula
+# `match_lineup_fotmob` (0 linhas hoje: a captura só vale daqui pra frente,
+# ver PR #114), base da feature "XI titular" (v3B, ver scripts/dados_
+# historicos.py). Escopo default (2 temporadas mais recentes, 5 ligas de
+# elite europeias) -- decisão explícita do usuário de fazer um backfill
+# PARCIAL, não os 6 anos completos que a v4 (cartões) fez.
+#
+# Só workflow_dispatch, disparado manualmente -- mesmo espírito de
+# cartoes_backfill.yml (1 chamada de matchDetails por partida, mesmo
+# endpoint/pacing).
+on:
+  workflow_dispatch:
+    inputs:
+      liga_id:
+        description: "league_id interno (vazio = todas as 5 ligas de elite europeias)"
+        required: false
+        type: string
+      temporadas:
+        description: "N temporadas mais recentes de cada liga (default 2)"
+        required: false
+        type: string
+      limite:
+        description: "Processa só as N primeiras partidas pendentes (vazio = todas)"
+        required: false
+        type: string
+      forcar:
+        description: "Reprocessa mesmo partidas que já têm linha em match_lineup_fotmob"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  backfill-lineup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backfill de escalação
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.liga_id }}" ]; then ARGS="$ARGS --liga-id ${{ inputs.liga_id }}"; fi
+          if [ -n "${{ inputs.temporadas }}" ]; then ARGS="$ARGS --temporadas ${{ inputs.temporadas }}"; fi
+          if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+          if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          python arquivos_do_claude/ingestao_fotmob_lineup_backfill.py $ARGS

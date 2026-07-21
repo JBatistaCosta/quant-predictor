@@ -8,8 +8,8 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      recente por casa/seleção e salva em `market_odds` via UPSERT. Não faz
      chamada de API própria: reaproveita odds reais que já existem.
   2. Roda os modelos de predição 1X2 (dixon_coles_v1 + catboost/xgboost/
-     lightgbm em v1, v2, v3, v4 e v5) para as mesmas partidas -- cada um
-     treinado com a janela de dado histórico apropriada pra sua família
+     lightgbm em v1, v2, v3, v4, v5 e v3B) para as mesmas partidas -- cada
+     um treinado com a janela de dado histórico apropriada pra sua família
      (ver `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas +
      decaimento temporal; os modelos de árvore usam um dataset "Feature
      Stacked" de 5-8 temporadas empilhadas das 5 ligas de elite europeias,
@@ -19,11 +19,15 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      obter_squad_rating_atual`/`_carregar_squad_rating_pre_jogo`), a v3 soma
      descanso pré-jogo/fadiga, a v4 soma risco de suspensão por acúmulo de
      cartão (`dados_historicos.obter_cartoes_atuais`/`_carregar_cartoes_pre_
-     jogo`), e a v5 soma classificação/tabela atual, confronto direto (H2H)
+     jogo`), a v5 soma classificação/tabela atual, confronto direto (H2H)
      e tendência de árbitro (`dados_historicos.obter_classificacao_atual`/
-     `obter_h2h_atual`/`obter_arbitro_atual`) às features da versão anterior
-     -- dixon_coles_v1 não tem v2/v3/v4/v5 (modelo Poisson de força de
-     time, não aceita feature de jogador/contexto).
+     `obter_h2h_atual`/`obter_arbitro_atual`), e a v3B soma força do XI
+     titular CONFIRMADO + valor de mercado na data do jogo (`dados_
+     historicos.obter_titular_atual`/`_carregar_titular_pre_jogo` -- nome
+     "v3B" vem do PR #114, mas o conjunto de features é v5 + XI titular)
+     às features da versão anterior -- dixon_coles_v1 não tem v2/v3/v4/v5/
+     v3B (modelo Poisson de força de time, não aceita feature de jogador/
+     contexto).
   3. Cada modelo ganha DUAS variantes CALIBRADAS (Platt e Isotonic
      Regression, ajustadas num Validation Set que o modelo base não
      treinou -- ver `calibracao.py`), persistidas ao lado da crua com
@@ -411,7 +415,13 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     direto (`obter_h2h_atual` + `resumir_h2h`) e tendência de árbitro
     (`obter_arbitro_atual` -- best-effort, NaN honesto quando o árbitro da
     partida ainda não foi divulgado, o que é a norma pra fixtures a mais de
-    ~1h do apito inicial)."""
+    ~1h do apito inicial). v3B soma força do XI titular confirmado + valor
+    de mercado na data do jogo (`obter_titular_atual` -- mesma limitação
+    best-effort do árbitro: escalação confirmada só costuma sair perto do
+    apito, então fica NaN pra quase toda fixture com dias de antecedência;
+    cobertura de treino depende do escopo do backfill parcial de
+    `match_lineup_fotmob`, ver arquivos_do_claude/
+    ingestao_fotmob_lineup_backfill.py)."""
     ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
@@ -442,6 +452,9 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     arbitro_atual = dados_historicos.obter_arbitro_atual(supabase, match_ids)
     arbitro_padrao = {"arbitro_cartoes_media": float("nan"), "arbitro_faltas_media": float("nan"), "arbitro_n_jogos": 0}
 
+    titular_atual = dados_historicos.obter_titular_atual(supabase, match_ids)
+    titular_padrao = {"titular_rating": float("nan"), "titular_valor_mercado": float("nan")}
+
     linhas = []
     for _, jogo in fixtures.iterrows():
         id_casa = jogo["home_team_id"]
@@ -459,6 +472,9 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         historico_h2h = h2h_atual.get(tuple(sorted((id_casa, id_fora))), [])
         h2h_taxa_vitoria_mandante, h2h_media_gols, h2h_n_jogos = dados_historicos.resumir_h2h(historico_h2h, id_casa)
         arbitro = arbitro_atual.get(jogo["match_id"], arbitro_padrao)
+        titular_por_time = titular_atual.get(jogo["match_id"], {})
+        titular_casa = titular_por_time.get(id_casa, titular_padrao)
+        titular_fora = titular_por_time.get(id_fora, titular_padrao)
         linhas.append(
             {
                 "match_id": jogo["match_id"],
@@ -496,6 +512,10 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "arbitro_cartoes_media": arbitro.get("arbitro_cartoes_media"),
                 "arbitro_faltas_media": arbitro.get("arbitro_faltas_media"),
                 "arbitro_n_jogos": arbitro.get("arbitro_n_jogos"),
+                "titular_rating_home": titular_casa.get("titular_rating"),
+                "titular_rating_away": titular_fora.get("titular_rating"),
+                "titular_valor_mercado_home": titular_casa.get("titular_valor_mercado"),
+                "titular_valor_mercado_away": titular_fora.get("titular_valor_mercado"),
                 "liga": jogo["liga"],
             }
         )
