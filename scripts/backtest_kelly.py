@@ -77,7 +77,7 @@ GRADE_HIPERPARAMETROS = {
     "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.08, 0.15])],
     "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([15, 31, 63], [0.05, 0.1, 0.2])],
 }
-for _sufixo in ("_v2", "_v3", "_v4"):
+for _sufixo in ("_v2", "_v3", "_v4", "_v5"):
     GRADE_HIPERPARAMETROS[f"catboost{_sufixo}"] = GRADE_HIPERPARAMETROS["catboost_v1"]
     GRADE_HIPERPARAMETROS[f"xgboost{_sufixo}"] = GRADE_HIPERPARAMETROS["xgboost_v1"]
     GRADE_HIPERPARAMETROS[f"lightgbm{_sufixo}"] = GRADE_HIPERPARAMETROS["lightgbm_v1"]

@@ -28,6 +28,7 @@ from dados_historicos import (
     FEATURES_V2,
     FEATURES_V3,
     FEATURES_V4,
+    FEATURES_V5,
     RESULTADO_AWAY,
     RESULTADO_DRAW,
     RESULTADO_HOME,
@@ -52,10 +53,11 @@ ROTULOS_SAIDA = {
 # tuning) -- é a config "leve e rápida" pedida originalmente pro modelo.
 #
 # v2 (parâmetros de jogador, ver dados_historicos.FEATURES_V2), v3
-# (+ fadiga, ver dados_historicos.FEATURES_V3) e v4 (+ disciplina/risco de
-# suspensão por cartão, ver dados_historicos.FEATURES_V4) reaproveitam os
-# mesmos defaults da v1 como ponto de partida -- ainda não passaram por
-# tuning dedicado, `backtest_kelly.py` faz grid search igual pras quatro.
+# (+ fadiga, ver dados_historicos.FEATURES_V3), v4 (+ disciplina/risco de
+# suspensão por cartão, ver dados_historicos.FEATURES_V4) e v5 (+
+# classificação/H2H/árbitro, ver dados_historicos.FEATURES_V5) reaproveitam
+# os mesmos defaults da v1 como ponto de partida -- ainda não passaram por
+# tuning dedicado, `backtest_kelly.py` faz grid search igual pras cinco.
 PARAMS_DEFAULT = {
     "catboost_v1": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v1": {"max_depth": 4, "learning_rate": 0.08},
@@ -69,12 +71,16 @@ PARAMS_DEFAULT = {
     "catboost_v4": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v4": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v4": {"num_leaves": 15, "learning_rate": 0.1},
+    "catboost_v5": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v5": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v5": {"num_leaves": 15, "learning_rate": 0.1},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
 # v2 usa `FEATURES_V2` (+ força do elenco), v3 usa `FEATURES_V3` (+
 # descanso pré-jogo/fadiga), v4 usa `FEATURES_V4` (+ risco de suspensão por
-# cartão). dixon_coles_v1 não entra aqui (não é um modelo baseado em
+# cartão), v5 usa `FEATURES_V5` (+ classificação/H2H/árbitro).
+# dixon_coles_v1 não entra aqui (não é um modelo baseado em
 # `TREINADORES`/lista de features -- é Poisson puro).
 FEATURES_POR_MODELO = {
     "catboost_v1": FEATURES,
@@ -89,6 +95,9 @@ FEATURES_POR_MODELO = {
     "catboost_v4": FEATURES_V4,
     "xgboost_v4": FEATURES_V4,
     "lightgbm_v4": FEATURES_V4,
+    "catboost_v5": FEATURES_V5,
+    "xgboost_v5": FEATURES_V5,
+    "lightgbm_v5": FEATURES_V5,
 }
 
 
@@ -193,7 +202,7 @@ def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame, features: list[st
 
 # treinar(params, train_df, coluna_alvo=..., features=...) -> (modelo, extra)
 # | prever(modelo, extra, df, features=...) -> (probs, classes)
-# v2/v3/v4 reaproveitam as MESMAS funções de treino/predição da v1 (só a
+# v2/v3/v4/v5 reaproveitam as MESMAS funções de treino/predição da v1 (só a
 # lista de features muda, ver `FEATURES_POR_MODELO` -- passada
 # explicitamente pelo chamador em cada call, não fica implícita no dict).
 TREINADORES = {
@@ -209,4 +218,7 @@ TREINADORES = {
     "catboost_v4": (treinar_catboost, prever_catboost),
     "xgboost_v4": (treinar_xgboost, prever_xgboost),
     "lightgbm_v4": (treinar_lightgbm, prever_lightgbm),
+    "catboost_v5": (treinar_catboost, prever_catboost),
+    "xgboost_v5": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v5": (treinar_lightgbm, prever_lightgbm),
 }

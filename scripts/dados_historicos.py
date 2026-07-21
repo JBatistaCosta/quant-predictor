@@ -1074,6 +1074,348 @@ FEATURES_NUMERICAS_V4 = FEATURES_NUMERICAS_V3 + [
 FEATURES_V4 = FEATURES_NUMERICAS_V4 + CAT_FEATURES
 
 
+# =============================================================================
+# v5 (contexto de campeonato): classificação, confronto direto (H2H) e
+# tendência de árbitro -- os três de custo-benefício mais alto levantados
+# nesta rodada: classificação e H2H são 100% deriváveis do que já está
+# carregado em `partidas` (zero query nova pro treino); árbitro usa dado
+# já capturado (`match_context_fotmob.referee` + `match_stats_fotmob`),
+# só nunca tinha virado feature.
+# =============================================================================
+def _calcular_classificacao_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
+    """Classificação (pontos/saldo de gols/posição) ANTES de cada partida
+    -- calculado 100% em cima de `partidas` já carregado, separado por
+    (league_id, season) pra não misturar temporada/liga diferente.
+    `pontos_por_jogo`/`saldo_por_jogo` (não os valores brutos) normalizam
+    times com jogo adiado/atrasado -- na mesma rodada do campeonato, times
+    podem ter disputado um número diferente de jogos, e pontos brutos não
+    seriam comparáveis entre eles. `jogos_disputados` fica como feature
+    companheira, pra distinguir "0 pontos em 0 jogos" (sem informação
+    ainda, estreia na temporada) de "0 pontos em 10 jogos" (time em crise
+    real) -- os dois têm pontos_por_jogo=0.0 igual, só o companheiro
+    diferencia."""
+    linhas = []
+    for _, grupo in partidas.groupby(["league_id", "season"]):
+        grupo = grupo.sort_values("match_date")
+        pontos: dict[int, int] = {}
+        saldo: dict[int, int] = {}
+        jogos: dict[int, int] = {}
+        for row in grupo.itertuples():
+            tabela = sorted(set(pontos) | {row.home_team_id, row.away_team_id}, key=lambda t: (-pontos.get(t, 0), -saldo.get(t, 0)))
+            posicao = {t: i + 1 for i, t in enumerate(tabela)}
+            for team_id in (row.home_team_id, row.away_team_id):
+                n = jogos.get(team_id, 0)
+                linhas.append(
+                    {
+                        "match_id": row.id,
+                        "team_id": team_id,
+                        "pontos_por_jogo": pontos.get(team_id, 0) / n if n > 0 else 0.0,
+                        "saldo_por_jogo": saldo.get(team_id, 0) / n if n > 0 else 0.0,
+                        "posicao": posicao[team_id],
+                        "jogos_disputados": n,
+                    }
+                )
+            # atualiza DEPOIS de registrar o snapshot -- nunca vaza o
+            # resultado do PRÓPRIO jogo que se está tentando prever.
+            h, a, hg, ag = row.home_team_id, row.away_team_id, row.home_goals, row.away_goals
+            if hg > ag:
+                pontos[h] = pontos.get(h, 0) + 3
+            elif hg == ag:
+                pontos[h] = pontos.get(h, 0) + 1
+                pontos[a] = pontos.get(a, 0) + 1
+            else:
+                pontos[a] = pontos.get(a, 0) + 3
+            saldo[h] = saldo.get(h, 0) + (hg - ag)
+            saldo[a] = saldo.get(a, 0) + (ag - hg)
+            jogos[h] = jogos.get(h, 0) + 1
+            jogos[a] = jogos.get(a, 0) + 1
+    return pd.DataFrame(linhas)
+
+
+def obter_classificacao_atual(supabase: Client, ligas_temporadas: list[tuple[int, str]]) -> dict[tuple[int, int], dict]:
+    """Classificação ATUAL (estado final de todos os jogos já disputados)
+    de cada (league_id, season) informado -- pra montar a feature de
+    fixtures futuras. Mesma lógica de `_calcular_classificacao_pre_jogo`,
+    só que o que importa é o estado FINAL da temporada corrente (todos os
+    jogos até agora), não um snapshot por partida histórica. Chave do
+    retorno é (league_id, team_id) -- um time pode aparecer em mais de
+    uma liga/temporada ao longo do histórico, mas dentro de uma rodada de
+    fixtures futuras só entra na (league_id, season) certa."""
+    resultado: dict[tuple[int, int], dict] = {}
+    for league_id, season in set(ligas_temporadas):
+        partidas = (
+            supabase.table("matches")
+            .select("home_team_id, away_team_id, home_goals, away_goals")
+            .eq("league_id", league_id)
+            .eq("season", season)
+            .eq("status", "finished")
+            .execute()
+            .data
+            or []
+        )
+        pontos: dict[int, int] = {}
+        saldo: dict[int, int] = {}
+        jogos: dict[int, int] = {}
+        for p in partidas:
+            h, a, hg, ag = p["home_team_id"], p["away_team_id"], p["home_goals"], p["away_goals"]
+            if hg > ag:
+                pontos[h] = pontos.get(h, 0) + 3
+            elif hg == ag:
+                pontos[h] = pontos.get(h, 0) + 1
+                pontos[a] = pontos.get(a, 0) + 1
+            else:
+                pontos[a] = pontos.get(a, 0) + 3
+            saldo[h] = saldo.get(h, 0) + (hg - ag)
+            saldo[a] = saldo.get(a, 0) + (ag - hg)
+            jogos[h] = jogos.get(h, 0) + 1
+            jogos[a] = jogos.get(a, 0) + 1
+        tabela = sorted(set(pontos) | set(jogos), key=lambda t: (-pontos.get(t, 0), -saldo.get(t, 0)))
+        posicao = {t: i + 1 for i, t in enumerate(tabela)}
+        for team_id in tabela:
+            n = jogos.get(team_id, 0)
+            resultado[(league_id, team_id)] = {
+                "pontos_por_jogo": pontos.get(team_id, 0) / n if n > 0 else 0.0,
+                "saldo_por_jogo": saldo.get(team_id, 0) / n if n > 0 else 0.0,
+                "posicao": posicao[team_id],
+                "jogos_disputados": n,
+            }
+    return resultado
+
+
+def resumir_h2h(historico: list[tuple[int, int, int, int]], home_team_id: int) -> tuple[float, float, int]:
+    """Resume uma lista de confrontos ANTERIORES (`(home_id, away_id,
+    home_goals, away_goals)`, qualquer lado histórico) da perspectiva de
+    quem é mandante NESTA partida (`home_team_id`) -- compartilhado pelo
+    caminho de treino (`_calcular_h2h_pre_jogo`) e o AO VIVO
+    (`obter_h2h_atual`). Sem confronto anterior: taxa de vitória neutra
+    (0.5, não 0 -- "sem informação" é diferente de "sempre perdeu") e
+    média de gols NaN (não dá pra estimar sem nenhum jogo)."""
+    n = len(historico)
+    if n == 0:
+        return 0.5, float("nan"), 0
+    vitorias, soma_gols = 0, 0
+    for h_home, h_away, h_hg, h_ag in historico:
+        gm, ga = (h_hg, h_ag) if h_home == home_team_id else (h_ag, h_hg)
+        if gm > ga:
+            vitorias += 1
+        soma_gols += h_hg + h_ag
+    return vitorias / n, soma_gols / n, n
+
+
+def _calcular_h2h_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
+    """Confronto direto ANTERIOR entre os 2 times de cada partida (dentro
+    do próprio escopo do dataset "Feature Stacked" -- não busca partidas
+    de copas continentais fora desse recorte) -- ponto-no-tempo real (só
+    conta encontros com `match_date` ANTERIOR ao jogo que se está
+    montando a feature). Uma linha por `match_id` (não por time -- é uma
+    característica do CONFRONTO, entra igual pros dois lados no dataset
+    final)."""
+    df = partidas[["id", "match_date", "home_team_id", "away_team_id", "home_goals", "away_goals"]].copy()
+    df["par"] = [tuple(sorted((h, a))) for h, a in zip(df["home_team_id"], df["away_team_id"])]
+    df = df.sort_values("match_date")
+
+    linhas = []
+    for _, grupo in df.groupby("par"):
+        historico: list[tuple[int, int, int, int]] = []
+        for row in grupo.itertuples():
+            taxa_vitoria_mandante, media_gols, n = resumir_h2h(historico, row.home_team_id)
+            linhas.append(
+                {
+                    "match_id": row.id,
+                    "h2h_taxa_vitoria_mandante": taxa_vitoria_mandante,
+                    "h2h_media_gols": media_gols,
+                    "h2h_n_jogos": n,
+                }
+            )
+            historico.append((row.home_team_id, row.away_team_id, row.home_goals, row.away_goals))
+    return pd.DataFrame(linhas)
+
+
+def obter_h2h_atual(supabase: Client, pares_de_times: list[tuple[int, int]]) -> dict[tuple[int, int], list[tuple[int, int, int, int]]]:
+    """Histórico de confronto direto ATÉ HOJE pra cada par de times de
+    fixtures futuras -- devolve a lista crua de confrontos anteriores
+    (mesmo formato de `resumir_h2h`), chaveada por par ORDENADO
+    (min,max) de team_id -- o caller (`montar_features_fixtures`) decide
+    qual dos dois é mandante NESTA partida e chama `resumir_h2h`. Ao
+    contrário da fadiga, o corte ponto-no-tempo aqui é sempre "agora"
+    (única referência que importa pra fixtures futuras -- H2H não muda
+    entre uma fixture de amanhã e uma da semana que vem)."""
+    resultado: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {}
+    for par in {tuple(sorted(p)) for p in pares_de_times}:
+        time_a, time_b = par
+        linhas = (
+            supabase.table("matches")
+            .select("home_team_id, away_team_id, home_goals, away_goals")
+            .eq("status", "finished")
+            .or_(f"and(home_team_id.eq.{time_a},away_team_id.eq.{time_b}),and(home_team_id.eq.{time_b},away_team_id.eq.{time_a})")
+            .execute()
+            .data
+            or []
+        )
+        resultado[par] = [(l["home_team_id"], l["away_team_id"], l["home_goals"], l["away_goals"]) for l in linhas]
+    return resultado
+
+
+def _carregar_arbitro_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Tendência do árbitro (cartões/faltas médios por jogo QUE ELE
+    apitou) ANTES de cada partida -- ponto-no-tempo real (`.shift(1)`
+    antes do `.expanding()`, mesma disciplina de `_forma_por_mando`: nunca
+    inclui o próprio jogo). Chaveado por NOME do árbitro
+    (`match_context_fotmob.referee` não tem ID estável na fonte) -- risco
+    leve de homônimos raros ficarem misturados, aceito (mesmo espírito de
+    outras simplificações documentadas neste módulo). Cobertura real
+    ~61% no escopo de treino (checado direto no banco antes de
+    implementar) -- NaN-tolerante como o resto, uma linha por `match_id`
+    (característica do jogo/árbitro, não por time)."""
+    vazio = pd.DataFrame(columns=["match_id", "arbitro_cartoes_media", "arbitro_faltas_media", "arbitro_n_jogos"])
+    match_ids = partidas["id"].astype(int).tolist()
+    if not match_ids:
+        return vazio
+
+    def factory_contexto(lote, inicio, fim):
+        return (
+            supabase.table("match_context_fotmob")
+            .select("match_id, referee")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    contexto = pd.DataFrame(_paginar_por_lotes_de_id(factory_contexto, match_ids))
+    if contexto.empty or "referee" not in contexto.columns:
+        return vazio
+    contexto = contexto[contexto["referee"].notna()].copy()
+    if contexto.empty:
+        return vazio
+
+    def factory_stats(lote, inicio, fim):
+        return (
+            supabase.table("match_stats_fotmob")
+            .select("match_id, yellow_cards, red_cards, fouls_committed")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    stats = pd.DataFrame(_paginar_por_lotes_de_id(factory_stats, contexto["match_id"].astype(int).tolist()))
+    if stats.empty:
+        return vazio
+    por_jogo = (
+        stats.groupby("match_id")
+        .agg(
+            total_cartoes=("yellow_cards", lambda s: float(s.fillna(0).sum())),
+            total_vermelhos=("red_cards", lambda s: float(s.fillna(0).sum())),
+            total_faltas=("fouls_committed", lambda s: float(s.fillna(0).sum())),
+        )
+        .reset_index()
+    )
+    por_jogo["total_cartoes"] = por_jogo["total_cartoes"] + por_jogo["total_vermelhos"]
+
+    base = contexto.merge(por_jogo, on="match_id", how="inner")
+    base = base.merge(partidas[["id", "match_date"]].rename(columns={"id": "match_id"}), on="match_id", how="inner")
+    base = base.sort_values(["referee", "match_date"])
+
+    base["arbitro_cartoes_media"] = base.groupby("referee")["total_cartoes"].transform(lambda s: s.shift(1).expanding().mean())
+    base["arbitro_faltas_media"] = base.groupby("referee")["total_faltas"].transform(lambda s: s.shift(1).expanding().mean())
+    base["arbitro_n_jogos"] = base.groupby("referee").cumcount()
+
+    return base[["match_id", "arbitro_cartoes_media", "arbitro_faltas_media", "arbitro_n_jogos"]]
+
+
+def obter_arbitro_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict]:
+    """Tendência do árbitro pra fixtures futuras -- BEST-EFFORT: escalação
+    de árbitro só costuma ser divulgada pouco antes do jogo, então isso
+    fica sem dado (dict vazio) pra quase toda fixture agendada (checado
+    direto no banco: 8 de 3139 partidas agendadas têm árbitro capturado
+    hoje) -- não é bug, é limitação real da fonte (não tem como prever
+    quem vai apitar). Quando o árbitro É conhecido, calcula a mesma
+    média histórica de `_carregar_arbitro_pre_jogo`."""
+    if not match_ids:
+        return {}
+    contexto = supabase.table("match_context_fotmob").select("match_id, referee").in_("match_id", match_ids).execute().data or []
+    nomes = {c["match_id"]: c["referee"] for c in contexto if c.get("referee")}
+    if not nomes:
+        return {}
+
+    arbitros = list(set(nomes.values()))
+    linhas_contexto = supabase.table("match_context_fotmob").select("match_id, referee").in_("referee", arbitros).execute().data or []
+    referee_por_match = {l["match_id"]: l["referee"] for l in linhas_contexto}
+    match_ids_historico = list(referee_por_match.keys())
+    linhas_stats = (
+        (
+            supabase.table("match_stats_fotmob")
+            .select("match_id, yellow_cards, red_cards, fouls_committed")
+            .in_("match_id", match_ids_historico)
+            .execute()
+            .data
+            or []
+        )
+        if match_ids_historico
+        else []
+    )
+
+    # `match_stats_fotmob` tem uma linha POR TIME por partida -- soma as
+    # duas linhas de cada `match_id` ANTES de acumular por árbitro, senão
+    # "n" conta aparição de time (2x por partida) em vez de partida, e as
+    # médias saem pela metade do valor real (mesmo agrupamento de
+    # `_carregar_arbitro_pre_jogo`, que usa `groupby("match_id").agg(sum)`).
+    por_jogo: dict[int, dict] = {}
+    for linha in linhas_stats:
+        totais = por_jogo.setdefault(linha["match_id"], {"cartoes": 0.0, "faltas": 0.0})
+        totais["cartoes"] += (linha.get("yellow_cards") or 0) + (linha.get("red_cards") or 0)
+        totais["faltas"] += linha.get("fouls_committed") or 0
+
+    acumulado: dict[str, dict] = {}
+    for match_id, totais in por_jogo.items():
+        arb = referee_por_match.get(match_id)
+        if not arb:
+            continue
+        est = acumulado.setdefault(arb, {"cartoes": 0.0, "faltas": 0.0, "n": 0})
+        est["cartoes"] += totais["cartoes"]
+        est["faltas"] += totais["faltas"]
+        est["n"] += 1
+
+    resultado: dict[int, dict] = {}
+    for match_id, nome in nomes.items():
+        est = acumulado.get(nome)
+        if not est or est["n"] == 0:
+            continue
+        resultado[match_id] = {
+            "arbitro_cartoes_media": est["cartoes"] / est["n"],
+            "arbitro_faltas_media": est["faltas"] / est["n"],
+            "arbitro_n_jogos": est["n"],
+        }
+    return resultado
+
+
+# v5 (contexto de campeonato): tudo da v4 + classificação
+# (`pontos_por_jogo`/`saldo_por_jogo`/`posicao`/`jogos_disputados`,
+# ver `_calcular_classificacao_pre_jogo`/`obter_classificacao_atual`) +
+# confronto direto (`h2h_taxa_vitoria_mandante`/`h2h_media_gols`/
+# `h2h_n_jogos`, ver `_calcular_h2h_pre_jogo`/`obter_h2h_atual`) +
+# tendência de árbitro (`arbitro_cartoes_media`/`arbitro_faltas_media`/
+# `arbitro_n_jogos`, ver `_carregar_arbitro_pre_jogo`/`obter_arbitro_atual`
+# -- só treino tem cobertura real, ao vivo fica NaN quase sempre) --
+# dixon_coles_v1 não ganha v5 pela mesma razão de v2/v3/v4.
+FEATURES_NUMERICAS_V5 = FEATURES_NUMERICAS_V4 + [
+    "pontos_por_jogo_home",
+    "pontos_por_jogo_away",
+    "saldo_por_jogo_home",
+    "saldo_por_jogo_away",
+    "posicao_home",
+    "posicao_away",
+    "jogos_disputados_home",
+    "jogos_disputados_away",
+    "h2h_taxa_vitoria_mandante",
+    "h2h_media_gols",
+    "h2h_n_jogos",
+    "arbitro_cartoes_media",
+    "arbitro_faltas_media",
+    "arbitro_n_jogos",
+]
+FEATURES_V5 = FEATURES_NUMERICAS_V5 + CAT_FEATURES
+
+
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
     temporadas de CADA uma das 5 ligas de elite europeias (em vez de usar
@@ -1186,9 +1528,42 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         cartoes_away[["id", "away_team_id", "cartoes_acumulados_away", "jogadores_pendurados_away"]], on=["id", "away_team_id"], how="left"
     )
 
+    classificacao = _calcular_classificacao_pre_jogo(partidas)
+    colunas_classificacao = ["pontos_por_jogo", "saldo_por_jogo", "posicao", "jogos_disputados"]
+    if not classificacao.empty:
+        classificacao_home = classificacao.rename(columns={"match_id": "id", "team_id": "home_team_id"}).rename(
+            columns={c: f"{c}_home" for c in colunas_classificacao}
+        )
+        classificacao_away = classificacao.rename(columns={"match_id": "id", "team_id": "away_team_id"}).rename(
+            columns={c: f"{c}_away" for c in colunas_classificacao}
+        )
+    else:
+        classificacao_home = pd.DataFrame(columns=["id", "home_team_id", *[f"{c}_home" for c in colunas_classificacao]])
+        classificacao_away = pd.DataFrame(columns=["id", "away_team_id", *[f"{c}_away" for c in colunas_classificacao]])
+    dataset = dataset.merge(
+        classificacao_home[["id", "home_team_id", *[f"{c}_home" for c in colunas_classificacao]]], on=["id", "home_team_id"], how="left"
+    )
+    dataset = dataset.merge(
+        classificacao_away[["id", "away_team_id", *[f"{c}_away" for c in colunas_classificacao]]], on=["id", "away_team_id"], how="left"
+    )
+
+    h2h = _calcular_h2h_pre_jogo(partidas)
+    if h2h.empty:
+        h2h = pd.DataFrame(columns=["id", "h2h_taxa_vitoria_mandante", "h2h_media_gols", "h2h_n_jogos"])
+    else:
+        h2h = h2h.rename(columns={"match_id": "id"})
+    dataset = dataset.merge(h2h, on="id", how="left")
+
+    arbitro = _carregar_arbitro_pre_jogo(supabase, partidas)
+    if arbitro.empty:
+        arbitro = pd.DataFrame(columns=["id", "arbitro_cartoes_media", "arbitro_faltas_media", "arbitro_n_jogos"])
+    else:
+        arbitro = arbitro.rename(columns={"match_id": "id"})
+    dataset = dataset.merge(arbitro, on="id", how="left")
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V4, "resultado", "resultado_over25"]]
+    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V5, "resultado", "resultado_over25"]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM

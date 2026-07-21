@@ -8,7 +8,7 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      recente por casa/seleção e salva em `market_odds` via UPSERT. Não faz
      chamada de API própria: reaproveita odds reais que já existem.
   2. Roda os modelos de predição 1X2 (dixon_coles_v1 + catboost/xgboost/
-     lightgbm em v1, v2, v3 e v4) para as mesmas partidas -- cada um
+     lightgbm em v1, v2, v3, v4 e v5) para as mesmas partidas -- cada um
      treinado com a janela de dado histórico apropriada pra sua família
      (ver `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas +
      decaimento temporal; os modelos de árvore usam um dataset "Feature
@@ -17,10 +17,13 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      _forma_por_mando`). A v2 (`modelos_ml.FEATURES_POR_MODELO`) soma força
      do elenco (rating Elo-like por jogador, `dados_historicos.
      obter_squad_rating_atual`/`_carregar_squad_rating_pre_jogo`), a v3 soma
-     descanso pré-jogo/fadiga, e a v4 soma risco de suspensão por acúmulo de
+     descanso pré-jogo/fadiga, a v4 soma risco de suspensão por acúmulo de
      cartão (`dados_historicos.obter_cartoes_atuais`/`_carregar_cartoes_pre_
-     jogo`) às features da versão anterior -- dixon_coles_v1 não tem v2/v3/
-     v4 (modelo Poisson de força de time, não aceita feature de jogador).
+     jogo`), e a v5 soma classificação/tabela atual, confronto direto (H2H)
+     e tendência de árbitro (`dados_historicos.obter_classificacao_atual`/
+     `obter_h2h_atual`/`obter_arbitro_atual`) às features da versão anterior
+     -- dixon_coles_v1 não tem v2/v3/v4/v5 (modelo Poisson de força de
+     time, não aceita feature de jogador/contexto).
   3. Cada modelo ganha DUAS variantes CALIBRADAS (Platt e Isotonic
      Regression, ajustadas num Validation Set que o modelo base não
      treinou -- ver `calibracao.py`), persistidas ao lado da crua com
@@ -129,7 +132,7 @@ def buscar_fixtures_reais(supabase: Client, limite: int = LIMITE_FIXTURES) -> pd
     agora = pd.Timestamp.now(tz="UTC").isoformat()
     candidatas = (
         supabase.table("matches")
-        .select("id, league_id, home_team_id, away_team_id, match_date")
+        .select("id, league_id, home_team_id, away_team_id, match_date, season")
         .eq("status", "scheduled")
         .in_("league_id", LIGAS_ESCOPO)
         .gte("match_date", agora)
@@ -140,7 +143,7 @@ def buscar_fixtures_reais(supabase: Client, limite: int = LIMITE_FIXTURES) -> pd
         or []
     )
     if not candidatas:
-        return pd.DataFrame(columns=["match_id", "league_id", "home_team_id", "away_team_id", "match_date", "liga"])
+        return pd.DataFrame(columns=["match_id", "league_id", "home_team_id", "away_team_id", "match_date", "season", "liga"])
 
     ids_candidatos = [c["id"] for c in candidatas]
     com_odds = set()
@@ -151,7 +154,7 @@ def buscar_fixtures_reais(supabase: Client, limite: int = LIMITE_FIXTURES) -> pd
 
     selecionadas = [c for c in candidatas if c["id"] in com_odds][:limite]
     if not selecionadas:
-        return pd.DataFrame(columns=["match_id", "league_id", "home_team_id", "away_team_id", "match_date", "liga"])
+        return pd.DataFrame(columns=["match_id", "league_id", "home_team_id", "away_team_id", "match_date", "season", "liga"])
 
     ligas = supabase.table("leagues").select("id, name").in_("id", LIGAS_ESCOPO).execute().data or []
     nome_liga_por_id = {l["id"]: l["name"] for l in ligas}
@@ -164,6 +167,11 @@ def buscar_fixtures_reais(supabase: Client, limite: int = LIMITE_FIXTURES) -> pd
                 "home_team_id": c["home_team_id"],
                 "away_team_id": c["away_team_id"],
                 "match_date": c["match_date"],
+                # temporada ATUAL da partida -- usado por v5 pra buscar a
+                # classificação/tabela (`dados_historicos.
+                # obter_classificacao_atual`, que precisa de (league_id,
+                # season) pra saber em qual tabela olhar).
+                "season": c["season"],
                 # nome EXATO de `leagues.name` -- precisa bater com
                 # `dados_historicos.LIGAS_ELITE_EUROPEIAS` pra alinhar com a
                 # categoria "liga" vista no treino dos modelos de ML.
@@ -398,7 +406,12 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     `dados_historicos.obter_cartoes_atuais`) roda pras 6 ligas do
     benchmarking (inclusive Brasileirão -- `CARTAO_LIMIAR_POR_LIGA` já tem
     a regra da CBF), diferente de `liga`/`squad_rating`, que só fazem
-    sentido pro dataset "Feature Stacked" europeu."""
+    sentido pro dataset "Feature Stacked" europeu. v5 soma classificação/
+    tabela atual (`dados_historicos.obter_classificacao_atual`), confronto
+    direto (`obter_h2h_atual` + `resumir_h2h`) e tendência de árbitro
+    (`obter_arbitro_atual` -- best-effort, NaN honesto quando o árbitro da
+    partida ainda não foi divulgado, o que é a norma pra fixtures a mais de
+    ~1h do apito inicial)."""
     ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
@@ -418,6 +431,17 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     cartoes_atuais = dados_historicos.obter_cartoes_atuais(supabase, ids_conhecidos, nome_por_league_id, league_id_por_time)
     cartoes_padrao = {"cartoes_acumulados": float("nan"), "jogadores_pendurados": float("nan")}
 
+    ligas_temporadas = sorted({(int(jogo["league_id"]), jogo["season"]) for _, jogo in fixtures.iterrows() if pd.notna(jogo.get("league_id")) and pd.notna(jogo.get("season"))})
+    classificacao_atual = dados_historicos.obter_classificacao_atual(supabase, ligas_temporadas)
+    classificacao_padrao = {"pontos_por_jogo": 0.0, "saldo_por_jogo": 0.0, "posicao": float("nan"), "jogos_disputados": 0}
+
+    pares_de_times = [(jogo["home_team_id"], jogo["away_team_id"]) for _, jogo in fixtures.iterrows()]
+    h2h_atual = dados_historicos.obter_h2h_atual(supabase, pares_de_times)
+
+    match_ids = fixtures["match_id"].tolist()
+    arbitro_atual = dados_historicos.obter_arbitro_atual(supabase, match_ids)
+    arbitro_padrao = {"arbitro_cartoes_media": float("nan"), "arbitro_faltas_media": float("nan"), "arbitro_n_jogos": 0}
+
     linhas = []
     for _, jogo in fixtures.iterrows():
         id_casa = jogo["home_team_id"]
@@ -429,6 +453,12 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         data_jogo = pd.to_datetime(jogo["match_date"], utc=True)
         dias_casa, midweek_casa = _fadiga_da_fixture(data_jogo, ultimo_jogo_por_time.get(id_casa))
         dias_fora, midweek_fora = _fadiga_da_fixture(data_jogo, ultimo_jogo_por_time.get(id_fora))
+        league_id = league_id_por_time.get(id_casa)
+        classificacao_casa = classificacao_atual.get((league_id, id_casa), classificacao_padrao)
+        classificacao_fora = classificacao_atual.get((league_id, id_fora), classificacao_padrao)
+        historico_h2h = h2h_atual.get(tuple(sorted((id_casa, id_fora))), [])
+        h2h_taxa_vitoria_mandante, h2h_media_gols, h2h_n_jogos = dados_historicos.resumir_h2h(historico_h2h, id_casa)
+        arbitro = arbitro_atual.get(jogo["match_id"], arbitro_padrao)
         linhas.append(
             {
                 "match_id": jogo["match_id"],
@@ -452,6 +482,20 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "cartoes_acumulados_away": cartoes_fora.get("cartoes_acumulados"),
                 "jogadores_pendurados_home": cartoes_casa.get("jogadores_pendurados"),
                 "jogadores_pendurados_away": cartoes_fora.get("jogadores_pendurados"),
+                "pontos_por_jogo_home": classificacao_casa.get("pontos_por_jogo"),
+                "pontos_por_jogo_away": classificacao_fora.get("pontos_por_jogo"),
+                "saldo_por_jogo_home": classificacao_casa.get("saldo_por_jogo"),
+                "saldo_por_jogo_away": classificacao_fora.get("saldo_por_jogo"),
+                "posicao_home": classificacao_casa.get("posicao"),
+                "posicao_away": classificacao_fora.get("posicao"),
+                "jogos_disputados_home": classificacao_casa.get("jogos_disputados"),
+                "jogos_disputados_away": classificacao_fora.get("jogos_disputados"),
+                "h2h_taxa_vitoria_mandante": h2h_taxa_vitoria_mandante,
+                "h2h_media_gols": h2h_media_gols,
+                "h2h_n_jogos": h2h_n_jogos,
+                "arbitro_cartoes_media": arbitro.get("arbitro_cartoes_media"),
+                "arbitro_faltas_media": arbitro.get("arbitro_faltas_media"),
+                "arbitro_n_jogos": arbitro.get("arbitro_n_jogos"),
                 "liga": jogo["liga"],
             }
         )
