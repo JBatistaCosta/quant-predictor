@@ -109,6 +109,53 @@ async function buscarTudoPaginado(criarQuery) {
   return resultado;
 }
 
+// Normaliza as saídas do pipeline "Model Benchmarking" (`predicoes`/
+// `market_odds`, ver scripts/rodar_predicoes.py) pro MESMO formato usado
+// pelo pipeline mais antigo (`model_predictions`/`odds_market`, uma linha
+// por seleção) -- assim o resto deste arquivo (agrupamento, log-loss,
+// Brier, acurácia, calibração em quintis) funciona idêntico pros dois
+// pipelines sem duplicar lógica de cálculo, só a normalização de formato.
+// `predicoes` só cobre 1X2 (não tem Over/Under 2.5 salvo por partida, só
+// o agregado do backtest em model_benchmarking_backtest) -- variantes
+// calibradas (`_calibrado_platt`/`_calibrado_isotonic`) já entram como
+// `model_name` PRÓPRIO (a probabilidade na linha já É a calibrada), por
+// isso não passam pelo mesmo cruzamento com `model_calibration` que os
+// modelos do pipeline antigo passam mais abaixo.
+function normalizarPredicoesBenchmarking(rows) {
+  const linhas = [];
+  for (const r of rows) {
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+  }
+  return linhas;
+}
+
+// `market_odds` é uma linha por (match_id, bookmaker) -- consensus de
+// mercado equivalente ao `bookmaker='media_mercado'` do pipeline antigo é
+// a MÉDIA das odds de todas as casas capturadas por partida (mesmo
+// espírito, dado diferente: lá é uma linha só pré-calculada, aqui calcula
+// na hora a partir de várias linhas por bookmaker).
+function normalizarOddsBenchmarking(rows) {
+  const somaPorMatch = {};
+  for (const r of rows) {
+    const acc = somaPorMatch[r.match_id] || { home: 0, draw: 0, draw_n: 0, away: 0, n: 0 };
+    acc.home += Number(r.odd_home);
+    acc.away += Number(r.odd_away);
+    acc.n += 1;
+    if (r.odd_draw != null) { acc.draw += Number(r.odd_draw); acc.draw_n += 1; }
+    somaPorMatch[r.match_id] = acc;
+  }
+  const linhas = [];
+  for (const [matchId, acc] of Object.entries(somaPorMatch)) {
+    if (acc.n === 0) continue;
+    linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'home', odds: acc.home / acc.n });
+    linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'away', odds: acc.away / acc.n });
+    if (acc.draw_n > 0) linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'draw', odds: acc.draw / acc.draw_n });
+  }
+  return linhas;
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
@@ -117,12 +164,24 @@ export default async function handler(req, res) {
   const { modelo, mercado, liga_id } = req.query;
 
   try {
-    const predicoes = await buscarTudoPaginado(() => {
-      let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
-      if (modelo) q = q.eq('model_name', modelo);
-      if (mercado) q = q.eq('market', mercado);
-      return q;
-    });
+    const [predicoesAntigas, predicoesBenchmarkingRaw] = await Promise.all([
+      buscarTudoPaginado(() => {
+        let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+        if (modelo) q = q.eq('model_name', modelo);
+        if (mercado) q = q.eq('market', mercado);
+        return q;
+      }),
+      // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
+      // já filtra tudo fora, sem precisar de query condicional separada.
+      mercado && mercado !== '1X2'
+        ? Promise.resolve([])
+        : buscarTudoPaginado(() => {
+            let q = supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away');
+            if (modelo) q = q.eq('model_name', modelo);
+            return q;
+          }),
+    ]);
+    const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
     if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [] });
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
@@ -130,12 +189,14 @@ export default async function handler(req, res) {
     // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
     // round-trips do que quebrar em lotes de match_id.
-    const [todasMatches, oddsRowsBrutas, corneragensBrutas, calibracoes] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+      buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
       buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
+    const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
 
     // calibração salva por model_name+market+selection -> { platt: {a,b}, isotonic: {x,y} }
     const calibPorChave = {};

@@ -79,6 +79,42 @@ function devigar(oddsPorSelecao) {
   return normalizadas;
 }
 
+// Normaliza `predicoes`/`market_odds` (pipeline "Model Benchmarking", ver
+// scripts/rodar_predicoes.py) pro MESMO formato de `model_predictions`/
+// `odds_market` (pipeline mais antigo, uma linha por seleção) -- ver
+// api/model-stats.js pra explicação completa (mesma normalização,
+// duplicada aqui pelo mesmo motivo do resto deste arquivo já duplicar
+// devigar/buscarTudoPaginado/calcularResultadosReais em vez de importar).
+function normalizarPredicoesBenchmarking(rows) {
+  const linhas = [];
+  for (const r of rows) {
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+  }
+  return linhas;
+}
+
+function normalizarOddsBenchmarking(rows) {
+  const somaPorMatch = {};
+  for (const r of rows) {
+    const acc = somaPorMatch[r.match_id] || { home: 0, draw: 0, draw_n: 0, away: 0, n: 0 };
+    acc.home += Number(r.odd_home);
+    acc.away += Number(r.odd_away);
+    acc.n += 1;
+    if (r.odd_draw != null) { acc.draw += Number(r.odd_draw); acc.draw_n += 1; }
+    somaPorMatch[r.match_id] = acc;
+  }
+  const linhas = [];
+  for (const [matchId, acc] of Object.entries(somaPorMatch)) {
+    if (acc.n === 0) continue;
+    linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'home', odds: acc.home / acc.n });
+    linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'away', odds: acc.away / acc.n });
+    if (acc.draw_n > 0) linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'draw', odds: acc.draw / acc.draw_n });
+  }
+  return linhas;
+}
+
 async function buscarTudoPaginado(criarQuery) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
@@ -131,22 +167,35 @@ export default async function handler(req, res) {
   const usarCalibracao = ['platt', 'isotonic'].includes(req.query.usar_calibracao) ? req.query.usar_calibracao : 'nenhuma';
 
   try {
-    const predicoes = await buscarTudoPaginado(() => {
-      let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
-      if (modelo) q = q.eq('model_name', modelo);
-      if (mercado) q = q.eq('market', mercado);
-      return q;
-    });
+    const [predicoesAntigas, predicoesBenchmarkingRaw] = await Promise.all([
+      buscarTudoPaginado(() => {
+        let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+        if (modelo) q = q.eq('model_name', modelo);
+        if (mercado) q = q.eq('market', mercado);
+        return q;
+      }),
+      // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado já filtra tudo fora.
+      mercado && mercado !== '1X2'
+        ? Promise.resolve([])
+        : buscarTudoPaginado(() => {
+            let q = supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away');
+            if (modelo) q = q.eq('model_name', modelo);
+            return q;
+          }),
+    ]);
+    const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
     if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [], resumo_geral: null });
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    const [todasMatches, oddsRowsBrutas, corneragensBrutas, calibracoes] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+      buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
       buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
+    const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
 
     const calibPorChave = {};
     calibracoes.forEach(c => {
