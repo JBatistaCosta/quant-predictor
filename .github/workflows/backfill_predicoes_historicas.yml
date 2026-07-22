@@ -1,17 +1,19 @@
-name: Model Benchmarking - Backfill de previsões históricas (1X2)
+name: Model Benchmarking - Backfill de previsões históricas (1X2 + Over/Under 2.5)
 
 # Roda scripts/backfill_predicoes_historicas.py -- popula `predicoes` com
-# previsão 1X2 de TODOS os modelos (dixon_coles_v1 + 18 modelos de árvore,
-# v1-v5/v3B) pro Test Set out-of-sample inteiro (temporada 2025+), não só
-# as ~10 fixtures futuras que o cron diário (predict.yml) escolhe por
-# rodada. Corrige "modelos v3+ não aparecem na Simulação de Carteira"
-# (/simulacao-carteira só lista um modelo com pelo menos 1 partida
-# finalizada com previsão persistida -- v3/v4/v5/v3B são recentes demais
-# pra terem acumulado isso sozinhos ainda).
+# previsão de TODOS os modelos (dixon_coles_v1 + 18 modelos de árvore,
+# v1-v5/v3B), nos 2 mercados com odds reais (1X2 e Over/Under 2.5), pro
+# Test Set out-of-sample inteiro (temporada 2025+) -- não só as ~10
+# fixtures futuras que o cron diário (predict.yml) escolhe por rodada.
+# Corrige "modelos v3+ não aparecem na Simulação de Carteira" (v3/v4/v5/
+# v3B são recentes demais pra terem acumulado partida finalizada
+# sozinhos) e "não houve treinamento pra Over/Under 2.5 nos outros
+# modelos" (houve, só nunca tinha sido persistido em lugar servível --
+# ver migração add_mercado_predicoes).
 #
 # Só workflow_dispatch -- é um backfill pontual (idempotente, upsert por
-# match_id+model_name), não precisa rodar de novo depois que os modelos
-# "encostarem" via cron diário.
+# match_id+model_name+mercado), não precisa rodar de novo depois que os
+# modelos "encostarem" via cron diário.
 
 on:
   workflow_dispatch: {}
@@ -19,7 +21,7 @@ on:
 jobs:
   backfill-predicoes-historicas:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     steps:
       - name: Checkout do repositório
