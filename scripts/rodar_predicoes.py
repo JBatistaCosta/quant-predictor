@@ -647,10 +647,20 @@ def montar_linhas_predicoes(
     return linhas
 
 
+TAMANHO_LOTE_UPSERT_PREDICOES = 500  # um upsert só com dezenas de milhares de
+# linhas (ex.: backfill_predicoes_historicas.py, 19 modelos x milhares de
+# partidas x 3 variantes) estoura o statement_timeout do Postgres
+# ("57014 canceling statement due to statement timeout") -- confirmado
+# rodando o backfill de verdade. O cron diário nunca teria esse volume
+# sozinho, mas o lote protege os dois casos igual.
+
+
 def salvar_predicoes(supabase: Client, linhas: list[dict]) -> None:
     if not linhas:
         return
-    supabase.table("predicoes").upsert(linhas, on_conflict="match_id,model_name").execute()
+    for inicio in range(0, len(linhas), TAMANHO_LOTE_UPSERT_PREDICOES):
+        lote = linhas[inicio : inicio + TAMANHO_LOTE_UPSERT_PREDICOES]
+        supabase.table("predicoes").upsert(lote, on_conflict="match_id,model_name").execute()
 
 
 def _persistir_cru_e_calibrados(
