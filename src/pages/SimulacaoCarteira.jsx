@@ -17,6 +17,7 @@
 // ?tarefa=modelos-disponiveis.
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wallet, Loader2, AlertTriangle, PlayCircle, ChevronDown, ChevronRight, TrendingDown } from 'lucide-react';
+import PainelInfoModelo, { BotaoInfoModelo } from '../components/PainelInfoModelo';
 
 const MERCADO_CONTEXTO = 'Mercado 1X2, restrito ao período de teste out-of-sample (temporada 2025+) — treino/validação (2019–2024) fica de fora. Execução comparada em duas odds da Pinnacle: abertura vs. fechamento; modelos sem esse par (ex.: só "Model Benchmarking") podem não ter apostas em nenhuma das duas.';
 
@@ -168,6 +169,7 @@ export default function SimulacaoCarteira() {
   const [erro, setErro] = useState('');
   const [resultados, setResultados] = useState(null); // [{ modelo, execucao, sumario, rodadas }] (2 linhas por modelo: abertura + fechamento)
   const [abertos, setAbertos] = useState({});
+  const [modeloInfo, setModeloInfo] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -280,18 +282,19 @@ export default function SimulacaoCarteira() {
               <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg p-3">
                 {modelosDisponiveis.length === 0 && <span className="text-xs text-slate-500">Nenhum modelo com histórico resolvido ainda.</span>}
                 {modelosDisponiveis.map((m) => (
-                  <button
+                  <span
                     key={m.model_name}
-                    onClick={() => toggleModelo(m.model_name)}
-                    className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition-colors ${
+                    className={`flex items-center gap-1.5 text-xs pl-2.5 pr-2 py-1.5 rounded-lg border font-semibold transition-colors ${
                       modelosSelecionados.has(m.model_name)
                         ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
                         : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
                     }`}
-                    title={`${m.n_partidas_resolvidas} partidas resolvidas`}
                   >
-                    {m.model_name} <span className="opacity-60">({m.n_partidas_resolvidas})</span>
-                  </button>
+                    <button onClick={() => toggleModelo(m.model_name)} title={`${m.n_partidas_resolvidas} partidas resolvidas`}>
+                      {m.model_name} <span className="opacity-60">({m.n_partidas_resolvidas})</span>
+                    </button>
+                    <BotaoInfoModelo onClick={() => setModeloInfo(m.model_name)} />
+                  </span>
                 ))}
               </div>
             </div>
@@ -385,6 +388,7 @@ export default function SimulacaoCarteira() {
           )}
         </>
       )}
+      <PainelInfoModelo modelName={modeloInfo} aberto={!!modeloInfo} onFechar={() => setModeloInfo(null)} />
     </div>
   );
 }
