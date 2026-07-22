@@ -60,7 +60,37 @@ funcionam normalmente.
 4. Depois disso, toda vez que você der `git push`, a Vercel atualiza o site
    sozinha (deploy automático).
 
-## 3. Por que isso resolve o problema do OCR
+## 3. Publicar no Firebase Hosting (alternativa ao passo 2)
+
+**Importante: só o front-end (a parte visual, `dist/`) vai pro Firebase Hosting.**
+As 12 funções em `api/*.js` (Supabase, API-Football, OCR, etc.) e os crons
+(`vercel.json`) continuam rodando no Vercel — Firebase Hosting só serve
+arquivos estáticos, não roda esse código de servidor. Por isso o front-end
+compilado pro Firebase precisa saber a URL do Vercel pra chamar a API
+(`src/utils/apiUrl.js` cuida disso, lendo `VITE_API_BASE_URL`).
+
+1. Instale a CLI do Firebase e faça login (uma vez só):
+   ```
+   npm install -g firebase-tools
+   firebase login
+   ```
+2. Garanta que existe um `.env` ou `.env.local` (não commitado) com
+   `VITE_SUPABASE_URL` e `VITE_SUPABASE_KEY` — os mesmos usados em `npm run dev`.
+   Sem isso o build quebra em runtime (o app não consegue falar com o Supabase).
+3. Rode:
+   ```
+   npm run deploy:firebase
+   ```
+   Isso builda com `.env.firebase` (define `VITE_API_BASE_URL` pro domínio de
+   produção do Vercel, `https://quant-predictor.vercel.app`) e publica o
+   `dist/` no projeto Firebase configurado em `.firebaserc` (`quant-79e8b`).
+4. O CORS das funções do Vercel já libera os domínios padrão do Firebase
+   Hosting (`*.web.app` / `*.firebaseapp.com`) e `localhost:5173` — ver
+   `api/_lib/cors.js`. Se depois você apontar um domínio próprio pro Firebase
+   Hosting, adicione-o na variável de ambiente `CORS_EXTRA_ORIGINS` no painel
+   do Vercel (aceita lista separada por vírgula) e faça redeploy das funções.
+
+## 4. Por que isso resolve o problema do OCR
 
 O leitor de imagens (botões "Ler Estatísticas" e "Ler Odds da Casa") usa
 `<input type="file">` para abrir a galeria/câmera do celular. Dentro do
@@ -69,7 +99,7 @@ vez publicado no Vercel, o app roda como um site normal no navegador do seu
 celular, com acesso total à câmera e à galeria — os botões devem funcionar
 imediatamente, sem nenhuma mudança de código.
 
-## 4. Estrutura do projeto
+## 5. Estrutura do projeto
 
 ```
 ├── index.html          # HTML raiz

@@ -18,6 +18,7 @@
 //   /api/match-odds?mandante=Brazil&visitante=Norway
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 const HORAS_DE_CACHE = 2;
 const SPORT_KEY = 'soccer_fifa_world_cup';
@@ -115,6 +116,7 @@ async function buscarDaOddsApi(nomeCasa, nomeFora, apiKey) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const apiKey = process.env.ODDS_API_KEY;
   if (!apiKey) return res.status(500).json({ error: { message: 'ODDS_API_KEY não configurada.' } });
   const supabaseUrl = process.env.SUPABASE_URL;

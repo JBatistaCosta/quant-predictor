@@ -8,6 +8,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar, Zap, TrendingUp, Trophy, Briefcase, RefreshCw, Ruler, Footprints, FileClock } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 const OPCOES_N = [10, 20, 40];
 
@@ -269,7 +270,7 @@ export default function JogadorDetalhe() {
   const sincronizarPerfilAvancado = async () => {
     setSincronizando(true); setErroSinc(''); setMsgSinc('');
     try {
-      const resp = await fetch(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${id}`);
+      const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${id}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao sincronizar.');
       const [{ data: mv }, { data: carreira }, { data: trof }, { data: det }] = await Promise.all([

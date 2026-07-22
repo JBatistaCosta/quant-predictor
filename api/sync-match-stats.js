@@ -30,6 +30,7 @@
 //   (liga_id = id em public.leagues; sem limite, processa até 40 por vez)
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
@@ -134,6 +135,7 @@ async function buscarEstatisticasDoTime(fixtureId, teamIdApiFootball, apiKey) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

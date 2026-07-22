@@ -12,6 +12,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange, UploadCloud, Loader2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
+import { apiUrl } from '../utils/apiUrl';
 
 const RODADAS_POR_PAGINA = 4;
 const LOTES_IMPORTACAO_PARTIDAS = [20, 50, 100, 200];
@@ -167,7 +168,7 @@ export default function LigaDetalhe() {
       const maxRodadas = Math.ceil(loteImportacao / rodadaLimite) + 3; // rede de segurança contra loop preso
       while (totalProcessado < loteImportacao && rodada < maxRodadas) {
         rodada++;
-        const resp = await fetch(`${url}&limite=${rodadaLimite}`);
+        const resp = await fetch(apiUrl(`${url}&limite=${rodadaLimite}`));
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Falha no lote.');
         if (dados.mensagem) { setMsgImportacao(dados.mensagem); break; }
@@ -197,7 +198,7 @@ export default function LigaDetalhe() {
     setCriandoJogos(fonte); setMsgCriarJogos(''); setErroCriarJogos('');
     const tarefa = fonte === 'fotmob' ? 'importar-jogos-fotmob' : 'importar-jogos-api-football';
     try {
-      const resp = await fetch(`/api/model-maintenance?tarefa=${tarefa}&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporadaNova.trim())}`);
+      const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=${tarefa}&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporadaNova.trim())}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao importar jogos.');
       setMsgCriarJogos(`${dados.sincronizados ?? 0} de ${dados.total_jogos ?? '?'} jogo(s) importado(s) (${fonte === 'fotmob' ? 'FotMob' : 'API-Football'}) pra temporada "${temporadaNova.trim()}".`);

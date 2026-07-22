@@ -30,6 +30,7 @@ import { getLambdaFormula } from '../utils/lambdaFormulas';
 import { extractJsonFromImage } from '../utils/ocr';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 import { negBinomialPMF } from '../utils/distributions';
+import { apiUrl } from '../utils/apiUrl';
 
 // Mesmo prompt de AnaliseEvento.jsx (OCR_STATS_PROMPT) — extrai xG/xGA/chutes/
 // escanteios dos DOIS times de uma vez a partir da tabela "Estatística média".
@@ -236,7 +237,7 @@ async function buscarEstimativaEscanteios(nomeMandante, nomeVisitante, idMandant
     const params = new URLSearchParams({ mandante: nomeMandante, visitante: nomeVisitante, linhas: '9.5' });
     if (idMandante) params.set('mandante_id', idMandante);
     if (idVisitante) params.set('visitante_id', idVisitante);
-    const resposta = await fetch(`/api/corners-model?${params.toString()}`);
+    const resposta = await fetch(apiUrl(`/api/corners-model?${params.toString()}`));
     if (!resposta.ok) return null;
     const dados = await resposta.json();
     return dados.error ? null : dados;
@@ -335,7 +336,7 @@ async function buscarComparacaoModeloMercado(matchId) {
 
 async function buscarPrecisaoModelo(ligaId) {
   try {
-    const resposta = await fetch(`/api/model-stats?liga_id=${ligaId}`);
+    const resposta = await fetch(apiUrl(`/api/model-stats?liga_id=${ligaId}`));
     if (!resposta.ok) return [];
     const dados = await resposta.json();
     return dados.grupos || [];

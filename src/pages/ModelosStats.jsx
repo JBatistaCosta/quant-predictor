@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -124,7 +125,7 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
       if (filtroModelo) params.set('modelo', filtroModelo);
       if (filtroMercado) params.set('mercado', filtroMercado);
       if (filtroLiga) params.set('liga_id', filtroLiga);
-      const resp = await fetch(`/api/backtest-betting?${params}`);
+      const resp = await fetch(apiUrl(`/api/backtest-betting?${params}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao rodar backtest.');
       setResultado(dados);
@@ -277,7 +278,7 @@ function ConfigPlayerElo() {
   useEffect(() => {
     (async () => {
       try {
-        const resp = await fetch('/api/model-maintenance?tarefa=config-get&model_name=player_elo_v1');
+        const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=config-get&model_name=player_elo_v1'));
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar config.');
         setConfig(dados.config);
@@ -294,7 +295,7 @@ function ConfigPlayerElo() {
   const salvar = async () => {
     setSalvando(true); setMsg(''); setErro('');
     try {
-      const resp = await fetch('/api/model-maintenance?tarefa=config-set&model_name=player_elo_v1', {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=config-set&model_name=player_elo_v1'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -314,7 +315,7 @@ function ConfigPlayerElo() {
     if (!window.confirm('Isso apaga TODOS os ratings de jogador e o histórico, e reprocessa do zero com a configuração atual (pode levar dezenas de lotes, alguns minutos). Continuar?')) return;
     setProcessando(true); setMsg(''); setErro('');
     try {
-      const respReset = await fetch('/api/model-maintenance?tarefa=player-elo-reset');
+      const respReset = await fetch(apiUrl('/api/model-maintenance?tarefa=player-elo-reset'));
       if (!respReset.ok) throw new Error('Falha no reset.');
       let restantes = null;
       let rodada = 0;
@@ -327,7 +328,7 @@ function ConfigPlayerElo() {
       // loop infinito em caso de erro real na API, nunca deveria ser
       // atingido em uso normal.
       for (rodada = 1; rodada <= 500; rodada++) {
-        const resp = await fetch('/api/model-maintenance?tarefa=player-elo&limite=200');
+        const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=player-elo&limite=200'));
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
         restantes = dados.partidas_restantes;
@@ -464,7 +465,7 @@ export default function ModelosStats() {
       setErro('');
       try {
         const [respStats, ligasResp] = await Promise.all([
-          fetch('/api/model-stats'),
+          fetch(apiUrl('/api/model-stats')),
           supabaseAtivo ? supabase.from('leagues').select('id, name') : Promise.resolve({ data: [] }),
         ]);
         const dataStats = await respStats.json();

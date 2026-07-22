@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, Plus, X, Loader2, AlertTriangle, Building2, Search, ChevronLeft, ChevronRight, Link2, Unlink, TrendingUp, Check } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 const CATEGORIAS = [
   { valor: 'masculino_profissional', rotulo: 'Masculino Profissional' },
@@ -105,7 +106,7 @@ export default function Times() {
     try {
       const params = new URLSearchParams({ time_id: pipelineTeamId });
       if (nomeManual) params.set('nome_clubelo', nomeManual);
-      const resp = await fetch(`/api/sync-clubelo?${params}`);
+      const resp = await fetch(apiUrl(`/api/sync-clubelo?${params}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao buscar no ClubElo.');
 

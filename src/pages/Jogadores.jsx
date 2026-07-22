@@ -11,6 +11,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { UserRound, Search, Loader2, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowUpDown, RotateCcw, UploadCloud, Star } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 const TAMANHO_PAGINA = 24;
 
@@ -144,7 +145,7 @@ export default function Jogadores() {
     if (!window.confirm('Isso apaga TODOS os ratings de jogador e o histórico, e reprocessa do zero com a configuração atual (pode levar dezenas de lotes, alguns minutos). Continuar?')) return;
     setResetando(true); setMsgReset(''); setErroReset('');
     try {
-      const respReset = await fetch('/api/model-maintenance?tarefa=player-elo-reset');
+      const respReset = await fetch(apiUrl('/api/model-maintenance?tarefa=player-elo-reset'));
       if (!respReset.ok) throw new Error('Falha no reset.');
       let restantes = null;
       let rodada = 0;
@@ -153,7 +154,7 @@ export default function Jogadores() {
       // quando o volume de partidas cresceu). 500 rodadas é só rede de
       // segurança contra loop infinito, nunca deveria ser atingida.
       for (rodada = 1; rodada <= 500; rodada++) {
-        const resp = await fetch('/api/model-maintenance?tarefa=player-elo&limite=200');
+        const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=player-elo&limite=200'));
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
         restantes = dados.partidas_restantes;
@@ -195,7 +196,7 @@ export default function Jogadores() {
         const jogador = candidatos[i];
         setMsgImportacao(`Importando ${i + 1}/${candidatos.length}: ${jogador.name || jogador.id}...`);
         try {
-          const resp = await fetch(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${jogador.id}`);
+          const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${jogador.id}`));
           const dados = await resp.json();
           if (!resp.ok || dados.error) throw new Error(dados.error?.message || dados.error || 'falha desconhecida');
           ok++;

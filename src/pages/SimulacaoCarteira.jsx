@@ -18,6 +18,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Wallet, Loader2, AlertTriangle, PlayCircle, ChevronDown, ChevronRight, TrendingDown, FileDown } from 'lucide-react';
 import PainelInfoModelo, { BotaoInfoModelo } from '../components/PainelInfoModelo';
+import { apiUrl } from '../utils/apiUrl';
 
 const MERCADO_CONTEXTO = 'Restrito ao período de teste out-of-sample (temporada 2025+) — treino/validação (2019–2024) fica de fora. Execução comparada em duas odds da Pinnacle: abertura vs. fechamento; modelos sem esse par (ex.: só "Model Benchmarking") podem não ter apostas em nenhuma das duas.';
 
@@ -193,7 +194,7 @@ export default function SimulacaoCarteira() {
     setCarregandoOpcoes(true);
     setErroOpcoes('');
     try {
-      const resp = await fetch(`/api/model-maintenance?tarefa=modelos-disponiveis&mercado=${encodeURIComponent(mercadoAtual)}`);
+      const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=modelos-disponiveis&mercado=${encodeURIComponent(mercadoAtual)}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar modelos.');
       setModelosDisponiveis(dados.modelos || []);
@@ -251,7 +252,7 @@ export default function SimulacaoCarteira() {
         const params = new URLSearchParams({ tarefa: 'simulacao-carteira', modelo, mercado, usar_calibracao: usarCalibracao, banca_inicial: String(bancaInicial) });
         if (ligaId) params.set('liga_id', ligaId);
         if (temporada) params.set('temporada', temporada);
-        const resp = await fetch(`/api/model-maintenance?${params}`);
+        const resp = await fetch(apiUrl(`/api/model-maintenance?${params}`));
         const dados = await resp.json();
         if (!resp.ok) throw new Error(`${modelo}: ${dados.error?.message || 'erro'}`);
         const execucoes = dados.execucoes && dados.execucoes.length > 0 ? dados.execucoes : [{ execucao: 'abertura', sumario: null, rodadas: [] }, { execucao: 'fechamento', sumario: null, rodadas: [] }];

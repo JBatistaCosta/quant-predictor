@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Trophy, Plus, X, Loader2, AlertTriangle, Search, Download, CheckCircle2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 const TIPOS_LIGA = [
   { valor: 'liga_domestica', rotulo: 'Liga Doméstica' },
@@ -46,7 +47,7 @@ export default function Ligas() {
     setErroBuscaFotmob('');
     setResultadosFotmob(null);
     try {
-      const resp = await fetch(`/api/model-maintenance?tarefa=fotmob-liga-buscar&termo=${encodeURIComponent(buscaFotmob)}`);
+      const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=fotmob-liga-buscar&termo=${encodeURIComponent(buscaFotmob)}`));
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
       setResultadosFotmob(data.resultados);
@@ -83,7 +84,7 @@ export default function Ligas() {
         confederacao: formImportFotmob.confederacao,
         simbolo_url: ligaFotmobSelecionada.simbolo_url,
       });
-      const resp = await fetch(`/api/model-maintenance?${params}`);
+      const resp = await fetch(apiUrl(`/api/model-maintenance?${params}`));
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
       setResultadoImportacao(data);
@@ -112,7 +113,7 @@ export default function Ligas() {
     setErroBusca('');
     setResultadosBusca(null);
     try {
-      const resp = await fetch(`/api/leagues-search?nome=${encodeURIComponent(buscaLiga)}`);
+      const resp = await fetch(apiUrl(`/api/leagues-search?nome=${encodeURIComponent(buscaLiga)}`));
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
       setResultadosBusca(data.resultados);

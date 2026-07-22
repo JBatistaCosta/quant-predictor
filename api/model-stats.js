@@ -24,6 +24,7 @@
 //   /api/model-stats?modelo=dixon_coles_v1&mercado=1X2&liga_id=4
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -157,6 +158,7 @@ function normalizarOddsBenchmarking(rows) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
   const supabase = getSupabase();

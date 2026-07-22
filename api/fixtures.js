@@ -17,6 +17,8 @@
 // COMO CHAMAR:
 //   /api/fixtures?time=Brazil&dias_passado=30&dias_futuro=60
 
+import { applyCors } from './_lib/cors.js';
+
 const API_FOOTBALL_URL = 'https://v3.football.api-sports.io';
 const FOOTBALL_DATA_URL = 'https://api.football-data.org/v4';
 const ODDS_API_URL = 'https://api.the-odds-api.com/v4';
@@ -178,6 +180,7 @@ async function buscarViaTheOddsApi(time, apiKey) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const apiFootballKey = process.env.API_FOOTBALL_KEY;
   const footballDataKey = process.env.FOOTBALL_DATA_KEY;
   const oddsApiKey = process.env.ODDS_API_KEY;

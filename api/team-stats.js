@@ -15,6 +15,7 @@
 //   /api/team-stats?times=Brazil,Norway,Mexico,England&jogos=5
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 const HORAS_DE_CACHE = 24; // depois de quanto tempo um time salvo é considerado "velho"
@@ -156,6 +157,7 @@ async function buscarTimeComCache(nomeTime, quantidadeJogos, apiKey, supabase) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const apiKey = process.env.API_FOOTBALL_KEY;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
