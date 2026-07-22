@@ -1,22 +1,24 @@
 // src/pages/ModelBenchmarking.jsx — rota /model-benchmarking
 // Painel dos modelos do Model Benchmarking (dixon_coles_v1 + catboost/
-// xgboost/lightgbm em v1 a v5 + v3B) competindo lado a lado, com o botão que
-// dispara o workflow_dispatch do predict.yml no GitHub Actions
-// (api/model-maintenance ?tarefa=disparar-predicoes). Leitura direta de
-// `predicoes`/`market_odds` (RLS pública) -- só o disparo exige login
-// (Authorization: Bearer do access_token do Supabase Auth, verificado no
-// servidor).
+// xgboost/lightgbm) competindo lado a lado, com o botão que dispara o
+// workflow_dispatch do predict.yml no GitHub Actions (api/model-maintenance
+// ?tarefa=disparar-predicoes). Leitura direta de `predicoes`/`market_odds`
+// (RLS pública) -- só o disparo exige login (Authorization: Bearer do
+// access_token do Supabase Auth, verificado no servidor).
 //
-// v2 soma força do elenco (rating Elo-like por jogador, ver
-// scripts/dados_historicos.py) às mesmas features de time da v1; v3 soma
-// descanso pré-jogo/fadiga (dias desde o último jogo + turnaround
-// apertado) à v2; v4 soma risco de suspensão por acúmulo de cartão à v3;
-// v5 soma classificação/tabela atual, confronto direto (H2H) e tendência
-// de árbitro à v4; v3B soma força do XI titular CONFIRMADO + valor de
-// mercado na data do jogo à v5 (nome "v3B" vem do PR #114, mas o conjunto
-// de features aqui é v5 + XI titular, não v2 + XI titular) -- dixon_coles_v1
-// não tem v2/v3/v4/v5/v3B (modelo Poisson de força de time, não aceita
-// feature de jogador/contexto).
+// Exibição restrita a partir da v3 (pedido do usuário: "deixe somente a
+// partir da terceira versão de cada modelo") -- v1/v2 de catboost/xgboost/
+// lightgbm continuam sendo treinados/previstos todo dia (rodar_predicoes.py/
+// backtest_kelly.py não mudaram, só esta tela), simplesmente não aparecem
+// mais aqui. v2 soma força do elenco às features de time da v1; v3 soma
+// descanso pré-jogo/fadiga à v2; v4 soma risco de suspensão por acúmulo de
+// cartão à v3; v5 soma classificação/tabela atual, confronto direto (H2H) e
+// tendência de árbitro à v4; v3B soma força do XI titular CONFIRMADO +
+// valor de mercado na data do jogo à v5 (nome "v3B" vem do PR #114, mas o
+// conjunto de features aqui é v5 + XI titular, não v2 + XI titular).
+// dixon_coles_v1 fica como baseline de referência (modelo Poisson à parte,
+// nunca ganhou a escada de features v2/v3/v4/v5/v3B, então "a partir da v3"
+// não se aplica a ele).
 import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
@@ -24,8 +26,6 @@ import { useAuth } from '../AuthContext';
 
 const MODELOS_BASE = [
   'dixon_coles_v1',
-  'catboost_v1', 'xgboost_v1', 'lightgbm_v1',
-  'catboost_v2', 'xgboost_v2', 'lightgbm_v2',
   'catboost_v3', 'xgboost_v3', 'lightgbm_v3',
   'catboost_v4', 'xgboost_v4', 'lightgbm_v4',
   'catboost_v5', 'xgboost_v5', 'lightgbm_v5',
@@ -33,12 +33,6 @@ const MODELOS_BASE = [
 ];
 const ROTULO_MODELO = {
   dixon_coles_v1: 'Dixon-Coles',
-  catboost_v1: 'CatBoost v1',
-  xgboost_v1: 'XGBoost v1',
-  lightgbm_v1: 'LightGBM v1',
-  catboost_v2: 'CatBoost v2 (+ elenco)',
-  xgboost_v2: 'XGBoost v2 (+ elenco)',
-  lightgbm_v2: 'LightGBM v2 (+ elenco)',
   catboost_v3: 'CatBoost v3 (+ fadiga)',
   xgboost_v3: 'XGBoost v3 (+ fadiga)',
   lightgbm_v3: 'LightGBM v3 (+ fadiga)',
