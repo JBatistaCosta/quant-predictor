@@ -2144,10 +2144,25 @@ function ehTemporadaDeTeste(season) {
   return season != null && String(season) >= TEMPORADA_TESTE_MINIMA;
 }
 
-async function tarefaModelosDisponiveis(supabase) {
+// Mercados oferecidos na Simulação de Carteira -- restrito aos que têm
+// odds reais de abertura/fechamento da Pinnacle em `odds_market` (sem
+// isso não dá pra rodar Kelly/EV+ nenhum, fica sempre 0 apostas). O
+// pipeline antigo também tem um modelo pra "corners_over_under_9.5"
+// (stats_glm_v1, model_predictions) mas SEM nenhuma odd capturada pra
+// esse mercado (confirmado via SQL) -- por isso NÃO entra aqui, mesmo já
+// tendo treino, seria sempre uma simulação vazia. `over_under_2.5` só
+// existe no pipeline antigo (dixon_coles_v1/_walkforward_v1) -- o
+// `predicoes` do Model Benchmarking só tem prob_home/draw/away, nenhuma
+// coluna de over/under, então nunca entra nesse mercado.
+const MERCADOS_CARTEIRA_SUPORTADOS = new Set(['1X2', 'over_under_2.5']);
+
+async function tarefaModelosDisponiveis(supabase, mercado = '1X2') {
+  const mercadoValido = MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2';
   const [predAntigas, predBenchmarking, todasMatches, ligas] = await Promise.all([
-    buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', '1X2')),
-    buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id')),
+    buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', mercadoValido)),
+    mercadoValido === '1X2'
+      ? buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id'))
+      : Promise.resolve([]),
     buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status')),
     buscarTudoPaginado(() => supabase.from('leagues').select('id, name')),
   ]);
@@ -2207,8 +2222,11 @@ function fracaoKellySimulacao(p, odd) {
   return Math.max(0, f) * 0.25; // Quarter Kelly
 }
 
-function calcularResultado1x2Simulacao(m) {
+function calcularResultadoMercadoSimulacao(m, mercado) {
   if (m.status !== 'finished' || m.home_goals == null || m.away_goals == null) return null;
+  if (mercado === 'over_under_2.5') {
+    return (m.home_goals + m.away_goals) > 2.5 ? 'over' : 'under';
+  }
   return m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw';
 }
 
@@ -2244,6 +2262,7 @@ function calcularResultado1x2Simulacao(m) {
 async function tarefaSimulacaoCarteira(supabase, query) {
   const { modelo, liga_id, temporada } = query;
   if (!modelo) return { status: 400, error: 'Parâmetro "modelo" é obrigatório.' };
+  const mercado = MERCADOS_CARTEIRA_SUPORTADOS.has(query.mercado) ? query.mercado : '1X2';
 
   const EV_MINIMO_PADRAO = 1.02, STAKE_MINIMA_PCT_PADRAO = 0.005, TETO_EXPOSICAO_PCT_PADRAO = 0.15, BANCA_INICIAL_PADRAO = 1000;
   const evMinimo = query.ev_minimo != null ? Number(query.ev_minimo) : EV_MINIMO_PADRAO;
@@ -2252,12 +2271,17 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   const bancaInicial = query.banca_inicial != null ? Number(query.banca_inicial) : BANCA_INICIAL_PADRAO;
   const usarCalibracao = ['platt', 'isotonic'].includes(query.usar_calibracao) ? query.usar_calibracao : 'nenhuma';
 
+  // Model Benchmarking (`predicoes`) só tem prob_home/draw/away -- nenhuma
+  // coluna de over/under, então só entra na simulação quando o mercado é
+  // 1X2 (ver MERCADOS_CARTEIRA_SUPORTADOS).
   const [predicoesAntigas, predicoesBenchmarkingRaw, calibracoesRaw] = await Promise.all([
-    buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', '1X2')),
-    buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo)),
+    buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado)),
+    mercado === '1X2'
+      ? buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo))
+      : Promise.resolve([]),
     usarCalibracao === 'nenhuma'
       ? Promise.resolve([])
-      : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', modelo).eq('market', '1X2')),
+      : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', modelo).eq('market', mercado)),
   ]);
   const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
 
@@ -2274,8 +2298,8 @@ async function tarefaSimulacaoCarteira(supabase, query) {
 
   const [todasMatches, pinnacleAberturaRaw, pinnacleFechaRaw] = await Promise.all([
     buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status, home_goals, away_goals, match_date')),
-    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', '1X2').eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle')),
-    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', '1X2').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle')),
+    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle')),
+    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle')),
   ]);
 
   const ligaIdNum = liga_id ? Number(liga_id) : null;
@@ -2299,7 +2323,7 @@ async function tarefaSimulacaoCarteira(supabase, query) {
     for (const p of predicoes) {
       if (!matchIdsValidos.has(p.match_id)) continue;
       const match = matchPorId[p.match_id];
-      const resultadoReal = calcularResultado1x2Simulacao(match);
+      const resultadoReal = calcularResultadoMercadoSimulacao(match, mercado);
       if (!resultadoReal) continue;
       const chave = `${p.match_id}__${p.selection}`;
       const odd = oddExecucaoPorChave[chave];
@@ -2432,7 +2456,7 @@ async function tarefaSimulacaoCarteira(supabase, query) {
     status: 200,
     body: {
       parametros: {
-        modelo, liga_id: ligaIdNum, temporada: temporada || null, temporada_minima_teste: TEMPORADA_TESTE_MINIMA,
+        modelo, mercado, liga_id: ligaIdNum, temporada: temporada || null, temporada_minima_teste: TEMPORADA_TESTE_MINIMA,
         usar_calibracao: usarCalibracao, ev_minimo: evMinimo, stake_minima_pct: stakeMinimaPct,
         teto_exposicao_pct: tetoExposicaoPct, banca_inicial: bancaInicial,
       },
@@ -2610,7 +2634,7 @@ export default async function handler(req, res) {
     }
 
     if (tarefa === 'modelos-disponiveis') {
-      return res.status(200).json(await tarefaModelosDisponiveis(supabase));
+      return res.status(200).json(await tarefaModelosDisponiveis(supabase, req.query.mercado));
     }
 
     if (tarefa === 'simulacao-carteira') {
