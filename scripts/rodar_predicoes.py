@@ -550,14 +550,24 @@ def _fadiga_da_fixture(data_jogo: pd.Timestamp, data_ultimo_jogo: pd.Timestamp |
 
 
 def prever_ml_com_calibracao(
-    nome_modelo: str, features_fixtures: pd.DataFrame, dataset_treino: pd.DataFrame
+    nome_modelo: str,
+    features_fixtures: pd.DataFrame,
+    dataset_treino: pd.DataFrame,
+    coluna_alvo: str = "resultado",
+    codigo_por_selecao: dict[str, int] | None = None,
+    selecoes: tuple[str, ...] | None = None,
 ) -> tuple[dict[int, dict[str, float]], dict[str, dict[int, dict[str, float]]]]:
     """Treina/prevê um modelo de árvore com suas variantes calibradas
     "conjugadas" (Platt e Isotonic, lado a lado): treina só no Train,
     ajusta os dois métodos no Validation (nunca visto pelo treino), depois
     refita no dataset INTEIRO (treino+validação) pra prever as fixtures de
     verdade, aplicando cada calibração já ajustada. Devolve
-    `(predicoes_cruas, predicoes_calibradas_por_metodo)`."""
+    `(predicoes_cruas, predicoes_calibradas_por_metodo)`.
+
+    `coluna_alvo`/`codigo_por_selecao`/`selecoes` default pro mercado 1X2
+    (uso diário em produção, `main()` abaixo) -- passados explicitamente só
+    por quem também precisa de Over/Under 2.5 (`backfill_predicoes_
+    historicas.py`, mesmo padrão de mercado de `backtest_kelly.MERCADOS`)."""
     treinar, prever = modelos_ml.TREINADORES[nome_modelo]
     params = modelos_ml.PARAMS_DEFAULT[nome_modelo]
     features = modelos_ml.FEATURES_POR_MODELO[nome_modelo]
@@ -568,21 +578,25 @@ def prever_ml_com_calibracao(
 
     calibradores_por_metodo: dict[str, dict] = {metodo: {} for metodo in METODOS_CALIBRACAO}
     if not val_df.empty and not train_df.empty:
-        modelo_val, extra_val = treinar(params, train_df, features=features)
+        modelo_val, extra_val = treinar(params, train_df, coluna_alvo=coluna_alvo, features=features)
         probs_val, classes_val = prever(modelo_val, extra_val, val_df, features=features)
-        preds_val = modelos_ml.empacotar_predicoes(val_df["match_id"].tolist(), probs_val, classes_val)
-        resultados_val = dict(zip(val_df["match_id"], val_df["resultado"]))
+        preds_val = modelos_ml.empacotar_predicoes(val_df["match_id"].tolist(), probs_val, classes_val, coluna_alvo=coluna_alvo)
+        resultados_val = dict(zip(val_df["match_id"], val_df[coluna_alvo]))
         for metodo in METODOS_CALIBRACAO:
-            calibradores_por_metodo[metodo] = calibracao.ajustar_calibracao(preds_val, resultados_val, metodo=metodo)
+            calibradores_por_metodo[metodo] = calibracao.ajustar_calibracao(
+                preds_val, resultados_val, metodo=metodo, codigo_por_selecao=codigo_por_selecao
+            )
 
-    modelo_final, extra_final = treinar(params, dataset_treino, features=features)
+    modelo_final, extra_final = treinar(params, dataset_treino, coluna_alvo=coluna_alvo, features=features)
     probs_fixtures, classes_fixtures = prever(modelo_final, extra_final, features_fixtures, features=features)
-    predicoes_raw = modelos_ml.empacotar_predicoes(features_fixtures["match_id"].tolist(), probs_fixtures, classes_fixtures)
+    predicoes_raw = modelos_ml.empacotar_predicoes(
+        features_fixtures["match_id"].tolist(), probs_fixtures, classes_fixtures, coluna_alvo=coluna_alvo
+    )
 
     predicoes_calibradas: dict[str, dict[int, dict[str, float]]] = {}
     for metodo, coef in calibradores_por_metodo.items():
         predicoes_calibradas[metodo] = (
-            {mid: calibracao.aplicar_calibracao(p, coef) for mid, p in predicoes_raw.items()} if coef else predicoes_raw
+            {mid: calibracao.aplicar_calibracao(p, coef, selecoes=selecoes) for mid, p in predicoes_raw.items()} if coef else predicoes_raw
         )
     return predicoes_raw, predicoes_calibradas
 
@@ -638,6 +652,7 @@ def montar_linhas_predicoes(
             {
                 "match_id": int(match_id),
                 "model_name": nome_modelo,
+                "mercado": "1X2",
                 "prob_home": round(probs["prob_home"], 5),
                 "prob_draw": round(probs["prob_draw"], 5),
                 "prob_away": round(probs["prob_away"], 5),
@@ -645,6 +660,26 @@ def montar_linhas_predicoes(
             }
         )
     return linhas
+
+
+def montar_linhas_predicoes_over_under25(nome_modelo: str, predicoes_modelo: dict[int, dict[str, float]]) -> list[dict]:
+    """Mesma ideia de `montar_linhas_predicoes`, mas pro mercado Over/Under
+    2.5 gols (`prob_under`/`prob_over`, ver migração `add_mercado_
+    predicoes`) -- usado só pelo backfill histórico
+    (`backfill_predicoes_historicas.py`), nunca pelo cron diário (o
+    `market_odds` que alimenta as fixtures do dia só tem odds de 1X2, não
+    dá pra calcular edge nem faz sentido prever esse mercado ao vivo)."""
+    return [
+        {
+            "match_id": int(match_id),
+            "model_name": nome_modelo,
+            "mercado": "over_under_2.5",
+            "prob_under": round(probs["prob_under"], 5),
+            "prob_over": round(probs["prob_over"], 5),
+            "edge_detectado": None,
+        }
+        for match_id, probs in predicoes_modelo.items()
+    ]
 
 
 TAMANHO_LOTE_UPSERT_PREDICOES = 500  # um upsert só com dezenas de milhares de
@@ -660,7 +695,7 @@ def salvar_predicoes(supabase: Client, linhas: list[dict]) -> None:
         return
     for inicio in range(0, len(linhas), TAMANHO_LOTE_UPSERT_PREDICOES):
         lote = linhas[inicio : inicio + TAMANHO_LOTE_UPSERT_PREDICOES]
-        supabase.table("predicoes").upsert(lote, on_conflict="match_id,model_name").execute()
+        supabase.table("predicoes").upsert(lote, on_conflict="match_id,model_name,mercado").execute()
 
 
 def _persistir_cru_e_calibrados(
@@ -685,6 +720,31 @@ def _persistir_cru_e_calibrados(
 
     logger.info(
         "%s: %d predição(ões) cruas + %d calibradas (%s).",
+        nome_modelo, len(linhas_raw), total_calibradas, ", ".join(predicoes_calibradas_por_metodo),
+    )
+
+
+def _persistir_cru_e_calibrados_over_under25(
+    nome_modelo: str,
+    predicoes_raw: dict[int, dict[str, float]],
+    predicoes_calibradas_por_metodo: dict[str, dict[int, dict[str, float]]],
+    todas_as_linhas: list[dict],
+) -> None:
+    """Mesma ideia de `_persistir_cru_e_calibrados`, pro mercado Over/Under
+    2.5 -- usado só pelo backfill histórico (`backfill_predicoes_
+    historicas.py`), sem edge (não há odd de over/under em `market_odds`,
+    a fonte usada pro edge ao vivo)."""
+    linhas_raw = montar_linhas_predicoes_over_under25(nome_modelo, predicoes_raw)
+    todas_as_linhas.extend(linhas_raw)
+
+    total_calibradas = 0
+    for metodo, predicoes_calibradas in predicoes_calibradas_por_metodo.items():
+        linhas_calibradas = montar_linhas_predicoes_over_under25(f"{nome_modelo}_calibrado_{metodo}", predicoes_calibradas)
+        todas_as_linhas.extend(linhas_calibradas)
+        total_calibradas += len(linhas_calibradas)
+
+    logger.info(
+        "%s [over_under_2.5]: %d predição(ões) cruas + %d calibradas (%s).",
         nome_modelo, len(linhas_raw), total_calibradas, ", ".join(predicoes_calibradas_por_metodo),
     )
 

@@ -2150,19 +2150,19 @@ function ehTemporadaDeTeste(season) {
 // pipeline antigo também tem um modelo pra "corners_over_under_9.5"
 // (stats_glm_v1, model_predictions) mas SEM nenhuma odd capturada pra
 // esse mercado (confirmado via SQL) -- por isso NÃO entra aqui, mesmo já
-// tendo treino, seria sempre uma simulação vazia. `over_under_2.5` só
-// existe no pipeline antigo (dixon_coles_v1/_walkforward_v1) -- o
-// `predicoes` do Model Benchmarking só tem prob_home/draw/away, nenhuma
-// coluna de over/under, então nunca entra nesse mercado.
+// tendo treino, seria sempre uma simulação vazia. `predicoes` (Model
+// Benchmarking) ganhou colunas de over/under (migração
+// `add_mercado_predicoes`) depois que se confirmou que os 18 modelos de
+// árvore JÁ tinham treino/avaliação real nesse mercado em backtest_
+// kelly.py -- só faltava persistir a previsão por partida em algum lugar
+// servível (ver scripts/backfill_predicoes_historicas.py).
 const MERCADOS_CARTEIRA_SUPORTADOS = new Set(['1X2', 'over_under_2.5']);
 
 async function tarefaModelosDisponiveis(supabase, mercado = '1X2') {
   const mercadoValido = MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2';
   const [predAntigas, predBenchmarking, todasMatches, ligas] = await Promise.all([
     buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', mercadoValido)),
-    mercadoValido === '1X2'
-      ? buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id'))
-      : Promise.resolve([]),
+    buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id').eq('mercado', mercadoValido)),
     buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status')),
     buscarTudoPaginado(() => supabase.from('leagues').select('id, name')),
   ]);
@@ -2209,6 +2209,17 @@ function normalizarPredicoesBenchmarking(rows) {
     linhas.push({ model_name: r.model_name, selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
     linhas.push({ model_name: r.model_name, selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
     linhas.push({ model_name: r.model_name, selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+  }
+  return linhas;
+}
+
+// Mesma normalização, pro mercado Over/Under 2.5 (`prob_under`/`prob_over`,
+// ver migração `add_mercado_predicoes`).
+function normalizarPredicoesBenchmarkingOverUnder(rows) {
+  const linhas = [];
+  for (const r of rows) {
+    linhas.push({ model_name: r.model_name, selection: 'under', probability: Number(r.prob_under), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, selection: 'over', probability: Number(r.prob_over), match_id: r.match_id });
   }
   return linhas;
 }
@@ -2271,19 +2282,23 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   const bancaInicial = query.banca_inicial != null ? Number(query.banca_inicial) : BANCA_INICIAL_PADRAO;
   const usarCalibracao = ['platt', 'isotonic'].includes(query.usar_calibracao) ? query.usar_calibracao : 'nenhuma';
 
-  // Model Benchmarking (`predicoes`) só tem prob_home/draw/away -- nenhuma
-  // coluna de over/under, então só entra na simulação quando o mercado é
-  // 1X2 (ver MERCADOS_CARTEIRA_SUPORTADOS).
+  // Model Benchmarking (`predicoes`) já cobre 1X2 e over_under_2.5 (ver
+  // migração `add_mercado_predicoes` + scripts/backfill_predicoes_
+  // historicas.py) -- cada mercado usa suas próprias colunas de prob e seu
+  // próprio normalizador (formato de saída idêntico ao do pipeline antigo).
   const [predicoesAntigas, predicoesBenchmarkingRaw, calibracoesRaw] = await Promise.all([
     buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado)),
     mercado === '1X2'
-      ? buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo))
-      : Promise.resolve([]),
+      ? buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo).eq('mercado', '1X2'))
+      : buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_under, prob_over').eq('model_name', modelo).eq('mercado', mercado)),
     usarCalibracao === 'nenhuma'
       ? Promise.resolve([])
       : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', modelo).eq('market', mercado)),
   ]);
-  const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
+  const predicoesBenchmarking = mercado === '1X2'
+    ? normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)
+    : normalizarPredicoesBenchmarkingOverUnder(predicoesBenchmarkingRaw);
+  const predicoes = [...predicoesAntigas, ...predicoesBenchmarking];
 
   const calibPorSelecao = {};
   calibracoesRaw.forEach((c) => {
