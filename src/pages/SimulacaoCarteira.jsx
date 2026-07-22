@@ -18,7 +18,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wallet, Loader2, AlertTriangle, PlayCircle, ChevronDown, ChevronRight, TrendingDown } from 'lucide-react';
 
-const MERCADO_CONTEXTO = 'Mercado 1X2, execução na odd média de fechamento — modelos "Model Benchmarking" (v1–v5, v3B) ainda com pouca profundidade resolvida.';
+const MERCADO_CONTEXTO = 'Mercado 1X2, restrito ao período de teste out-of-sample (temporada 2025+) — treino/validação (2019–2024) fica de fora. Execução comparada em duas odds da Pinnacle: abertura vs. fechamento; modelos sem esse par (ex.: só "Model Benchmarking") podem não ter apostas em nenhuma das duas.';
+
+const ROTULO_EXECUCAO = { abertura: 'Abertura', fechamento: 'Fechamento' };
 
 function fmtMoney(v) {
   if (v == null) return '—';
@@ -60,11 +62,14 @@ function Sparkline({ pontos, cor }) {
 }
 
 function CardModelo({ resultado, aberto, onToggle }) {
-  const { modelo, sumario, rodadas } = resultado;
-  if (!sumario) {
+  const { modelo, execucao, sumario, rodadas } = resultado;
+  if (!sumario || sumario.n_apostas_totais === 0) {
     return (
       <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4">
-        <div className="text-sm font-bold text-slate-300">{modelo}</div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-bold text-slate-300 truncate" title={modelo}>{modelo}</span>
+          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">{ROTULO_EXECUCAO[execucao] || execucao}</span>
+        </div>
         <div className="text-xs text-slate-500 mt-2">Sem apostas que passem o filtro de EV com os filtros atuais.</div>
       </div>
     );
@@ -81,6 +86,9 @@ function CardModelo({ resultado, aberto, onToggle }) {
           <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${roiPos ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
             {fmtPct(sumario.roi_total_pct)}
           </span>
+        </div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{ROTULO_EXECUCAO[execucao] || execucao}</span>
         </div>
         <div className="text-[11px] text-slate-500 mb-2">
           {sumario.n_apostas_totais} apostas · {sumario.n_rodadas_com_aposta} rodadas · banca R$ {fmtMoney(sumario.banca_final)}
@@ -158,7 +166,7 @@ export default function SimulacaoCarteira() {
 
   const [rodando, setRodando] = useState(false);
   const [erro, setErro] = useState('');
-  const [resultados, setResultados] = useState(null); // [{ modelo, sumario, rodadas }]
+  const [resultados, setResultados] = useState(null); // [{ modelo, execucao, sumario, rodadas }] (2 linhas por modelo: abertura + fechamento)
   const [abertos, setAbertos] = useState({});
 
   useEffect(() => {
@@ -217,9 +225,10 @@ export default function SimulacaoCarteira() {
         const resp = await fetch(`/api/model-maintenance?${params}`);
         const dados = await resp.json();
         if (!resp.ok) throw new Error(`${modelo}: ${dados.error?.message || 'erro'}`);
-        return { modelo, sumario: dados.sumario, rodadas: dados.rodadas || [] };
+        const execucoes = dados.execucoes && dados.execucoes.length > 0 ? dados.execucoes : [{ execucao: 'abertura', sumario: null, rodadas: [] }, { execucao: 'fechamento', sumario: null, rodadas: [] }];
+        return execucoes.map((ex) => ({ modelo, execucao: ex.execucao, sumario: ex.sumario, rodadas: ex.rodadas || [] }));
       });
-      const resultadosBrutos = await Promise.all(promessas);
+      const resultadosBrutos = (await Promise.all(promessas)).flat();
       resultadosBrutos.sort((a, b) => (b.sumario?.roi_total_pct ?? -Infinity) - (a.sumario?.roi_total_pct ?? -Infinity));
       setResultados(resultadosBrutos);
       setAbertos({});
@@ -230,7 +239,7 @@ export default function SimulacaoCarteira() {
     }
   };
 
-  const comSumario = (resultados || []).filter((r) => r.sumario);
+  const comSumario = (resultados || []).filter((r) => r.sumario && r.sumario.n_apostas_totais > 0);
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
@@ -333,15 +342,16 @@ export default function SimulacaoCarteira() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-slate-500 uppercase text-[10px]">
-                          <th className="text-left p-1.5">Modelo</th><th className="text-right p-1.5">ROI</th><th className="text-right p-1.5">CAGR</th>
+                          <th className="text-left p-1.5">Modelo</th><th className="text-left p-1.5">Execução</th><th className="text-right p-1.5">ROI</th><th className="text-right p-1.5">CAGR</th>
                           <th className="text-right p-1.5">MDD</th><th className="text-right p-1.5">Acerto</th><th className="text-right p-1.5">CLV médio</th>
                           <th className="text-right p-1.5">Sharpe</th><th className="text-right p-1.5">Sortino</th><th className="text-right p-1.5">Banca final</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-700/50">
                         {comSumario.map((r) => (
-                          <tr key={r.modelo}>
+                          <tr key={`${r.modelo}__${r.execucao}`}>
                             <td className="p-1.5 text-slate-300 font-semibold">{r.modelo}</td>
+                            <td className="p-1.5 text-slate-500">{ROTULO_EXECUCAO[r.execucao] || r.execucao}</td>
                             <td className={`p-1.5 text-right font-bold ${r.sumario.roi_total_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPct(r.sumario.roi_total_pct)}</td>
                             <td className="p-1.5 text-right text-slate-400">{r.sumario.cagr_pct != null ? fmtPct(r.sumario.cagr_pct) : '—'}</td>
                             <td className="p-1.5 text-right text-red-400">−{fmtPctPlain(r.sumario.mdd_pct)}</td>
@@ -359,14 +369,17 @@ export default function SimulacaoCarteira() {
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {resultados.map((r) => (
-                  <CardModelo
-                    key={r.modelo}
-                    resultado={r}
-                    aberto={!!abertos[r.modelo]}
-                    onToggle={() => setAbertos((prev) => ({ ...prev, [r.modelo]: !prev[r.modelo] }))}
-                  />
-                ))}
+                {resultados.map((r) => {
+                  const chave = `${r.modelo}__${r.execucao}`;
+                  return (
+                    <CardModelo
+                      key={chave}
+                      resultado={r}
+                      aberto={!!abertos[chave]}
+                      onToggle={() => setAbertos((prev) => ({ ...prev, [chave]: !prev[chave] }))}
+                    />
+                  );
+                })}
               </div>
             </>
           )}
