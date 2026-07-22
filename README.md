@@ -83,7 +83,7 @@ compilado pro Firebase precisa saber a URL do Vercel pra chamar a API
    ```
    Isso builda com `.env.firebase` (define `VITE_API_BASE_URL` pro domínio de
    produção do Vercel, `https://quant-predictor.vercel.app`) e publica o
-   `dist/` no projeto Firebase configurado em `.firebaserc` (`quant-79e8b`).
+   `dist/` no projeto Firebase configurado em `.firebaserc` (`agilsgh-65463878-f64e7`).
 4. O CORS das funções do Vercel já libera os domínios padrão do Firebase
    Hosting (`*.web.app` / `*.firebaseapp.com`) e `localhost:5173` — ver
    `api/_lib/cors.js`. Se depois você apontar um domínio próprio pro Firebase
