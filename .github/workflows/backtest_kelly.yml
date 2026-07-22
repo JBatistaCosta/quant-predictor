@@ -12,9 +12,10 @@ name: Model Benchmarking - Backtest (ROI/Kelly/EV+)
 # predict.yml diário -- rodar isso toda noite sem necessidade real não
 # compensa o tempo de execução no runner gratuito do GitHub Actions.
 #
-# Roda o grid search + tuning DUAS vezes (1X2 e Over/Under 2.5 gols, ver
-# `MERCADOS` em backtest_kelly.py) -- timeout maior que o dobro do original
-# (45min) pra dar folga.
+# Roda o grid search + tuning QUATRO vezes (1X2, Over/Under 2.5 gols,
+# Over/Under 9.5 escanteios e faixa de gols, ver `MERCADOS` em
+# backtest_kelly.py) -- timeout dobrado de novo (era 100min pra 2 mercados)
+# pra dar folga.
 
 on:
   workflow_dispatch: {}
@@ -22,7 +23,7 @@ on:
 jobs:
   backtest-kelly:
     runs-on: ubuntu-latest
-    timeout-minutes: 100
+    timeout-minutes: 200
 
     steps:
       - name: Checkout do repositório

@@ -84,15 +84,20 @@ for _sufixo in ("_v2", "_v3", "_v4", "_v5", "_v3b"):
 del _sufixo
 
 # =============================================================================
-# Mercados cobertos por esta análise -- 1X2 (3 seleções) e Over/Under 2.5
-# gols (binário, 2 seleções) usam a MESMA infraestrutura de treino/predição
-# por baixo (`modelos_ml.TREINADORES`, parametrizada por `coluna_alvo` --
-# ver `dados_historicos.montar_dataset_ml_empilhado`, que já traz
-# `resultado` E `resultado_over25` no mesmo dataset) e a mesma simulação de
-# banca Kelly -- só muda o conjunto de seleções e onde ler o resultado
-# real. Escanteios ficou de fora: a OddsPapi não captura esse mercado neste
-# projeto (só 1X2 e over_under_2.5 existem em `odds_market`).
-# =============================================================================
+# Mercados cobertos por esta análise -- 1X2 (3 seleções), Over/Under 2.5
+# gols (binário), Over/Under 9.5 escanteios (binário) e faixa de gols
+# totais (4 classes, 0-1/2-3/4-6/7+) usam a MESMA infraestrutura de treino/
+# predição por baixo (`modelos_ml.TREINADORES`, parametrizada por
+# `coluna_alvo` -- ver `dados_historicos.montar_dataset_ml_empilhado`, que
+# já traz as 4 colunas-alvo no mesmo dataset) e a mesma simulação de banca
+# Kelly -- só muda o conjunto de seleções e onde ler o resultado real.
+#
+# Escanteios e faixa de gols NÃO têm nenhuma fonte de odds de mercado neste
+# projeto (a OddsPapi só cobre 1X2 e over_under_2.5 em `odds_market`) -- pra
+# esses 2 mercados, o relatório principal (`salvar_relatorio`) só traz
+# qualidade intrínseca da probabilidade (log-loss/Brier/Acurácia sobre TODO
+# o Test Set resolvido, não só as partidas com odd da Pinnacle -- ver
+# `main()`), nunca ROI/Kelly/CLV (fica sempre com `n_apostas=0`, não é bug).
 MERCADOS = {
     "1X2": {
         "coluna_alvo": "resultado",
@@ -102,7 +107,26 @@ MERCADOS = {
         "coluna_alvo": "resultado_over25",
         "codigo_por_selecao": {"under": dados_historicos.RESULTADO_UNDER25, "over": dados_historicos.RESULTADO_OVER25},
     },
+    "corners_ou95": {
+        "coluna_alvo": "resultado_corners_ou95",
+        "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CORNERS_UNDER95, "over": dados_historicos.RESULTADO_CORNERS_OVER95},
+    },
+    "faixa_gols": {
+        "coluna_alvo": "resultado_faixa_gols",
+        "codigo_por_selecao": {
+            "faixa_0_1": dados_historicos.RESULTADO_FAIXA_0_1,
+            "faixa_2_3": dados_historicos.RESULTADO_FAIXA_2_3,
+            "faixa_4_6": dados_historicos.RESULTADO_FAIXA_4_6,
+            "faixa_7mais": dados_historicos.RESULTADO_FAIXA_7MAIS,
+        },
+    },
 }
+
+# dixon_coles_v1 é um modelo Poisson de GOLS -- prevê faixa de gols pelo
+# mesmo grid de placares usado pra 1X2/over_under_2.5 (ver
+# `rp._prever_probs_dixon_coles`), mas não tem NENHUMA noção de escanteio.
+# `main()` pula o baseline dixon_coles inteiro pros mercados aqui listados.
+MERCADOS_SEM_DIXON_COLES = {"corners_ou95"}
 
 
 def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) -> int:
@@ -110,9 +134,12 @@ def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) ->
     códigos certo pro mercado -- usado no caminho do Dixon-Coles, que
     calcula resultado real a partir de `home_goals`/`away_goals` crus (ao
     contrário dos modelos de árvore, que já leem a coluna pronta do
-    dataset "Feature Stacked")."""
+    dataset "Feature Stacked"). Nunca chamada pra `corners_ou95` (ver
+    `MERCADOS_SEM_DIXON_COLES`)."""
     if mercado == "1X2":
         return rp._resultado_codigo(home_goals, away_goals)
+    if mercado == "faixa_gols":
+        return dados_historicos.codigo_faixa_gols(home_goals + away_goals)
     return dados_historicos.RESULTADO_OVER25 if (home_goals + away_goals) > 2.5 else dados_historicos.RESULTADO_UNDER25
 
 
@@ -885,14 +912,38 @@ def main() -> None:
         coluna_alvo = MERCADOS[mercado]["coluna_alvo"]
         selecoes_mercado = tuple(MERCADOS[mercado]["codigo_por_selecao"].keys())
 
-        logger.info("[%s] Buscando odds reais pro Test Set (%d partidas out-of-sample)...", mercado, len(match_ids_teste))
-        odds_fechamento = carregar_melhores_odds_fechamento(supabase, match_ids_teste, mercado)
-        odds_abertura = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_teste, mercado)
-        pinnacle_devigada = carregar_odds_pinnacle_devigadas(supabase, match_ids_teste, mercado)
-        resultados_reais = dict(zip(test_df["match_id"], test_df[coluna_alvo]))
-        match_ids_validos_qualidade = set(pinnacle_devigada.keys()) & set(resultados_reais.keys())
+        # Linhas sem alvo neste mercado específico (ex.: escanteio ainda não
+        # ingerido pra aquela partida) ficam de fora SÓ desta iteração -- os
+        # outros mercados usam o dataset inteiro normalmente (ver
+        # `dados_historicos._carregar_total_corners_por_partida`).
+        train_df_m = train_df.dropna(subset=[coluna_alvo]).reset_index(drop=True)
+        val_df_m = val_df.dropna(subset=[coluna_alvo]).reset_index(drop=True)
+        train_mais_val_df_m = train_mais_val_df.dropna(subset=[coluna_alvo]).reset_index(drop=True)
+        test_df_m = test_df.dropna(subset=[coluna_alvo]).reset_index(drop=True)
+        match_ids_teste_m = test_df_m["match_id"].astype(int).tolist()
+        periodo_inicio_mercado, periodo_fim_mercado = _periodo_teste(test_df_m)
+        periodo_por_liga_mercado = {liga: _periodo_teste(sub) for liga, sub in test_df_m.groupby("liga")}
+
+        logger.info("[%s] Buscando odds reais pro Test Set (%d partidas out-of-sample)...", mercado, len(match_ids_teste_m))
+        odds_fechamento = carregar_melhores_odds_fechamento(supabase, match_ids_teste_m, mercado)
+        odds_abertura = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_teste_m, mercado)
+        pinnacle_devigada = carregar_odds_pinnacle_devigadas(supabase, match_ids_teste_m, mercado)
+        resultados_reais = {int(mid): int(r) for mid, r in zip(test_df_m["match_id"], test_df_m[coluna_alvo])}
+        # Qualidade INTRÍNSECA do modelo (log-loss/Brier/Acurácia) usa TODO
+        # o Test Set resolvido deste mercado -- não depende de odd nenhuma.
+        # A comparação CONTRA o mercado (linha "mercado_pinnacle_sem_vig" +
+        # diagnósticos pareados) é que precisa da interseção com a Pinnacle,
+        # e fica vazia pra escanteios/faixa de gols (sem fonte de odds) sem
+        # derrubar a qualidade intrínseca -- é assim que os 2 mercados sem
+        # odds ainda aparecem no relatório principal.
+        match_ids_com_resultado = set(resultados_reais.keys())
+        match_ids_validos_qualidade = set(pinnacle_devigada.keys()) & match_ids_com_resultado
         if not match_ids_validos_qualidade:
-            logger.warning("[%s] Nenhuma odd da Pinnacle encontrada pro Test Set -- qualidade vs. mercado ficará vazia.", mercado)
+            logger.warning(
+                "[%s] Nenhuma odd da Pinnacle encontrada pro Test Set -- comparação com o mercado ficará vazia "
+                "(a qualidade intrínseca de cada modelo continua sendo reportada normalmente).",
+                mercado,
+            )
 
         todas_as_predicoes_teste: dict[str, dict[int, dict[str, float]]] = {}
 
@@ -903,14 +954,14 @@ def main() -> None:
             resumo_f = resumir_backtest(nome_variante, apostas_fechamento, melhor_params)
             resumo_a = resumir_backtest(nome_variante, apostas_abertura, melhor_params)
             log_loss, brier, accuracy, n_qualidade = _metricas_probabilisticas(
-                preds, resultados_reais, match_ids_validos_qualidade, mercado
+                preds, resultados_reais, match_ids_com_resultado, mercado
             )
             relatorio.append(
                 {
                     "model_name": nome_variante,
                     "mercado": mercado,
-                    "periodo_inicio": periodo_inicio_geral,
-                    "periodo_fim": periodo_fim_geral,
+                    "periodo_inicio": periodo_inicio_mercado,
+                    "periodo_fim": periodo_fim_mercado,
                     "hiperparametros": melhor_params,
                     "n_apostas": resumo_f["n_apostas"],
                     "roi_medio": resumo_f["roi_medio"],
@@ -936,17 +987,17 @@ def main() -> None:
             apostas_a_por_liga: dict[str, list[dict]] = {}
             for a in apostas_abertura:
                 apostas_a_por_liga.setdefault(a.get("liga") or "desconhecida", []).append(a)
-            match_ids_qual_por_liga: dict[str, set[int]] = {}
-            for mid in match_ids_validos_qualidade:
-                match_ids_qual_por_liga.setdefault(liga_por_match_id.get(mid) or "desconhecida", set()).add(mid)
+            match_ids_com_resultado_por_liga: dict[str, set[int]] = {}
+            for mid in match_ids_com_resultado:
+                match_ids_com_resultado_por_liga.setdefault(liga_por_match_id.get(mid) or "desconhecida", set()).add(mid)
 
-            for liga in set(apostas_f_por_liga) | set(apostas_a_por_liga) | set(match_ids_qual_por_liga):
+            for liga in set(apostas_f_por_liga) | set(apostas_a_por_liga) | set(match_ids_com_resultado_por_liga):
                 resumo_f_l = resumir_backtest(nome_variante, apostas_f_por_liga.get(liga, []), None)
                 resumo_a_l = resumir_backtest(nome_variante, apostas_a_por_liga.get(liga, []), None)
                 log_loss_l, brier_l, accuracy_l, n_qualidade_l = _metricas_probabilisticas(
-                    preds, resultados_reais, match_ids_qual_por_liga.get(liga, set()), mercado
+                    preds, resultados_reais, match_ids_com_resultado_por_liga.get(liga, set()), mercado
                 )
-                periodo_ini_l, periodo_fim_l = periodo_por_liga.get(liga, (None, None))
+                periodo_ini_l, periodo_fim_l = periodo_por_liga_mercado.get(liga, (None, None))
                 relatorio_por_liga.append(
                     {
                         "model_name": nome_variante,
@@ -972,33 +1023,38 @@ def main() -> None:
                 )
 
         # --- dixon_coles_v1: baseline sem tuning, mas com o mesmo esquema de calibração ---
-        try:
-            logger.info("[%s] Rodando dixon_coles_v1 (força real + calibração ajustada no Val)...", mercado)
-            forcas_finais, coeficientes_por_metodo = tunar_e_calibrar_dixon_coles(
-                partidas_treino, partidas_val, partidas_treino_val, partidas_teste["match_date"].min(), mercado
-            )
-            preds_raw = prever_dixon_coles_backtest(forcas_finais, partidas_teste)
-            _registrar("dixon_coles_v1", preds_raw, None, por_liga=True)
-            for metodo, coef in coeficientes_por_metodo.items():
-                preds_calibradas = {
-                    mid: calibracao.aplicar_calibracao(p, coef, selecoes=selecoes_mercado) for mid, p in preds_raw.items()
-                }
-                _registrar(f"dixon_coles_v1_calibrado_{metodo}", preds_calibradas, None, por_liga=False)
-        except Exception:
-            logger.exception("[%s] Falha no baseline dixon_coles_v1 -- pulando, os outros modelos continuam.", mercado)
+        # Modelo Poisson de GOLS -- não tem nenhuma noção de escanteio, pula
+        # inteiro pra `corners_ou95` (ver `MERCADOS_SEM_DIXON_COLES`).
+        if mercado in MERCADOS_SEM_DIXON_COLES:
+            logger.info("[%s] dixon_coles_v1 não modela escanteios -- pulando o baseline pra este mercado.", mercado)
+        else:
+            try:
+                logger.info("[%s] Rodando dixon_coles_v1 (força real + calibração ajustada no Val)...", mercado)
+                forcas_finais, coeficientes_por_metodo = tunar_e_calibrar_dixon_coles(
+                    partidas_treino, partidas_val, partidas_treino_val, partidas_teste["match_date"].min(), mercado
+                )
+                preds_raw = prever_dixon_coles_backtest(forcas_finais, partidas_teste)
+                _registrar("dixon_coles_v1", preds_raw, None, por_liga=True)
+                for metodo, coef in coeficientes_por_metodo.items():
+                    preds_calibradas = {
+                        mid: calibracao.aplicar_calibracao(p, coef, selecoes=selecoes_mercado) for mid, p in preds_raw.items()
+                    }
+                    _registrar(f"dixon_coles_v1_calibrado_{metodo}", preds_calibradas, None, por_liga=False)
+            except Exception:
+                logger.exception("[%s] Falha no baseline dixon_coles_v1 -- pulando, os outros modelos continuam.", mercado)
 
-        # --- catboost_v1 / xgboost_v1 / lightgbm_v1: tuning + calibração ---
+        # --- catboost_v1 / xgboost_v1 / lightgbm_v1 (e v2-v5/v3B): tuning + calibração ---
         for nome_modelo in modelos_ml.TREINADORES:
             try:
                 logger.info("[%s] Tuning + calibração + treino final: %s", mercado, nome_modelo)
                 modelo, extra, melhor_params, coeficientes_por_metodo = tunar_treinar_e_calibrar(
-                    nome_modelo, train_df, val_df, train_mais_val_df, mercado
+                    nome_modelo, train_df_m, val_df_m, train_mais_val_df_m, mercado
                 )
                 _, prever = modelos_ml.TREINADORES[nome_modelo]
 
-                probs_teste, classes = prever(modelo, extra, test_df, features=modelos_ml.FEATURES_POR_MODELO[nome_modelo])
+                probs_teste, classes = prever(modelo, extra, test_df_m, features=modelos_ml.FEATURES_POR_MODELO[nome_modelo])
                 preds_raw = modelos_ml.empacotar_predicoes(
-                    test_df["match_id"].tolist(), probs_teste, classes, coluna_alvo=coluna_alvo
+                    test_df_m["match_id"].tolist(), probs_teste, classes, coluna_alvo=coluna_alvo
                 )
 
                 _registrar(nome_modelo, preds_raw, melhor_params, por_liga=True)
@@ -1011,6 +1067,8 @@ def main() -> None:
                 logger.exception("[%s] Falha ao rodar %s -- pulando, os outros modelos continuam.", mercado, nome_modelo)
 
         # --- linha sintética de referência: qualidade da própria Pinnacle (sem ROI) ---
+        # Só existe quando há odd da Pinnacle pro mercado (nunca acontece
+        # pra corners_ou95/faixa_gols -- ver módulo de comentário no topo).
         if match_ids_validos_qualidade:
             log_loss_mkt, brier_mkt, accuracy_mkt, n_mkt = _metricas_probabilisticas(
                 pinnacle_devigada, resultados_reais, match_ids_validos_qualidade, mercado
@@ -1019,8 +1077,8 @@ def main() -> None:
                 {
                     "model_name": "mercado_pinnacle_sem_vig",
                     "mercado": mercado,
-                    "periodo_inicio": periodo_inicio_geral,
-                    "periodo_fim": periodo_fim_geral,
+                    "periodo_inicio": periodo_inicio_mercado,
+                    "periodo_fim": periodo_fim_mercado,
                     "log_loss": log_loss_mkt,
                     "brier": brier_mkt,
                     "accuracy": accuracy_mkt,
@@ -1032,7 +1090,7 @@ def main() -> None:
                 match_ids_qual_por_liga_mkt.setdefault(liga_por_match_id.get(mid) or "desconhecida", set()).add(mid)
             for liga, mids in match_ids_qual_por_liga_mkt.items():
                 log_loss_l, brier_l, accuracy_l, n_l = _metricas_probabilisticas(pinnacle_devigada, resultados_reais, mids, mercado)
-                periodo_ini_l, periodo_fim_l = periodo_por_liga.get(liga, (None, None))
+                periodo_ini_l, periodo_fim_l = periodo_por_liga_mercado.get(liga, (None, None))
                 relatorio_por_liga.append(
                     {
                         "model_name": "mercado_pinnacle_sem_vig",

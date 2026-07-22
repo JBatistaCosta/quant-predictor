@@ -31,20 +31,34 @@ from dados_historicos import (
     FEATURES_V4,
     FEATURES_V5,
     RESULTADO_AWAY,
+    RESULTADO_CORNERS_OVER95,
+    RESULTADO_CORNERS_UNDER95,
     RESULTADO_DRAW,
+    RESULTADO_FAIXA_0_1,
+    RESULTADO_FAIXA_2_3,
+    RESULTADO_FAIXA_4_6,
+    RESULTADO_FAIXA_7MAIS,
     RESULTADO_HOME,
     RESULTADO_OVER25,
     RESULTADO_UNDER25,
 )
 
 # Rótulo de saída por código de classe -- usado por `empacotar_predicoes`
-# pra virar {match_id: {prob_*}} sem hardcoded 1X2. `resultado` (3 classes)
-# e `resultado_over25` (2 classes, mercado Over/Under 2.5 gols) usam o
-# MESMO treino/predição por baixo (`TREINADORES`), só muda a coluna-alvo e
-# esse mapeamento de rótulo.
+# pra virar {match_id: {prob_*}} sem hardcoded 1X2. `resultado` (3 classes),
+# `resultado_over25` (2 classes, Over/Under 2.5 gols), `resultado_corners_
+# ou95` (2 classes, Over/Under 9.5 escanteios) e `resultado_faixa_gols` (4
+# classes, faixa de gols totais) usam o MESMO treino/predição por baixo
+# (`TREINADORES`), só muda a coluna-alvo e esse mapeamento de rótulo.
 ROTULOS_SAIDA = {
     "resultado": {RESULTADO_HOME: "prob_home", RESULTADO_DRAW: "prob_draw", RESULTADO_AWAY: "prob_away"},
     "resultado_over25": {RESULTADO_UNDER25: "prob_under", RESULTADO_OVER25: "prob_over"},
+    "resultado_corners_ou95": {RESULTADO_CORNERS_UNDER95: "prob_corners_under", RESULTADO_CORNERS_OVER95: "prob_corners_over"},
+    "resultado_faixa_gols": {
+        RESULTADO_FAIXA_0_1: "prob_faixa_0_1",
+        RESULTADO_FAIXA_2_3: "prob_faixa_2_3",
+        RESULTADO_FAIXA_4_6: "prob_faixa_4_6",
+        RESULTADO_FAIXA_7MAIS: "prob_faixa_7mais",
+    },
 }
 
 # Hiperparâmetros default -- usados pelo treino diário em produção, sem

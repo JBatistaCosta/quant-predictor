@@ -20,7 +20,7 @@
 // nunca ganhou a escada de features v2/v3/v4/v5/v3B, então "a partir da v3"
 // não se aplica a ele).
 import React, { useState, useEffect, useCallback } from 'react';
-import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight, FileDown } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
@@ -81,8 +81,161 @@ function fmtPeriodo(inicio, fim) {
 const MERCADOS_BACKTEST = [
   { chave: '1X2', rotulo: '1X2' },
   { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
+  { chave: 'corners_ou95', rotulo: 'Escanteios O/U 9,5' },
+  { chave: 'faixa_gols', rotulo: 'Faixa de gols' },
 ];
+// Escanteios e faixa de gols não têm nenhuma fonte de odds de mercado neste
+// projeto (a OddsPapi só cobre 1X2 e Over/Under 2.5 em `odds_market`) --
+// pra esses 2, o backtest só traz qualidade intrínseca da probabilidade
+// (log-loss/Brier/Acurácia), nunca ROI/Kelly/EV+ (fica sempre 0 apostas,
+// não é bug -- ver comentário no topo de `MERCADOS` em backtest_kelly.py).
+const MERCADOS_SEM_ROI = new Set(['corners_ou95', 'faixa_gols']);
 const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
+
+function escaparHtml(valor) {
+  return String(valor ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Relatório HTML consolidado (todos os mercados x todos os modelos, cru +
+// calibrado_platt + calibrado_isotonic), gerado no CLIENTE a partir do
+// mesmo `relatorio`/`relatorioPorLiga` já carregado na tela -- não faz
+// nenhuma chamada nova, só formata o que já está em
+// `model_benchmarking_backtest`/`_liga` num arquivo autônomo, baixável/
+// imprimível.
+function montarRelatorioHtml(relatorio, relatorioPorLiga) {
+  const geradoEm = new Date().toLocaleString('pt-BR');
+  const secoes = MERCADOS_BACKTEST.map(({ chave, rotulo }) => {
+    const linhas = relatorio.filter((r) => (r.mercado || '1X2') === chave);
+    const referencia = linhas.find((r) => r.model_name === MODEL_NAME_MERCADO_REF);
+    const modelos = linhas
+      .filter((r) => r.model_name !== MODEL_NAME_MERCADO_REF)
+      .sort((a, b) => (b.roi_ic95_inferior ?? -Infinity) - (a.roi_ic95_inferior ?? -Infinity));
+    const periodo = referencia || modelos[0];
+    const porLiga = relatorioPorLiga.filter((r) => (r.mercado || '1X2') === chave);
+
+    if (modelos.length === 0) {
+      return `<section><h2>${escaparHtml(rotulo)}</h2><p class="vazio">Nenhum backtest rodado ainda pra este mercado.</p></section>`;
+    }
+
+    const linhaReferencia = referencia
+      ? `<tr class="ref"><td>Pinnacle sem vig (mercado)</td><td class="num">${fmtNum(referencia.log_loss)}</td><td class="num">${fmtNum(referencia.brier)}</td><td class="num">${fmtPct(referencia.accuracy)}</td><td colspan="8" class="dim">— (referência, sem ROI)</td></tr>`
+      : '';
+
+    const linhasModelo = modelos
+      .map((r) => {
+        const destaque = r.significativo || r.significativo_abertura ? ' class="ev"' : '';
+        return `<tr${destaque}>
+          <td>${escaparHtml(r.model_name)}</td>
+          <td class="num">${fmtNum(r.log_loss)}</td>
+          <td class="num">${fmtNum(r.brier)}</td>
+          <td class="num">${fmtPct(r.accuracy)}</td>
+          <td class="num">${r.n_apostas ?? 0}</td>
+          <td class="num ${r.roi_medio > 0 ? 'pos' : 'neg'}">${fmtPctSigned(r.roi_medio)}</td>
+          <td class="num dim">[${fmtPctSigned(r.roi_ic95_inferior)}, ${fmtPctSigned(r.roi_ic95_superior)}]</td>
+          <td class="ctr">${r.significativo ? '✓' : '—'}</td>
+          <td class="num">${r.n_apostas_abertura ?? 0}</td>
+          <td class="num ${r.roi_abertura_medio > 0 ? 'pos' : 'neg'}">${fmtPctSigned(r.roi_abertura_medio)}</td>
+          <td class="num dim">[${fmtPctSigned(r.roi_abertura_ic95_inferior)}, ${fmtPctSigned(r.roi_abertura_ic95_superior)}]</td>
+          <td class="ctr">${r.significativo_abertura ? '✓' : '—'}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const linhasPorLiga = porLiga
+      .map(
+        (l) => `<tr class="liga">
+          <td>${escaparHtml(l.model_name)} — ${escaparHtml(l.liga)}</td>
+          <td class="num">${fmtNum(l.log_loss)}</td>
+          <td class="num">${fmtNum(l.brier)}</td>
+          <td class="num">${fmtPct(l.accuracy)}</td>
+          <td class="num">${l.n_apostas ?? 0}</td>
+          <td class="num ${l.roi_medio > 0 ? 'pos' : 'neg'}">${fmtPctSigned(l.roi_medio)}</td>
+          <td class="num dim">[${fmtPctSigned(l.roi_ic95_inferior)}, ${fmtPctSigned(l.roi_ic95_superior)}]</td>
+          <td class="ctr">${l.significativo ? '✓' : '—'}</td>
+          <td class="num">${l.n_apostas_abertura ?? 0}</td>
+          <td class="num ${l.roi_abertura_medio > 0 ? 'pos' : 'neg'}">${fmtPctSigned(l.roi_abertura_medio)}</td>
+          <td class="num dim">[${fmtPctSigned(l.roi_abertura_ic95_inferior)}, ${fmtPctSigned(l.roi_abertura_ic95_superior)}]</td>
+          <td class="ctr">${l.significativo_abertura ? '✓' : '—'}</td>
+        </tr>`
+      )
+      .join('');
+
+    return `<section>
+      <h2>${escaparHtml(rotulo)} ${MERCADOS_SEM_ROI.has(chave) ? '<span class="badge">sem odds de mercado — só qualidade</span>' : ''}</h2>
+      <p class="periodo">${periodo?.periodo_inicio ? `Período de teste: ${fmtPeriodo(periodo.periodo_inicio, periodo.periodo_fim)}` : ''}</p>
+      <table>
+        <thead><tr>
+          <th>Modelo</th><th>Log-loss</th><th>Brier</th><th>Acurácia</th>
+          <th>Apostas (fech.)</th><th>ROI (fech.)</th><th>IC 95% (fech.)</th><th>EV+?</th>
+          <th>Apostas (abert.)</th><th>ROI (abert.)</th><th>IC 95% (abert.)</th><th>EV+?</th>
+        </tr></thead>
+        <tbody>${linhaReferencia}${linhasModelo}</tbody>
+      </table>
+      ${linhasPorLiga ? `<h3>Quebra por liga (variante crua)</h3><table>
+        <thead><tr>
+          <th>Modelo / Liga</th><th>Log-loss</th><th>Brier</th><th>Acurácia</th>
+          <th>Apostas (fech.)</th><th>ROI (fech.)</th><th>IC 95% (fech.)</th><th>EV+?</th>
+          <th>Apostas (abert.)</th><th>ROI (abert.)</th><th>IC 95% (abert.)</th><th>EV+?</th>
+        </tr></thead>
+        <tbody>${linhasPorLiga}</tbody>
+      </table>` : ''}
+    </section>`;
+  }).join('\n');
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Relatório Model Benchmarking</title>
+<style>
+  body { background:#0f172a; color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; margin:0; padding:32px; }
+  h1 { font-size:22px; margin-bottom:4px; }
+  .subtitulo { color:#94a3b8; font-size:13px; margin-bottom:28px; }
+  section { margin-bottom:36px; }
+  h2 { font-size:16px; color:#f1f5f9; border-bottom:1px solid #334155; padding-bottom:6px; }
+  h3 { font-size:12px; color:#94a3b8; text-transform:uppercase; margin-top:18px; }
+  .badge { font-size:10px; font-weight:normal; color:#fbbf24; background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.4); border-radius:6px; padding:2px 8px; margin-left:8px; }
+  .periodo { color:#64748b; font-size:11px; margin:2px 0 10px; }
+  .vazio { color:#64748b; font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:11px; font-variant-numeric:tabular-nums; margin-bottom:8px; }
+  th { text-align:right; color:#64748b; text-transform:uppercase; font-size:9px; padding:6px 8px; border-bottom:1px solid #334155; }
+  th:first-child, td:first-child { text-align:left; }
+  td { padding:6px 8px; border-bottom:1px solid #1e293b; color:#cbd5e1; }
+  td.num { text-align:right; }
+  td.ctr { text-align:center; }
+  td.dim { color:#64748b; }
+  td.pos { color:#34d399; font-weight:bold; }
+  td.neg { color:#f87171; font-weight:bold; }
+  tr.ev { background:rgba(16,185,129,0.06); }
+  tr.ref { font-style:italic; color:#7dd3fc; }
+  tr.liga td { color:#64748b; padding-left:20px; }
+  @media print { body { background:#fff; color:#000; } }
+</style>
+</head>
+<body>
+  <h1>Relatório — Model Benchmarking</h1>
+  <p class="subtitulo">
+    Gerado em ${geradoEm}. Test Set out-of-sample (nunca visto pelo treino/tuning). Qualidade (log-loss/Brier/Acurácia)
+    comparada com a Pinnacle sem vig quando há odd disponível pro mercado. ROI simulado com Kelly fracionário 25% e edge
+    mínimo 2pp, contra a melhor odd de fechamento e contra a odd de abertura da Pinnacle separadamente — IC 95% via
+    bootstrap, "EV+" só quando o limite inferior do IC fica acima de zero.
+  </p>
+  ${secoes}
+</body>
+</html>`;
+}
+
+function baixarRelatorioHtml(html) {
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `relatorio-model-benchmarking-${new Date().toISOString().slice(0, 10)}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // Painel de backtest (log-loss/Brier/Acurácia vs. Pinnacle sem vig + ROI/
 // Kelly/IC95%/EV+) equivalente ao "Backtest de apostas simuladas (EV+)" de
@@ -142,7 +295,7 @@ function BacktestModelBenchmarking({ session }) {
       if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
       setMensagemDisparo({
         tipo: 'ok',
-        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 19 modelos (v1 a v5 + v3B), em 2 mercados (1X2 e Over/Under 2.5) -- é bem mais pesado que as predições diárias, pode levar 30-60 minutos. Volte depois e clique em "Recarregar".',
+        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 19 modelos (v1 a v5 + v3B), em 4 mercados (1X2, Over/Under 2.5, Escanteios O/U 9,5 e Faixa de gols) -- é bem mais pesado que as predições diárias, pode levar mais de 1h. Volte depois e clique em "Recarregar".',
       });
     } catch (e) {
       setMensagemDisparo({ tipo: 'erro', texto: e.message });
@@ -171,6 +324,13 @@ function BacktestModelBenchmarking({ session }) {
             className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm border border-slate-700 disabled:opacity-50">
             Recarregar
           </button>
+          <button
+            onClick={() => baixarRelatorioHtml(montarRelatorioHtml(relatorio, relatorioPorLiga))}
+            disabled={relatorio.length === 0}
+            title="Baixa um relatório HTML com todos os mercados e modelos já carregados nesta tela."
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm border border-slate-700 disabled:opacity-50">
+            <FileDown size={16} /> Emitir relatório
+          </button>
           <button onClick={dispararBacktest} disabled={disparando || !session}
             title={!session ? 'Faça login pra disparar o backtest.' : ''}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-4 py-2 rounded-lg text-sm">
@@ -198,6 +358,14 @@ function BacktestModelBenchmarking({ session }) {
           <span className="text-[11px] text-slate-500 ml-2">Período de teste: {fmtPeriodo(periodo.periodo_inicio, periodo.periodo_fim)}</span>
         )}
       </div>
+
+      {MERCADOS_SEM_ROI.has(mercado) && (
+        <div className="rounded-lg border border-amber-800/50 bg-amber-950/20 p-3 text-xs text-amber-300 mb-4">
+          Sem fonte de odds de mercado pra este mercado (OddsPapi só cobre 1X2 e Over/Under 2.5) — as colunas de
+          ROI/Kelly/EV+ ficam sempre com 0 apostas de propósito. Log-loss/Brier/Acurácia continuam válidos (qualidade
+          intrínseca da probabilidade, não depende de odd nenhuma).
+        </div>
+      )}
 
       {mensagemDisparo && (
         <div className={`rounded-lg border p-3 text-sm mb-4 ${mensagemDisparo.tipo === 'ok' ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-red-950/40 border-red-800 text-red-300'}`}>
