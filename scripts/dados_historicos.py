@@ -46,6 +46,31 @@ RESULTADO_HOME, RESULTADO_DRAW, RESULTADO_AWAY = 0, 1, 2
 # Códigos do alvo binário `resultado_over25` (mercado Over/Under 2.5 gols).
 RESULTADO_UNDER25, RESULTADO_OVER25 = 0, 1
 
+# Códigos do alvo binário `resultado_corners_ou95` (mercado Over/Under 9.5
+# escanteios totais -- soma casa+visitante).
+RESULTADO_CORNERS_UNDER95, RESULTADO_CORNERS_OVER95 = 0, 1
+
+# Códigos do alvo multiclasse `resultado_faixa_gols` (mercado "faixa de
+# gols", 4 classes sobre o total casa+visitante -- pedido explícito do
+# usuário: 0-1 / 2-3 / 4-6 / 7+).
+RESULTADO_FAIXA_0_1, RESULTADO_FAIXA_2_3, RESULTADO_FAIXA_4_6, RESULTADO_FAIXA_7MAIS = 0, 1, 2, 3
+
+
+def codigo_faixa_gols(total_gols: float) -> int:
+    """Bucket do total de gols (casa+visitante) nas 4 faixas -- usado tanto
+    na construção do alvo do dataset "Feature Stacked" quanto no Dixon-Coles
+    (`rodar_predicoes._prever_probs_dixon_coles`, que soma o MESMO grid de
+    placares por faixa em vez de por vencedor/total>2.5) e no backtest
+    (`backtest_kelly._resultado_codigo_mercado`), pra nunca duplicar os
+    limiares das faixas em 3 lugares."""
+    if total_gols <= 1:
+        return RESULTADO_FAIXA_0_1
+    if total_gols <= 3:
+        return RESULTADO_FAIXA_2_3
+    if total_gols <= 6:
+        return RESULTADO_FAIXA_4_6
+    return RESULTADO_FAIXA_7MAIS
+
 TAMANHO_PAGINA = 1000
 
 # Tamanho seguro de lista dentro de um `.in_()` -- uma lista de milhares de
@@ -689,6 +714,34 @@ def _historico_cartoes_por_jogador(supabase: Client, match_ids: list[int], parti
         how="inner",
     )
     return eventos
+
+
+def _carregar_total_corners_por_partida(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
+    """Total de escanteios (casa+visitante) por partida, alvo do mercado
+    Over/Under 9.5 -- vem de `match_stats_fotmob` (1 linha por match_id+
+    team_id, coluna `corners`). É o RESULTADO real da partida (não uma
+    feature pré-jogo, igual `home_goals`/`away_goals`), então não tem risco
+    de vazamento -- só é usado como alvo de treino/avaliação, nunca como
+    entrada do modelo. `min_count=2` garante que só soma quando as DUAS
+    linhas (casa e visitante) existem -- senão fica NaN (partida sem dado de
+    escanteio ainda ingerido), filtrado depois no backtest."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "total_corners"])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_stats_fotmob")
+            .select("match_id, corners")
+            .in_("match_id", lote)
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    if not linhas:
+        return pd.DataFrame(columns=["match_id", "total_corners"])
+    df = pd.DataFrame(linhas)
+    total = df.groupby("match_id")["corners"].apply(lambda s: s.sum(min_count=2)).reset_index(name="total_corners")
+    return total
 
 
 def _carregar_cartoes_pre_jogo(
@@ -1676,6 +1729,9 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     # `resultado` (elo/forma/xG pré-jogo), só troca o alvo. RESULTADO_OVER25
     # = 1 quando total de gols > 2.5.
     dataset["resultado_over25"] = (dataset["home_goals"] + dataset["away_goals"] > 2.5).astype(int)
+    # Alvo multiclasse pro mercado "faixa de gols" (0-1/2-3/4-6/7+) -- mesma
+    # base de gols, sem dado novo (ver `codigo_faixa_gols`).
+    dataset["resultado_faixa_gols"] = (dataset["home_goals"] + dataset["away_goals"]).apply(codigo_faixa_gols)
     dataset = dataset.merge(elo_home[["id", "home_team_id", "elo_home"]], on=["id", "home_team_id"], how="left")
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
     dataset = dataset.join(forma_gols, on="id")
@@ -1780,9 +1836,28 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         titular_away[["id", "away_team_id", "titular_rating_away", "titular_valor_mercado_away"]], on=["id", "away_team_id"], how="left"
     )
 
+    # Alvo binário pro mercado Over/Under 9.5 escanteios totais -- resultado
+    # real da partida (não uma feature pré-jogo), NaN quando o dado de
+    # escanteio ainda não foi ingerido pra aquela partida (ver
+    # `_carregar_total_corners_por_partida`) -- filtrado depois no backtest,
+    # não no dataset inteiro (senão jogaria fora linhas válidas pros outros
+    # mercados).
+    corners = _carregar_total_corners_por_partida(supabase, partidas["id"].astype(int).tolist())
+    if corners.empty:
+        corners = pd.DataFrame(columns=["match_id", "total_corners"])
+    dataset = dataset.merge(corners.rename(columns={"match_id": "id"}), on="id", how="left")
+    dataset["resultado_corners_ou95"] = np.where(
+        dataset["total_corners"].notna(), (dataset["total_corners"] > 9.5).astype(float), np.nan
+    )
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[["match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3B, "resultado", "resultado_over25"]]
+    dataset = dataset[
+        [
+            "match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3B,
+            "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
+        ]
+    ]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM
