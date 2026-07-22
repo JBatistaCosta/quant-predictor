@@ -1,17 +1,20 @@
 // src/pages/SimulacaoCarteira.jsx — rota /simulacao-carteira
 // Simulação de carteira RODADA A RODADA (Quarter Kelly + gerenciamento de
-// risco estrito), servida por api/simulacao-carteira.js -- diferente do
-// "Backtest de apostas simuladas (EV+)" já existente em /modelos
-// (api/backtest-betting.js, ROI agregado com edge devigado), aqui o filtro
-// de entrada é EV bruto (p_modelo * odd >= 1,02, sem devig) e a banca
-// evolui rodada a rodada (rodada = dia de calendário) com teto de
-// exposição de 15% por rodada e piso de ruído de 0,5% da banca.
+// risco estrito), servida por api/model-maintenance.js
+// (?tarefa=simulacao-carteira/?tarefa=modelos-disponiveis -- fundidas lá
+// em vez de arquivos próprios por causa do teto de 12 Serverless
+// Functions do plano Hobby do Vercel, ver skill workflow-quant-predictor)
+// -- diferente do "Backtest de apostas simuladas (EV+)" já existente em
+// /modelos (api/backtest-betting.js, ROI agregado com edge devigado),
+// aqui o filtro de entrada é EV bruto (p_modelo * odd >= 1,02, sem devig)
+// e a banca evolui rodada a rodada (rodada = dia de calendário) com teto
+// de exposição de 15% por rodada e piso de ruído de 0,5% da banca.
 //
 // "permita usar cada modelo para comparação" -- roda a simulação (uma
 // banca independente por modelo, nunca somada) pra QUALQUER conjunto de
 // modelos brutos escolhido, com filtro de liga/temporada e opção de
 // correção (crua/Platt/Isotonic) -- lista completa vem de
-// api/modelos-disponiveis.js.
+// ?tarefa=modelos-disponiveis.
 import React, { useState, useEffect, useMemo } from 'react';
 import { Wallet, Loader2, AlertTriangle, PlayCircle, ChevronDown, ChevronRight, TrendingDown } from 'lucide-react';
 
@@ -161,7 +164,7 @@ export default function SimulacaoCarteira() {
   useEffect(() => {
     (async () => {
       try {
-        const resp = await fetch('/api/modelos-disponiveis');
+        const resp = await fetch('/api/model-maintenance?tarefa=modelos-disponiveis');
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar modelos.');
         setModelosDisponiveis(dados.modelos || []);
@@ -208,10 +211,10 @@ export default function SimulacaoCarteira() {
     setErro('');
     try {
       const promessas = [...modelosSelecionados].map(async (modelo) => {
-        const params = new URLSearchParams({ modelo, usar_calibracao: usarCalibracao, banca_inicial: String(bancaInicial) });
+        const params = new URLSearchParams({ tarefa: 'simulacao-carteira', modelo, usar_calibracao: usarCalibracao, banca_inicial: String(bancaInicial) });
         if (ligaId) params.set('liga_id', ligaId);
         if (temporada) params.set('temporada', temporada);
-        const resp = await fetch(`/api/simulacao-carteira?${params}`);
+        const resp = await fetch(`/api/model-maintenance?${params}`);
         const dados = await resp.json();
         if (!resp.ok) throw new Error(`${modelo}: ${dados.error?.message || 'erro'}`);
         return { modelo, sumario: dados.sumario, rodadas: dados.rodadas || [] };

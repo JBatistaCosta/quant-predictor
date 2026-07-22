@@ -2100,6 +2100,313 @@ async function tarefaInfoClubes(supabase, apiKey, limite) {
   };
 }
 
+// =============================================================================
+// tarefa=modelos-disponiveis / tarefa=simulacao-carteira
+// -- fundidas aqui (em vez de api/modelos-disponiveis.js e
+// api/simulacao-carteira.js próprios) por causa do teto de 12 Serverless
+// Functions do plano Hobby do Vercel (cada arquivo em api/*.js conta 1,
+// já estava em 12 antes dessas duas -- ver skill workflow-quant-predictor).
+// Chamadas pelo FRONTEND (src/pages/SimulacaoCarteira.jsx), não só
+// administrativas, mas o dispatch por ?tarefa= já é o padrão estabelecido
+// pra qualquer endpoint novo quando o teto é atingido.
+// =============================================================================
+
+// "bruto" -- sem sufixo _calibrado_platt/_calibrado_isotonic (essas
+// variantes do pipeline "Model Benchmarking" já são cobertas pelo seletor
+// de correção da simulação, não precisam aparecer soltas na lista).
+function ehModeloBruto(nome) {
+  return !/_calibrado_(platt|isotonic)$/.test(nome);
+}
+
+async function tarefaModelosDisponiveis(supabase) {
+  const [predAntigas, predBenchmarking, todasMatches, ligas] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', '1X2')),
+    buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id')),
+    buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status')),
+    buscarTudoPaginado(() => supabase.from('leagues').select('id, name')),
+  ]);
+
+  const matchInfo = {};
+  todasMatches.forEach((m) => { matchInfo[m.id] = m; });
+
+  const contagem = {}; // model_name -> Set(match_id) finalizado
+  const ligasPorModelo = {}; // model_name -> Set(league_id)
+  const temporadasPorModelo = {}; // model_name -> Set(season)
+
+  const processar = (linhas) => {
+    linhas.forEach((l) => {
+      if (!ehModeloBruto(l.model_name)) return;
+      const m = matchInfo[l.match_id];
+      if (!m || m.status !== 'finished') return;
+      (contagem[l.model_name] = contagem[l.model_name] || new Set()).add(l.match_id);
+      (ligasPorModelo[l.model_name] = ligasPorModelo[l.model_name] || new Set()).add(m.league_id);
+      (temporadasPorModelo[l.model_name] = temporadasPorModelo[l.model_name] || new Set()).add(m.season);
+    });
+  };
+  processar(predAntigas);
+  processar(predBenchmarking);
+
+  const modelos = Object.keys(contagem)
+    .map((nome) => ({
+      model_name: nome,
+      n_partidas_resolvidas: contagem[nome].size,
+      ligas: [...ligasPorModelo[nome]],
+      temporadas: [...temporadasPorModelo[nome]].sort(),
+    }))
+    .sort((a, b) => b.n_partidas_resolvidas - a.n_partidas_resolvidas);
+
+  return { modelos, ligas: ligas.sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+// Normaliza `predicoes`/`market_odds` (pipeline "Model Benchmarking") pro
+// mesmo formato de `model_predictions`/`odds_market` (uma linha por
+// seleção) -- mesma normalização já usada em api/model-stats.js e
+// api/backtest-betting.js.
+function normalizarPredicoesBenchmarking(rows) {
+  const linhas = [];
+  for (const r of rows) {
+    linhas.push({ model_name: r.model_name, selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+  }
+  return linhas;
+}
+
+function normalizarOddsBenchmarking(rows) {
+  const somaPorMatch = {};
+  for (const r of rows) {
+    const acc = somaPorMatch[r.match_id] || { home: 0, draw: 0, draw_n: 0, away: 0, n: 0 };
+    acc.home += Number(r.odd_home);
+    acc.away += Number(r.odd_away);
+    acc.n += 1;
+    if (r.odd_draw != null) { acc.draw += Number(r.odd_draw); acc.draw_n += 1; }
+    somaPorMatch[r.match_id] = acc;
+  }
+  const linhas = [];
+  for (const [matchId, acc] of Object.entries(somaPorMatch)) {
+    if (acc.n === 0) continue;
+    linhas.push({ match_id: Number(matchId), selection: 'home', odds: acc.home / acc.n });
+    linhas.push({ match_id: Number(matchId), selection: 'away', odds: acc.away / acc.n });
+    if (acc.draw_n > 0) linhas.push({ match_id: Number(matchId), selection: 'draw', odds: acc.draw / acc.draw_n });
+  }
+  return linhas;
+}
+
+function aplicarPlattPredicao(p, coef, intercept) { return sigmoid(coef * logit(p) + intercept); }
+
+function fracaoKellySimulacao(p, odd) {
+  const b = odd - 1;
+  if (b <= 0) return 0;
+  const f = (p * b - (1 - p)) / b;
+  return Math.max(0, f) * 0.25; // Quarter Kelly
+}
+
+function calcularResultado1x2Simulacao(m) {
+  if (m.status !== 'finished' || m.home_goals == null || m.away_goals == null) return null;
+  return m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw';
+}
+
+// Simulação de carteira RODADA A RODADA com Quarter Kelly + gerenciamento
+// de risco estrito (ver docstring completa que existia em
+// api/simulacao-carteira.js, preservada aqui):
+//   - Filtro de EV BRUTO: p_modelo * odd >= 1,02 (sem devig -- escolha
+//     deliberada da tarefa, não um bug: aceita azarão com qualquer excesso
+//     de confiança do modelo).
+//   - Piso de ruído: descarta stake < 0,5% da banca da rodada.
+//   - Quarter Kelly, teto de exposição de 15% da banca por rodada (escala
+//     proporcional se exceder).
+//   - Banca da rodada = banca de FECHAMENTO da rodada anterior.
+//   - "Rodada" = data de calendário (UTC) do match_date.
+//   - `usar_calibracao=platt|isotonic` aplica a correção salva em
+//     `model_calibration` sobre a probabilidade crua -- só pro pipeline
+//     antigo (Model Benchmarking já calibrado entra como model_name próprio).
+async function tarefaSimulacaoCarteira(supabase, query) {
+  const { modelo, liga_id, temporada } = query;
+  if (!modelo) return { status: 400, error: 'Parâmetro "modelo" é obrigatório.' };
+
+  const EV_MINIMO_PADRAO = 1.02, STAKE_MINIMA_PCT_PADRAO = 0.005, TETO_EXPOSICAO_PCT_PADRAO = 0.15, BANCA_INICIAL_PADRAO = 1000;
+  const evMinimo = query.ev_minimo != null ? Number(query.ev_minimo) : EV_MINIMO_PADRAO;
+  const stakeMinimaPct = query.stake_minima_pct != null ? Number(query.stake_minima_pct) : STAKE_MINIMA_PCT_PADRAO;
+  const tetoExposicaoPct = query.teto_exposicao_pct != null ? Number(query.teto_exposicao_pct) : TETO_EXPOSICAO_PCT_PADRAO;
+  const bancaInicial = query.banca_inicial != null ? Number(query.banca_inicial) : BANCA_INICIAL_PADRAO;
+  const usarCalibracao = ['platt', 'isotonic'].includes(query.usar_calibracao) ? query.usar_calibracao : 'nenhuma';
+
+  const [predicoesAntigas, predicoesBenchmarkingRaw, calibracoesRaw] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', '1X2')),
+    buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo)),
+    usarCalibracao === 'nenhuma'
+      ? Promise.resolve([])
+      : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', modelo).eq('market', '1X2')),
+  ]);
+  const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
+
+  const calibPorSelecao = {};
+  calibracoesRaw.forEach((c) => {
+    if (c.method !== usarCalibracao) return;
+    calibPorSelecao[c.selection] = c.method === 'platt'
+      ? { tipo: 'platt', a: Number(c.platt_coef), b: Number(c.platt_intercept) }
+      : { tipo: 'isotonic', x: c.isotonic_x, y: c.isotonic_y };
+  });
+  if (predicoes.length === 0) return { status: 200, body: { parametros: {}, sumario: null, rodadas: [] } };
+
+  const matchIdsSet = new Set(predicoes.map((p) => p.match_id));
+
+  const [todasMatches, oddsFechaAntigas, marketOddsRaw, pinnacleAberturaRaw, pinnacleFechaRaw] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status, home_goals, away_goals, match_date')),
+    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', '1X2').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+    buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
+    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', '1X2').eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle')),
+    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', '1X2').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle')),
+  ]);
+  const oddsFechamento = [...oddsFechaAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
+
+  const ligaIdNum = liga_id ? Number(liga_id) : null;
+  const matchesValidos = todasMatches.filter(
+    (m) => matchIdsSet.has(m.id) && (!ligaIdNum || m.league_id === ligaIdNum) && (!temporada || String(m.season) === String(temporada))
+  );
+  const matchIdsValidos = new Set(matchesValidos.map((m) => m.id));
+  const matchPorId = {};
+  matchesValidos.forEach((m) => { matchPorId[m.id] = m; });
+
+  const oddPorChave = {};
+  oddsFechamento.filter((r) => matchIdsValidos.has(r.match_id)).forEach((r) => { oddPorChave[`${r.match_id}__${r.selection}`] = Number(r.odds); });
+  const pinnAberturaPorChave = {};
+  pinnacleAberturaRaw.filter((r) => matchIdsValidos.has(r.match_id)).forEach((r) => { pinnAberturaPorChave[`${r.match_id}__${r.selection}`] = Number(r.odds); });
+  const pinnFechaPorChave = {};
+  pinnacleFechaRaw.filter((r) => matchIdsValidos.has(r.match_id)).forEach((r) => { pinnFechaPorChave[`${r.match_id}__${r.selection}`] = Number(r.odds); });
+
+  const candidatos = [];
+  for (const p of predicoes) {
+    if (!matchIdsValidos.has(p.match_id)) continue;
+    const match = matchPorId[p.match_id];
+    const resultadoReal = calcularResultado1x2Simulacao(match);
+    if (!resultadoReal) continue;
+    const chave = `${p.match_id}__${p.selection}`;
+    const odd = oddPorChave[chave];
+    if (odd == null) continue;
+
+    let pModelo = Number(p.probability);
+    if (usarCalibracao !== 'nenhuma') {
+      const calib = calibPorSelecao[p.selection];
+      if (!calib) continue;
+      pModelo = calib.tipo === 'platt' ? aplicarPlattPredicao(pModelo, calib.a, calib.b) : aplicarIsotonicPredicao(pModelo, calib.x, calib.y);
+      if (pModelo == null) continue;
+    }
+    const ev = pModelo * odd;
+    if (ev < evMinimo) continue;
+
+    const oddPinnAbertura = pinnAberturaPorChave[chave] ?? null;
+    const oddPinnFecha = pinnFechaPorChave[chave] ?? null;
+    const clv = oddPinnAbertura != null && oddPinnFecha != null ? (oddPinnAbertura / oddPinnFecha - 1) * 100 : null;
+
+    candidatos.push({ match_id: p.match_id, data: match.match_date.slice(0, 10), league_id: match.league_id, selection: p.selection, p_modelo: pModelo, odd, ev, resultado_real: resultadoReal, clv });
+  }
+
+  const porDia = {};
+  candidatos.forEach((c) => { (porDia[c.data] = porDia[c.data] || []).push(c); });
+  const diasOrdenados = Object.keys(porDia).sort();
+
+  let banca = bancaInicial, pico = bancaInicial;
+  const rodadas = [];
+  const todasApostas = [];
+
+  diasOrdenados.forEach((dia) => {
+    const bancaInicialRodada = banca;
+    const brutas = porDia[dia].map((c) => ({ ...c, stake_bruta: fracaoKellySimulacao(c.p_modelo, c.odd) * bancaInicialRodada }));
+    const pisoStake = stakeMinimaPct * bancaInicialRodada;
+    const validas = brutas.filter((b) => b.stake_bruta >= pisoStake);
+    if (validas.length === 0) return;
+
+    const somaStakes = validas.reduce((s, v) => s + v.stake_bruta, 0);
+    const teto = tetoExposicaoPct * bancaInicialRodada;
+    const fatorEscala = somaStakes > 0 ? Math.min(1, teto / somaStakes) : 1;
+
+    const apostasRodada = validas.map((v) => {
+      const stake = v.stake_bruta * fatorEscala;
+      const venceu = v.resultado_real === v.selection;
+      const lucro = venceu ? stake * (v.odd - 1) : -stake;
+      return { ...v, stake, venceu, lucro };
+    });
+
+    const resultadoLiquido = apostasRodada.reduce((s, a) => s + a.lucro, 0);
+    const exposicaoTotal = apostasRodada.reduce((s, a) => s + a.stake, 0);
+    const bancaFinalRodada = bancaInicialRodada + resultadoLiquido;
+    pico = Math.max(pico, bancaFinalRodada);
+    const drawdownAtual = pico > 0 ? (pico - bancaFinalRodada) / pico : 0;
+    const vitorias = apostasRodada.filter((a) => a.venceu).length;
+
+    rodadas.push({
+      rodada: rodadas.length + 1, data: dia, banca_inicial: bancaInicialRodada, qtd_apostas: apostasRodada.length,
+      exposicao_pct: (exposicaoTotal / bancaInicialRodada) * 100, vitorias, derrotas: apostasRodada.length - vitorias,
+      resultado_liquido: resultadoLiquido, retorno_pct: (resultadoLiquido / bancaInicialRodada) * 100,
+      banca_final: bancaFinalRodada, drawdown_pct: drawdownAtual * 100, escalado: fatorEscala < 0.999999,
+    });
+    todasApostas.push(...apostasRodada);
+    banca = bancaFinalRodada;
+  });
+
+  const bancaFinal = banca;
+  const roiTotalPct = ((bancaFinal - bancaInicial) / bancaInicial) * 100;
+
+  let cagrPct = null, diasTotais = 0;
+  if (diasOrdenados.length > 0 && rodadas.length > 0) {
+    const d0 = new Date(diasOrdenados[0]);
+    const d1 = new Date(rodadas[rodadas.length - 1].data);
+    diasTotais = Math.max(Math.round((d1 - d0) / 86400000), 1);
+    const anos = diasTotais / 365;
+    if (bancaFinal > 0 && anos > 0) cagrPct = (Math.pow(bancaFinal / bancaInicial, 1 / anos) - 1) * 100;
+  }
+
+  const curva = [bancaInicial, ...rodadas.map((r) => r.banca_final)];
+  let picoCorrente = curva[0], picoIdxCorrente = 0, mdd = 0, idxPicoMdd = 0, idxFundoMdd = 0;
+  curva.forEach((v, i) => {
+    if (v > picoCorrente) { picoCorrente = v; picoIdxCorrente = i; }
+    const dd = picoCorrente > 0 ? (picoCorrente - v) / picoCorrente : 0;
+    if (dd > mdd) { mdd = dd; idxPicoMdd = picoIdxCorrente; idxFundoMdd = i; }
+  });
+
+  const totalApostas = todasApostas.length;
+  const vitoriasTotais = todasApostas.filter((a) => a.venceu).length;
+  const winRatePct = totalApostas > 0 ? (vitoriasTotais / totalApostas) * 100 : null;
+
+  const comClv = todasApostas.filter((a) => a.clv != null);
+  const clvMedioPct = comClv.length > 0 ? comClv.reduce((s, a) => s + a.clv, 0) / comClv.length : null;
+
+  const retornosRodada = rodadas.map((r) => r.retorno_pct / 100);
+  let sharpe = null, sortino = null;
+  if (retornosRodada.length > 1) {
+    const media = retornosRodada.reduce((s, r) => s + r, 0) / retornosRodada.length;
+    const variancia = retornosRodada.reduce((s, r) => s + (r - media) ** 2, 0) / (retornosRodada.length - 1);
+    const desvio = Math.sqrt(variancia);
+    sharpe = desvio > 0 ? media / desvio : null;
+    const negativos = retornosRodada.filter((r) => r < 0);
+    if (negativos.length > 1) {
+      const downsideVar = negativos.reduce((s, r) => s + r ** 2, 0) / negativos.length;
+      const downsideStd = Math.sqrt(downsideVar);
+      sortino = downsideStd > 0 ? media / downsideStd : null;
+    }
+  }
+
+  const sumario = {
+    modelo, n_candidatos_brutos: predicoes.length, n_passaram_ev: candidatos.length, n_rodadas_com_aposta: rodadas.length,
+    n_apostas_totais: totalApostas, banca_inicial: bancaInicial, banca_final: bancaFinal, roi_total_pct: roiTotalPct,
+    cagr_pct: cagrPct, dias_totais: diasTotais, mdd_pct: mdd * 100,
+    mdd_pico_valor: rodadas.length ? curva[idxPicoMdd] : null, mdd_pico_rodada: idxPicoMdd,
+    mdd_fundo_valor: rodadas.length ? curva[idxFundoMdd] : null, mdd_fundo_rodada: idxFundoMdd,
+    win_rate_pct: winRatePct, clv_medio_pct: clvMedioPct, n_bets_com_clv: comClv.length,
+    sharpe_simplificado: sharpe, sortino_simplificado: sortino,
+  };
+
+  return {
+    status: 200,
+    body: {
+      parametros: { modelo, liga_id: ligaIdNum, temporada: temporada || null, usar_calibracao: usarCalibracao, ev_minimo: evMinimo, stake_minima_pct: stakeMinimaPct, teto_exposicao_pct: tetoExposicaoPct, banca_inicial: bancaInicial },
+      sumario,
+      rodadas,
+    },
+  };
+}
+
 export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
@@ -2266,6 +2573,16 @@ export default async function handler(req, res) {
       const resultado = await tarefaDispararBacktest(supabase, req.headers.authorization);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'modelos-disponiveis') {
+      return res.status(200).json(await tarefaModelosDisponiveis(supabase));
+    }
+
+    if (tarefa === 'simulacao-carteira') {
+      const resultado = await tarefaSimulacaoCarteira(supabase, req.query);
+      if (resultado.error) return res.status(resultado.status).json({ error: { message: resultado.error } });
+      return res.status(resultado.status).json(resultado.body);
     }
 
     return res.status(400).json({
