@@ -507,10 +507,21 @@ export default function ModelBenchmarking() {
     setCarregando(true);
     setErro(null);
     try {
+      // Só partidas recentes/futuras -- essa tela é o monitor das
+      // predições DIÁRIAS (predict.yml só prevê as ~10 fixtures mais
+      // próximas por rodada), não um navegador histórico (isso é papel de
+      // /simulacao-carteira e do backtest abaixo). Sem esse filtro, o
+      // backfill histórico (scripts/backfill_predicoes_historicas.py --
+      // popula milhares de partidas antigas em `predicoes` pra alimentar a
+      // Simulação de Carteira) fazia partidas de meses atrás inundarem
+      // esta lista.
+      const JANELA_DIAS_PASSADO = 7;
+      const dataMinima = new Date(Date.now() - JANELA_DIAS_PASSADO * 86400000).toISOString();
+
       const [predicoes, odds, matches] = await Promise.all([
         buscarPaginado(supabase.from('predicoes').select('*').in('model_name', MODELOS_BASE)),
         buscarPaginado(supabase.from('market_odds').select('*')),
-        buscarPaginado(supabase.from('matches').select('id, match_date, home_team_id, away_team_id')),
+        buscarPaginado(supabase.from('matches').select('id, match_date, home_team_id, away_team_id').gte('match_date', dataMinima)),
       ]);
 
       const idsTimes = [...new Set(matches.flatMap(m => [m.home_team_id, m.away_team_id]))];
@@ -526,6 +537,7 @@ export default function ModelBenchmarking() {
 
       const porPartida = {};
       for (const p of predicoes) {
+        if (!matchPorId[p.match_id]) continue; // fora da janela recente -- ver JANELA_DIAS_PASSADO acima
         if (!porPartida[p.match_id]) porPartida[p.match_id] = { match_id: p.match_id, modelos: {} };
         porPartida[p.match_id].modelos[p.model_name] = p;
       }
