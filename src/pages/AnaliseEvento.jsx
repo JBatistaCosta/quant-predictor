@@ -11,6 +11,7 @@ import { XT_GRID } from '../utils/xt';
 import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format';
 import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions';
 import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
+import { apiUrl } from '../utils/apiUrl';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
 
@@ -499,7 +500,7 @@ export default function AnaliseEvento() {
       // não estiver na tabela `teams` do pipeline Python (ex: seleções fora
       // das 5 ligas europeias com dado calibrado).
       try {
-        const respCorners = await fetch(`/api/corners-model?mandante=${encodeURIComponent(t1.name)}&visitante=${encodeURIComponent(t2.name)}`);
+        const respCorners = await fetch(apiUrl(`/api/corners-model?mandante=${encodeURIComponent(t1.name)}&visitante=${encodeURIComponent(t2.name)}`));
         if (respCorners.ok) {
           const dadosCorners = await respCorners.json();
           if (!cancelado && dadosCorners?.escanteios_esperados) {
@@ -748,7 +749,7 @@ export default function AnaliseEvento() {
     // Passo 2: envia imagem + instruções para o NOSSO backend
     let response;
     try {
-      response = await fetch('/api/ocr', {
+      response = await fetch(apiUrl('/api/ocr'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: base64Data, mediaType, prompt })

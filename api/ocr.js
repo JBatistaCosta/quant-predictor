@@ -11,6 +11,8 @@
 // mesmo formato (o formato nativo do Claude: {content: [{type:"text", text}]}),
 // porque a resposta do Gemini é "traduzida" pra esse formato aqui dentro.
 
+import { applyCors } from './_lib/cors.js';
+
 async function chamarClaude(apiKey, image, mediaType, prompt) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -65,6 +67,7 @@ async function chamarGemini(apiKey, image, mediaType, prompt) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   if (req.method !== 'POST') {
     return res.status(405).json({ error: { message: 'Método não permitido.' } });
   }

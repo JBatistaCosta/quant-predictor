@@ -30,6 +30,7 @@
 // chamado manualmente.
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 const BASE_URL = 'https://api.football-data.org/v4';
 const LIGAS_PIPELINE = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'BSA', 'EC', 'CLI', 'ELC', 'DED', 'PPL', 'WC'];
@@ -114,6 +115,7 @@ async function sincronizarLiga(codigo, apiKey, supabase, mapaExternalIdParaTeamI
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   // Chamadas do Vercel Cron trazem esse header automaticamente; se CRON_SECRET
   // estiver configurada, bloqueia chamada externa sem o segredo.
   const cronSecret = process.env.CRON_SECRET;

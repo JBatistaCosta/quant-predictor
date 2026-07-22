@@ -6,6 +6,8 @@
 // COMO CHAMAR:
 //   /api/leagues-search?nome=Premier League
 
+import { applyCors } from './_lib/cors.js';
+
 const BASE_URL = 'https://v3.football.api-sports.io';
 
 // Heurística simples pra mapear o "type" da API-Football (só League/Cup) nas
@@ -24,6 +26,7 @@ function inferirTipo(apiType, nomeCompeticao, nomePais) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
 

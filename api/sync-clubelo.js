@@ -25,6 +25,7 @@
 //                                                       o nome exato do ClubElo direto, pra reconciliação manual)
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -123,6 +124,7 @@ async function sincronizarTime(supabase, time, snapshot, nomeClubeloForcado) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY não configuradas.' } });

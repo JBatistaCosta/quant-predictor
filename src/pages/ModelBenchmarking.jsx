@@ -24,6 +24,7 @@ import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, Chevr
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 import PainelInfoModelo, { BotaoInfoModelo } from '../components/PainelInfoModelo';
+import { apiUrl } from '../utils/apiUrl';
 
 const MODELOS_BASE = [
   'dixon_coles_v1',
@@ -289,7 +290,7 @@ function BacktestModelBenchmarking({ session }) {
     setDisparando(true);
     setMensagemDisparo(null);
     try {
-      const resp = await fetch('/api/model-maintenance?tarefa=disparar-backtest', {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=disparar-backtest'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${session?.access_token || ''}` },
       });
@@ -572,7 +573,7 @@ export default function ModelBenchmarking() {
     setDisparando(true);
     setMensagemDisparo(null);
     try {
-      const resp = await fetch('/api/model-maintenance?tarefa=disparar-predicoes', {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=disparar-predicoes'), {
         method: 'POST',
         headers: { Authorization: `Bearer ${session?.access_token || ''}` },
       });

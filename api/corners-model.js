@@ -26,6 +26,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { negBinomialCDF } from './_lib/negbin.js';
+import { applyCors } from './_lib/cors.js';
 
 // Usado só quando a liga do confronto não tem disp_r calibrado ainda (ex:
 // Brasileirão, Champions, Eurocopa — sem model_stat_estimates de escanteios
@@ -130,6 +131,7 @@ async function dispRDaLiga(supabase, leagueId) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
