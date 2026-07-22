@@ -109,7 +109,14 @@ MERCADOS = {
     },
     "corners_ou95": {
         "coluna_alvo": "resultado_corners_ou95",
-        "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CORNERS_UNDER95, "over": dados_historicos.RESULTADO_CORNERS_OVER95},
+        # Nomes de seleção com prefixo "corners_" de propósito -- têm que
+        # bater com os campos "prob_corners_under"/"prob_corners_over" que
+        # `modelos_ml.ROTULOS_SAIDA["resultado_corners_ou95"]` produz (ao
+        # contrário de over_under_2.5, que usa "prob_under"/"prob_over" sem
+        # prefixo). Já causou um KeyError real em produção (todo modelo de
+        # árvore falhando com "prob_under" pra este mercado) quando as
+        # chaves aqui estavam como "under"/"over" sem o prefixo.
+        "codigo_por_selecao": {"corners_under": dados_historicos.RESULTADO_CORNERS_UNDER95, "corners_over": dados_historicos.RESULTADO_CORNERS_OVER95},
     },
     "faixa_gols": {
         "coluna_alvo": "resultado_faixa_gols",
@@ -484,6 +491,10 @@ def salvar_relatorio(supabase, relatorio: list[dict]) -> None:
             "mercado": r["mercado"],
             "periodo_inicio": r.get("periodo_inicio"),
             "periodo_fim": r.get("periodo_fim"),
+            "treino_periodo_inicio": r.get("treino_periodo_inicio"),
+            "treino_periodo_fim": r.get("treino_periodo_fim"),
+            "validacao_periodo_inicio": r.get("validacao_periodo_inicio"),
+            "validacao_periodo_fim": r.get("validacao_periodo_fim"),
             "n_apostas": r.get("n_apostas"),
             "roi_medio": _arredondar_ou_none(r.get("roi_medio"), 5),
             "roi_ic95_inferior": _arredondar_ou_none(r.get("roi_ic95_inferior"), 5),
@@ -923,6 +934,10 @@ def main() -> None:
         match_ids_teste_m = test_df_m["match_id"].astype(int).tolist()
         periodo_inicio_mercado, periodo_fim_mercado = _periodo_teste(test_df_m)
         periodo_por_liga_mercado = {liga: _periodo_teste(sub) for liga, sub in test_df_m.groupby("liga")}
+        # Períodos de treino/validação (painel de informação do modelo no
+        # frontend) -- mesmo split cronológico, só reporta as datas.
+        treino_periodo_inicio_mercado, treino_periodo_fim_mercado = _periodo_teste(train_df_m)
+        validacao_periodo_inicio_mercado, validacao_periodo_fim_mercado = _periodo_teste(val_df_m)
 
         logger.info("[%s] Buscando odds reais pro Test Set (%d partidas out-of-sample)...", mercado, len(match_ids_teste_m))
         odds_fechamento = carregar_melhores_odds_fechamento(supabase, match_ids_teste_m, mercado)
@@ -962,6 +977,10 @@ def main() -> None:
                     "mercado": mercado,
                     "periodo_inicio": periodo_inicio_mercado,
                     "periodo_fim": periodo_fim_mercado,
+                    "treino_periodo_inicio": treino_periodo_inicio_mercado,
+                    "treino_periodo_fim": treino_periodo_fim_mercado,
+                    "validacao_periodo_inicio": validacao_periodo_inicio_mercado,
+                    "validacao_periodo_fim": validacao_periodo_fim_mercado,
                     "hiperparametros": melhor_params,
                     "n_apostas": resumo_f["n_apostas"],
                     "roi_medio": resumo_f["roi_medio"],

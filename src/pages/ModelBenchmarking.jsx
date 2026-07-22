@@ -23,6 +23,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight, FileDown } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
+import PainelInfoModelo, { BotaoInfoModelo } from '../components/PainelInfoModelo';
 
 const MODELOS_BASE = [
   'dixon_coles_v1',
@@ -260,6 +261,7 @@ function BacktestModelBenchmarking({ session }) {
   const [mensagemDisparo, setMensagemDisparo] = useState(null);
   const [expandido, setExpandido] = useState(null);
   const [mercado, setMercado] = useState('1X2');
+  const [modeloInfo, setModeloInfo] = useState(null);
 
   const carregar = useCallback(async () => {
     if (!supabaseAtivo) { setErro('Supabase não configurado.'); setCarregando(false); return; }
@@ -432,7 +434,12 @@ function BacktestModelBenchmarking({ session }) {
                           </button>
                         )}
                       </td>
-                      <td className="p-1.5 text-slate-300">{r.model_name}</td>
+                      <td className="p-1.5 text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          {r.model_name}
+                          <BotaoInfoModelo onClick={() => setModeloInfo(r.model_name)} />
+                        </span>
+                      </td>
                       <td className="p-1.5 text-right text-slate-400">{fmtNum(r.log_loss)}</td>
                       <td className="p-1.5 text-right text-slate-400">{fmtNum(r.brier)}</td>
                       <td className="p-1.5 text-right text-slate-400">{fmtPct(r.accuracy)}</td>
@@ -477,6 +484,12 @@ function BacktestModelBenchmarking({ session }) {
           </p>
         </div>
       )}
+      <PainelInfoModelo
+        modelName={modeloInfo}
+        rotulo={ROTULO_MODELO[modeloInfo] || modeloInfo}
+        aberto={!!modeloInfo}
+        onFechar={() => setModeloInfo(null)}
+      />
     </div>
   );
 }
