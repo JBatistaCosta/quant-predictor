@@ -35,7 +35,7 @@
 //                                   oddspapi_cache — rodar e inspecionar a amostra antes de
 //                                   confiar no parser da FASE 2 abaixo (endpoint pouco usado
 //                                   neste projeto até agora, ver comentário na função).
-//   ?tarefa=odds-historico&liga_id=X[&limite=N]
+//   ?tarefa=odds-historico&liga_id=X[&temporada=AAAA][&limite=N]
 //                               -> FASE 2: importa odds de fechamento de partidas JÁ
 //                                   FINALIZADAS, em lotes de N (padrão/teto
 //                                   MAX_FIXTURES_HISTORICO_POR_CHAMADA) — diferente de
@@ -1176,11 +1176,27 @@ function extrairPrecoFechamento(outcomeData) {
   return maisRecente?.price ?? null;
 }
 
-async function tarefaOddsHistorico(supabase, apiKey, { ligaId, limite }) {
+async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite }) {
   const limiteReal = Math.min(parseInt(limite, 10) || MAX_FIXTURES_HISTORICO_POR_CHAMADA, MAX_FIXTURES_HISTORICO_POR_CHAMADA);
 
   const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
   if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
+
+  // temporada é OBRIGATÓRIA de resolver explicitamente (não dá pra confiar
+  // em ORDER BY season sem esse filtro): matches guarda o mesmo jogo
+  // triplicado por fonte diferente (football-data.org com round preenchido,
+  // + 2 fontes sem round) em VÁRIAS temporadas -- sem filtrar season E
+  // round IS NOT NULL, a consulta abaixo passa fácil de 1000 linhas e o
+  // corte silencioso do PostgREST (mesmo bug já documentado em
+  // model-stats.js/sync-clubelo.js) faz "nenhuma partida pendente" aparecer
+  // mesmo com fixtures de sobra pra casar.
+  let temporadaAlvo = temporada;
+  if (!temporadaAlvo) {
+    const { data: ultimaTemporada } = await supabase.from('matches').select('season')
+      .eq('league_id', ligaId).order('season', { ascending: false }).limit(1);
+    temporadaAlvo = ultimaTemporada?.[0]?.season;
+  }
+  if (!temporadaAlvo) return { error: `Nenhuma temporada encontrada pra liga ${ligaId}.` };
 
   const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
   const mercados = mercadosCacheRaw?.valor || [];
@@ -1203,7 +1219,8 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, limite }) {
 
   const { data: nossosJogos } = await supabase.from('matches')
     .select('id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
-    .eq('league_id', ligaId).eq('status', 'finished');
+    .eq('league_id', ligaId).eq('season', temporadaAlvo).eq('status', 'finished')
+    .not('round', 'is', null);
 
   const { data: jaProcessados } = await supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico');
   const idsProntos = new Set((jaProcessados || []).map((r) => r.match_id));
@@ -1222,7 +1239,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, limite }) {
 
   const totalFinalizadosLocal = (nossosJogos || []).length;
   if (pendentes.length === 0) {
-    return { liga_id: ligaId, torneio: mapa.tournament_name, mensagem: 'Nenhuma partida pendente encontrada.', total_finalizados_local: totalFinalizadosLocal, ja_importados: idsProntos.size };
+    return { liga_id: ligaId, temporada: temporadaAlvo, torneio: mapa.tournament_name, mensagem: 'Nenhuma partida pendente encontrada.', total_finalizados_local: totalFinalizadosLocal, ja_importados: idsProntos.size };
   }
 
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1273,6 +1290,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, limite }) {
 
   return {
     liga_id: ligaId,
+    temporada: temporadaAlvo,
     torneio: mapa.tournament_name,
     total_finalizados_local: totalFinalizadosLocal,
     ja_importados_antes: idsProntos.size,
@@ -2789,7 +2807,7 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico precisa de ?liga_id=X.' } });
-      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), limite });
+      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
