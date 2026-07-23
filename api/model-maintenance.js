@@ -1165,13 +1165,24 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 // ============================================================
 const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 6;
 
-function extrairPrecoFechamento(outcomeData) {
+// BUG REAL corrigido (achado testando em produção antes de rodar o backfill
+// inteiro): a maioria dos pontos de /v4/historical-odds é preço AO VIVO,
+// capturado durante e depois da partida (na amostra de 1 fixture, 201 de
+// 215 pontos eram pós-apito inicial) -- pegar só o createdAt mais recente
+// pega o preço já quase decidido pelo placar (ex.: 1.01 pro time que já
+// está vencendo de goleada no fim do jogo), não o fechamento pré-jogo de
+// verdade. Corrigido filtrando só pontos com createdAt <= horário do apito
+// (kickoffIso, vem de fx.startTime) antes de escolher o mais recente.
+function extrairPrecoFechamento(outcomeData, kickoffIso) {
   const pontos = outcomeData?.players?.['0'];
   if (!Array.isArray(pontos) || pontos.length === 0) return null;
+  const kickoffMs = new Date(kickoffIso).getTime();
   let maisRecente = null;
   for (const p of pontos) {
     if (p.price == null) continue;
-    if (!maisRecente || new Date(p.createdAt) > new Date(maisRecente.createdAt)) maisRecente = p;
+    const ts = new Date(p.createdAt).getTime();
+    if (ts > kickoffMs) continue; // preço ao vivo/pós-jogo -- descarta
+    if (!maisRecente || ts > new Date(maisRecente.createdAt).getTime()) maisRecente = p;
   }
   return maisRecente?.price ?? null;
 }
@@ -1234,7 +1245,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
       if (diffHoras > 36) return false;
       return nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name);
     });
-    if (partida) pendentes.push({ fixtureId: fx.fixtureId, match: partida });
+    if (partida) pendentes.push({ fixtureId: fx.fixtureId, startTime: fx.startTime, match: partida });
   }
 
   const totalFinalizadosLocal = (nossosJogos || []).length;
@@ -1246,7 +1257,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   let processados = 0, sucesso = 0;
   const falhas = [];
 
-  for (const { fixtureId, match } of pendentes) {
+  for (const { fixtureId, startTime, match } of pendentes) {
     if (processados > 0) await esperar(5000); // cooldown documentado do endpoint (5000ms)
     processados++;
     try {
@@ -1261,14 +1272,14 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
         const m1x2 = bdata.markets?.[String(mercado1x2.marketId)];
         for (const [outcomeId, outcomeData] of Object.entries(m1x2?.outcomes || {})) {
           const selecao = outcome1x2[outcomeId];
-          const preco = extrairPrecoFechamento(outcomeData);
+          const preco = extrairPrecoFechamento(outcomeData, startTime);
           if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: '1X2', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
         }
 
         const mou = bdata.markets?.[String(mercadoOU25.marketId)];
         for (const [outcomeId, outcomeData] of Object.entries(mou?.outcomes || {})) {
           const selecao = outcomeOU25[outcomeId];
-          const preco = extrairPrecoFechamento(outcomeData);
+          const preco = extrairPrecoFechamento(outcomeData, startTime);
           if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: 'over_under_2.5', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
         }
       }
