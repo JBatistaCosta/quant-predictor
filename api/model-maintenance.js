@@ -1131,6 +1131,159 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 }
 
 // ============================================================
+// TAREFA: odds-historico — FASE 2 do backfill de rodadas encerradas.
+//
+// Formato real de /v4/historical-odds (confirmado rodando odds-historico-
+// descobrir em produção, NÃO estava documentado com esse nível de detalhe):
+//   { fixtureId, bookmakers: { <slug>: { markets: { <marketId>: { outcomes:
+//     { <outcomeId>: { players: { "0": [ {createdAt, price, active, ...},
+//     ... MUITOS pontos, é o histórico de movimento de linha inteiro, não só
+//     o fechamento ] } } } } } } }
+// -- bem mais pesado que /v4/odds-by-tournaments (um fixture sozinho já
+// passou de 3,9MB de JSON na amostra). Por isso: (a) só o preço de
+// createdAt mais recente de cada outcome é aproveitado (snapshot='closing'
+// em odds_market — não vale a pena guardar o histórico de movimento inteiro
+// aqui, isso é objetivo futuro separado, já documentado em CONTEXTO), (b)
+// mercadoId/outcomeId são resolvidos pela cache `markets` (fase 1 do sync
+// AO VIVO, já existia) em vez de hardcoded: 1X2 = marketName "Full Time
+// Result" com handicap=0 (outcomes "1"/"X"/"2"), Over/Under 2.5 = marketName
+// "Over Under Full Time" com handicap=2.5 (outcomes "Over"/"Under") --
+// confirmado real, marketId 101 e 1010 respectivamente pro Brasileirão, mas
+// resolvido dinamicamente pra não quebrar se mudar de liga/bookmaker.
+//
+// fixtureId (por partida, diferente do tournamentId usado no sync ao vivo)
+// é descoberto batendo /v4/fixtures (1 chamada só, cacheada) com nossos
+// jogos internos por DATA + NOME DE TIME (mesma técnica de tarefaOddsSync).
+// Idempotente via match_source_ids (source='oddspapi_historico') -- mesmo
+// padrão de partidas-fotmob.
+//
+// CUSTO DE COTA: 1 chamada por partida (cooldown de 5s da própria OddsPapi,
+// documentado) -- backfill de uma temporada inteira (~180 jogos) consome
+// quase toda a cota mensal (250 free). Processa no máximo
+// MAX_FIXTURES_HISTORICO_POR_CHAMADA por chamada, avisado ao usuário antes
+// de rodar (ver skill do projeto, disciplina de cota).
+// ============================================================
+const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 6;
+
+function extrairPrecoFechamento(outcomeData) {
+  const pontos = outcomeData?.players?.['0'];
+  if (!Array.isArray(pontos) || pontos.length === 0) return null;
+  let maisRecente = null;
+  for (const p of pontos) {
+    if (p.price == null) continue;
+    if (!maisRecente || new Date(p.createdAt) > new Date(maisRecente.createdAt)) maisRecente = p;
+  }
+  return maisRecente?.price ?? null;
+}
+
+async function tarefaOddsHistorico(supabase, apiKey, { ligaId, limite }) {
+  const limiteReal = Math.min(parseInt(limite, 10) || MAX_FIXTURES_HISTORICO_POR_CHAMADA, MAX_FIXTURES_HISTORICO_POR_CHAMADA);
+
+  const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
+  if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
+
+  const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
+  const mercados = mercadosCacheRaw?.valor || [];
+  const mercado1x2 = mercados.find((m) => m.marketName === 'Full Time Result' && m.handicap === 0);
+  const mercadoOU25 = mercados.find((m) => m.marketName === 'Over Under Full Time' && m.handicap === 2.5);
+  if (!mercado1x2 || !mercadoOU25) return { error: 'Mercados "Full Time Result" (handicap 0) ou "Over Under Full Time" (handicap 2.5) não encontrados na cache markets — rode tarefa=odds-descobrir de novo.' };
+
+  const outcome1x2 = Object.fromEntries(mercado1x2.outcomes.map((o) => [String(o.outcomeId), { '1': 'home', X: 'draw', '2': 'away' }[o.outcomeName]]));
+  const outcomeOU25 = Object.fromEntries(mercadoOU25.outcomes.map((o) => [String(o.outcomeId), o.outcomeName.toLowerCase()]));
+
+  const fixtures = await buscarOuCache(supabase, `fixtures_finalizadas_liga_${ligaId}`, () => chamarOddspapi('/v4/fixtures', {
+    tournamentId: mapa.tournament_id,
+    statusId: 2, // Finished
+    from: '2026-01-01T00:00:00Z',
+    to: new Date().toISOString(),
+  }, apiKey));
+  if (!Array.isArray(fixtures) || fixtures.length === 0) {
+    return { error: 'Cache de fixtures finalizadas vazia/inválida — rode tarefa=odds-historico-descobrir de novo (ou apague oddspapi_cache pra essa chave se a temporada mudou).' };
+  }
+
+  const { data: nossosJogos } = await supabase.from('matches')
+    .select('id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
+    .eq('league_id', ligaId).eq('status', 'finished');
+
+  const { data: jaProcessados } = await supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico');
+  const idsProntos = new Set((jaProcessados || []).map((r) => r.match_id));
+
+  const pendentes = [];
+  for (const fx of fixtures) {
+    if (!fx.startTime || pendentes.length >= limiteReal) continue;
+    const partida = (nossosJogos || []).find((m) => {
+      if (idsProntos.has(m.id) || pendentes.some((p) => p.match.id === m.id)) return false;
+      const diffHoras = Math.abs(new Date(m.match_date) - new Date(fx.startTime)) / 3600000;
+      if (diffHoras > 36) return false;
+      return nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name);
+    });
+    if (partida) pendentes.push({ fixtureId: fx.fixtureId, match: partida });
+  }
+
+  const totalFinalizadosLocal = (nossosJogos || []).length;
+  if (pendentes.length === 0) {
+    return { liga_id: ligaId, torneio: mapa.tournament_name, mensagem: 'Nenhuma partida pendente encontrada.', total_finalizados_local: totalFinalizadosLocal, ja_importados: idsProntos.size };
+  }
+
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let processados = 0, sucesso = 0;
+  const falhas = [];
+
+  for (const { fixtureId, match } of pendentes) {
+    if (processados > 0) await esperar(5000); // cooldown documentado do endpoint (5000ms)
+    processados++;
+    try {
+      const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: BOOKMAKERS_ALVO.join(',') }, apiKey);
+      const linhas = [];
+      const agora = new Date().toISOString();
+
+      for (const bookmaker of BOOKMAKERS_ALVO) {
+        const bdata = historico.bookmakers?.[bookmaker];
+        if (!bdata) continue;
+
+        const m1x2 = bdata.markets?.[String(mercado1x2.marketId)];
+        for (const [outcomeId, outcomeData] of Object.entries(m1x2?.outcomes || {})) {
+          const selecao = outcome1x2[outcomeId];
+          const preco = extrairPrecoFechamento(outcomeData);
+          if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: '1X2', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
+        }
+
+        const mou = bdata.markets?.[String(mercadoOU25.marketId)];
+        for (const [outcomeId, outcomeData] of Object.entries(mou?.outcomes || {})) {
+          const selecao = outcomeOU25[outcomeId];
+          const preco = extrairPrecoFechamento(outcomeData);
+          if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: 'over_under_2.5', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
+        }
+      }
+
+      if (linhas.length > 0) {
+        const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
+        if (erroInsert) { falhas.push({ match_id: match.id, motivo: erroInsert.message }); continue; }
+      }
+
+      await supabase.from('match_source_ids').upsert(
+        { match_id: match.id, source: 'oddspapi_historico', source_id: fixtureId },
+        { onConflict: 'match_id,source' }
+      );
+      sucesso++;
+    } catch (erro) {
+      falhas.push({ match_id: match.id, motivo: erro.message });
+    }
+  }
+
+  return {
+    liga_id: ligaId,
+    torneio: mapa.tournament_name,
+    total_finalizados_local: totalFinalizadosLocal,
+    ja_importados_antes: idsProntos.size,
+    processados_agora: processados,
+    sucesso,
+    falhas: falhas.length ? falhas : undefined,
+    restantes_estimado: totalFinalizadosLocal - idsProntos.size - processados,
+  };
+}
+
+// ============================================================
 // TAREFA: odds — FASE 2 do sync de odds (OddsPapi): sincroniza de verdade.
 //
 // Captura o MÁXIMO possível por chamada: /v4/odds-by-tournaments devolve o
@@ -2628,6 +2781,15 @@ export default async function handler(req, res) {
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico-descobrir precisa de ?liga_id=X.' } });
       const resultado = await tarefaOddsHistoricoDescobrir(supabase, apiKey, Number(liga_id));
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'odds-historico') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico precisa de ?liga_id=X.' } });
+      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), limite });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
