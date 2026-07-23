@@ -28,6 +28,21 @@
 //                                   suficiente no curto prazo, pra não gastar cota à toa
 //   ?tarefa=odds-todas          -> roda tarefa=odds nas 6 ligas domésticas em sequência
 //                                   (usado pelo cron em vercel.json)
+//   ?tarefa=odds-historico-descobrir&liga_id=X
+//                               -> FASE 1 do BACKFILL de odds de rodadas JÁ ENCERRADAS: 2
+//                                   chamadas só (lista de fixtures finalizadas do torneio +
+//                                   1 amostra de /v4/historical-odds), cacheadas em
+//                                   oddspapi_cache — rodar e inspecionar a amostra antes de
+//                                   confiar no parser da FASE 2 abaixo (endpoint pouco usado
+//                                   neste projeto até agora, ver comentário na função).
+//   ?tarefa=odds-historico&liga_id=X[&limite=N]
+//                               -> FASE 2: importa odds de fechamento de partidas JÁ
+//                                   FINALIZADAS, em lotes de N (padrão/teto
+//                                   MAX_FIXTURES_HISTORICO_POR_CHAMADA) — diferente de
+//                                   tarefa=odds acima (que só pega jogos AGENDADOS), esse é
+//                                   por fixture individual (1 chamada por partida, cooldown
+//                                   de 5s da OddsPapi), então uma temporada inteira consome
+//                                   cota real — ver aviso de custo na função antes de rodar.
 //   ?tarefa=backfill-competicao&codigo=CLI&temporada=2023
 //                               -> importa TODAS as partidas de uma temporada específica de
 //                                   uma competição já cadastrada em leagues (external_id=codigo),
@@ -1055,6 +1070,64 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
   }
 
   return resultado;
+}
+
+// ============================================================
+// TAREFA: odds-historico-descobrir — FASE 1 do backfill de odds de rodadas
+// JÁ ENCERRADAS (pedido do usuário: "importar odds de todas as rodadas
+// anteriores do Brasileirão").
+//
+// Diferente de tarefa=odds (que lê /v4/odds-by-tournaments, o quadro inteiro
+// do torneio numa chamada, mas só pega jogo AGENDADO com linha aberta),
+// odds de jogo ENCERRADO exigem dois endpoints novos, nunca usados neste
+// projeto até agora — por isso essa fase só DESCOBRE e cacheia a resposta
+// crua, sem gastar nada além de 2 chamadas, pra inspecionar o formato real
+// antes de escrever o parser da fase 2 (regra do projeto: nunca adivinhar
+// formato de resposta de API paga e escrever parser às cegas):
+//   1. /v4/fixtures?tournamentId=X&statusId=2 (Finished) -- lista TODAS as
+//      partidas finalizadas do torneio numa chamada só (com fixtureId de
+//      cada uma), diferente de /v4/historical-odds que é por partida.
+//   2. /v4/historical-odds?fixtureId=X&bookmakers=pinnacle,bet365,betano --
+//      odds da PRIMEIRA fixture da lista acima, só como amostra.
+// ============================================================
+async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
+  const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
+  if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
+
+  const fixtures = await chamarOddspapi('/v4/fixtures', {
+    tournamentId: mapa.tournament_id,
+    statusId: 2, // Finished
+    from: '2026-01-01T00:00:00Z',
+    to: new Date().toISOString(),
+  }, apiKey);
+
+  if (!Array.isArray(fixtures) || fixtures.length === 0) {
+    return { error: 'Nenhuma fixture finalizada retornada por /v4/fixtures — confira tournament_id/statusId/from/to.', resposta_bruta: fixtures };
+  }
+
+  await supabase.from('oddspapi_cache').upsert(
+    { chave: `fixtures_finalizadas_liga_${ligaId}`, valor: fixtures, atualizado_em: new Date().toISOString() },
+    { onConflict: 'chave' }
+  );
+
+  const amostraFixture = fixtures[0];
+  const historico = await chamarOddspapi('/v4/historical-odds', {
+    fixtureId: amostraFixture.fixtureId,
+    bookmakers: BOOKMAKERS_ALVO.join(','),
+  }, apiKey);
+
+  await supabase.from('oddspapi_cache').upsert(
+    { chave: `historico_amostra_liga_${ligaId}`, valor: historico, atualizado_em: new Date().toISOString() },
+    { onConflict: 'chave' }
+  );
+
+  return {
+    liga_id: ligaId,
+    torneio: mapa.tournament_name,
+    total_fixtures_finalizadas: fixtures.length,
+    amostra_fixture: amostraFixture,
+    amostra_historico: historico,
+  };
 }
 
 // ============================================================
@@ -2548,6 +2621,15 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       return res.status(200).json(await tarefaOddsTodas(supabase, apiKey));
+    }
+
+    if (tarefa === 'odds-historico-descobrir') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico-descobrir precisa de ?liga_id=X.' } });
+      const resultado = await tarefaOddsHistoricoDescobrir(supabase, apiKey, Number(liga_id));
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
     }
 
     if (tarefa === 'elo') {
