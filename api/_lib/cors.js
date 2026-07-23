@@ -8,8 +8,8 @@
 // bloqueia — inclusive o preflight (OPTIONS) que o browser manda sozinho
 // antes de POSTs com corpo JSON ou header Authorization.
 const ALLOWED_ORIGINS = [
-  'https://quant-79e8b.web.app',
-  'https://quant-79e8b.firebaseapp.com',
+  'https://agilsgh-65463878-f64e7.web.app',
+  'https://agilsgh-65463878-f64e7.firebaseapp.com',
   'https://quant-predictor.vercel.app',
   'http://localhost:5173',
   ...(process.env.CORS_EXTRA_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean),
