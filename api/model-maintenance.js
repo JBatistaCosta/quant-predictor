@@ -1343,8 +1343,28 @@ const JANELAS_DIAS = [7, 14, 21];
 function normalizarTexto2(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
 }
+
+// Apelidos SEM raiz/token em comum entre o nome cadastrado em `teams` e o
+// nome usado pela OddsPapi -- mesma classe de bug já resolvida pra outras
+// fontes (ver ALIASES_MANUAIS em sync-match-stats.js, ex.: QPR/West Brom).
+// Achado comparando os 20 times do Brasileirão 2026 contra os 20 nomes
+// distintos da OddsPapi (script local, não em produção): 6 de 20 não batem
+// por substring — sigla nossa (FBC/FBPA/CA/AF/RB) vs nome mais por extenso
+// ou sigla diferente da OddsPapi. Sem ambiguidade (comparação 1:1 direta
+// entre as duas listas fechadas de 20 times), não precisa de confirmação
+// time a time como o caso QPR (que tinha colisão entre ligas).
+const ALIASES_ODDSPAPI = {
+  'camineiro': 'atleticomineiro',
+  'chapecoenseaf': 'chapecoense',
+  'coritibafbc': 'coritibafc',
+  'gremiofbpa': 'gremiofbportoalegrense',
+  'rbbragantino': 'redbullbragantino',
+  'sccorinthianspaulista': 'sccorinthians',
+};
 function nomesBatem(a, b) {
-  const x = normalizarTexto2(a), y = normalizarTexto2(b);
+  let x = normalizarTexto2(a), y = normalizarTexto2(b);
+  x = ALIASES_ODDSPAPI[x] || x;
+  y = ALIASES_ODDSPAPI[y] || y;
   return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
 }
 
