@@ -60,6 +60,11 @@ const ALIASES_MANUAIS = {
   'qpr': 'queens park rangers',
   'west brom': 'west bromwich albion',
   'sheffield utd': 'sheffield united',
+  // Clube renomeou de "Clube Atlético Paranaense" pra "Club Athletico
+  // Paranaense" (grafia com "h") — API-Football ainda usa a grafia antiga
+  // sem "h" em algumas competições, e "Athletico-PR" em outras.
+  'atletico paranaense': 'club athletico paranaense',
+  'athletico pr': 'club athletico paranaense',
 };
 
 // Normaliza preservando espaços (vira tokens) em vez de colapsar tudo numa
