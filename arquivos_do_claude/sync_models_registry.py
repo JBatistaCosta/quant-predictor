@@ -145,6 +145,22 @@ def main() -> None:
             "metrics_test": {"fonte": "model_predictions", "nota": "sem backtest de ROI formal — só log-loss calculado ao vivo em /api/model-stats"},
         })
 
+    # catboost_xg_regressor_v1 (scripts/treinar_regressor_xg.py) — regressão
+    # (RMSE), não classificação; não passa por model_benchmarking_backtest
+    # (métrica é RMSE, não ROI/log-loss/brier). market='gols_esperados' não
+    # é um mercado de aposta de verdade, é só o rótulo do que o modelo prevê.
+    ja_tem_regressor = any(r["name"] == "catboost_xg_regressor_v1" for r in linhas_registro)
+    if not ja_tem_regressor:
+        linhas_registro.append({
+            "name": "catboost_xg_regressor_v1",
+            "market": "gols_esperados",
+            "algorithm": "CatBoost (regressão)",
+            "status": "testing",
+            "features_used": FEATURES_POR_MODELO.get("catboost_xg_regressor_v1"),
+            "hyperparameters": hiperparametros_do_nome("catboost_xg_regressor_v1"),
+            "metrics_test": {"fonte": "scripts/treinar_regressor_xg.py", "nota": "RMSE impresso no console ao rodar — ver model_match_estimates pra previsão x realidade partida a partida"},
+        })
+
     for i in range(0, len(linhas_registro), 200):
         supabase.table("models_registry").upsert(
             linhas_registro[i:i + 200], on_conflict="name,market",
