@@ -9,6 +9,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Info, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import CurvaAprendizadoModelo from './CurvaAprendizadoModelo';
 
 const ROTULO_MERCADO = {
   '1X2': '1X2',
@@ -195,6 +196,11 @@ export default function PainelInfoModelo({ modelName, rotulo, aberto, onFechar }
                   </div>
                 ))}
               </div>
+            </section>
+
+            <section className="mt-5">
+              <h4 className="text-[11px] font-bold uppercase text-slate-500 mb-2">Curva de aprendizado</h4>
+              <CurvaAprendizadoModelo modelName={modelName} />
             </section>
           </>
         )}
