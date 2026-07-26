@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
+from catboost import CatBoostClassifier, CatBoostRegressor
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
@@ -94,6 +94,9 @@ PARAMS_DEFAULT = {
     "catboost_v3b": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v3b": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v3b": {"num_leaves": 15, "learning_rate": 0.1},
+    # Regressor de xG (não é classificação -- ver treinar_catboost_regressor).
+    # Mesmos defaults da v1, ainda sem tuning dedicado.
+    "catboost_xg_regressor_v1": {"depth": 6, "learning_rate": 0.05},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -124,6 +127,9 @@ FEATURES_POR_MODELO = {
     "catboost_v3b": FEATURES_V3B,
     "xgboost_v3b": FEATURES_V3B,
     "lightgbm_v3b": FEATURES_V3B,
+    # Regressor de xG -- mesmas features base da v1 (elo/forma/xG/liga),
+    # prevendo um valor contínuo (gols esperados) em vez de classe.
+    "catboost_xg_regressor_v1": FEATURES,
 }
 
 
@@ -218,6 +224,36 @@ def treinar_catboost(
 def prever_catboost(modelo, _extra, df: pd.DataFrame, features: list[str] = FEATURES):
     df = preparar_liga_para_catboost(df)
     return modelo.predict_proba(df[features]), modelo.classes_
+
+
+def treinar_catboost_regressor(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str,
+    features: list[str] = FEATURES,
+):
+    """Mesmo espírito de `treinar_catboost`, mas regressão (RMSE) em vez de
+    classificação -- usado pra gols esperados (xG) por equipe, onde o alvo é
+    contínuo (`match_stats.xg`/`match_stats_fotmob.xg`), não uma classe.
+    Sem `val_df`/`test_df`/curva de aprendizado -- primeira versão, mesmo
+    nível de simplicidade do `treinar_catboost` original (sem tuning)."""
+    modelo = CatBoostRegressor(
+        loss_function="RMSE",
+        thread_count=2,
+        iterations=200,
+        cat_features=CAT_FEATURES,
+        random_seed=42,
+        verbose=False,
+        **params,
+    )
+    treino = preparar_liga_para_catboost(train_df)
+    modelo.fit(treino[features], treino[coluna_alvo])
+    return modelo, None, None
+
+
+def prever_catboost_regressor(modelo, _extra, df: pd.DataFrame, features: list[str] = FEATURES):
+    df = preparar_liga_para_catboost(df)
+    return modelo.predict(df[features])
 
 
 def treinar_xgboost(
