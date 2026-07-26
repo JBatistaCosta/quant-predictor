@@ -1,0 +1,80 @@
+name: Model Benchmarking - Backfill de temporadas antigas (FotMob)
+
+# Roda arquivos_do_claude/ingestao_fotmob.py -- mesmo script já usado pra
+# sincronizar match_stats_fotmob/match_player_stats_fotmob/match_shots_fotmob/
+# match_context_fotmob/match_lineup_fotmob das temporadas correntes, aqui
+# reaproveitado pra estender o HISTÓRICO do Brasileirão/Libertadores (só
+# tinham 2023-2026 -- 3-4 temporadas -- contra 7-8 das 5 ligas europeias de
+# elite, gap identificado ao investigar se dava pra incluir essas duas
+# competições no dataset "Feature Stacked" dos modelos de árvore, ver
+# scripts/dados_historicos.py:LIGAS_ELITE_EUROPEIAS).
+#
+# Pré-requisito (feito manualmente antes de disparar este workflow, 1
+# chamada por temporada, barato): as linhas de `matches` da temporada já
+# precisam existir -- tarefaBackfillFotmobLiga/`?tarefa=importar-jogos-
+# fotmob` no Vercel cria isso a partir de UMA chamada de /fixtures; este
+# script aqui só ENRIQUECE partidas já existentes (casa por team_id +
+# janela de 36h, não cria jogo novo).
+#
+# Aceita múltiplas temporadas numa dispatch só (`temporadas`, separadas por
+# espaço) pra não precisar de um workflow_dispatch por ano -- diferente de
+# cartoes_backfill.yml/lineup_backfill.yml (uma chamada resolve TODAS as
+# partidas pendentes da liga de uma vez, sem recorte por temporada), esse
+# script exige `--temporada` porque precisa bater com o formato exigido
+# pela API do FotMob pra buscar a fixture list (`/fixtures?id=X&season=Y`).
+on:
+  workflow_dispatch:
+    inputs:
+      liga_id:
+        description: "league_id interno (1=Brasileirão, 23=Libertadores)"
+        required: true
+        type: string
+      fotmob_league_id:
+        description: "id da liga no FotMob (268=Brasileirão, 45=Libertadores)"
+        required: true
+        type: string
+      temporadas:
+        description: "Temporadas a processar, separadas por espaço (ex: 2019 2020 2021 2022)"
+        required: true
+        type: string
+      limite:
+        description: "Processa só as N primeiras partidas pendentes POR TEMPORADA (vazio = todas)"
+        required: false
+        type: string
+      forcar:
+        description: "Reprocessa mesmo partidas já em match_source_ids"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  backfill-temporadas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backfill de temporadas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          for TEMPORADA in ${{ inputs.temporadas }}; do
+            echo "=== Temporada $TEMPORADA ==="
+            ARGS="--liga-id ${{ inputs.liga_id }} --fotmob-league-id ${{ inputs.fotmob_league_id }} --temporada $TEMPORADA"
+            if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+            if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+            python arquivos_do_claude/ingestao_fotmob.py $ARGS
+          done
