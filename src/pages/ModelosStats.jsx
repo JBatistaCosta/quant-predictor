@@ -7,6 +7,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
+import CurvaPnlEv from '../components/CurvaPnlEv';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -115,6 +116,7 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   const [staking, setStaking] = useState('flat');
   const [fracaoKelly, setFracaoKelly] = useState(0.25);
   const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
+  const [grupoCurvaIdx, setGrupoCurvaIdx] = useState(0);
 
   const rodar = async () => {
     setCarregando(true);
@@ -129,6 +131,7 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao rodar backtest.');
       setResultado(dados);
+      setGrupoCurvaIdx(0);
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -244,6 +247,25 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
               </table>
             </div>
             <p className="text-[10px] text-slate-600 mt-2">Linhas destacadas em verde = IC 95% do ROI inteiramente acima de zero (EV+ estatisticamente sustentado nesse histórico, não só edge médio positivo).</p>
+
+            <div className="mt-5 pt-4 border-t border-slate-700/50">
+              <h3 className="text-sm font-bold text-slate-200 mb-2">Curva de Retorno (PnL) x Valor Esperado (EV)</h3>
+              <p className="text-[11px] text-slate-500 mb-3">
+                Acumulado cronológico, aposta a aposta — cada grupo (modelo/mercado/seleção/liga) tem sua própria curva, então dá pra ver especializações por campeonato escolhendo abaixo.
+              </p>
+              <select
+                value={grupoCurvaIdx}
+                onChange={(e) => setGrupoCurvaIdx(Number(e.target.value))}
+                className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-100 mb-3 max-w-full"
+              >
+                {resultado.grupos.map((g, i) => (
+                  <option key={i} value={i}>
+                    {g.model_name} — {MERCADO_ROTULO[g.market] || g.market} — {SELECAO_ROTULO[g.selection] || g.selection} — {ligasPorId[g.league_id] || `#${g.league_id}`} ({g.n_apostas} apostas)
+                  </option>
+                ))}
+              </select>
+              <CurvaPnlEv serieTemporal={resultado.grupos[grupoCurvaIdx]?.serie_temporal} />
+            </div>
           </>
         )
       )}
