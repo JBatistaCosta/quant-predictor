@@ -1179,7 +1179,11 @@ function extrairPrecoFechamento(outcomeData, kickoffIso) {
   const kickoffMs = new Date(kickoffIso).getTime();
   let maisRecente = null;
   for (const p of pontos) {
-    if (p.price == null) continue;
+    // odd decimal válida é sempre > 1 -- achado real rodando o backfill em
+    // produção: bet365 às vezes grava price:0 (mercado suspenso/indisponível
+    // naquele instante), e sem esse filtro o preço "mais recente" escolhido
+    // podia ser esse 0 em vez do último preço de verdade.
+    if (p.price == null || p.price <= 1) continue;
     const ts = new Date(p.createdAt).getTime();
     if (ts > kickoffMs) continue; // preço ao vivo/pós-jogo -- descarta
     if (!maisRecente || ts > new Date(maisRecente.createdAt).getTime()) maisRecente = p;
