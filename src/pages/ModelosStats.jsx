@@ -108,6 +108,107 @@ function AjusteCalibracao({ g }) {
   );
 }
 
+// Relatório partida a partida: exige um modelo+mercado específicos (os
+// mesmos filtros já existentes na página) -- lista cada jogo já finalizado
+// com a seleção que o modelo mais favoreceu, o EV estimado contra a odd
+// real de fechamento, e se acertou. Quando o modelo é baseado em gols
+// esperados (Dixon-Coles/Poisson), mostra também o xG previsto por equipe
+// lado a lado com o xG real (match_stats) -- ausente pra modelos de
+// classificação pura (ver CONTEXTO_PROJETO.md).
+function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [partidas, setPartidas] = useState(null);
+
+  useEffect(() => {
+    if (!filtroModelo || !filtroMercado) { setPartidas(null); return; }
+    (async () => {
+      setCarregando(true); setErro('');
+      try {
+        const resp = await fetch(apiUrl(`/api/model-stats?modelo=${encodeURIComponent(filtroModelo)}&mercado=${encodeURIComponent(filtroMercado)}&formato=partidas`));
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar relatório.');
+        setPartidas(dados.partidas || []);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, [filtroModelo, filtroMercado]);
+
+  if (!filtroModelo || !filtroMercado) {
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4 text-center text-sm text-slate-500">
+        Escolha um modelo E um mercado específicos acima pra ver o relatório partida a partida.
+      </div>
+    );
+  }
+
+  const temXg = partidas?.some(p => p.xg_home_previsto != null || p.xg_away_previsto != null);
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <h2 className="text-sm font-bold text-slate-200 mb-1">Relatório partida a partida</h2>
+      <p className="text-[11px] text-slate-500 mb-3">
+        {filtroModelo} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção que o modelo mais favoreceu.
+        {temXg && ' Colunas de xG só aparecem pra modelos que calculam gols esperados por equipe de verdade (Dixon-Coles/Poisson).'}
+      </p>
+
+      {carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-6"><Loader2 className="animate-spin" size={16} /> Carregando...</div>
+      ) : erro ? (
+        <p className="text-xs text-red-400">{erro}</p>
+      ) : !partidas || partidas.length === 0 ? (
+        <p className="text-xs text-slate-600">Sem partidas finalizadas com previsão pra esse modelo/mercado ainda.</p>
+      ) : (
+        <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-800">
+              <tr className="text-slate-500 uppercase text-[10px]">
+                <th className="text-left p-1.5">Data</th>
+                <th className="text-left p-1.5">Confronto</th>
+                <th className="text-left p-1.5">Previsão</th>
+                <th className="text-right p-1.5">Prob.</th>
+                <th className="text-right p-1.5">Odd usada</th>
+                <th className="text-right p-1.5">EV estimado</th>
+                <th className="text-center p-1.5">Resultado</th>
+                {temXg && <th className="text-right p-1.5">xG casa (prev/real)</th>}
+                {temXg && <th className="text-right p-1.5">xG fora (prev/real)</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {partidas.map(p => (
+                <tr key={p.match_id} className={p.acertou ? 'bg-emerald-500/5' : ''}>
+                  <td className="p-1.5 text-slate-500">{p.match_date ? new Date(p.match_date).toLocaleDateString('pt-BR') : '—'}</td>
+                  <td className="p-1.5 text-slate-300">{p.mandante} x {p.visitante} <span className="text-slate-600">({ligasPorId[p.league_id] || `#${p.league_id}`})</span></td>
+                  <td className="p-1.5 text-slate-300 font-semibold">{SELECAO_ROTULO[p.selecao_prevista] || p.selecao_prevista}</td>
+                  <td className="p-1.5 text-right text-slate-300">{(p.probabilidade_modelo * 100).toFixed(1)}%</td>
+                  <td className="p-1.5 text-right text-slate-400">{p.odds_usada != null ? p.odds_usada.toFixed(2) : '—'}</td>
+                  <td className={`p-1.5 text-right font-bold ${p.ev_estimado == null ? 'text-slate-600' : p.ev_estimado > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {p.ev_estimado != null ? `${p.ev_estimado > 0 ? '+' : ''}${(p.ev_estimado * 100).toFixed(1)}%` : '—'}
+                  </td>
+                  <td className="p-1.5 text-center">{p.acertou == null ? '—' : p.acertou ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-red-400">✗</span>}</td>
+                  {temXg && (
+                    <td className="p-1.5 text-right text-slate-400">
+                      {p.xg_home_previsto != null ? p.xg_home_previsto.toFixed(2) : '—'} / {p.xg_home_real != null ? p.xg_home_real.toFixed(2) : '—'}
+                    </td>
+                  )}
+                  {temXg && (
+                    <td className="p-1.5 text-right text-slate-400">
+                      {p.xg_away_previsto != null ? p.xg_away_previsto.toFixed(2) : '—'} / {p.xg_away_real != null ? p.xg_away_real.toFixed(2) : '—'}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -568,6 +669,10 @@ export default function ModelosStats() {
             {ligas.map(l => <option key={l} value={l}>{ligasPorId[l] || `Liga #${l}`}</option>)}
           </select>
         </div>
+      )}
+
+      {!carregando && grupos.length > 0 && (
+        <RelatorioPartidas filtroModelo={filtroModelo} filtroMercado={filtroMercado} ligasPorId={ligasPorId} />
       )}
 
       {!carregando && grupos.length > 0 && (

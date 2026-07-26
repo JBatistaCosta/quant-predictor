@@ -818,6 +818,7 @@ export default function AnaliseEstatisticaJogo() {
   const [tendenciasVisitante, setTendenciasVisitante] = useState(null);
   const [comparacaoModelo, setComparacaoModelo] = useState([]);
   const [precisaoModelo, setPrecisaoModelo] = useState([]);
+  const [modeloSelecionado, setModeloSelecionado] = useState(''); // '' = mostra todos os modelos com previsão salva pra essa partida
   const [mediasBrutas, setMediasBrutas] = useState(null); // { mandante, visitante } antes de qualquer override de OCR
   const [estimativaEscanteios, setEstimativaEscanteios] = useState(null);
   const [contextoJogo, setContextoJogo] = useState(null);
@@ -873,6 +874,7 @@ export default function AnaliseEstatisticaJogo() {
       setOcrOverride(null);
       setOcrError('');
       setOcrSuccess('');
+      setModeloSelecionado('');
 
       const mercadosDaPartida = new Set(comparacao.map(c => c.market));
       const modelosDaPartida = new Set(comparacao.map(c => c.model_name));
@@ -892,6 +894,19 @@ export default function AnaliseEstatisticaJogo() {
   const faixasEscanteios = useMemo(
     () => calcularFaixasEscanteios(estimativaEscanteios?.escanteios_esperados?.total, estimativaEscanteios?.modelo?.disp_r),
     [estimativaEscanteios]
+  );
+
+  // Só existe mais de um modelo pra escolher quando model_predictions tem
+  // mais de um model_name salvo pra essa partida (registro em models_registry
+  // ainda não filtra aqui -- qualquer modelo com previsão salva aparece).
+  const modelosDisponiveis = useMemo(() => [...new Set(comparacaoModelo.map(c => c.model_name))].sort(), [comparacaoModelo]);
+  const comparacaoModeloFiltrada = useMemo(
+    () => (modeloSelecionado ? comparacaoModelo.filter(c => c.model_name === modeloSelecionado) : comparacaoModelo),
+    [comparacaoModelo, modeloSelecionado]
+  );
+  const precisaoModeloFiltrada = useMemo(
+    () => (modeloSelecionado ? precisaoModelo.filter(g => g.model_name === modeloSelecionado) : precisaoModelo),
+    [precisaoModelo, modeloSelecionado]
   );
 
   const handleOcrUpload = async (event) => {
@@ -1001,9 +1016,23 @@ export default function AnaliseEstatisticaJogo() {
         />
       </div>
 
+      {modelosDisponiveis.length > 1 && (
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-[10px] uppercase font-bold text-slate-500">Modelo</span>
+          <select
+            value={modeloSelecionado}
+            onChange={(e) => setModeloSelecionado(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-100"
+          >
+            <option value="">Todos os modelos ({modelosDisponiveis.length})</option>
+            {modelosDisponiveis.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <PainelModeloMercado grupos={comparacaoModelo} />
-        <PainelPrecisaoModelo grupos={precisaoModelo} />
+        <PainelModeloMercado grupos={comparacaoModeloFiltrada} />
+        <PainelPrecisaoModelo grupos={precisaoModeloFiltrada} />
       </div>
     </div>
   );
