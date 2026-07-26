@@ -192,7 +192,7 @@ export default async function handler(req, res) {
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
     // round-trips do que quebrar em lotes de match_id.
     const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
-      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals')),
+      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
       buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
@@ -239,6 +239,82 @@ export default async function handler(req, res) {
     Object.entries(oddsPorMatchMercado).forEach(([chave, oddsSel]) => {
       probMercado[chave] = devigar(oddsSel);
     });
+
+    // Relatório partida a partida: exige modelo+mercado (senão a lista fica
+    // grande e sem sentido de leitura) -- reaproveita TODO o pipeline acima
+    // (predições, resultado real, odds, corners), só não agrega em métricas.
+    // EV usa a odd REAL (não devigada -- devig é só pra comparar probabilidade,
+    // EV precisa do payout de verdade) contra a probabilidade do próprio
+    // modelo, sempre na seleção que o modelo mais favorece naquela partida
+    // (mesmo "argmax" já usado no cálculo de acurácia agregada acima).
+    // xG previsto/real só entra quando existe em model_match_estimates
+    // (só modelos baseados em gols esperados -- Dixon-Coles/Poisson --
+    // gravam isso; ver CONTEXTO_PROJETO.md sobre por que classificação pura
+    // não ganha um "xG implícito" back-derivado).
+    if (req.query.formato === 'partidas') {
+      if (!modelo || !mercado) {
+        return res.status(400).json({ error: { message: 'formato=partidas exige modelo e mercado.' } });
+      }
+      const previsoesDoModelo = predicoes.filter(p => matchIdsValidos.has(p.match_id));
+      const porMatch = {};
+      previsoesDoModelo.forEach(p => {
+        if (!porMatch[p.match_id]) porMatch[p.match_id] = [];
+        porMatch[p.match_id].push(p);
+      });
+
+      const matchIdsRelatorio = Object.keys(porMatch).map(Number);
+      const [timesRows, estimativasRows, xgRows] = await Promise.all([
+        buscarTudoPaginado(() => supabase.from('teams').select('id, name')),
+        buscarTudoPaginado(() => supabase.from('model_match_estimates').select('match_id, model_name, xg_home_previsto, xg_away_previsto').eq('model_name', modelo).in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+        buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, xg').in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+      ]);
+      const nomePorTime = {};
+      timesRows.forEach(t => { nomePorTime[t.id] = t.name; });
+      const estimativaPorMatch = {};
+      estimativasRows.forEach(e => { estimativaPorMatch[e.match_id] = e; });
+      const xgRealPorMatchTime = {};
+      xgRows.forEach(r => {
+        if (!xgRealPorMatchTime[r.match_id]) xgRealPorMatchTime[r.match_id] = {};
+        xgRealPorMatchTime[r.match_id][r.team_id] = r.xg != null ? Number(r.xg) : null;
+      });
+
+      const partidas = matchIdsRelatorio.map(matchId => {
+        const match = matchesValidos.find(m => m.id === matchId);
+        const selecoes = porMatch[matchId];
+        const mercadoChave = chaveMercado(mercado);
+        const resultado = resultadosReais[matchId];
+        const chaveOdds = `${matchId}__${mercado}`;
+        const oddsSel = oddsPorMatchMercado[chaveOdds] || {};
+
+        const previstaMaior = selecoes.reduce((a, b) => (Number(b.probability) > Number(a.probability) ? b : a));
+        const oddsUsada = oddsSel[previstaMaior.selection] ?? null;
+        const evEstimado = oddsUsada != null ? Number(previstaMaior.probability) * oddsUsada - 1 : null;
+        const resultadoReal = resultado ? resultado[mercadoChave] : null;
+        const estimativa = estimativaPorMatch[matchId];
+        const xgReal = xgRealPorMatchTime[matchId] || {};
+
+        return {
+          match_id: matchId,
+          match_date: match?.match_date ?? null,
+          mandante: nomePorTime[match?.home_team_id] || `Time #${match?.home_team_id}`,
+          visitante: nomePorTime[match?.away_team_id] || `Time #${match?.away_team_id}`,
+          league_id: match?.league_id ?? null,
+          selecao_prevista: previstaMaior.selection,
+          probabilidade_modelo: Number(previstaMaior.probability),
+          odds_usada: oddsUsada,
+          ev_estimado: evEstimado,
+          resultado_real: resultadoReal,
+          acertou: resultadoReal != null ? resultadoReal === previstaMaior.selection : null,
+          xg_home_previsto: estimativa?.xg_home_previsto != null ? Number(estimativa.xg_home_previsto) : null,
+          xg_away_previsto: estimativa?.xg_away_previsto != null ? Number(estimativa.xg_away_previsto) : null,
+          xg_home_real: match ? (xgReal[match.home_team_id] ?? null) : null,
+          xg_away_real: match ? (xgReal[match.away_team_id] ?? null) : null,
+        };
+      }).filter(p => p.resultado_real != null) // só partidas já finalizadas, mesmo filtro do resto do endpoint
+        .sort((a, b) => (a.match_date || '').localeCompare(b.match_date || ''));
+
+      return res.status(200).json({ partidas });
+    }
 
     // Agrupa previsões por model_name+market+league_id
     const grupos = {};
