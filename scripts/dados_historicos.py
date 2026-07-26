@@ -1069,6 +1069,37 @@ def _anexar_xg_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataF
     return partidas
 
 
+def _anexar_xgot_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Mesmo espírito de `_anexar_xg_por_partida`, mas xGOT (expected goals
+    on target -- xG ajustado pela qualidade do chute a gol, não só a
+    chance) via `match_stats_fotmob.xgot` -- fonte separada de
+    `match_stats` (nunca cruzada com ela), com boa cobertura nas 5 ligas de
+    elite europeias, Brasileirão e Libertadores (achado ao investigar se
+    xGOT tinha dado real no banco -- tinha, só não estava sendo usado em
+    nenhum treino). Só usado como ALVO de regressão (nunca como feature de
+    forma pré-jogo por enquanto -- diferente de xG, que já vira
+    `media_xg_5j_*`), fica NaN fora da cobertura, sem quebrar nada."""
+    match_ids = partidas["id"].astype(int).tolist()
+
+    def factory(lote, inicio, fim):
+        return supabase.table("match_stats_fotmob").select("match_id, team_id, xgot").in_("match_id", lote).order("match_id").range(inicio, fim)
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+    if not linhas:
+        partidas["xgot_home"] = np.nan
+        partidas["xgot_away"] = np.nan
+        return partidas
+
+    stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
+    stats_home = stats.rename(columns={"team_id": "home_team_id", "xgot": "xgot_home"})
+    stats_away = stats.rename(columns={"team_id": "away_team_id", "xgot": "xgot_away"})
+
+    partidas = partidas.merge(stats_home[["id", "home_team_id", "xgot_home"]], on=["id", "home_team_id"], how="left")
+    partidas = partidas.merge(stats_away[["id", "away_team_id", "xgot_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
 COLUNAS_FORMA_GOLS = {
     "marcado_home": "media_gols_marcados_5j_home",
     "sofrido_home": "media_gols_sofridos_5j_home",
@@ -1707,6 +1738,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     partidas = pd.concat(partidas_recortadas, ignore_index=True).sort_values("match_date").reset_index(drop=True)
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
+    partidas = _anexar_xgot_por_partida(supabase, partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
 
@@ -1718,7 +1750,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         elo_home = pd.DataFrame(columns=["id", "home_team_id", "elo_home"])
         elo_away = pd.DataFrame(columns=["id", "away_team_id", "elo_away"])
 
-    dataset = partidas[["id", "match_date", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals"]].copy()
+    dataset = partidas[["id", "match_date", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away"]].copy()
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
     dataset["resultado"] = np.select(
         [dataset["home_goals"] > dataset["away_goals"], dataset["home_goals"] == dataset["away_goals"]],
@@ -1856,6 +1888,11 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         [
             "match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3B,
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
+            # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
+            # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
+            # partida, usados só como ALVO de regressão em
+            # scripts/treinar_regressor_xg.py / treinar_regressor_xgot.py.
+            "xg_home", "xg_away", "xgot_home", "xgot_away",
         ]
     ]
 

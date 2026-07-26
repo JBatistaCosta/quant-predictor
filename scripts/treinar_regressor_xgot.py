@@ -1,30 +1,22 @@
 #!/usr/bin/env python3
-"""Regressor de gols esperados (xG) por equipe -- primeira versão de um
-modelo que prevê um valor CONTÍNUO (não uma classe/probabilidade como os
-outros 57 modelos do Model Benchmarking). Reaproveita o MESMO dataset
-"Feature Stacked" (`dados_historicos.montar_dataset_ml_empilhado`, 5 ligas
-de elite europeias) e as MESMAS features base (v1: elo/forma/xG/liga) já
-usadas pros modelos de classificação -- só troca o alvo pra `xg_home`/
-`xg_away`, que o dataset já traz embutido (via `match_stats.xg`,
-Understat) pra alimentar a feature de forma de xG.
+"""Regressor de xGOT (expected goals on target -- xG ajustado pela
+qualidade do próprio chute a gol, não só a chance) por equipe. Mesmo
+espírito de `treinar_regressor_xg.py` (mesmo dataset, mesmas features v1,
+mesmo split cronológico 80/20, só grava previsão do holdout) -- só troca
+o alvo pra `xgot_home`/`xgot_away`.
 
-Cobertura: só as 5 ligas de elite europeias, mesma limitação de
-`montar_dataset_ml_empilhado` -- NÃO cobre Brasileirão/Libertadores ainda,
-mesmo esses tendo xG real via FotMob (`match_stats_fotmob.xg`), porque
-isso exigiria alargar o escopo de liga da função compartilhada (usada
-pelos 57 modelos de classificação também) -- mudança maior, fora do
-escopo desta primeira versão.
-
-Split cronológico (não por temporada como os outros scripts): últimos 20%
-das partidas por data viram teste (holdout de verdade), resto vira treino
--- só os jogos de TESTE entram em `model_match_estimates` (mesma
-disciplina do `modelo_dixon_coles.py`: nunca salvar previsão em cima de
-dado que o próprio modelo já viu no treino).
+Fonte do rótulo: `match_stats_fotmob.xgot` (via
+`dados_historicos._anexar_xgot_por_partida`) -- achado ao investigar se
+xGOT tinha ground truth real no banco: tinha, só nunca tinha sido cruzado
+com `match_stats` nem usado em treino. Cobertura nas 5 ligas de elite
+europeias (mesmo escopo de `montar_dataset_ml_empilhado` -- ver
+CONTEXTO_PROJETO.md sobre a decisão de não alargar a função compartilhada
+nesta primeira versão).
 
 Uso:
     set SUPABASE_URL=...
     set SUPABASE_KEY=sua_service_role_key
-    python treinar_regressor_xg.py
+    python treinar_regressor_xgot.py
 """
 
 from __future__ import annotations
@@ -38,7 +30,7 @@ from supabase import create_client
 import dados_historicos
 import modelos_ml
 
-MODEL_NAME = "catboost_xg_regressor_v1"
+MODEL_NAME = "catboost_xgot_regressor_v1"
 FRACAO_TESTE = 0.2
 
 
@@ -58,7 +50,7 @@ def main() -> None:
     key = obter_env_obrigatoria("SUPABASE_KEY")
     supabase = create_client(url, key)
 
-    print("Montando dataset (5 ligas de elite europeias, xG via match_stats/Understat)...")
+    print("Montando dataset (5 ligas de elite europeias, xGOT via match_stats_fotmob)...")
     dataset = dados_historicos.montar_dataset_ml_empilhado(supabase)
     if dataset.empty:
         sys.exit("Dataset vazio -- nada pra treinar.")
@@ -70,13 +62,13 @@ def main() -> None:
     corte = int(len(dataset) * (1 - FRACAO_TESTE))
     treino_base, teste_base = dataset.iloc[:corte], dataset.iloc[corte:]
 
-    previsoes_xg = []
+    previsoes_xgot = []
     resultados = {}
-    for lado, coluna_alvo in (("home", "xg_home"), ("away", "xg_away")):
+    for lado, coluna_alvo in (("home", "xgot_home"), ("away", "xgot_away")):
         treino = treino_base.dropna(subset=[coluna_alvo])
         teste = teste_base.dropna(subset=[coluna_alvo])
         if treino.empty or teste.empty:
-            print(f"[{lado}] sem dados suficientes de xG real pra treinar/testar -- pulando.")
+            print(f"[{lado}] sem dados suficientes de xGOT real pra treinar/testar -- pulando.")
             continue
 
         modelo, _, _ = modelos_ml.treinar_catboost_regressor(params, treino, coluna_alvo=coluna_alvo, features=features)
@@ -91,16 +83,16 @@ def main() -> None:
         }
 
         for match_id, valor in zip(teste["match_id"], previsto):
-            previsoes_xg.append((int(match_id), lado, round(float(valor), 3)))
+            previsoes_xgot.append((int(match_id), lado, round(float(valor), 3)))
 
-    if not previsoes_xg:
+    if not previsoes_xgot:
         sys.exit("Nenhum lado (home/away) teve dado suficiente -- nada gravado.")
 
     por_match: dict[int, dict] = {}
-    for match_id, lado, valor in previsoes_xg:
+    for match_id, lado, valor in previsoes_xgot:
         if match_id not in por_match:
             por_match[match_id] = {"match_id": match_id, "model_name": MODEL_NAME}
-        por_match[match_id][f"xg_{lado}_previsto"] = valor
+        por_match[match_id][f"xgot_{lado}_previsto"] = valor
 
     linhas = list(por_match.values())
     for i in range(0, len(linhas), 500):
@@ -111,7 +103,7 @@ def main() -> None:
     print(f"\n{len(linhas)} partidas de teste gravadas em model_match_estimates ({MODEL_NAME}).")
     for lado, r in resultados.items():
         melhor = "MELHOR que baseline" if r["rmse_modelo"] < r["rmse_baseline"] else "pior que baseline"
-        print(f"  xG {lado}: RMSE modelo {r['rmse_modelo']:.3f} vs. baseline (média) {r['rmse_baseline']:.3f} -> {melhor} "
+        print(f"  xGOT {lado}: RMSE modelo {r['rmse_modelo']:.3f} vs. baseline (média) {r['rmse_baseline']:.3f} -> {melhor} "
               f"(treino={r['n_treino']}, teste={r['n_teste']})")
 
 

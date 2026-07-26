@@ -97,6 +97,7 @@ PARAMS_DEFAULT = {
     # Regressor de xG (não é classificação -- ver treinar_catboost_regressor).
     # Mesmos defaults da v1, ainda sem tuning dedicado.
     "catboost_xg_regressor_v1": {"depth": 6, "learning_rate": 0.05},
+    "catboost_xgot_regressor_v1": {"depth": 6, "learning_rate": 0.05},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -127,9 +128,10 @@ FEATURES_POR_MODELO = {
     "catboost_v3b": FEATURES_V3B,
     "xgboost_v3b": FEATURES_V3B,
     "lightgbm_v3b": FEATURES_V3B,
-    # Regressor de xG -- mesmas features base da v1 (elo/forma/xG/liga),
-    # prevendo um valor contínuo (gols esperados) em vez de classe.
+    # Regressor de xG/xGOT -- mesmas features base da v1 (elo/forma/xG/liga),
+    # prevendo um valor contínuo (gols esperados / xGOT) em vez de classe.
     "catboost_xg_regressor_v1": FEATURES,
+    "catboost_xgot_regressor_v1": FEATURES,
 }
 
 

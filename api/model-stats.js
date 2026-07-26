@@ -263,10 +263,13 @@ export default async function handler(req, res) {
       });
 
       const matchIdsRelatorio = Object.keys(porMatch).map(Number);
-      const [timesRows, estimativasRows, xgRows] = await Promise.all([
+      const [timesRows, estimativasRows, xgRows, xgotRows] = await Promise.all([
         buscarTudoPaginado(() => supabase.from('teams').select('id, name')),
-        buscarTudoPaginado(() => supabase.from('model_match_estimates').select('match_id, model_name, xg_home_previsto, xg_away_previsto').eq('model_name', modelo).in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+        buscarTudoPaginado(() => supabase.from('model_match_estimates').select('match_id, model_name, xg_home_previsto, xg_away_previsto, xgot_home_previsto, xgot_away_previsto').eq('model_name', modelo).in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
         buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, xg').in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+        // xGOT só existe em match_stats_fotmob (não em match_stats) -- ver
+        // dados_historicos._anexar_xgot_por_partida sobre essa fonte.
+        buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, team_id, xgot').in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
       ]);
       const nomePorTime = {};
       timesRows.forEach(t => { nomePorTime[t.id] = t.name; });
@@ -276,6 +279,11 @@ export default async function handler(req, res) {
       xgRows.forEach(r => {
         if (!xgRealPorMatchTime[r.match_id]) xgRealPorMatchTime[r.match_id] = {};
         xgRealPorMatchTime[r.match_id][r.team_id] = r.xg != null ? Number(r.xg) : null;
+      });
+      const xgotRealPorMatchTime = {};
+      xgotRows.forEach(r => {
+        if (!xgotRealPorMatchTime[r.match_id]) xgotRealPorMatchTime[r.match_id] = {};
+        xgotRealPorMatchTime[r.match_id][r.team_id] = r.xgot != null ? Number(r.xgot) : null;
       });
 
       const partidas = matchIdsRelatorio.map(matchId => {
@@ -292,6 +300,7 @@ export default async function handler(req, res) {
         const resultadoReal = resultado ? resultado[mercadoChave] : null;
         const estimativa = estimativaPorMatch[matchId];
         const xgReal = xgRealPorMatchTime[matchId] || {};
+        const xgotReal = xgotRealPorMatchTime[matchId] || {};
 
         return {
           match_id: matchId,
@@ -309,6 +318,10 @@ export default async function handler(req, res) {
           xg_away_previsto: estimativa?.xg_away_previsto != null ? Number(estimativa.xg_away_previsto) : null,
           xg_home_real: match ? (xgReal[match.home_team_id] ?? null) : null,
           xg_away_real: match ? (xgReal[match.away_team_id] ?? null) : null,
+          xgot_home_previsto: estimativa?.xgot_home_previsto != null ? Number(estimativa.xgot_home_previsto) : null,
+          xgot_away_previsto: estimativa?.xgot_away_previsto != null ? Number(estimativa.xgot_away_previsto) : null,
+          xgot_home_real: match ? (xgotReal[match.home_team_id] ?? null) : null,
+          xgot_away_real: match ? (xgotReal[match.away_team_id] ?? null) : null,
         };
       }).filter(p => p.resultado_real != null) // só partidas já finalizadas, mesmo filtro do resto do endpoint
         .sort((a, b) => (a.match_date || '').localeCompare(b.match_date || ''));
