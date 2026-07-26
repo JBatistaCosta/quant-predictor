@@ -65,6 +65,14 @@ const ALIASES_MANUAIS = {
   // sem "h" em algumas competições, e "Athletico-PR" em outras.
   'atletico paranaense': 'club athletico paranaense',
   'athletico pr': 'club athletico paranaense',
+  // Achados investigando taxa de casamento da Copa Libertadores
+  // (?diagnostico=nomes por temporada, ver CONTEXTO_PROJETO.md).
+  'atletico mg': 'ca mineiro',
+  'estudiantes l p': 'estudiantes de la plata',
+  'liverpool montevideo': 'liverpool fc', // só existe 1 "Liverpool FC" nas partidas da Libertadores no banco (id 545, Uruguai) — sem ambiguidade com o Liverpool inglês nesse contexto
+  'aguilas doradas': 'rionegro aguilas',
+  'defensor sporting': 'defensor sc',
+  'talleres cordoba': 'ca talleres',
 };
 
 // Normaliza preservando espaços (vira tokens) em vez de colapsar tudo numa
