@@ -146,13 +146,14 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
   }
 
   const temXg = partidas?.some(p => p.xg_home_previsto != null || p.xg_away_previsto != null);
+  const temXgot = partidas?.some(p => p.xgot_home_previsto != null || p.xgot_away_previsto != null);
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
       <h2 className="text-sm font-bold text-slate-200 mb-1">Relatório partida a partida</h2>
       <p className="text-[11px] text-slate-500 mb-3">
         {filtroModelo} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção que o modelo mais favoreceu.
-        {temXg && ' Colunas de xG só aparecem pra modelos que calculam gols esperados por equipe de verdade (Dixon-Coles/Poisson).'}
+        {(temXg || temXgot) && ' Colunas de xG/xGOT só aparecem pra modelos que calculam esses valores de verdade (Dixon-Coles, ou os regressores dedicados catboost_xg_regressor_v1/catboost_xgot_regressor_v1).'}
       </p>
 
       {carregando ? (
@@ -175,6 +176,8 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
                 <th className="text-center p-1.5">Resultado</th>
                 {temXg && <th className="text-right p-1.5">xG casa (prev/real)</th>}
                 {temXg && <th className="text-right p-1.5">xG fora (prev/real)</th>}
+                {temXgot && <th className="text-right p-1.5">xGOT casa (prev/real)</th>}
+                {temXgot && <th className="text-right p-1.5">xGOT fora (prev/real)</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
@@ -197,6 +200,16 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
                   {temXg && (
                     <td className="p-1.5 text-right text-slate-400">
                       {p.xg_away_previsto != null ? p.xg_away_previsto.toFixed(2) : '—'} / {p.xg_away_real != null ? p.xg_away_real.toFixed(2) : '—'}
+                    </td>
+                  )}
+                  {temXgot && (
+                    <td className="p-1.5 text-right text-slate-400">
+                      {p.xgot_home_previsto != null ? p.xgot_home_previsto.toFixed(2) : '—'} / {p.xgot_home_real != null ? p.xgot_home_real.toFixed(2) : '—'}
+                    </td>
+                  )}
+                  {temXgot && (
+                    <td className="p-1.5 text-right text-slate-400">
+                      {p.xgot_away_previsto != null ? p.xgot_away_previsto.toFixed(2) : '—'} / {p.xgot_away_real != null ? p.xgot_away_real.toFixed(2) : '—'}
                     </td>
                   )}
                 </tr>
