@@ -158,7 +158,38 @@ def empacotar_predicoes(match_ids, probs: np.ndarray, classes, coluna_alvo: str 
     return resultado
 
 
-def treinar_catboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado", features: list[str] = FEATURES):
+def _montar_curva(treino: list[float], validacao: list[float] | None, teste: list[float] | None) -> list[dict]:
+    """Formato comum da curva de aprendizado (loss por iteração do boosting)
+    entre os 3 frameworks -- cada um expõe isso com nomes/estrutura
+    diferente (ver `treinar_catboost`/`treinar_xgboost`/`treinar_lightgbm`),
+    normalizado aqui pra {iteracao, treino, validacao, teste} plano, fácil
+    de servir direto pro front-end sem lógica por framework lá."""
+    n = len(treino)
+    return [
+        {
+            "iteracao": i,
+            "treino": treino[i],
+            "validacao": validacao[i] if validacao else None,
+            "teste": teste[i] if teste else None,
+        }
+        for i in range(n)
+    ]
+
+
+def treinar_catboost(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str = "resultado",
+    features: list[str] = FEATURES,
+    val_df: pd.DataFrame | None = None,
+    test_df: pd.DataFrame | None = None,
+):
+    """`val_df`/`test_df` são OPCIONAIS -- só passados por
+    `backtest_kelly.tunar_treinar_e_calibrar` (pra capturar a curva de
+    aprendizado, comparando loss por iteração nos 3 splits). O treino
+    diário em produção (`rodar_predicoes.py`) não passa esses dois
+    parâmetros, então `curva` sempre volta `None` nesse caminho -- sem
+    custo extra de CPU no cron diário."""
     modelo = CatBoostClassifier(
         loss_function="MultiClass",
         thread_count=2,
@@ -169,8 +200,19 @@ def treinar_catboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "r
         **params,
     )
     treino = preparar_liga_para_catboost(train_df)
-    modelo.fit(treino[features], treino[coluna_alvo])
-    return modelo, None
+    eval_set = None
+    if val_df is not None and test_df is not None:
+        val_prep, test_prep = preparar_liga_para_catboost(val_df), preparar_liga_para_catboost(test_df)
+        eval_set = [(val_prep[features], val_prep[coluna_alvo]), (test_prep[features], test_prep[coluna_alvo])]
+    modelo.fit(treino[features], treino[coluna_alvo], eval_set=eval_set)
+
+    curva = None
+    if eval_set is not None:
+        resultados = modelo.get_evals_result()
+        curva = _montar_curva(
+            resultados["learn"]["MultiClass"], resultados["validation_0"]["MultiClass"], resultados["validation_1"]["MultiClass"]
+        )
+    return modelo, None, curva
 
 
 def prever_catboost(modelo, _extra, df: pd.DataFrame, features: list[str] = FEATURES):
@@ -178,7 +220,15 @@ def prever_catboost(modelo, _extra, df: pd.DataFrame, features: list[str] = FEAT
     return modelo.predict_proba(df[features]), modelo.classes_
 
 
-def treinar_xgboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado", features: list[str] = FEATURES):
+def treinar_xgboost(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str = "resultado",
+    features: list[str] = FEATURES,
+    val_df: pd.DataFrame | None = None,
+    test_df: pd.DataFrame | None = None,
+):
+    """Ver docstring de `treinar_catboost` sobre `val_df`/`test_df`."""
     treino_encoded = pd.get_dummies(train_df[features], columns=CAT_FEATURES)
     modelo = XGBClassifier(
         objective="multi:softprob",
@@ -188,8 +238,23 @@ def treinar_xgboost(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "re
         random_state=42,
         **params,
     )
-    modelo.fit(treino_encoded, train_df[coluna_alvo])
-    return modelo, treino_encoded.columns
+    eval_set = None
+    if val_df is not None and test_df is not None:
+        # reencoda val/test com as MESMAS colunas do treino (reindex,
+        # fill_value=0) -- mesma técnica de `prever_xgboost`, senão uma liga
+        # ausente no lote de val/test (ou presente só lá) quebra o fit.
+        val_encoded = pd.get_dummies(val_df[features], columns=CAT_FEATURES).reindex(columns=treino_encoded.columns, fill_value=0)
+        test_encoded = pd.get_dummies(test_df[features], columns=CAT_FEATURES).reindex(columns=treino_encoded.columns, fill_value=0)
+        eval_set = [(treino_encoded, train_df[coluna_alvo]), (val_encoded, val_df[coluna_alvo]), (test_encoded, test_df[coluna_alvo])]
+    modelo.fit(treino_encoded, train_df[coluna_alvo], eval_set=eval_set, verbose=False)
+
+    curva = None
+    if eval_set is not None:
+        resultados = modelo.evals_result()
+        curva = _montar_curva(
+            resultados["validation_0"]["mlogloss"], resultados["validation_1"]["mlogloss"], resultados["validation_2"]["mlogloss"]
+        )
+    return modelo, treino_encoded.columns, curva
 
 
 def prever_xgboost(modelo, colunas_treino, df: pd.DataFrame, features: list[str] = FEATURES):
@@ -200,10 +265,18 @@ def prever_xgboost(modelo, colunas_treino, df: pd.DataFrame, features: list[str]
     return modelo.predict_proba(encoded), modelo.classes_
 
 
-def treinar_lightgbm(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "resultado", features: list[str] = FEATURES):
+def treinar_lightgbm(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str = "resultado",
+    features: list[str] = FEATURES,
+    val_df: pd.DataFrame | None = None,
+    test_df: pd.DataFrame | None = None,
+):
     """Configuração deliberadamente leve/rápida (poucas árvores, folhas
     rasas por padrão) -- é o modelo mais barato dos 3 em custo de CPU no
-    runner do GitHub Actions."""
+    runner do GitHub Actions. Ver docstring de `treinar_catboost` sobre
+    `val_df`/`test_df`."""
     treino = train_df.copy()
     categorias_liga = sorted(treino["liga"].dropna().unique())
     treino["liga"] = pd.Categorical(treino["liga"], categories=categorias_liga)
@@ -216,8 +289,28 @@ def treinar_lightgbm(params: dict, train_df: pd.DataFrame, coluna_alvo: str = "r
         verbosity=-1,
         **params,
     )
-    modelo.fit(treino[features], treino[coluna_alvo], categorical_feature=CAT_FEATURES)
-    return modelo, categorias_liga
+    eval_set, eval_names = None, None
+    if val_df is not None and test_df is not None:
+        val_prep, test_prep = val_df.copy(), test_df.copy()
+        val_prep["liga"] = alinhar_categoria_liga(val_prep["liga"], categorias_liga)
+        test_prep["liga"] = alinhar_categoria_liga(test_prep["liga"], categorias_liga)
+        eval_set = [
+            (treino[features], treino[coluna_alvo]),
+            (val_prep[features], val_df[coluna_alvo]),
+            (test_prep[features], test_df[coluna_alvo]),
+        ]
+        eval_names = ["treino", "validacao", "teste"]
+    modelo.fit(
+        treino[features], treino[coluna_alvo], categorical_feature=CAT_FEATURES, eval_set=eval_set, eval_names=eval_names
+    )
+
+    curva = None
+    if eval_set is not None:
+        resultados = modelo.evals_result_
+        curva = _montar_curva(
+            resultados["treino"]["multi_logloss"], resultados["validacao"]["multi_logloss"], resultados["teste"]["multi_logloss"]
+        )
+    return modelo, categorias_liga, curva
 
 
 def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame, features: list[str] = FEATURES):

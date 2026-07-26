@@ -578,7 +578,7 @@ def prever_ml_com_calibracao(
 
     calibradores_por_metodo: dict[str, dict] = {metodo: {} for metodo in METODOS_CALIBRACAO}
     if not val_df.empty and not train_df.empty:
-        modelo_val, extra_val = treinar(params, train_df, coluna_alvo=coluna_alvo, features=features)
+        modelo_val, extra_val, _ = treinar(params, train_df, coluna_alvo=coluna_alvo, features=features)
         probs_val, classes_val = prever(modelo_val, extra_val, val_df, features=features)
         preds_val = modelos_ml.empacotar_predicoes(val_df["match_id"].tolist(), probs_val, classes_val, coluna_alvo=coluna_alvo)
         resultados_val = dict(zip(val_df["match_id"], val_df[coluna_alvo]))
@@ -587,7 +587,7 @@ def prever_ml_com_calibracao(
                 preds_val, resultados_val, metodo=metodo, codigo_por_selecao=codigo_por_selecao
             )
 
-    modelo_final, extra_final = treinar(params, dataset_treino, coluna_alvo=coluna_alvo, features=features)
+    modelo_final, extra_final, _ = treinar(params, dataset_treino, coluna_alvo=coluna_alvo, features=features)
     probs_fixtures, classes_fixtures = prever(modelo_final, extra_final, features_fixtures, features=features)
     predicoes_raw = modelos_ml.empacotar_predicoes(
         features_fixtures["match_id"].tolist(), probs_fixtures, classes_fixtures, coluna_alvo=coluna_alvo
@@ -639,6 +639,24 @@ def calcular_edge(probs_modelo: dict[str, float], melhor_odd: dict[str, float]) 
     return max(edges) if edges else None
 
 
+def renormalizar_arredondado(valores: dict[str, float], casas: int = 5) -> dict[str, float]:
+    """`round()` de cada probabilidade em separado (o que já acontecia antes)
+    não garante que a soma continue exatamente 1.0 -- softmax/calibração já
+    garantem a soma ANTES do arredondamento, mas arredondar cada uma
+    isoladamente pode produzir 0.99999 ou 1.00001 (achado real: usuário
+    reportou probabilidades não somando 100% nos modelos de ML). Corrige
+    absorvendo o resíduo do arredondamento na MAIOR probabilidade (é a que
+    menos distorce percentualmente) -- mesma técnica usada em partilha de
+    assentos (maior resto), garante soma exata sem mudar qual seleção é
+    favorita."""
+    arredondados = {chave: round(valor, casas) for chave, valor in valores.items()}
+    residuo = round(1.0 - sum(arredondados.values()), casas)
+    if residuo != 0:
+        chave_maior = max(arredondados, key=arredondados.get)
+        arredondados[chave_maior] = round(arredondados[chave_maior] + residuo, casas)
+    return arredondados
+
+
 def montar_linhas_predicoes(
     nome_modelo: str,
     predicoes_modelo: dict[int, dict[str, float]],
@@ -648,14 +666,17 @@ def montar_linhas_predicoes(
     for match_id, probs in predicoes_modelo.items():
         melhor_odd = melhor_odd_por_partida.get(match_id, {})
         edge = calcular_edge(probs, melhor_odd)
+        normalizadas = renormalizar_arredondado(
+            {"prob_home": probs["prob_home"], "prob_draw": probs["prob_draw"], "prob_away": probs["prob_away"]}
+        )
         linhas.append(
             {
                 "match_id": int(match_id),
                 "model_name": nome_modelo,
                 "mercado": "1X2",
-                "prob_home": round(probs["prob_home"], 5),
-                "prob_draw": round(probs["prob_draw"], 5),
-                "prob_away": round(probs["prob_away"], 5),
+                "prob_home": normalizadas["prob_home"],
+                "prob_draw": normalizadas["prob_draw"],
+                "prob_away": normalizadas["prob_away"],
                 "edge_detectado": round(edge, 5) if edge is not None else None,
             }
         )
@@ -669,17 +690,20 @@ def montar_linhas_predicoes_over_under25(nome_modelo: str, predicoes_modelo: dic
     (`backfill_predicoes_historicas.py`), nunca pelo cron diário (o
     `market_odds` que alimenta as fixtures do dia só tem odds de 1X2, não
     dá pra calcular edge nem faz sentido prever esse mercado ao vivo)."""
-    return [
-        {
-            "match_id": int(match_id),
-            "model_name": nome_modelo,
-            "mercado": "over_under_2.5",
-            "prob_under": round(probs["prob_under"], 5),
-            "prob_over": round(probs["prob_over"], 5),
-            "edge_detectado": None,
-        }
-        for match_id, probs in predicoes_modelo.items()
-    ]
+    linhas = []
+    for match_id, probs in predicoes_modelo.items():
+        normalizadas = renormalizar_arredondado({"prob_under": probs["prob_under"], "prob_over": probs["prob_over"]})
+        linhas.append(
+            {
+                "match_id": int(match_id),
+                "model_name": nome_modelo,
+                "mercado": "over_under_2.5",
+                "prob_under": normalizadas["prob_under"],
+                "prob_over": normalizadas["prob_over"],
+                "edge_detectado": None,
+            }
+        )
+    return linhas
 
 
 TAMANHO_LOTE_UPSERT_PREDICOES = 500  # um upsert só com dezenas de milhares de

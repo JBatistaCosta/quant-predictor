@@ -169,7 +169,12 @@ def _log_loss_multiclasse(y_true: np.ndarray, probs: np.ndarray, classes: np.nda
 
 
 def tunar_treinar_e_calibrar(
-    nome_modelo: str, train_df: pd.DataFrame, val_df: pd.DataFrame, train_mais_val_df: pd.DataFrame, mercado: str = "1X2"
+    nome_modelo: str,
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    train_mais_val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    mercado: str = "1X2",
 ):
     """Treina cada combinação da grade só no Train, mede log-loss só no Val
     -- escolhe a melhor. Ajusta a calibração (Platt E Isotonic, lado a
@@ -179,22 +184,28 @@ def tunar_treinar_e_calibrar(
     fim refita a config vencedora em Train+Val (usa toda informação
     anterior ao Test no modelo final, mas nunca olha o Test). `mercado`
     escolhe a coluna-alvo e o conjunto de seleções (`MERCADOS`) -- 1X2 e
-    Over/Under 2.5 usam a mesma infraestrutura de treino, só muda o alvo."""
+    Over/Under 2.5 usam a mesma infraestrutura de treino, só muda o alvo.
+
+    `test_df` só é usado pra capturar a CURVA DE APRENDIZADO (loss por
+    iteração do boosting em Treino/Validação/Teste, pedido do usuário --
+    ver `modelos_ml._montar_curva`) da config vencedora -- o modelo em si
+    nunca vê o Test durante o tuning (a predição real do Test acontece
+    depois, fora desta função, com `modelo_final`)."""
     coluna_alvo = MERCADOS[mercado]["coluna_alvo"]
     codigo_por_selecao = MERCADOS[mercado]["codigo_por_selecao"]
     treinar, prever = modelos_ml.TREINADORES[nome_modelo]
     features = modelos_ml.FEATURES_POR_MODELO[nome_modelo]
     melhor_params, melhor_log_loss = None, np.inf
-    melhor_modelo_val, melhor_extra_val = None, None
+    melhor_modelo_val, melhor_extra_val, melhor_curva = None, None, None
 
     for params in GRADE_HIPERPARAMETROS[nome_modelo]:
-        modelo, extra = treinar(params, train_df, coluna_alvo=coluna_alvo, features=features)
+        modelo, extra, curva = treinar(params, train_df, coluna_alvo=coluna_alvo, features=features, val_df=val_df, test_df=test_df)
         probs_val, classes = prever(modelo, extra, val_df, features=features)
         log_loss = _log_loss_multiclasse(val_df[coluna_alvo].to_numpy(), probs_val, classes)
         logger.info("  %s [%s] params=%s -> log-loss(val)=%.4f", nome_modelo, mercado, params, log_loss)
         if log_loss < melhor_log_loss:
             melhor_log_loss, melhor_params = log_loss, params
-            melhor_modelo_val, melhor_extra_val = modelo, extra
+            melhor_modelo_val, melhor_extra_val, melhor_curva = modelo, extra, curva
 
     probs_val_melhor, classes_val_melhor = prever(melhor_modelo_val, melhor_extra_val, val_df, features=features)
     preds_val = modelos_ml.empacotar_predicoes(
@@ -213,8 +224,12 @@ def tunar_treinar_e_calibrar(
         melhor_params,
         melhor_log_loss,
     )
-    modelo_final, extra_final = treinar(melhor_params, train_mais_val_df, coluna_alvo=coluna_alvo, features=features)
-    return modelo_final, extra_final, melhor_params, coeficientes_por_metodo
+    # Refit final em Train+Val não passa val_df/test_df -- é o modelo que
+    # realmente prevê o Test Set depois (fora desta função), não precisa de
+    # curva (a curva reportada é sempre a da config vencedora, treinada só
+    # em Train, que é o cenário onde Val e Teste são de fato out-of-sample).
+    modelo_final, extra_final, _ = treinar(melhor_params, train_mais_val_df, coluna_alvo=coluna_alvo, features=features)
+    return modelo_final, extra_final, melhor_params, coeficientes_por_metodo, melhor_curva
 
 
 # =============================================================================
@@ -551,6 +566,33 @@ def salvar_relatorio_por_liga(supabase, relatorio_por_liga: list[dict]) -> None:
     supabase.table("model_benchmarking_backtest_liga").delete().neq("model_name", "").execute()
     supabase.table("model_benchmarking_backtest_liga").upsert(linhas, on_conflict="model_name,liga,mercado").execute()
     logger.info("Relatório por liga salvo em model_benchmarking_backtest_liga (%d linha(s)).", len(linhas))
+
+
+def salvar_curva_aprendizado(supabase, curvas: list[dict]) -> None:
+    """Persiste a curva de aprendizado (log-loss por iteração do boosting,
+    Treino/Validação/Teste) da config vencedora de cada modelo/mercado --
+    ver `modelos_ml._montar_curva` e `tunar_treinar_e_calibrar`. Só
+    catboost_v1..v5/v3b, xgboost_v1..v5/v3b, lightgbm_v1..v5/v3b têm curva
+    (dixon_coles_v1 é Poisson puro, não boosting -- não entra aqui, mesma
+    exclusão de `modelos_ml.TREINADORES`)."""
+    if not curvas:
+        return
+    linhas = [
+        {
+            "model_name": c["model_name"],
+            "mercado": c["mercado"],
+            "iteracao": c["iteracao"],
+            "treino": _arredondar_ou_none(c.get("treino"), 6),
+            "validacao": _arredondar_ou_none(c.get("validacao"), 6),
+            "teste": _arredondar_ou_none(c.get("teste"), 6),
+        }
+        for c in curvas
+    ]
+    tamanho_lote = rp.TAMANHO_LOTE_UPSERT_PREDICOES  # mesmo teto de statement_timeout do Postgres, ver rodar_predicoes.py
+    supabase.table("model_benchmarking_learning_curve").delete().neq("model_name", "").execute()
+    for lote in [linhas[i : i + tamanho_lote] for i in range(0, len(linhas), tamanho_lote)]:
+        supabase.table("model_benchmarking_learning_curve").upsert(lote, on_conflict="model_name,mercado,iteracao").execute()
+    logger.info("Curva de aprendizado salva em model_benchmarking_learning_curve (%d linha(s)).", len(linhas))
 
 
 # =============================================================================
@@ -908,6 +950,7 @@ def main() -> None:
 
     relatorio: list[dict] = []
     relatorio_por_liga: list[dict] = []
+    curvas_aprendizado: list[dict] = []
     # diagnósticos extra (comparação pareada + Closing Line Value) ainda só
     # cobrem 1X2 -- guardamos as predições dessa rodada pra rodar essas duas
     # seções depois do loop, sem refazer o tuning.
@@ -1066,8 +1109,8 @@ def main() -> None:
         for nome_modelo in modelos_ml.TREINADORES:
             try:
                 logger.info("[%s] Tuning + calibração + treino final: %s", mercado, nome_modelo)
-                modelo, extra, melhor_params, coeficientes_por_metodo = tunar_treinar_e_calibrar(
-                    nome_modelo, train_df_m, val_df_m, train_mais_val_df_m, mercado
+                modelo, extra, melhor_params, coeficientes_por_metodo, curva = tunar_treinar_e_calibrar(
+                    nome_modelo, train_df_m, val_df_m, train_mais_val_df_m, test_df_m, mercado
                 )
                 _, prever = modelos_ml.TREINADORES[nome_modelo]
 
@@ -1077,6 +1120,10 @@ def main() -> None:
                 )
 
                 _registrar(nome_modelo, preds_raw, melhor_params, por_liga=True)
+                if curva:
+                    curvas_aprendizado.extend(
+                        {"model_name": nome_modelo, "mercado": mercado, **ponto} for ponto in curva
+                    )
                 for metodo, coef in coeficientes_por_metodo.items():
                     preds_calibradas = {
                         mid: calibracao.aplicar_calibracao(p, coef, selecoes=selecoes_mercado) for mid, p in preds_raw.items()
@@ -1141,6 +1188,7 @@ def main() -> None:
 
     salvar_relatorio(supabase, relatorio)
     salvar_relatorio_por_liga(supabase, relatorio_por_liga)
+    salvar_curva_aprendizado(supabase, curvas_aprendizado)
 
     # --- diagnósticos extra (comparação pareada + Closing Line Value) -- só 1X2 por ora ---
     if match_ids_validos_1x2:
