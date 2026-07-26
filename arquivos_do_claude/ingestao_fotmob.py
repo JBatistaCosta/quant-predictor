@@ -418,6 +418,12 @@ def main():
 
         fotmob_to_player_id = {}
         if player_dim_rows:
+            # Mesma deduplicação (e mesmo motivo) já documentada abaixo pra
+            # player_rows: content.lineup pode repetir o mesmo fotmob_player_id
+            # (visto em partidas antigas, ex. 2019-2022) -- sem isso, o upsert
+            # falha com "ON CONFLICT DO UPDATE command cannot affect row a
+            # second time" e derruba o backfill da temporada inteira no meio.
+            player_dim_rows = list({row["fotmob_player_id"]: row for row in player_dim_rows}.values())
             resp = supabase.table("players").upsert(player_dim_rows, on_conflict="fotmob_player_id").execute()
             for row in resp.data:
                 fotmob_to_player_id[row["fotmob_player_id"]] = row["id"]
@@ -425,6 +431,7 @@ def main():
         if lineup_rows:
             for row in lineup_rows:
                 row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"])
+            lineup_rows = list({(r["match_id"], r["team_id"], r["fotmob_player_id"]): r for r in lineup_rows}.values())
             supabase.table("match_lineup_fotmob").upsert(lineup_rows, on_conflict="match_id,team_id,fotmob_player_id").execute()
 
         player_rows = []
