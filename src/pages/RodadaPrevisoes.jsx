@@ -31,8 +31,10 @@ import { apiUrl } from '../utils/apiUrl';
 import { toOdd, toPct } from '../utils/format';
 import { MODELOS_BASE, ROTULO_MODELO } from '../utils/modelosBenchmarking';
 import PainelInfoModelo, { BotaoInfoModelo } from '../components/PainelInfoModelo';
+import { nomesTimeBatem } from '../utils/matchTeamNames';
 
 const LIGA_ID = 1; // Brasileirão Série A
+const API_FOOTBALL_LIGA_ID = 71; // id da Série A na API-Football (v3.football.api-sports.io)
 
 const ROTULO_STATUS = {
   scheduled: 'Agendado', live: 'Ao vivo', finished: 'Encerrado',
@@ -66,6 +68,35 @@ function indexarOddsPinnacle(rows) {
     if (!porJogo[r.match_id]) porJogo[r.match_id] = {};
     const chave = `${r.market}|${r.selection}`;
     if (!(chave in porJogo[r.match_id])) porJogo[r.match_id][chave] = r.odds;
+  }
+  return porJogo;
+}
+
+// Converte "45%" -> 0.45. O payload da API-Football só traz percentuais em
+// texto, nunca a probabilidade "crua" — por isso o parse aqui em vez de vir
+// pronto do banco.
+function percentParaProb(texto) {
+  if (!texto) return null;
+  const n = parseFloat(String(texto).replace('%', '').replace(',', '.'));
+  return Number.isFinite(n) ? n / 100 : null;
+}
+
+// Casa cada previsão cacheada (api_football_predictions_cache) com um jogo da
+// rodada exibida, por nome dos times (normalizado) — o endpoint /predictions
+// da API-Football não devolve data/rodada do fixture, só os nomes dos times,
+// então não dá pra casar por match_id/external_id (que na Série A vem do
+// football-data.org, fonte diferente). Casamento só pra EXIBIÇÃO, não grava
+// nada — ver src/utils/matchTeamNames.js.
+function indexarPrevisoesApiFootball(rows, jogosDaRodada, temporada) {
+  const porJogo = {};
+  for (const j of jogosDaRodada) {
+    const candidata = rows.find((r) => {
+      const p = r.payload;
+      if (String(p?.league?.id) !== String(API_FOOTBALL_LIGA_ID)) return false;
+      if (String(p?.league?.season) !== String(temporada)) return false;
+      return nomesTimeBatem(p?.teams?.home?.name, j.mandante) && nomesTimeBatem(p?.teams?.away?.name, j.visitante);
+    });
+    if (candidata) porJogo[j.id] = candidata.payload;
   }
   return porJogo;
 }
@@ -107,6 +138,7 @@ export default function RodadaPrevisoes() {
   const [jogos, setJogos] = useState([]);
   const [previsoesPorJogo, setPrevisoesPorJogo] = useState({});
   const [pinnaclePorJogo, setPinnaclePorJogo] = useState({});
+  const [previsoesApiFootballPorJogo, setPrevisoesApiFootballPorJogo] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [acao, setAcao] = useState(null);
@@ -143,14 +175,14 @@ export default function RodadaPrevisoes() {
         .sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
 
       if (jogosDaRodada.length === 0) {
-        setJogos([]); setPrevisoesPorJogo({}); setPinnaclePorJogo({});
+        setJogos([]); setPrevisoesPorJogo({}); setPinnaclePorJogo({}); setPrevisoesApiFootballPorJogo({});
         return;
       }
 
       const idsTimes = [...new Set(jogosDaRodada.flatMap((j) => [j.home_team_id, j.away_team_id]))];
       const idsJogos = jogosDaRodada.map((j) => j.id);
 
-      const [{ data: times }, { data: previsoes }, { data: oddsPinnacle }] = await Promise.all([
+      const [{ data: times }, { data: previsoes }, { data: oddsPinnacle }, { data: previsoesApiFootball }] = await Promise.all([
         supabase.from('teams').select('id, name').in('id', idsTimes),
         supabase.from('predicoes')
           .select('match_id, model_name, mercado, prob_home, prob_draw, prob_away, prob_over, prob_under')
@@ -159,16 +191,22 @@ export default function RodadaPrevisoes() {
           .select('match_id, market, selection, odds, captured_at')
           .in('match_id', idsJogos).eq('bookmaker', 'pinnacle')
           .order('captured_at', { ascending: false }),
+        supabase.from('api_football_predictions_cache')
+          .select('fixture_id, payload')
+          .eq('payload->league->>id', String(API_FOOTBALL_LIGA_ID))
+          .eq('payload->league->>season', String(temporadaAlvo)),
       ]);
 
       const nomeTime = Object.fromEntries((times || []).map((t) => [t.id, t.name]));
-      setJogos(jogosDaRodada.map((j) => ({
+      const jogosResolvidos = jogosDaRodada.map((j) => ({
         ...j,
         mandante: nomeTime[j.home_team_id] || `#${j.home_team_id}`,
         visitante: nomeTime[j.away_team_id] || `#${j.away_team_id}`,
-      })));
+      }));
+      setJogos(jogosResolvidos);
       setPrevisoesPorJogo(indexarPrevisoes(previsoes || []));
       setPinnaclePorJogo(indexarOddsPinnacle(oddsPinnacle || []));
+      setPrevisoesApiFootballPorJogo(indexarPrevisoesApiFootball(previsoesApiFootball || [], jogosResolvidos, temporadaAlvo));
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -222,7 +260,7 @@ export default function RodadaPrevisoes() {
           <h1 className="text-xl font-bold text-slate-100">Brasileirão Série A — Rodada a Rodada</h1>
           <p className="text-sm text-slate-500">
             Odd justa de todos os modelos do Model Benchmarking (1X2 + Over/Under 2.5), lado a lado com a odd real
-            da Pinnacle mais recente importada.
+            da Pinnacle mais recente importada e, quando disponível em cache, a previsão da API-Football.
           </p>
         </div>
         <button
@@ -313,6 +351,8 @@ export default function RodadaPrevisoes() {
           {jogos.map((j) => {
             const previsoesJogo = previsoesPorJogo[j.id] || {};
             const pinnacleJogo = pinnaclePorJogo[j.id] || {};
+            const apiFootball = previsoesApiFootballPorJogo[j.id];
+            const apiFootballPercent = apiFootball?.predictions?.percent;
             return (
               <div key={j.id} className="bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
                 <div className="px-4 py-2 bg-slate-800/50 flex items-center justify-between text-sm">
@@ -343,6 +383,15 @@ export default function RodadaPrevisoes() {
                         <td className="px-4 py-2 text-right text-sky-200 font-semibold">{pinnacleJogo['over_under_2.5|over']?.toFixed(2) ?? '—'}</td>
                         <td className="px-4 py-2 text-right text-sky-200 font-semibold">{pinnacleJogo['over_under_2.5|under']?.toFixed(2) ?? '—'}</td>
                       </tr>
+                      {apiFootball && (
+                        <tr className="border-t border-slate-800 bg-purple-950/30">
+                          <td className="px-4 py-2 text-purple-300 font-medium">API-Football</td>
+                          <td className="px-4 py-2 text-right"><Celula prob={percentParaProb(apiFootballPercent?.home)} /></td>
+                          <td className="px-4 py-2 text-right"><Celula prob={percentParaProb(apiFootballPercent?.draw)} /></td>
+                          <td className="px-4 py-2 text-right"><Celula prob={percentParaProb(apiFootballPercent?.away)} /></td>
+                          <td className="px-4 py-2 text-right text-slate-600" colSpan={2}>—</td>
+                        </tr>
+                      )}
                       {MODELOS_BASE.map((nome) => {
                         const p1x2 = previsoesJogo[nome]?.['1X2'];
                         const pou = previsoesJogo[nome]?.['over_under_2.5'];
@@ -363,6 +412,16 @@ export default function RodadaPrevisoes() {
                         );
                       })}
                     </tbody>
+                    {apiFootball?.predictions?.advice && (
+                      <tfoot>
+                        <tr className="border-t border-slate-800/60">
+                          <td colSpan={6} className="px-4 py-2 text-xs text-purple-300/80 italic">
+                            API-Football: "{apiFootball.predictions.advice}"
+                            {apiFootball.predictions.winner?.comment ? ` (${apiFootball.predictions.winner.comment})` : ''}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </div>
@@ -374,7 +433,11 @@ export default function RodadaPrevisoes() {
       <p className="text-[11px] text-slate-600">
         Odd justa = 1/probabilidade do modelo (sem margem de casa) — não é a mesma coisa que a odd real da Pinnacle,
         que já embute a margem da casa. "Disparar previsões" não é filtrável só pro Brasileirão: importe a odds da
-        Pinnacle primeiro pra aumentar a chance dos jogos desta rodada entrarem nas 10 vagas diárias.
+        Pinnacle primeiro pra aumentar a chance dos jogos desta rodada entrarem nas 10 vagas diárias. A linha
+        "API-Football" só aparece pros jogos que já têm previsão cacheada (rode
+        <code className="mx-1 px-1 bg-slate-800 rounded">scripts/ingestao_predictions_api_football.py</code>
+        pra popular) — casamento com o jogo é por nome dos times (a API-Football não devolve data do fixture no
+        endpoint de previsões), então times com grafia muito diferente podem não casar automaticamente.
       </p>
 
       <PainelInfoModelo
