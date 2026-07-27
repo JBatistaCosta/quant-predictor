@@ -1100,6 +1100,48 @@ def _anexar_xgot_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.Dat
     return partidas
 
 
+COLUNAS_STATS_EXTRA = ["possession", "shots", "shots_on_target", "corners", "fouls", "yellow_cards", "red_cards"]
+
+
+def _anexar_stats_extra_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Busca as estatísticas de jogo do FBref (`match_stats.possession`/
+    `shots`/`shots_on_target`/`corners`/`fouls`/`yellow_cards`/`red_cards`)
+    de cada partida e anexa como colunas `{stat}_home`/`{stat}_away` --
+    mesmo espírito de `_anexar_xg_por_partida` (aliás, mesma tabela: até
+    agora só a coluna `xg` dela virava feature, as outras 7 eram
+    coletadas e nunca usadas por nenhum modelo). Só serve de matéria-prima
+    pra forma pré-jogo (`_forma_por_mando`, ver FEATURES_NUMERICAS_V7) --
+    o valor bruto da PRÓPRIA partida nunca é feature (vazaria o resultado:
+    não dá pra saber quantos escanteios vai ter antes do jogo acontecer).
+    """
+    match_ids = partidas["id"].astype(int).tolist()
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_stats")
+            .select(f"match_id, team_id, {', '.join(COLUNAS_STATS_EXTRA)}")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+    if not linhas:
+        for col in COLUNAS_STATS_EXTRA:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
+    for col in COLUNAS_STATS_EXTRA:
+        stats_home = stats.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
+        stats_away = stats.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
+        partidas = partidas.merge(stats_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(stats_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
 COLUNAS_FORMA_GOLS = {
     "marcado_home": "media_gols_marcados_5j_home",
     "sofrido_home": "media_gols_sofridos_5j_home",
@@ -1111,6 +1153,56 @@ COLUNAS_FORMA_XG = {
     "sofrido_home": "media_xg_sofrido_5j_home",
     "marcado_away": "media_xg_5j_away",
     "sofrido_away": "media_xg_sofrido_5j_away",
+}
+
+# v7 (estatísticas de jogo do FBref, `match_stats`): mesmo espírito de
+# COLUNAS_FORMA_GOLS/XG, uma forma pré-jogo (média móvel 5 jogos, separada
+# por mando) por estatística -- "sofrido" aqui é sempre "o que o adversário
+# fez NAQUELA partida", útil mesmo pra posse/faltas/cartões (ex.: cartão
+# sofrido = quanto o adversário costuma tomar de cartão jogando contra este
+# time). Colunas brutas por partida (`possession_home`/`_away` etc.) vêm de
+# `_anexar_stats_extra_por_partida`.
+COLUNAS_FORMA_POSSE = {
+    "marcado_home": "media_posse_5j_home",
+    "sofrido_home": "media_posse_sofrida_5j_home",
+    "marcado_away": "media_posse_5j_away",
+    "sofrido_away": "media_posse_sofrida_5j_away",
+}
+COLUNAS_FORMA_CHUTES = {
+    "marcado_home": "media_chutes_5j_home",
+    "sofrido_home": "media_chutes_sofridos_5j_home",
+    "marcado_away": "media_chutes_5j_away",
+    "sofrido_away": "media_chutes_sofridos_5j_away",
+}
+COLUNAS_FORMA_CHUTES_ALVO = {
+    "marcado_home": "media_chutes_alvo_5j_home",
+    "sofrido_home": "media_chutes_alvo_sofridos_5j_home",
+    "marcado_away": "media_chutes_alvo_5j_away",
+    "sofrido_away": "media_chutes_alvo_sofridos_5j_away",
+}
+COLUNAS_FORMA_ESCANTEIOS = {
+    "marcado_home": "media_escanteios_5j_home",
+    "sofrido_home": "media_escanteios_sofridos_5j_home",
+    "marcado_away": "media_escanteios_5j_away",
+    "sofrido_away": "media_escanteios_sofridos_5j_away",
+}
+COLUNAS_FORMA_FALTAS = {
+    "marcado_home": "media_faltas_5j_home",
+    "sofrido_home": "media_faltas_sofridas_5j_home",
+    "marcado_away": "media_faltas_5j_away",
+    "sofrido_away": "media_faltas_sofridas_5j_away",
+}
+COLUNAS_FORMA_CARTOES_AMARELOS = {
+    "marcado_home": "media_cartoes_amarelos_5j_home",
+    "sofrido_home": "media_cartoes_amarelos_sofridos_5j_home",
+    "marcado_away": "media_cartoes_amarelos_5j_away",
+    "sofrido_away": "media_cartoes_amarelos_sofridos_5j_away",
+}
+COLUNAS_FORMA_CARTOES_VERMELHOS = {
+    "marcado_home": "media_cartoes_vermelhos_5j_home",
+    "sofrido_home": "media_cartoes_vermelhos_sofridos_5j_home",
+    "marcado_away": "media_cartoes_vermelhos_5j_away",
+    "sofrido_away": "media_cartoes_vermelhos_sofridos_5j_away",
 }
 
 # Colunas de feature dos modelos de árvore (usado também por
@@ -1713,6 +1805,27 @@ FEATURES_V3B = FEATURES_NUMERICAS_V3B + CAT_FEATURES
 FEATURES_NUMERICAS_V6 = FEATURES_NUMERICAS_V5 + ["progresso_temporada"]
 FEATURES_V6 = FEATURES_NUMERICAS_V6 + CAT_FEATURES
 
+# v7 (estatísticas de jogo do FBref): tudo da v6 + forma pré-jogo (média
+# móvel 5 jogos, separada por mando) de posse de bola, chutes, chutes no
+# alvo, escanteios, faltas, cartões amarelos e vermelhos -- 7 colunas de
+# `match_stats` que já estavam no banco (coletadas por `ingestao_stats_
+# fbref.py`) mas nunca tinham virado feature de nenhum modelo (só `xg`
+# virava, via v1). Estende v6 (não v3B/XI titular) pela mesma razão de v6
+# não estender v3B: são ramos independentes que partem de v5, evitar
+# empilhar duas fontes esparsas (XI titular parcial + stats do FBref
+# parcial) sem necessidade. Cobertura: 14 competições, majoritariamente
+# 2022-2026 (checado direto no banco antes de implementar).
+FEATURES_NUMERICAS_V7 = FEATURES_NUMERICAS_V6 + [
+    *COLUNAS_FORMA_POSSE.values(),
+    *COLUNAS_FORMA_CHUTES.values(),
+    *COLUNAS_FORMA_CHUTES_ALVO.values(),
+    *COLUNAS_FORMA_ESCANTEIOS.values(),
+    *COLUNAS_FORMA_FALTAS.values(),
+    *COLUNAS_FORMA_CARTOES_AMARELOS.values(),
+    *COLUNAS_FORMA_CARTOES_VERMELHOS.values(),
+]
+FEATURES_V7 = FEATURES_NUMERICAS_V7 + CAT_FEATURES
+
 
 def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
     """Posição da partida no calendário da temporada, 0 (primeira rodada)
@@ -1771,9 +1884,17 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
+    partidas = _anexar_stats_extra_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
+    forma_posse = _forma_por_mando(partidas, "possession_home", "possession_away", COLUNAS_FORMA_POSSE)
+    forma_chutes = _forma_por_mando(partidas, "shots_home", "shots_away", COLUNAS_FORMA_CHUTES)
+    forma_chutes_alvo = _forma_por_mando(partidas, "shots_on_target_home", "shots_on_target_away", COLUNAS_FORMA_CHUTES_ALVO)
+    forma_escanteios = _forma_por_mando(partidas, "corners_home", "corners_away", COLUNAS_FORMA_ESCANTEIOS)
+    forma_faltas = _forma_por_mando(partidas, "fouls_home", "fouls_away", COLUNAS_FORMA_FALTAS)
+    forma_cartoes_amarelos = _forma_por_mando(partidas, "yellow_cards_home", "yellow_cards_away", COLUNAS_FORMA_CARTOES_AMARELOS)
+    forma_cartoes_vermelhos = _forma_por_mando(partidas, "red_cards_home", "red_cards_away", COLUNAS_FORMA_CARTOES_VERMELHOS)
 
     elo = _carregar_elo_pre_jogo(supabase, league_ids)
     if not elo.empty:
@@ -1801,6 +1922,13 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
     dataset = dataset.join(forma_gols, on="id")
     dataset = dataset.join(forma_xg, on="id")
+    dataset = dataset.join(forma_posse, on="id")
+    dataset = dataset.join(forma_chutes, on="id")
+    dataset = dataset.join(forma_chutes_alvo, on="id")
+    dataset = dataset.join(forma_escanteios, on="id")
+    dataset = dataset.join(forma_faltas, on="id")
+    dataset = dataset.join(forma_cartoes_amarelos, on="id")
+    dataset = dataset.join(forma_cartoes_vermelhos, on="id")
 
     squad_rating = _carregar_squad_rating_pre_jogo(supabase, partidas["id"].astype(int).tolist())
     if not squad_rating.empty:
@@ -1925,6 +2053,16 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
             # diferentes, por isso entra à parte aqui em vez de já vir de
             # FEATURES_NUMERICAS_V3B.
             "progresso_temporada",
+            # Forma pré-jogo das estatísticas do FBref (v7) -- mesma razão de
+            # progresso_temporada ficar à parte: ramo próprio a partir de v5,
+            # não faz parte de FEATURES_NUMERICAS_V3B.
+            *COLUNAS_FORMA_POSSE.values(),
+            *COLUNAS_FORMA_CHUTES.values(),
+            *COLUNAS_FORMA_CHUTES_ALVO.values(),
+            *COLUNAS_FORMA_ESCANTEIOS.values(),
+            *COLUNAS_FORMA_FALTAS.values(),
+            *COLUNAS_FORMA_CARTOES_AMARELOS.values(),
+            *COLUNAS_FORMA_CARTOES_VERMELHOS.values(),
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
             # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
             # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
