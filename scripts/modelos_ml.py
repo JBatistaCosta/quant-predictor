@@ -31,6 +31,7 @@ from dados_historicos import (
     FEATURES_V4,
     FEATURES_V5,
     FEATURES_V6,
+    FEATURES_V7,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -104,6 +105,11 @@ PARAMS_DEFAULT = {
     "catboost_v6": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v6": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v6": {"num_leaves": 15, "learning_rate": 0.1},
+    # v7 (estatísticas de jogo do FBref, ver dados_historicos.FEATURES_V7) --
+    # mesmos defaults da v1, ainda sem tuning dedicado.
+    "catboost_v7": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v7": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v7": {"num_leaves": 15, "learning_rate": 0.1},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -144,6 +150,12 @@ FEATURES_POR_MODELO = {
     "catboost_v6": FEATURES_V6,
     "xgboost_v6": FEATURES_V6,
     "lightgbm_v6": FEATURES_V6,
+    # v7 = v6 + forma pré-jogo das estatísticas do FBref (posse, chutes,
+    # chutes no alvo, escanteios, faltas, cartões) -- linhagem separada de
+    # v3B pela mesma razão de v6.
+    "catboost_v7": FEATURES_V7,
+    "xgboost_v7": FEATURES_V7,
+    "lightgbm_v7": FEATURES_V7,
 }
 
 
@@ -396,4 +408,7 @@ TREINADORES = {
     "catboost_v6": (treinar_catboost, prever_catboost),
     "xgboost_v6": (treinar_xgboost, prever_xgboost),
     "lightgbm_v6": (treinar_lightgbm, prever_lightgbm),
+    "catboost_v7": (treinar_catboost, prever_catboost),
+    "xgboost_v7": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v7": (treinar_lightgbm, prever_lightgbm),
 }
