@@ -394,7 +394,13 @@ def main():
         # Mesma paginação explícita do fetch de matches acima — essa tabela já
         # passa de 3.000 linhas; sem .range(), o corte silencioso de 1000 faria
         # jogos já sincronizados parecerem pendentes (re-sync inútil, idempotente
-        # mas desperdiçando horas de pacing).
+        # mas desperdiçando horas de pacing). `.order("source_id")` é
+        # OBRIGATÓRIO junto com `.range()` -- sem ordenação explícita, o
+        # PostgREST não garante travessia estável entre páginas numa tabela
+        # deste tamanho (bug real encontrado em `ingestao_fotmob_dumps_
+        # locais.py`: sem `.order()`, algumas linhas já sincronizadas
+        # ficavam de fora da paginação silenciosamente, fazendo partidas já
+        # prontas parecerem pendentes pra sempre).
         ja_sync_ids = set()
         _pagina_sync = 0
         while True:
@@ -402,6 +408,7 @@ def main():
                 supabase.table("match_source_ids")
                 .select("source_id")
                 .eq("source", "fotmob")
+                .order("source_id")
                 .range(_pagina_sync * 1000, _pagina_sync * 1000 + 999)
                 .execute()
                 .data
@@ -420,7 +427,8 @@ def main():
     # SILÊNCIO (bug clássico já documentado várias vezes no projeto): ligas
     # com 8 temporadas têm ~3.000 partidas, e o corte fazia o índice de
     # casamento só enxergar as 1.000 mais antigas — temporadas mais novas
-    # caíam 100% em "sem par em matches".
+    # caíam 100% em "sem par em matches". `.order("id")` pelo mesmo motivo
+    # do bloco acima.
     matches_internos = []
     _pagina = 0
     while True:
@@ -428,6 +436,7 @@ def main():
             supabase.table("matches")
             .select("id, home_team_id, away_team_id, match_date")
             .eq("league_id", args.liga_id)
+            .order("id")
             .range(_pagina * 1000, _pagina * 1000 + 999)
             .execute()
             .data

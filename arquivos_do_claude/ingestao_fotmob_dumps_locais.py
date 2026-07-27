@@ -65,14 +65,27 @@ def _paginar_ids_existentes(supabase, tabela: str, coluna: str, filtros: dict) -
     """Busca todos os valores de `coluna` numa tabela filtrada por
     `filtros` (igualdade), paginando de 1000 em 1000 -- sem isso,
     `.execute()` sozinho corta em 1000 linhas EM SILÊNCIO (bug clássico já
-    documentado várias vezes neste projeto, ver ingestao_fotmob.py)."""
+    documentado várias vezes neste projeto, ver ingestao_fotmob.py).
+
+    `.order(coluna)` é OBRIGATÓRIO aqui -- sem uma ordenação explícita, o
+    PostgREST/Postgres não garante uma travessia estável entre chamadas
+    `.range()` sucessivas numa tabela deste tamanho (>15k linhas): o plano
+    de execução pode variar entre as duas requisições e algumas linhas
+    ficam de fora silenciosamente (nem duplicadas nem repetidas, só
+    ausentes). Bug real encontrado nesta sessão: sem `.order()`, alguns
+    `match_id` já sincronizados (ex.: 6951-6953, de 18/07) apareciam como
+    "pendentes" -- o script então reprocessava (upsert) partidas já
+    prontas em vez de nunca alcançar as genuinamente novas, e como o
+    upsert só ATUALIZA uma linha já existente (não gera `created_at`
+    novo), o total da tabela nunca mudava e o problema ficava invisível
+    nos logs (sempre reportava sucesso)."""
     valores = set()
     pagina = 0
     while True:
         q = supabase.table(tabela).select(coluna)
         for col, val in filtros.items():
             q = q.eq(col, val)
-        chunk = q.range(pagina * 1000, pagina * 1000 + 999).execute().data
+        chunk = q.order(coluna).range(pagina * 1000, pagina * 1000 + 999).execute().data
         valores.update(row[coluna] for row in chunk)
         if len(chunk) < 1000:
             break
