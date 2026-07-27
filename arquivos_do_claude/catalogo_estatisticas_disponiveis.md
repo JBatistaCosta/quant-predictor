@@ -108,10 +108,25 @@ Colunas promovidas (estruturadas): `rating`, `minutes_played`, `goals`, `assists
 | Coluna | Cobertura |
 |---|---|
 | `rating`, `accurate_passes`, `chances_created`, `touches` | ~445-482k (66-72%) |
-| `minutes_played` | 481.721 (72%) |
+| `xgot` | 82.244 (12%) |
 | `xa` | 261.895 (39%) |
 | `xg` | 176.740 (26%) |
-| `xgot` | 82.244 (12%) |
+| `minutes_played` | 481.721 (72%) |
+
+### Cobertura por liga/temporada (nº de partidas com pelo menos 1 linha em `match_player_stats_fotmob`) — MESMAS 8 competições e temporadas de `match_stats_fotmob` (seção 2), praticamente 1:1
+
+| Liga | Temporadas cobertas |
+|---|---|
+| Premier League | 2019-2025 (380/temporada) |
+| La Liga | 2019-2025 (379-380/temporada) |
+| Serie A (Itália) | 2019-2025 (379-380/temporada) |
+| Bundesliga | 2019-2025 (306/temporada) |
+| Ligue 1 | 2019-2025 (278-380/temporada, 2019 encurtada pela Covid) |
+| Brasileirão Série A | 2019-2026 (177-380/temporada) |
+| Copa Libertadores | 2019-2022, 2026 (60-125/temporada — falta 2023-2025) |
+| Copa America | 2024 (30/30) |
+
+Não tem `match_player_stats_fotmob` nenhuma pras outras 6 competições que aparecem em `match_stats` (Championship, Eredivisie, Primeira Liga, Champions League, Copa do Brasil, Eurocopa, Copa do Mundo) — essas só têm estatística a nível de TIME, nunca por jogador.
 
 **Achado importante**: a coluna `stats_raw` (JSON, sempre presente quando a linha tem dado) guarda MUITO mais do que foi promovido pras colunas estruturadas acima — inspecionado diretamente em 3 amostras (jogador de linha, goleiro, jogador com stats mais completas):
 - **Defesa**: `tackles`, `interceptions`, `clearances`, `recoveries`, `blocks` (`shot_blocks`), `dribbled_past`, `defensive_actions`
