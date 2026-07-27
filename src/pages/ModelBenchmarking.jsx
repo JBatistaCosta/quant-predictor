@@ -498,7 +498,7 @@ export default function ModelBenchmarking() {
       const dataMinima = new Date(Date.now() - JANELA_DIAS_PASSADO * 86400000).toISOString();
 
       const [predicoes, odds, matches] = await Promise.all([
-        buscarPaginado(supabase.from('predicoes').select('*').in('model_name', MODELOS_BASE)),
+        buscarPaginado(supabase.from('predicoes').select('*').in('model_name', MODELOS_BASE).eq('mercado', '1X2')),
         buscarPaginado(supabase.from('market_odds').select('*')),
         buscarPaginado(supabase.from('matches').select('id, match_date, home_team_id, away_team_id').gte('match_date', dataMinima)),
       ]);

@@ -24,17 +24,9 @@
 //   /api/backtest-betting?edge_minimo=0.03&staking=kelly&fracao_kelly=0.25
 //   /api/backtest-betting?modelo=dixon_coles_walkforward_v1&mercado=1X2&liga_id=4
 //   /api/backtest-betting?usar_calibracao=platt   (usa a prob. calibrada em vez da crua, tanto pro edge quanto pro Kelly)
-//
-// Cada grupo em `grupos` traz `serie_temporal` (ver api/_lib/curvaPnlEv.js):
-// Lucro Real e Valor Esperado (EV) acumulados cronologicamente + drawdown,
-// aposta a aposta -- alimenta o gráfico "Curva de Retorno x EV" em
-// ModelosStats.jsx. `league_id` já vai em cada ponto, então dá pra
-// visualizar "especializações por campeonato" filtrando client-side sem
-// chamada nova (ou repetindo a chamada com ?liga_id=X pra isolar 1 liga só).
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
-import { calcularCurvaPnlEv } from './_lib/curvaPnlEv.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -274,7 +266,7 @@ export default async function handler(req, res) {
       const lucro = venceu ? stakeUnitario * (oddReal - 1) : -stakeUnitario;
 
       candidatas.push({
-        match_id: p.match_id, model_name: p.model_name, market: p.market, selection: p.selection, league_id: match.league_id,
+        model_name: p.model_name, market: p.market, selection: p.selection, league_id: match.league_id,
         match_date: match.match_date, edge, p_aposta: pAposta, odd: oddReal, stake: stakeUnitario, lucro, venceu,
       });
     }
@@ -301,10 +293,6 @@ export default async function handler(req, res) {
         roi_ic95_inferior: ic.lo, roi_ic95_superior: ic.hi,
         significativo: ic.lo != null && ic.lo > 0,
         edge_medio: g.apostas.reduce((s, a) => s + a.edge, 0) / g.apostas.length,
-        // Curva de Retorno (PnL) x Valor Esperado (EV), cronológica -- pedido
-        // do usuário. g.apostas já vem ordenado (candidatas é ordenado antes
-        // de agrupar, .push preserva a ordem relativa dentro de cada grupo).
-        serie_temporal: calcularCurvaPnlEv(g.apostas),
       };
     });
 

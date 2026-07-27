@@ -8,7 +8,7 @@
     "build": "vite build",
     "build:firebase": "vite build --mode firebase",
     "preview": "vite preview",
-    "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting"
+    "deploy:firebase": "npm run build:firebase && firebase deploy"
   },
   "dependencies": {
     "react": "^18.3.1",
