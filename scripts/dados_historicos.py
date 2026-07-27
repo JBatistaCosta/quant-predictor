@@ -1699,6 +1699,38 @@ FEATURES_NUMERICAS_V3B = FEATURES_NUMERICAS_V5 + [
 ]
 FEATURES_V3B = FEATURES_NUMERICAS_V3B + CAT_FEATURES
 
+# v6 (progresso da temporada): tudo da v5 + `progresso_temporada` (0 a 1),
+# pra o modelo distinguir início de temporada (padrões de forma ainda
+# ruidosos, poucos pontos disputados) de reta final (motivação de
+# título/rebaixamento, elencos possivelmente já poupando titulares). NÃO
+# estende v3B (XI titular) de propósito -- cobertura de escalação é
+# parcial (1-2 temporadas recentes), não faz sentido empilhar mais uma
+# feature esparsa em cima de outra já esparsa sem necessidade. Camada
+# NOVA em vez de adicionar em v5 direto -- v5/v3b já têm modelos
+# registrados em `models_registry` com métricas de teste que dependem do
+# shape de feature exato; mudar retroativamente invalidaria essas
+# métricas sem gerar uma nova versão pra comparar.
+FEATURES_NUMERICAS_V6 = FEATURES_NUMERICAS_V5 + ["progresso_temporada"]
+FEATURES_V6 = FEATURES_NUMERICAS_V6 + CAT_FEATURES
+
+
+def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
+    """Posição da partida no calendário da temporada, 0 (primeira rodada)
+    a 1 (última) -- não usa a coluna `round` (só populada a partir de 2023
+    pra várias ligas, ver CONTEXTO_PROJETO.md sobre o Brasileirão) nem
+    contagem de jogos por TIME (`jogos_disputados`, já existe mas não é
+    comparável entre ligas com números de rodada diferentes -- 380 jogos
+    x 306). Em vez disso, ordena todas as partidas de cada (league_id,
+    season) por data e usa a posição relativa nessa ordenação -- funciona
+    igual em qualquer liga/temporada, sem depender de `round` estar
+    preenchido."""
+    partidas = partidas.sort_values("match_date").copy()
+    grupo = partidas.groupby(["league_id", "season"])
+    posicao = grupo.cumcount()
+    tamanho = grupo["id"].transform("count")
+    partidas["progresso_temporada"] = (posicao / (tamanho - 1).clip(lower=1)).round(4)
+    return partidas
+
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
@@ -1739,6 +1771,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
+    partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
 
@@ -1750,7 +1783,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         elo_home = pd.DataFrame(columns=["id", "home_team_id", "elo_home"])
         elo_away = pd.DataFrame(columns=["id", "away_team_id", "elo_away"])
 
-    dataset = partidas[["id", "match_date", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away"]].copy()
+    dataset = partidas[["id", "match_date", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away", "progresso_temporada"]].copy()
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
     dataset["resultado"] = np.select(
         [dataset["home_goals"] > dataset["away_goals"], dataset["home_goals"] == dataset["away_goals"]],
@@ -1887,6 +1920,11 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset[
         [
             "match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3B,
+            # progresso_temporada é da linhagem v6 (v5 + progresso), não de
+            # v3b (v5 + XI titular) -- as duas estendem v5 em direções
+            # diferentes, por isso entra à parte aqui em vez de já vir de
+            # FEATURES_NUMERICAS_V3B.
+            "progresso_temporada",
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
             # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
             # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
