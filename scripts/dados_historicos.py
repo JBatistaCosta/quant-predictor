@@ -1907,18 +1907,25 @@ def _anexar_stats_fotmob_por_partida(supabase: Client, partidas: pd.DataFrame) -
 
     linhas = _paginar_por_lotes_de_id(factory, match_ids)
     partidas = partidas.copy()
+    # Sufixo "_fm" já no nome da coluna CRUA (não só na forma/rolling
+    # average) -- "corners"/"possession" existem em COLUNAS_STATS_EXTRA
+    # (FBref) E em COLUNAS_STATS_FOTMOB, e sem esse sufixo aqui os dois
+    # merges abaixo colidiam com as colunas já anexadas por
+    # `_anexar_stats_extra_por_partida`, viravam "_x"/"_y" (renomeio
+    # automático do pandas) e quebravam `_forma_por_mando` mais adiante
+    # com KeyError.
     if not linhas:
         for col in colunas_raw:
-            partidas[f"{col}_home"] = np.nan
-            partidas[f"{col}_away"] = np.nan
+            partidas[f"{col}_fm_home"] = np.nan
+            partidas[f"{col}_fm_away"] = np.nan
         return partidas
 
     stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
     for col in colunas_raw:
-        stats_home = stats.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
-        stats_away = stats.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
-        partidas = partidas.merge(stats_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
-        partidas = partidas.merge(stats_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+        stats_home = stats.rename(columns={"team_id": "home_team_id", col: f"{col}_fm_home"})
+        stats_away = stats.rename(columns={"team_id": "away_team_id", col: f"{col}_fm_away"})
+        partidas = partidas.merge(stats_home[["id", "home_team_id", f"{col}_fm_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(stats_away[["id", "away_team_id", f"{col}_fm_away"]], on=["id", "away_team_id"], how="left")
     return partidas
 
 
@@ -1998,7 +2005,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     forma_cartoes_amarelos = _forma_por_mando(partidas, "yellow_cards_home", "yellow_cards_away", COLUNAS_FORMA_CARTOES_AMARELOS)
     forma_cartoes_vermelhos = _forma_por_mando(partidas, "red_cards_home", "red_cards_away", COLUNAS_FORMA_CARTOES_VERMELHOS)
     formas_fotmob = {
-        nome_curto: _forma_por_mando(partidas, f"{col_raw}_home", f"{col_raw}_away", _colunas_forma_fotmob(nome_curto))
+        nome_curto: _forma_por_mando(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", _colunas_forma_fotmob(nome_curto))
         for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items()
     }
 
