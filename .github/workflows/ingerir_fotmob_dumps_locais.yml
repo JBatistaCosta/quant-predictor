@@ -46,12 +46,13 @@ jobs:
         with:
           repository: jbatistacosta/repository-fotmob
           path: _repository-fotmob
-          # token vazio de propósito: o GITHUB_TOKEN padrão deste job só
-          # tem escopo pro repositório atual (quant-predictor) -- usá-lo
-          # aqui faria o checkout de um repo DIFERENTE falhar com 403.
-          # repository-fotmob é público, então um clone sem autenticação
-          # funciona normalmente.
-          token: ""
+          # SEM `token:` de propósito -- passar "" quebra a validação de
+          # input do actions/checkout ("Input required and not supplied:
+          # token", confirmado num run real que falhou por causa disso).
+          # O GITHUB_TOKEN padrão (usado quando `token` não é passado)
+          # consegue ler qualquer repositório PÚBLICO normalmente, mesmo
+          # fora do repo atual -- só é limitado pra escrita/repos privados
+          # de terceiros, não é o caso aqui (repository-fotmob é público).
 
       - name: Configurar Python 3.10
         uses: actions/setup-python@v5
