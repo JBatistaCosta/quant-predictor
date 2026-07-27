@@ -30,6 +30,7 @@ from dados_historicos import (
     FEATURES_V3B,
     FEATURES_V4,
     FEATURES_V5,
+    FEATURES_V6,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -98,6 +99,11 @@ PARAMS_DEFAULT = {
     # Mesmos defaults da v1, ainda sem tuning dedicado.
     "catboost_xg_regressor_v1": {"depth": 6, "learning_rate": 0.05},
     "catboost_xgot_regressor_v1": {"depth": 6, "learning_rate": 0.05},
+    # v6 (progresso da temporada, ver dados_historicos.FEATURES_V6) -- mesmos
+    # defaults da v1, ainda sem tuning dedicado.
+    "catboost_v6": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v6": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v6": {"num_leaves": 15, "learning_rate": 0.1},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -132,6 +138,12 @@ FEATURES_POR_MODELO = {
     # prevendo um valor contínuo (gols esperados / xGOT) em vez de classe.
     "catboost_xg_regressor_v1": FEATURES,
     "catboost_xgot_regressor_v1": FEATURES,
+    # v6 = v5 (classificação/H2H/árbitro) + progresso_temporada (0-1, posição
+    # da partida no calendário da temporada) -- linhagem separada de v3B
+    # (v5 + XI titular), não empilha as duas.
+    "catboost_v6": FEATURES_V6,
+    "xgboost_v6": FEATURES_V6,
+    "lightgbm_v6": FEATURES_V6,
 }
 
 
@@ -381,4 +393,7 @@ TREINADORES = {
     "catboost_v3b": (treinar_catboost, prever_catboost),
     "xgboost_v3b": (treinar_xgboost, prever_xgboost),
     "lightgbm_v3b": (treinar_lightgbm, prever_lightgbm),
+    "catboost_v6": (treinar_catboost, prever_catboost),
+    "xgboost_v6": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v6": (treinar_lightgbm, prever_lightgbm),
 }
