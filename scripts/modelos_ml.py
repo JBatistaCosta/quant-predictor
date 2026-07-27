@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, CatBoostRegressor
-from lightgbm import LGBMClassifier
+from lightgbm import LGBMClassifier, early_stopping
 from xgboost import XGBClassifier
 
 from dados_historicos import (
@@ -32,6 +32,7 @@ from dados_historicos import (
     FEATURES_V5,
     FEATURES_V6,
     FEATURES_V7,
+    FEATURES_V8,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -62,6 +63,21 @@ ROTULOS_SAIDA = {
         RESULTADO_FAIXA_7MAIS: "prob_faixa_7mais",
     },
 }
+
+# Profundidade de aprendizado (nº de iterações/árvores de boosting) quando
+# há validação disponível (`val_df` passado por `backtest_kelly.
+# tunar_treinar_e_calibrar`): treina até um teto alto e para de verdade
+# (`early_stopping_rounds`) assim que o log-loss de VALIDAÇÃO parar de
+# melhorar por `RODADAS_EARLY_STOPPING` iterações seguidas -- exatamente
+# "menor log-loss encontrado, evitando subida por overfitting" (pedido do
+# usuário). Sem validação (treino diário de produção, `rodar_predicoes.py`,
+# que não separa holdout -- ver decisão do usuário de manter 100% do
+# histórico em produção), não tem como saber quando parar, então usa um
+# teto fixo conservador (mesmo valor de sempre, sem mudança de
+# comportamento em produção).
+ITERACOES_MAXIMAS_EARLY_STOPPING = 2000
+RODADAS_EARLY_STOPPING = 50
+ITERACOES_PRODUCAO = {"catboost": 200, "xgboost": 200, "lightgbm": 80}
 
 # Hiperparâmetros default -- usados pelo treino diário em produção, sem
 # tuning (`backtest_kelly.py` faz grid search em cima dessas mesmas funções
@@ -110,6 +126,11 @@ PARAMS_DEFAULT = {
     "catboost_v7": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v7": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v7": {"num_leaves": 15, "learning_rate": 0.1},
+    # v8 (estatísticas do FotMob, ver dados_historicos.FEATURES_V8) -- mesmos
+    # defaults da v1, ainda sem tuning dedicado.
+    "catboost_v8": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v8": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v8": {"num_leaves": 15, "learning_rate": 0.1},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -156,6 +177,12 @@ FEATURES_POR_MODELO = {
     "catboost_v7": FEATURES_V7,
     "xgboost_v7": FEATURES_V7,
     "lightgbm_v7": FEATURES_V7,
+    # v8 = v7 + forma pré-jogo das estatísticas do FotMob (~22 colunas com
+    # boa cobertura -- xG detalhado, finalização, construção de jogo,
+    # defesa, duelos). Linhagem separada de v3B pela mesma razão de v6/v7.
+    "catboost_v8": FEATURES_V8,
+    "xgboost_v8": FEATURES_V8,
+    "lightgbm_v8": FEATURES_V8,
 }
 
 
@@ -217,15 +244,22 @@ def treinar_catboost(
     test_df: pd.DataFrame | None = None,
 ):
     """`val_df`/`test_df` são OPCIONAIS -- só passados por
-    `backtest_kelly.tunar_treinar_e_calibrar` (pra capturar a curva de
-    aprendizado, comparando loss por iteração nos 3 splits). O treino
-    diário em produção (`rodar_predicoes.py`) não passa esses dois
-    parâmetros, então `curva` sempre volta `None` nesse caminho -- sem
-    custo extra de CPU no cron diário."""
+    `backtest_kelly.tunar_treinar_e_calibrar`. Quando passados, treina até
+    `ITERACOES_MAXIMAS_EARLY_STOPPING` com parada real
+    (`early_stopping_rounds`) no log-loss de VALIDAÇÃO -- CatBoost usa o
+    PRIMEIRO pool de `eval_set` pro detector de overfitting por padrão, por
+    isso `val_prep` vem antes de `test_prep` na lista (nunca o contrário,
+    senão a parada vazaria informação do Test). `use_best_model=True`
+    garante que a predição final usa a iteração de menor log-loss de
+    validação, não a última treinada. O treino diário em produção
+    (`rodar_predicoes.py`) não passa `val_df`/`test_df` -- sem holdout não
+    tem como saber quando parar, então usa o teto fixo de sempre
+    (`ITERACOES_PRODUCAO`), sem mudança de comportamento lá."""
+    usa_early_stopping = val_df is not None and test_df is not None
     modelo = CatBoostClassifier(
         loss_function="MultiClass",
         thread_count=2,
-        iterations=200,
+        iterations=ITERACOES_MAXIMAS_EARLY_STOPPING if usa_early_stopping else ITERACOES_PRODUCAO["catboost"],
         cat_features=CAT_FEATURES,
         random_seed=42,
         verbose=False,
@@ -233,10 +267,16 @@ def treinar_catboost(
     )
     treino = preparar_liga_para_catboost(train_df)
     eval_set = None
-    if val_df is not None and test_df is not None:
+    if usa_early_stopping:
         val_prep, test_prep = preparar_liga_para_catboost(val_df), preparar_liga_para_catboost(test_df)
         eval_set = [(val_prep[features], val_prep[coluna_alvo]), (test_prep[features], test_prep[coluna_alvo])]
-    modelo.fit(treino[features], treino[coluna_alvo], eval_set=eval_set)
+    modelo.fit(
+        treino[features],
+        treino[coluna_alvo],
+        eval_set=eval_set,
+        early_stopping_rounds=RODADAS_EARLY_STOPPING if usa_early_stopping else None,
+        use_best_model=usa_early_stopping,
+    )
 
     curva = None
     if eval_set is not None:
@@ -290,31 +330,40 @@ def treinar_xgboost(
     val_df: pd.DataFrame | None = None,
     test_df: pd.DataFrame | None = None,
 ):
-    """Ver docstring de `treinar_catboost` sobre `val_df`/`test_df`."""
+    """Ver docstring de `treinar_catboost` sobre `val_df`/`test_df` -- MAS
+    XGBoost decide a parada olhando o ÚLTIMO item de `eval_set` (o oposto
+    do CatBoost, que olha o primeiro), então aqui a ordem é
+    (treino, teste, validação) -- validação por último de propósito, senão
+    a parada usaria o Test Set pra decidir quando parar (vazamento)."""
+    usa_early_stopping = val_df is not None and test_df is not None
     treino_encoded = pd.get_dummies(train_df[features], columns=CAT_FEATURES)
     modelo = XGBClassifier(
         objective="multi:softprob",
         num_class=train_df[coluna_alvo].nunique(),
-        n_estimators=200,
+        n_estimators=ITERACOES_MAXIMAS_EARLY_STOPPING if usa_early_stopping else ITERACOES_PRODUCAO["xgboost"],
         eval_metric="mlogloss",
         random_state=42,
+        early_stopping_rounds=RODADAS_EARLY_STOPPING if usa_early_stopping else None,
         **params,
     )
     eval_set = None
-    if val_df is not None and test_df is not None:
+    if usa_early_stopping:
         # reencoda val/test com as MESMAS colunas do treino (reindex,
         # fill_value=0) -- mesma técnica de `prever_xgboost`, senão uma liga
         # ausente no lote de val/test (ou presente só lá) quebra o fit.
         val_encoded = pd.get_dummies(val_df[features], columns=CAT_FEATURES).reindex(columns=treino_encoded.columns, fill_value=0)
         test_encoded = pd.get_dummies(test_df[features], columns=CAT_FEATURES).reindex(columns=treino_encoded.columns, fill_value=0)
-        eval_set = [(treino_encoded, train_df[coluna_alvo]), (val_encoded, val_df[coluna_alvo]), (test_encoded, test_df[coluna_alvo])]
+        eval_set = [(treino_encoded, train_df[coluna_alvo]), (test_encoded, test_df[coluna_alvo]), (val_encoded, val_df[coluna_alvo])]
     modelo.fit(treino_encoded, train_df[coluna_alvo], eval_set=eval_set, verbose=False)
 
     curva = None
     if eval_set is not None:
+        # Índices batem com a ordem de eval_set acima: validation_0=treino,
+        # validation_1=teste, validation_2=validação (não confundir com o
+        # nome "validation_N" do XGBoost, que é só a posição na lista).
         resultados = modelo.evals_result()
         curva = _montar_curva(
-            resultados["validation_0"]["mlogloss"], resultados["validation_1"]["mlogloss"], resultados["validation_2"]["mlogloss"]
+            resultados["validation_0"]["mlogloss"], resultados["validation_2"]["mlogloss"], resultados["validation_1"]["mlogloss"]
         )
     return modelo, treino_encoded.columns, curva
 
@@ -323,6 +372,9 @@ def prever_xgboost(modelo, colunas_treino, df: pd.DataFrame, features: list[str]
     # garante as mesmas colunas (mesma ordem) vistas no treino -- uma liga
     # do treino ausente na predição, ou uma liga na predição fora do
     # dataset "Feature Stacked", vira coluna de zeros em vez de quebrar
+    # (quando o treino usou early stopping, o XGBoost >=1.6 já limita
+    # predict_proba à melhor iteração automaticamente -- não precisa passar
+    # iteration_range aqui).
     encoded = pd.get_dummies(df[features], columns=CAT_FEATURES).reindex(columns=colunas_treino, fill_value=0)
     return modelo.predict_proba(encoded), modelo.classes_
 
@@ -338,40 +390,48 @@ def treinar_lightgbm(
     """Configuração deliberadamente leve/rápida (poucas árvores, folhas
     rasas por padrão) -- é o modelo mais barato dos 3 em custo de CPU no
     runner do GitHub Actions. Ver docstring de `treinar_catboost` sobre
-    `val_df`/`test_df`."""
+    `val_df`/`test_df` -- MAS, ao contrário de CatBoost (que olha só o
+    primeiro eval_set) e XGBoost (que olha só o último), o callback de
+    early stopping do LightGBM para assim que QUALQUER valid_set passado
+    parar de melhorar. Incluir o Test nesse `eval_set` faria a decisão de
+    parada depender do Test (vazamento) -- por isso aqui o `eval_set` do
+    `.fit()` usado pra early stopping é só (treino, validação); o Test
+    continua sendo avaliado normalmente DEPOIS do treino (fora desta
+    função, em `tunar_treinar_e_calibrar`), só não aparece como curva
+    ponto-a-ponto por iteração pra este framework especificamente."""
+    usa_early_stopping = val_df is not None and test_df is not None
     treino = train_df.copy()
     categorias_liga = sorted(treino["liga"].dropna().unique())
     treino["liga"] = pd.Categorical(treino["liga"], categories=categorias_liga)
     modelo = LGBMClassifier(
         objective="multiclass",
         num_class=treino[coluna_alvo].nunique(),
-        n_estimators=80,
+        n_estimators=ITERACOES_MAXIMAS_EARLY_STOPPING if usa_early_stopping else ITERACOES_PRODUCAO["lightgbm"],
         min_child_samples=10,
         random_state=42,
         verbosity=-1,
         **params,
     )
-    eval_set, eval_names = None, None
-    if val_df is not None and test_df is not None:
-        val_prep, test_prep = val_df.copy(), test_df.copy()
+    eval_set, eval_names, callbacks = None, None, None
+    if usa_early_stopping:
+        val_prep = val_df.copy()
         val_prep["liga"] = alinhar_categoria_liga(val_prep["liga"], categorias_liga)
-        test_prep["liga"] = alinhar_categoria_liga(test_prep["liga"], categorias_liga)
-        eval_set = [
-            (treino[features], treino[coluna_alvo]),
-            (val_prep[features], val_df[coluna_alvo]),
-            (test_prep[features], test_df[coluna_alvo]),
-        ]
-        eval_names = ["treino", "validacao", "teste"]
+        eval_set = [(treino[features], treino[coluna_alvo]), (val_prep[features], val_df[coluna_alvo])]
+        eval_names = ["treino", "validacao"]
+        callbacks = [early_stopping(stopping_rounds=RODADAS_EARLY_STOPPING, verbose=False)]
     modelo.fit(
-        treino[features], treino[coluna_alvo], categorical_feature=CAT_FEATURES, eval_set=eval_set, eval_names=eval_names
+        treino[features],
+        treino[coluna_alvo],
+        categorical_feature=CAT_FEATURES,
+        eval_set=eval_set,
+        eval_names=eval_names,
+        callbacks=callbacks,
     )
 
     curva = None
     if eval_set is not None:
         resultados = modelo.evals_result_
-        curva = _montar_curva(
-            resultados["treino"]["multi_logloss"], resultados["validacao"]["multi_logloss"], resultados["teste"]["multi_logloss"]
-        )
+        curva = _montar_curva(resultados["treino"]["multi_logloss"], resultados["validacao"]["multi_logloss"], None)
     return modelo, categorias_liga, curva
 
 
@@ -411,4 +471,7 @@ TREINADORES = {
     "catboost_v7": (treinar_catboost, prever_catboost),
     "xgboost_v7": (treinar_xgboost, prever_xgboost),
     "lightgbm_v7": (treinar_lightgbm, prever_lightgbm),
+    "catboost_v8": (treinar_catboost, prever_catboost),
+    "xgboost_v8": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v8": (treinar_lightgbm, prever_lightgbm),
 }

@@ -1826,6 +1826,107 @@ FEATURES_NUMERICAS_V7 = FEATURES_NUMERICAS_V6 + [
 ]
 FEATURES_V7 = FEATURES_NUMERICAS_V7 + CAT_FEATURES
 
+# v8 (estatísticas do FotMob, `match_stats_fotmob`): tudo da v7 + forma
+# pré-jogo de ~22 colunas do FotMob com cobertura quase completa em TODAS
+# as temporadas 2019-2026 (checado coluna a coluna direto no banco antes de
+# implementar -- ver `arquivos_do_claude/catalogo_estatisticas_
+# disponiveis.md`). Deliberadamente NÃO inclui `touches_opp_box`
+# (cobertura irregular, 369/4460 em 2019 subindo aos poucos até 100% só em
+# 2024), `accurate_passes_total` (praticamente nunca populada -- 0 em quase
+# toda temporada, coluna com bug de captura na fonte) nem `xg`/`xgot`
+# (já usados: `xg` vem do FBref desde v1, `xgot` só como ALVO de regressão
+# -- ambos irregulares no FotMob em 2019-2022, sem motivo de duplicar com
+# pior cobertura). `possession`/`corners`/`fouls_committed`/`yellow_cards`/
+# `red_cards` aqui são intencionalmente REDUNDANTES com as equivalentes do
+# FBref (v7) -- fonte independente, útil como segundo sinal do mesmo
+# fenômeno, os modelos de árvore lidam bem com colinearidade.
+#
+# `COLUNAS_STATS_FOTMOB` mapeia coluna bruta -> nome curto (sufixo "_fm"
+# pra nunca colidir com as colunas de forma do FBref, ex.:
+# media_faltas_5j_home é FBref, media_faltas_fm_5j_home é FotMob) --
+# gerado em loop em vez de 22 dicts escritos à mão (mesmo padrão de
+# COLUNAS_FORMA_GOLS/XG/V7, só que construído programaticamente pelo
+# volume de colunas).
+COLUNAS_STATS_FOTMOB = {
+    "total_shots": "chutes_fm",
+    "shots_on_target": "chutes_alvo_fm",
+    "shots_off_target": "chutes_fora_fm",
+    "shots_blocked": "chutes_bloqueados_fm",
+    "shots_inside_box": "chutes_area_fm",
+    "shots_outside_box": "chutes_fora_area_fm",
+    "big_chances": "chances_claras_fm",
+    "big_chances_missed": "chances_claras_perdidas_fm",
+    "accurate_passes": "passes_certos_fm",
+    "accurate_long_balls": "bolas_longas_certas_fm",
+    "accurate_crosses": "cruzamentos_certos_fm",
+    "tackles": "desarmes_fm",
+    "interceptions": "interceptacoes_fm",
+    "blocks": "bloqueios_fm",
+    "clearances": "afastamentos_fm",
+    "keeper_saves": "defesas_goleiro_fm",
+    "duels_won": "duelos_vencidos_fm",
+    "aerial_duels_won": "duelos_aereos_vencidos_fm",
+    "successful_dribbles": "dribles_certos_fm",
+    "fouls_committed": "faltas_fm",
+    "yellow_cards": "cartoes_amarelos_fm",
+    "red_cards": "cartoes_vermelhos_fm",
+    "corners": "escanteios_fm",
+    "possession": "posse_fm",
+}
+
+
+def _colunas_forma_fotmob(nome_curto: str) -> dict[str, str]:
+    """Mesmo formato de COLUNAS_FORMA_GOLS/XG/V7 (`marcado_home`/
+    `sofrido_home`/`marcado_away`/`sofrido_away` -> nome da coluna de
+    saída), gerado a partir do nome curto pra evitar 22 dicts repetidos."""
+    return {
+        "marcado_home": f"media_{nome_curto}_5j_home",
+        "sofrido_home": f"media_{nome_curto}_sofrido_5j_home",
+        "marcado_away": f"media_{nome_curto}_5j_away",
+        "sofrido_away": f"media_{nome_curto}_sofrido_5j_away",
+    }
+
+
+def _anexar_stats_fotmob_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Busca as colunas do FotMob listadas em `COLUNAS_STATS_FOTMOB` de
+    cada partida e anexa como `{coluna}_home`/`{coluna}_away` -- mesmo
+    espírito de `_anexar_stats_extra_por_partida` (FBref), só que lendo de
+    `match_stats_fotmob`. Só matéria-prima pra forma pré-jogo -- o valor
+    bruto da PRÓPRIA partida nunca é feature (vazaria o resultado)."""
+    match_ids = partidas["id"].astype(int).tolist()
+    colunas_raw = list(COLUNAS_STATS_FOTMOB.keys())
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_stats_fotmob")
+            .select(f"match_id, team_id, {', '.join(colunas_raw)}")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+    if not linhas:
+        for col in colunas_raw:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
+    for col in colunas_raw:
+        stats_home = stats.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
+        stats_away = stats.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
+        partidas = partidas.merge(stats_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(stats_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
+FEATURES_NUMERICAS_V8 = FEATURES_NUMERICAS_V7 + [
+    col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in _colunas_forma_fotmob(nome_curto).values()
+]
+FEATURES_V8 = FEATURES_NUMERICAS_V8 + CAT_FEATURES
+
 
 def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
     """Posição da partida no calendário da temporada, 0 (primeira rodada)
@@ -1885,6 +1986,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
     partidas = _anexar_stats_extra_por_partida(supabase, partidas)
+    partidas = _anexar_stats_fotmob_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
@@ -1895,6 +1997,10 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     forma_faltas = _forma_por_mando(partidas, "fouls_home", "fouls_away", COLUNAS_FORMA_FALTAS)
     forma_cartoes_amarelos = _forma_por_mando(partidas, "yellow_cards_home", "yellow_cards_away", COLUNAS_FORMA_CARTOES_AMARELOS)
     forma_cartoes_vermelhos = _forma_por_mando(partidas, "red_cards_home", "red_cards_away", COLUNAS_FORMA_CARTOES_VERMELHOS)
+    formas_fotmob = {
+        nome_curto: _forma_por_mando(partidas, f"{col_raw}_home", f"{col_raw}_away", _colunas_forma_fotmob(nome_curto))
+        for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items()
+    }
 
     elo = _carregar_elo_pre_jogo(supabase, league_ids)
     if not elo.empty:
@@ -1929,6 +2035,8 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.join(forma_faltas, on="id")
     dataset = dataset.join(forma_cartoes_amarelos, on="id")
     dataset = dataset.join(forma_cartoes_vermelhos, on="id")
+    for forma in formas_fotmob.values():
+        dataset = dataset.join(forma, on="id")
 
     squad_rating = _carregar_squad_rating_pre_jogo(supabase, partidas["id"].astype(int).tolist())
     if not squad_rating.empty:
@@ -2063,6 +2171,10 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
             *COLUNAS_FORMA_FALTAS.values(),
             *COLUNAS_FORMA_CARTOES_AMARELOS.values(),
             *COLUNAS_FORMA_CARTOES_VERMELHOS.values(),
+            # Forma pré-jogo das estatísticas do FotMob (v8) -- mesma razão
+            # das anteriores: ramo próprio a partir de v5/v7, não faz parte
+            # de FEATURES_NUMERICAS_V3B.
+            *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in _colunas_forma_fotmob(nome_curto).values()],
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
             # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
             # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
