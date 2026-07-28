@@ -11,7 +11,15 @@ on:
 jobs:
   rodar-predicoes:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Era 15min (já apertado com as 5 ligas de elite -- runs saudáveis
+    # ficavam por volta de 12-13min). Brasileirão entrou no dataset
+    # "Feature Stacked" (`dados_historicos.LIGAS_MODEL_BENCHMARKING`) e só
+    # montar o dataset agora leva ~13,5min sozinho (medido direto,
+    # +20% de volume de partida) -- sem folga nenhuma pro resto do
+    # script (treino dos modelos de árvore + persistência). Triplicado
+    # com folga generosa, mesmo espírito de `backtest_kelly.yml` quando
+    # o escopo cresceu.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout do repositório
