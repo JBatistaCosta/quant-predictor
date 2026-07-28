@@ -26,6 +26,7 @@ const JogadorDetalhe = lazy(() => import('./pages/JogadorDetalhe'));
 const ModelBenchmarking = lazy(() => import('./pages/ModelBenchmarking'));
 const SimulacaoCarteira = lazy(() => import('./pages/SimulacaoCarteira'));
 const RodadaPrevisoes = lazy(() => import('./pages/RodadaPrevisoes'));
+const ModeloV9 = lazy(() => import('./pages/ModeloV9'));
 
 function CarregandoPagina() {
   return (
@@ -94,6 +95,9 @@ export default function App() {
             } />
             <Route path="/rodada-atual" element={
               <ProtectedRoute><Layout><RodadaPrevisoes /></Layout></ProtectedRoute>
+            } />
+            <Route path="/modelo-v9" element={
+              <ProtectedRoute><Layout><ModeloV9 /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />

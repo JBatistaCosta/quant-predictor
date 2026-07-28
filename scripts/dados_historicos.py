@@ -2103,6 +2103,48 @@ FEATURES_NUMERICAS_V8 = FEATURES_NUMERICAS_V7 + [
 ]
 FEATURES_V8 = FEATURES_NUMERICAS_V8 + CAT_FEATURES
 
+# v9 — mesmas features da v8; novidade é a arquitetura (MLP como 4ª família
+# + stacking LogísticaRegressão + walk-forward CV por temporada).
+# Documentado aqui como referência canônica pra walkforward_cv_v9.py.
+FEATURES_NUMERICAS_V9 = FEATURES_NUMERICAS_V8
+FEATURES_V9 = FEATURES_V8
+
+# Agrupamento de features pro painel de análise exploratória do v9 --
+# cada feature de FEATURES_V9 pertence a exatamente um grupo (mapeado por
+# prefixo/sufixo de nome, sem hardcoded de lista completa pra não sair de
+# sincronia se novas colunas de forma forem adicionadas).
+def grupo_da_feature(nome: str) -> str:
+    if nome in ("elo_home", "elo_away"):
+        return "Elo"
+    if nome in ("xg_home", "xg_away", "xgot_home", "xgot_away"):
+        return "xG direto"
+    if nome in ("squad_rating_home", "squad_rating_away"):
+        return "Elenco"
+    if "since_last_match" in nome or "midweek" in nome:
+        return "Fadiga"
+    if "cartoes_acumulados" in nome or "jogadores_pendurados" in nome:
+        return "Disciplina"
+    if any(k in nome for k in ("posicao_", "ppg_", "saldo_gols_", "jogos_disputados_")):
+        return "Tabela"
+    if nome.startswith("h2h_"):
+        return "H2H"
+    if nome.startswith("arbitro_"):
+        return "Árbitro"
+    if nome == "progresso_temporada":
+        return "Progresso"
+    if nome == "liga":
+        return "Liga (categ.)"
+    if "_fm_" in nome:
+        return "Stats FotMob"
+    if any(k in nome for k in ("gols_marcados", "gols_sofridos")):
+        return "Forma (Gols)"
+    if any(k in nome for k in ("media_xg_", "xg_sofrido")):
+        return "Forma (xG)"
+    # v7 FBref stats (posse, chutes, escanteios, faltas, cartoes)
+    if any(k in nome for k in ("posse_", "chutes_", "escanteios_", "faltas_", "cartoes_")):
+        return "Stats FBref"
+    return "Outros"
+
 
 def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
     """Posição da partida no calendário da temporada, 0 (primeira rodada)
@@ -2189,7 +2231,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         elo_home = pd.DataFrame(columns=["id", "home_team_id", "elo_home"])
         elo_away = pd.DataFrame(columns=["id", "away_team_id", "elo_away"])
 
-    dataset = partidas[["id", "match_date", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away", "progresso_temporada"]].copy()
+    dataset = partidas[["id", "match_date", "season", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away", "progresso_temporada"]].copy()
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
     dataset["resultado"] = np.select(
         [dataset["home_goals"] > dataset["away_goals"], dataset["home_goals"] == dataset["away_goals"]],
