@@ -110,6 +110,33 @@ def _acuracia(y_true: np.ndarray, probs: np.ndarray, classes: np.ndarray) -> flo
     return float(np.mean(classe_pred == y_true))
 
 
+def construir_predicoes(test_df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray, model_name: str) -> list[dict]:
+    """Converte probabilidades do test set em linhas para `model_predictions` (1 linha por match × seleção)."""
+    mapa = {dh.RESULTADO_HOME: "home", dh.RESULTADO_DRAW: "draw", dh.RESULTADO_AWAY: "away"}
+    col_por_sel: dict[str, int] = {}
+    for col_i, c in enumerate(classes):
+        sel = mapa.get(int(c))
+        if sel:
+            col_por_sel[sel] = col_i
+
+    ids = test_df.reset_index(drop=True)["id"].tolist()
+    linhas: list[dict] = []
+    for row_i, match_id in enumerate(ids):
+        for sel in ("home", "draw", "away"):
+            if sel not in col_por_sel:
+                continue
+            p = float(np.clip(probs[row_i, col_por_sel[sel]], 1e-7, 1 - 1e-7))
+            linhas.append({
+                "match_id": int(match_id),
+                "model_name": model_name,
+                "market": "1x2",
+                "selection": sel,
+                "probability": round(p, 5),
+                "fair_odds": round(1.0 / p, 4),
+            })
+    return linhas
+
+
 def calcular_metricas(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray) -> dict:
     y = df[COLUNA_ALVO].values
     logloss = _log_loss_safe(y, probs, classes)
@@ -296,6 +323,7 @@ def main() -> None:
     # Walk-forward CV — 3 folds
     # ------------------------------------------------------------------
     resultados_wf: list[dict] = []
+    predicoes_v9: list[dict] = []
 
     # Acumuladores OOF pra stacking
     oof_y_list: list[np.ndarray] = []
@@ -349,6 +377,9 @@ def main() -> None:
                 "n_test": len(test_df),
                 **metricas,
             })
+
+            # Coleta predições OOF do test set pra persistir em model_predictions
+            predicoes_v9.extend(construir_predicoes(test_df, test_probs, test_classes, nome))
 
             # Acumula OOF predictions no val set pra stacking
             oof_probs_por_modelo[nome].append(val_probs)
@@ -429,6 +460,7 @@ def main() -> None:
                 "n_test": len(test_df_fold3),
                 **metricas_stacking,
             })
+            predicoes_v9.extend(construir_predicoes(test_df_fold3, stacking_probs, stacking_classes, "stacking_v9"))
     else:
         logger.warning("Stacking pulado — nem todos os folds foram completados.")
 
@@ -471,6 +503,18 @@ def main() -> None:
                 cobertura[inicio: inicio + TAMANHO_LOTE_UPSERT]
             ).execute()
         logger.info("  model_v9_feature_coverage: %d linhas", len(cobertura))
+
+    # model_predictions — previsões OOF por partida (SimulacaoCarteira / backtest)
+    MODELOS_V9 = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9", "stacking_v9"]
+    logger.info("Limpando previsões v9 anteriores de model_predictions...")
+    for _mv9 in MODELOS_V9:
+        supabase_client.table("model_predictions").delete().eq("model_name", _mv9).eq("market", "1x2").execute()
+    if predicoes_v9:
+        for inicio in range(0, len(predicoes_v9), TAMANHO_LOTE_UPSERT):
+            supabase_client.table("model_predictions").insert(
+                predicoes_v9[inicio: inicio + TAMANHO_LOTE_UPSERT]
+            ).execute()
+        logger.info("  model_predictions (v9 OOF): %d linhas", len(predicoes_v9))
 
     logger.info("=== Walk-forward CV v9 concluído ===")
 
