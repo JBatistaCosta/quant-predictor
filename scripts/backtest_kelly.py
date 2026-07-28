@@ -73,10 +73,16 @@ SEED = 42
 # jogo, ver dados_historicos.FEATURES_V2..V8) reaproveitam a MESMA grade da
 # v1 -- só a lista de features muda (modelos_ml.FEATURES_POR_MODELO), não
 # faz sentido duplicar a grade de tuning.
+# Profundidade deslocada pra baixo (era [4,6,8]/[3,4,6]/[15,31,63]) --
+# achado real na curva de aprendizado (Treino/Validação/Teste): árvores
+# rasas generalizam melhor em dados esportivos (ruído inerente alto),
+# mesmo espírito de FRACAO_SUBSAMPLE/FRACAO_COLSAMPLE em modelos_ml.py.
+# Continua 3x3 combinações -- não expande o grid search (rodaria 9x mais
+# caro se subsample/colsample entrassem aqui em vez de fixos).
 GRADE_HIPERPARAMETROS = {
-    "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([4, 6, 8], [0.03, 0.05, 0.1])],
-    "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.08, 0.15])],
-    "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([15, 31, 63], [0.05, 0.1, 0.2])],
+    "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.05, 0.1])],
+    "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([2, 3, 4], [0.03, 0.08, 0.15])],
+    "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([7, 15, 31], [0.05, 0.1, 0.2])],
 }
 # Derivado de `modelos_ml.TREINADORES` em vez de uma lista fixa de sufixos
 # -- a lista fixa (_v2.._v5/_v3b) já ficou pra trás uma vez (catboost_v6/v7

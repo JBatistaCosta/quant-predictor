@@ -79,6 +79,20 @@ ITERACOES_MAXIMAS_EARLY_STOPPING = 2000
 RODADAS_EARLY_STOPPING = 50
 ITERACOES_PRODUCAO = {"catboost": 200, "xgboost": 200, "lightgbm": 80}
 
+# Regularização/subsampling FIXOS (não entram na grade de tuning de
+# `backtest_kelly.GRADE_HIPERPARAMETROS` -- variar isso junto com
+# depth/learning_rate multiplicaria o tamanho da grade sem necessidade)
+# -- pedido do usuário depois de ver a curva de aprendizado (Treino/
+# Validação/Teste) mostrando que o modelo "decora" os dados antes da
+# parada antecipada conseguir agir: cada árvore treina só numa amostra
+# aleatória de 80% das linhas e 80% das colunas (equivalente a
+# `subsample`/`colsample_bytree` do XGBoost), reduzindo a chance de uma
+# árvore virar regra específica de poucas partidas. Junto com o aumento
+# de `min_child_samples`/`min_child_weight`/`l2_leaf_reg` abaixo (exige
+# mais partidas sustentando uma folha antes de criar a regra).
+FRACAO_SUBSAMPLE = 0.8
+FRACAO_COLSAMPLE = 0.8
+
 # Hiperparâmetros default -- usados pelo treino diário em produção, sem
 # tuning (`backtest_kelly.py` faz grid search em cima dessas mesmas funções
 # de treino pra escolher profundidade/learning_rate melhores no Validation
@@ -263,6 +277,16 @@ def treinar_catboost(
         cat_features=CAT_FEATURES,
         random_seed=42,
         verbose=False,
+        # Regularização/subsampling fixos (ver FRACAO_SUBSAMPLE/FRACAO_
+        # COLSAMPLE) -- `subsample` só funciona com bootstrap Bernoulli/MVS
+        # (o default "Bayesian" do CatBoost não aceita esse parâmetro);
+        # `rsm` é o equivalente do CatBoost pra colsample_bytree (Random
+        # Subspace Method, fração de FEATURES por árvore); `l2_leaf_reg`
+        # sobe do default (3) pra 5, mais conservador.
+        bootstrap_type="Bernoulli",
+        subsample=FRACAO_SUBSAMPLE,
+        rsm=FRACAO_COLSAMPLE,
+        l2_leaf_reg=5,
         **params,
     )
     treino = preparar_liga_para_catboost(train_df)
@@ -344,6 +368,13 @@ def treinar_xgboost(
         eval_metric="mlogloss",
         random_state=42,
         early_stopping_rounds=RODADAS_EARLY_STOPPING if usa_early_stopping else None,
+        # Regularização/subsampling fixos (ver FRACAO_SUBSAMPLE/FRACAO_
+        # COLSAMPLE no topo do arquivo): cada árvore só vê 80% das linhas
+        # e 80% das colunas, e `min_child_weight=3` exige mais partidas
+        # sustentando uma folha antes de criar a regra (default é 1).
+        subsample=FRACAO_SUBSAMPLE,
+        colsample_bytree=FRACAO_COLSAMPLE,
+        min_child_weight=3,
         **params,
     )
     eval_set = None
@@ -407,7 +438,16 @@ def treinar_lightgbm(
         objective="multiclass",
         num_class=treino[coluna_alvo].nunique(),
         n_estimators=ITERACOES_MAXIMAS_EARLY_STOPPING if usa_early_stopping else ITERACOES_PRODUCAO["lightgbm"],
-        min_child_samples=10,
+        # `min_child_samples` subiu de 10 pra 20 (default do LightGBM,
+        # mais conservador -- exige mais partidas sustentando uma folha).
+        # `subsample`/`colsample_bytree` (ver FRACAO_SUBSAMPLE/FRACAO_
+        # COLSAMPLE no topo do arquivo) -- `subsample_freq=1` é
+        # obrigatório pro bagging (subsample) realmente ativar no
+        # LightGBM, senão o parâmetro é ignorado silenciosamente.
+        min_child_samples=20,
+        subsample=FRACAO_SUBSAMPLE,
+        subsample_freq=1,
+        colsample_bytree=FRACAO_COLSAMPLE,
         random_state=42,
         verbosity=-1,
         **params,
