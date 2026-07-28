@@ -12,17 +12,18 @@ janela diferentes, compartilhadas por `rodar_predicoes.py` e
     dar mais peso a jogo recente e não deixar ruído de anos distantes pesar
     igual. Ver `montar_janela_dixon_coles`/`estimar_forcas_dixon_coles`.
   - CatBoost/XGBoost/LightGBM: janela mais LONGA (5-8 temporadas), mas
-    "Feature Stacked" entre ligas de elite equivalentes -- em vez de buscar
-    15 anos de uma liga só, empilha os últimos N anos de cada uma das 5
-    ligas europeias de elite, ganhando linhas sem trazer dinâmica tática
-    datada demais. Ver `montar_dataset_ml_empilhado`.
+    "Feature Stacked" entre ligas equivalentes -- em vez de buscar 15 anos
+    de uma liga só, empilha os últimos N anos de cada uma das 6 ligas do
+    Model Benchmarking (5 europeias de elite + Brasileirão), ganhando
+    linhas sem trazer dinâmica tática datada demais. Ver
+    `montar_dataset_ml_empilhado`.
   - `split_cronologico`: 60% treino / 20% validação / 20% teste (out-of-
     -sample), sempre por ORDEM DE DATA -- nunca aleatório, senão vazaria
     informação do futuro pro treino.
 
 Todas as consultas ao Supabase paginam de verdade (`.range()`): sem isso o
 PostgREST corta silenciosamente em 1000 linhas, e é fácil passar disso aqui
-(7 temporadas x 5 ligas x ~380 jogos = mais de 10 mil linhas).
+(7 temporadas x 6 ligas x ~380 jogos = mais de 15 mil linhas).
 """
 
 from __future__ import annotations
@@ -88,8 +89,16 @@ TAMANHO_LOTE_IDS = 500
 XI_DECAIMENTO = 0.0018
 
 # Nomes exatamente como estão em `leagues.name` (confirmado por consulta
-# direta ao banco, não adivinhado).
-LIGAS_ELITE_EUROPEIAS = ["Premier League", "La Liga", "Serie A (Itália)", "Bundesliga", "Ligue 1"]
+# direta ao banco, não adivinhado). Brasileirão incluído por pedido
+# explícito do usuário -- antes ficava de fora (só as 5 europeias) porque
+# faltava profundidade de histórico (backfill de temporadas antigas do
+# FotMob resolveu isso, ver .github/workflows/temporadas_fotmob_backfill.yml)
+# e por não ter squad-rating/elo tão completo quanto a Europa; cobertura
+# real de elo pré-jogo pro Brasileirão é ~46% (contra ~100% na Europa) e xG
+# é ~2% (contra ~40% na Europa) -- ambas NaN-tolerantes pros modelos de
+# árvore (mesmo espírito do xG parcial já aceito nas ligas europeias), só
+# fica mais fraco especificamente nessas duas features pro Brasileirão.
+LIGAS_MODEL_BENCHMARKING = ["Premier League", "La Liga", "Serie A (Itália)", "Bundesliga", "Ligue 1", "Brasileirão Série A"]
 
 # Últimos N jogos usados na média móvel pré-jogo de gols marcados/sofridos
 # dos modelos de árvore.
@@ -1955,8 +1964,9 @@ def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
 
 def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
-    temporadas de CADA uma das 5 ligas de elite europeias (em vez de usar
-    15 anos de uma liga só), ganhando linhas sem trazer dinâmica tática
+    temporadas de CADA uma das 6 ligas do Model Benchmarking (5 de elite
+    europeias + Brasileirão, ver `LIGAS_MODEL_BENCHMARKING`) em vez de usar
+    15 anos de uma liga só, ganhando linhas sem trazer dinâmica tática
     datada demais de uma década atrás. Cada liga contribui só com as
     temporadas mais recentes DELA MESMA (acesso/rebaixamento faz o rótulo
     de temporada não se alinhar perfeitamente entre ligas, então o corte é
@@ -1967,14 +1977,16 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     gols e de xG dos últimos `JANELA_ROLLING_ML` jogos -- SEPARADA por
     mando (`_home`/`_away`, ver `_forma_por_mando`) -- `liga` (categórica),
     e `squad_rating_home`/`_away` (v2 -- força do elenco que jogou,
-    `_carregar_squad_rating_pre_jogo`). Fica NaN-tolerante igual elo/xG:
-    cobre >99,9% das partidas das 5 ligas de elite (checado direto no
-    banco), mas não é bloqueante -- os modelos de árvore lidam com NaN
-    numérico nativamente, e só os modelos v2 de fato usam essa coluna.
+    `_carregar_squad_rating_pre_jogo`). Fica NaN-tolerante igual elo/xG --
+    cobertura é bem desigual entre ligas (elo pré-jogo: ~100% na Europa,
+    ~46% no Brasileirão; xG: ~40% na Europa, ~2% no Brasileirão, checado
+    direto no banco) -- mas não é bloqueante, os modelos de árvore lidam
+    com NaN numérico nativamente, e só os modelos v2 de fato usam a coluna
+    de squad rating.
     """
-    ligas = obter_ids_ligas(supabase, LIGAS_ELITE_EUROPEIAS)
+    ligas = obter_ids_ligas(supabase, LIGAS_MODEL_BENCHMARKING)
     if not ligas:
-        logger.error("Nenhuma das ligas de elite foi encontrada em `leagues`.")
+        logger.error("Nenhuma das ligas do Model Benchmarking foi encontrada em `leagues`.")
         return pd.DataFrame()
 
     league_ids = list(ligas.values())

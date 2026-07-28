@@ -6,7 +6,8 @@ mercado (rodada de otimização).
 Não roda no cron diário (`predict.yml`) -- é uma rotina de VALIDAÇÃO,
 disparada manualmente (`python scripts/backtest_kelly.py`), no mesmo
 espírito de `api/backtest-betting.js` (painel de modelos em produção), só
-que em cima do dataset "Feature Stacked" das 5 ligas de elite.
+que em cima do dataset "Feature Stacked" das 6 ligas do Model
+Benchmarking (5 de elite europeias + Brasileirão).
 
 Passo a passo:
   1. Monta o dataset "Feature Stacked" (`dados_historicos.montar_dataset_ml_empilhado`)
