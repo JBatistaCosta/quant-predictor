@@ -2395,21 +2395,12 @@ async function tarefaInfoClubes(supabase, apiKey, limite) {
 // variantes do pipeline "Model Benchmarking" já são cobertas pelo seletor
 // de correção da simulação, não precisam aparecer soltas na lista).
 //
-// Exibição restrita a partir da v3 pra catboost/xgboost/lightgbm (pedido
-// do usuário: "deixe somente a partir da terceira versão de cada
-// modelo") -- v1/v2 continuam sendo treinados/previstos no cron diário,
-// só não aparecem mais nesta lista. Lista EXPLÍCITA (não regex "_v1$"/
-// "_v2$") de propósito -- um regex genérico pegaria "dixon_coles_
-// walkforward_v1"/"stats_glm_v1" (pipeline antigo, não faz parte da
-// escada v1→v5/v3B) e "dixon_coles_v1" (mantido como baseline, decisão
-// explícita do usuário -- não tem v2/v3/v4/v5, "a partir da v3" não se
-// aplica a ele).
-const MODELOS_ANTIGOS_ESCONDIDOS = new Set([
-  'catboost_v1', 'xgboost_v1', 'lightgbm_v1',
-  'catboost_v2', 'xgboost_v2', 'lightgbm_v2',
-]);
+// Antes a exibição era restrita a partir da v3 pra catboost/xgboost/
+// lightgbm (pedido anterior do usuário) -- revertido por pedido novo
+// ("incluir todos os modelos"): v1/v2 agora aparecem também, junto com
+// v3-v8 e dixon_coles_v1.
 function ehModeloBruto(nome) {
-  return !/_calibrado_(platt|isotonic)$/.test(nome) && !MODELOS_ANTIGOS_ESCONDIDOS.has(nome);
+  return !/_calibrado_(platt|isotonic)$/.test(nome);
 }
 
 // "Teste sempre em 2025" (CONTEXTO_PROJETO.md) -- convenção já documentada
