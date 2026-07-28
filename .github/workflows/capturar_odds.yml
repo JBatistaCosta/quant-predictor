@@ -1,0 +1,76 @@
+name: Capturar Odds Snapshot
+
+on:
+  # Abertura: toda segunda-feira às 08:00 UTC
+  # → captura odds de abertura para partidas da semana seguinte (D+7 a D+21)
+  # → INSERT sem update (primeira captura vence)
+  schedule:
+    - cron: '0 8 * * 1'      # abertura     — segunda, 08h UTC
+    - cron: '0 10 * * *'     # pre_fechamento — todos os dias, 10h UTC
+    - cron: '0 13 * * *'     # fechamento   — todos os dias, 13h UTC
+    - cron: '0 16 * * *'     # fechamento   — todos os dias, 16h UTC
+    - cron: '0 19 * * *'     # fechamento   — todos os dias, 19h UTC
+
+  workflow_dispatch:
+    inputs:
+      snapshot_type:
+        description: 'Tipo de snapshot a capturar'
+        required: true
+        default: 'pre_fechamento'
+        type: choice
+        options:
+          - abertura
+          - pre_fechamento
+          - fechamento
+
+# Consumo estimado de cota The-Odds-API (500 req/mês free tier):
+#   7 ligas × 1 chamada = 7 req/rodada
+#   abertura:       4 rodadas/mês × 7 =  28 req
+#   pre_fechamento: 30 rodadas/mês × 7 = 210 req
+#   fechamento:     60 rodadas/mês × 7 = 420 req (3x/dia × 30 dias)
+#   TOTAL: ~658 req/mês → EXCEDE o free tier (500).
+#   Monitorar X-Requests-Remaining nos logs.
+#   Para manter dentro do limite: remover 2 das 3 crons de fechamento
+#   ou reduzir para 4-5 ligas (editar LIGAS_ODDS_API no script).
+
+jobs:
+  capturar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determinar tipo de snapshot
+        id: tipo
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "snapshot_type=${{ github.event.inputs.snapshot_type }}" >> "$GITHUB_OUTPUT"
+          else
+            HOUR=$(date -u +%-H)   # hora UTC sem zero à esquerda
+            DOW=$(date -u +%u)     # dia da semana (1=segunda)
+            if [ "$DOW" = "1" ] && [ "$HOUR" -le "9" ]; then
+              echo "snapshot_type=abertura" >> "$GITHUB_OUTPUT"
+            elif [ "$HOUR" -ge "9" ] && [ "$HOUR" -le "12" ]; then
+              echo "snapshot_type=pre_fechamento" >> "$GITHUB_OUTPUT"
+            else
+              echo "snapshot_type=fechamento" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install supabase requests
+
+      - name: Capturar odds (${{ steps.tipo.outputs.snapshot_type }})
+        working-directory: scripts
+        env:
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          ODDS_API_KEY:  ${{ secrets.ODDS_API_KEY }}
+        run: python capturar_odds_snapshot.py --snapshot-type "${{ steps.tipo.outputs.snapshot_type }}"
