@@ -166,7 +166,7 @@ export default function ModeloV9() {
   }, [cobertura, filtroGrupo, buscaFeature, ordenacaoCob]);
 
   const importanciaAgrupada = useMemo(() => {
-    const por_grupo: Record<string, number> = {};
+    const por_grupo = {};
     importancia.forEach(i => {
       por_grupo[i.feature_group] = (por_grupo[i.feature_group] || 0) + i.importance_mean;
     });
