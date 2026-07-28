@@ -366,6 +366,153 @@ def obter_forma_recente_por_mando(
     return forma
 
 
+def _stats_marcado_sofrido_lote(
+    supabase: Client, tabela: str, colunas: list[str], match_ids: list[int], team_id: int
+) -> dict[str, dict[str, float]]:
+    """Generaliza `_xg_marcado_sofrido` pra QUALQUER coluna de uma tabela no
+    formato 1-linha-por-time-por-partida (`match_stats`/`match_stats_fotmob`)
+    -- um punhado de `match_ids` (tipicamente os últimos 5 jogos de casa OU
+    de fora de um time só), devolve marcado (linha do próprio `team_id`) e
+    sofrido (linha do adversário) por coluna, numa passada só (evita
+    refazer a mesma query pra cada uma das 7/24 colunas de v7/v8)."""
+    if not match_ids:
+        return {col: {"marcado": np.nan, "sofrido": np.nan} for col in colunas}
+    linhas = supabase.table(tabela).select(f"match_id, team_id, {', '.join(colunas)}").in_("match_id", match_ids).execute().data or []
+    resultado: dict[str, dict[str, float]] = {}
+    for col in colunas:
+        marcado = [l[col] for l in linhas if l["team_id"] == team_id and l.get(col) is not None]
+        sofrido = [l[col] for l in linhas if l["team_id"] != team_id and l.get(col) is not None]
+        resultado[col] = {
+            "marcado": float(np.mean(marcado)) if marcado else np.nan,
+            "sofrido": float(np.mean(sofrido)) if sofrido else np.nan,
+        }
+    return resultado
+
+
+def obter_forma_recente_extra_por_mando(
+    supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
+) -> dict[int, dict[str, float]]:
+    """v7 AO VIVO: forma pré-jogo das estatísticas do FBref (`match_stats`
+    -- posse/chutes/chutes no alvo/escanteios/faltas/cartões amarelos/
+    vermelhos, ver `COLUNAS_FORMA_EXTRA_POR_RAW`), mesmo espírito de
+    `obter_forma_recente_por_mando` (gols/xG) -- últimos `ultimos_n` jogos
+    EM CASA pras colunas "_home", últimos `ultimos_n` jogos FORA pras
+    "_away". Usa `_stats_marcado_sofrido_lote` (generaliza
+    `_xg_marcado_sofrido` pra qualquer coluna de `match_stats`)."""
+    forma: dict[int, dict[str, float]] = {}
+    for team_id in team_ids:
+        jogos_casa = (
+            supabase.table("matches")
+            .select("id")
+            .eq("status", "finished")
+            .eq("home_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(ultimos_n)
+            .execute()
+            .data
+            or []
+        )
+        jogos_fora = (
+            supabase.table("matches")
+            .select("id")
+            .eq("status", "finished")
+            .eq("away_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(ultimos_n)
+            .execute()
+            .data
+            or []
+        )
+        stats_casa = _stats_marcado_sofrido_lote(supabase, "match_stats", COLUNAS_STATS_EXTRA, [j["id"] for j in jogos_casa], team_id)
+        stats_fora = _stats_marcado_sofrido_lote(supabase, "match_stats", COLUNAS_STATS_EXTRA, [j["id"] for j in jogos_fora], team_id)
+
+        linha: dict[str, float] = {}
+        for col_raw, mapa in COLUNAS_FORMA_EXTRA_POR_RAW.items():
+            linha[mapa["marcado_home"]] = stats_casa[col_raw]["marcado"]
+            linha[mapa["sofrido_home"]] = stats_casa[col_raw]["sofrido"]
+            linha[mapa["marcado_away"]] = stats_fora[col_raw]["marcado"]
+            linha[mapa["sofrido_away"]] = stats_fora[col_raw]["sofrido"]
+        forma[team_id] = linha
+    return forma
+
+
+def obter_forma_recente_fotmob_por_mando(
+    supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
+) -> dict[int, dict[str, float]]:
+    """v8 AO VIVO: forma pré-jogo das ~22 colunas do FotMob (`match_stats_
+    fotmob`, ver `COLUNAS_STATS_FOTMOB`) -- mesmo padrão de
+    `obter_forma_recente_extra_por_mando` (v7/FBref), só que lendo de
+    `match_stats_fotmob` (cobertura bem mais ampla, ver docstring de
+    `_anexar_stats_fotmob_por_partida`)."""
+    forma: dict[int, dict[str, float]] = {}
+    colunas_raw = list(COLUNAS_STATS_FOTMOB.keys())
+    for team_id in team_ids:
+        jogos_casa = (
+            supabase.table("matches")
+            .select("id")
+            .eq("status", "finished")
+            .eq("home_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(ultimos_n)
+            .execute()
+            .data
+            or []
+        )
+        jogos_fora = (
+            supabase.table("matches")
+            .select("id")
+            .eq("status", "finished")
+            .eq("away_team_id", int(team_id))
+            .order("match_date", desc=True)
+            .limit(ultimos_n)
+            .execute()
+            .data
+            or []
+        )
+        stats_casa = _stats_marcado_sofrido_lote(supabase, "match_stats_fotmob", colunas_raw, [j["id"] for j in jogos_casa], team_id)
+        stats_fora = _stats_marcado_sofrido_lote(supabase, "match_stats_fotmob", colunas_raw, [j["id"] for j in jogos_fora], team_id)
+
+        linha: dict[str, float] = {}
+        for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items():
+            mapa = colunas_forma_fotmob(nome_curto)
+            linha[mapa["marcado_home"]] = stats_casa[col_raw]["marcado"]
+            linha[mapa["sofrido_home"]] = stats_casa[col_raw]["sofrido"]
+            linha[mapa["marcado_away"]] = stats_fora[col_raw]["marcado"]
+            linha[mapa["sofrido_away"]] = stats_fora[col_raw]["sofrido"]
+        forma[team_id] = linha
+    return forma
+
+
+def obter_progresso_temporada_atual(supabase: Client, ligas_temporadas: list[tuple[int, str]]) -> dict[int, float]:
+    """v6 AO VIVO: posição da fixture no calendário da temporada (0=primeira
+    rodada, 1=última) -- mesma lógica de `_progresso_temporada` (posição
+    relativa por ORDEM DE DATA dentro de cada liga+temporada, não pela
+    coluna `round`), só que aqui considera TODAS as partidas da temporada
+    (agendadas + finalizadas): a fixture que queremos prever ainda não
+    aconteceu, então não dá pra usar só `status='finished'` como no
+    histórico."""
+    progresso: dict[int, float] = {}
+    for league_id, season in ligas_temporadas:
+        partidas = (
+            supabase.table("matches")
+            .select("id, match_date")
+            .eq("league_id", league_id)
+            .eq("season", season)
+            .order("match_date")
+            .execute()
+            .data
+            or []
+        )
+        n = len(partidas)
+        if n <= 1:
+            for p in partidas:
+                progresso[p["id"]] = 0.0
+            continue
+        for posicao, p in enumerate(partidas):
+            progresso[p["id"]] = round(posicao / (n - 1), 4)
+    return progresso
+
+
 # =============================================================================
 # Janela curta + decaimento temporal -- Dixon-Coles
 # =============================================================================
@@ -1214,6 +1361,19 @@ COLUNAS_FORMA_CARTOES_VERMELHOS = {
     "sofrido_away": "media_cartoes_vermelhos_sofridos_5j_away",
 }
 
+# Coluna crua de `match_stats` (FBref) -> dict de saída COLUNAS_FORMA_X
+# correspondente -- usado pela forma AO VIVO (v7, `obter_forma_recente_
+# extra_por_mando`) pra não repetir os 7 mapeamentos na mão.
+COLUNAS_FORMA_EXTRA_POR_RAW = {
+    "possession": COLUNAS_FORMA_POSSE,
+    "shots": COLUNAS_FORMA_CHUTES,
+    "shots_on_target": COLUNAS_FORMA_CHUTES_ALVO,
+    "corners": COLUNAS_FORMA_ESCANTEIOS,
+    "fouls": COLUNAS_FORMA_FALTAS,
+    "yellow_cards": COLUNAS_FORMA_CARTOES_AMARELOS,
+    "red_cards": COLUNAS_FORMA_CARTOES_VERMELHOS,
+}
+
 # Colunas de feature dos modelos de árvore (usado também por
 # `scripts/modelos_ml.py` pra garantir treino e predição com o mesmo shape).
 FEATURES_NUMERICAS = [
@@ -1884,7 +2044,7 @@ COLUNAS_STATS_FOTMOB = {
 }
 
 
-def _colunas_forma_fotmob(nome_curto: str) -> dict[str, str]:
+def colunas_forma_fotmob(nome_curto: str) -> dict[str, str]:
     """Mesmo formato de COLUNAS_FORMA_GOLS/XG/V7 (`marcado_home`/
     `sofrido_home`/`marcado_away`/`sofrido_away` -> nome da coluna de
     saída), gerado a partir do nome curto pra evitar 22 dicts repetidos."""
@@ -1939,7 +2099,7 @@ def _anexar_stats_fotmob_por_partida(supabase: Client, partidas: pd.DataFrame) -
 
 
 FEATURES_NUMERICAS_V8 = FEATURES_NUMERICAS_V7 + [
-    col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in _colunas_forma_fotmob(nome_curto).values()
+    col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in colunas_forma_fotmob(nome_curto).values()
 ]
 FEATURES_V8 = FEATURES_NUMERICAS_V8 + CAT_FEATURES
 
@@ -2017,7 +2177,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     forma_cartoes_amarelos = _forma_por_mando(partidas, "yellow_cards_home", "yellow_cards_away", COLUNAS_FORMA_CARTOES_AMARELOS)
     forma_cartoes_vermelhos = _forma_por_mando(partidas, "red_cards_home", "red_cards_away", COLUNAS_FORMA_CARTOES_VERMELHOS)
     formas_fotmob = {
-        nome_curto: _forma_por_mando(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", _colunas_forma_fotmob(nome_curto))
+        nome_curto: _forma_por_mando(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", colunas_forma_fotmob(nome_curto))
         for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items()
     }
 
@@ -2193,7 +2353,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
             # Forma pré-jogo das estatísticas do FotMob (v8) -- mesma razão
             # das anteriores: ramo próprio a partir de v5/v7, não faz parte
             # de FEATURES_NUMERICAS_V3B.
-            *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in _colunas_forma_fotmob(nome_curto).values()],
+            *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in colunas_forma_fotmob(nome_curto).values()],
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
             # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
             # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela

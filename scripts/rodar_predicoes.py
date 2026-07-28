@@ -439,6 +439,13 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
+    # v7/v8 ao vivo: forma pré-jogo do FBref (`match_stats`) e do FotMob
+    # (`match_stats_fotmob`), mesmo espírito de `forma_recente` (gols/xG)
+    # -- sem isso, catboost_v7/v8, xgboost_v7/v8 e lightgbm_v7/v8 quebravam
+    # com KeyError na hora de prever (as colunas só existiam no dataset de
+    # TREINO, nunca no lado ao vivo).
+    forma_extra_atual = dados_historicos.obter_forma_recente_extra_por_mando(supabase, ids_conhecidos)
+    forma_fotmob_atual = dados_historicos.obter_forma_recente_fotmob_por_mando(supabase, ids_conhecidos)
     squad_rating_atual = dados_historicos.obter_squad_rating_atual(supabase, ids_conhecidos)
     ultimo_jogo_por_time = dados_historicos.obter_fadiga_atual(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
@@ -458,6 +465,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     ligas_temporadas = sorted({(int(jogo["league_id"]), jogo["season"]) for _, jogo in fixtures.iterrows() if pd.notna(jogo.get("league_id")) and pd.notna(jogo.get("season"))})
     classificacao_atual = dados_historicos.obter_classificacao_atual(supabase, ligas_temporadas)
     classificacao_padrao = {"pontos_por_jogo": 0.0, "saldo_por_jogo": 0.0, "posicao": float("nan"), "jogos_disputados": 0}
+    # v6 ao vivo: mesmas (league_id, season) já levantadas pra classificação.
+    progresso_atual = dados_historicos.obter_progresso_temporada_atual(supabase, ligas_temporadas)
 
     pares_de_times = [(jogo["home_team_id"], jogo["away_team_id"]) for _, jogo in fixtures.iterrows()]
     h2h_atual = dados_historicos.obter_h2h_atual(supabase, pares_de_times)
@@ -475,6 +484,10 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         id_fora = jogo["away_team_id"]
         forma_casa = forma_recente.get(id_casa, forma_padrao)
         forma_fora = forma_recente.get(id_fora, forma_padrao)
+        forma_extra_casa = forma_extra_atual.get(id_casa, {})
+        forma_extra_fora = forma_extra_atual.get(id_fora, {})
+        forma_fotmob_casa = forma_fotmob_atual.get(id_casa, {})
+        forma_fotmob_fora = forma_fotmob_atual.get(id_fora, {})
         cartoes_casa = cartoes_atuais.get(id_casa, cartoes_padrao)
         cartoes_fora = cartoes_atuais.get(id_fora, cartoes_padrao)
         data_jogo = pd.to_datetime(jogo["match_date"], utc=True)
@@ -489,6 +502,25 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         titular_por_time = titular_atual.get(jogo["match_id"], {})
         titular_casa = titular_por_time.get(id_casa, titular_padrao)
         titular_fora = titular_por_time.get(id_fora, titular_padrao)
+
+        # v7 (FBref) + v8 (FotMob): "_home" vem do time da CASA jogando em
+        # casa, "_away" vem do time de FORA jogando fora -- mesmo padrão de
+        # `forma_casa`/`forma_fora` acima (gols/xG), só que iterando sobre
+        # os mapas de coluna em vez de listar cada campo na mão (7+24
+        # famílias de estatística x 4 campos = 124 colunas).
+        colunas_v7v8 = {}
+        for mapa in dados_historicos.COLUNAS_FORMA_EXTRA_POR_RAW.values():
+            colunas_v7v8[mapa["marcado_home"]] = forma_extra_casa.get(mapa["marcado_home"])
+            colunas_v7v8[mapa["sofrido_home"]] = forma_extra_casa.get(mapa["sofrido_home"])
+            colunas_v7v8[mapa["marcado_away"]] = forma_extra_fora.get(mapa["marcado_away"])
+            colunas_v7v8[mapa["sofrido_away"]] = forma_extra_fora.get(mapa["sofrido_away"])
+        for nome_curto in dados_historicos.COLUNAS_STATS_FOTMOB.values():
+            mapa = dados_historicos.colunas_forma_fotmob(nome_curto)
+            colunas_v7v8[mapa["marcado_home"]] = forma_fotmob_casa.get(mapa["marcado_home"])
+            colunas_v7v8[mapa["sofrido_home"]] = forma_fotmob_casa.get(mapa["sofrido_home"])
+            colunas_v7v8[mapa["marcado_away"]] = forma_fotmob_fora.get(mapa["marcado_away"])
+            colunas_v7v8[mapa["sofrido_away"]] = forma_fotmob_fora.get(mapa["sofrido_away"])
+
         linhas.append(
             {
                 "match_id": jogo["match_id"],
@@ -530,6 +562,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "titular_rating_away": titular_fora.get("titular_rating"),
                 "titular_valor_mercado_home": titular_casa.get("titular_valor_mercado"),
                 "titular_valor_mercado_away": titular_fora.get("titular_valor_mercado"),
+                "progresso_temporada": progresso_atual.get(jogo["match_id"]),
+                **colunas_v7v8,
                 "liga": jogo["liga"],
             }
         )

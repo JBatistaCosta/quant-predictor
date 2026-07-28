@@ -305,11 +305,12 @@ def _nome_mercado_odds(mercado: str) -> str:
     return mercado
 
 
-def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
+def _melhores_odds_fechamento_snapshot(
+    supabase, match_ids: list[int], mercado: str, snapshot: str
+) -> dict[int, dict[str, float]]:
     """Melhor odd real (exclui a média sintética `media_mercado`) por
-    partida/seleção -- `snapshot='pre_closing'` porque é a cobertura mais
-    ampla de odds históricas reais neste banco (achado documentado em
-    CONTEXTO_PROJETO.md: `closing` só cobre 1 temporada)."""
+    partida/seleção, num snapshot específico -- base compartilhada de
+    `carregar_melhores_odds_fechamento` (com fallback entre snapshots)."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
     campo_por_selecao = {selecao: f"odd_{selecao}" for selecao in selecoes}
 
@@ -319,7 +320,7 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: s
             .select("match_id, bookmaker, selection, odds")
             .in_("match_id", lote)
             .eq("market", _nome_mercado_odds(mercado))
-            .eq("snapshot", "pre_closing")
+            .eq("snapshot", snapshot)
             .neq("bookmaker", "media_mercado")
             .order("match_id")
             .range(inicio, fim)
@@ -336,6 +337,29 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: s
         if linha["odds"] and linha["odds"] > atual[campo]:
             atual[campo] = linha["odds"]
     return melhor
+
+
+def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
+    """Melhor odd real (exclui a média sintética `media_mercado`) por
+    partida/seleção -- `snapshot='pre_closing'` porque é a cobertura mais
+    ampla de odds históricas reais neste banco pras 5 ligas europeias
+    (achado documentado em CONTEXTO_PROJETO.md: `closing` só cobre 1
+    temporada). ALTERAÇÃO (inclusão do Brasileirão): pro Brasileirão é o
+    INVERSO -- o import de odds (football-data.co.uk, PR #151) só trouxe
+    linhas de FECHAMENTO, `pre_closing` tem só 16 partidas em todo o banco
+    (contra 2.616 em `closing`). Sem fallback, o Brasileirão nunca teria
+    aposta simulada nenhuma no ROI/Kelly. Fallback aplicado por PARTIDA (não
+    por liga inteira): só usa `closing` pras partidas que realmente não
+    têm `pre_closing` -- não muda nada pras 5 ligas europeias, que já têm
+    `pre_closing` de sobra. Investigado Betfair Exchange como alternativa
+    de odd de abertura pro Brasileirão -- também só tem `closing` (774
+    partidas, 0 em `pre_closing`), mesma limitação da fonte."""
+    principal = _melhores_odds_fechamento_snapshot(supabase, match_ids, mercado, "pre_closing")
+    faltando = [mid for mid in match_ids if mid not in principal]
+    if faltando:
+        fallback = _melhores_odds_fechamento_snapshot(supabase, faltando, mercado, "closing")
+        principal.update(fallback)
+    return principal
 
 
 # =============================================================================
@@ -612,35 +636,53 @@ def salvar_curva_aprendizado(supabase, curvas: list[dict]) -> None:
 # Comparação com o mercado -- Pinnacle sem vig (log-loss / Brier Score)
 # =============================================================================
 def _carregar_odds_pinnacle_brutas(
-    supabase, match_ids: list[int], mercado: str = "1X2", snapshot: str = "pre_closing"
+    supabase, match_ids: list[int], mercado: str = "1X2", snapshot: str = "pre_closing", com_fallback_fechamento: bool = False
 ) -> dict[int, dict[str, float]]:
     """Odds cruas (não devigadas) da Pinnacle por partida/seleção --
     `snapshot='pre_closing'` é a odd de ABERTURA (cobertura mais ampla
-    neste banco, ver CONTEXTO_PROJETO.md); `snapshot='closing'` é a odd de
-    FECHAMENTO de verdade (cobertura mais estreita, só 1 temporada) --
-    usada pelo teste de Closing Line Value. Base compartilhada por
-    `carregar_odds_pinnacle_devigadas` (qualidade) e
-    `carregar_odds_pinnacle_abertura_bruta` (ROI vs. abertura)."""
+    neste banco pras 5 ligas europeias, ver CONTEXTO_PROJETO.md);
+    `snapshot='closing'` é a odd de FECHAMENTO de verdade (cobertura mais
+    estreita nelas, só 1 temporada) -- usada pelo teste de Closing Line
+    Value. Base compartilhada por `carregar_odds_pinnacle_devigadas`
+    (qualidade) e `carregar_odds_pinnacle_abertura_bruta` (ROI vs.
+    abertura).
+
+    `com_fallback_fechamento=True` (só usado por `carregar_odds_pinnacle_
+    devigadas`, NUNCA por `carregar_odds_pinnacle_abertura_bruta`/CLV --
+    misturar fechamento no meio de um teste que compara abertura vs.
+    fechamento anularia o próprio teste) completa com `closing` as
+    partidas sem `pre_closing` -- pro Brasileirão é o INVERSO da Europa:
+    só 16 partidas em `pre_closing` em todo o banco, contra 2.616 em
+    `closing` (import de odds do football-data.co.uk só trouxe linhas de
+    FECHAMENTO, ver CONTEXTO_PROJETO.md)."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
 
-    def factory(lote, inicio, fim):
-        return (
-            supabase.table("odds_market")
-            .select("match_id, selection, odds")
-            .in_("match_id", lote)
-            .eq("market", _nome_mercado_odds(mercado))
-            .eq("snapshot", snapshot)
-            .eq("bookmaker", "pinnacle")
-            .order("match_id")
-            .range(inicio, fim)
-        )
+    def buscar(ids: list[int], snap: str) -> dict[int, dict[str, float]]:
+        def factory(lote, inicio, fim):
+            return (
+                supabase.table("odds_market")
+                .select("match_id, selection, odds")
+                .in_("match_id", lote)
+                .eq("market", _nome_mercado_odds(mercado))
+                .eq("snapshot", snap)
+                .eq("bookmaker", "pinnacle")
+                .order("match_id")
+                .range(inicio, fim)
+            )
 
-    linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids)
-    odds_por_partida: dict[int, dict[str, float]] = {}
-    for linha in linhas:
-        if linha["selection"] not in selecoes:
-            continue
-        odds_por_partida.setdefault(linha["match_id"], {})[linha["selection"]] = linha["odds"]
+        linhas = dados_historicos._paginar_por_lotes_de_id(factory, ids)
+        odds_por_partida: dict[int, dict[str, float]] = {}
+        for linha in linhas:
+            if linha["selection"] not in selecoes:
+                continue
+            odds_por_partida.setdefault(linha["match_id"], {})[linha["selection"]] = linha["odds"]
+        return odds_por_partida
+
+    odds_por_partida = buscar(match_ids, snapshot)
+    if com_fallback_fechamento and snapshot != "closing":
+        faltando = [mid for mid in match_ids if mid not in odds_por_partida]
+        if faltando:
+            odds_por_partida.update(buscar(faltando, "closing"))
     return odds_por_partida
 
 
@@ -662,9 +704,15 @@ def carregar_odds_pinnacle_devigadas(supabase, match_ids: list[int], mercado: st
     """Probabilidade implícita da Pinnacle -- referência padrão de "linha
     eficiente" em análise quantitativa de apostas (menor margem/vig do
     mercado) -- devigada pelo método proporcional. Usa a odd de ABERTURA
-    (`pre_closing`, maior cobertura) já que é a mesma base de comparação do
-    teste de ROI vs. abertura (`carregar_odds_pinnacle_abertura_bruta`)."""
-    odds_por_partida = _carregar_odds_pinnacle_brutas(supabase, match_ids, mercado, snapshot="pre_closing")
+    (`pre_closing`, maior cobertura na Europa) como preferência, com
+    fallback pra `closing` partida a partida quando não existe abertura
+    (`com_fallback_fechamento=True` -- caso do Brasileirão, ver docstring
+    de `_carregar_odds_pinnacle_brutas`). Essa é só a referência de
+    QUALIDADE de probabilidade (log-loss/Brier vs. mercado) -- o teste de
+    ROI vs. abertura (`carregar_odds_pinnacle_abertura_bruta`) continua
+    100% abertura, sem fallback, porque ali misturar fechamento
+    invalidaria a comparação."""
+    odds_por_partida = _carregar_odds_pinnacle_brutas(supabase, match_ids, mercado, snapshot="pre_closing", com_fallback_fechamento=True)
     return _devigar_odds_por_partida(odds_por_partida, mercado)
 
 
