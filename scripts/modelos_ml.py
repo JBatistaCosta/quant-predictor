@@ -20,6 +20,11 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, CatBoostRegressor
 from lightgbm import LGBMClassifier, early_stopping
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
 from dados_historicos import (
@@ -33,6 +38,7 @@ from dados_historicos import (
     FEATURES_V6,
     FEATURES_V7,
     FEATURES_V8,
+    FEATURES_V9,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -145,6 +151,11 @@ PARAMS_DEFAULT = {
     "catboost_v8": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v8": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v8": {"num_leaves": 15, "learning_rate": 0.1},
+    # v9 — mesmas features da v8; MLP com defaults iniciais conservadores.
+    "catboost_v9": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v9": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v9": {"num_leaves": 15, "learning_rate": 0.1},
+    "mlp_v9": {"hidden_layer_sizes": (64, 32), "max_iter": 500, "learning_rate_init": 0.001},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -197,6 +208,11 @@ FEATURES_POR_MODELO = {
     "catboost_v8": FEATURES_V8,
     "xgboost_v8": FEATURES_V8,
     "lightgbm_v8": FEATURES_V8,
+    # v9 — mesmas features da v8; MLP adicionado como 4ª família.
+    "catboost_v9": FEATURES_V9,
+    "xgboost_v9": FEATURES_V9,
+    "lightgbm_v9": FEATURES_V9,
+    "mlp_v9": FEATURES_V9,
 }
 
 
@@ -514,4 +530,100 @@ TREINADORES = {
     "catboost_v8": (treinar_catboost, prever_catboost),
     "xgboost_v8": (treinar_xgboost, prever_xgboost),
     "lightgbm_v8": (treinar_lightgbm, prever_lightgbm),
+    # v9 — mesmas features da v8, 4ª família de algoritmo (MLP) adicionada;
+    # stacking sobre as 4 famílias base é treinado separadamente em
+    # `walkforward_cv_v9.py` (precisa de OOF predictions, não entra aqui).
+    "catboost_v9": (treinar_catboost, prever_catboost),
+    "xgboost_v9": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v9": (treinar_lightgbm, prever_lightgbm),
+    "mlp_v9": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
 }
+
+
+# =============================================================================
+# MLP (v9) — 4ª família de algoritmo
+# =============================================================================
+# Usa sklearn.neural_network.MLPClassifier dentro de um Pipeline (imputer +
+# scaler + MLP) pra tratar NaN nativamente e escalar features (sensível a
+# escala, ao contrário dos modelos de árvore). A coluna categórica `liga`
+# recebe one-hot igual ao XGBoost (MLP não aceita categórica diretamente).
+# `early_stopping=True` + `validation_fraction=0.12` carva 12% do próprio
+# treino como set de parada interno — sem precisar de val_df externo (isso
+# simplifica a interface mas significa que a parada não usa o MESMO Val Set
+# do early stopping das árvores — trade-off aceito pra manter a interface
+# uniforme de `(params, train_df, coluna_alvo, features, val_df, test_df)`).
+
+def treinar_mlp(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str = "resultado",
+    features: list[str] = FEATURES,
+    val_df: pd.DataFrame | None = None,
+    test_df: pd.DataFrame | None = None,
+):
+    treino_encoded = pd.get_dummies(train_df[features], columns=CAT_FEATURES)
+    colunas_treino = treino_encoded.columns.tolist()
+
+    pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="mean")),
+        ("scaler", StandardScaler()),
+        ("mlp", MLPClassifier(
+            hidden_layer_sizes=params.get("hidden_layer_sizes", (64, 32)),
+            max_iter=params.get("max_iter", 500),
+            learning_rate_init=params.get("learning_rate_init", 0.001),
+            early_stopping=True,
+            validation_fraction=0.12,
+            n_iter_no_change=20,
+            random_state=42,
+            verbose=False,
+        )),
+    ])
+    pipeline.fit(treino_encoded.values, train_df[coluna_alvo].values)
+    return pipeline, colunas_treino, None
+
+
+def prever_mlp(pipeline, colunas_treino, df: pd.DataFrame, features: list[str] = FEATURES):
+    encoded = pd.get_dummies(df[features], columns=CAT_FEATURES).reindex(columns=colunas_treino, fill_value=0)
+    mlp = pipeline.named_steps["mlp"]
+    return pipeline.predict_proba(encoded.values), mlp.classes_
+
+
+# =============================================================================
+# Stacking meta-modelo (v9) — treinado em walkforward_cv_v9.py
+# =============================================================================
+# A LogisticRegression meta-modelo NÃO entra no dict TREINADORES porque ela
+# recebe como input as probabilidades dos 4 modelos base (não as features
+# brutas), então sua interface é diferente. Exposta aqui como funções
+# independentes pra ser chamada diretamente por walkforward_cv_v9.py e por
+# rodar_predicoes.py quando (v10) o stacking entrar em produção.
+
+def treinar_stacking_v9(
+    meta_X: np.ndarray,
+    meta_y: np.ndarray,
+) -> LogisticRegression:
+    """Treina a LogisticRegression meta-modelo.
+
+    `meta_X`: shape (n, n_modelos * n_classes) — OOF predictions empilhadas.
+    `meta_y`: shape (n,) — rótulos reais (0/1/2 para home/draw/away).
+    """
+    meta_modelo = LogisticRegression(
+        max_iter=500,
+        random_state=42,
+        C=1.0,
+        multi_class="multinomial",
+        solver="lbfgs",
+    )
+    meta_modelo.fit(meta_X, meta_y)
+    return meta_modelo
+
+
+def prever_stacking_v9(
+    meta_modelo: LogisticRegression,
+    meta_X: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """(probs, classes) — mesma interface de `prever_catboost`/etc."""
+    return meta_modelo.predict_proba(meta_X), meta_modelo.classes_
+
+
+# Corrige o placeholder mlp_v9 depois de definir as funções.
+TREINADORES["mlp_v9"] = (treinar_mlp, prever_mlp)
