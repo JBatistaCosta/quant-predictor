@@ -132,7 +132,6 @@ def construir_predicoes(test_df: pd.DataFrame, probs: np.ndarray, classes: np.nd
                 "market": "1x2",
                 "selection": sel,
                 "probability": round(p, 5),
-                "fair_odds": round(1.0 / p, 4),
             })
     return linhas
 
