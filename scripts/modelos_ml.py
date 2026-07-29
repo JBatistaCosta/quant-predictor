@@ -39,6 +39,7 @@ from dados_historicos import (
     FEATURES_V7,
     FEATURES_V8,
     FEATURES_V9,
+    FEATURES_V10,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -214,6 +215,14 @@ FEATURES_POR_MODELO = {
     "xgboost_v9": FEATURES_V9,
     "lightgbm_v9": FEATURES_V9,
     "mlp_v9": FEATURES_V9,
+    # v10 — v9 + idade/altura do XI titular (na data da partida) + venue_capacity_home.
+    # Cobertura depende do backfill de birth_date/height (ingestao_perfil_jogador_local)
+    # e de stadium_capacity (ingestao_equipes_local). Features ficam NaN onde sem dado,
+    # mesma tolerância de titular_rating/valor_mercado (v3B).
+    "catboost_v10": FEATURES_V10,
+    "xgboost_v10": FEATURES_V10,
+    "lightgbm_v10": FEATURES_V10,
+    "mlp_v10": FEATURES_V10,
 }
 
 
@@ -538,6 +547,11 @@ TREINADORES = {
     "xgboost_v9": (treinar_xgboost, prever_xgboost),
     "lightgbm_v9": (treinar_lightgbm, prever_lightgbm),
     "mlp_v9": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
+    # v10 — adiciona titular_avg_age, titular_avg_height e venue_capacity_home
+    "catboost_v10": (treinar_catboost, prever_catboost),
+    "xgboost_v10": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v10": (treinar_lightgbm, prever_lightgbm),
+    "mlp_v10": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
 }
 
 
@@ -626,5 +640,6 @@ def prever_stacking_v9(
     return meta_modelo.predict_proba(meta_X), meta_modelo.classes_
 
 
-# Corrige o placeholder mlp_v9 depois de definir as funções.
+# Corrige os placeholders mlp depois de definir as funções.
 TREINADORES["mlp_v9"] = (treinar_mlp, prever_mlp)
+TREINADORES["mlp_v10"] = (treinar_mlp, prever_mlp)

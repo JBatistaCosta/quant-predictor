@@ -1932,7 +1932,8 @@ def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
     partida" pré-calculado. Soma (não média) do XI -- valor de mercado é
     aditivo por natureza (patrimônio do elenco em campo), diferente de
     rating (nota de habilidade por jogador)."""
-    vazio = pd.DataFrame(columns=["match_id", "team_id", "titular_rating_antes", "titular_valor_mercado_antes"])
+    vazio = pd.DataFrame(columns=["match_id", "team_id", "titular_rating_antes", "titular_valor_mercado_antes",
+                                    "titular_avg_age_antes", "titular_avg_height"])
     match_ids = partidas["id"].astype(int).tolist()
     if not match_ids:
         return vazio
@@ -1983,6 +1984,27 @@ def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
 
     valores = pd.DataFrame(_paginar_por_lotes_de_id(factory_valores, player_ids))
 
+    def factory_birth(lote, inicio, fim):
+        return (
+            supabase.table("players")
+            .select("id, birth_date")
+            .in_("id", lote)
+            .order("id")
+            .range(inicio, fim)
+        )
+
+    def factory_height(lote, inicio, fim):
+        return (
+            supabase.table("player_details_fotmob")
+            .select("player_id, height_cm")
+            .in_("player_id", lote)
+            .order("player_id")
+            .range(inicio, fim)
+        )
+
+    nascimentos = pd.DataFrame(_paginar_por_lotes_de_id(factory_birth, player_ids))
+    alturas = pd.DataFrame(_paginar_por_lotes_de_id(factory_height, player_ids))
+
     lineup = lineup.merge(partidas[["id", "match_date"]].rename(columns={"id": "match_id"}), on="match_id", how="left")
     lineup["match_date"] = pd.to_datetime(lineup["match_date"], utc=True)
 
@@ -1997,9 +2019,29 @@ def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
     else:
         lineup["value_eur"] = np.nan
 
+    if not nascimentos.empty and "birth_date" in nascimentos.columns:
+        nascimentos = nascimentos.rename(columns={"id": "player_id"}).dropna(subset=["birth_date"]).copy()
+        nascimentos["birth_date"] = pd.to_datetime(nascimentos["birth_date"], utc=True)
+        lineup = lineup.merge(nascimentos[["player_id", "birth_date"]], on="player_id", how="left")
+        lineup["titular_age_anos"] = (
+            (lineup["match_date"] - lineup["birth_date"]).dt.days / 365.25
+        ).where(lineup["birth_date"].notna())
+    else:
+        lineup["titular_age_anos"] = np.nan
+
+    if not alturas.empty and "height_cm" in alturas.columns:
+        lineup = lineup.merge(alturas[["player_id", "height_cm"]], on="player_id", how="left")
+    else:
+        lineup["height_cm"] = np.nan
+
     agregado = (
         lineup.groupby(["match_id", "team_id"])
-        .agg(titular_rating_antes=("rating_antes", "mean"), titular_valor_mercado_antes=("value_eur", "sum"))
+        .agg(
+            titular_rating_antes=("rating_antes", "mean"),
+            titular_valor_mercado_antes=("value_eur", "sum"),
+            titular_avg_age_antes=("titular_age_anos", "mean"),
+            titular_avg_height=("height_cm", "mean"),
+        )
         .reset_index()
     )
     return agregado
@@ -2288,6 +2330,47 @@ FEATURES_NUMERICAS_V9 = FEATURES_NUMERICAS_V8 + [
 ]
 FEATURES_V9 = FEATURES_NUMERICAS_V9 + CAT_FEATURES
 
+# v10 — tudo da v9 + features do XI titular expandidas:
+#   • titular_avg_age_home/away: idade média dos titulares NA DATA DA PARTIDA,
+#     calculada de players.birth_date (novo campo, migração 20260729120000).
+#     Cobertura depende do backfill de birth_date (ingestao_perfil_jogador_local.py)
+#     + cobertura de match_lineup_fotmob (mesma janela que v3B).
+#   • titular_avg_height_home/away: altura média dos titulares (cm), de
+#     player_details_fotmob.height_cm. Mesma cobertura que titular_valor_mercado.
+#   • venue_capacity_home: capacidade do estádio do time da casa, de
+#     teams.stadium_capacity (migração 20260729130000, ingestao_equipes_local.py).
+#     Proxy do efeito casa (lotação amplifica vantagem do torcedor).
+FEATURES_NUMERICAS_V10 = FEATURES_NUMERICAS_V9 + [
+    "titular_avg_age_home",
+    "titular_avg_age_away",
+    "titular_avg_height_home",
+    "titular_avg_height_away",
+    "venue_capacity_home",
+]
+FEATURES_V10 = FEATURES_NUMERICAS_V10 + CAT_FEATURES
+
+
+def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
+    """Capacidade do estádio por teams.id — NaN quando não preenchido.
+    Retorna Series indexada por team_id."""
+    if not team_ids:
+        return pd.Series(dtype=float)
+    ids_str = ",".join(str(i) for i in set(team_ids))
+    rows = (
+        supabase.table("teams")
+        .select("id, stadium_capacity")
+        .in_("id", list(set(team_ids)))
+        .execute()
+        .data
+    )
+    if not rows:
+        return pd.Series(dtype=float)
+    return pd.Series(
+        {r["id"]: r["stadium_capacity"] for r in rows if r.get("stadium_capacity") is not None},
+        dtype=float,
+    )
+
+
 # Agrupamento de features pro painel de análise exploratória do v9 --
 # cada feature de FEATURES_V9 pertence a exatamente um grupo (mapeado por
 # prefixo/sufixo de nome, sem hardcoded de lista completa pra não sair de
@@ -2528,7 +2611,9 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.merge(arbitro, on="id", how="left")
 
     titular = _carregar_titular_pre_jogo(supabase, partidas)
-    colunas_titular = ["titular_rating_antes", "titular_valor_mercado_antes"]
+    colunas_titular_base = ["titular_rating_antes", "titular_valor_mercado_antes"]
+    colunas_titular_v10 = ["titular_avg_age_antes", "titular_avg_height"]
+    colunas_titular = colunas_titular_base + [c for c in colunas_titular_v10 if c in titular.columns]
     if not titular.empty:
         titular_home = titular.rename(columns={"match_id": "id", "team_id": "home_team_id"}).rename(
             columns={c: f"{c.replace('_antes', '')}_home" for c in colunas_titular}
@@ -2537,14 +2622,23 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
             columns={c: f"{c.replace('_antes', '')}_away" for c in colunas_titular}
         )
     else:
-        titular_home = pd.DataFrame(columns=["id", "home_team_id", "titular_rating_home", "titular_valor_mercado_home"])
-        titular_away = pd.DataFrame(columns=["id", "away_team_id", "titular_rating_away", "titular_valor_mercado_away"])
+        titular_home = pd.DataFrame(columns=["id", "home_team_id", "titular_rating_home", "titular_valor_mercado_home",
+                                             "titular_avg_age_home", "titular_avg_height_home"])
+        titular_away = pd.DataFrame(columns=["id", "away_team_id", "titular_rating_away", "titular_valor_mercado_away",
+                                             "titular_avg_age_away", "titular_avg_height_away"])
+    cols_titular_home = [c for c in titular_home.columns if c not in ("match_id", "team_id")]
+    cols_titular_away = [c for c in titular_away.columns if c not in ("match_id", "team_id")]
     dataset = dataset.merge(
-        titular_home[["id", "home_team_id", "titular_rating_home", "titular_valor_mercado_home"]], on=["id", "home_team_id"], how="left"
+        titular_home[["id", "home_team_id", *[c for c in cols_titular_home if c not in ("id", "home_team_id")]]],
+        on=["id", "home_team_id"], how="left"
     )
     dataset = dataset.merge(
-        titular_away[["id", "away_team_id", "titular_rating_away", "titular_valor_mercado_away"]], on=["id", "away_team_id"], how="left"
+        titular_away[["id", "away_team_id", *[c for c in cols_titular_away if c not in ("id", "away_team_id")]]],
+        on=["id", "away_team_id"], how="left"
     )
+
+    venue_capacity = _carregar_venue_capacity(supabase, dataset["home_team_id"].dropna().astype(int).tolist())
+    dataset["venue_capacity_home"] = dataset["home_team_id"].map(venue_capacity)
 
     # Alvo binário pro mercado Over/Under 9.5 escanteios totais -- resultado
     # real da partida (não uma feature pré-jogo), NaN quando o dado de
@@ -2587,6 +2681,12 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
             # Forma pré-jogo de xGOT e features de situação de chute (v9).
             *COLUNAS_FORMA_XGOT.values(),
             *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
+            # Features do XI titular expandidas (v10): idade, altura e venue.
+            # Ficam NaN quando sem cobertura de lineup, mesmo comportamento
+            # tolerante de titular_rating/valor_mercado (v3B).
+            "titular_avg_age_home", "titular_avg_age_away",
+            "titular_avg_height_home", "titular_avg_height_away",
+            "venue_capacity_home",
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
             # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
             # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
