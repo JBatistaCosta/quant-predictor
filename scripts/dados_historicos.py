@@ -1286,7 +1286,13 @@ COLUNAS_SITUACAO_CHUTES = [
     "pct_gols_2tempo_fm",      # % dos gols marcados no 2º tempo
 ]
 COLUNAS_FORMA_SITUACAO_CHUTES = {
-    col: colunas_forma_fotmob(col) for col in COLUNAS_SITUACAO_CHUTES
+    col: {
+        "marcado_home": f"media_{col}_5j_home",
+        "sofrido_home": f"media_{col}_sofrido_5j_home",
+        "marcado_away": f"media_{col}_5j_away",
+        "sofrido_away": f"media_{col}_sofrido_5j_away",
+    }
+    for col in COLUNAS_SITUACAO_CHUTES
 }
 
 
