@@ -46,13 +46,7 @@ jobs:
         with:
           repository: jbatistacosta/repository-fotmob
           path: _repository-fotmob
-          # SEM `token:` de propósito -- passar "" quebra a validação de
-          # input do actions/checkout ("Input required and not supplied:
-          # token", confirmado num run real que falhou por causa disso).
-          # O GITHUB_TOKEN padrão (usado quando `token` não é passado)
-          # consegue ler qualquer repositório PÚBLICO normalmente, mesmo
-          # fora do repo atual -- só é limitado pra escrita/repos privados
-          # de terceiros, não é o caso aqui (repository-fotmob é público).
+          token: ${{ secrets.REPO_FOTMOB_PAT }}
 
       - name: Configurar Python 3.10
         uses: actions/setup-python@v5

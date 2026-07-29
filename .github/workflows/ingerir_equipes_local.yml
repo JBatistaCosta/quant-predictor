@@ -29,6 +29,7 @@ jobs:
         with:
           repository: jbatistacosta/repository-fotmob
           path: _repository-fotmob
+          token: ${{ secrets.REPO_FOTMOB_PAT }}
 
       - name: Configurar Python 3.10
         uses: actions/setup-python@v5
