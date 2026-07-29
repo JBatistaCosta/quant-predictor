@@ -1313,11 +1313,11 @@ def _anexar_situacao_chutes_por_partida(supabase: Client, partidas: pd.DataFrame
 
     linhas = _paginar_por_lotes_de_id(factory, match_ids)
     partidas = partidas.copy()
-    for col in COLUNAS_SITUACAO_CHUTES:
-        partidas[f"{col}_home"] = np.nan
-        partidas[f"{col}_away"] = np.nan
 
     if not linhas:
+        for col in COLUNAS_SITUACAO_CHUTES:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
         return partidas
 
     shots = pd.DataFrame(linhas)
