@@ -119,7 +119,7 @@ def construir_predicoes(test_df: pd.DataFrame, probs: np.ndarray, classes: np.nd
         if sel:
             col_por_sel[sel] = col_i
 
-    ids = test_df.reset_index(drop=True)["id"].tolist()
+    ids = test_df.reset_index(drop=True)["match_id"].tolist()
     linhas: list[dict] = []
     for row_i, match_id in enumerate(ids):
         for sel in ("home", "draw", "away"):
