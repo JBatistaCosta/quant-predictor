@@ -1,15 +1,10 @@
 // src/pages/ModeloV9.jsx
-// Painel do Modelo v9: walk-forward CV por fold, importância de features e
-// análise exploratória de cobertura. Os dados vêm das tabelas
-// model_v9_walkforward_results / model_v9_feature_importance /
-// model_v9_feature_coverage populadas por scripts/walkforward_cv_v9.py.
+// Painel do Modelo v9: walk-forward CV por fold, curvas de treinamento,
+// importância de features e análise exploratória de cobertura.
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import { BarChart3, GitBranch, Search, ChevronUp, ChevronDown, Layers, RefreshCw } from 'lucide-react';
+import { BarChart3, GitBranch, Search, ChevronUp, ChevronDown, Layers, RefreshCw, TrendingUp } from 'lucide-react';
 
-// ---------------------------------------------------------------------------
-// Paleta de modelos
-// ---------------------------------------------------------------------------
 const COR_MODELO = {
   catboost_v9: '#f97316',
   xgboost_v9: '#3b82f6',
@@ -21,14 +16,15 @@ const COR_MODELO = {
 function badgeModelo(nome) {
   const cor = COR_MODELO[nome] || '#64748b';
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold" style={{ background: cor + '22', color: cor, border: `1px solid ${cor}55` }}>
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold"
+      style={{ background: cor + '22', color: cor, border: `1px solid ${cor}55` }}>
       {nome}
     </span>
   );
 }
 
 // ---------------------------------------------------------------------------
-// SVG bar chart inline (sem deps externas)
+// Gráfico de barras por fold
 // ---------------------------------------------------------------------------
 function MiniBarChart({ dados, metrica, altura = 160 }) {
   if (!dados.length) return null;
@@ -38,37 +34,25 @@ function MiniBarChart({ dados, metrica, altura = 160 }) {
   const maxVal = Math.max(...valores);
   const minVal = Math.min(...valores);
   const range = maxVal - minVal || 1;
-
   const largura = 520;
   const margem = { top: 10, right: 10, bottom: 30, left: 46 };
   const innerW = largura - margem.left - margem.right;
   const innerH = altura - margem.top - margem.bottom;
-
   const foldW = innerW / folds.length;
   const barW = foldW / (modelos.length + 1);
-
-  function yPos(val) {
-    return innerH - ((val - minVal) / range) * innerH;
-  }
-
-  // linhas de grade
+  function yPos(val) { return innerH - ((val - minVal) / range) * innerH; }
   const ticks = 4;
   const tickVals = Array.from({ length: ticks + 1 }, (_, i) => minVal + (range * i) / ticks);
-
   return (
     <div className="overflow-x-auto">
       <svg width={largura} height={altura} className="text-slate-300">
         <g transform={`translate(${margem.left},${margem.top})`}>
-          {/* Grade */}
           {tickVals.map((v, i) => (
             <g key={i}>
               <line x1={0} x2={innerW} y1={yPos(v)} y2={yPos(v)} stroke="#334155" strokeDasharray="3 3" />
-              <text x={-4} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="#94a3b8">
-                {v.toFixed(3)}
-              </text>
+              <text x={-4} y={yPos(v) + 4} textAnchor="end" fontSize={9} fill="#94a3b8">{v.toFixed(3)}</text>
             </g>
           ))}
-          {/* Barras */}
           {folds.map((fold, fi) => (
             <g key={fold}>
               {modelos.map((modelo, mi) => {
@@ -86,7 +70,6 @@ function MiniBarChart({ dados, metrica, altura = 160 }) {
                   </g>
                 );
               })}
-              {/* Label do fold */}
               <text x={fi * foldW + foldW / 2} y={innerH + 18} textAnchor="middle" fontSize={10} fill="#94a3b8">
                 {fold.replace('_', ' ')}
               </text>
@@ -99,7 +82,67 @@ function MiniBarChart({ dados, metrica, altura = 160 }) {
 }
 
 // ---------------------------------------------------------------------------
-// Barra horizontal de importância
+// Curva de treinamento (linha)
+// ---------------------------------------------------------------------------
+function CurvaChart({ curva, modelo, altura = 160 }) {
+  if (!curva || !curva.length) return (
+    <div className="flex items-center justify-center h-20 text-slate-600 text-xs">
+      Curva não disponível (MLP / sem early stopping)
+    </div>
+  );
+  const cor = COR_MODELO[modelo] || '#64748b';
+  const largura = 460;
+  const margem = { top: 8, right: 10, bottom: 24, left: 44 };
+  const innerW = largura - margem.left - margem.right;
+  const innerH = altura - margem.top - margem.bottom;
+  const vals = curva.flatMap(p => [p.treino, p.validacao, p.teste].filter(v => v != null));
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const range = maxV - minV || 1;
+  const maxIt = curva[curva.length - 1].iteracao || curva.length - 1;
+  function x(it) { return (it / maxIt) * innerW; }
+  function y(v) { return innerH - ((v - minV) / range) * innerH; }
+  function pontos(campo) {
+    return curva
+      .filter(p => p[campo] != null)
+      .map(p => `${x(p.iteracao)},${y(p[campo])}`)
+      .join(' ');
+  }
+  const ticks = 3;
+  const tickVals = Array.from({ length: ticks + 1 }, (_, i) => minV + (range * i) / ticks);
+  return (
+    <div className="overflow-x-auto">
+      <svg width={largura} height={altura}>
+        <g transform={`translate(${margem.left},${margem.top})`}>
+          {tickVals.map((v, i) => (
+            <g key={i}>
+              <line x1={0} x2={innerW} y1={y(v)} y2={y(v)} stroke="#334155" strokeDasharray="3 3" />
+              <text x={-4} y={y(v) + 4} textAnchor="end" fontSize={8} fill="#94a3b8">{v.toFixed(3)}</text>
+            </g>
+          ))}
+          <polyline points={pontos('treino')} fill="none" stroke={cor} strokeWidth={1.5} opacity={0.5} />
+          {curva.some(p => p.validacao != null) && (
+            <polyline points={pontos('validacao')} fill="none" stroke={cor} strokeWidth={2} />
+          )}
+          {curva.some(p => p.teste != null) && (
+            <polyline points={pontos('teste')} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 2" />
+          )}
+          <text x={innerW / 2} y={innerH + 18} textAnchor="middle" fontSize={9} fill="#475569">
+            iteração (early-stop em {maxIt})
+          </text>
+        </g>
+      </svg>
+      <div className="flex gap-3 mt-1 ml-11 text-[10px] text-slate-500">
+        <span style={{ color: cor }}>── treino</span>
+        {curva.some(p => p.validacao != null) && <span style={{ color: cor }} className="font-bold">── val</span>}
+        {curva.some(p => p.teste != null) && <span className="text-slate-400">- - teste</span>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Barra horizontal
 // ---------------------------------------------------------------------------
 function ImportanciaBar({ valor, max }) {
   const pct = max > 0 ? (valor / max) * 100 : 0;
@@ -125,8 +168,8 @@ export default function ModeloV9() {
   const [importancia, setImportancia] = useState([]);
   const [cobertura, setCobertura] = useState([]);
 
-  // estados de filtro/ordenação
   const [metricaWF, setMetricaWF] = useState('logloss_test');
+  const [ligaFold, setLigaFold] = useState('fold_3');
   const [filtroGrupo, setFiltroGrupo] = useState('Todos');
   const [buscaFeature, setBuscaFeature] = useState('');
   const [ordenacaoCob, setOrdenacaoCob] = useState({ col: 'coverage_pct', dir: 'desc' });
@@ -152,9 +195,7 @@ export default function ModeloV9() {
 
   useEffect(() => { carregar(); }, []);
 
-  // Grupos disponíveis na cobertura
   const grupos = useMemo(() => ['Todos', ...[...new Set(cobertura.map(c => c.feature_group))].sort()], [cobertura]);
-
   const coberturaFiltrada = useMemo(() => {
     let dados = cobertura;
     if (filtroGrupo !== 'Todos') dados = dados.filter(c => c.feature_group === filtroGrupo);
@@ -167,21 +208,29 @@ export default function ModeloV9() {
 
   const importanciaAgrupada = useMemo(() => {
     const por_grupo = {};
-    importancia.forEach(i => {
-      por_grupo[i.feature_group] = (por_grupo[i.feature_group] || 0) + i.importance_mean;
-    });
-    return Object.entries(por_grupo)
-      .map(([grupo, total]) => ({ grupo, total }))
-      .sort((a, b) => b.total - a.total);
+    importancia.forEach(i => { por_grupo[i.feature_group] = (por_grupo[i.feature_group] || 0) + i.importance_mean; });
+    return Object.entries(por_grupo).map(([grupo, total]) => ({ grupo, total })).sort((a, b) => b.total - a.total);
   }, [importancia]);
+
+  // Ligas disponíveis no fold selecionado (união de todos os modelos)
+  const ligasPorFold = useMemo(() => {
+    const rows = resultados.filter(r => r.fold === ligaFold && r.logloss_por_liga);
+    const ligas = new Set();
+    rows.forEach(r => Object.keys(r.logloss_por_liga || {}).forEach(l => ligas.add(l)));
+    return [...ligas].sort();
+  }, [resultados, ligaFold]);
+
+  const modelosDisponiveisFold = useMemo(() => {
+    return resultados.filter(r => r.fold === ligaFold && r.logloss_por_liga).map(r => r.modelo);
+  }, [resultados, ligaFold]);
 
   const maxImportanciaGrupo = importanciaAgrupada[0]?.total || 1;
   const maxImportanciaFeature = importancia[0]?.importance_mean || 1;
+  const semDados = !carregando && resultados.length === 0 && importancia.length === 0 && cobertura.length === 0;
 
   function sortCob(col) {
     setOrdenacaoCob(prev => ({ col, dir: prev.col === col && prev.dir === 'desc' ? 'asc' : 'desc' }));
   }
-
   function SortIcon({ col }) {
     if (ordenacaoCob.col !== col) return <ChevronUp size={12} className="text-slate-600" />;
     return ordenacaoCob.dir === 'asc'
@@ -189,7 +238,12 @@ export default function ModeloV9() {
       : <ChevronDown size={12} className="text-emerald-400" />;
   }
 
-  const semDados = !carregando && resultados.length === 0 && importancia.length === 0 && cobertura.length === 0;
+  const abas = [
+    { id: 'walkforward', label: 'Walk-forward CV', icone: GitBranch },
+    { id: 'curvas', label: 'Curvas de Treino', icone: TrendingUp },
+    { id: 'importancia', label: 'Importância de Features', icone: BarChart3 },
+    { id: 'cobertura', label: 'Análise Exploratória', icone: Search },
+  ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -209,32 +263,19 @@ export default function ModeloV9() {
       </div>
 
       {/* Abas */}
-      <div className="flex gap-1 border-b border-slate-700">
-        {[
-          { id: 'walkforward', label: 'Walk-forward CV', icone: GitBranch },
-          { id: 'importancia', label: 'Importância de Features', icone: BarChart3 },
-          { id: 'cobertura', label: 'Análise Exploratória', icone: Search },
-        ].map(({ id, label, icone: Icone }) => (
-          <button
-            key={id}
-            onClick={() => setAba(id)}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              aba === id
-                ? 'border-emerald-400 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
+      <div className="flex gap-1 border-b border-slate-700 overflow-x-auto">
+        {abas.map(({ id, label, icone: Icone }) => (
+          <button key={id} onClick={() => setAba(id)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+              aba === id ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}>
             <Icone size={15} /> {label}
           </button>
         ))}
       </div>
 
-      {carregando && (
-        <div className="text-center py-16 text-slate-500 text-sm">Carregando dados...</div>
-      )}
-      {erro && (
-        <div className="bg-red-900/20 border border-red-700 rounded-lg p-4 text-red-400 text-sm">{erro}</div>
-      )}
+      {carregando && <div className="text-center py-16 text-slate-500 text-sm">Carregando dados...</div>}
+      {erro && <div className="bg-red-900/20 border border-red-700 rounded-lg p-4 text-red-400 text-sm">{erro}</div>}
       {semDados && !erro && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-500 text-sm">
           <p className="font-semibold text-slate-300 mb-2">Nenhum dado disponível ainda.</p>
@@ -245,12 +286,11 @@ export default function ModeloV9() {
       {/* ─── Aba: Walk-forward CV ────────────────────────────────────────── */}
       {!carregando && aba === 'walkforward' && resultados.length > 0 && (
         <div className="space-y-6">
-          {/* Legenda de modelos */}
+          {/* Legenda */}
           <div className="flex flex-wrap gap-2">
             {Object.entries(COR_MODELO).map(([nome, cor]) => (
-              <span key={nome} className="text-xs px-2 py-0.5 rounded font-bold" style={{ background: cor + '22', color: cor, border: `1px solid ${cor}55` }}>
-                {nome}
-              </span>
+              <span key={nome} className="text-xs px-2 py-0.5 rounded font-bold"
+                style={{ background: cor + '22', color: cor, border: `1px solid ${cor}55` }}>{nome}</span>
             ))}
           </div>
 
@@ -259,13 +299,15 @@ export default function ModeloV9() {
             <span className="text-xs text-slate-500 font-semibold">Métrica:</span>
             {['logloss_test', 'brier_score_test', 'accuracy_test'].map(m => (
               <button key={m} onClick={() => setMetricaWF(m)}
-                className={`text-xs px-3 py-1 rounded-lg font-bold transition-colors ${metricaWF === m ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'text-slate-400 hover:text-slate-200 border border-slate-700'}`}>
+                className={`text-xs px-3 py-1 rounded-lg font-bold transition-colors ${
+                  metricaWF === m ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'text-slate-400 hover:text-slate-200 border border-slate-700'
+                }`}>
                 {m.replace('_test', '').replace('_', ' ')}
               </button>
             ))}
           </div>
 
-          {/* Gráfico */}
+          {/* Gráfico de barras */}
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <p className="text-xs text-slate-500 font-semibold mb-3 uppercase tracking-wide">
               {metricaWF.replace('_test', '').replace('_', ' ')} por fold
@@ -299,7 +341,9 @@ export default function ModeloV9() {
                       <td className="px-4 py-2.5 text-right text-slate-400 text-xs">{r.n_test?.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs text-blue-300">{r.logloss_test?.toFixed(4)}</td>
                       <td className="px-4 py-2.5 text-right font-mono text-xs text-purple-300">{r.brier_score_test?.toFixed(4)}</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-xs text-emerald-300">{r.accuracy_test != null ? (r.accuracy_test * 100).toFixed(1) + '%' : '—'}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs text-emerald-300">
+                        {r.accuracy_test != null ? (r.accuracy_test * 100).toFixed(1) + '%' : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -307,30 +351,117 @@ export default function ModeloV9() {
             </div>
           </div>
 
-          {/* Breakdown por liga do melhor modelo no fold_3 */}
-          {(() => {
-            const fold3 = resultados.filter(r => r.fold === 'fold_3' && r.logloss_por_liga);
-            if (!fold3.length) return null;
-            const melhor = fold3.reduce((a, b) => (a.logloss_test < b.logloss_test ? a : b));
-            const ligas = Object.entries(melhor.logloss_por_liga || {}).sort((a, b) => a[1].logloss - b[1].logloss);
-            if (!ligas.length) return null;
-            return (
-              <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <p className="text-xs text-slate-500 font-semibold mb-3 uppercase tracking-wide">
-                  Log-loss por liga — {melhor.modelo} (fold_3, melhor modelo)
+          {/* Breakdown por liga — todos os modelos */}
+          {ligasPorFold.length > 0 && (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">
+                  Desempenho por liga
                 </p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {ligas.map(([liga, m]) => (
-                    <div key={liga} className="bg-slate-900 rounded-lg p-3">
-                      <p className="text-xs text-slate-400 truncate">{liga}</p>
-                      <p className="text-sm font-mono font-bold text-blue-300">{m.logloss?.toFixed(4)}</p>
-                      <p className="text-[10px] text-slate-500">{m.n} partidas</p>
-                    </div>
+                <div className="flex gap-1">
+                  {['fold_1', 'fold_2', 'fold_3'].map(f => (
+                    <button key={f} onClick={() => setLigaFold(f)}
+                      className={`text-xs px-2.5 py-1 rounded font-bold transition-colors ${
+                        ligaFold === f ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'text-slate-400 border border-slate-700 hover:text-slate-200'
+                      }`}>
+                      {f.replace('_', ' ')}
+                    </button>
                   ))}
                 </div>
               </div>
-            );
-          })()}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-700 text-slate-500 uppercase tracking-wide">
+                      <th className="px-3 py-2 text-left">Liga</th>
+                      {modelosDisponiveisFold.map(m => (
+                        <th key={m} className="px-3 py-2 text-center" colSpan={2}>
+                          {badgeModelo(m)}
+                        </th>
+                      ))}
+                    </tr>
+                    <tr className="border-b border-slate-700/50 text-slate-600">
+                      <th className="px-3 py-1"></th>
+                      {modelosDisponiveisFold.map(m => (
+                        <React.Fragment key={m}>
+                          <th className="px-2 py-1 text-center font-normal">log-loss</th>
+                          <th className="px-2 py-1 text-center font-normal">acc</th>
+                        </React.Fragment>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ligasPorFold.map(liga => {
+                      const rowsModelo = modelosDisponiveisFold.map(m =>
+                        resultados.find(r => r.fold === ligaFold && r.modelo === m)?.logloss_por_liga?.[liga]
+                      );
+                      const loglossValues = rowsModelo.map(v => v?.logloss).filter(v => v != null);
+                      const melhorLogloss = loglossValues.length ? Math.min(...loglossValues) : null;
+                      return (
+                        <tr key={liga} className="border-b border-slate-700/30 hover:bg-slate-700/20">
+                          <td className="px-3 py-2 text-slate-300 font-medium">{liga}</td>
+                          {rowsModelo.map((m, i) => {
+                            const isMelhor = m?.logloss != null && m.logloss === melhorLogloss;
+                            return (
+                              <React.Fragment key={i}>
+                                <td className={`px-2 py-2 text-center font-mono ${isMelhor ? 'text-emerald-300 font-bold' : 'text-blue-300'}`}>
+                                  {m?.logloss?.toFixed(4) ?? '—'}
+                                </td>
+                                <td className="px-2 py-2 text-center text-slate-400">
+                                  {m?.accuracy != null ? (m.accuracy * 100).toFixed(1) + '%' : '—'}
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-[10px] text-slate-600">Log-loss mais baixo por linha em verde.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Aba: Curvas de Treinamento ──────────────────────────────────── */}
+      {!carregando && aba === 'curvas' && (
+        <div className="space-y-6">
+          {resultados.length === 0 ? (
+            <div className="text-center py-12 text-slate-500 text-sm">Rode o workflow para gerar as curvas.</div>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500">
+                Curvas de log-loss por iteração de boosting (early stopping). Linha sólida fina = treino; linha sólida grossa = validação; tracejada = teste.
+                MLP e stacking não têm curva iterativa.
+              </p>
+              {['fold_1', 'fold_2', 'fold_3'].map(fold => {
+                const rowsFold = resultados.filter(r => r.fold === fold && r.modelo !== 'stacking_v9');
+                if (!rowsFold.length) return null;
+                return (
+                  <div key={fold} className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wide">
+                      {fold.replace('_', ' ')} — test {rowsFold[0]?.test_ano}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {rowsFold.map(r => (
+                        <div key={r.modelo} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            {badgeModelo(r.modelo)}
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              logloss test {r.logloss_test?.toFixed(4)}
+                            </span>
+                          </div>
+                          <CurvaChart curva={r.learning_curve} modelo={r.modelo} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       )}
 
@@ -341,7 +472,6 @@ export default function ModeloV9() {
             <div className="text-center py-12 text-slate-500 text-sm">Dados de importância não disponíveis. Rode o workflow para gerar.</div>
           ) : (
             <>
-              {/* Por grupo */}
               <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p className="text-xs text-slate-500 font-semibold mb-4 uppercase tracking-wide">Importância total por grupo de feature</p>
                 <div className="space-y-2">
@@ -353,8 +483,6 @@ export default function ModeloV9() {
                   ))}
                 </div>
               </div>
-
-              {/* Top 20 features individuais */}
               <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                 <p className="text-xs text-slate-500 font-semibold mb-4 uppercase tracking-wide">Top 20 features individuais (CatBoost fold_3)</p>
                 <div className="space-y-1.5">
@@ -380,7 +508,6 @@ export default function ModeloV9() {
             <div className="text-center py-12 text-slate-500 text-sm">Dados de cobertura não disponíveis. Rode o workflow para gerar.</div>
           ) : (
             <>
-              {/* Resumo por grupo */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {importanciaAgrupada.slice(0, 8).map(({ grupo }) => {
                   const features_grupo = cobertura.filter(c => c.feature_group === grupo);
@@ -394,30 +521,19 @@ export default function ModeloV9() {
                   );
                 })}
               </div>
-
-              {/* Filtros */}
               <div className="flex flex-wrap gap-2 items-center">
                 <div className="relative">
                   <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="text"
-                    value={buscaFeature}
-                    onChange={e => setBuscaFeature(e.target.value)}
+                  <input type="text" value={buscaFeature} onChange={e => setBuscaFeature(e.target.value)}
                     placeholder="Buscar feature..."
-                    className="pl-7 pr-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-lg text-slate-200 outline-none focus:border-emerald-500/50 w-52"
-                  />
+                    className="pl-7 pr-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-lg text-slate-200 outline-none focus:border-emerald-500/50 w-52" />
                 </div>
-                <select
-                  value={filtroGrupo}
-                  onChange={e => setFiltroGrupo(e.target.value)}
-                  className="text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-slate-200 outline-none"
-                >
+                <select value={filtroGrupo} onChange={e => setFiltroGrupo(e.target.value)}
+                  className="text-xs bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-slate-200 outline-none">
                   {grupos.map(g => <option key={g}>{g}</option>)}
                 </select>
                 <span className="text-xs text-slate-500">{coberturaFiltrada.length} features</span>
               </div>
-
-              {/* Tabela */}
               <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -470,11 +586,4 @@ export default function ModeloV9() {
       )}
     </div>
   );
-
-  function SortIcon({ col }) {
-    if (ordenacaoCob.col !== col) return <ChevronUp size={12} className="text-slate-600" />;
-    return ordenacaoCob.dir === 'asc'
-      ? <ChevronUp size={12} className="text-emerald-400" />
-      : <ChevronDown size={12} className="text-emerald-400" />;
-  }
 }

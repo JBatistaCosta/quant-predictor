@@ -168,30 +168,42 @@ def calcular_metricas(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray) 
 # Treinamento e predição de um modelo base num fold
 # ---------------------------------------------------------------------------
 
+def _amostrar_curva(curva: list[dict], max_pontos: int = 100) -> list[dict]:
+    """Reduz curva de aprendizado pra no máximo max_pontos (preserva início e fim)."""
+    if not curva or len(curva) <= max_pontos:
+        return curva
+    passo = max(1, len(curva) // max_pontos)
+    amostrada = curva[::passo]
+    if curva[-1]["iteracao"] != amostrada[-1]["iteracao"]:
+        amostrada = amostrada + [curva[-1]]
+    return amostrada
+
+
 def treinar_modelo_fold(
     nome: str,
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, object, object]:
+) -> tuple:
     """Treina `nome` em train_df; retorna (val_probs, val_classes, test_probs,
-    test_classes, modelo, extra) — val_probs são as OOF predictions pro stacking."""
+    test_classes, modelo, extra, curva) — val_probs são as OOF predictions pro stacking."""
     treinar_fn, prever_fn = ml.TREINADORES[nome]
     features = ml.FEATURES_POR_MODELO[nome]
     params = ml.PARAMS_DEFAULT[nome]
 
-    modelo, extra, _ = treinar_fn(
+    modelo, extra, curva_bruta = treinar_fn(
         params, train_df,
         coluna_alvo=COLUNA_ALVO,
         features=features,
         val_df=val_df,
         test_df=test_df,
     )
+    curva = _amostrar_curva(curva_bruta or [], 100) if curva_bruta else None
 
     val_probs, val_classes = prever_fn(modelo, extra, val_df, features=features)
     test_probs, test_classes = prever_fn(modelo, extra, test_df, features=features)
 
-    return val_probs, val_classes, test_probs, test_classes, modelo, extra
+    return val_probs, val_classes, test_probs, test_classes, modelo, extra, curva
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +361,7 @@ def main() -> None:
         for nome in MODELOS_BASE:
             logger.info("  Treinando %s...", nome)
             try:
-                val_probs, val_classes, test_probs, test_classes, modelo, _ = treinar_modelo_fold(
+                val_probs, val_classes, test_probs, test_classes, modelo, _, curva = treinar_modelo_fold(
                     nome, train_df, val_df, test_df
                 )
             except Exception as exc:
@@ -375,6 +387,7 @@ def main() -> None:
                 "n_val": len(val_df),
                 "n_test": len(test_df),
                 **metricas,
+                "learning_curve": curva,
             })
 
             # Coleta predições OOF do test set pra persistir em model_predictions
