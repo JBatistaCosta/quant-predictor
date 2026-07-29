@@ -6,7 +6,8 @@ mercado (rodada de otimização).
 Não roda no cron diário (`predict.yml`) -- é uma rotina de VALIDAÇÃO,
 disparada manualmente (`python scripts/backtest_kelly.py`), no mesmo
 espírito de `api/backtest-betting.js` (painel de modelos em produção), só
-que em cima do dataset "Feature Stacked" das 5 ligas de elite.
+que em cima do dataset "Feature Stacked" das 6 ligas do Model
+Benchmarking (5 de elite europeias + Brasileirão).
 
 Passo a passo:
   1. Monta o dataset "Feature Stacked" (`dados_historicos.montar_dataset_ml_empilhado`)
@@ -67,21 +68,37 @@ SEED = 42
 # =============================================================================
 # Grid search pequeno (Val) + refit final (Train+Val) por modelo de árvore
 # =============================================================================
-# v2/v3/v4/v5/v3B (parâmetros de jogador/fadiga/disciplina/contexto de
-# campeonato/XI titular, ver dados_historicos.FEATURES_V2/FEATURES_V3/
-# FEATURES_V4/FEATURES_V5/FEATURES_V3B) reaproveitam a MESMA grade da v1
-# -- só a lista de features muda (modelos_ml.FEATURES_POR_MODELO), não faz
-# sentido duplicar a grade de tuning.
+# v2/v3/v4/v5/v3B/v6/v7/v8... (parâmetros de jogador/fadiga/disciplina/
+# contexto de campeonato/XI titular/progresso da temporada/estatísticas de
+# jogo, ver dados_historicos.FEATURES_V2..V8) reaproveitam a MESMA grade da
+# v1 -- só a lista de features muda (modelos_ml.FEATURES_POR_MODELO), não
+# faz sentido duplicar a grade de tuning.
+# Profundidade deslocada pra baixo (era [4,6,8]/[3,4,6]/[15,31,63]) --
+# achado real na curva de aprendizado (Treino/Validação/Teste): árvores
+# rasas generalizam melhor em dados esportivos (ruído inerente alto),
+# mesmo espírito de FRACAO_SUBSAMPLE/FRACAO_COLSAMPLE em modelos_ml.py.
+# Continua 3x3 combinações -- não expande o grid search (rodaria 9x mais
+# caro se subsample/colsample entrassem aqui em vez de fixos).
 GRADE_HIPERPARAMETROS = {
-    "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([4, 6, 8], [0.03, 0.05, 0.1])],
-    "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.08, 0.15])],
-    "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([15, 31, 63], [0.05, 0.1, 0.2])],
+    "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.05, 0.1])],
+    "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([2, 3, 4], [0.03, 0.08, 0.15])],
+    "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([7, 15, 31], [0.05, 0.1, 0.2])],
 }
-for _sufixo in ("_v2", "_v3", "_v4", "_v5", "_v3b"):
-    GRADE_HIPERPARAMETROS[f"catboost{_sufixo}"] = GRADE_HIPERPARAMETROS["catboost_v1"]
-    GRADE_HIPERPARAMETROS[f"xgboost{_sufixo}"] = GRADE_HIPERPARAMETROS["xgboost_v1"]
-    GRADE_HIPERPARAMETROS[f"lightgbm{_sufixo}"] = GRADE_HIPERPARAMETROS["lightgbm_v1"]
-del _sufixo
+# Derivado de `modelos_ml.TREINADORES` em vez de uma lista fixa de sufixos
+# -- a lista fixa (_v2.._v5/_v3b) já ficou pra trás uma vez (catboost_v6/v7
+# nunca ganharam grade, `tunar_treinar_e_calibrar` ia estourar KeyError pra
+# esses 2 -- só não quebrou o backtest inteiro porque o loop principal
+# envolve cada modelo num try/except). Assim, qualquer versão nova
+# registrada em TREINADORES (v9, v10...) herda a grade da v1 automaticamente,
+# sem precisar lembrar de atualizar esta lista de novo.
+for _nome_modelo in modelos_ml.TREINADORES:
+    if _nome_modelo in GRADE_HIPERPARAMETROS:
+        continue
+    for _prefixo in ("catboost", "xgboost", "lightgbm"):
+        if _nome_modelo.startswith(_prefixo):
+            GRADE_HIPERPARAMETROS[_nome_modelo] = GRADE_HIPERPARAMETROS[f"{_prefixo}_v1"]
+            break
+del _nome_modelo, _prefixo
 
 # =============================================================================
 # Mercados cobertos por esta análise -- 1X2 (3 seleções), Over/Under 2.5
@@ -294,11 +311,12 @@ def _nome_mercado_odds(mercado: str) -> str:
     return mercado
 
 
-def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
+def _melhores_odds_fechamento_snapshot(
+    supabase, match_ids: list[int], mercado: str, snapshot: str
+) -> dict[int, dict[str, float]]:
     """Melhor odd real (exclui a média sintética `media_mercado`) por
-    partida/seleção -- `snapshot='pre_closing'` porque é a cobertura mais
-    ampla de odds históricas reais neste banco (achado documentado em
-    CONTEXTO_PROJETO.md: `closing` só cobre 1 temporada)."""
+    partida/seleção, num snapshot específico -- base compartilhada de
+    `carregar_melhores_odds_fechamento` (com fallback entre snapshots)."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
     campo_por_selecao = {selecao: f"odd_{selecao}" for selecao in selecoes}
 
@@ -308,7 +326,7 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: s
             .select("match_id, bookmaker, selection, odds")
             .in_("match_id", lote)
             .eq("market", _nome_mercado_odds(mercado))
-            .eq("snapshot", "pre_closing")
+            .eq("snapshot", snapshot)
             .neq("bookmaker", "media_mercado")
             .order("match_id")
             .range(inicio, fim)
@@ -325,6 +343,29 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: s
         if linha["odds"] and linha["odds"] > atual[campo]:
             atual[campo] = linha["odds"]
     return melhor
+
+
+def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
+    """Melhor odd real (exclui a média sintética `media_mercado`) por
+    partida/seleção -- `snapshot='pre_closing'` porque é a cobertura mais
+    ampla de odds históricas reais neste banco pras 5 ligas europeias
+    (achado documentado em CONTEXTO_PROJETO.md: `closing` só cobre 1
+    temporada). ALTERAÇÃO (inclusão do Brasileirão): pro Brasileirão é o
+    INVERSO -- o import de odds (football-data.co.uk, PR #151) só trouxe
+    linhas de FECHAMENTO, `pre_closing` tem só 16 partidas em todo o banco
+    (contra 2.616 em `closing`). Sem fallback, o Brasileirão nunca teria
+    aposta simulada nenhuma no ROI/Kelly. Fallback aplicado por PARTIDA (não
+    por liga inteira): só usa `closing` pras partidas que realmente não
+    têm `pre_closing` -- não muda nada pras 5 ligas europeias, que já têm
+    `pre_closing` de sobra. Investigado Betfair Exchange como alternativa
+    de odd de abertura pro Brasileirão -- também só tem `closing` (774
+    partidas, 0 em `pre_closing`), mesma limitação da fonte."""
+    principal = _melhores_odds_fechamento_snapshot(supabase, match_ids, mercado, "pre_closing")
+    faltando = [mid for mid in match_ids if mid not in principal]
+    if faltando:
+        fallback = _melhores_odds_fechamento_snapshot(supabase, faltando, mercado, "closing")
+        principal.update(fallback)
+    return principal
 
 
 # =============================================================================
@@ -571,10 +612,12 @@ def salvar_relatorio_por_liga(supabase, relatorio_por_liga: list[dict]) -> None:
 def salvar_curva_aprendizado(supabase, curvas: list[dict]) -> None:
     """Persiste a curva de aprendizado (log-loss por iteração do boosting,
     Treino/Validação/Teste) da config vencedora de cada modelo/mercado --
-    ver `modelos_ml._montar_curva` e `tunar_treinar_e_calibrar`. Só
-    catboost_v1..v5/v3b, xgboost_v1..v5/v3b, lightgbm_v1..v5/v3b têm curva
-    (dixon_coles_v1 é Poisson puro, não boosting -- não entra aqui, mesma
-    exclusão de `modelos_ml.TREINADORES`)."""
+    ver `modelos_ml._montar_curva` e `tunar_treinar_e_calibrar`. Todo
+    catboost_*/xgboost_*/lightgbm_* em `modelos_ml.TREINADORES` tem curva
+    (dixon_coles_v1 é Poisson puro, não boosting -- não entra aqui). `teste`
+    fica sempre `None` pra lightgbm_* especificamente (ver comentário em
+    `modelos_ml.treinar_lightgbm` sobre por que o Test não entra no
+    `eval_set` de early stopping desse framework)."""
     if not curvas:
         return
     linhas = [
@@ -599,35 +642,53 @@ def salvar_curva_aprendizado(supabase, curvas: list[dict]) -> None:
 # Comparação com o mercado -- Pinnacle sem vig (log-loss / Brier Score)
 # =============================================================================
 def _carregar_odds_pinnacle_brutas(
-    supabase, match_ids: list[int], mercado: str = "1X2", snapshot: str = "pre_closing"
+    supabase, match_ids: list[int], mercado: str = "1X2", snapshot: str = "pre_closing", com_fallback_fechamento: bool = False
 ) -> dict[int, dict[str, float]]:
     """Odds cruas (não devigadas) da Pinnacle por partida/seleção --
     `snapshot='pre_closing'` é a odd de ABERTURA (cobertura mais ampla
-    neste banco, ver CONTEXTO_PROJETO.md); `snapshot='closing'` é a odd de
-    FECHAMENTO de verdade (cobertura mais estreita, só 1 temporada) --
-    usada pelo teste de Closing Line Value. Base compartilhada por
-    `carregar_odds_pinnacle_devigadas` (qualidade) e
-    `carregar_odds_pinnacle_abertura_bruta` (ROI vs. abertura)."""
+    neste banco pras 5 ligas europeias, ver CONTEXTO_PROJETO.md);
+    `snapshot='closing'` é a odd de FECHAMENTO de verdade (cobertura mais
+    estreita nelas, só 1 temporada) -- usada pelo teste de Closing Line
+    Value. Base compartilhada por `carregar_odds_pinnacle_devigadas`
+    (qualidade) e `carregar_odds_pinnacle_abertura_bruta` (ROI vs.
+    abertura).
+
+    `com_fallback_fechamento=True` (só usado por `carregar_odds_pinnacle_
+    devigadas`, NUNCA por `carregar_odds_pinnacle_abertura_bruta`/CLV --
+    misturar fechamento no meio de um teste que compara abertura vs.
+    fechamento anularia o próprio teste) completa com `closing` as
+    partidas sem `pre_closing` -- pro Brasileirão é o INVERSO da Europa:
+    só 16 partidas em `pre_closing` em todo o banco, contra 2.616 em
+    `closing` (import de odds do football-data.co.uk só trouxe linhas de
+    FECHAMENTO, ver CONTEXTO_PROJETO.md)."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
 
-    def factory(lote, inicio, fim):
-        return (
-            supabase.table("odds_market")
-            .select("match_id, selection, odds")
-            .in_("match_id", lote)
-            .eq("market", _nome_mercado_odds(mercado))
-            .eq("snapshot", snapshot)
-            .eq("bookmaker", "pinnacle")
-            .order("match_id")
-            .range(inicio, fim)
-        )
+    def buscar(ids: list[int], snap: str) -> dict[int, dict[str, float]]:
+        def factory(lote, inicio, fim):
+            return (
+                supabase.table("odds_market")
+                .select("match_id, selection, odds")
+                .in_("match_id", lote)
+                .eq("market", _nome_mercado_odds(mercado))
+                .eq("snapshot", snap)
+                .eq("bookmaker", "pinnacle")
+                .order("match_id")
+                .range(inicio, fim)
+            )
 
-    linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids)
-    odds_por_partida: dict[int, dict[str, float]] = {}
-    for linha in linhas:
-        if linha["selection"] not in selecoes:
-            continue
-        odds_por_partida.setdefault(linha["match_id"], {})[linha["selection"]] = linha["odds"]
+        linhas = dados_historicos._paginar_por_lotes_de_id(factory, ids)
+        odds_por_partida: dict[int, dict[str, float]] = {}
+        for linha in linhas:
+            if linha["selection"] not in selecoes:
+                continue
+            odds_por_partida.setdefault(linha["match_id"], {})[linha["selection"]] = linha["odds"]
+        return odds_por_partida
+
+    odds_por_partida = buscar(match_ids, snapshot)
+    if com_fallback_fechamento and snapshot != "closing":
+        faltando = [mid for mid in match_ids if mid not in odds_por_partida]
+        if faltando:
+            odds_por_partida.update(buscar(faltando, "closing"))
     return odds_por_partida
 
 
@@ -649,9 +710,15 @@ def carregar_odds_pinnacle_devigadas(supabase, match_ids: list[int], mercado: st
     """Probabilidade implícita da Pinnacle -- referência padrão de "linha
     eficiente" em análise quantitativa de apostas (menor margem/vig do
     mercado) -- devigada pelo método proporcional. Usa a odd de ABERTURA
-    (`pre_closing`, maior cobertura) já que é a mesma base de comparação do
-    teste de ROI vs. abertura (`carregar_odds_pinnacle_abertura_bruta`)."""
-    odds_por_partida = _carregar_odds_pinnacle_brutas(supabase, match_ids, mercado, snapshot="pre_closing")
+    (`pre_closing`, maior cobertura na Europa) como preferência, com
+    fallback pra `closing` partida a partida quando não existe abertura
+    (`com_fallback_fechamento=True` -- caso do Brasileirão, ver docstring
+    de `_carregar_odds_pinnacle_brutas`). Essa é só a referência de
+    QUALIDADE de probabilidade (log-loss/Brier vs. mercado) -- o teste de
+    ROI vs. abertura (`carregar_odds_pinnacle_abertura_bruta`) continua
+    100% abertura, sem fallback, porque ali misturar fechamento
+    invalidaria a comparação."""
+    odds_por_partida = _carregar_odds_pinnacle_brutas(supabase, match_ids, mercado, snapshot="pre_closing", com_fallback_fechamento=True)
     return _devigar_odds_por_partida(odds_por_partida, mercado)
 
 

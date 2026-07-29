@@ -12,8 +12,9 @@ Passo a passo (ver README do PR pra visão geral da arquitetura):
      um treinado com a janela de dado histórico apropriada pra sua família
      (ver `dados_historicos.py`: Dixon-Coles usa 2-3 temporadas +
      decaimento temporal; os modelos de árvore usam um dataset "Feature
-     Stacked" de 5-8 temporadas empilhadas das 5 ligas de elite europeias,
-     com features de gols e xG separadas por mando -- ver `dados_historicos.
+     Stacked" de 5-8 temporadas empilhadas das 6 ligas do Model
+     Benchmarking (5 europeias de elite + Brasileirão), com features de
+     gols e xG separadas por mando -- ver `dados_historicos.
      _forma_por_mando`). A v2 (`modelos_ml.FEATURES_POR_MODELO`) soma força
      do elenco (rating Elo-like por jogador, `dados_historicos.
      obter_squad_rating_atual`/`_carregar_squad_rating_pre_jogo`), a v3 soma
@@ -80,11 +81,11 @@ METODOS_CALIBRACAO = calibracao.METODOS
 
 # As 6 ligas do Model Benchmarking (5 de elite europeias + Brasileirão) --
 # mesmo escopo já usado em outras partes do pipeline (ex.: crosswalk de
-# jogador). Brasileirão não faz parte do dataset "Feature Stacked" dos
-# modelos de ML (só as 5 ligas de elite europeias, por pedido explícito do
-# Requisito 5) -- fica de fora de `dados_historicos.LIGAS_ELITE_EUROPEIAS`
-# de propósito, tratado como categoria desconhecida pelos modelos de ML (o
-# Dixon-Coles não depende desse mapeamento, usa league_id direto).
+# jogador) e, desde pedido explícito do usuário, também o mesmo escopo do
+# dataset "Feature Stacked" dos modelos de ML (`dados_historicos.
+# LIGAS_MODEL_BENCHMARKING`) -- Brasileirão tem cobertura de elo/xG
+# pré-jogo mais fraca que a Europa (NaN-tolerante, ver docstring de
+# `montar_dataset_ml_empilhado`), mas entra igual.
 LIGAS_ESCOPO = [1, 4, 7, 10, 13, 16]
 
 # Quantas partidas futuras (mais próximas) prever por rodada -- lote pequeno
@@ -177,7 +178,7 @@ def buscar_fixtures_reais(supabase: Client, limite: int = LIMITE_FIXTURES) -> pd
                 # season) pra saber em qual tabela olhar).
                 "season": c["season"],
                 # nome EXATO de `leagues.name` -- precisa bater com
-                # `dados_historicos.LIGAS_ELITE_EUROPEIAS` pra alinhar com a
+                # `dados_historicos.LIGAS_MODEL_BENCHMARKING` pra alinhar com a
                 # categoria "liga" vista no treino dos modelos de ML.
                 "liga": nome_liga_por_id.get(c["league_id"]),
             }
@@ -417,15 +418,13 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     obter_forma_recente_por_mando` -- e força do elenco atual pros modelos
     v2, `dados_historicos.obter_squad_rating_atual`, que já exclui
     lesionados/suspensos do cálculo) pros times de `fixtures`. `liga` já
-    vem de `buscar_fixtures_reais` (nome real de `leagues.name`) --
-    fixtures de ligas fora do dataset "Feature Stacked" (Brasileirão) ficam
-    com `liga=None` naturalmente (não está em
-    `dados_historicos.LIGAS_ELITE_EUROPEIAS`), tratado como categoria
-    desconhecida pelos modelos de ML. v4 (risco de suspensão por cartão,
-    `dados_historicos.obter_cartoes_atuais`) roda pras 6 ligas do
-    benchmarking (inclusive Brasileirão -- `CARTAO_LIMIAR_POR_LIGA` já tem
-    a regra da CBF), diferente de `liga`/`squad_rating`, que só fazem
-    sentido pro dataset "Feature Stacked" europeu. v5 soma classificação/
+    vem de `buscar_fixtures_reais` (nome real de `leagues.name`) e cobre
+    as 6 ligas do benchmarking (inclusive Brasileirão, que agora também
+    entra no dataset "Feature Stacked" -- ver
+    `dados_historicos.LIGAS_MODEL_BENCHMARKING`). v4 (risco de suspensão
+    por cartão, `dados_historicos.obter_cartoes_atuais`) já rodava pras 6
+    ligas do benchmarking (`CARTAO_LIMIAR_POR_LIGA` já tem a regra da
+    CBF). v5 soma classificação/
     tabela atual (`dados_historicos.obter_classificacao_atual`), confronto
     direto (`obter_h2h_atual` + `resumir_h2h`) e tendência de árbitro
     (`obter_arbitro_atual` -- best-effort, NaN honesto quando o árbitro da
@@ -440,6 +439,13 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     ids_conhecidos = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
     elo_atual = dados_historicos.obter_elo_atual(supabase, ids_conhecidos)
     forma_recente = dados_historicos.obter_forma_recente_por_mando(supabase, ids_conhecidos)
+    # v7/v8 ao vivo: forma pré-jogo do FBref (`match_stats`) e do FotMob
+    # (`match_stats_fotmob`), mesmo espírito de `forma_recente` (gols/xG)
+    # -- sem isso, catboost_v7/v8, xgboost_v7/v8 e lightgbm_v7/v8 quebravam
+    # com KeyError na hora de prever (as colunas só existiam no dataset de
+    # TREINO, nunca no lado ao vivo).
+    forma_extra_atual = dados_historicos.obter_forma_recente_extra_por_mando(supabase, ids_conhecidos)
+    forma_fotmob_atual = dados_historicos.obter_forma_recente_fotmob_por_mando(supabase, ids_conhecidos)
     squad_rating_atual = dados_historicos.obter_squad_rating_atual(supabase, ids_conhecidos)
     ultimo_jogo_por_time = dados_historicos.obter_fadiga_atual(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
@@ -459,6 +465,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     ligas_temporadas = sorted({(int(jogo["league_id"]), jogo["season"]) for _, jogo in fixtures.iterrows() if pd.notna(jogo.get("league_id")) and pd.notna(jogo.get("season"))})
     classificacao_atual = dados_historicos.obter_classificacao_atual(supabase, ligas_temporadas)
     classificacao_padrao = {"pontos_por_jogo": 0.0, "saldo_por_jogo": 0.0, "posicao": float("nan"), "jogos_disputados": 0}
+    # v6 ao vivo: mesmas (league_id, season) já levantadas pra classificação.
+    progresso_atual = dados_historicos.obter_progresso_temporada_atual(supabase, ligas_temporadas)
 
     pares_de_times = [(jogo["home_team_id"], jogo["away_team_id"]) for _, jogo in fixtures.iterrows()]
     h2h_atual = dados_historicos.obter_h2h_atual(supabase, pares_de_times)
@@ -476,6 +484,10 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         id_fora = jogo["away_team_id"]
         forma_casa = forma_recente.get(id_casa, forma_padrao)
         forma_fora = forma_recente.get(id_fora, forma_padrao)
+        forma_extra_casa = forma_extra_atual.get(id_casa, {})
+        forma_extra_fora = forma_extra_atual.get(id_fora, {})
+        forma_fotmob_casa = forma_fotmob_atual.get(id_casa, {})
+        forma_fotmob_fora = forma_fotmob_atual.get(id_fora, {})
         cartoes_casa = cartoes_atuais.get(id_casa, cartoes_padrao)
         cartoes_fora = cartoes_atuais.get(id_fora, cartoes_padrao)
         data_jogo = pd.to_datetime(jogo["match_date"], utc=True)
@@ -490,6 +502,25 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         titular_por_time = titular_atual.get(jogo["match_id"], {})
         titular_casa = titular_por_time.get(id_casa, titular_padrao)
         titular_fora = titular_por_time.get(id_fora, titular_padrao)
+
+        # v7 (FBref) + v8 (FotMob): "_home" vem do time da CASA jogando em
+        # casa, "_away" vem do time de FORA jogando fora -- mesmo padrão de
+        # `forma_casa`/`forma_fora` acima (gols/xG), só que iterando sobre
+        # os mapas de coluna em vez de listar cada campo na mão (7+24
+        # famílias de estatística x 4 campos = 124 colunas).
+        colunas_v7v8 = {}
+        for mapa in dados_historicos.COLUNAS_FORMA_EXTRA_POR_RAW.values():
+            colunas_v7v8[mapa["marcado_home"]] = forma_extra_casa.get(mapa["marcado_home"])
+            colunas_v7v8[mapa["sofrido_home"]] = forma_extra_casa.get(mapa["sofrido_home"])
+            colunas_v7v8[mapa["marcado_away"]] = forma_extra_fora.get(mapa["marcado_away"])
+            colunas_v7v8[mapa["sofrido_away"]] = forma_extra_fora.get(mapa["sofrido_away"])
+        for nome_curto in dados_historicos.COLUNAS_STATS_FOTMOB.values():
+            mapa = dados_historicos.colunas_forma_fotmob(nome_curto)
+            colunas_v7v8[mapa["marcado_home"]] = forma_fotmob_casa.get(mapa["marcado_home"])
+            colunas_v7v8[mapa["sofrido_home"]] = forma_fotmob_casa.get(mapa["sofrido_home"])
+            colunas_v7v8[mapa["marcado_away"]] = forma_fotmob_fora.get(mapa["marcado_away"])
+            colunas_v7v8[mapa["sofrido_away"]] = forma_fotmob_fora.get(mapa["sofrido_away"])
+
         linhas.append(
             {
                 "match_id": jogo["match_id"],
@@ -531,6 +562,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "titular_rating_away": titular_fora.get("titular_rating"),
                 "titular_valor_mercado_home": titular_casa.get("titular_valor_mercado"),
                 "titular_valor_mercado_away": titular_fora.get("titular_valor_mercado"),
+                "progresso_temporada": progresso_atual.get(jogo["match_id"]),
+                **colunas_v7v8,
                 "liga": jogo["liga"],
             }
         )
@@ -808,7 +841,8 @@ def main() -> None:
         logger.exception("Falha ao rodar dixon_coles_v1 -- pulando, os outros modelos continuam.")
 
     # Os 3 modelos de árvore compartilham o mesmo dataset "Feature Stacked"
-    # (Requisito 5: 5-8 temporadas empilhadas das 5 ligas de elite) e o
+    # (Requisito 5: 5-8 temporadas empilhadas das 6 ligas do Model
+    # Benchmarking, 5 de elite europeias + Brasileirão) e o
     # mesmo conjunto de features das fixtures -- montados uma única vez
     # aqui, em vez de 3x (uma por modelo), pra não repetir consulta ao
     # Supabase à toa. Sequencial em vez de paralelo de propósito: CatBoost/

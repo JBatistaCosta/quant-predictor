@@ -1,0 +1,2979 @@
+temporada,temporada_dropdown,semana,time_casa,time_fora,gols_casa,gols_fora,odd_casa,odd_empate,odd_fora,vencedor,odd_vencedora
+15/16,15/16,1,Tondela,Sporting,1,2,13.0,5.25,1.25,Sporting,1.25
+15/16,15/16,1,Belenenses SAD,Rio Ave,3,3,2.1,3.1,3.75,Empate,3.1
+15/16,15/16,1,Porto,Vitória SC,3,0,1.18,6.0,19.0,Porto,1.18
+15/16,15/16,1,União da Madeira,Maritimo,2,1,3.0,3.2,2.38,União da Madeira,3.0
+15/16,15/16,1,Vitória FC,Boavista,2,2,2.4,3.0,3.2,Empate,3.0
+15/16,15/16,1,Moreirense,Arouca,0,2,2.3,3.25,3.1,Arouca,3.1
+15/16,15/16,1,Braga,Nacional,2,1,1.73,3.5,5.0,Braga,1.73
+15/16,15/16,1,Benfica,Estoril Praia,4,0,1.29,5.0,11.0,Benfica,1.29
+15/16,15/16,2,Paços Ferreira,Académica,1,0,1.91,3.2,4.33,Paços Ferreira,1.91
+15/16,15/16,2,Rio Ave,Braga,1,0,3.0,3.2,2.38,Rio Ave,3.0
+15/16,15/16,2,Sporting,Paços Ferreira,1,1,1.33,5.0,8.5,Empate,5.0
+15/16,15/16,2,Maritimo,Porto,1,1,8.5,4.33,1.4,Empate,4.33
+15/16,15/16,2,Boavista,Tondela,1,0,1.95,3.4,4.0,Boavista,1.95
+15/16,15/16,2,Estoril Praia,Moreirense,2,0,1.7,3.5,5.25,Estoril Praia,1.7
+15/16,15/16,2,Nacional,União da Madeira,1,0,1.8,3.4,4.75,Nacional,1.8
+15/16,15/16,2,Vitória SC,Belenenses SAD,1,1,1.83,3.5,4.2,Empate,3.5
+15/16,15/16,2,Arouca,Benfica,1,0,9.0,4.5,1.36,Arouca,9.0
+15/16,15/16,3,Académica,Vitória FC,0,4,2.15,3.3,3.4,Vitória FC,3.4
+15/16,15/16,6,Boavista,Paços Ferreira,0,1,3.0,3.0,2.5,Paços Ferreira,2.5
+15/16,15/16,6,Vitória FC,Vitória SC,2,2,2.45,3.1,3.0,Empate,3.1
+15/16,15/16,6,Tondela,Estoril Praia,0,1,2.8,3.1,2.6,Estoril Praia,2.6
+15/16,15/16,6,Paços Ferreira,Rio Ave,0,3,2.0,3.2,4.0,Rio Ave,4.0
+15/16,15/16,6,Académica,Boavista,0,2,2.88,3.0,2.63,Boavista,2.63
+15/16,15/16,6,União da Madeira,Arouca,0,0,2.6,3.1,2.8,Empate,3.1
+15/16,15/16,6,Porto,Benfica,1,0,2.0,3.2,4.0,Porto,2.0
+15/16,15/16,7,Belenenses SAD,Moreirense,2,0,2.1,3.25,3.5,Belenenses SAD,2.1
+15/16,15/16,7,Braga,Maritimo,5,1,1.75,3.5,4.75,Braga,1.75
+15/16,15/16,7,Moreirense,Porto,2,2,15.0,5.5,1.22,Empate,5.5
+15/16,15/16,7,Benfica,Paços Ferreira,3,0,1.25,5.5,13.0,Benfica,1.25
+15/16,15/16,7,Boavista,Sporting,0,0,9.5,5.0,1.33,Empate,5.0
+15/16,15/16,7,Maritimo,Tondela,1,0,1.73,3.6,4.75,Maritimo,1.73
+15/16,15/16,7,Arouca,Belenenses SAD,2,2,2.4,3.0,3.2,Empate,3.0
+15/16,15/16,7,Estoril Praia,União da Madeira,2,1,1.73,3.4,5.25,Estoril Praia,1.73
+15/16,15/16,7,Vitória SC,Braga,0,1,3.5,3.0,2.25,Braga,2.25
+15/16,15/16,8,Rio Ave,Académica,1,0,1.62,3.6,6.0,Rio Ave,1.62
+15/16,15/16,8,Vitória FC,Estoril Praia,1,0,2.5,3.2,2.88,,
+15/16,15/16,8,Paços Ferreira,Nacional,3,1,2.2,3.5,3.1,Paços Ferreira,2.2
+15/16,15/16,8,Tondela,Moreirense,1,1,2.38,3.1,3.1,Empate,3.1
+15/16,15/16,8,Académica,Maritimo,1,0,4.0,3.1,2.05,Académica,4.0
+15/16,15/16,8,Rio Ave,Boavista,1,0,2.05,3.3,3.6,Rio Ave,2.05
+15/16,15/16,8,Braga,Arouca,0,0,1.53,4.0,6.0,Empate,4.0
+15/16,15/16,8,Porto,Belenenses SAD,4,0,1.14,7.0,21.0,Porto,1.14
+15/16,15/16,8,Sporting,Vitória SC,5,1,1.29,5.5,10.0,,
+15/16,15/16,9,Nacional,Boavista,0,0,1.91,3.25,4.33,Empate,3.25
+15/16,15/16,9,Maritimo,Paços Ferreira,0,2,1.91,3.4,4.0,Paços Ferreira,4.0
+15/16,15/16,9,Estoril Praia,Rio Ave,2,2,2.2,3.1,3.5,Empate,3.1
+15/16,15/16,9,Vitória SC,Académica,1,1,1.7,3.6,5.0,Empate,3.6
+15/16,15/16,9,Arouca,Tondela,1,1,1.95,3.1,4.33,Empate,3.1
+15/16,15/16,9,Moreirense,Vitória FC,0,2,2.3,3.2,3.2,Vitória FC,3.2
+15/16,15/16,9,Benfica,Sporting,0,3,2.3,3.1,3.25,Sporting,3.25
+15/16,15/16,9,Porto,Braga,0,0,1.33,4.75,10.0,Empate,4.75
+15/16,15/16,10,Belenenses SAD,União da Madeira,1,0,1.95,3.25,4.1,Belenenses SAD,1.95
+15/16,15/16,10,Tondela,Benfica,0,4,10.0,5.0,1.3,Benfica,1.3
+15/16,15/16,10,Braga,Belenenses SAD,4,0,1.53,3.8,6.5,Braga,1.53
+15/16,15/16,10,Sporting,Estoril Praia,1,0,1.2,6.0,15.0,Sporting,1.2
+15/16,15/16,10,Académica,Moreirense,1,1,2.35,3.0,3.25,Empate,3.0
+15/16,15/16,10,Rio Ave,Nacional,1,0,2.3,3.1,3.3,Rio Ave,2.3
+15/16,15/16,10,Vitória FC,Arouca,0,0,2.1,3.1,3.75,Empate,3.1
+15/16,15/16,10,Boavista,Maritimo,0,1,2.7,3.2,2.6,Maritimo,2.6
+15/16,15/16,11,Paços Ferreira,Vitória SC,0,1,2.15,3.1,3.6,Vitória SC,3.6
+15/16,15/16,11,Estoril Praia,Académica,1,1,1.75,3.4,5.0,Empate,3.4
+15/16,15/16,11,Vitória SC,Nacional,0,1,2.15,3.25,3.4,Nacional,3.4
+15/16,15/16,11,Benfica,Boavista,2,0,1.2,6.0,15.0,Benfica,1.2
+15/16,15/16,11,Maritimo,Rio Ave,3,2,2.15,3.2,3.5,Maritimo,2.15
+15/16,15/16,11,Moreirense,Paços Ferreira,2,0,2.9,3.1,2.5,Moreirense,2.9
+15/16,15/16,11,Porto,Vitória FC,2,0,1.14,7.5,19.0,Porto,1.14
+15/16,15/16,11,Arouca,Sporting,0,1,8.5,4.75,1.36,Sporting,1.36
+15/16,15/16,12,Belenenses SAD,Tondela,2,1,2.0,3.2,4.0,Belenenses SAD,2.0
+15/16,15/16,12,União da Madeira,Braga,0,1,5.0,3.75,1.67,Braga,1.67
+15/16,15/16,13,Nacional,Maritimo,3,1,2.5,3.1,2.9,Nacional,2.5
+15/16,15/16,13,Vitória FC,União da Madeira,2,2,1.95,3.2,4.2,Empate,3.2
+15/16,15/16,13,Boavista,Vitória SC,1,2,2.5,3.0,3.0,Vitória SC,3.0
+15/16,15/16,13,Tondela,Porto,0,1,19.0,6.5,1.17,Porto,1.17
+15/16,15/16,13,Académica,Arouca,1,1,2.7,2.9,2.88,Empate,2.9
+15/16,15/16,13,Rio Ave,Moreirense,0,1,1.91,3.25,4.33,Moreirense,4.33
+15/16,15/16,13,Paços Ferreira,Estoril Praia,2,0,2.0,3.2,4.0,Paços Ferreira,2.0
+15/16,15/16,14,Sporting,Belenenses SAD,1,0,1.17,7.0,15.0,Sporting,1.17
+15/16,15/16,14,Braga,Benfica,0,2,2.7,3.2,2.6,Benfica,2.6
+15/16,15/16,14,União da Madeira,Porto,0,4,11.0,5.0,1.29,Porto,1.29
+15/16,15/16,14,Benfica,Académica,3,0,1.17,6.5,19.0,Benfica,1.17
+15/16,15/16,14,Belenenses SAD,Vitória FC,0,3,2.38,3.0,3.25,Vitória FC,3.25
+15/16,15/16,14,Porto,Paços Ferreira,2,1,1.2,6.0,15.0,Porto,1.2
+15/16,15/16,14,Maritimo,Sporting,0,1,6.5,3.6,1.57,Sporting,1.57
+15/16,15/16,14,Arouca,Boavista,3,2,2.15,3.0,3.75,Arouca,2.15
+15/16,15/16,14,Estoril Praia,Nacional,1,1,2.25,3.1,3.4,Empate,3.1
+15/16,15/16,14,União da Madeira,Tondela,2,0,2.0,3.1,4.2,União da Madeira,2.0
+15/16,15/16,14,Moreirense,Braga,0,0,5.25,3.3,1.75,Empate,3.3
+15/16,15/16,15,Vitória SC,Rio Ave,3,1,2.5,3.0,3.0,Vitória SC,2.5
+15/16,15/16,15,Boavista,Estoril Praia,1,1,2.88,2.9,2.7,Empate,2.9
+15/16,15/16,15,Rio Ave,Arouca,3,1,1.91,3.2,4.33,Rio Ave,1.91
+15/16,15/16,15,Paços Ferreira,União da Madeira,6,0,1.75,3.2,5.25,Paços Ferreira,1.75
+15/16,15/16,15,Vitória SC,Maritimo,3,4,2.25,3.0,3.5,Maritimo,3.5
+15/16,15/16,15,Vitória FC,Benfica,2,4,6.5,3.8,1.53,Benfica,1.53
+15/16,15/16,15,Nacional,Porto,1,2,7.0,4.33,1.44,Porto,1.44
+15/16,15/16,15,Sporting,Moreirense,3,1,1.18,6.5,15.0,Sporting,1.18
+15/16,15/16,15,Tondela,Braga,0,1,6.0,3.6,1.62,Braga,1.62
+15/16,15/16,16,Académica,Belenenses SAD,4,3,2.5,3.0,3.0,Académica,2.5
+15/16,15/16,16,União da Madeira,Benfica,0,0,9.0,5.0,1.33,Empate,5.0
+15/16,15/16,16,Arouca,Maritimo,4,1,2.45,3.25,2.9,Arouca,2.45
+15/16,15/16,16,Estoril Praia,Vitória SC,0,1,2.25,3.2,3.25,Vitória SC,3.25
+15/16,15/16,16,Benfica,Rio Ave,3,1,1.3,4.8,11.0,Benfica,1.3
+15/16,15/16,16,Moreirense,Nacional,2,0,2.5,3.1,2.9,Moreirense,2.5
+15/16,15/16,16,Tondela,Vitória FC,1,3,2.8,3.1,2.6,Vitória FC,2.6
+15/16,15/16,16,União da Madeira,Sporting,1,0,8.5,4.33,1.4,União da Madeira,8.5
+15/16,15/16,16,Porto,Académica,3,1,1.14,7.0,21.0,Porto,1.14
+15/16,15/16,17,Belenenses SAD,Boavista,1,0,2.0,3.1,4.0,Belenenses SAD,2.0
+15/16,15/16,17,Braga,Paços Ferreira,1,1,1.57,3.8,6.0,Empate,3.8
+15/16,15/16,19,União da Madeira,Boavista,1,0,2.5,3.0,3.1,União da Madeira,2.5
+15/16,15/16,19,Arouca,Estoril Praia,1,0,2.3,3.0,3.4,Arouca,2.3
+15/16,15/16,19,Tondela,Paços Ferreira,0,2,3.4,3.1,2.25,Paços Ferreira,2.25
+15/16,15/16,19,Moreirense,Vitória SC,3,4,2.7,2.9,2.88,Vitória SC,2.88
+15/16,15/16,19,Belenenses SAD,Nacional,2,2,2.6,3.0,2.88,Empate,3.0
+15/16,15/16,19,Braga,Académica,3,0,1.36,4.5,9.5,Braga,1.36
+15/16,15/16,19,Benfica,Maritimo,6,0,1.33,5.0,8.5,Benfica,1.33
+15/16,15/16,19,Porto,Rio Ave,1,1,1.17,6.5,17.0,Empate,6.5
+15/16,15/16,19,Vitória FC,Sporting,0,6,9.0,4.33,1.4,Sporting,1.4
+15/16,15/16,19,Vitória SC,Arouca,2,2,1.83,3.4,4.5,Empate,3.4
+15/16,15/16,19,Académica,Tondela,2,1,2.15,3.1,3.6,Académica,2.15
+15/16,15/16,19,Estoril Praia,Belenenses SAD,2,0,2.15,3.0,3.75,Estoril Praia,2.15
+15/16,15/16,19,Maritimo,Moreirense,5,1,1.83,3.0,5.25,Maritimo,1.83
+15/16,15/16,19,Rio Ave,União da Madeira,1,0,1.6,3.6,6.0,Rio Ave,1.6
+15/16,15/16,19,Sporting,Braga,3,2,1.55,3.75,7.0,Sporting,1.55
+15/16,15/16,19,Boavista,Porto,0,5,15.0,5.0,1.25,Porto,1.25
+15/16,15/16,19,Nacional,Benfica,1,4,4.75,3.5,1.75,Benfica,1.75
+15/16,15/16,20,Paços Ferreira,Vitória FC,2,1,1.85,3.5,4.2,Paços Ferreira,1.85
+15/16,15/16,20,Sporting,Tondela,2,2,1.08,10.0,23.0,Empate,10.0
+15/16,15/16,20,Académica,Paços Ferreira,1,1,2.9,3.2,2.45,Empate,3.2
+15/16,15/16,20,Maritimo,União da Madeira,0,1,1.62,3.8,5.5,União da Madeira,5.5
+15/16,15/16,20,Estoril Praia,Benfica,1,2,8.0,4.0,1.45,Benfica,1.45
+15/16,15/16,20,Arouca,Moreirense,1,2,2.25,3.2,3.25,Moreirense,3.25
+15/16,15/16,20,Rio Ave,Belenenses SAD,1,2,1.91,3.4,4.0,Belenenses SAD,4.0
+15/16,15/16,20,Nacional,Braga,2,3,4.0,3.4,1.91,Braga,1.91
+15/16,15/16,20,Vitória SC,Porto,1,0,9.5,4.5,1.36,Vitória SC,9.5
+15/16,15/16,21,Boavista,Vitória FC,4,0,2.4,2.8,3.4,Boavista,2.4
+15/16,15/16,21,Vitória FC,Académica,2,1,2.3,3.0,3.4,Vitória FC,2.3
+15/16,15/16,21,Moreirense,Estoril Praia,1,3,2.38,3.0,3.2,Estoril Praia,3.2
+15/16,15/16,21,União da Madeira,Nacional,3,0,3.4,3.0,2.3,União da Madeira,3.4
+15/16,15/16,21,Benfica,Arouca,3,1,1.2,6.5,13.0,Benfica,1.2
+15/16,15/16,21,Paços Ferreira,Sporting,1,3,8.5,4.0,1.44,Sporting,1.44
+15/16,15/16,21,Belenenses SAD,Vitória SC,3,3,2.7,3.0,2.8,Empate,3.0
+15/16,15/16,21,Braga,Rio Ave,5,1,1.5,4.0,7.0,Braga,1.5
+15/16,15/16,21,Porto,Maritimo,1,0,1.14,7.0,21.0,Porto,1.14
+15/16,15/16,22,Tondela,Boavista,1,2,2.4,3.0,3.2,Boavista,3.2
+15/16,15/16,22,Vitória SC,União da Madeira,3,1,1.62,3.75,5.75,Vitória SC,1.62
+15/16,15/16,22,Estoril Praia,Porto,1,3,7.0,4.75,1.4,Porto,1.4
+15/16,15/16,22,Sporting,Académica,3,2,1.14,7.5,17.0,Sporting,1.14
+15/16,15/16,22,Arouca,Paços Ferreira,2,2,2.05,3.1,4.0,Empate,3.1
+15/16,15/16,22,Nacional,Tondela,3,1,1.57,3.8,6.0,Nacional,1.57
+15/16,15/16,22,Rio Ave,Vitória FC,2,1,1.73,3.3,5.5,Rio Ave,1.73
+15/16,15/16,22,Boavista,Braga,0,0,4.33,3.25,1.91,Empate,3.25
+15/16,15/16,22,Moreirense,Benfica,1,4,9.5,4.75,1.33,Benfica,1.33
+15/16,15/16,23,Maritimo,Belenenses SAD,1,2,1.91,3.1,4.33,Belenenses SAD,4.33
+15/16,15/16,23,Belenenses SAD,Benfica,0,5,8.5,4.33,1.4,Benfica,1.4
+15/16,15/16,23,Vitória FC,Maritimo,1,1,2.63,3.2,2.63,Empate,3.2
+15/16,15/16,23,Tondela,Vitória SC,1,1,3.4,3.2,2.15,Empate,3.2
+15/16,15/16,23,Académica,Nacional,2,2,2.5,3.2,2.88,Empate,3.2
+15/16,15/16,23,Paços Ferreira,Boavista,0,1,2.2,3.1,3.5,Boavista,3.5
+15/16,15/16,23,União da Madeira,Moreirense,0,1,2.55,3.2,2.8,Moreirense,2.8
+15/16,15/16,23,Porto,Arouca,1,2,1.17,6.5,19.0,Arouca,19.0
+15/16,15/16,24,Sporting,Rio Ave,0,0,1.29,5.25,10.0,Empate,5.25
+15/16,15/16,24,Braga,Estoril Praia,2,0,1.36,4.33,10.0,Braga,1.36
+15/16,15/16,24,Benfica,Porto,1,2,2.25,3.1,3.4,Porto,3.4
+15/16,15/16,24,Moreirense,Belenenses SAD,2,3,2.3,3.1,3.3,Belenenses SAD,3.3
+15/16,15/16,24,Vitória SC,Vitória FC,2,2,1.8,3.3,4.75,Empate,3.3
+15/16,15/16,24,Arouca,União da Madeira,3,0,1.85,3.3,4.5,Arouca,1.85
+15/16,15/16,24,Estoril Praia,Tondela,2,1,1.85,3.4,4.33,Estoril Praia,1.85
+15/16,15/16,24,Boavista,Académica,0,0,2.2,3.1,3.5,Empate,3.1
+15/16,15/16,24,Maritimo,Braga,1,3,4.0,3.3,1.95,Braga,1.95
+15/16,15/16,25,Rio Ave,Paços Ferreira,1,1,2.0,3.3,3.8,Empate,3.3
+15/16,15/16,25,União da Madeira,Estoril Praia,1,1,2.63,3.0,2.88,Empate,3.0
+15/16,15/16,25,Paços Ferreira,Benfica,1,3,10.0,5.25,1.29,Benfica,1.29
+15/16,15/16,25,Académica,Rio Ave,0,2,3.0,3.0,2.5,Rio Ave,2.5
+15/16,15/16,25,Belenenses SAD,Arouca,0,2,2.38,3.1,3.1,Arouca,3.1
+15/16,15/16,25,Tondela,Maritimo,3,4,2.9,3.1,2.5,Maritimo,2.5
+15/16,15/16,25,Vitória FC,Nacional,1,1,2.6,3.1,2.8,Empate,3.1
+15/16,15/16,25,Porto,Moreirense,3,2,1.17,6.5,19.0,Porto,1.17
+15/16,15/16,25,Braga,Vitória SC,3,3,1.57,3.75,6.0,Empate,3.75
+15/16,15/16,26,Sporting,Boavista,2,0,1.22,5.75,13.0,Sporting,1.22
+15/16,15/16,26,Nacional,Paços Ferreira,3,0,2.1,3.25,3.5,Nacional,2.1
+15/16,15/16,26,Boavista,Rio Ave,1,2,2.6,3.0,2.9,Rio Ave,2.9
+15/16,15/16,26,Arouca,Braga,0,0,4.5,3.2,1.91,Empate,3.2
+15/16,15/16,26,Estoril Praia,Vitória FC,3,0,2.05,3.25,3.75,Estoril Praia,2.05
+15/16,15/16,26,Maritimo,Académica,1,0,1.83,3.5,4.33,Maritimo,1.83
+15/16,15/16,26,Moreirense,Tondela,1,2,1.91,3.3,4.0,Tondela,4.0
+15/16,15/16,26,Belenenses SAD,Porto,1,2,9.5,4.75,1.33,Porto,1.33
+15/16,15/16,27,Benfica,União da Madeira,2,0,1.11,8.0,23.0,Benfica,1.11
+15/16,15/16,27,Vitória SC,Sporting,0,0,6.5,3.5,1.6,Empate,3.5
+15/16,15/16,27,Paços Ferreira,Maritimo,2,2,2.25,3.25,3.25,Empate,3.25
+15/16,15/16,27,Sporting,Benfica,0,1,2.1,3.2,3.6,Benfica,3.6
+15/16,15/16,27,Tondela,Arouca,0,1,3.1,3.0,2.45,Arouca,2.45
+15/16,15/16,27,União da Madeira,Belenenses SAD,0,0,2.9,3.1,2.5,Empate,3.1
+15/16,15/16,27,Vitória FC,Moreirense,0,1,2.25,3.25,3.2,Moreirense,3.2
+15/16,15/16,27,Académica,Vitória SC,2,0,2.9,3.1,2.5,Académica,2.9
+15/16,15/16,27,Braga,Porto,3,1,3.3,3.4,2.15,Braga,3.3
+15/16,15/16,28,Rio Ave,Estoril Praia,1,3,2.0,3.3,3.8,Estoril Praia,3.8
+15/16,15/16,28,Maritimo,Boavista,0,3,2.05,3.25,3.75,Boavista,3.75
+15/16,15/16,28,Estoril Praia,Sporting,1,2,10.0,4.33,1.36,Sporting,1.36
+15/16,15/16,28,Porto,União da Madeira,3,2,1.14,8.0,19.0,Porto,1.14
+15/16,15/16,28,Arouca,Vitória FC,1,0,1.95,3.3,4.0,Arouca,1.95
+15/16,15/16,28,Moreirense,Académica,2,2,2.2,3.2,3.3,Empate,3.2
+15/16,15/16,28,Nacional,Rio Ave,1,0,2.25,3.2,3.3,Nacional,2.25
+15/16,15/16,28,Vitória SC,Paços Ferreira,0,1,2.0,3.2,4.0,Paços Ferreira,4.0
+15/16,15/16,28,Belenenses SAD,Braga,3,0,3.6,3.25,2.1,Belenenses SAD,3.6
+15/16,15/16,29,Benfica,Tondela,4,1,1.06,10.0,21.0,Benfica,1.06
+15/16,15/16,29,Rio Ave,Maritimo,1,0,1.83,3.6,4.2,Rio Ave,1.83
+15/16,15/16,29,Sporting,Arouca,5,1,1.2,6.0,15.0,Sporting,1.2
+15/16,15/16,29,Vitória FC,Porto,0,1,10.0,6.0,1.25,Porto,1.25
+15/16,15/16,29,Académica,Estoril Praia,0,3,2.25,3.2,3.2,Estoril Praia,3.2
+15/16,15/16,29,Nacional,Vitória SC,3,2,2.3,3.1,3.25,Nacional,2.3
+15/16,15/16,29,Paços Ferreira,Moreirense,0,0,1.95,3.3,4.0,Empate,3.3
+15/16,15/16,29,Tondela,Belenenses SAD,2,2,3.1,3.1,2.38,Empate,3.1
+15/16,15/16,29,Boavista,Benfica,0,1,8.5,4.33,1.4,Benfica,1.4
+15/16,15/16,29,Braga,União da Madeira,2,0,1.29,5.25,10.0,Braga,1.29
+15/16,15/16,30,Benfica,Braga,5,1,1.53,3.75,7.0,Benfica,1.53
+15/16,15/16,30,Arouca,Académica,3,2,1.95,3.3,4.0,Arouca,1.95
+15/16,15/16,30,Maritimo,Nacional,2,0,2.3,3.2,3.2,Maritimo,2.3
+15/16,15/16,30,Vitória SC,Boavista,1,1,2.1,3.0,4.0,Empate,3.0
+15/16,15/16,30,União da Madeira,Vitória FC,2,2,2.38,3.1,3.1,Empate,3.1
+15/16,15/16,30,Estoril Praia,Paços Ferreira,1,0,2.0,3.3,3.8,Estoril Praia,2.0
+15/16,15/16,30,Moreirense,Rio Ave,0,1,2.75,3.3,2.5,Rio Ave,2.5
+15/16,15/16,31,Porto,Tondela,0,1,1.06,11.0,34.0,Tondela,34.0
+15/16,15/16,31,Belenenses SAD,Sporting,2,5,8.5,4.75,1.36,Sporting,1.36
+15/16,15/16,31,Boavista,Arouca,0,0,2.38,3.1,3.1,Empate,3.1
+15/16,15/16,31,Académica,Benfica,1,2,15.0,5.25,1.25,Benfica,1.25
+15/16,15/16,31,Sporting,Maritimo,3,1,1.17,7.0,15.0,Sporting,1.17
+15/16,15/16,31,Nacional,Estoril Praia,4,1,2.38,3.1,3.1,Nacional,2.38
+15/16,15/16,31,Tondela,União da Madeira,1,0,1.91,3.2,4.33,Tondela,1.91
+15/16,15/16,31,Vitória FC,Belenenses SAD,0,1,2.38,3.25,3.0,Belenenses SAD,3.0
+15/16,15/16,31,Paços Ferreira,Porto,1,0,8.0,4.5,1.4,Paços Ferreira,8.0
+15/16,15/16,31,Braga,Moreirense,1,1,1.44,4.0,8.0,Empate,4.0
+15/16,15/16,33,Rio Ave,Vitória SC,2,0,2.15,3.3,3.4,Rio Ave,2.15
+15/16,15/16,33,Arouca,Rio Ave,0,0,2.45,3.2,2.9,Empate,3.2
+15/16,15/16,33,Estoril Praia,Boavista,1,0,2.3,3.1,3.3,Estoril Praia,2.3
+15/16,15/16,33,Moreirense,Sporting,0,1,19.0,6.0,1.18,Sporting,1.18
+15/16,15/16,33,Belenenses SAD,Académica,1,1,2.2,3.2,3.4,Empate,3.2
+15/16,15/16,33,União da Madeira,Paços Ferreira,3,4,2.4,3.1,3.1,Paços Ferreira,3.1
+15/16,15/16,33,Maritimo,Vitória SC,3,0,2.05,3.25,3.6,Maritimo,2.05
+15/16,15/16,33,Porto,Nacional,4,0,1.33,5.0,9.0,Porto,1.33
+15/16,15/16,34,Benfica,Vitória SC,1,0,1.11,9.0,19.0,Benfica,1.11
+15/16,15/16,34,Braga,Vitória FC,3,2,1.5,4.0,7.0,Braga,1.5
+15/16,15/16,34,Belenenses SAD,Paços Ferreira,0,2,3.0,3.2,2.4,Paços Ferreira,2.4
+15/16,15/16,34,Tondela,Rio Ave,1,1,3.1,3.1,2.4,Empate,3.1
+15/16,15/16,34,Porto,Sporting,1,3,2.7,3.2,2.6,Sporting,2.6
+15/16,15/16,34,Estoril Praia,Maritimo,2,1,1.95,3.5,3.8,Estoril Praia,1.95
+15/16,15/16,34,Moreirense,Boavista,1,1,2.8,3.0,2.7,Empate,3.0
+15/16,15/16,34,Arouca,Nacional,3,0,1.8,3.5,4.5,Arouca,1.8
+15/16,15/16,34,União da Madeira,Académica,3,1,2.4,3.2,3.0,União da Madeira,2.4
+15/16,15/16,35,Paços Ferreira,Tondela,1,4,1.8,3.5,4.5,Tondela,4.5
+15/16,15/16,35,Rio Ave,Porto,1,3,4.0,3.6,1.85,Porto,1.85
+15/16,15/16,35,Académica,Braga,0,0,4.2,3.5,1.85,Empate,3.5
+15/16,15/16,35,Sporting,Vitória FC,5,0,1.13,8.0,19.0,Sporting,1.13
+15/16,15/16,35,Boavista,União da Madeira,1,0,2.5,2.88,3.2,Boavista,2.5
+15/16,15/16,35,Nacional,Belenenses SAD,2,2,2.05,3.3,3.6,Empate,3.3
+15/16,15/16,35,Vitória SC,Moreirense,4,1,1.91,3.4,4.0,Vitória SC,1.91
+15/16,15/16,35,Maritimo,Benfica,0,2,10.0,5.0,1.3,Benfica,1.3
+15/16,15/16,36,Estoril Praia,Arouca,1,1,1.75,3.75,4.5,Empate,3.75
+15/16,15/16,36,Porto,Boavista,4,0,1.25,5.5,12.0,Porto,1.25
+15/16,15/16,36,Arouca,Vitória SC,2,2,2.38,3.5,2.8,Empate,3.5
+15/16,15/16,36,Belenenses SAD,Estoril Praia,2,1,3.5,3.6,2.0,Belenenses SAD,3.5
+15/16,15/16,36,Tondela,Académica,2,0,1.45,4.33,7.0,Tondela,1.45
+15/16,15/16,36,União da Madeira,Rio Ave,1,2,2.55,3.1,2.88,Rio Ave,2.88
+15/16,15/16,36,Vitória FC,Paços Ferreira,0,0,2.25,3.3,3.0,Empate,3.3
+15/16,15/16,36,Moreirense,Maritimo,2,1,2.05,3.4,3.6,Moreirense,2.05
+15/16,15/16,36,Benfica,Nacional,4,1,1.1,9.0,21.0,Benfica,1.1
+15/16,15/16,36,Braga,Sporting,0,4,7.0,4.33,1.44,Sporting,1.44
+16/17,16/17,1,Rio Ave,Porto,1,3,6.0,3.8,1.57,Porto,1.57
+16/17,16/17,1,Moreirense,Paços Ferreira,1,1,2.5,3.0,3.0,Empate,3.0
+16/17,16/17,1,Tondela,Benfica,0,2,12.0,4.75,1.3,Benfica,1.3
+16/17,16/17,1,Boavista,Arouca,2,0,2.7,2.88,2.88,Boavista,2.7
+16/17,16/17,1,Vitória FC,Belenenses SAD,2,0,2.4,3.1,3.1,Vitória FC,2.4
+16/17,16/17,1,Vitória SC,Braga,0,1,3.25,3.2,2.25,Braga,2.25
+16/17,16/17,2,Belenenses SAD,Boavista,0,0,2.38,3.0,3.2,Empate,3.0
+16/17,16/17,2,Maritimo,Vitória SC,0,2,2.5,3.1,2.9,Vitória SC,2.9
+16/17,16/17,2,Chaves,Tondela,1,1,2.1,3.1,3.8,Empate,3.1
+16/17,16/17,2,Porto,Estoril Praia,1,0,1.33,5.0,9.0,Porto,1.33
+16/17,16/17,2,Benfica,Vitória FC,1,1,1.18,6.5,15.0,Empate,6.5
+16/17,16/17,3,Braga,Rio Ave,1,1,1.7,3.6,5.0,Empate,3.6
+16/17,16/17,3,Vitória SC,Paços Ferreira,5,3,2.0,3.1,4.2,Vitória SC,2.0
+16/17,16/17,3,Tondela,Belenenses SAD,0,1,2.45,3.1,2.9,Belenenses SAD,2.9
+16/17,16/17,3,Estoril Praia,Braga,1,3,4.75,3.6,1.73,Braga,1.73
+16/17,16/17,3,Nacional,Benfica,1,3,10.0,5.25,1.29,Benfica,1.29
+16/17,16/17,3,Boavista,Chaves,2,2,2.5,3.0,3.1,Empate,3.0
+16/17,16/17,3,Moreirense,Maritimo,0,1,2.25,3.2,3.2,Maritimo,3.2
+16/17,16/17,3,Sporting,Porto,2,1,2.3,3.2,3.1,Sporting,2.3
+16/17,16/17,3,Rio Ave,Feirense,1,0,1.8,3.4,4.75,Rio Ave,1.8
+16/17,16/17,3,Vitória FC,Arouca,2,0,2.2,3.1,3.5,Vitória FC,2.2
+16/17,16/17,4,Nacional,Chaves,0,1,2.4,3.0,3.2,Chaves,3.2
+16/17,16/17,5,Arouca,Benfica,1,2,7.5,4.2,1.45,Benfica,1.45
+16/17,16/17,5,Belenenses SAD,Nacional,2,1,1.95,3.2,4.2,Belenenses SAD,1.95
+16/17,16/17,5,Sporting,Moreirense,3,0,1.25,5.0,15.0,Sporting,1.25
+16/17,16/17,5,Porto,Vitória SC,3,0,1.33,5.0,9.0,Porto,1.33
+16/17,16/17,5,Paços Ferreira,Estoril Praia,0,0,2.0,3.2,4.0,Empate,3.2
+16/17,16/17,5,Maritimo,Rio Ave,0,1,2.7,3.0,2.8,Rio Ave,2.8
+16/17,16/17,5,Braga,Boavista,3,0,1.44,4.2,7.5,Braga,1.44
+16/17,16/17,5,Chaves,Vitória FC,0,0,2.3,3.0,3.4,Empate,3.0
+16/17,16/17,6,Feirense,Tondela,2,1,2.38,3.0,3.25,Feirense,2.38
+16/17,16/17,6,Nacional,Maritimo,2,0,2.63,3.2,2.7,Nacional,2.63
+16/17,16/17,6,Estoril Praia,Moreirense,2,0,2.45,3.0,3.1,Estoril Praia,2.45
+16/17,16/17,6,Vitória FC,Paços Ferreira,1,4,2.0,3.1,4.2,Paços Ferreira,4.2
+16/17,16/17,6,Vitória SC,Belenenses SAD,1,1,1.8,3.3,5.0,Empate,3.3
+16/17,16/17,6,Arouca,Chaves,0,1,2.3,3.0,3.4,Chaves,3.4
+16/17,16/17,6,Boavista,Feirense,1,2,2.25,3.1,3.4,Feirense,3.4
+16/17,16/17,6,Tondela,Porto,0,0,8.5,5.0,1.33,Empate,5.0
+16/17,16/17,6,Rio Ave,Sporting,3,1,5.75,3.5,1.57,Rio Ave,5.75
+16/17,16/17,7,Benfica,Braga,3,1,1.5,3.8,7.5,Benfica,1.5
+16/17,16/17,7,Porto,Boavista,3,1,1.18,6.5,15.0,Porto,1.18
+16/17,16/17,7,Sporting,Estoril Praia,4,2,1.17,6.5,19.0,Sporting,1.17
+16/17,16/17,7,Chaves,Benfica,0,2,8.0,4.0,1.45,Benfica,1.45
+16/17,16/17,7,Braga,Vitória FC,2,1,1.55,3.8,6.5,Braga,1.55
+16/17,16/17,7,Maritimo,Tondela,2,0,1.91,3.3,4.2,Maritimo,1.91
+16/17,16/17,7,Paços Ferreira,Rio Ave,2,1,2.88,3.0,2.6,Paços Ferreira,2.88
+16/17,16/17,7,Moreirense,Vitória SC,0,1,3.0,3.0,2.5,Vitória SC,2.5
+16/17,16/17,8,Belenenses SAD,Arouca,1,1,2.0,3.2,4.0,Empate,3.2
+16/17,16/17,8,Tondela,Paços Ferreira,2,1,2.4,3.1,3.1,Tondela,2.4
+16/17,16/17,8,Rio Ave,Estoril Praia,1,2,1.67,3.6,5.25,Estoril Praia,5.25
+16/17,16/17,8,Chaves,Belenenses SAD,3,1,2.5,3.0,3.0,Chaves,2.5
+16/17,16/17,8,Vitória SC,Sporting,3,3,5.0,3.75,1.67,Empate,3.75
+16/17,16/17,8,Nacional,Porto,0,4,8.5,4.75,1.36,Porto,1.36
+16/17,16/17,8,Benfica,Feirense,4,0,1.18,6.5,15.0,Benfica,1.18
+16/17,16/17,8,Vitória FC,Maritimo,0,1,2.25,3.1,3.4,Maritimo,3.4
+16/17,16/17,8,Boavista,Moreirense,2,0,2.3,3.1,3.3,Boavista,2.3
+16/17,16/17,8,Arouca,Braga,1,1,3.2,3.3,2.25,Empate,3.3
+16/17,16/17,9,Paços Ferreira,Nacional,1,1,2.38,3.2,3.0,Empate,3.2
+16/17,16/17,9,Maritimo,Boavista,1,1,2.0,3.3,3.8,Empate,3.3
+16/17,16/17,9,Feirense,Vitória FC,1,1,2.4,3.1,3.1,Empate,3.1
+16/17,16/17,9,Sporting,Tondela,1,1,1.2,6.5,13.0,Empate,6.5
+16/17,16/17,9,Porto,Arouca,3,0,1.13,8.0,19.0,Porto,1.13
+16/17,16/17,9,Moreirense,Rio Ave,1,1,2.88,3.0,2.63,Empate,3.0
+16/17,16/17,9,Estoril Praia,Vitória SC,0,2,3.3,3.2,2.25,Vitória SC,2.25
+16/17,16/17,9,Belenenses SAD,Benfica,0,2,9.5,4.75,1.33,Benfica,1.33
+16/17,16/17,10,Braga,Chaves,1,0,1.57,3.75,6.0,Braga,1.57
+16/17,16/17,10,Benfica,Paços Ferreira,3,0,1.22,6.0,12.0,Benfica,1.22
+16/17,16/17,10,Tondela,Moreirense,1,2,2.5,3.0,2.75,Moreirense,2.75
+16/17,16/17,10,Vitória FC,Porto,0,0,10.0,5.5,1.29,Empate,5.5
+16/17,16/17,10,Boavista,Estoril Praia,0,0,2.25,3.1,3.4,Empate,3.1
+16/17,16/17,10,Arouca,Maritimo,1,0,2.6,3.1,2.8,Arouca,2.6
+16/17,16/17,10,Rio Ave,Vitória SC,0,3,2.25,3.2,3.25,Vitória SC,3.25
+16/17,16/17,10,Braga,Belenenses SAD,2,1,1.57,3.8,6.0,Braga,1.57
+16/17,16/17,11,Chaves,Feirense,1,1,1.95,3.3,4.0,Empate,3.3
+16/17,16/17,11,Vitória SC,Nacional,2,1,1.53,4.0,6.0,Vitória SC,1.53
+16/17,16/17,11,Estoril Praia,Tondela,2,0,2.1,3.2,3.6,Estoril Praia,2.1
+16/17,16/17,11,Paços Ferreira,Chaves,1,1,2.5,3.0,3.0,Empate,3.0
+16/17,16/17,11,Feirense,Belenenses SAD,0,1,2.5,3.0,3.0,Belenenses SAD,3.0
+16/17,16/17,11,Rio Ave,Boavista,1,2,1.85,3.3,4.5,Boavista,4.5
+16/17,16/17,11,Moreirense,Vitória FC,1,2,2.1,3.1,3.8,Vitória FC,3.8
+16/17,16/17,11,Porto,Benfica,1,1,1.83,3.5,4.33,Empate,3.5
+16/17,16/17,11,Sporting,Arouca,3,0,1.2,6.5,13.0,Sporting,1.2
+16/17,16/17,11,Maritimo,Braga,1,0,2.9,3.2,2.45,Maritimo,2.9
+16/17,16/17,12,Vitória FC,Rio Ave,0,1,2.6,3.0,2.9,Rio Ave,2.9
+16/17,16/17,12,Chaves,Maritimo,0,0,2.15,3.1,3.6,Empate,3.1
+16/17,16/17,12,Nacional,Estoril Praia,0,1,2.0,3.4,3.75,Estoril Praia,3.75
+16/17,16/17,12,Boavista,Sporting,0,1,10.0,4.75,1.33,Sporting,1.33
+16/17,16/17,12,Belenenses SAD,Porto,0,0,10.0,5.25,1.29,Empate,5.25
+16/17,16/17,12,Arouca,Paços Ferreira,1,0,2.3,3.1,3.3,Arouca,2.3
+16/17,16/17,12,Benfica,Moreirense,3,0,1.18,6.5,15.0,Benfica,1.18
+16/17,16/17,12,Tondela,Vitória SC,2,1,3.4,3.25,2.15,Tondela,3.4
+16/17,16/17,13,Braga,Feirense,6,2,1.5,4.1,6.5,Braga,1.5
+16/17,16/17,13,Maritimo,Benfica,2,1,8.5,4.33,1.4,Maritimo,8.5
+16/17,16/17,13,Rio Ave,Tondela,3,1,1.73,3.5,5.0,Rio Ave,1.73
+16/17,16/17,13,Sporting,Vitória FC,2,0,1.2,6.0,15.0,Sporting,1.2
+16/17,16/17,13,Porto,Braga,1,0,1.36,4.75,8.0,Porto,1.36
+16/17,16/17,13,Feirense,Arouca,0,2,2.63,3.0,2.88,Arouca,2.88
+16/17,16/17,13,Moreirense,Nacional,3,1,2.2,3.2,3.4,Moreirense,2.2
+16/17,16/17,13,Estoril Praia,Belenenses SAD,1,1,2.9,3.0,2.6,Empate,3.0
+16/17,16/17,13,Vitória SC,Chaves,1,1,1.8,3.4,4.75,Empate,3.4
+16/17,16/17,14,Paços Ferreira,Boavista,2,1,2.25,3.0,3.5,Paços Ferreira,2.25
+16/17,16/17,14,Vitória FC,Estoril Praia,2,0,2.15,3.1,3.6,Vitória FC,2.15
+16/17,16/17,14,Belenenses SAD,Maritimo,1,0,2.25,3.0,3.5,Belenenses SAD,2.25
+16/17,16/17,14,Chaves,Moreirense,2,1,2.4,3.1,3.1,Chaves,2.4
+16/17,16/17,14,Boavista,Vitória SC,1,2,3.4,3.0,2.3,Vitória SC,2.3
+16/17,16/17,14,Feirense,Porto,0,4,15.0,6.0,1.2,Porto,1.2
+16/17,16/17,14,Nacional,Tondela,3,2,2.05,3.25,3.75,Nacional,2.05
+16/17,16/17,14,Benfica,Sporting,2,1,2.3,2.9,3.4,Benfica,2.3
+16/17,16/17,14,Braga,Paços Ferreira,3,0,1.65,3.6,5.5,Braga,1.65
+16/17,16/17,15,Arouca,Rio Ave,0,2,3.0,2.9,2.63,Rio Ave,2.63
+16/17,16/17,15,Porto,Maritimo,2,1,1.14,8.0,15.0,Porto,1.14
+16/17,16/17,15,Paços Ferreira,Belenenses SAD,1,0,2.4,3.1,3.1,Paços Ferreira,2.4
+16/17,16/17,15,Moreirense,Arouca,1,4,2.1,3.1,3.8,Arouca,3.8
+16/17,16/17,15,Estoril Praia,Benfica,0,1,13.0,6.0,1.22,Benfica,1.22
+16/17,16/17,15,Rio Ave,Nacional,2,1,1.6,3.8,5.75,Rio Ave,1.6
+16/17,16/17,15,Tondela,Boavista,1,1,2.25,3.0,3.5,Empate,3.0
+16/17,16/17,15,Vitória SC,Vitória FC,3,1,1.95,3.4,4.0,Vitória SC,1.95
+16/17,16/17,15,Sporting,Braga,0,1,1.36,4.5,9.0,Braga,9.0
+16/17,16/17,16,Maritimo,Feirense,2,0,1.75,3.4,5.0,Maritimo,1.75
+16/17,16/17,16,Porto,Chaves,2,1,1.17,7.0,13.0,Porto,1.17
+16/17,16/17,16,Benfica,Rio Ave,2,0,1.33,4.5,10.5,Benfica,1.33
+16/17,16/17,16,Nacional,Boavista,0,2,1.91,3.4,4.0,Boavista,4.0
+16/17,16/17,16,Braga,Moreirense,2,1,1.65,3.6,5.5,Braga,1.65
+16/17,16/17,16,Feirense,Paços Ferreira,2,0,2.75,3.2,2.6,Feirense,2.75
+16/17,16/17,16,Belenenses SAD,Sporting,0,1,7.0,4.0,1.5,Sporting,1.5
+16/17,16/17,16,Chaves,Estoril Praia,1,0,1.91,3.3,4.2,Chaves,1.91
+16/17,16/17,16,Vitória FC,Tondela,3,0,1.95,3.2,4.2,Vitória FC,1.95
+16/17,16/17,16,Arouca,Vitória SC,0,1,3.0,3.2,2.38,Vitória SC,2.38
+16/17,16/17,17,Nacional,Braga,0,0,3.4,3.4,2.1,Empate,3.4
+16/17,16/17,17,Estoril Praia,Maritimo,0,1,2.6,3.0,2.9,Maritimo,2.9
+16/17,16/17,17,Vitória SC,Benfica,0,2,5.5,3.8,1.62,Benfica,1.62
+16/17,16/17,17,Paços Ferreira,Porto,0,0,8.5,4.75,1.36,Empate,4.75
+16/17,16/17,17,Rio Ave,Chaves,2,2,1.8,3.2,5.0,Empate,3.2
+16/17,16/17,17,Tondela,Arouca,1,2,3.0,3.0,2.5,Arouca,2.5
+16/17,16/17,17,Boavista,Vitória FC,1,0,2.4,3.1,3.1,Boavista,2.4
+16/17,16/17,18,Moreirense,Belenenses SAD,1,0,2.15,3.25,3.6,Moreirense,2.15
+16/17,16/17,18,Arouca,Estoril Praia,2,1,1.83,3.25,4.75,Arouca,1.83
+16/17,16/17,18,Benfica,Boavista,3,3,1.2,6.0,15.0,Empate,6.0
+16/17,16/17,18,Vitória FC,Nacional,1,0,2.3,3.1,3.3,Vitória FC,2.3
+16/17,16/17,18,Chaves,Sporting,2,2,6.0,3.6,1.62,Empate,3.6
+16/17,16/17,18,Feirense,Vitória SC,0,0,3.6,3.2,2.1,Empate,3.2
+16/17,16/17,18,Maritimo,Paços Ferreira,3,1,2.15,3.2,3.5,Maritimo,2.15
+16/17,16/17,18,Porto,Moreirense,3,0,1.2,6.5,13.0,Porto,1.2
+16/17,16/17,18,Belenenses SAD,Rio Ave,1,0,2.9,3.1,2.5,Belenenses SAD,2.9
+16/17,16/17,19,Braga,Tondela,2,0,1.4,4.2,9.0,Braga,1.4
+16/17,16/17,19,Paços Ferreira,Moreirense,0,2,2.5,2.9,3.1,Moreirense,3.1
+16/17,16/17,19,Porto,Rio Ave,4,2,1.22,5.75,15.0,Porto,1.22
+16/17,16/17,19,Maritimo,Sporting,2,2,5.25,3.6,1.67,Empate,3.6
+16/17,16/17,19,Arouca,Boavista,1,2,2.3,3.0,3.4,Boavista,3.4
+16/17,16/17,19,Benfica,Tondela,4,0,1.13,9.0,17.0,Benfica,1.13
+16/17,16/17,19,Feirense,Estoril Praia,1,0,2.2,3.0,3.6,Feirense,2.2
+16/17,16/17,19,Belenenses SAD,Vitória FC,1,2,2.25,2.9,3.6,Vitória FC,3.6
+16/17,16/17,19,Braga,Vitória SC,1,2,2.0,3.4,3.75,Vitória SC,3.75
+16/17,16/17,20,Chaves,Nacional,2,0,1.75,3.4,5.0,Chaves,1.75
+16/17,16/17,20,Boavista,Belenenses SAD,0,1,2.3,3.0,3.4,Belenenses SAD,3.4
+16/17,16/17,20,Tondela,Chaves,2,0,2.8,3.1,2.6,Tondela,2.8
+16/17,16/17,20,Nacional,Arouca,1,1,2.15,3.1,3.6,Empate,3.1
+16/17,16/17,20,Vitória SC,Maritimo,0,0,1.85,3.5,4.2,Empate,3.5
+16/17,16/17,20,Estoril Praia,Porto,1,2,13.0,6.0,1.22,Porto,1.22
+16/17,16/17,20,Sporting,Paços Ferreira,4,2,1.2,6.0,15.0,Sporting,1.2
+16/17,16/17,21,Vitória FC,Benfica,1,0,9.0,4.5,1.36,Vitória FC,9.0
+16/17,16/17,21,Moreirense,Feirense,1,1,2.05,3.2,3.75,Empate,3.2
+16/17,16/17,21,Rio Ave,Braga,1,0,2.5,3.0,3.0,Rio Ave,2.5
+16/17,16/17,21,Paços Ferreira,Vitória SC,2,0,3.4,3.1,2.25,Paços Ferreira,3.4
+16/17,16/17,21,Chaves,Boavista,0,0,2.2,3.1,3.5,Empate,3.1
+16/17,16/17,21,Porto,Sporting,2,1,1.85,3.6,4.0,Porto,1.85
+16/17,16/17,21,Arouca,Vitória FC,2,1,2.2,3.1,3.5,Arouca,2.2
+16/17,16/17,21,Benfica,Nacional,3,0,1.17,7.0,15.0,Benfica,1.17
+16/17,16/17,21,Belenenses SAD,Tondela,0,0,1.91,3.25,4.33,Empate,3.25
+16/17,16/17,22,Maritimo,Moreirense,1,0,2.0,3.2,4.0,Maritimo,2.0
+16/17,16/17,22,Braga,Estoril Praia,1,1,1.44,4.0,8.0,Empate,4.0
+16/17,16/17,22,Feirense,Rio Ave,2,1,2.7,3.1,2.7,Feirense,2.7
+16/17,16/17,22,Benfica,Arouca,3,0,1.17,6.5,17.0,Benfica,1.17
+16/17,16/17,22,Tondela,Feirense,0,1,2.3,3.0,3.4,Feirense,3.4
+16/17,16/17,22,Vitória FC,Chaves,0,0,2.38,2.88,3.4,Empate,2.88
+16/17,16/17,22,Estoril Praia,Paços Ferreira,2,1,2.5,3.1,2.9,Estoril Praia,2.5
+16/17,16/17,22,Vitória SC,Porto,0,2,6.5,3.8,1.53,Porto,1.53
+16/17,16/17,22,Nacional,Belenenses SAD,1,1,2.3,3.0,3.3,Empate,3.0
+16/17,16/17,22,Moreirense,Sporting,2,3,7.5,3.8,1.5,Sporting,1.5
+16/17,16/17,22,Boavista,Braga,1,1,3.0,3.0,2.5,Empate,3.0
+16/17,16/17,23,Rio Ave,Maritimo,0,0,2.0,3.1,4.2,Empate,3.1
+16/17,16/17,23,Porto,Tondela,4,0,1.13,7.5,23.0,Porto,1.13
+16/17,16/17,23,Chaves,Arouca,2,0,2.15,3.0,3.8,Chaves,2.15
+16/17,16/17,23,Moreirense,Estoril Praia,1,1,1.95,3.2,4.2,Empate,3.2
+16/17,16/17,23,Feirense,Boavista,0,1,2.63,2.88,3.0,Boavista,3.0
+16/17,16/17,23,Sporting,Rio Ave,1,0,1.33,4.75,10.0,Sporting,1.33
+16/17,16/17,23,Paços Ferreira,Vitória FC,2,1,2.7,3.0,2.8,Paços Ferreira,2.7
+16/17,16/17,23,Belenenses SAD,Vitória SC,1,1,3.4,2.9,2.3,Empate,2.9
+16/17,16/17,23,Braga,Benfica,0,1,4.75,3.6,1.75,Benfica,1.75
+16/17,16/17,24,Maritimo,Nacional,0,0,1.75,3.5,4.75,Empate,3.5
+16/17,16/17,24,Vitória SC,Moreirense,1,0,1.8,3.5,4.5,Vitória SC,1.8
+16/17,16/17,24,Benfica,Chaves,3,1,1.17,6.5,17.0,Benfica,1.17
+16/17,16/17,24,Tondela,Maritimo,1,1,2.88,3.0,2.63,Empate,3.0
+16/17,16/17,24,Estoril Praia,Sporting,0,2,8.5,4.33,1.4,Sporting,1.4
+16/17,16/17,24,Rio Ave,Paços Ferreira,0,0,1.73,3.3,5.5,Empate,3.3
+16/17,16/17,24,Vitória FC,Braga,1,1,3.2,3.0,2.38,Empate,3.0
+16/17,16/17,24,Boavista,Porto,0,1,9.0,4.5,1.36,Porto,1.36
+16/17,16/17,25,Arouca,Belenenses SAD,1,2,2.3,2.88,3.5,Belenenses SAD,3.5
+16/17,16/17,25,Moreirense,Boavista,0,0,2.3,2.9,3.5,Empate,2.9
+16/17,16/17,25,Braga,Arouca,3,1,1.53,3.6,7.5,Braga,1.53
+16/17,16/17,25,Porto,Nacional,7,0,1.11,8.5,21.0,Porto,1.11
+16/17,16/17,25,Feirense,Benfica,0,1,10.0,5.25,1.29,Benfica,1.29
+16/17,16/17,25,Paços Ferreira,Tondela,0,0,1.95,3.2,4.2,Empate,3.2
+16/17,16/17,25,Maritimo,Vitória FC,1,0,2.38,2.88,3.4,Maritimo,2.38
+16/17,16/17,25,Belenenses SAD,Chaves,2,1,2.0,3.0,4.33,Belenenses SAD,2.0
+16/17,16/17,25,Sporting,Vitória SC,1,1,1.4,4.5,7.5,Empate,4.5
+16/17,16/17,26,Estoril Praia,Rio Ave,0,2,3.4,2.88,2.38,Rio Ave,2.38
+16/17,16/17,26,Arouca,Porto,0,4,13.0,5.75,1.22,Porto,1.22
+16/17,16/17,26,Vitória FC,Feirense,1,2,2.0,3.1,4.33,Feirense,4.33
+16/17,16/17,26,Chaves,Braga,0,0,3.5,3.1,2.2,Empate,3.1
+16/17,16/17,26,Tondela,Sporting,1,4,7.0,4.33,1.44,Sporting,1.44
+16/17,16/17,26,Boavista,Maritimo,3,0,2.4,2.88,3.3,Boavista,2.4
+16/17,16/17,26,Rio Ave,Moreirense,3,2,1.7,3.75,4.75,Rio Ave,1.7
+16/17,16/17,26,Vitória SC,Estoril Praia,3,3,1.5,3.8,7.5,Empate,3.8
+16/17,16/17,27,Nacional,Paços Ferreira,1,1,2.2,3.1,3.5,Empate,3.1
+16/17,16/17,27,Benfica,Belenenses SAD,4,0,1.2,6.0,15.0,Benfica,1.2
+16/17,16/17,27,Estoril Praia,Boavista,0,0,3.25,3.0,2.38,Empate,3.0
+16/17,16/17,27,Belenenses SAD,Braga,1,2,3.2,2.88,2.5,Braga,2.5
+16/17,16/17,27,Moreirense,Tondela,1,1,1.8,3.1,5.75,Empate,3.1
+16/17,16/17,27,Paços Ferreira,Benfica,0,0,9.0,5.0,1.33,Empate,5.0
+16/17,16/17,27,Feirense,Chaves,3,2,2.88,2.88,2.7,Feirense,2.88
+16/17,16/17,27,Maritimo,Arouca,3,1,1.91,3.2,4.33,Maritimo,1.91
+16/17,16/17,27,Porto,Vitória FC,1,1,1.13,8.0,19.0,Empate,8.0
+16/17,16/17,27,Vitória SC,Rio Ave,3,0,2.38,3.2,3.0,Vitória SC,2.38
+16/17,16/17,28,Chaves,Paços Ferreira,1,0,2.05,3.1,4.0,Chaves,2.05
+16/17,16/17,28,Nacional,Vitória SC,1,2,2.5,3.2,2.88,Vitória SC,2.88
+16/17,16/17,28,Tondela,Estoril Praia,0,2,2.3,3.0,3.4,Estoril Praia,3.4
+16/17,16/17,28,Boavista,Rio Ave,0,1,2.75,2.88,2.8,Rio Ave,2.8
+16/17,16/17,28,Benfica,Porto,1,1,2.4,3.1,3.1,Empate,3.1
+16/17,16/17,28,Belenenses SAD,Feirense,1,2,1.91,3.25,4.33,Feirense,4.33
+16/17,16/17,28,Vitória FC,Moreirense,2,0,2.38,2.9,3.3,Vitória FC,2.38
+16/17,16/17,28,Arouca,Sporting,1,2,8.0,4.33,1.4,Sporting,1.4
+16/17,16/17,28,Braga,Maritimo,3,3,1.65,3.4,6.0,Empate,3.4
+16/17,16/17,29,Feirense,Braga,0,1,3.75,3.1,2.1,Braga,2.1
+16/17,16/17,29,Paços Ferreira,Arouca,1,1,2.15,3.1,3.6,Empate,3.1
+16/17,16/17,29,Porto,Belenenses SAD,3,0,1.14,8.0,15.0,Porto,1.14
+16/17,16/17,29,Sporting,Boavista,4,0,1.33,5.0,10.0,Sporting,1.33
+16/17,16/17,29,Estoril Praia,Nacional,0,1,2.38,3.1,3.3,Nacional,3.3
+16/17,16/17,29,Rio Ave,Vitória FC,0,0,1.75,3.3,5.25,Empate,3.3
+16/17,16/17,29,Vitória SC,Tondela,2,1,1.36,4.5,9.0,Vitória SC,1.36
+16/17,16/17,29,Moreirense,Benfica,0,1,8.0,4.5,1.36,Benfica,1.36
+16/17,16/17,30,Maritimo,Chaves,2,1,1.95,3.3,4.0,Maritimo,1.95
+16/17,16/17,30,Belenenses SAD,Estoril Praia,1,3,2.15,3.2,3.5,Estoril Praia,3.5
+16/17,16/17,30,Boavista,Paços Ferreira,0,0,2.2,3.0,3.6,Empate,3.0
+16/17,16/17,30,Benfica,Maritimo,3,0,1.17,7.0,15.0,Benfica,1.17
+16/17,16/17,30,Vitória FC,Sporting,0,3,6.5,3.8,1.55,Sporting,1.55
+16/17,16/17,30,Arouca,Feirense,2,0,2.0,3.1,4.2,Arouca,2.0
+16/17,16/17,30,Chaves,Vitória SC,2,3,3.0,3.0,2.5,Vitória SC,2.5
+16/17,16/17,30,Tondela,Rio Ave,2,1,4.0,3.3,1.95,Tondela,4.0
+16/17,16/17,30,Braga,Porto,1,1,7.0,4.2,1.5,Empate,4.2
+16/17,16/17,31,Nacional,Moreirense,0,1,2.2,3.2,3.4,Moreirense,3.4
+16/17,16/17,31,Rio Ave,Arouca,3,0,1.57,3.75,6.0,Rio Ave,1.57
+16/17,16/17,31,Maritimo,Belenenses SAD,3,0,1.8,3.5,4.5,Maritimo,1.8
+16/17,16/17,31,Tondela,Nacional,2,0,2.38,3.2,3.0,Tondela,2.38
+16/17,16/17,31,Estoril Praia,Vitória FC,3,0,2.38,3.0,3.25,Estoril Praia,2.38
+16/17,16/17,31,Sporting,Benfica,1,1,2.45,3.2,2.9,Empate,3.2
+16/17,16/17,31,Paços Ferreira,Braga,3,1,3.2,3.2,2.25,Paços Ferreira,3.2
+16/17,16/17,31,Vitória SC,Boavista,2,0,1.53,3.75,7.0,Vitória SC,1.53
+16/17,16/17,31,Porto,Feirense,0,0,1.13,8.0,21.0,Empate,8.0
+16/17,16/17,32,Moreirense,Chaves,0,0,2.2,3.1,3.5,Empate,3.1
+16/17,16/17,32,Vitória FC,Vitória SC,0,2,3.6,3.3,2.05,Vitória SC,2.05
+16/17,16/17,32,Boavista,Tondela,1,0,2.38,3.0,3.25,Boavista,2.38
+16/17,16/17,32,Nacional,Rio Ave,0,2,3.3,3.2,2.25,Rio Ave,2.25
+16/17,16/17,32,Benfica,Estoril Praia,2,1,1.11,9.0,21.0,Benfica,1.11
+16/17,16/17,32,Chaves,Porto,0,2,10.0,4.75,1.33,Porto,1.33
+16/17,16/17,32,Arouca,Moreirense,2,2,2.9,3.0,2.6,Empate,3.0
+16/17,16/17,32,Feirense,Maritimo,2,1,3.0,3.0,2.5,Feirense,3.0
+16/17,16/17,32,Braga,Sporting,2,3,4.2,3.6,1.83,Sporting,1.83
+16/17,16/17,32,Belenenses SAD,Paços Ferreira,1,2,2.05,3.2,3.8,Paços Ferreira,3.8
+16/17,16/17,33,Moreirense,Braga,2,1,2.8,3.1,2.6,Moreirense,2.8
+16/17,16/17,33,Boavista,Nacional,2,2,2.0,3.3,3.8,Empate,3.3
+16/17,16/17,33,Paços Ferreira,Feirense,0,1,4.5,4.0,1.7,Feirense,1.7
+16/17,16/17,33,Maritimo,Porto,1,1,7.5,4.2,1.44,Empate,4.2
+16/17,16/17,33,Sporting,Belenenses SAD,1,3,1.22,6.0,12.0,Belenenses SAD,12.0
+16/17,16/17,33,Tondela,Vitória FC,2,1,1.91,3.1,4.5,Tondela,1.91
+16/17,16/17,33,Vitória SC,Arouca,1,0,1.45,4.2,7.5,Vitória SC,1.45
+16/17,16/17,33,Rio Ave,Benfica,0,1,5.5,4.0,1.57,Benfica,1.57
+16/17,16/17,34,Estoril Praia,Chaves,2,1,2.05,3.3,3.9,Estoril Praia,2.05
+16/17,16/17,34,Belenenses SAD,Moreirense,1,1,2.9,3.1,2.5,Empate,3.1
+16/17,16/17,34,Arouca,Tondela,1,2,2.3,3.2,3.1,Tondela,3.1
+16/17,16/17,34,Benfica,Vitória SC,5,0,1.33,5.0,9.0,Benfica,1.33
+16/17,16/17,34,Chaves,Rio Ave,2,2,1.5,4.0,5.0,Empate,4.0
+16/17,16/17,34,Maritimo,Estoril Praia,1,1,1.53,4.0,6.0,Empate,4.0
+16/17,16/17,34,Porto,Paços Ferreira,4,1,1.13,8.0,19.0,Porto,1.13
+16/17,16/17,34,Braga,Nacional,4,0,1.33,5.25,8.0,Braga,1.33
+16/17,16/17,35,Vitória FC,Boavista,0,1,2.25,3.1,3.4,Boavista,3.4
+16/17,16/17,35,Nacional,Vitória FC,1,2,2.5,3.0,3.0,Vitória FC,3.0
+16/17,16/17,35,Paços Ferreira,Maritimo,0,0,3.0,3.0,2.5,Empate,3.0
+16/17,16/17,35,Rio Ave,Belenenses SAD,2,0,1.5,3.8,7.5,Rio Ave,1.5
+16/17,16/17,35,Vitória SC,Feirense,0,1,1.62,3.6,6.0,Feirense,6.0
+16/17,16/17,35,Boavista,Benfica,2,2,7.5,4.2,1.45,Empate,4.2
+16/17,16/17,35,Estoril Praia,Arouca,4,2,2.2,3.25,3.3,Estoril Praia,2.2
+16/17,16/17,35,Moreirense,Porto,3,1,4.5,3.75,1.73,Moreirense,4.5
+16/17,16/17,35,Tondela,Braga,2,0,1.62,3.8,5.5,Tondela,1.62
+16/17,16/17,35,Sporting,Chaves,4,1,1.29,5.25,10.0,Sporting,1.29
+17/18,17/18,2,Portimonense,Boavista,2,1,2.5,3.0,3.0,Portimonense,2.5
+17/18,17/18,2,Feirense,Tondela,1,1,2.25,3.2,3.4,Empate,3.2
+17/18,17/18,2,Rio Ave,Belenenses SAD,1,0,1.85,3.5,4.75,Rio Ave,1.85
+17/18,17/18,2,Maritimo,Paços Ferreira,1,0,2.0,3.2,4.0,Maritimo,2.0
+17/18,17/18,2,Aves,Sporting,0,2,23.0,6.0,1.44,,
+17/18,17/18,2,Porto,Estoril Praia,4,0,1.15,8.0,19.0,Porto,1.15
+17/18,17/18,2,Benfica,Braga,3,1,1.33,5.0,9.0,Benfica,1.33
+17/18,17/18,2,Vitória SC,Chaves,3,2,1.83,3.4,4.5,Vitória SC,1.83
+17/18,17/18,2,Sporting,Vitória FC,1,0,1.36,6.0,15.0,Sporting,1.36
+17/18,17/18,2,Moreirense,Feirense,0,0,2.55,3.1,4.5,Empate,3.1
+17/18,17/18,2,Belenenses SAD,Maritimo,1,0,2.65,3.1,4.33,Belenenses SAD,2.65
+17/18,17/18,2,Boavista,Rio Ave,1,2,11.0,4.0,2.6,Rio Ave,2.6
+17/18,17/18,2,Paços Ferreira,Aves,2,2,15.0,7.0,3.4,Empate,7.0
+17/18,17/18,2,Braga,Portimonense,2,1,1.73,4.2,6.5,Braga,1.73
+17/18,17/18,2,Tondela,Porto,0,1,41.0,10.0,1.25,Porto,1.25
+17/18,17/18,3,Estoril Praia,Vitória SC,3,0,3.0,3.25,3.6,Estoril Praia,3.0
+17/18,17/18,3,Chaves,Benfica,0,1,7.0,4.33,1.75,Benfica,1.75
+17/18,17/18,3,Rio Ave,Portimonense,2,0,2.3,3.6,4.75,Rio Ave,2.3
+17/18,17/18,3,Tondela,Estoril Praia,2,3,21.0,8.0,3.2,Estoril Praia,3.2
+17/18,17/18,3,Vitória SC,Sporting,0,5,41.0,13.0,1.55,Sporting,1.55
+17/18,17/18,3,Benfica,Belenenses SAD,5,0,1.2,9.5,29.0,Benfica,1.2
+17/18,17/18,3,Vitória FC,Chaves,1,1,2.85,3.2,4.0,Empate,3.2
+17/18,17/18,3,Porto,Moreirense,3,0,1.14,7.5,17.0,Porto,1.14
+17/18,17/18,3,Aves,Braga,0,2,7.0,3.1,2.63,Braga,2.63
+17/18,17/18,3,Maritimo,Boavista,1,0,2.8,3.0,4.33,Maritimo,2.8
+17/18,17/18,4,Feirense,Paços Ferreira,2,1,3.1,3.1,3.1,Feirense,3.1
+17/18,17/18,4,Belenenses SAD,Vitória FC,1,1,2.2,3.1,3.6,Empate,3.1
+17/18,17/18,4,Moreirense,Tondela,0,3,5.75,3.1,4.2,Tondela,4.2
+17/18,17/18,4,Paços Ferreira,Vitória SC,0,0,6.0,2.88,3.0,Empate,2.88
+17/18,17/18,4,Chaves,Feirense,0,2,5.0,3.1,3.75,Feirense,3.75
+17/18,17/18,4,Rio Ave,Benfica,1,1,6.5,4.0,1.9,Empate,4.0
+17/18,17/18,4,Boavista,Aves,1,0,2.75,2.9,4.0,Boavista,2.75
+17/18,17/18,4,Sporting,Estoril Praia,2,1,1.17,17.0,51.0,Sporting,1.17
+17/18,17/18,4,Braga,Porto,0,1,26.0,7.5,1.44,Porto,1.44
+17/18,17/18,5,Portimonense,Maritimo,1,2,2.6,3.3,4.2,Maritimo,4.2
+17/18,17/18,6,Feirense,Sporting,2,3,8.65,4.9,1.38,Sporting,1.38
+17/18,17/18,6,Benfica,Portimonense,2,1,1.14,8.6,18.5,Benfica,1.14
+17/18,17/18,6,Tondela,Paços Ferreira,2,2,2.27,3.2,3.4,Empate,3.2
+17/18,17/18,6,Maritimo,Rio Ave,1,0,2.75,3.0,2.88,Maritimo,2.75
+17/18,17/18,6,Porto,Chaves,3,0,1.14,9.7,22.0,Porto,1.14
+17/18,17/18,6,Vitória FC,Braga,2,0,3.2,3.1,2.38,Vitória FC,3.2
+17/18,17/18,6,Vitória SC,Boavista,1,0,1.93,3.5,4.1,Vitória SC,1.93
+17/18,17/18,6,Estoril Praia,Moreirense,0,2,1.91,3.35,4.33,Moreirense,4.33
+17/18,17/18,7,Aves,Belenenses SAD,2,1,2.2,3.2,3.4,Aves,2.2
+17/18,17/18,7,Paços Ferreira,Vitória FC,1,0,2.45,2.88,3.4,Paços Ferreira,2.45
+17/18,17/18,7,Maritimo,Aves,2,1,1.98,3.3,4.0,Maritimo,1.98
+17/18,17/18,7,Boavista,Benfica,2,1,7.5,4.5,1.44,Boavista,7.5
+17/18,17/18,7,Sporting,Tondela,2,0,1.2,7.2,13.0,Sporting,1.2
+17/18,17/18,7,Belenenses SAD,Estoril Praia,2,1,2.35,3.2,3.1,Belenenses SAD,2.35
+17/18,17/18,7,Rio Ave,Porto,1,2,8.0,4.0,1.44,Porto,1.44
+17/18,17/18,7,Braga,Vitória SC,2,1,1.83,3.55,4.75,Braga,1.83
+17/18,17/18,8,Portimonense,Feirense,2,1,2.0,3.4,4.15,Portimonense,2.0
+17/18,17/18,8,Chaves,Moreirense,3,0,2.16,3.15,3.8,Chaves,2.16
+17/18,17/18,8,Porto,Portimonense,5,2,1.11,9.7,28.0,Porto,1.11
+17/18,17/18,8,Estoril Praia,Chaves,0,2,2.25,3.2,3.5,Chaves,3.5
+17/18,17/18,8,Moreirense,Sporting,1,1,11.0,5.0,1.3,Empate,5.0
+17/18,17/18,8,Benfica,Paços Ferreira,2,0,1.14,7.75,21.0,Benfica,1.14
+17/18,17/18,8,Feirense,Belenenses SAD,1,4,2.4,3.0,3.2,Belenenses SAD,3.2
+17/18,17/18,8,Vitória SC,Maritimo,2,1,1.95,3.25,4.33,Vitória SC,1.95
+17/18,17/18,8,Tondela,Braga,1,2,3.8,3.25,2.08,Braga,2.08
+17/18,17/18,8,Aves,Rio Ave,0,0,2.8,3.0,2.7,Empate,3.0
+17/18,17/18,9,Vitória FC,Boavista,1,1,2.17,3.0,4.0,Empate,3.0
+17/18,17/18,9,Chaves,Tondela,1,1,1.91,3.3,4.2,Empate,3.3
+17/18,17/18,9,Paços Ferreira,Moreirense,3,2,2.4,3.1,3.4,Paços Ferreira,2.4
+17/18,17/18,9,Portimonense,Aves,2,2,2.02,3.4,3.9,Empate,3.4
+17/18,17/18,9,Boavista,Feirense,1,0,2.0,3.1,4.2,Boavista,2.0
+17/18,17/18,9,Rio Ave,Vitória FC,2,1,1.88,3.5,5.0,Rio Ave,1.88
+17/18,17/18,9,Braga,Estoril Praia,6,0,1.57,3.9,6.0,Braga,1.57
+17/18,17/18,9,Sporting,Porto,0,0,2.75,3.25,2.6,Empate,3.25
+17/18,17/18,9,Belenenses SAD,Vitória SC,1,0,2.2,3.25,3.35,Belenenses SAD,2.2
+17/18,17/18,9,Maritimo,Benfica,1,1,8.0,4.5,1.4,Empate,4.5
+17/18,17/18,10,Estoril Praia,Boavista,0,3,2.22,3.0,3.6,Boavista,3.6
+17/18,17/18,10,Feirense,Rio Ave,1,0,3.6,3.05,2.22,Feirense,3.6
+17/18,17/18,10,Vitória FC,Maritimo,3,1,2.13,3.1,4.0,Vitória FC,2.13
+17/18,17/18,10,Porto,Paços Ferreira,6,1,1.11,9.65,30.0,Porto,1.11
+17/18,17/18,10,Tondela,Belenenses SAD,2,0,2.27,3.1,3.6,Tondela,2.27
+17/18,17/18,10,Aves,Benfica,1,3,7.75,4.75,1.44,Benfica,1.44
+17/18,17/18,10,Sporting,Chaves,5,1,1.18,6.6,17.0,Sporting,1.18
+17/18,17/18,11,Moreirense,Braga,0,1,3.75,3.39,2.02,Braga,2.02
+17/18,17/18,11,Vitória SC,Portimonense,3,3,1.85,3.6,4.0,Empate,3.6
+17/18,17/18,11,Benfica,Feirense,1,0,1.14,8.5,19.0,Benfica,1.14
+17/18,17/18,11,Rio Ave,Sporting,0,1,7.5,3.85,1.51,Sporting,1.51
+17/18,17/18,11,Maritimo,Tondela,2,0,2.15,3.29,3.5,Maritimo,2.15
+17/18,17/18,11,Belenenses SAD,Moreirense,3,0,2.08,3.1,4.2,Belenenses SAD,2.08
+17/18,17/18,11,Boavista,Porto,0,3,11.5,5.0,1.33,Porto,1.33
+17/18,17/18,11,Braga,Chaves,1,0,1.5,4.15,7.5,Braga,1.5
+17/18,17/18,11,Paços Ferreira,Estoril Praia,1,0,2.29,3.1,3.3,Paços Ferreira,2.29
+17/18,17/18,11,Aves,Vitória SC,1,3,2.75,3.2,2.65,Vitória SC,2.65
+17/18,17/18,12,Portimonense,Vitória FC,5,2,2.05,3.25,3.79,Portimonense,2.05
+17/18,17/18,12,Vitória FC,Aves,0,1,2.14,3.2,3.6,Aves,3.6
+17/18,17/18,12,Moreirense,Portimonense,1,1,2.39,3.2,3.1,Empate,3.2
+17/18,17/18,12,Tondela,Boavista,3,2,2.3,3.0,3.39,Tondela,2.3
+17/18,17/18,12,Estoril Praia,Rio Ave,0,2,3.0,3.1,2.5,Rio Ave,2.5
+17/18,17/18,12,Porto,Belenenses SAD,2,0,1.16,8.0,19.5,Porto,1.16
+17/18,17/18,12,Chaves,Paços Ferreira,4,2,1.88,3.6,4.5,Chaves,1.88
+17/18,17/18,12,Feirense,Maritimo,0,1,2.55,3.0,3.1,Maritimo,3.1
+17/18,17/18,12,Vitória SC,Benfica,1,3,5.0,3.8,1.7,Benfica,1.7
+17/18,17/18,12,Sporting,Braga,2,2,1.46,4.2,8.0,Empate,4.2
+17/18,17/18,13,Belenenses SAD,Chaves,0,1,2.17,3.1,3.6,Chaves,3.6
+17/18,17/18,13,Portimonense,Tondela,2,0,2.04,3.5,3.9,Portimonense,2.04
+17/18,17/18,13,Boavista,Moreirense,1,0,2.17,3.25,3.75,Boavista,2.17
+17/18,17/18,13,Aves,Porto,1,1,13.0,5.55,1.28,Empate,5.55
+17/18,17/18,13,Maritimo,Estoril Praia,0,0,1.9,3.4,4.55,Empate,3.4
+17/18,17/18,13,Paços Ferreira,Sporting,1,2,9.2,4.75,1.36,Sporting,1.36
+17/18,17/18,13,Benfica,Vitória FC,6,0,1.17,7.0,16.5,Benfica,1.17
+17/18,17/18,14,Braga,Feirense,3,1,1.44,4.65,8.1,Braga,1.44
+17/18,17/18,14,Rio Ave,Vitória SC,0,1,2.1,3.29,3.5,Vitória SC,3.5
+17/18,17/18,14,Sporting,Belenenses SAD,1,0,1.17,7.05,14.5,Sporting,1.17
+17/18,17/18,14,Porto,Benfica,0,0,1.7,3.55,5.0,Empate,3.55
+17/18,17/18,14,Moreirense,Maritimo,1,1,2.25,2.85,3.4,Empate,2.85
+17/18,17/18,14,Tondela,Rio Ave,1,3,2.95,3.05,2.38,Rio Ave,2.38
+17/18,17/18,14,Chaves,Boavista,0,0,2.17,3.0,3.4,Empate,3.0
+17/18,17/18,14,Feirense,Aves,0,1,2.75,2.95,2.6,Aves,2.6
+17/18,17/18,14,Braga,Paços Ferreira,3,0,1.44,4.35,7.0,Braga,1.44
+17/18,17/18,14,Vitória FC,Vitória SC,1,2,3.2,2.95,2.27,Vitória SC,2.27
+17/18,17/18,15,Estoril Praia,Portimonense,0,0,2.45,3.2,2.7,Empate,3.2
+17/18,17/18,15,Rio Ave,Moreirense,2,1,1.7,3.4,4.75,Rio Ave,1.7
+17/18,17/18,15,Aves,Tondela,0,1,1.83,3.3,4.0,Tondela,4.0
+17/18,17/18,15,Benfica,Estoril Praia,3,1,1.12,9.5,21.0,Benfica,1.12
+17/18,17/18,15,Boavista,Sporting,1,3,6.3,3.9,1.51,Sporting,1.51
+17/18,17/18,15,Portimonense,Chaves,0,1,2.02,3.3,3.4,Chaves,3.4
+17/18,17/18,15,Belenenses SAD,Paços Ferreira,1,1,2.09,3.2,3.5,Empate,3.2
+17/18,17/18,15,Vitória FC,Porto,0,5,19.0,6.5,1.19,Porto,1.19
+17/18,17/18,16,Vitória SC,Feirense,1,0,1.61,3.85,5.9,Vitória SC,1.61
+17/18,17/18,16,Maritimo,Braga,1,0,3.75,3.2,2.22,Maritimo,3.75
+17/18,17/18,17,Moreirense,Vitória SC,2,1,2.9,3.1,2.4,Moreirense,2.9
+17/18,17/18,17,Porto,Maritimo,3,1,1.08,8.7,29.0,Porto,1.08
+17/18,17/18,17,Vitória SC,Tondela,0,1,1.72,3.5,4.75,Tondela,4.75
+17/18,17/18,18,Aves,Moreirense,1,2,1.98,3.39,4.0,Moreirense,4.0
+17/18,17/18,18,Boavista,Braga,1,3,4.0,3.1,2.05,Braga,2.05
+17/18,17/18,18,Maritimo,Chaves,1,2,2.45,3.2,2.87,Chaves,2.87
+17/18,17/18,18,Feirense,Porto,1,2,18.5,6.8,1.16,Porto,1.16
+17/18,17/18,18,Rio Ave,Paços Ferreira,4,2,1.73,3.6,5.0,Rio Ave,1.73
+17/18,17/18,18,Benfica,Sporting,1,1,2.4,3.2,3.0,Empate,3.2
+17/18,17/18,18,Vitória FC,Estoril Praia,2,2,2.7,3.15,2.75,Empate,3.15
+17/18,17/18,18,Portimonense,Belenenses SAD,0,0,1.76,3.55,5.0,Empate,3.55
+17/18,17/18,18,Braga,Rio Ave,2,1,1.72,3.75,5.0,Braga,1.72
+17/18,17/18,18,Chaves,Aves,1,1,2.04,3.25,3.75,Empate,3.25
+17/18,17/18,18,Moreirense,Benfica,0,2,7.5,4.75,1.4,Benfica,1.4
+17/18,17/18,18,Sporting,Maritimo,5,0,1.16,7.05,20.0,Sporting,1.16
+17/18,17/18,18,Porto,Vitória SC,4,2,1.18,7.85,16.0,Porto,1.18
+17/18,17/18,19,Paços Ferreira,Portimonense,1,1,2.5,3.2,2.87,Empate,3.2
+17/18,17/18,19,Estoril Praia,Feirense,0,2,1.85,3.29,4.5,Feirense,4.5
+17/18,17/18,19,Tondela,Vitória FC,1,1,2.31,3.1,3.29,Empate,3.1
+17/18,17/18,19,Belenenses SAD,Boavista,1,1,2.14,3.0,3.75,Empate,3.0
+17/18,17/18,19,Chaves,Vitória SC,4,3,2.29,3.25,3.1,Chaves,2.29
+17/18,17/18,19,Paços Ferreira,Maritimo,0,0,2.2,3.1,3.5,Empate,3.1
+17/18,17/18,19,Braga,Benfica,1,3,3.5,3.25,2.1,Benfica,2.1
+17/18,17/18,19,Boavista,Portimonense,2,0,2.7,3.1,2.75,Boavista,2.7
+17/18,17/18,19,Tondela,Feirense,3,1,2.1,3.1,3.79,Tondela,2.1
+17/18,17/18,19,Belenenses SAD,Rio Ave,1,2,2.35,3.0,3.29,Rio Ave,3.29
+17/18,17/18,19,Sporting,Aves,3,0,1.18,7.0,13.0,Sporting,1.18
+17/18,17/18,20,Moreirense,Vitória FC,2,2,2.35,3.0,3.29,Empate,3.0
+17/18,17/18,20,Estoril Praia,Porto,1,3,12.0,6.0,1.22,Porto,1.22
+17/18,17/18,20,Vitória FC,Sporting,1,1,8.0,4.5,1.4,Empate,4.5
+17/18,17/18,20,Porto,Tondela,1,0,1.1,10.5,30.0,Porto,1.1
+17/18,17/18,20,Maritimo,Belenenses SAD,0,0,2.39,3.0,3.2,Empate,3.0
+17/18,17/18,20,Benfica,Chaves,3,0,1.22,6.65,13.5,Benfica,1.22
+17/18,17/18,20,Portimonense,Braga,1,2,3.2,3.39,2.2,Braga,2.2
+17/18,17/18,20,Aves,Paços Ferreira,0,2,2.01,3.29,3.79,Paços Ferreira,3.79
+17/18,17/18,20,Feirense,Moreirense,1,0,2.62,3.0,2.87,Feirense,2.62
+17/18,17/18,20,Rio Ave,Boavista,2,0,2.05,3.2,4.0,Rio Ave,2.05
+17/18,17/18,20,Vitória SC,Estoril Praia,3,1,1.66,3.75,5.0,Vitória SC,1.66
+17/18,17/18,21,Paços Ferreira,Feirense,2,1,2.1,3.0,4.0,Paços Ferreira,2.1
+17/18,17/18,21,Portimonense,Rio Ave,4,1,2.15,3.39,3.39,Portimonense,2.15
+17/18,17/18,21,Belenenses SAD,Benfica,1,1,9.0,4.8,1.36,Empate,4.8
+17/18,17/18,21,Braga,Aves,2,0,1.66,3.79,5.5,Braga,1.66
+17/18,17/18,21,Estoril Praia,Tondela,3,0,2.04,3.1,4.0,Estoril Praia,2.04
+17/18,17/18,21,Moreirense,Porto,0,0,15.0,5.85,1.22,Empate,5.85
+17/18,17/18,21,Boavista,Maritimo,2,1,1.9,3.0,4.5,Boavista,1.9
+17/18,17/18,21,Chaves,Vitória FC,2,2,1.72,3.5,5.0,Empate,3.5
+17/18,17/18,21,Sporting,Vitória SC,1,0,1.3,5.4,10.0,Sporting,1.3
+17/18,17/18,21,Benfica,Rio Ave,5,1,1.19,7.4,16.5,Benfica,1.19
+17/18,17/18,21,Porto,Braga,3,1,1.28,5.3,11.0,Porto,1.28
+17/18,17/18,21,Feirense,Chaves,1,2,3.1,3.0,2.45,Chaves,2.45
+17/18,17/18,21,Tondela,Moreirense,1,2,2.29,3.1,3.29,Moreirense,3.29
+17/18,17/18,21,Estoril Praia,Sporting,2,0,7.5,4.2,1.44,Estoril Praia,7.5
+17/18,17/18,21,Vitória SC,Paços Ferreira,3,2,1.66,3.6,5.25,Vitória SC,1.66
+17/18,17/18,22,Maritimo,Portimonense,0,3,3.25,3.0,2.37,Portimonense,2.37
+17/18,17/18,22,Vitória FC,Belenenses SAD,3,0,2.39,3.0,3.25,Vitória FC,2.39
+17/18,17/18,22,Aves,Boavista,3,0,2.2,3.0,3.6,Aves,2.2
+17/18,17/18,22,Paços Ferreira,Tondela,0,2,2.0,3.1,4.2,Tondela,4.2
+17/18,17/18,22,Rio Ave,Maritimo,3,0,1.64,3.5,5.75,Rio Ave,1.64
+17/18,17/18,22,Braga,Vitória FC,3,1,1.5,4.0,7.5,Braga,1.5
+17/18,17/18,22,Portimonense,Benfica,1,3,6.5,4.09,1.5,Benfica,1.5
+17/18,17/18,22,Belenenses SAD,Aves,2,5,2.25,3.0,3.5,Aves,3.5
+17/18,17/18,22,Chaves,Porto,0,4,8.5,4.33,1.39,Porto,1.39
+17/18,17/18,22,Boavista,Vitória SC,1,0,2.89,3.1,2.5,Boavista,2.89
+17/18,17/18,23,Moreirense,Estoril Praia,1,2,2.29,3.1,3.29,Estoril Praia,3.29
+17/18,17/18,23,Feirense,Portimonense,1,3,3.25,3.1,2.29,Portimonense,2.29
+17/18,17/18,23,Aves,Maritimo,0,0,1.64,3.6,5.5,Empate,3.6
+17/18,17/18,23,Benfica,Boavista,4,0,1.19,6.5,13.0,Benfica,1.19
+17/18,17/18,23,Estoril Praia,Belenenses SAD,0,2,2.14,3.1,3.6,Belenenses SAD,3.6
+17/18,17/18,23,Moreirense,Chaves,0,1,2.37,3.2,3.0,Chaves,3.0
+17/18,17/18,23,Vitória FC,Paços Ferreira,1,0,2.29,3.0,3.39,Vitória FC,2.29
+17/18,17/18,23,Porto,Rio Ave,5,0,1.16,7.0,15.0,Porto,1.16
+17/18,17/18,23,Vitória SC,Braga,0,5,3.0,3.2,2.39,Braga,2.39
+17/18,17/18,24,Tondela,Sporting,1,2,10.0,5.25,1.3,Sporting,1.3
+17/18,17/18,24,Rio Ave,Aves,0,0,2.1,3.39,3.39,Empate,3.39
+17/18,17/18,24,Belenenses SAD,Feirense,1,0,1.8,3.5,4.5,Belenenses SAD,1.8
+17/18,17/18,24,Maritimo,Vitória SC,3,2,2.25,3.1,3.39,Maritimo,2.25
+17/18,17/18,24,Paços Ferreira,Benfica,1,3,8.0,4.5,1.39,Benfica,1.39
+17/18,17/18,24,Chaves,Estoril Praia,2,0,1.95,3.29,4.0,Chaves,1.95
+17/18,17/18,24,Boavista,Vitória FC,4,0,2.14,3.1,3.75,Boavista,2.14
+17/18,17/18,24,Portimonense,Porto,1,5,8.5,4.75,1.36,Porto,1.36
+17/18,17/18,25,Braga,Tondela,1,0,1.33,4.75,9.5,Braga,1.33
+17/18,17/18,25,Sporting,Moreirense,1,0,1.16,7.0,15.0,Sporting,1.16
+17/18,17/18,25,Porto,Sporting,2,1,1.55,3.79,6.5,Porto,1.55
+17/18,17/18,25,Feirense,Boavista,3,0,3.0,3.0,2.5,Feirense,3.0
+17/18,17/18,25,Benfica,Maritimo,5,0,1.14,7.5,17.0,Benfica,1.14
+17/18,17/18,25,Estoril Praia,Braga,0,6,4.0,3.5,1.9,Braga,1.9
+17/18,17/18,25,Tondela,Chaves,2,0,2.45,3.2,2.87,Tondela,2.45
+17/18,17/18,25,Moreirense,Paços Ferreira,2,0,2.29,3.1,3.29,Moreirense,2.29
+17/18,17/18,25,Vitória FC,Rio Ave,1,0,2.54,3.2,2.79,Vitória FC,2.54
+17/18,17/18,25,Vitória SC,Belenenses SAD,0,0,1.95,3.29,4.0,Empate,3.29
+17/18,17/18,26,Aves,Portimonense,3,0,2.04,3.39,3.6,Aves,2.04
+17/18,17/18,26,Braga,Moreirense,3,0,1.44,4.2,7.0,Braga,1.44
+17/18,17/18,26,Rio Ave,Feirense,2,1,1.61,3.39,6.5,Rio Ave,1.61
+17/18,17/18,26,Benfica,Aves,2,0,1.14,8.0,15.0,Benfica,1.14
+17/18,17/18,26,Boavista,Estoril Praia,1,0,2.14,3.25,3.39,Boavista,2.14
+17/18,17/18,26,Portimonense,Vitória SC,2,1,2.1,3.39,3.5,Portimonense,2.1
+17/18,17/18,26,Maritimo,Vitória FC,4,2,2.2,3.1,3.5,Maritimo,2.2
+17/18,17/18,26,Belenenses SAD,Tondela,0,0,1.83,3.29,4.75,Empate,3.29
+17/18,17/18,26,Paços Ferreira,Porto,1,0,12.0,5.75,1.22,Paços Ferreira,12.0
+17/18,17/18,27,Chaves,Sporting,1,2,6.5,3.6,1.57,Sporting,1.57
+17/18,17/18,27,Vitória FC,Portimonense,1,1,2.29,3.29,3.1,Empate,3.29
+17/18,17/18,27,Estoril Praia,Paços Ferreira,1,1,2.04,3.29,3.6,Empate,3.29
+17/18,17/18,27,Tondela,Maritimo,1,2,2.2,3.1,3.5,Maritimo,3.5
+17/18,17/18,27,Feirense,Benfica,0,2,10.0,5.25,1.28,Benfica,1.28
+17/18,17/18,27,Porto,Boavista,2,0,1.16,7.5,13.0,Porto,1.16
+17/18,17/18,27,Moreirense,Belenenses SAD,2,1,2.29,3.0,3.29,Moreirense,2.29
+17/18,17/18,27,Vitória SC,Aves,2,1,2.04,3.39,3.5,Vitória SC,2.04
+17/18,17/18,27,Chaves,Braga,1,4,4.2,3.6,1.83,Braga,1.83
+17/18,17/18,27,Sporting,Rio Ave,2,0,1.22,6.0,12.0,Sporting,1.22
+17/18,17/18,28,Aves,Vitória FC,1,4,2.0,3.25,3.89,,
+17/18,17/18,28,Maritimo,Feirense,4,1,1.7,3.5,5.25,Maritimo,1.7
+17/18,17/18,28,Rio Ave,Estoril Praia,2,0,1.75,3.7,4.5,Rio Ave,1.75
+17/18,17/18,28,Boavista,Tondela,1,1,2.04,3.29,4.0,Empate,3.29
+17/18,17/18,28,Paços Ferreira,Chaves,2,0,2.2,3.1,3.5,Paços Ferreira,2.2
+17/18,17/18,28,Portimonense,Moreirense,4,3,1.95,3.25,4.09,Portimonense,1.95
+17/18,17/18,28,Benfica,Vitória SC,2,0,1.12,8.5,17.0,Benfica,1.12
+17/18,17/18,28,Braga,Sporting,1,0,3.2,3.5,2.14,Braga,3.2
+17/18,17/18,29,Belenenses SAD,Porto,2,0,13.0,5.0,1.28,Belenenses SAD,13.0
+17/18,17/18,29,Vitória SC,Rio Ave,3,0,2.1,3.39,3.39,Vitória SC,2.1
+17/18,17/18,29,Estoril Praia,Maritimo,1,1,2.14,3.29,3.39,Empate,3.29
+17/18,17/18,29,Tondela,Portimonense,2,2,2.6,3.0,2.87,Empate,3.0
+17/18,17/18,29,Feirense,Braga,2,2,7.0,4.0,1.53,Empate,4.0
+17/18,17/18,29,Vitória FC,Benfica,1,2,11.0,5.25,1.28,Benfica,1.28
+17/18,17/18,29,Chaves,Belenenses SAD,1,1,2.14,3.2,3.5,Empate,3.2
+17/18,17/18,29,Porto,Aves,2,0,1.12,8.0,19.0,Porto,1.12
+17/18,17/18,29,Sporting,Paços Ferreira,2,0,1.22,6.0,11.0,Sporting,1.22
+17/18,17/18,30,Moreirense,Boavista,1,0,2.1,3.0,3.89,Moreirense,2.1
+17/18,17/18,30,Paços Ferreira,Braga,1,5,4.5,3.75,1.75,Braga,1.75
+17/18,17/18,30,Aves,Feirense,1,0,1.8,3.29,5.0,Aves,1.8
+17/18,17/18,30,Portimonense,Estoril Praia,0,1,1.95,3.5,3.75,Estoril Praia,3.75
+17/18,17/18,30,Boavista,Chaves,3,3,2.37,3.1,3.1,Empate,3.1
+17/18,17/18,30,Vitória SC,Vitória FC,1,1,1.75,3.5,4.75,Empate,3.5
+17/18,17/18,30,Maritimo,Moreirense,1,1,2.04,3.1,3.89,Empate,3.1
+17/18,17/18,30,Benfica,Porto,0,1,2.7,3.1,2.7,Porto,2.7
+17/18,17/18,30,Belenenses SAD,Sporting,3,4,6.5,3.6,1.57,Sporting,1.57
+17/18,17/18,31,Rio Ave,Tondela,1,1,1.72,3.5,5.0,Empate,3.5
+17/18,17/18,31,Braga,Maritimo,2,0,1.3,5.0,11.0,Braga,1.3
+17/18,17/18,31,Paços Ferreira,Belenenses SAD,1,1,2.05,3.25,3.79,Empate,3.25
+17/18,17/18,31,Feirense,Vitória SC,2,1,3.1,3.2,2.45,Feirense,3.1
+17/18,17/18,31,Estoril Praia,Benfica,1,2,9.5,5.25,1.3,Benfica,1.3
+17/18,17/18,31,Chaves,Portimonense,2,1,2.2,3.5,3.29,Chaves,2.2
+17/18,17/18,31,Tondela,Aves,3,0,2.55,3.1,2.89,Tondela,2.55
+17/18,17/18,31,Moreirense,Rio Ave,2,1,2.5,3.2,3.0,Moreirense,2.5
+17/18,17/18,31,Sporting,Boavista,1,0,1.18,7.5,19.0,Sporting,1.18
+17/18,17/18,32,Porto,Vitória FC,5,1,1.09,10.0,41.0,Porto,1.09
+17/18,17/18,32,Vitória SC,Moreirense,1,0,1.9,3.5,4.5,Vitória SC,1.9
+17/18,17/18,32,Vitória FC,Feirense,0,2,1.8,3.4,5.0,Feirense,5.0
+17/18,17/18,32,Benfica,Tondela,2,3,1.12,12.0,36.0,Tondela,36.0
+17/18,17/18,32,Portimonense,Sporting,1,2,9.5,5.0,1.33,Sporting,1.33
+17/18,17/18,32,Boavista,Paços Ferreira,1,0,2.37,3.1,3.5,Boavista,2.37
+17/18,17/18,32,Rio Ave,Chaves,2,1,2.0,3.4,4.33,Rio Ave,2.0
+17/18,17/18,32,Maritimo,Porto,0,1,13.0,6.0,1.25,Porto,1.25
+17/18,17/18,32,Belenenses SAD,Braga,0,1,7.0,4.2,1.5,Braga,1.5
+17/18,17/18,33,Aves,Estoril Praia,1,0,1.95,3.5,3.75,Aves,1.95
+17/18,17/18,33,Braga,Boavista,1,1,1.22,6.0,13.0,Empate,6.0
+17/18,17/18,33,Belenenses SAD,Portimonense,3,2,2.2,3.39,3.39,Belenenses SAD,2.2
+17/18,17/18,33,Tondela,Vitória SC,1,4,2.75,3.4,2.5,Vitória SC,2.5
+17/18,17/18,33,Sporting,Benfica,0,0,2.0,3.4,4.0,Empate,3.4
+17/18,17/18,33,Estoril Praia,Vitória FC,2,1,2.3,3.2,3.25,Estoril Praia,2.3
+17/18,17/18,33,Moreirense,Aves,0,3,2.38,3.1,3.3,Aves,3.3
+17/18,17/18,33,Chaves,Maritimo,4,1,2.15,3.3,3.5,Chaves,2.15
+17/18,17/18,33,Porto,Feirense,2,1,1.15,8.0,15.0,Porto,1.15
+17/18,17/18,34,Paços Ferreira,Rio Ave,0,0,1.9,3.5,4.33,Empate,3.5
+17/18,17/18,34,Aves,Chaves,2,3,2.54,3.2,2.79,Chaves,2.79
+17/18,17/18,34,Vitória SC,Porto,0,1,7.0,4.6,1.4,Porto,1.4
+17/18,17/18,34,Boavista,Belenenses SAD,1,0,2.0,3.3,3.79,Boavista,2.0
+17/18,17/18,34,Benfica,Moreirense,1,0,1.12,8.0,21.0,Benfica,1.12
+17/18,17/18,34,Feirense,Estoril Praia,0,0,2.39,3.5,3.0,Empate,3.5
+17/18,17/18,34,Maritimo,Sporting,2,1,10.5,5.25,1.3,Maritimo,10.5
+17/18,17/18,34,Portimonense,Paços Ferreira,3,1,3.29,3.75,2.05,Portimonense,3.29
+17/18,17/18,34,Rio Ave,Braga,1,0,4.75,3.8,1.75,Rio Ave,4.75
+17/18,17/18,34,Vitória FC,Tondela,1,0,1.5,4.2,7.0,Vitória FC,1.5
+18/19,18/19,1,Benfica,Vitória SC,3,2,1.25,6.0,12.0,Benfica,1.25
+18/19,18/19,1,Vitória FC,Aves,2,0,2.34,3.1,3.4,Vitória FC,2.34
+18/19,18/19,1,Tondela,Belenenses SAD,0,1,2.25,3.25,3.4,Belenenses SAD,3.4
+18/19,18/19,1,Porto,Chaves,5,0,1.16,7.5,21.0,Porto,1.16
+18/19,18/19,1,Feirense,Rio Ave,2,0,2.6,3.1,3.1,Feirense,2.6
+18/19,18/19,1,Maritimo,Santa Clara,1,0,1.9,3.4,4.75,Maritimo,1.9
+18/19,18/19,1,Moreirense,Sporting,1,3,6.5,3.9,1.57,Sporting,1.57
+18/19,18/19,1,Braga,Nacional,4,2,1.25,5.9,14.0,Braga,1.25
+18/19,18/19,2,Portimonense,Boavista,0,2,2.2,3.2,3.6,Boavista,3.6
+18/19,18/19,2,Aves,Tondela,2,2,2.2,3.15,3.5,Empate,3.15
+18/19,18/19,2,Chaves,Portimonense,2,0,2.31,3.3,3.4,Chaves,2.31
+18/19,18/19,2,Boavista,Benfica,0,2,6.5,3.9,1.53,Benfica,1.53
+18/19,18/19,2,Sporting,Vitória FC,2,1,1.33,5.5,9.5,Sporting,1.33
+18/19,18/19,2,Nacional,Moreirense,1,2,2.25,3.3,3.3,Moreirense,3.3
+18/19,18/19,2,Rio Ave,Maritimo,3,1,2.35,3.1,3.2,Rio Ave,2.35
+18/19,18/19,2,Belenenses SAD,Porto,2,3,17.0,5.6,1.23,Porto,1.23
+18/19,18/19,2,Santa Clara,Braga,3,3,5.5,3.7,1.74,Empate,3.7
+18/19,18/19,3,Vitória SC,Feirense,0,1,1.62,3.65,6.5,Feirense,6.5
+18/19,18/19,3,Maritimo,Chaves,2,1,1.81,3.5,4.6,Maritimo,1.81
+18/19,18/19,3,Portimonense,Santa Clara,2,2,2.16,3.4,4.4,Empate,3.4
+18/19,18/19,3,Benfica,Sporting,1,1,1.8,3.4,5.0,Empate,3.4
+18/19,18/19,3,Porto,Vitória SC,2,3,1.16,8.0,18.0,Vitória SC,18.0
+18/19,18/19,3,Feirense,Boavista,1,1,2.45,3.0,3.2,Empate,3.0
+18/19,18/19,3,Vitória FC,Nacional,1,2,1.75,3.6,5.0,Nacional,5.0
+18/19,18/19,3,Tondela,Rio Ave,1,1,2.27,3.2,3.25,Empate,3.2
+18/19,18/19,3,Braga,Aves,3,1,1.36,5.0,10.5,Braga,1.36
+18/19,18/19,4,Moreirense,Belenenses SAD,1,1,2.2,3.15,3.6,Empate,3.15
+18/19,18/19,4,Chaves,Braga,0,1,4.75,3.8,1.72,Braga,1.72
+18/19,18/19,4,Vitória SC,Tondela,1,0,1.88,3.3,4.5,Vitória SC,1.88
+18/19,18/19,4,Belenenses SAD,Vitória FC,0,0,2.25,3.3,3.4,Empate,3.3
+18/19,18/19,4,Santa Clara,Boavista,4,2,2.22,3.1,3.6,Santa Clara,2.22
+18/19,18/19,4,Sporting,Feirense,1,0,1.26,5.5,11.0,Sporting,1.26
+18/19,18/19,4,Aves,Maritimo,0,1,2.45,3.1,3.2,Maritimo,3.2
+18/19,18/19,4,Rio Ave,Portimonense,2,1,2.29,3.5,3.1,Rio Ave,2.29
+18/19,18/19,4,Nacional,Benfica,0,4,9.0,5.0,1.33,Benfica,1.33
+18/19,18/19,4,Porto,Moreirense,3,0,1.14,8.5,23.0,Porto,1.14
+18/19,18/19,5,Boavista,Chaves,1,2,2.2,3.1,3.6,Chaves,3.6
+18/19,18/19,5,Santa Clara,Rio Ave,1,3,2.4,3.3,3.1,Rio Ave,3.1
+18/19,18/19,5,Maritimo,Belenenses SAD,0,0,2.04,3.2,4.0,Empate,3.2
+18/19,18/19,5,Vitória FC,Porto,0,2,8.5,4.75,1.36,Porto,1.36
+18/19,18/19,5,Feirense,Nacional,0,0,1.95,3.4,3.8,Empate,3.4
+18/19,18/19,5,Tondela,Moreirense,2,0,2.25,3.2,3.25,Tondela,2.25
+18/19,18/19,5,Benfica,Aves,2,0,1.11,9.0,24.0,Benfica,1.11
+18/19,18/19,5,Portimonense,Vitória SC,3,2,2.2,3.35,3.3,Portimonense,2.2
+18/19,18/19,6,Braga,Sporting,1,0,2.37,3.4,2.9,Braga,2.37
+18/19,18/19,6,Chaves,Benfica,2,2,10.0,5.0,1.31,Empate,5.0
+18/19,18/19,6,Porto,Tondela,1,0,1.12,9.05,21.0,Porto,1.12
+18/19,18/19,6,Moreirense,Feirense,1,0,2.15,3.1,3.8,Moreirense,2.15
+18/19,18/19,6,Rio Ave,Boavista,2,1,2.1,3.2,4.0,Rio Ave,2.1
+18/19,18/19,6,Sporting,Maritimo,2,0,1.36,4.8,9.5,Sporting,1.36
+18/19,18/19,6,Nacional,Santa Clara,0,3,1.91,3.6,4.0,Santa Clara,4.0
+18/19,18/19,6,Vitória SC,Vitória FC,1,1,2.0,3.3,4.0,Empate,3.3
+18/19,18/19,6,Belenenses SAD,Braga,0,3,4.33,3.6,1.84,Braga,1.84
+18/19,18/19,7,Aves,Portimonense,3,0,2.75,3.3,2.6,Aves,2.75
+18/19,18/19,7,Tondela,Nacional,1,1,1.91,3.6,3.8,Empate,3.6
+18/19,18/19,7,Santa Clara,Chaves,1,0,2.3,3.3,3.4,Santa Clara,2.3
+18/19,18/19,7,Feirense,Belenenses SAD,0,0,2.4,3.0,3.3,Empate,3.0
+18/19,18/19,7,Vitória FC,Moreirense,3,0,2.1,3.2,3.65,Vitória FC,2.1
+18/19,18/19,7,Maritimo,Vitória SC,1,3,2.3,3.1,3.5,Vitória SC,3.5
+18/19,18/19,7,Braga,Rio Ave,1,1,1.4,4.75,9.0,Empate,4.75
+18/19,18/19,7,Boavista,Aves,1,0,2.2,3.1,3.6,Boavista,2.2
+18/19,18/19,7,Benfica,Porto,1,0,2.4,3.2,3.0,Benfica,2.4
+18/19,18/19,7,Portimonense,Sporting,4,2,4.75,3.8,1.75,Portimonense,4.75
+18/19,18/19,8,Nacional,Portimonense,0,1,2.6,3.45,2.75,Portimonense,2.75
+18/19,18/19,8,Vitória SC,Braga,1,1,3.2,3.4,2.25,Empate,3.4
+18/19,18/19,8,Aves,Santa Clara,1,2,2.05,3.35,3.6,Santa Clara,3.6
+18/19,18/19,8,Rio Ave,Chaves,1,0,1.8,3.75,4.5,Rio Ave,1.8
+18/19,18/19,8,Belenenses SAD,Benfica,2,0,10.5,5.5,1.29,Belenenses SAD,10.5
+18/19,18/19,8,Moreirense,Maritimo,1,0,2.1,3.3,3.6,Moreirense,2.1
+18/19,18/19,8,Tondela,Vitória FC,1,2,2.55,3.1,3.0,Vitória FC,3.0
+18/19,18/19,8,Porto,Feirense,2,0,1.12,10.0,41.0,Porto,1.12
+18/19,18/19,8,Sporting,Boavista,3,0,1.32,5.25,9.5,Sporting,1.32
+18/19,18/19,9,Benfica,Moreirense,1,3,1.14,7.65,21.0,Moreirense,21.0
+18/19,18/19,9,Portimonense,Belenenses SAD,1,1,1.85,3.6,4.5,Empate,3.6
+18/19,18/19,9,Maritimo,Porto,0,2,8.5,4.5,1.4,Porto,1.4
+18/19,18/19,9,Boavista,Vitória SC,0,0,3.1,3.2,2.4,Empate,3.2
+18/19,18/19,9,Feirense,Tondela,2,4,2.39,3.0,3.4,Tondela,3.4
+18/19,18/19,9,Santa Clara,Sporting,1,2,5.0,4.0,1.7,Sporting,1.7
+18/19,18/19,9,Braga,Vitória FC,2,1,1.44,4.5,7.5,Braga,1.44
+18/19,18/19,10,Rio Ave,Nacional,3,3,1.45,4.75,6.5,Empate,4.75
+18/19,18/19,10,Chaves,Aves,1,2,2.1,3.3,3.8,Aves,3.8
+18/19,18/19,10,Moreirense,Portimonense,2,0,2.45,3.4,2.9,Moreirense,2.45
+18/19,18/19,10,Vitória FC,Feirense,2,1,1.73,3.5,5.0,Vitória FC,1.73
+18/19,18/19,10,Aves,Rio Ave,2,1,2.8,3.4,2.45,Aves,2.8
+18/19,18/19,10,Belenenses SAD,Boavista,0,0,2.24,3.2,3.5,Empate,3.2
+18/19,18/19,10,Nacional,Maritimo,1,0,2.63,3.3,2.75,Nacional,2.63
+18/19,18/19,10,Porto,Braga,1,0,1.42,4.6,7.5,Porto,1.42
+18/19,18/19,10,Vitória SC,Santa Clara,2,0,1.65,3.75,5.75,Vitória SC,1.65
+18/19,18/19,10,Tondela,Benfica,1,3,10.5,4.75,1.33,Benfica,1.33
+18/19,18/19,10,Sporting,Chaves,2,1,1.28,5.5,10.5,Sporting,1.28
+18/19,18/19,11,Santa Clara,Belenenses SAD,2,3,2.15,3.1,3.6,Belenenses SAD,3.6
+18/19,18/19,11,Maritimo,Vitória FC,0,1,2.35,3.1,3.25,Vitória FC,3.25
+18/19,18/19,11,Benfica,Feirense,4,0,1.16,7.5,16.0,Benfica,1.16
+18/19,18/19,11,Braga,Moreirense,2,0,1.36,5.0,9.5,Braga,1.36
+18/19,18/19,11,Aves,Nacional,2,3,1.75,3.75,4.5,Nacional,4.5
+18/19,18/19,11,Portimonense,Tondela,3,2,1.93,3.4,4.2,Portimonense,1.93
+18/19,18/19,11,Chaves,Vitória SC,0,1,3.0,3.25,2.4,Vitória SC,2.4
+18/19,18/19,11,Boavista,Porto,0,1,13.0,5.25,1.25,Porto,1.25
+18/19,18/19,12,Rio Ave,Sporting,1,3,4.5,3.8,1.83,Sporting,1.83
+18/19,18/19,12,Porto,Portimonense,4,1,1.14,8.0,21.0,Porto,1.14
+18/19,18/19,12,Belenenses SAD,Chaves,1,0,2.15,3.2,3.75,Belenenses SAD,2.15
+18/19,18/19,12,Tondela,Braga,0,1,6.0,4.0,1.6,Braga,1.6
+18/19,18/19,12,Vitória FC,Benfica,0,1,7.5,4.0,1.53,Benfica,1.53
+18/19,18/19,12,Moreirense,Santa Clara,0,1,1.89,3.4,4.33,Santa Clara,4.33
+18/19,18/19,12,Nacional,Boavista,0,0,2.3,3.2,3.4,Empate,3.2
+18/19,18/19,12,Vitória SC,Rio Ave,3,2,1.85,3.6,4.5,Vitória SC,1.85
+18/19,18/19,12,Sporting,Aves,4,1,1.2,6.5,17.0,Sporting,1.2
+18/19,18/19,13,Feirense,Maritimo,1,1,2.55,3.0,3.2,Empate,3.0
+18/19,18/19,13,Portimonense,Vitória FC,3,1,2.1,3.45,3.75,Portimonense,2.1
+18/19,18/19,13,Braga,Feirense,4,0,1.25,5.5,12.0,Braga,1.25
+18/19,18/19,13,Boavista,Tondela,2,0,2.35,3.25,3.2,Boavista,2.35
+18/19,18/19,13,Chaves,Moreirense,1,2,2.3,3.4,3.25,Moreirense,3.25
+18/19,18/19,13,Aves,Vitória SC,1,1,3.5,3.3,2.17,Empate,3.3
+18/19,18/19,13,Santa Clara,Porto,1,2,10.5,5.5,1.3,Porto,1.3
+18/19,18/19,13,Rio Ave,Belenenses SAD,2,2,1.77,3.7,4.75,Empate,3.7
+18/19,18/19,13,Maritimo,Benfica,0,1,8.0,4.5,1.41,Benfica,1.41
+18/19,18/19,13,Sporting,Nacional,5,2,1.22,6.1,12.0,Sporting,1.22
+18/19,18/19,14,Feirense,Portimonense,0,1,2.88,3.2,2.6,Portimonense,2.6
+18/19,18/19,14,Tondela,Maritimo,2,1,2.1,3.25,3.8,Tondela,2.1
+18/19,18/19,14,Vitória FC,Santa Clara,0,2,1.91,3.4,4.2,Santa Clara,4.2
+18/19,18/19,14,Belenenses SAD,Aves,5,2,2.24,3.2,3.6,Belenenses SAD,2.24
+18/19,18/19,14,Moreirense,Boavista,2,1,2.01,3.25,4.33,Moreirense,2.01
+18/19,18/19,14,Nacional,Chaves,2,0,1.95,3.5,3.9,Nacional,1.95
+18/19,18/19,14,Porto,Rio Ave,2,1,1.16,8.0,17.5,Porto,1.16
+18/19,18/19,14,Benfica,Braga,6,2,1.62,3.85,5.5,Benfica,1.62
+18/19,18/19,14,Vitória SC,Sporting,1,0,3.3,3.5,2.15,Vitória SC,3.3
+18/19,18/19,16,Moreirense,Aves,1,0,2.07,3.25,3.9,Moreirense,2.07
+18/19,18/19,16,Tondela,Sporting,2,1,4.5,3.6,1.8,Tondela,4.5
+18/19,18/19,16,Porto,Nacional,3,1,1.12,10.0,19.0,Porto,1.12
+18/19,18/19,16,Portimonense,Braga,1,1,3.7,3.6,2.0,Empate,3.6
+18/19,18/19,16,Aves,Feirense,1,1,2.0,3.2,4.2,Empate,3.2
+18/19,18/19,16,Santa Clara,Benfica,0,2,8.5,4.75,1.4,Benfica,1.4
+18/19,18/19,16,Vitória SC,Moreirense,1,0,2.03,3.3,4.0,Vitória SC,2.03
+18/19,18/19,16,Sporting,Porto,0,0,3.1,3.3,2.3,Empate,3.3
+18/19,18/19,16,Boavista,Maritimo,0,1,2.1,3.2,4.0,Maritimo,4.0
+18/19,18/19,16,Nacional,Belenenses SAD,0,1,2.3,3.2,3.25,Belenenses SAD,3.25
+18/19,18/19,16,Chaves,Tondela,2,1,2.3,3.25,3.3,Chaves,2.3
+18/19,18/19,16,Rio Ave,Vitória FC,1,1,1.96,3.3,4.2,Empate,3.3
+18/19,18/19,17,Nacional,Braga,0,3,4.0,3.5,1.95,Braga,1.95
+18/19,18/19,17,Chaves,Porto,1,4,10.0,4.75,1.36,Porto,1.36
+18/19,18/19,17,Vitória SC,Benfica,0,1,4.0,3.2,2.05,Benfica,2.05
+18/19,18/19,17,Belenenses SAD,Tondela,2,2,2.16,3.1,3.8,Empate,3.1
+18/19,18/19,17,Sporting,Moreirense,2,1,1.33,5.0,10.0,Sporting,1.33
+18/19,18/19,17,Santa Clara,Maritimo,0,1,2.3,3.1,3.3,Maritimo,3.3
+18/19,18/19,17,Aves,Vitória FC,2,1,2.4,3.3,3.0,Aves,2.4
+18/19,18/19,17,Boavista,Portimonense,0,2,2.45,3.0,3.25,Portimonense,3.25
+18/19,18/19,17,Rio Ave,Feirense,0,0,1.55,4.05,6.0,Empate,4.05
+18/19,18/19,18,Maritimo,Rio Ave,0,2,2.31,3.25,3.25,Rio Ave,3.25
+18/19,18/19,18,Moreirense,Nacional,2,1,1.65,3.9,5.25,Moreirense,1.65
+18/19,18/19,18,Tondela,Aves,0,2,2.27,3.25,3.5,Aves,3.5
+18/19,18/19,18,Feirense,Vitória SC,1,2,4.33,3.25,1.95,Vitória SC,1.95
+18/19,18/19,18,Benfica,Boavista,5,1,1.2,7.0,17.0,Benfica,1.2
+18/19,18/19,18,Portimonense,Chaves,0,1,1.76,3.9,4.75,Chaves,4.75
+18/19,18/19,18,Braga,Santa Clara,1,0,1.25,5.75,12.0,Braga,1.25
+18/19,18/19,18,Vitória FC,Sporting,1,1,4.75,3.6,1.76,Empate,3.6
+18/19,18/19,18,Porto,Belenenses SAD,3,0,1.16,8.5,19.0,Porto,1.16
+18/19,18/19,18,Rio Ave,Tondela,2,2,2.0,3.4,3.75,Empate,3.4
+18/19,18/19,18,Chaves,Maritimo,1,0,1.91,3.4,4.2,Chaves,1.91
+18/19,18/19,18,Boavista,Feirense,2,0,2.05,3.1,4.33,Boavista,2.05
+18/19,18/19,18,Aves,Braga,0,2,4.75,3.6,1.8,Braga,1.8
+18/19,18/19,18,Nacional,Vitória FC,0,0,2.4,3.2,3.0,Empate,3.2
+18/19,18/19,18,Santa Clara,Portimonense,2,1,2.63,3.3,2.63,Santa Clara,2.63
+18/19,18/19,18,Sporting,Benfica,2,4,3.5,3.3,2.2,Benfica,2.2
+18/19,18/19,18,Vitória SC,Porto,0,0,6.5,3.75,1.59,Empate,3.75
+18/19,18/19,19,Belenenses SAD,Moreirense,0,1,3.0,3.1,2.5,Moreirense,2.5
+18/19,18/19,19,Moreirense,Porto,1,1,7.5,4.1,1.5,Empate,4.1
+18/19,18/19,19,Maritimo,Aves,0,1,2.27,3.2,3.3,Aves,3.3
+18/19,18/19,19,Portimonense,Rio Ave,0,1,1.96,3.7,3.6,Rio Ave,3.6
+18/19,18/19,19,Tondela,Vitória SC,1,0,2.9,3.25,2.5,Tondela,2.9
+18/19,18/19,19,Boavista,Santa Clara,1,0,2.1,3.2,3.8,Boavista,2.1
+18/19,18/19,19,Braga,Chaves,2,1,1.3,5.4,12.0,Braga,1.3
+18/19,18/19,19,Benfica,Nacional,10,0,1.14,9.0,20.0,Benfica,1.14
+18/19,18/19,19,Feirense,Sporting,1,3,7.5,4.0,1.49,Sporting,1.49
+18/19,18/19,20,Vitória FC,Belenenses SAD,0,0,2.3,3.0,3.6,Empate,3.0
+18/19,18/19,20,Rio Ave,Santa Clara,1,2,1.9,3.4,4.5,Santa Clara,4.5
+18/19,18/19,20,Nacional,Feirense,4,0,2.0,3.25,3.8,Nacional,2.0
+18/19,18/19,20,Vitória SC,Portimonense,2,0,1.81,3.6,4.4,Vitória SC,1.81
+18/19,18/19,20,Porto,Vitória FC,2,0,1.16,7.3,17.0,Porto,1.16
+18/19,18/19,20,Belenenses SAD,Maritimo,0,1,2.2,3.05,3.75,Maritimo,3.75
+18/19,18/19,20,Moreirense,Tondela,2,0,1.98,3.4,4.2,Moreirense,1.98
+18/19,18/19,20,Chaves,Boavista,1,1,2.15,3.1,3.75,Empate,3.1
+18/19,18/19,20,Sporting,Braga,3,0,2.5,3.3,3.0,Sporting,2.5
+18/19,18/19,21,Aves,Benfica,0,3,8.5,5.0,1.36,Benfica,1.36
+18/19,18/19,21,Braga,Belenenses SAD,0,2,1.37,4.75,9.0,Belenenses SAD,9.0
+18/19,18/19,21,Tondela,Porto,0,3,8.0,4.1,1.5,Porto,1.5
+18/19,18/19,21,Feirense,Moreirense,1,3,4.0,3.3,2.06,Moreirense,2.06
+18/19,18/19,21,Portimonense,Aves,1,1,2.11,3.3,3.8,Empate,3.3
+18/19,18/19,21,Vitória FC,Vitória SC,1,1,3.3,3.0,2.45,Empate,3.0
+18/19,18/19,21,Santa Clara,Nacional,2,0,1.94,3.5,4.0,Santa Clara,1.94
+18/19,18/19,21,Boavista,Rio Ave,1,0,2.87,3.0,2.7,Boavista,2.87
+18/19,18/19,22,Maritimo,Sporting,0,0,5.75,3.75,1.63,Empate,3.75
+18/19,18/19,22,Benfica,Chaves,4,0,1.12,9.0,15.5,Benfica,1.12
+18/19,18/19,22,Aves,Boavista,2,0,2.15,3.1,4.0,Aves,2.15
+18/19,18/19,22,Nacional,Tondela,3,2,2.38,3.15,3.1,Nacional,2.38
+18/19,18/19,22,Moreirense,Vitória FC,1,1,1.89,3.3,4.5,Empate,3.3
+18/19,18/19,22,Porto,Benfica,1,2,2.14,3.3,3.5,Benfica,3.5
+18/19,18/19,22,Belenenses SAD,Feirense,4,0,1.87,3.4,4.35,Belenenses SAD,1.87
+18/19,18/19,22,Chaves,Santa Clara,0,0,2.06,3.3,3.6,Empate,3.3
+18/19,18/19,22,Rio Ave,Braga,1,2,3.95,3.8,1.85,Braga,1.85
+18/19,18/19,22,Sporting,Portimonense,3,1,1.33,5.25,8.0,Sporting,1.33
+18/19,18/19,23,Vitória SC,Maritimo,1,0,1.65,3.8,5.6,Vitória SC,1.65
+18/19,18/19,23,Chaves,Rio Ave,1,1,2.4,3.1,3.1,Empate,3.1
+18/19,18/19,23,Maritimo,Moreirense,3,2,2.8,3.1,2.62,Maritimo,2.8
+18/19,18/19,23,Braga,Vitória SC,1,0,1.76,3.5,5.0,Braga,1.76
+18/19,18/19,23,Boavista,Sporting,1,2,5.25,3.75,1.66,Sporting,1.66
+18/19,18/19,23,Portimonense,Nacional,5,1,1.8,3.8,4.0,Portimonense,1.8
+18/19,18/19,23,Santa Clara,Aves,0,0,2.7,3.1,2.8,Empate,3.1
+18/19,18/19,23,Vitória FC,Tondela,0,0,2.03,3.4,3.75,Empate,3.4
+18/19,18/19,23,Feirense,Porto,1,2,13.0,6.05,1.22,Porto,1.22
+18/19,18/19,24,Benfica,Belenenses SAD,2,2,1.17,7.5,15.0,Empate,7.5
+18/19,18/19,24,Sporting,Santa Clara,1,0,1.22,6.1,15.0,Sporting,1.22
+18/19,18/19,24,Belenenses SAD,Portimonense,2,2,2.4,3.2,3.1,Empate,3.2
+18/19,18/19,24,Vitória FC,Braga,0,1,5.25,3.4,1.77,Braga,1.77
+18/19,18/19,24,Vitória SC,Boavista,3,1,1.64,3.6,5.75,Vitória SC,1.64
+18/19,18/19,24,Porto,Maritimo,3,0,1.11,9.65,30.0,Porto,1.11
+18/19,18/19,24,Aves,Chaves,0,1,2.06,3.25,3.75,Chaves,3.75
+18/19,18/19,24,Nacional,Rio Ave,0,1,3.2,3.45,2.37,Rio Ave,2.37
+18/19,18/19,24,Moreirense,Benfica,0,4,8.5,4.55,1.41,Benfica,1.41
+18/19,18/19,24,Tondela,Feirense,1,1,1.94,3.5,4.0,Empate,3.5
+18/19,18/19,25,Portimonense,Moreirense,0,2,2.01,3.6,3.5,Moreirense,3.5
+18/19,18/19,25,Braga,Porto,2,3,4.2,3.5,1.95,Porto,1.95
+18/19,18/19,25,Chaves,Sporting,1,3,5.25,3.6,1.74,Sporting,1.74
+18/19,18/19,25,Benfica,Tondela,1,0,1.1,12.0,34.0,Benfica,1.1
+18/19,18/19,25,Santa Clara,Vitória SC,1,0,3.4,3.25,2.3,Santa Clara,3.4
+18/19,18/19,25,Maritimo,Nacional,3,2,2.17,3.25,3.6,Maritimo,2.17
+18/19,18/19,25,Rio Ave,Aves,0,2,2.65,3.2,2.8,Aves,2.8
+18/19,18/19,25,Boavista,Belenenses SAD,2,0,2.55,3.2,3.0,Boavista,2.55
+18/19,18/19,26,Feirense,Vitória FC,0,1,2.75,3.1,2.75,Vitória FC,2.75
+18/19,18/19,26,Porto,Boavista,2,0,1.14,8.0,20.0,Porto,1.14
+18/19,18/19,26,Belenenses SAD,Santa Clara,1,1,2.2,3.1,3.8,Empate,3.1
+18/19,18/19,26,Nacional,Aves,0,0,2.75,3.2,2.7,Empate,3.2
+18/19,18/19,26,Vitória SC,Chaves,4,0,1.68,3.6,6.0,Vitória SC,1.68
+18/19,18/19,26,Moreirense,Braga,1,0,4.4,3.6,1.83,Moreirense,4.4
+18/19,18/19,26,Vitória FC,Maritimo,1,0,2.0,3.1,4.4,Vitória FC,2.0
+18/19,18/19,26,Feirense,Benfica,1,4,15.0,6.0,1.25,Benfica,1.25
+18/19,18/19,26,Sporting,Rio Ave,3,0,1.3,5.5,10.0,Sporting,1.3
+18/19,18/19,27,Tondela,Portimonense,3,2,2.45,3.3,2.88,Tondela,2.45
+18/19,18/19,27,Chaves,Belenenses SAD,2,2,1.94,3.3,4.33,Empate,3.3
+18/19,18/19,27,Santa Clara,Moreirense,1,1,2.4,3.1,3.25,Empate,3.1
+18/19,18/19,27,Portimonense,Porto,0,3,9.5,5.1,1.36,Porto,1.36
+18/19,18/19,27,Aves,Sporting,1,3,4.5,3.6,1.86,Sporting,1.86
+18/19,18/19,27,Maritimo,Feirense,2,0,1.67,3.8,5.5,Maritimo,1.67
+18/19,18/19,27,Rio Ave,Vitória SC,2,1,3.2,3.3,2.32,Rio Ave,3.2
+18/19,18/19,27,Boavista,Nacional,1,0,1.97,3.4,3.9,Boavista,1.97
+18/19,18/19,27,Braga,Tondela,3,0,1.36,5.0,9.0,Braga,1.36
+18/19,18/19,27,Benfica,Vitória FC,4,2,1.16,8.5,21.0,Benfica,1.16
+18/19,18/19,28,Tondela,Boavista,1,0,2.05,3.25,3.75,Tondela,2.05
+18/19,18/19,28,Vitória FC,Portimonense,1,1,2.45,3.0,3.25,Empate,3.0
+18/19,18/19,28,Nacional,Sporting,0,1,4.75,4.2,1.62,Sporting,1.62
+18/19,18/19,28,Vitória SC,Aves,0,2,1.88,3.3,4.5,Aves,4.5
+18/19,18/19,28,Belenenses SAD,Rio Ave,1,3,2.35,3.25,3.4,Rio Ave,3.4
+18/19,18/19,28,Moreirense,Chaves,0,1,1.86,3.5,4.75,Chaves,4.75
+18/19,18/19,28,Feirense,Braga,0,2,10.0,4.75,1.33,Braga,1.33
+18/19,18/19,28,Porto,Santa Clara,1,0,1.12,9.5,23.0,Porto,1.12
+18/19,18/19,29,Benfica,Maritimo,6,0,1.12,12.0,31.0,Benfica,1.12
+18/19,18/19,29,Rio Ave,Porto,2,2,14.0,7.0,1.22,Empate,7.0
+18/19,18/19,29,Portimonense,Feirense,1,0,1.41,4.7,7.0,Portimonense,1.41
+18/19,18/19,29,Santa Clara,Vitória FC,0,0,2.38,3.0,3.4,Empate,3.0
+18/19,18/19,29,Sporting,Vitória SC,2,0,1.4,4.75,7.5,Sporting,1.4
+18/19,18/19,29,Aves,Belenenses SAD,3,0,1.67,3.65,5.5,Aves,1.67
+18/19,18/19,29,Chaves,Nacional,4,1,1.78,3.7,5.0,Chaves,1.78
+18/19,18/19,29,Maritimo,Tondela,2,0,2.45,3.25,3.0,Maritimo,2.45
+18/19,18/19,29,Braga,Benfica,1,4,5.0,3.75,1.77,Benfica,1.77
+18/19,18/19,29,Boavista,Moreirense,3,1,2.3,3.1,3.5,Boavista,2.3
+18/19,18/19,30,Moreirense,Rio Ave,1,2,2.4,3.5,2.87,Rio Ave,2.87
+18/19,18/19,30,Feirense,Chaves,4,4,4.2,3.6,1.9,Empate,3.6
+18/19,18/19,30,Maritimo,Braga,1,0,4.33,3.8,1.75,Maritimo,4.33
+18/19,18/19,30,Benfica,Portimonense,5,1,1.12,11.0,26.0,Benfica,1.12
+18/19,18/19,30,Porto,Aves,4,0,1.1,10.5,23.0,Porto,1.1
+18/19,18/19,30,Tondela,Santa Clara,1,3,1.55,3.95,6.0,Santa Clara,6.0
+18/19,18/19,30,Belenenses SAD,Sporting,1,8,7.0,4.75,1.4,Sporting,1.4
+18/19,18/19,30,Vitória SC,Nacional,2,2,1.55,4.2,6.5,Empate,4.2
+18/19,18/19,31,Vitória FC,Boavista,0,3,2.29,2.7,4.33,Boavista,4.33
+18/19,18/19,31,Aves,Moreirense,0,1,2.3,3.2,3.3,Moreirense,3.3
+18/19,18/19,31,Portimonense,Maritimo,3,2,1.52,4.5,6.0,Portimonense,1.52
+18/19,18/19,31,Santa Clara,Feirense,4,4,1.9,3.5,4.5,Empate,3.5
+18/19,18/19,31,Boavista,Braga,4,2,4.2,3.5,1.89,Boavista,4.2
+18/19,18/19,31,Sporting,Tondela,1,1,1.25,6.5,11.0,Empate,6.5
+18/19,18/19,31,Chaves,Vitória FC,1,2,2.2,3.1,3.75,Vitória FC,3.75
+18/19,18/19,31,Vitória SC,Belenenses SAD,5,1,1.41,4.6,7.5,Vitória SC,1.41
+18/19,18/19,31,Nacional,Porto,0,4,10.5,6.5,1.22,Porto,1.22
+18/19,18/19,31,Rio Ave,Benfica,2,3,12.0,6.1,1.28,Benfica,1.28
+18/19,18/19,32,Belenenses SAD,Nacional,3,0,2.12,3.8,3.1,Belenenses SAD,2.12
+18/19,18/19,32,Braga,Portimonense,2,0,1.31,6.0,8.5,Braga,1.31
+18/19,18/19,32,Feirense,Aves,2,1,1.55,4.55,6.0,Feirense,1.55
+18/19,18/19,32,Maritimo,Boavista,0,1,2.27,3.25,3.5,Boavista,3.5
+18/19,18/19,32,Vitória FC,Rio Ave,1,3,2.13,3.4,3.4,Rio Ave,3.4
+18/19,18/19,32,Benfica,Santa Clara,4,1,1.09,12.0,26.0,Benfica,1.09
+18/19,18/19,32,Porto,Sporting,2,1,1.4,5.0,8.0,Porto,1.4
+18/19,18/19,32,Tondela,Chaves,5,2,2.11,3.5,3.5,Tondela,2.11
+18/19,18/19,32,Moreirense,Vitória SC,1,3,2.6,3.3,3.0,Vitória SC,3.0
+19/20,19/20,1,Portimonense,Belenenses SAD,0,0,2.16,3.9,5.5,Empate,3.9
+19/20,19/20,1,Santa Clara,Famalicão,0,2,1.92,3.4,4.33,Famalicão,4.33
+19/20,19/20,1,Gil Vicente,Porto,2,1,11.0,5.5,1.28,Gil Vicente,11.0
+19/20,19/20,1,Benfica,Paços Ferreira,5,0,1.2,7.35,17.0,Benfica,1.2
+19/20,19/20,1,Boavista,Aves,2,1,2.13,3.25,4.2,Boavista,2.13
+19/20,19/20,1,Maritimo,Sporting,1,1,5.75,3.8,1.63,Empate,3.8
+19/20,19/20,1,Braga,Moreirense,3,1,1.41,4.55,10.0,Braga,1.41
+19/20,19/20,2,Vitória FC,Tondela,0,0,2.14,3.25,4.0,Empate,3.25
+19/20,19/20,2,Famalicão,Rio Ave,1,0,2.8,3.5,2.37,Famalicão,2.8
+19/20,19/20,2,Moreirense,Gil Vicente,3,0,2.1,3.4,3.5,Moreirense,2.1
+19/20,19/20,2,Belenenses SAD,Benfica,0,2,17.0,7.0,1.16,Benfica,1.16
+19/20,19/20,2,Porto,Vitória FC,4,0,1.14,8.0,21.0,Porto,1.14
+19/20,19/20,2,Aves,Maritimo,3,1,2.1,3.25,3.8,Aves,2.1
+19/20,19/20,2,Paços Ferreira,Santa Clara,0,1,2.1,3.4,3.5,Santa Clara,3.5
+19/20,19/20,2,Vitória SC,Boavista,1,1,1.72,3.6,5.0,Empate,3.6
+19/20,19/20,2,Sporting,Braga,2,1,2.05,3.5,3.7,Sporting,2.05
+19/20,19/20,3,Tondela,Portimonense,1,2,2.7,3.25,2.63,Portimonense,2.63
+19/20,19/20,3,Vitória FC,Moreirense,0,0,2.3,3.2,3.3,Empate,3.2
+19/20,19/20,3,Rio Ave,Aves,5,1,1.85,3.6,4.5,Rio Ave,1.85
+19/20,19/20,3,Benfica,Porto,0,2,2.05,3.4,3.6,Porto,3.6
+19/20,19/20,3,Boavista,Paços Ferreira,1,1,2.45,3.0,3.1,Empate,3.0
+19/20,19/20,3,Maritimo,Tondela,2,3,2.2,3.2,3.5,Tondela,3.5
+19/20,19/20,3,Santa Clara,Belenenses SAD,0,0,1.8,3.5,4.75,Empate,3.5
+19/20,19/20,3,Portimonense,Sporting,1,3,4.75,3.75,1.75,Sporting,1.75
+19/20,19/20,3,Gil Vicente,Braga,1,1,4.0,3.6,1.9,Empate,3.6
+19/20,19/20,3,Vitória SC,Famalicão,1,1,1.9,3.3,4.5,Empate,3.3
+19/20,19/20,4,Moreirense,Portimonense,1,0,2.2,3.25,3.25,Moreirense,2.2
+19/20,19/20,4,Belenenses SAD,Boavista,0,1,2.45,3.0,3.1,Boavista,3.1
+19/20,19/20,4,Aves,Famalicão,2,3,2.55,3.25,2.8,Famalicão,2.8
+19/20,19/20,4,Paços Ferreira,Maritimo,0,1,1.8,3.4,5.0,Maritimo,5.0
+19/20,19/20,4,Sporting,Rio Ave,2,3,1.44,4.5,7.0,Rio Ave,7.0
+19/20,19/20,4,Gil Vicente,Vitória FC,0,0,2.05,3.1,4.33,Empate,3.1
+19/20,19/20,4,Tondela,Santa Clara,0,0,2.63,3.1,2.9,Empate,3.1
+19/20,19/20,4,Porto,Vitória SC,3,0,1.33,5.5,10.0,Porto,1.33
+19/20,19/20,4,Braga,Benfica,0,4,3.9,3.75,1.9,Benfica,1.9
+19/20,19/20,5,Rio Ave,Vitória SC,1,1,1.8,3.6,4.33,Empate,3.6
+19/20,19/20,6,Vitória FC,Braga,1,0,5.0,3.5,1.75,Vitória FC,5.0
+19/20,19/20,6,Famalicão,Paços Ferreira,4,2,2.5,3.25,2.88,Famalicão,2.5
+19/20,19/20,6,Benfica,Gil Vicente,2,0,1.12,8.5,21.0,Benfica,1.12
+19/20,19/20,6,Vitória SC,Aves,5,1,1.45,4.2,7.5,Vitória SC,1.45
+19/20,19/20,6,Maritimo,Belenenses SAD,1,3,1.9,3.4,4.2,Belenenses SAD,4.2
+19/20,19/20,6,Rio Ave,Tondela,2,4,1.57,4.0,5.75,Tondela,5.75
+19/20,19/20,6,Santa Clara,Moreirense,2,0,2.2,3.1,3.5,Santa Clara,2.2
+19/20,19/20,6,Portimonense,Porto,2,3,9.0,5.0,1.33,Porto,1.33
+19/20,19/20,6,Boavista,Sporting,1,1,5.0,3.75,1.75,Empate,3.75
+19/20,19/20,7,Paços Ferreira,Aves,2,1,1.84,3.5,4.5,Paços Ferreira,1.84
+19/20,19/20,7,Belenenses SAD,Rio Ave,0,2,3.6,3.6,2.05,Rio Ave,2.05
+19/20,19/20,7,Moreirense,Benfica,1,2,8.5,5.05,1.36,Benfica,1.36
+19/20,19/20,7,Gil Vicente,Boavista,0,0,2.13,3.1,3.75,Empate,3.1
+19/20,19/20,7,Tondela,Vitória SC,1,3,3.6,3.5,2.08,Vitória SC,2.08
+19/20,19/20,7,Vitória FC,Portimonense,0,0,2.75,3.0,2.7,Empate,3.0
+19/20,19/20,7,Porto,Santa Clara,2,0,1.14,8.0,17.0,Porto,1.14
+19/20,19/20,8,Braga,Maritimo,2,2,1.28,5.5,10.5,Empate,5.5
+19/20,19/20,8,Sporting,Famalicão,1,2,1.5,4.6,6.0,Famalicão,6.0
+19/20,19/20,8,Boavista,Tondela,0,0,2.07,3.2,4.0,Empate,3.2
+19/20,19/20,8,Maritimo,Moreirense,2,1,2.5,3.2,3.1,Maritimo,2.5
+19/20,19/20,8,Benfica,Vitória FC,1,0,1.16,8.0,18.0,Benfica,1.16
+19/20,19/20,8,Famalicão,Belenenses SAD,3,1,1.63,3.8,6.0,Famalicão,1.63
+19/20,19/20,8,Santa Clara,Gil Vicente,1,0,2.0,3.4,4.0,Santa Clara,2.0
+19/20,19/20,8,Vitória SC,Paços Ferreira,1,0,1.72,4.0,5.0,Vitória SC,1.72
+19/20,19/20,8,Portimonense,Braga,0,1,3.75,3.8,1.9,Braga,1.9
+19/20,19/20,8,Rio Ave,Porto,0,1,6.5,4.35,1.5,Porto,1.5
+19/20,19/20,9,Aves,Sporting,0,1,6.0,4.33,1.55,Sporting,1.55
+19/20,19/20,9,Aves,Tondela,0,1,2.3,3.3,3.1,Tondela,3.1
+19/20,19/20,10,Paços Ferreira,Rio Ave,0,0,2.95,3.3,2.6,Empate,3.3
+19/20,19/20,10,Belenenses SAD,Aves,3,2,2.27,3.55,4.0,Belenenses SAD,2.27
+19/20,19/20,10,Gil Vicente,Portimonense,1,1,2.12,3.2,4.0,Empate,3.2
+19/20,19/20,10,Vitória FC,Maritimo,0,0,1.97,3.25,4.5,Empate,3.25
+19/20,19/20,10,Moreirense,Boavista,1,1,2.5,3.1,3.3,Empate,3.1
+19/20,19/20,10,Tondela,Benfica,0,1,12.0,5.85,1.3,Benfica,1.3
+19/20,19/20,10,Porto,Famalicão,3,0,1.26,6.5,11.0,Porto,1.26
+19/20,19/20,10,Sporting,Vitória SC,3,1,2.17,3.4,3.75,Sporting,2.17
+19/20,19/20,11,Braga,Santa Clara,2,0,1.4,5.0,9.0,Braga,1.4
+19/20,19/20,11,Rio Ave,Moreirense,1,1,1.6,4.2,5.8,Empate,4.2
+19/20,19/20,11,Maritimo,Porto,1,1,11.0,5.0,1.35,Empate,5.0
+19/20,19/20,11,Vitória SC,Belenenses SAD,5,0,1.4,5.0,8.0,Vitória SC,1.4
+19/20,19/20,11,Benfica,Portimonense,4,0,1.25,6.5,13.0,Benfica,1.25
+19/20,19/20,11,Famalicão,Gil Vicente,2,1,2.1,3.4,3.75,Famalicão,2.1
+19/20,19/20,11,Paços Ferreira,Sporting,1,2,3.6,3.3,2.17,Sporting,2.17
+19/20,19/20,11,Boavista,Braga,2,0,5.0,3.75,1.75,Boavista,5.0
+19/20,19/20,11,Santa Clara,Vitória FC,1,1,2.08,3.1,4.33,Empate,3.1
+19/20,19/20,11,Benfica,Rio Ave,2,0,1.36,5.5,8.5,Benfica,1.36
+19/20,19/20,11,Moreirense,Vitória SC,1,1,5.5,4.0,1.67,Empate,4.0
+19/20,19/20,11,Gil Vicente,Maritimo,2,0,2.05,3.25,4.33,Gil Vicente,2.05
+19/20,19/20,11,Tondela,Sporting,1,0,4.0,3.6,1.97,Tondela,4.0
+19/20,19/20,11,Porto,Aves,1,0,1.1,12.0,41.0,Porto,1.1
+19/20,19/20,11,Braga,Famalicão,2,2,1.35,5.85,8.5,Empate,5.85
+19/20,19/20,12,Belenenses SAD,Paços Ferreira,1,0,3.0,3.35,2.45,Belenenses SAD,3.0
+19/20,19/20,12,Portimonense,Santa Clara,1,1,1.8,3.65,4.75,Empate,3.65
+19/20,19/20,12,Vitória FC,Boavista,1,0,2.6,2.87,3.3,Vitória FC,2.6
+19/20,19/20,12,Aves,Gil Vicente,1,2,2.9,3.0,2.88,Gil Vicente,2.88
+19/20,19/20,12,Rio Ave,Vitória FC,1,0,1.57,3.9,7.0,Rio Ave,1.57
+19/20,19/20,12,Santa Clara,Benfica,1,2,6.5,4.33,1.55,Benfica,1.55
+19/20,19/20,12,Famalicão,Moreirense,3,3,2.05,3.5,4.15,Empate,3.5
+19/20,19/20,12,Maritimo,Portimonense,1,1,2.85,3.2,2.65,Empate,3.2
+19/20,19/20,12,Paços Ferreira,Tondela,1,0,2.17,3.5,3.7,Paços Ferreira,2.17
+19/20,19/20,12,Sporting,Belenenses SAD,2,0,1.36,5.0,9.5,Sporting,1.36
+19/20,19/20,12,Vitória SC,Braga,0,2,2.55,3.4,2.9,Braga,2.9
+19/20,19/20,12,Boavista,Porto,0,1,6.75,4.0,1.62,Porto,1.62
+19/20,19/20,13,Santa Clara,Boavista,1,2,2.18,3.1,4.2,Boavista,4.2
+19/20,19/20,13,Moreirense,Aves,3,2,2.08,3.35,3.85,Moreirense,2.08
+19/20,19/20,13,Benfica,Maritimo,4,0,1.12,10.5,24.0,Benfica,1.12
+19/20,19/20,13,Portimonense,Famalicão,2,1,2.15,3.75,3.25,Portimonense,2.15
+19/20,19/20,13,Tondela,Belenenses SAD,0,1,1.9,3.55,4.35,Belenenses SAD,4.35
+19/20,19/20,13,Vitória FC,Vitória SC,1,1,4.6,3.55,1.88,Empate,3.55
+19/20,19/20,13,Gil Vicente,Sporting,3,1,4.33,3.5,1.97,Gil Vicente,4.33
+19/20,19/20,14,Braga,Rio Ave,2,0,1.53,4.6,6.5,Braga,1.53
+19/20,19/20,14,Porto,Paços Ferreira,2,0,1.25,6.25,13.0,Porto,1.25
+19/20,19/20,14,Boavista,Benfica,1,4,6.0,4.0,1.61,Benfica,1.61
+19/20,19/20,14,Maritimo,Santa Clara,2,2,2.7,3.2,2.95,Empate,3.2
+19/20,19/20,14,Famalicão,Tondela,2,3,1.95,3.7,4.0,Tondela,4.0
+19/20,19/20,14,Aves,Braga,1,0,8.0,5.4,1.38,Aves,8.0
+19/20,19/20,14,Paços Ferreira,Vitória FC,2,3,2.05,3.1,4.6,Vitória FC,4.6
+19/20,19/20,14,Vitória SC,Portimonense,2,0,1.42,5.0,7.5,Vitória SC,1.42
+19/20,19/20,14,Sporting,Moreirense,1,0,1.35,5.5,9.0,Sporting,1.35
+19/20,19/20,14,Belenenses SAD,Porto,1,1,12.0,5.85,1.3,Empate,5.85
+19/20,19/20,15,Rio Ave,Gil Vicente,1,0,1.97,3.6,4.2,Rio Ave,1.97
+19/20,19/20,15,Portimonense,Rio Ave,1,1,2.97,3.2,2.67,Empate,3.2
+19/20,19/20,15,Maritimo,Boavista,1,0,2.85,2.9,3.0,Maritimo,2.85
+19/20,19/20,15,Benfica,Famalicão,4,0,1.16,8.5,17.0,Benfica,1.16
+19/20,19/20,15,Vitória FC,Aves,1,0,2.13,3.25,3.95,Vitória FC,2.13
+19/20,19/20,15,Moreirense,Belenenses SAD,2,1,2.17,3.35,3.55,Moreirense,2.17
+19/20,19/20,15,Gil Vicente,Vitória SC,2,2,4.0,3.4,2.05,Empate,3.4
+19/20,19/20,15,Braga,Paços Ferreira,0,1,1.42,4.75,8.0,Paços Ferreira,8.0
+19/20,19/20,16,Santa Clara,Sporting,0,4,4.1,3.5,2.02,Sporting,2.02
+19/20,19/20,16,Porto,Tondela,3,0,1.18,7.5,18.0,Porto,1.18
+19/20,19/20,18,Benfica,Aves,2,1,1.14,10.5,26.0,Benfica,1.14
+19/20,19/20,18,Santa Clara,Rio Ave,0,1,2.8,3.2,2.7,Rio Ave,2.7
+19/20,19/20,18,Moreirense,Porto,2,4,10.5,5.5,1.33,Porto,1.33
+19/20,19/20,18,Portimonense,Paços Ferreira,0,0,2.07,3.3,4.0,Empate,3.3
+19/20,19/20,18,Boavista,Famalicão,0,1,2.6,3.3,2.95,Famalicão,2.95
+19/20,19/20,18,Vitória FC,Sporting,1,3,13.0,6.45,1.25,Sporting,1.25
+19/20,19/20,18,Gil Vicente,Belenenses SAD,2,0,1.67,3.75,6.5,Gil Vicente,1.67
+19/20,19/20,18,Maritimo,Vitória SC,0,0,4.5,3.75,1.87,Empate,3.75
+19/20,19/20,18,Braga,Tondela,2,1,1.33,5.7,10.0,Braga,1.33
+19/20,19/20,19,Porto,Braga,1,2,1.67,4.0,5.5,Braga,5.5
+19/20,19/20,19,Sporting,Benfica,0,2,3.75,3.95,1.93,Benfica,1.93
+19/20,19/20,19,Aves,Portimonense,3,0,2.92,3.2,2.6,Aves,2.92
+19/20,19/20,19,Vitória SC,Santa Clara,1,0,1.36,5.2,9.0,Vitória SC,1.36
+19/20,19/20,19,Tondela,Moreirense,1,1,2.12,3.3,3.9,Empate,3.3
+19/20,19/20,19,Belenenses SAD,Vitória FC,0,1,2.23,3.2,3.8,Vitória FC,3.8
+19/20,19/20,19,Paços Ferreira,Gil Vicente,0,0,3.05,3.0,2.72,Empate,3.0
+19/20,19/20,19,Famalicão,Maritimo,1,1,1.67,4.45,6.0,Empate,4.45
+19/20,19/20,19,Rio Ave,Boavista,2,0,1.78,3.8,5.25,Rio Ave,1.78
+19/20,19/20,20,Belenenses SAD,Portimonense,2,1,2.9,3.1,2.72,Belenenses SAD,2.9
+19/20,19/20,20,Famalicão,Santa Clara,0,1,1.72,3.9,5.5,Santa Clara,5.5
+19/20,19/20,20,Tondela,Vitória FC,0,3,2.0,3.25,4.6,Vitória FC,4.6
+19/20,19/20,20,Paços Ferreira,Benfica,0,2,11.0,5.35,1.33,Benfica,1.33
+19/20,19/20,20,Aves,Boavista,0,1,2.45,3.2,3.4,Boavista,3.4
+19/20,19/20,21,Vitória SC,Rio Ave,1,2,1.67,3.75,5.75,Rio Ave,5.75
+19/20,19/20,21,Sporting,Maritimo,1,0,1.35,5.5,9.5,Sporting,1.35
+19/20,19/20,21,Porto,Gil Vicente,2,1,1.33,5.9,12.0,Porto,1.33
+19/20,19/20,21,Moreirense,Braga,1,2,7.0,4.3,1.6,Braga,1.6
+19/20,19/20,21,Benfica,Belenenses SAD,3,2,1.1,12.0,34.0,Benfica,1.1
+19/20,19/20,21,Rio Ave,Famalicão,2,2,2.02,3.5,4.0,Empate,3.5
+19/20,19/20,21,Portimonense,Tondela,0,1,2.07,3.3,3.95,Tondela,3.95
+19/20,19/20,21,Vitória FC,Porto,0,4,8.5,4.4,1.44,Porto,1.44
+19/20,19/20,21,Gil Vicente,Moreirense,1,5,1.95,3.4,4.5,Moreirense,4.5
+19/20,19/20,21,Maritimo,Aves,1,2,2.07,3.35,4.1,Aves,4.1
+19/20,19/20,21,Braga,Sporting,1,0,1.83,3.85,4.5,Braga,1.83
+19/20,19/20,21,Santa Clara,Paços Ferreira,2,1,2.37,2.95,3.75,Santa Clara,2.37
+19/20,19/20,21,Boavista,Vitória SC,2,0,4.5,3.55,1.87,Boavista,4.5
+19/20,19/20,22,Paços Ferreira,Boavista,0,1,2.8,2.87,3.15,Boavista,3.15
+19/20,19/20,22,Belenenses SAD,Santa Clara,0,2,2.55,3.0,3.15,Santa Clara,3.15
+19/20,19/20,22,Famalicão,Vitória SC,0,7,4.33,3.85,1.87,Vitória SC,1.87
+19/20,19/20,22,Braga,Gil Vicente,2,2,1.4,4.9,8.5,Empate,4.9
+19/20,19/20,22,Porto,Benfica,3,2,2.25,3.35,3.6,Porto,2.25
+19/20,19/20,22,Moreirense,Vitória FC,1,1,2.13,3.05,4.33,Empate,3.05
+19/20,19/20,22,Tondela,Maritimo,0,0,2.27,3.1,3.7,Empate,3.1
+19/20,19/20,22,Sporting,Portimonense,2,1,1.42,5.0,8.0,Sporting,1.42
+19/20,19/20,22,Aves,Rio Ave,0,4,4.05,3.45,2.05,Rio Ave,2.05
+19/20,19/20,23,Vitória FC,Gil Vicente,1,2,2.8,3.0,3.0,Gil Vicente,3.0
+19/20,19/20,23,Portimonense,Moreirense,1,1,2.1,3.3,3.85,Empate,3.3
+19/20,19/20,23,Santa Clara,Tondela,1,0,2.05,3.1,4.75,Santa Clara,2.05
+19/20,19/20,23,Benfica,Braga,0,1,1.76,3.95,5.8,Braga,5.8
+19/20,19/20,23,Rio Ave,Sporting,1,1,2.52,3.5,2.9,Empate,3.5
+19/20,19/20,23,Boavista,Belenenses SAD,1,2,1.85,3.3,5.5,Belenenses SAD,5.5
+19/20,19/20,23,Maritimo,Paços Ferreira,3,0,2.45,3.1,3.35,Maritimo,2.45
+19/20,19/20,23,Vitória SC,Porto,1,2,3.65,3.4,2.2,Porto,2.2
+19/20,19/20,23,Famalicão,Aves,1,1,1.53,4.5,6.5,Empate,4.5
+19/20,19/20,24,Aves,Vitória SC,0,2,8.0,4.75,1.45,Vitória SC,1.45
+19/20,19/20,24,Tondela,Rio Ave,1,2,4.45,3.45,1.92,Rio Ave,1.92
+19/20,19/20,24,Belenenses SAD,Maritimo,1,0,2.4,3.05,3.6,Belenenses SAD,2.4
+19/20,19/20,24,Moreirense,Santa Clara,2,1,2.42,3.1,3.4,Moreirense,2.42
+19/20,19/20,24,Paços Ferreira,Famalicão,2,1,3.0,3.2,2.55,Paços Ferreira,3.0
+19/20,19/20,24,Sporting,Boavista,2,0,1.65,3.8,6.05,Sporting,1.65
+19/20,19/20,24,Braga,Vitória FC,3,1,1.4,4.95,9.0,Braga,1.4
+19/20,19/20,24,Porto,Portimonense,1,0,1.22,7.5,17.0,Porto,1.22
+19/20,19/20,25,Gil Vicente,Benfica,0,1,7.35,4.5,1.51,Benfica,1.51
+19/20,19/20,25,Portimonense,Vitória FC,0,0,1.83,3.5,5.0,Empate,3.5
+19/20,19/20,25,Rio Ave,Belenenses SAD,0,0,1.47,4.33,7.8,Empate,4.33
+19/20,19/20,25,Boavista,Gil Vicente,0,1,2.75,3.05,2.92,,
+19/20,19/20,25,Aves,Paços Ferreira,1,3,2.8,3.0,2.92,Paços Ferreira,2.92
+19/20,19/20,25,Maritimo,Braga,1,2,5.3,4.0,1.68,Braga,1.68
+19/20,19/20,25,Vitória SC,Tondela,2,0,1.38,5.25,12.0,Vitória SC,1.38
+19/20,19/20,26,Santa Clara,Porto,0,2,6.7,4.2,1.55,Porto,1.55
+19/20,19/20,26,Benfica,Moreirense,1,1,1.22,8.0,15.0,Empate,8.0
+19/20,19/20,26,Famalicão,Sporting,3,1,3.2,3.65,2.2,Famalicão,3.2
+19/20,19/20,26,Braga,Portimonense,3,1,1.38,5.25,9.0,Braga,1.38
+19/20,19/20,26,Tondela,Boavista,1,1,2.52,3.0,3.3,Empate,3.0
+19/20,19/20,26,Vitória FC,Benfica,1,1,10.0,5.15,1.37,Empate,5.15
+19/20,19/20,26,Porto,Rio Ave,1,1,1.44,4.5,8.5,Empate,4.5
+19/20,19/20,26,Belenenses SAD,Famalicão,0,0,2.95,3.5,2.4,Empate,3.5
+19/20,19/20,26,Moreirense,Maritimo,2,0,2.07,3.3,4.0,Moreirense,2.07
+19/20,19/20,26,Gil Vicente,Santa Clara,1,1,2.22,3.05,3.9,Empate,3.05
+19/20,19/20,26,Sporting,Aves,2,0,1.27,6.0,12.6,Sporting,1.27
+19/20,19/20,26,Paços Ferreira,Vitória SC,1,2,5.0,3.5,1.88,Vitória SC,1.88
+19/20,19/20,36,Portimonense,Gil Vicente,1,0,2.32,3.15,3.4,Portimonense,2.32
+19/20,19/20,36,Famalicão,Porto,2,1,7.0,4.7,1.51,Famalicão,7.0
+19/20,19/20,36,Maritimo,Vitória FC,1,1,2.02,3.25,4.5,Empate,3.25
+19/20,19/20,36,Benfica,Tondela,0,0,1.2,8.5,17.0,Empate,8.5
+19/20,19/20,36,Vitória SC,Sporting,2,2,2.5,3.4,2.92,Empate,3.4
+19/20,19/20,36,Santa Clara,Braga,3,2,7.55,4.33,1.51,Santa Clara,7.55
+19/20,19/20,36,Aves,Belenenses SAD,0,2,2.95,3.2,2.65,Belenenses SAD,2.65
+19/20,19/20,36,Boavista,Moreirense,0,1,2.8,2.95,2.92,Moreirense,2.92
+19/20,19/20,36,Rio Ave,Paços Ferreira,2,3,1.7,3.75,5.75,Paços Ferreira,5.75
+19/20,19/20,37,Gil Vicente,Famalicão,1,3,3.15,3.2,2.45,Famalicão,2.45
+19/20,19/20,37,Vitória FC,Santa Clara,2,2,3.0,3.0,2.7,Empate,3.0
+19/20,19/20,37,Portimonense,Benfica,2,2,9.0,5.0,1.38,Empate,5.0
+19/20,19/20,37,Porto,Maritimo,1,0,1.27,6.5,14.0,Porto,1.27
+19/20,19/20,37,Belenenses SAD,Vitória SC,1,1,4.75,3.65,1.8,Empate,3.65
+19/20,19/20,37,Tondela,Aves,2,0,1.9,3.5,4.95,Tondela,1.9
+19/20,19/20,37,Moreirense,Rio Ave,0,1,3.65,3.3,2.17,Rio Ave,2.17
+19/20,19/20,37,Sporting,Paços Ferreira,1,0,1.51,4.6,7.0,Sporting,1.51
+19/20,19/20,37,Braga,Boavista,0,1,1.47,4.75,7.5,Boavista,7.5
+19/20,19/20,38,Maritimo,Gil Vicente,2,1,2.5,3.05,3.3,Maritimo,2.5
+19/20,19/20,38,Santa Clara,Portimonense,1,1,2.45,3.1,3.3,Empate,3.1
+19/20,19/20,38,Aves,Porto,0,0,22.0,7.55,1.16,Empate,7.55
+19/20,19/20,38,Paços Ferreira,Belenenses SAD,2,1,2.37,3.2,3.6,Paços Ferreira,2.37
+19/20,19/20,38,Rio Ave,Benfica,1,2,5.0,3.75,1.76,Benfica,1.76
+19/20,19/20,38,Boavista,Vitória FC,3,1,2.35,2.9,3.75,Boavista,2.35
+19/20,19/20,38,Sporting,Tondela,2,0,1.57,4.1,6.7,Sporting,1.57
+19/20,19/20,38,Vitória SC,Moreirense,1,1,1.53,4.3,6.6,Empate,4.3
+19/20,19/20,38,Famalicão,Braga,0,0,4.0,3.8,1.95,Empate,3.8
+19/20,19/20,38,Gil Vicente,Aves,3,0,1.73,3.55,5.5,Gil Vicente,1.73
+19/20,19/20,39,Portimonense,Maritimo,3,2,2.42,3.1,3.4,Portimonense,2.42
+19/20,19/20,39,Vitória FC,Rio Ave,1,2,4.4,3.3,1.97,Rio Ave,1.97
+19/20,19/20,39,Benfica,Santa Clara,3,4,1.3,6.0,12.0,Santa Clara,12.0
+19/20,19/20,39,Porto,Boavista,4,0,1.3,5.5,12.0,Porto,1.3
+19/20,19/20,39,Tondela,Paços Ferreira,1,3,3.2,2.75,2.8,Paços Ferreira,2.8
+19/20,19/20,39,Moreirense,Famalicão,1,1,3.6,3.4,2.2,Empate,3.4
+19/20,19/20,39,Braga,Vitória SC,3,2,2.05,3.5,3.9,Braga,2.05
+19/20,19/20,39,Belenenses SAD,Sporting,1,3,5.5,3.75,1.72,Sporting,1.72
+19/20,19/20,39,Boavista,Santa Clara,1,0,3.0,2.87,2.82,Boavista,3.0
+19/20,19/20,40,Aves,Moreirense,0,1,4.4,3.4,1.93,Moreirense,1.93
+19/20,19/20,40,Maritimo,Benfica,2,0,8.0,4.55,1.44,Maritimo,8.0
+19/20,19/20,40,Paços Ferreira,Porto,0,1,9.5,4.75,1.4,Porto,1.4
+19/20,19/20,40,Famalicão,Portimonense,0,1,2.17,3.5,3.6,Portimonense,3.6
+19/20,19/20,40,Vitória SC,Vitória FC,2,0,1.46,4.6,8.0,Vitória SC,1.46
+19/20,19/20,40,Rio Ave,Braga,4,3,3.05,3.35,2.42,Rio Ave,3.05
+19/20,19/20,40,Belenenses SAD,Tondela,1,1,2.55,2.85,3.35,Empate,2.85
+19/20,19/20,40,Sporting,Gil Vicente,2,1,1.72,3.7,6.0,Sporting,1.72
+19/20,19/20,40,Santa Clara,Maritimo,0,1,2.45,3.15,3.2,Maritimo,3.2
+19/20,19/20,40,Vitória FC,Paços Ferreira,2,3,3.8,2.95,2.45,Paços Ferreira,2.45
+19/20,19/20,40,Portimonense,Vitória SC,0,1,3.1,3.3,2.45,Vitória SC,2.45
+19/20,19/20,40,Benfica,Boavista,3,1,1.25,6.5,14.0,Benfica,1.25
+19/20,19/20,40,Braga,Aves,4,0,1.2,8.5,15.0,Braga,1.2
+19/20,19/20,40,Gil Vicente,Rio Ave,1,0,4.2,3.75,1.9,Gil Vicente,4.2
+19/20,19/20,40,Tondela,Famalicão,0,1,3.5,3.2,2.32,Famalicão,2.32
+19/20,19/20,40,Porto,Belenenses SAD,5,0,1.14,9.5,23.0,Porto,1.14
+19/20,19/20,41,Moreirense,Sporting,0,0,5.5,3.75,1.72,Empate,3.75
+19/20,19/20,41,Boavista,Maritimo,0,1,2.75,3.0,2.95,Maritimo,2.95
+19/20,19/20,41,Aves,Vitória FC,1,0,5.5,3.7,1.7,Aves,5.5
+19/20,19/20,41,Rio Ave,Portimonense,2,1,1.8,3.6,4.95,Rio Ave,1.8
+19/20,19/20,41,Tondela,Porto,1,3,10.0,5.5,1.36,Porto,1.36
+19/20,19/20,41,Famalicão,Benfica,1,1,6.5,4.5,1.53,Empate,4.5
+19/20,19/20,41,Vitória SC,Gil Vicente,1,2,1.51,4.45,7.5,Gil Vicente,7.5
+19/20,19/20,41,Sporting,Santa Clara,1,0,1.53,4.15,6.85,Sporting,1.53
+19/20,19/20,41,Paços Ferreira,Braga,1,5,4.2,3.6,1.92,Braga,1.92
+19/20,19/20,41,Belenenses SAD,Moreirense,0,1,2.27,3.15,3.6,Moreirense,3.6
+19/20,19/20,42,Maritimo,Rio Ave,0,0,4.3,3.35,2.03,Empate,3.35
+19/20,19/20,42,Vitória FC,Famalicão,1,2,3.8,3.45,2.12,Famalicão,2.12
+19/20,19/20,42,Santa Clara,Aves,3,0,1.59,4.0,6.35,Santa Clara,1.59
+19/20,19/20,42,Portimonense,Boavista,2,1,1.57,3.9,7.1,Portimonense,1.57
+19/20,19/20,42,Benfica,Vitória SC,2,0,1.6,4.4,6.0,Benfica,1.6
+19/20,19/20,42,Gil Vicente,Tondela,3,2,2.72,3.1,3.0,Gil Vicente,2.72
+19/20,19/20,42,Moreirense,Paços Ferreira,1,1,3.7,3.2,2.25,Empate,3.2
+19/20,19/20,42,Braga,Belenenses SAD,1,1,1.3,6.35,10.5,Empate,6.35
+19/20,19/20,42,Porto,Sporting,2,0,1.73,3.7,5.5,Porto,1.73
+19/20,19/20,42,Rio Ave,Santa Clara,2,2,1.5,4.35,7.05,Empate,4.35
+19/20,19/20,42,Famalicão,Boavista,2,2,1.51,4.15,7.35,Empate,4.15
+19/20,19/20,42,Belenenses SAD,Gil Vicente,1,0,2.5,3.15,3.25,Belenenses SAD,2.5
+19/20,19/20,42,Vitória SC,Maritimo,1,0,1.68,4.0,5.2,Vitória SC,1.68
+19/20,19/20,43,Paços Ferreira,Portimonense,2,1,2.9,2.95,2.82,Paços Ferreira,2.9
+19/20,19/20,43,Tondela,Braga,1,0,6.0,4.35,1.6,Tondela,6.0
+19/20,19/20,43,Porto,Moreirense,6,1,1.42,5.25,8.0,Porto,1.42
+19/20,19/20,43,Sporting,Vitória FC,0,0,1.6,4.1,6.0,Empate,4.1
+19/20,19/20,43,Aves,Benfica,0,4,25.0,10.5,1.13,Benfica,1.13
+19/20,19/20,43,Santa Clara,Vitória SC,2,2,3.45,3.5,2.25,Empate,3.5
+19/20,19/20,43,Gil Vicente,Paços Ferreira,3,3,2.55,3.3,2.9,Empate,3.3
+19/20,19/20,43,Boavista,Rio Ave,0,2,5.25,4.4,1.63,Rio Ave,1.63
+19/20,19/20,43,Maritimo,Famalicão,3,3,3.5,3.5,2.12,Empate,3.5
+19/20,19/20,43,Benfica,Sporting,2,1,1.78,4.0,4.5,Benfica,1.78
+19/20,19/20,43,Braga,Porto,2,1,2.7,3.75,2.52,Braga,2.7
+19/20,19/20,43,Moreirense,Tondela,1,2,3.3,2.6,2.85,Tondela,2.85
+19/20,19/20,43,Portimonense,Aves,2,0,1.22,8.0,19.0,Portimonense,1.22
+19/20,19/20,43,Vitória FC,Belenenses SAD,2,0,1.75,3.75,5.25,Vitória FC,1.75
+20/21,20/21,1,Famalicão,Benfica,1,5,8.5,5.15,1.41,Benfica,1.41
+20/21,20/21,1,Vitória SC,Belenenses SAD,0,1,1.53,4.8,7.6,Belenenses SAD,7.6
+20/21,20/21,1,Nacional,Boavista,3,3,2.7,3.1,3.1,Empate,3.1
+20/21,20/21,1,Porto,Braga,3,1,1.7,4.0,5.4,Porto,1.7
+20/21,20/21,1,Santa Clara,Maritimo,2,0,2.45,3.05,3.55,Santa Clara,2.45
+20/21,20/21,1,Moreirense,Farense,2,0,2.22,3.2,3.75,Moreirense,2.22
+20/21,20/21,1,Tondela,Rio Ave,1,1,4.35,3.4,2.17,Empate,3.4
+20/21,20/21,2,Portimonense,Paços Ferreira,1,1,2.45,3.2,3.35,Empate,3.2
+20/21,20/21,2,Braga,Santa Clara,0,1,1.47,4.5,8.0,Santa Clara,8.0
+20/21,20/21,2,Maritimo,Tondela,2,1,2.1,3.25,4.0,Maritimo,2.1
+20/21,20/21,2,Benfica,Moreirense,2,0,1.15,9.0,19.0,Benfica,1.15
+20/21,20/21,2,Boavista,Porto,0,5,11.0,5.0,1.33,Porto,1.33
+20/21,20/21,2,Farense,Nacional,0,1,2.45,3.3,3.1,Nacional,3.1
+20/21,20/21,2,Gil Vicente,Portimonense,1,0,3.2,3.1,2.55,Gil Vicente,3.2
+20/21,20/21,2,Paços Ferreira,Sporting,0,2,3.6,3.2,2.2,Sporting,2.2
+20/21,20/21,2,Rio Ave,Vitória SC,0,0,3.2,3.3,2.37,Empate,3.3
+20/21,20/21,3,Belenenses SAD,Famalicão,1,2,2.55,3.25,2.95,Famalicão,2.95
+20/21,20/21,3,Moreirense,Boavista,1,1,2.63,3.1,2.9,Empate,3.1
+20/21,20/21,3,Vitória SC,Paços Ferreira,1,0,1.73,3.6,5.25,Vitória SC,1.73
+20/21,20/21,3,Santa Clara,Gil Vicente,0,0,2.27,3.05,3.6,Empate,3.05
+20/21,20/21,3,Porto,Maritimo,2,3,1.2,8.0,17.0,Maritimo,17.0
+20/21,20/21,3,Tondela,Braga,0,4,6.0,4.4,1.55,Braga,1.55
+20/21,20/21,3,Nacional,Belenenses SAD,0,0,2.3,3.3,3.45,Empate,3.3
+20/21,20/21,3,Benfica,Farense,3,2,1.13,9.75,19.0,Benfica,1.13
+20/21,20/21,3,Famalicão,Rio Ave,1,1,3.35,3.4,2.22,Empate,3.4
+20/21,20/21,3,Portimonense,Sporting,0,2,4.05,3.6,1.97,Sporting,1.97
+20/21,20/21,4,Gil Vicente,Tondela,1,1,2.2,3.1,3.75,Empate,3.1
+20/21,20/21,4,Maritimo,Portimonense,1,2,2.65,3.2,2.8,Portimonense,2.8
+20/21,20/21,4,Braga,Nacional,2,1,1.35,5.55,10.0,Braga,1.35
+20/21,20/21,4,Sporting,Porto,2,2,4.0,3.5,2.07,Empate,3.5
+20/21,20/21,4,Belenenses SAD,Moreirense,0,0,2.55,3.1,3.1,Empate,3.1
+20/21,20/21,4,Paços Ferreira,Santa Clara,2,1,2.22,3.2,3.6,Paços Ferreira,2.22
+20/21,20/21,4,Farense,Famalicão,3,3,2.35,3.3,3.3,Empate,3.3
+20/21,20/21,4,Rio Ave,Benfica,0,3,8.5,5.35,1.38,Benfica,1.38
+20/21,20/21,5,Boavista,Vitória SC,0,1,3.8,3.25,2.1,Vitória SC,2.1
+20/21,20/21,5,Tondela,Portimonense,1,0,3.8,3.25,2.12,Tondela,3.8
+20/21,20/21,5,Nacional,Paços Ferreira,1,1,2.88,3.3,2.62,Empate,3.3
+20/21,20/21,5,Santa Clara,Sporting,1,2,4.2,3.4,2.02,Sporting,2.02
+20/21,20/21,5,Porto,Gil Vicente,1,0,1.38,5.0,9.5,Porto,1.38
+20/21,20/21,5,Farense,Rio Ave,0,1,3.0,3.4,2.45,Rio Ave,2.45
+20/21,20/21,5,Moreirense,Maritimo,2,1,2.95,3.05,2.62,Moreirense,2.95
+20/21,20/21,5,Famalicão,Boavista,2,2,2.52,3.2,3.0,Empate,3.2
+20/21,20/21,5,Vitória SC,Braga,0,1,4.0,3.5,2.0,Braga,2.0
+20/21,20/21,6,Benfica,Belenenses SAD,2,0,1.24,7.0,14.0,Benfica,1.24
+20/21,20/21,6,Sporting,Gil Vicente,3,1,1.53,4.33,7.0,Sporting,1.53
+20/21,20/21,6,Paços Ferreira,Porto,3,2,7.5,4.5,1.5,Paços Ferreira,7.5
+20/21,20/21,6,Belenenses SAD,Farense,1,1,2.65,3.1,2.85,Empate,3.1
+20/21,20/21,6,Rio Ave,Moreirense,2,0,1.72,3.8,5.5,Rio Ave,1.72
+20/21,20/21,6,Maritimo,Nacional,0,0,2.4,3.2,3.5,Empate,3.2
+20/21,20/21,6,Portimonense,Santa Clara,1,2,2.22,3.4,3.5,Santa Clara,3.5
+20/21,20/21,6,Gil Vicente,Vitória SC,1,2,3.4,3.15,2.35,Vitória SC,2.35
+20/21,20/21,6,Sporting,Tondela,4,0,1.36,5.5,9.0,Sporting,1.36
+20/21,20/21,7,Braga,Famalicão,1,0,1.47,4.75,7.3,Braga,1.47
+20/21,20/21,7,Boavista,Benfica,3,0,14.0,7.0,1.22,Boavista,14.0
+20/21,20/21,7,Belenenses SAD,Rio Ave,0,0,3.55,3.2,2.25,Empate,3.2
+20/21,20/21,7,Tondela,Santa Clara,2,0,3.75,3.2,2.2,Tondela,3.75
+20/21,20/21,7,Famalicão,Maritimo,2,1,2.15,3.4,3.75,Famalicão,2.15
+20/21,20/21,7,Vitória SC,Sporting,0,4,4.2,3.65,1.95,Sporting,1.95
+20/21,20/21,7,Farense,Boavista,3,1,2.52,3.45,2.87,Farense,2.52
+20/21,20/21,7,Nacional,Gil Vicente,2,1,2.55,3.1,3.0,Nacional,2.55
+20/21,20/21,7,Porto,Portimonense,3,1,1.27,6.5,12.0,Porto,1.27
+20/21,20/21,7,Benfica,Braga,2,3,1.55,4.5,6.0,Braga,6.0
+20/21,20/21,8,Paços Ferreira,Famalicão,2,0,2.22,3.3,3.6,Paços Ferreira,2.22
+20/21,20/21,8,Tondela,Vitória SC,0,2,4.25,3.5,1.9,Vitória SC,1.9
+20/21,20/21,8,Santa Clara,Porto,0,1,7.5,4.6,1.5,Porto,1.5
+20/21,20/21,8,Sporting,Moreirense,2,1,1.2,7.5,15.0,Sporting,1.2
+20/21,20/21,8,Gil Vicente,Rio Ave,2,0,3.15,3.2,2.5,Gil Vicente,3.15
+20/21,20/21,8,Portimonense,Nacional,1,0,2.2,3.5,3.4,Portimonense,2.2
+20/21,20/21,8,Boavista,Belenenses SAD,0,0,2.15,3.1,4.0,Empate,3.1
+20/21,20/21,8,Braga,Farense,1,0,1.37,5.5,8.5,Braga,1.37
+20/21,20/21,9,Maritimo,Benfica,1,2,12.0,6.5,1.26,Benfica,1.26
+20/21,20/21,9,Moreirense,Paços Ferreira,0,1,4.2,3.3,2.05,Paços Ferreira,2.05
+20/21,20/21,9,Moreirense,Gil Vicente,1,1,3.15,3.1,2.5,Empate,3.1
+20/21,20/21,9,Vitória SC,Portimonense,1,0,1.95,3.5,4.2,Vitória SC,1.95
+20/21,20/21,9,Famalicão,Sporting,2,2,6.2,4.5,1.52,Empate,4.5
+20/21,20/21,9,Porto,Tondela,4,3,1.2,7.5,17.0,Porto,1.2
+20/21,20/21,9,Nacional,Santa Clara,1,3,2.7,3.2,2.8,Santa Clara,2.8
+20/21,20/21,9,Rio Ave,Boavista,0,0,2.35,3.2,3.5,Empate,3.2
+20/21,20/21,9,Belenenses SAD,Braga,2,1,6.5,4.2,1.53,Belenenses SAD,6.5
+20/21,20/21,9,Benfica,Paços Ferreira,2,1,1.34,6.0,10.5,Benfica,1.34
+20/21,20/21,10,Farense,Maritimo,2,1,2.18,3.3,3.5,Farense,2.18
+20/21,20/21,11,Portimonense,Famalicão,0,0,2.47,3.1,3.4,Empate,3.1
+20/21,20/21,11,Maritimo,Belenenses SAD,1,0,2.6,2.9,3.25,Maritimo,2.6
+20/21,20/21,11,Tondela,Moreirense,0,0,2.67,3.2,2.87,Empate,3.2
+20/21,20/21,11,Sporting,Farense,1,0,1.31,5.75,11.0,Sporting,1.31
+20/21,20/21,11,Paços Ferreira,Boavista,1,1,2.21,3.4,3.5,Empate,3.4
+20/21,20/21,11,Gil Vicente,Benfica,0,2,7.0,4.75,1.44,Benfica,1.44
+20/21,20/21,11,Porto,Nacional,2,0,1.21,7.5,13.5,Porto,1.21
+20/21,20/21,12,Santa Clara,Vitória SC,0,4,2.95,3.2,2.6,Vitória SC,2.6
+20/21,20/21,12,Braga,Rio Ave,3,0,1.64,4.0,5.5,Braga,1.64
+20/21,20/21,12,Famalicão,Gil Vicente,0,1,2.95,3.2,2.6,Gil Vicente,2.6
+20/21,20/21,12,Nacional,Tondela,2,0,2.25,3.3,3.6,Nacional,2.25
+20/21,20/21,12,Farense,Paços Ferreira,1,1,3.05,3.1,2.55,Empate,3.1
+20/21,20/21,12,Belenenses SAD,Sporting,1,2,7.5,4.5,1.47,Sporting,1.47
+20/21,20/21,13,Rio Ave,Maritimo,1,3,1.87,3.4,4.75,Maritimo,4.75
+20/21,20/21,13,Boavista,Braga,1,4,5.2,4.0,1.65,Braga,1.65
+20/21,20/21,13,Benfica,Portimonense,2,1,1.29,6.0,12.0,Benfica,1.29
+20/21,20/21,13,Moreirense,Santa Clara,1,0,3.0,2.95,2.75,Moreirense,3.0
+20/21,20/21,13,Vitória SC,Porto,2,3,6.2,3.8,1.72,Porto,1.72
+20/21,20/21,14,Gil Vicente,Belenenses SAD,0,0,2.4,3.05,3.4,Empate,3.05
+20/21,20/21,14,Portimonense,Farense,2,0,2.45,3.25,3.1,Portimonense,2.45
+20/21,20/21,14,Braga,Maritimo,2,1,1.39,5.0,8.5,Braga,1.39
+20/21,20/21,14,Nacional,Sporting,0,2,8.0,4.6,1.47,Sporting,1.47
+20/21,20/21,14,Benfica,Tondela,2,0,1.14,10.0,21.0,Benfica,1.14
+20/21,20/21,14,Rio Ave,Portimonense,3,0,2.1,3.15,4.33,Rio Ave,2.1
+20/21,20/21,14,Famalicão,Porto,1,4,8.75,5.5,1.38,Porto,1.38
+20/21,20/21,14,Moreirense,Vitória SC,2,2,3.85,3.4,2.05,,
+20/21,20/21,14,Boavista,Santa Clara,1,1,2.37,3.2,3.35,Empate,3.2
+20/21,20/21,14,Farense,Gil Vicente,3,1,3.0,3.2,2.7,Farense,3.0
+20/21,20/21,14,Belenenses SAD,Paços Ferreira,0,2,2.9,2.92,2.75,Paços Ferreira,2.75
+20/21,20/21,15,Sporting,Rio Ave,1,1,1.56,4.05,6.8,Empate,4.05
+20/21,20/21,15,Porto,Benfica,1,1,2.22,3.55,3.25,Empate,3.55
+20/21,20/21,15,Paços Ferreira,Braga,2,0,4.4,3.75,1.82,Paços Ferreira,4.4
+20/21,20/21,15,Tondela,Boavista,3,1,3.65,3.4,2.15,Tondela,3.65
+20/21,20/21,15,Nacional,Moreirense,0,1,2.45,3.15,3.3,Moreirense,3.3
+20/21,20/21,15,Santa Clara,Famalicão,1,2,2.42,3.2,3.2,Famalicão,3.2
+20/21,20/21,15,Gil Vicente,Maritimo,0,1,2.25,3.1,3.8,Maritimo,3.8
+20/21,20/21,16,Portimonense,Belenenses SAD,1,0,2.5,2.95,3.4,Portimonense,2.5
+20/21,20/21,16,Vitória SC,Nacional,3,1,1.6,4.0,6.0,Vitória SC,1.6
+20/21,20/21,16,Maritimo,Paços Ferreira,0,3,3.0,3.1,2.65,Paços Ferreira,2.65
+20/21,20/21,16,Moreirense,Portimonense,2,2,3.25,3.3,2.65,Empate,3.3
+20/21,20/21,16,Famalicão,Vitória SC,0,1,3.2,3.35,2.5,Vitória SC,2.5
+20/21,20/21,17,Belenenses SAD,Tondela,2,0,2.26,3.1,3.75,Belenenses SAD,2.26
+20/21,20/21,17,Rio Ave,Santa Clara,1,2,2.3,3.15,4.5,Santa Clara,4.5
+20/21,20/21,17,Benfica,Nacional,1,1,1.22,8.0,18.0,Empate,8.0
+20/21,20/21,17,Farense,Porto,0,1,9.5,5.25,1.37,Porto,1.37
+20/21,20/21,17,Braga,Gil Vicente,1,0,1.55,4.2,7.0,Braga,1.55
+20/21,20/21,17,Boavista,Sporting,0,2,6.7,4.1,1.6,Sporting,1.6
+20/21,20/21,17,Nacional,Famalicão,2,1,3.0,3.3,2.5,Nacional,3.0
+20/21,20/21,17,Tondela,Farense,2,0,2.6,3.4,2.9,Tondela,2.6
+20/21,20/21,17,Portimonense,Boavista,1,2,2.25,3.2,3.75,Boavista,3.75
+20/21,20/21,17,Vitória SC,Maritimo,1,0,2.02,3.4,4.1,Vitória SC,2.02
+20/21,20/21,18,Santa Clara,Belenenses SAD,2,0,2.37,2.9,3.7,Santa Clara,2.37
+20/21,20/21,18,Porto,Rio Ave,2,0,1.36,5.25,9.5,Porto,1.36
+20/21,20/21,18,Moreirense,Braga,0,4,7.9,4.5,1.55,Braga,1.55
+20/21,20/21,18,Sporting,Benfica,1,0,3.2,3.5,2.65,Sporting,3.2
+20/21,20/21,18,Gil Vicente,Paços Ferreira,1,2,3.0,3.0,2.75,Paços Ferreira,2.75
+20/21,20/21,18,Farense,Santa Clara,1,1,2.75,3.05,3.1,Empate,3.05
+20/21,20/21,18,Belenenses SAD,Porto,0,0,8.5,4.6,1.44,Empate,4.6
+20/21,20/21,18,Braga,Portimonense,2,1,1.42,5.0,8.25,Braga,1.42
+20/21,20/21,18,Famalicão,Moreirense,0,2,2.1,3.3,3.8,Moreirense,3.8
+20/21,20/21,18,Rio Ave,Nacional,0,0,1.9,3.35,5.25,Empate,3.35
+20/21,20/21,18,Benfica,Vitória SC,0,0,1.45,5.0,7.5,Empate,5.0
+20/21,20/21,18,Maritimo,Sporting,0,2,6.8,3.85,1.6,Sporting,1.6
+20/21,20/21,18,Boavista,Gil Vicente,1,2,2.77,2.85,3.0,Gil Vicente,3.0
+20/21,20/21,18,Paços Ferreira,Tondela,2,1,1.85,3.6,4.6,Paços Ferreira,1.85
+20/21,20/21,18,Braga,Porto,2,2,3.75,3.75,2.1,Empate,3.75
+20/21,20/21,19,Farense,Moreirense,1,2,2.22,3.3,3.65,Moreirense,3.65
+20/21,20/21,19,Benfica,Famalicão,2,0,1.29,6.1,14.0,Benfica,1.29
+20/21,20/21,19,Maritimo,Santa Clara,1,2,3.2,3.2,2.45,Santa Clara,2.45
+20/21,20/21,19,Belenenses SAD,Vitória SC,1,1,3.05,3.0,2.62,Empate,3.0
+20/21,20/21,19,Paços Ferreira,Portimonense,0,0,2.13,3.1,4.4,Empate,3.1
+20/21,20/21,19,Rio Ave,Tondela,2,1,1.88,3.6,4.6,Rio Ave,1.88
+20/21,20/21,19,Boavista,Nacional,0,1,2.23,3.3,3.5,Nacional,3.5
+20/21,20/21,19,Gil Vicente,Sporting,1,2,6.5,4.0,1.62,Sporting,1.62
+20/21,20/21,19,Famalicão,Belenenses SAD,0,0,2.41,3.15,3.25,Empate,3.15
+20/21,20/21,19,Nacional,Farense,2,3,2.75,3.35,2.8,Farense,2.8
+20/21,20/21,19,Vitória SC,Rio Ave,1,3,2.25,3.4,3.45,Rio Ave,3.45
+20/21,20/21,19,Porto,Boavista,2,2,1.3,5.5,11.0,Empate,5.5
+20/21,20/21,19,Portimonense,Gil Vicente,4,1,2.35,3.1,3.6,Portimonense,2.35
+20/21,20/21,19,Santa Clara,Braga,0,1,4.5,3.6,1.9,Braga,1.9
+20/21,20/21,19,Moreirense,Benfica,1,1,10.75,5.5,1.3,Empate,5.5
+20/21,20/21,20,Sporting,Paços Ferreira,2,0,1.47,4.33,8.5,Sporting,1.47
+20/21,20/21,20,Tondela,Maritimo,2,1,2.55,3.2,3.1,Tondela,2.55
+20/21,20/21,20,Vitória SC,Farense,2,2,1.95,3.35,4.5,Empate,3.35
+20/21,20/21,20,Boavista,Moreirense,1,0,2.15,3.25,3.95,Boavista,2.15
+20/21,20/21,20,Belenenses SAD,Nacional,2,1,2.12,3.2,4.0,Belenenses SAD,2.12
+20/21,20/21,20,Gil Vicente,Santa Clara,1,0,2.55,3.1,3.2,Gil Vicente,2.55
+20/21,20/21,20,Sporting,Portimonense,2,0,1.52,4.5,8.25,Sporting,1.52
+20/21,20/21,20,Paços Ferreira,Vitória SC,2,1,3.0,3.15,2.55,Paços Ferreira,3.0
+20/21,20/21,20,Rio Ave,Famalicão,0,1,2.4,3.1,3.3,Famalicão,3.3
+20/21,20/21,20,Braga,Tondela,4,2,1.45,4.8,8.0,Braga,1.45
+20/21,20/21,20,Farense,Benfica,0,0,8.5,5.25,1.38,Empate,5.25
+20/21,20/21,21,Maritimo,Porto,1,2,11.0,5.0,1.34,Porto,1.34
+20/21,20/21,21,Vitória SC,Boavista,2,1,2.17,3.4,3.75,Vitória SC,2.17
+20/21,20/21,21,Famalicão,Farense,0,0,2.4,3.25,3.2,Empate,3.25
+20/21,20/21,21,Santa Clara,Paços Ferreira,3,0,2.9,3.0,2.8,Santa Clara,2.9
+20/21,20/21,21,Porto,Sporting,0,0,2.0,3.5,4.25,Empate,3.5
+20/21,20/21,21,Portimonense,Maritimo,0,0,2.0,3.25,4.75,Empate,3.25
+20/21,20/21,21,Tondela,Gil Vicente,1,0,3.1,3.1,2.6,Tondela,3.1
+20/21,20/21,21,Nacional,Braga,1,2,7.0,4.33,1.57,Braga,1.57
+20/21,20/21,22,Benfica,Rio Ave,2,0,1.46,4.75,8.0,Benfica,1.46
+20/21,20/21,22,Moreirense,Belenenses SAD,2,2,2.7,3.0,2.95,Empate,3.0
+20/21,20/21,22,Paços Ferreira,Nacional,2,1,1.78,3.7,5.5,Paços Ferreira,1.78
+20/21,20/21,22,Sporting,Santa Clara,2,1,1.52,4.0,7.8,Sporting,1.52
+20/21,20/21,22,Portimonense,Tondela,3,0,1.93,3.4,4.75,Portimonense,1.93
+20/21,20/21,22,Gil Vicente,Porto,0,2,9.0,4.75,1.4,Porto,1.4
+20/21,20/21,22,Boavista,Famalicão,3,0,2.37,3.15,3.3,Boavista,2.37
+20/21,20/21,22,Maritimo,Moreirense,0,2,2.42,3.1,3.25,Moreirense,3.25
+20/21,20/21,22,Rio Ave,Farense,2,0,1.95,3.3,4.35,Rio Ave,1.95
+20/21,20/21,23,Belenenses SAD,Benfica,0,3,10.0,4.9,1.36,Benfica,1.36
+20/21,20/21,23,Braga,Vitória SC,3,0,1.66,3.85,5.7,Braga,1.66
+20/21,20/21,23,Nacional,Maritimo,1,2,3.0,3.1,2.65,Maritimo,2.65
+20/21,20/21,23,Farense,Belenenses SAD,0,1,2.55,2.95,3.4,Belenenses SAD,3.4
+20/21,20/21,23,Benfica,Boavista,2,0,1.33,6.0,10.5,Benfica,1.33
+20/21,20/21,23,Santa Clara,Portimonense,2,0,2.6,3.0,3.2,Santa Clara,2.6
+20/21,20/21,23,Tondela,Sporting,0,1,9.75,4.75,1.37,Sporting,1.37
+20/21,20/21,23,Moreirense,Rio Ave,1,1,3.3,3.25,2.4,Empate,3.25
+20/21,20/21,23,Vitória SC,Gil Vicente,2,4,2.05,3.4,4.3,Gil Vicente,4.3
+20/21,20/21,23,Porto,Paços Ferreira,2,0,1.38,4.75,9.25,Porto,1.38
+20/21,20/21,24,Famalicão,Braga,2,2,6.6,4.45,1.57,Empate,4.45
+20/21,20/21,24,Gil Vicente,Nacional,2,0,2.15,3.35,4.0,Gil Vicente,2.15
+20/21,20/21,24,Paços Ferreira,Moreirense,3,0,1.87,3.5,5.0,Paços Ferreira,1.87
+20/21,20/21,24,Santa Clara,Tondela,1,1,1.78,3.45,5.25,Empate,3.45
+20/21,20/21,24,Portimonense,Porto,1,2,9.25,4.5,1.45,Porto,1.45
+20/21,20/21,24,Sporting,Vitória SC,1,0,1.72,3.75,6.3,Sporting,1.72
+20/21,20/21,24,Rio Ave,Belenenses SAD,0,0,2.02,3.2,4.33,Empate,3.2
+20/21,20/21,24,Boavista,Farense,0,1,2.25,3.25,3.5,Farense,3.5
+20/21,20/21,24,Maritimo,Famalicão,0,4,2.75,3.1,2.8,Famalicão,2.8
+20/21,20/21,24,Braga,Benfica,0,2,3.6,3.9,2.05,Benfica,2.05
+20/21,20/21,25,Nacional,Portimonense,1,5,2.9,3.2,2.65,Portimonense,2.65
+20/21,20/21,25,Rio Ave,Gil Vicente,0,2,2.3,3.25,3.6,Gil Vicente,3.6
+20/21,20/21,25,Porto,Santa Clara,2,1,1.31,5.75,14.5,Porto,1.31
+20/21,20/21,25,Belenenses SAD,Boavista,0,2,2.45,3.0,3.45,Boavista,3.45
+20/21,20/21,25,Vitória SC,Tondela,1,2,1.85,3.7,5.0,Tondela,5.0
+20/21,20/21,25,Famalicão,Paços Ferreira,2,0,2.55,3.15,3.1,Famalicão,2.55
+20/21,20/21,26,Farense,Braga,1,2,4.75,3.75,1.8,Braga,1.8
+20/21,20/21,26,Benfica,Maritimo,1,0,1.19,8.5,19.0,Benfica,1.19
+20/21,20/21,26,Moreirense,Sporting,1,1,9.5,4.5,1.42,Empate,4.5
+20/21,20/21,26,Portimonense,Vitória SC,3,0,2.7,3.2,2.9,Portimonense,2.7
+20/21,20/21,26,Maritimo,Farense,1,0,3.1,3.3,2.6,Maritimo,3.1
+20/21,20/21,26,Boavista,Rio Ave,3,3,2.85,3.0,2.75,Empate,3.0
+20/21,20/21,26,Tondela,Porto,0,2,10.0,5.2,1.35,Porto,1.35
+20/21,20/21,26,Paços Ferreira,Benfica,0,5,7.75,4.75,1.47,Benfica,1.47
+20/21,20/21,26,Gil Vicente,Moreirense,1,2,2.2,3.25,3.75,Moreirense,3.75
+20/21,20/21,26,Santa Clara,Nacional,5,1,1.72,3.6,5.4,Santa Clara,1.72
+20/21,20/21,26,Braga,Belenenses SAD,1,1,1.4,5.0,8.5,Empate,5.0
+20/21,20/21,26,Sporting,Famalicão,1,1,1.62,4.2,7.2,Empate,4.2
+20/21,20/21,27,Boavista,Paços Ferreira,2,0,2.45,3.1,3.3,Boavista,2.45
+20/21,20/21,27,Farense,Sporting,0,1,6.0,3.8,1.72,Sporting,1.72
+20/21,20/21,27,Moreirense,Tondela,2,3,2.55,3.25,3.0,Tondela,3.0
+20/21,20/21,27,Vitória SC,Santa Clara,1,0,2.35,3.3,3.3,Vitória SC,2.35
+20/21,20/21,27,Belenenses SAD,Maritimo,2,0,2.2,3.1,3.9,Belenenses SAD,2.2
+20/21,20/21,27,Benfica,Gil Vicente,1,2,1.23,7.0,15.0,Gil Vicente,15.0
+20/21,20/21,27,Rio Ave,Braga,0,0,4.9,4.0,1.75,Empate,4.0
+20/21,20/21,27,Famalicão,Portimonense,0,1,2.4,3.35,3.3,Portimonense,3.3
+20/21,20/21,27,Nacional,Porto,0,1,15.0,7.0,1.22,Porto,1.22
+20/21,20/21,28,Paços Ferreira,Farense,0,2,2.7,3.25,2.95,Farense,2.95
+20/21,20/21,28,Santa Clara,Moreirense,0,0,1.8,3.6,5.0,Empate,3.6
+20/21,20/21,28,Maritimo,Rio Ave,1,0,2.7,3.1,3.15,Maritimo,2.7
+20/21,20/21,28,Braga,Boavista,2,1,1.5,4.75,7.0,Braga,1.5
+20/21,20/21,28,Sporting,Belenenses SAD,2,2,1.42,4.4,8.75,Empate,4.4
+20/21,20/21,28,Tondela,Nacional,2,1,2.18,3.4,3.7,Tondela,2.18
+20/21,20/21,28,Gil Vicente,Famalicão,0,3,2.77,3.1,2.8,Famalicão,2.8
+20/21,20/21,28,Portimonense,Benfica,1,5,7.5,4.5,1.48,Benfica,1.48
+20/21,20/21,28,Porto,Vitória SC,1,0,1.36,5.5,9.5,Porto,1.36
+20/21,20/21,28,Boavista,Maritimo,0,1,2.2,3.3,3.65,Maritimo,3.65
+20/21,20/21,28,Rio Ave,Paços Ferreira,1,1,2.3,3.2,3.5,Empate,3.2
+20/21,20/21,28,Braga,Sporting,0,1,2.87,3.3,2.7,Sporting,2.7
+20/21,20/21,29,Belenenses SAD,Gil Vicente,2,1,2.9,3.05,2.75,Belenenses SAD,2.9
+20/21,20/21,29,Benfica,Santa Clara,2,1,1.35,5.25,10.5,Benfica,1.35
+20/21,20/21,29,Famalicão,Tondela,2,2,1.75,3.75,5.5,Empate,3.75
+20/21,20/21,29,Nacional,Vitória SC,1,0,3.7,3.45,2.15,Nacional,3.7
+20/21,20/21,29,Moreirense,Porto,1,1,15.0,6.5,1.23,Empate,6.5
+20/21,20/21,29,Farense,Portimonense,1,1,2.32,3.1,3.5,Empate,3.1
+20/21,20/21,29,Maritimo,Braga,1,0,5.8,4.0,1.62,Maritimo,5.8
+20/21,20/21,29,Paços Ferreira,Belenenses SAD,1,0,2.3,3.2,3.4,Paços Ferreira,2.3
+20/21,20/21,29,Vitória SC,Moreirense,2,0,1.95,3.6,4.5,Vitória SC,1.95
+20/21,20/21,29,Tondela,Benfica,0,2,10.5,6.0,1.3,Benfica,1.3
+20/21,20/21,29,Porto,Famalicão,3,2,1.42,4.8,8.5,Porto,1.42
+20/21,20/21,29,Gil Vicente,Farense,0,0,2.55,3.2,3.0,Empate,3.2
+20/21,20/21,29,Portimonense,Rio Ave,0,0,2.55,3.25,3.2,Empate,3.25
+20/21,20/21,29,Santa Clara,Boavista,3,3,1.91,3.5,4.5,Empate,3.5
+20/21,20/21,29,Sporting,Nacional,2,0,1.33,5.5,12.0,Sporting,1.33
+20/21,20/21,30,Braga,Paços Ferreira,1,1,1.52,4.4,8.0,Empate,4.4
+20/21,20/21,30,Maritimo,Gil Vicente,0,1,3.0,3.1,2.75,Gil Vicente,2.75
+20/21,20/21,30,Rio Ave,Sporting,0,2,5.5,3.75,1.75,Sporting,1.75
+20/21,20/21,30,Moreirense,Nacional,2,2,2.35,3.3,3.2,Empate,3.3
+20/21,20/21,30,Belenenses SAD,Portimonense,1,0,3.35,2.75,2.95,Belenenses SAD,3.35
+20/21,20/21,30,Benfica,Porto,1,1,2.5,3.4,3.0,Empate,3.4
+20/21,20/21,30,Farense,Vitória SC,2,2,2.32,3.3,3.5,Empate,3.3
+20/21,20/21,30,Famalicão,Santa Clara,1,0,2.3,3.3,3.4,Famalicão,2.3
+20/21,20/21,30,Boavista,Tondela,1,1,2.1,3.4,4.0,Empate,3.4
+20/21,20/21,30,Paços Ferreira,Maritimo,1,1,2.45,3.1,3.25,Empate,3.1
+20/21,20/21,30,Gil Vicente,Braga,1,1,4.5,3.6,1.9,Empate,3.6
+20/21,20/21,31,Portimonense,Moreirense,1,2,1.83,3.5,5.0,Moreirense,5.0
+20/21,20/21,31,Porto,Farense,5,1,1.38,5.5,9.0,Porto,1.38
+20/21,20/21,31,Santa Clara,Rio Ave,1,0,2.4,3.2,3.3,Santa Clara,2.4
+20/21,20/21,31,Tondela,Belenenses SAD,1,3,2.7,3.15,2.85,Belenenses SAD,2.85
+20/21,20/21,31,Nacional,Benfica,1,3,7.5,5.25,1.42,Benfica,1.42
+20/21,20/21,31,Sporting,Boavista,1,0,1.33,5.5,11.0,Sporting,1.33
+20/21,20/21,31,Vitória SC,Famalicão,1,2,2.8,3.3,2.75,Famalicão,2.75
+20/21,20/21,31,Paços Ferreira,Gil Vicente,0,2,3.0,3.1,2.6,Gil Vicente,2.6
+20/21,20/21,31,Braga,Moreirense,2,1,1.42,5.5,8.0,Braga,1.42
+20/21,20/21,31,Boavista,Portimonense,1,0,2.5,3.3,3.15,Boavista,2.5
+20/21,20/21,31,Farense,Tondela,1,0,1.47,4.5,7.5,Farense,1.47
+20/21,20/21,31,Benfica,Sporting,4,3,2.0,3.6,4.0,Benfica,2.0
+20/21,20/21,31,Rio Ave,Porto,0,3,8.5,4.5,1.44,Porto,1.44
+20/21,20/21,31,Famalicão,Nacional,3,0,1.75,4.0,4.75,Famalicão,1.75
+20/21,20/21,31,Belenenses SAD,Santa Clara,0,2,3.5,3.2,2.37,Santa Clara,2.37
+20/21,20/21,31,Maritimo,Vitória SC,0,0,4.0,3.2,2.2,Empate,3.2
+20/21,20/21,32,Tondela,Paços Ferreira,2,3,3.1,3.4,2.4,Paços Ferreira,2.4
+20/21,20/21,32,Porto,Belenenses SAD,4,0,1.22,7.5,13.5,Porto,1.22
+20/21,20/21,32,Gil Vicente,Boavista,1,2,3.1,3.4,2.45,Boavista,2.45
+20/21,20/21,32,Moreirense,Famalicão,3,0,4.2,3.8,1.9,Moreirense,4.2
+20/21,20/21,32,Nacional,Rio Ave,1,2,5.6,4.33,1.6,Rio Ave,1.6
+20/21,20/21,32,Portimonense,Braga,0,0,2.27,3.3,3.5,Empate,3.3
+20/21,20/21,32,Santa Clara,Farense,4,0,2.07,3.7,3.7,Santa Clara,2.07
+20/21,20/21,32,Vitória SC,Benfica,1,3,3.35,4.0,2.15,Benfica,2.15
+20/21,20/21,32,Sporting,Maritimo,5,1,1.35,5.5,9.25,Sporting,1.35
+20/21,20/21,33,Arouca,Rio Ave,3,0,3.2,3.1,2.65,Arouca,3.2
+20/21,20/21,33,Rio Ave,Arouca,0,2,1.75,3.75,5.5,Arouca,5.5
+21/22,21/22,1,Sporting,Vizela,3,0,1.28,6.5,13.0,Sporting,1.28
+21/22,21/22,1,Arouca,Estoril Praia,0,2,2.3,3.1,3.55,Estoril Praia,3.55
+21/22,21/22,1,Moreirense,Benfica,1,2,9.0,5.0,1.42,Benfica,1.42
+21/22,21/22,1,Maritimo,Braga,0,2,5.1,3.6,1.8,Braga,1.8
+21/22,21/22,1,Tondela,Santa Clara,3,0,3.3,3.2,2.45,Tondela,3.3
+21/22,21/22,1,Vitória SC,Portimonense,0,1,1.96,3.3,4.5,Portimonense,4.5
+21/22,21/22,1,Porto,Belenenses SAD,2,0,1.2,8.0,17.0,Porto,1.2
+21/22,21/22,1,Paços Ferreira,Famalicão,2,0,2.6,3.25,3.0,Paços Ferreira,2.6
+21/22,21/22,2,Gil Vicente,Boavista,3,0,1.93,3.3,5.0,Gil Vicente,1.93
+21/22,21/22,2,Estoril Praia,Vitória SC,0,0,3.0,3.2,2.45,Empate,3.2
+21/22,21/22,2,Vizela,Tondela,2,1,2.4,3.35,3.25,Vizela,2.4
+21/22,21/22,2,Benfica,Arouca,2,0,1.24,7.0,13.0,Benfica,1.24
+21/22,21/22,2,Braga,Sporting,1,2,3.3,3.4,2.5,Sporting,2.5
+21/22,21/22,2,Portimonense,Gil Vicente,0,1,2.45,3.0,3.3,Gil Vicente,3.3
+21/22,21/22,2,Famalicão,Porto,1,2,9.5,4.8,1.42,Porto,1.42
+21/22,21/22,2,Santa Clara,Moreirense,2,2,2.05,3.35,4.1,Empate,3.35
+21/22,21/22,3,Boavista,Paços Ferreira,3,0,3.05,3.05,2.6,Boavista,3.05
+21/22,21/22,3,Belenenses SAD,Maritimo,1,2,2.65,3.0,3.05,Maritimo,3.05
+21/22,21/22,3,Arouca,Famalicão,2,1,2.9,3.1,2.72,Arouca,2.9
+21/22,21/22,3,Moreirense,Braga,2,3,5.25,4.0,1.72,Braga,1.72
+21/22,21/22,3,Gil Vicente,Benfica,0,2,5.5,3.8,1.7,Benfica,1.7
+21/22,21/22,3,Sporting,Belenenses SAD,2,0,1.22,6.5,17.0,Sporting,1.22
+21/22,21/22,3,Tondela,Portimonense,0,3,2.8,3.1,2.7,Portimonense,2.7
+21/22,21/22,3,Maritimo,Porto,1,1,8.5,4.4,1.47,Empate,4.4
+21/22,21/22,3,Vitória SC,Vizela,4,0,1.91,3.5,4.33,Vitória SC,1.91
+21/22,21/22,4,Paços Ferreira,Estoril Praia,1,3,2.35,3.1,3.6,Estoril Praia,3.6
+21/22,21/22,4,Boavista,Santa Clara,2,0,2.6,3.0,3.1,Boavista,2.6
+21/22,21/22,4,Belenenses SAD,Moreirense,1,1,3.65,3.25,2.25,Empate,3.25
+21/22,21/22,4,Estoril Praia,Maritimo,2,1,2.25,3.1,3.75,Estoril Praia,2.25
+21/22,21/22,4,Vizela,Boavista,1,1,2.5,3.25,3.05,Empate,3.25
+21/22,21/22,4,Porto,Arouca,3,0,1.2,8.0,15.0,Porto,1.2
+21/22,21/22,4,Famalicão,Sporting,1,1,6.7,4.0,1.57,Empate,4.0
+21/22,21/22,4,Benfica,Tondela,2,1,1.14,9.75,26.0,Benfica,1.14
+21/22,21/22,4,Braga,Vitória SC,0,0,1.8,3.75,4.75,Empate,3.75
+21/22,21/22,4,Portimonense,Paços Ferreira,0,1,2.31,3.1,3.5,Paços Ferreira,3.5
+21/22,21/22,4,Santa Clara,Gil Vicente,1,0,2.65,3.0,3.05,Santa Clara,2.65
+21/22,21/22,5,Paços Ferreira,Braga,0,0,4.5,3.6,1.83,Empate,3.6
+21/22,21/22,5,Santa Clara,Benfica,0,5,5.75,4.2,1.6,Benfica,1.6
+21/22,21/22,5,Sporting,Porto,1,1,2.7,3.2,3.0,Empate,3.2
+21/22,21/22,5,Moreirense,Famalicão,2,2,2.9,3.3,2.55,Empate,3.3
+21/22,21/22,5,Boavista,Portimonense,1,1,2.85,3.1,2.7,Empate,3.1
+21/22,21/22,5,Gil Vicente,Vizela,2,2,2.5,3.2,3.15,Empate,3.2
+21/22,21/22,5,Vitória SC,Belenenses SAD,0,0,1.41,4.75,8.75,Empate,4.75
+21/22,21/22,6,Maritimo,Arouca,2,2,2.27,3.2,3.5,Empate,3.2
+21/22,21/22,6,Tondela,Estoril Praia,1,2,3.25,3.3,2.32,Estoril Praia,2.32
+21/22,21/22,6,Portimonense,Santa Clara,2,1,2.37,3.1,3.5,Portimonense,2.37
+21/22,21/22,6,Famalicão,Maritimo,0,0,1.78,3.75,4.8,Empate,3.75
+21/22,21/22,6,Belenenses SAD,Gil Vicente,1,1,3.7,3.2,2.19,Empate,3.2
+21/22,21/22,6,Arouca,Vitória SC,2,2,4.55,3.4,2.05,Empate,3.4
+21/22,21/22,6,Vizela,Paços Ferreira,1,1,2.4,3.3,3.3,Empate,3.3
+21/22,21/22,6,Porto,Moreirense,5,0,1.22,7.5,13.0,Porto,1.22
+21/22,21/22,6,Estoril Praia,Sporting,0,1,5.75,4.0,1.6,Sporting,1.6
+21/22,21/22,7,Benfica,Boavista,3,1,1.16,8.5,19.0,Benfica,1.16
+21/22,21/22,7,Braga,Tondela,3,1,1.33,5.5,9.75,Braga,1.33
+21/22,21/22,7,Sporting,Maritimo,1,0,1.29,5.5,14.0,Sporting,1.29
+21/22,21/22,7,Gil Vicente,Porto,1,2,9.25,4.75,1.4,Porto,1.4
+21/22,21/22,7,Moreirense,Arouca,2,1,2.0,3.6,4.2,Moreirense,2.0
+21/22,21/22,7,Vitória SC,Benfica,1,3,6.3,3.95,1.72,Benfica,1.72
+21/22,21/22,7,Tondela,Famalicão,3,2,4.05,3.5,2.0,Tondela,4.05
+21/22,21/22,7,Santa Clara,Braga,1,1,4.25,3.4,1.95,Empate,3.4
+21/22,21/22,7,Portimonense,Vizela,0,0,2.4,3.25,3.25,Empate,3.25
+21/22,21/22,8,Paços Ferreira,Belenenses SAD,2,2,1.87,3.4,5.1,Empate,3.4
+21/22,21/22,8,Boavista,Estoril Praia,1,1,2.75,3.1,2.85,Empate,3.1
+21/22,21/22,8,Maritimo,Moreirense,0,0,2.3,3.2,3.4,Empate,3.2
+21/22,21/22,8,Famalicão,Vitória SC,1,2,2.8,3.3,2.75,Vitória SC,2.75
+21/22,21/22,8,Vizela,Santa Clara,1,1,2.55,3.1,3.2,Empate,3.1
+21/22,21/22,8,Porto,Paços Ferreira,2,1,1.27,6.0,13.0,Porto,1.27
+21/22,21/22,8,Arouca,Sporting,1,2,8.5,4.75,1.42,Sporting,1.42
+21/22,21/22,8,Belenenses SAD,Tondela,0,2,2.72,3.25,2.87,Tondela,2.87
+21/22,21/22,8,Benfica,Portimonense,0,1,1.23,6.5,15.0,Portimonense,15.0
+21/22,21/22,8,Estoril Praia,Gil Vicente,2,2,2.2,3.2,3.8,Empate,3.2
+21/22,21/22,8,Braga,Boavista,2,2,1.38,4.8,8.5,Empate,4.8
+21/22,21/22,9,Vitória SC,Maritimo,2,1,1.52,4.2,7.0,Vitória SC,1.52
+21/22,21/22,9,Santa Clara,Famalicão,0,2,2.7,3.3,2.8,Famalicão,2.8
+21/22,21/22,9,Tondela,Porto,1,3,13.0,6.2,1.29,Porto,1.29
+21/22,21/22,9,Sporting,Moreirense,1,0,1.24,6.5,15.0,Sporting,1.24
+21/22,21/22,9,Paços Ferreira,Arouca,0,0,1.95,3.6,4.1,Empate,3.6
+21/22,21/22,9,Vizela,Benfica,0,1,10.5,5.5,1.35,Benfica,1.35
+21/22,21/22,9,Portimonense,Estoril Praia,0,2,2.45,3.1,3.3,Estoril Praia,3.3
+21/22,21/22,10,Gil Vicente,Braga,0,1,5.0,3.75,1.77,Braga,1.77
+21/22,21/22,10,Boavista,Belenenses SAD,0,0,2.25,3.25,4.0,Empate,3.25
+21/22,21/22,10,Arouca,Tondela,2,0,2.15,3.5,3.65,Arouca,2.15
+21/22,21/22,10,Porto,Boavista,4,1,1.2,7.5,17.0,Porto,1.2
+21/22,21/22,10,Estoril Praia,Benfica,1,1,8.25,4.75,1.39,Empate,4.75
+21/22,21/22,10,Sporting,Vitória SC,1,0,1.44,5.0,8.0,Sporting,1.44
+21/22,21/22,10,Maritimo,Gil Vicente,1,2,3.0,3.1,2.65,Gil Vicente,2.65
+21/22,21/22,10,Belenenses SAD,Santa Clara,2,1,3.65,3.2,2.31,Belenenses SAD,3.65
+21/22,21/22,10,Famalicão,Vizela,1,1,1.8,3.65,4.75,Empate,3.65
+21/22,21/22,11,Braga,Portimonense,3,0,1.52,4.5,7.0,Braga,1.52
+21/22,21/22,11,Moreirense,Paços Ferreira,1,1,2.45,3.3,3.2,Empate,3.3
+21/22,21/22,11,Gil Vicente,Arouca,1,1,1.95,3.5,4.33,Empate,3.5
+21/22,21/22,11,Boavista,Famalicão,2,5,4.0,3.4,2.0,Famalicão,2.0
+21/22,21/22,11,Vizela,Estoril Praia,1,1,2.25,3.2,3.5,Empate,3.2
+21/22,21/22,11,Portimonense,Belenenses SAD,2,0,1.93,3.4,5.0,Portimonense,1.93
+21/22,21/22,11,Vitória SC,Moreirense,2,1,1.68,4.0,6.5,Vitória SC,1.68
+21/22,21/22,11,Tondela,Maritimo,4,2,2.06,3.6,4.0,Tondela,2.06
+21/22,21/22,11,Santa Clara,Porto,0,3,8.0,5.0,1.4,Porto,1.4
+21/22,21/22,11,Paços Ferreira,Sporting,0,2,6.75,3.8,1.63,Sporting,1.63
+21/22,21/22,11,Benfica,Braga,6,1,1.63,4.4,5.75,Benfica,1.63
+21/22,21/22,12,Moreirense,Gil Vicente,2,2,2.55,3.3,3.0,Empate,3.3
+21/22,21/22,12,Famalicão,Portimonense,0,3,1.8,3.5,5.0,Portimonense,5.0
+21/22,21/22,12,Arouca,Boavista,2,1,2.2,3.2,3.9,Arouca,2.2
+21/22,21/22,12,Belenenses SAD,Benfica,0,7,65.0,17.5,1.08,,
+21/22,21/22,12,Maritimo,Paços Ferreira,2,0,2.4,3.2,3.45,Maritimo,2.4
+21/22,21/22,12,Sporting,Tondela,2,0,1.19,7.4,17.0,Sporting,1.19
+21/22,21/22,12,Porto,Vitória SC,2,1,1.26,6.5,12.0,Porto,1.26
+21/22,21/22,13,Estoril Praia,Santa Clara,2,2,2.3,3.1,3.75,Empate,3.1
+21/22,21/22,13,Braga,Vizela,4,1,1.5,4.75,6.6,Braga,1.5
+21/22,21/22,13,Portimonense,Porto,0,3,8.5,4.5,1.45,Porto,1.45
+21/22,21/22,13,Benfica,Sporting,1,3,2.1,3.4,3.75,Sporting,3.75
+21/22,21/22,13,Boavista,Maritimo,1,1,2.4,3.1,3.6,Empate,3.1
+21/22,21/22,13,Paços Ferreira,Vitória SC,1,2,2.95,3.15,2.55,Vitória SC,2.55
+21/22,21/22,13,Santa Clara,Arouca,2,1,2.0,3.4,4.2,Santa Clara,2.0
+21/22,21/22,13,Gil Vicente,Famalicão,4,0,3.4,3.5,2.26,Gil Vicente,3.4
+21/22,21/22,13,Braga,Estoril Praia,2,0,1.45,4.75,7.0,Braga,1.45
+21/22,21/22,14,Paços Ferreira,Gil Vicente,0,1,3.7,3.2,2.15,Gil Vicente,2.15
+21/22,21/22,14,Maritimo,Santa Clara,4,1,2.85,3.1,2.75,Maritimo,2.85
+21/22,21/22,14,Vitória SC,Tondela,5,2,1.6,4.33,6.0,Vitória SC,1.6
+21/22,21/22,14,Sporting,Boavista,2,0,1.28,6.5,13.5,Sporting,1.28
+21/22,21/22,14,Belenenses SAD,Estoril Praia,0,1,3.45,3.3,2.23,Estoril Praia,2.23
+21/22,21/22,14,Moreirense,Portimonense,0,1,2.42,3.25,3.1,Portimonense,3.1
+21/22,21/22,14,Famalicão,Benfica,1,4,5.75,4.33,1.6,Benfica,1.6
+21/22,21/22,14,Porto,Braga,1,0,1.44,4.8,7.1,Porto,1.44
+21/22,21/22,15,Arouca,Vizela,1,4,2.9,3.2,2.65,Vizela,2.65
+21/22,21/22,15,Santa Clara,Vitória SC,1,0,3.1,3.3,2.45,Santa Clara,3.1
+21/22,21/22,15,Estoril Praia,Famalicão,2,2,2.25,3.3,3.3,Empate,3.3
+21/22,21/22,15,Portimonense,Arouca,1,1,2.08,3.2,4.0,Empate,3.2
+21/22,21/22,15,Tondela,Paços Ferreira,0,1,2.55,3.3,2.9,Paços Ferreira,2.9
+21/22,21/22,15,Gil Vicente,Sporting,0,3,4.85,3.6,1.78,Sporting,1.78
+21/22,21/22,15,Benfica,Maritimo,7,1,1.19,7.5,17.0,Benfica,1.19
+21/22,21/22,15,Boavista,Moreirense,1,0,2.8,3.1,2.75,Boavista,2.8
+21/22,21/22,15,Vizela,Porto,0,4,11.0,5.8,1.28,Porto,1.28
+21/22,21/22,15,Braga,Belenenses SAD,1,0,1.22,6.5,14.0,Braga,1.22
+21/22,21/22,16,Tondela,Gil Vicente,0,3,3.2,3.6,2.24,Gil Vicente,2.24
+21/22,21/22,16,Maritimo,Vizela,2,0,2.95,3.3,2.65,Maritimo,2.95
+21/22,21/22,16,Moreirense,Estoril Praia,1,0,3.1,3.1,2.48,Moreirense,3.1
+21/22,21/22,16,Vitória SC,Boavista,1,1,1.68,3.8,5.75,Empate,3.8
+21/22,21/22,16,Sporting,Portimonense,3,2,1.3,6.0,11.0,Sporting,1.3
+21/22,21/22,16,Paços Ferreira,Santa Clara,2,1,2.6,3.1,3.05,Paços Ferreira,2.6
+21/22,21/22,16,Arouca,Braga,0,6,4.65,3.6,1.8,Braga,1.8
+21/22,21/22,16,Porto,Benfica,3,1,1.78,3.8,4.4,Porto,1.78
+21/22,21/22,17,Tondela,Moreirense,2,1,2.8,3.2,2.62,Tondela,2.8
+21/22,21/22,17,Santa Clara,Sporting,3,2,8.0,4.5,1.47,Santa Clara,8.0
+21/22,21/22,17,Vizela,Moreirense,0,1,2.31,3.4,3.2,Moreirense,3.2
+21/22,21/22,17,Estoril Praia,Porto,2,3,11.5,5.75,1.32,Porto,1.32
+21/22,21/22,17,Boavista,Tondela,1,1,2.07,3.45,3.8,Empate,3.45
+21/22,21/22,17,Portimonense,Maritimo,1,2,2.13,3.25,4.2,Maritimo,4.2
+21/22,21/22,17,Benfica,Paços Ferreira,2,0,1.21,7.0,17.0,Benfica,1.21
+21/22,21/22,17,Braga,Famalicão,2,2,1.65,4.2,6.0,Empate,4.2
+21/22,21/22,17,Belenenses SAD,Arouca,2,1,3.1,3.0,2.6,Belenenses SAD,3.1
+21/22,21/22,18,Gil Vicente,Vitória SC,3,2,2.22,3.3,3.35,Gil Vicente,2.22
+21/22,21/22,18,Famalicão,Belenenses SAD,1,0,2.1,4.1,7.7,Famalicão,2.1
+21/22,21/22,18,Boavista,Gil Vicente,1,1,3.25,3.25,2.3,Empate,3.25
+21/22,21/22,18,Benfica,Moreirense,1,1,1.2,7.0,17.0,Empate,7.0
+21/22,21/22,18,Braga,Maritimo,0,1,1.36,5.2,8.0,Maritimo,8.0
+21/22,21/22,18,Santa Clara,Tondela,2,2,1.78,3.6,5.2,Empate,3.6
+21/22,21/22,18,Vizela,Sporting,0,2,9.5,5.25,1.37,Sporting,1.37
+21/22,21/22,18,Famalicão,Paços Ferreira,0,0,2.05,3.3,4.2,Empate,3.3
+21/22,21/22,18,Belenenses SAD,Porto,1,4,13.5,6.25,1.27,Porto,1.27
+21/22,21/22,19,Portimonense,Vitória SC,1,1,2.33,3.45,3.25,Empate,3.45
+21/22,21/22,19,Arouca,Benfica,0,2,11.0,5.75,1.3,Benfica,1.3
+21/22,21/22,19,Paços Ferreira,Boavista,1,1,2.55,3.0,3.3,Empate,3.0
+21/22,21/22,19,Moreirense,Santa Clara,0,2,2.5,3.1,3.2,Santa Clara,3.2
+21/22,21/22,19,Tondela,Vizela,2,3,2.75,3.4,2.65,Vizela,2.65
+21/22,21/22,19,Sporting,Braga,1,2,1.65,4.0,5.5,Braga,5.5
+21/22,21/22,19,Maritimo,Belenenses SAD,1,1,1.85,3.4,4.8,Empate,3.4
+21/22,21/22,19,Vitória SC,Estoril Praia,3,1,2.11,3.5,3.6,Vitória SC,2.11
+21/22,21/22,19,Gil Vicente,Portimonense,1,0,1.88,3.75,4.33,Gil Vicente,1.88
+21/22,21/22,19,Porto,Famalicão,3,1,1.22,7.25,13.0,Porto,1.22
+21/22,21/22,20,Estoril Praia,Arouca,1,2,2.0,3.4,4.0,Arouca,4.0
+21/22,21/22,20,Portimonense,Tondela,1,2,2.22,3.5,3.25,Tondela,3.25
+21/22,21/22,20,Vizela,Vitória SC,3,2,2.7,3.4,2.6,Vizela,2.7
+21/22,21/22,20,Braga,Moreirense,2,0,1.44,4.75,7.5,Braga,1.44
+21/22,21/22,20,Porto,Maritimo,2,1,1.2,7.25,15.0,Porto,1.2
+21/22,21/22,21,Estoril Praia,Paços Ferreira,0,0,2.06,3.2,3.85,Empate,3.2
+21/22,21/22,21,Famalicão,Arouca,0,0,2.06,3.25,3.9,Empate,3.25
+21/22,21/22,21,Santa Clara,Boavista,2,1,2.07,3.2,4.0,Santa Clara,2.07
+21/22,21/22,21,Benfica,Gil Vicente,1,2,1.47,4.6,7.0,Gil Vicente,7.0
+21/22,21/22,21,Belenenses SAD,Sporting,1,4,12.5,5.8,1.28,Sporting,1.28
+21/22,21/22,21,Maritimo,Estoril Praia,0,0,2.46,3.1,3.1,Empate,3.1
+21/22,21/22,21,Paços Ferreira,Portimonense,1,1,2.5,3.1,3.35,Empate,3.1
+21/22,21/22,21,Vitória SC,Braga,2,1,3.85,3.6,1.98,Vitória SC,3.85
+21/22,21/22,21,Boavista,Vizela,2,2,2.42,3.3,3.15,Empate,3.3
+21/22,21/22,21,Gil Vicente,Santa Clara,2,2,2.05,3.4,4.05,Empate,3.4
+21/22,21/22,21,Arouca,Porto,0,2,9.0,5.0,1.4,Porto,1.4
+21/22,21/22,21,Sporting,Famalicão,2,0,1.31,6.0,12.0,Sporting,1.31
+21/22,21/22,22,Tondela,Benfica,1,3,9.75,5.5,1.37,Benfica,1.37
+21/22,21/22,22,Moreirense,Belenenses SAD,4,1,1.78,3.5,5.0,Moreirense,1.78
+21/22,21/22,22,Porto,Sporting,2,2,1.98,3.5,4.1,Empate,3.5
+21/22,21/22,22,Braga,Paços Ferreira,2,1,1.41,4.75,9.5,Braga,1.41
+21/22,21/22,22,Benfica,Santa Clara,2,1,1.38,5.5,9.0,Benfica,1.38
+21/22,21/22,22,Portimonense,Boavista,1,1,2.47,3.15,3.1,Empate,3.15
+21/22,21/22,22,Estoril Praia,Tondela,1,0,1.99,3.4,4.2,Estoril Praia,1.99
+21/22,21/22,22,Famalicão,Moreirense,5,0,2.1,3.2,4.05,Famalicão,2.1
+21/22,21/22,22,Belenenses SAD,Vitória SC,1,0,3.75,3.5,2.02,Belenenses SAD,3.75
+21/22,21/22,22,Vizela,Gil Vicente,0,1,2.6,3.4,2.8,Gil Vicente,2.8
+21/22,21/22,23,Arouca,Maritimo,0,3,2.3,3.2,3.6,Maritimo,3.6
+21/22,21/22,23,Boavista,Benfica,2,2,7.0,4.8,1.45,Empate,4.8
+21/22,21/22,23,Gil Vicente,Belenenses SAD,2,0,1.55,4.0,6.5,Gil Vicente,1.55
+21/22,21/22,23,Paços Ferreira,Vizela,2,1,2.85,3.3,2.55,Paços Ferreira,2.85
+21/22,21/22,23,Vitória SC,Arouca,1,3,1.82,3.6,4.6,Arouca,4.6
+21/22,21/22,23,Maritimo,Famalicão,0,1,2.75,3.3,2.65,Famalicão,2.65
+21/22,21/22,23,Sporting,Estoril Praia,3,0,1.33,5.5,12.0,Sporting,1.33
+21/22,21/22,23,Moreirense,Porto,0,1,11.0,5.4,1.33,Porto,1.33
+21/22,21/22,23,Tondela,Braga,0,1,4.75,4.1,1.75,Braga,1.75
+21/22,21/22,24,Santa Clara,Portimonense,1,1,2.05,3.3,3.9,Empate,3.3
+21/22,21/22,24,Belenenses SAD,Paços Ferreira,0,2,3.15,3.1,2.45,Paços Ferreira,2.45
+21/22,21/22,24,Famalicão,Tondela,2,1,1.65,3.95,6.0,Famalicão,1.65
+21/22,21/22,24,Maritimo,Sporting,1,1,6.5,4.2,1.55,Empate,4.2
+21/22,21/22,24,Arouca,Moreirense,1,1,2.35,3.1,3.4,Empate,3.1
+21/22,21/22,24,Vizela,Portimonense,1,1,2.22,3.4,3.4,Empate,3.4
+21/22,21/22,24,Benfica,Vitória SC,3,0,1.35,5.75,9.0,Benfica,1.35
+21/22,21/22,24,Estoril Praia,Boavista,2,3,2.46,3.1,3.1,Boavista,3.1
+21/22,21/22,24,Porto,Gil Vicente,1,1,1.32,5.5,13.0,Empate,5.5
+21/22,21/22,25,Braga,Santa Clara,0,0,1.61,4.0,5.8,Empate,4.0
+21/22,21/22,25,Gil Vicente,Estoril Praia,0,0,1.91,3.6,4.0,Empate,3.6
+21/22,21/22,25,Boavista,Braga,1,1,3.75,3.3,2.2,Empate,3.3
+21/22,21/22,25,Portimonense,Benfica,1,2,6.5,4.75,1.5,Benfica,1.5
+21/22,21/22,25,Sporting,Arouca,2,0,1.4,5.25,12.0,Sporting,1.4
+21/22,21/22,25,Moreirense,Maritimo,0,1,2.32,3.2,3.4,Maritimo,3.4
+21/22,21/22,25,Paços Ferreira,Porto,2,4,11.0,5.5,1.31,Porto,1.31
+21/22,21/22,25,Santa Clara,Vizela,3,1,2.25,3.4,3.3,Santa Clara,2.25
+21/22,21/22,25,Vitória SC,Famalicão,2,1,2.57,3.3,2.8,Vitória SC,2.57
+21/22,21/22,26,Tondela,Belenenses SAD,1,1,1.88,3.5,4.5,Empate,3.5
+21/22,21/22,26,Benfica,Vizela,1,1,1.33,6.2,9.25,Empate,6.2
+21/22,21/22,26,Estoril Praia,Portimonense,2,0,2.3,3.1,3.45,Estoril Praia,2.3
+21/22,21/22,26,Famalicão,Santa Clara,0,0,2.27,3.1,3.5,Empate,3.1
+21/22,21/22,26,Arouca,Paços Ferreira,0,1,2.15,3.25,3.75,Paços Ferreira,3.75
+21/22,21/22,26,Belenenses SAD,Boavista,0,0,4.0,3.25,2.15,Empate,3.25
+21/22,21/22,26,Maritimo,Vitória SC,0,1,2.7,3.25,2.8,Vitória SC,2.8
+21/22,21/22,26,Porto,Tondela,4,0,1.13,9.5,21.0,Porto,1.13
+21/22,21/22,26,Braga,Gil Vicente,0,1,1.78,3.9,4.5,Gil Vicente,4.5
+21/22,21/22,27,Moreirense,Sporting,0,2,8.0,4.5,1.45,Sporting,1.45
+21/22,21/22,27,Vizela,Famalicão,1,1,3.0,3.25,2.5,Empate,3.25
+21/22,21/22,27,Tondela,Arouca,2,2,2.6,3.05,2.95,Empate,3.05
+21/22,21/22,27,Santa Clara,Belenenses SAD,0,0,1.57,3.9,6.5,Empate,3.9
+21/22,21/22,27,Vitória SC,Sporting,1,3,5.5,4.0,1.68,Sporting,1.68
+21/22,21/22,27,Gil Vicente,Maritimo,1,1,1.71,3.75,5.0,Empate,3.75
+21/22,21/22,27,Paços Ferreira,Moreirense,2,1,2.4,3.2,3.5,Paços Ferreira,2.4
+21/22,21/22,27,Benfica,Estoril Praia,2,1,1.33,5.4,9.0,Benfica,1.33
+21/22,21/22,27,Portimonense,Braga,1,2,4.2,3.5,1.91,Braga,1.91
+21/22,21/22,27,Boavista,Porto,0,1,8.5,5.0,1.38,Porto,1.38
+21/22,21/22,28,Braga,Benfica,3,2,2.6,3.4,2.75,Braga,2.6
+21/22,21/22,28,Belenenses SAD,Portimonense,2,0,3.2,3.2,2.45,Belenenses SAD,3.2
+21/22,21/22,28,Arouca,Gil Vicente,2,1,2.95,3.2,2.5,Arouca,2.95
+21/22,21/22,28,Estoril Praia,Vizela,1,2,2.25,3.3,3.6,Vizela,3.6
+21/22,21/22,28,Famalicão,Boavista,1,2,1.83,3.3,5.0,Boavista,5.0
+21/22,21/22,28,Maritimo,Tondela,1,3,2.2,3.25,3.45,Tondela,3.45
+21/22,21/22,28,Moreirense,Vitória SC,0,1,3.15,3.3,2.35,Vitória SC,2.35
+21/22,21/22,28,Sporting,Paços Ferreira,2,0,1.17,7.5,19.0,Sporting,1.17
+21/22,21/22,29,Porto,Santa Clara,3,0,1.19,7.0,17.0,Porto,1.19
+21/22,21/22,29,Gil Vicente,Moreirense,1,2,1.72,3.6,5.0,Moreirense,5.0
+21/22,21/22,29,Paços Ferreira,Maritimo,2,0,2.75,3.0,2.8,Paços Ferreira,2.75
+21/22,21/22,29,Benfica,Belenenses SAD,3,1,1.33,5.6,9.5,Benfica,1.33
+21/22,21/22,29,Boavista,Arouca,1,0,2.2,3.1,3.75,Boavista,2.2
+21/22,21/22,29,Tondela,Sporting,1,3,11.0,5.4,1.3,Sporting,1.3
+21/22,21/22,29,Portimonense,Famalicão,1,0,2.75,3.0,2.8,Portimonense,2.75
+21/22,21/22,29,Santa Clara,Estoril Praia,2,0,2.5,3.0,3.15,Santa Clara,2.5
+21/22,21/22,29,Vitória SC,Porto,0,1,8.0,5.2,1.38,Porto,1.38
+21/22,21/22,29,Vizela,Braga,0,1,4.8,3.85,1.71,Braga,1.71
+21/22,21/22,30,Arouca,Santa Clara,1,1,2.5,3.0,3.2,Empate,3.0
+21/22,21/22,30,Famalicão,Gil Vicente,2,2,2.11,3.35,3.6,Empate,3.35
+21/22,21/22,30,Vitória SC,Paços Ferreira,4,0,1.8,3.75,5.0,Vitória SC,1.8
+21/22,21/22,30,Moreirense,Tondela,2,0,2.23,3.3,3.35,Moreirense,2.23
+21/22,21/22,30,Belenenses SAD,Vizela,1,0,3.4,3.3,2.2,Belenenses SAD,3.4
+21/22,21/22,30,Maritimo,Boavista,4,0,2.3,3.05,3.45,Maritimo,2.3
+21/22,21/22,30,Porto,Portimonense,7,0,1.11,10.0,29.0,Porto,1.11
+21/22,21/22,30,Sporting,Benfica,0,2,1.93,3.75,3.8,Benfica,3.8
+21/22,21/22,31,Estoril Praia,Braga,0,0,3.4,3.3,2.25,Empate,3.3
+21/22,21/22,31,Vizela,Arouca,2,1,2.15,3.4,3.6,Vizela,2.15
+21/22,21/22,31,Portimonense,Moreirense,1,0,2.35,3.25,3.2,Portimonense,2.35
+21/22,21/22,31,Benfica,Famalicão,0,0,1.39,5.4,8.4,Empate,5.4
+21/22,21/22,31,Santa Clara,Maritimo,2,2,1.95,3.2,4.5,Empate,3.2
+21/22,21/22,31,Gil Vicente,Paços Ferreira,1,1,1.75,3.65,5.3,Empate,3.65
+21/22,21/22,31,Estoril Praia,Belenenses SAD,2,2,2.07,3.1,4.0,Empate,3.1
+21/22,21/22,31,Tondela,Vitória SC,1,1,3.65,3.4,2.2,Empate,3.4
+21/22,21/22,32,Braga,Porto,1,0,4.7,3.75,1.76,Braga,4.7
+21/22,21/22,32,Boavista,Sporting,0,3,8.5,4.3,1.44,Sporting,1.44
+21/22,21/22,32,Famalicão,Estoril Praia,3,1,1.68,3.75,5.4,Famalicão,1.68
+21/22,21/22,32,Arouca,Portimonense,1,0,1.86,3.5,4.7,Arouca,1.86
+21/22,21/22,32,Maritimo,Benfica,0,1,5.75,4.33,1.6,Benfica,1.6
+21/22,21/22,32,Porto,Vizela,4,2,1.17,7.5,18.0,Porto,1.17
+21/22,21/22,32,Belenenses SAD,Braga,0,1,4.33,3.5,1.96,Braga,1.96
+21/22,21/22,32,Vitória SC,Santa Clara,1,1,1.76,3.75,5.0,Empate,3.75
+21/22,21/22,32,Moreirense,Boavista,1,2,2.41,3.2,3.2,Boavista,3.2
+21/22,21/22,32,Sporting,Gil Vicente,4,1,1.4,5.0,8.0,Sporting,1.4
+21/22,21/22,33,Paços Ferreira,Tondela,1,1,3.1,3.3,3.2,Empate,3.3
+21/22,21/22,33,Boavista,Vitória SC,1,1,3.5,3.3,2.42,Empate,3.3
+21/22,21/22,33,Estoril Praia,Moreirense,1,0,2.55,3.3,3.2,Estoril Praia,2.55
+21/22,21/22,33,Benfica,Porto,0,1,2.95,3.6,2.4,Porto,2.4
+21/22,21/22,33,Portimonense,Sporting,2,3,7.6,5.25,1.4,Sporting,1.4
+21/22,21/22,33,Gil Vicente,Tondela,3,0,1.8,3.75,4.75,Gil Vicente,1.8
+21/22,21/22,33,Vizela,Maritimo,1,1,1.77,3.75,5.0,Empate,3.75
+21/22,21/22,33,Braga,Arouca,1,0,1.68,3.75,5.5,Braga,1.68
+21/22,21/22,33,Santa Clara,Paços Ferreira,2,0,1.8,3.6,4.75,Santa Clara,1.8
+21/22,21/22,34,Belenenses SAD,Famalicão,2,3,2.62,3.3,2.85,Famalicão,2.85
+21/22,21/22,34,Paços Ferreira,Benfica,0,2,4.0,4.0,2.0,Benfica,2.0
+21/22,21/22,34,Arouca,Belenenses SAD,0,0,2.2,3.5,3.2,Empate,3.5
+21/22,21/22,34,Moreirense,Vizela,4,1,1.91,3.6,4.15,Moreirense,1.91
+21/22,21/22,34,Tondela,Boavista,2,2,1.73,3.75,5.0,Empate,3.75
+21/22,21/22,34,Maritimo,Portimonense,0,1,2.4,3.45,3.0,Portimonense,3.0
+21/22,21/22,34,Porto,Estoril Praia,2,0,1.14,10.0,21.0,Porto,1.14
+21/22,21/22,34,Sporting,Santa Clara,4,0,1.29,6.25,15.0,Sporting,1.29
+21/22,21/22,34,Famalicão,Braga,3,2,3.3,3.6,2.16,Famalicão,3.3
+21/22,21/22,34,Vitória SC,Gil Vicente,5,0,2.6,3.65,2.6,Vitória SC,2.6
+21/22,21/22,35,Chaves,Moreirense,2,0,2.55,3.2,3.15,Chaves,2.55
+21/22,21/22,36,Moreirense,Chaves,1,0,2.06,3.4,4.05,Moreirense,2.06
+22/23,22/23,1,Benfica,Arouca,4,0,1.15,8.0,19.0,Benfica,1.15
+22/23,22/23,1,Rio Ave,Vizela,0,1,2.12,3.25,3.75,Vizela,3.75
+22/23,22/23,1,Estoril Praia,Famalicão,2,0,2.55,3.1,2.95,Estoril Praia,2.55
+22/23,22/23,1,Porto,Maritimo,5,1,1.18,7.2,17.0,Porto,1.18
+22/23,22/23,1,Santa Clara,Casa Pia AC,0,0,2.2,3.1,3.65,Empate,3.1
+22/23,22/23,1,Braga,Sporting,3,3,4.2,3.5,1.95,Empate,3.5
+22/23,22/23,1,Chaves,Vitória SC,0,1,2.6,3.2,2.8,Vitória SC,2.8
+22/23,22/23,1,Portimonense,Boavista,0,1,2.35,3.25,3.25,Boavista,3.25
+22/23,22/23,2,Gil Vicente,Paços Ferreira,1,0,2.05,3.3,4.2,Gil Vicente,2.05
+22/23,22/23,2,Famalicão,Braga,0,3,4.0,3.6,1.94,Braga,1.94
+22/23,22/23,2,Casa Pia AC,Benfica,0,1,11.5,5.75,1.31,Benfica,1.31
+22/23,22/23,2,Sporting,Rio Ave,3,0,1.22,7.0,16.5,Sporting,1.22
+22/23,22/23,2,Boavista,Santa Clara,2,1,2.47,3.05,3.15,Boavista,2.47
+22/23,22/23,2,Vizela,Porto,0,1,9.0,5.0,1.36,Porto,1.36
+22/23,22/23,2,Vitória SC,Estoril Praia,1,0,2.1,3.3,3.6,Vitória SC,2.1
+22/23,22/23,3,Maritimo,Chaves,1,2,2.15,3.3,3.6,Chaves,3.6
+22/23,22/23,3,Arouca,Gil Vicente,1,0,2.9,3.3,2.5,Arouca,2.9
+22/23,22/23,3,Paços Ferreira,Portimonense,0,3,2.65,3.2,2.87,Portimonense,2.87
+22/23,22/23,3,Estoril Praia,Rio Ave,2,2,2.13,3.25,3.75,Empate,3.25
+22/23,22/23,3,Santa Clara,Arouca,1,2,2.03,3.25,4.0,Arouca,4.0
+22/23,22/23,3,Chaves,Vizela,1,1,2.65,3.25,2.87,Empate,3.25
+22/23,22/23,3,Porto,Sporting,3,0,2.1,3.4,4.0,Porto,2.1
+22/23,22/23,3,Casa Pia AC,Boavista,2,0,2.55,3.0,3.15,Casa Pia AC,2.55
+22/23,22/23,3,Braga,Maritimo,5,0,1.26,6.0,12.0,Braga,1.26
+22/23,22/23,3,Portimonense,Vitória SC,2,1,2.45,3.1,3.15,Portimonense,2.45
+22/23,22/23,4,Gil Vicente,Famalicão,0,0,2.2,3.5,3.3,Empate,3.5
+22/23,22/23,4,Paços Ferreira,Estoril Praia,0,3,2.55,3.2,3.0,Estoril Praia,3.0
+22/23,22/23,4,Maritimo,Portimonense,0,1,3.0,3.2,2.55,Portimonense,2.55
+22/23,22/23,4,Boavista,Benfica,0,3,8.5,5.0,1.39,Benfica,1.39
+22/23,22/23,4,Sporting,Chaves,0,2,1.2,7.0,18.5,Chaves,18.5
+22/23,22/23,4,Famalicão,Santa Clara,1,0,2.08,3.3,3.9,Famalicão,2.08
+22/23,22/23,4,Arouca,Braga,0,6,7.5,4.4,1.5,Braga,1.5
+22/23,22/23,4,Rio Ave,Porto,3,1,11.0,5.4,1.32,Rio Ave,11.0
+22/23,22/23,5,Vitória SC,Casa Pia AC,0,1,2.31,3.15,3.6,Casa Pia AC,3.6
+22/23,22/23,5,Vizela,Gil Vicente,2,2,2.42,3.25,3.1,Empate,3.25
+22/23,22/23,5,Benfica,Paços Ferreira,3,2,1.08,11.5,36.0,Benfica,1.08
+22/23,22/23,5,Benfica,Vizela,2,1,1.21,7.5,15.0,Benfica,1.21
+22/23,22/23,5,Estoril Praia,Sporting,0,2,7.5,4.75,1.47,Sporting,1.47
+22/23,22/23,5,Braga,Vitória SC,1,0,1.39,5.0,8.75,Braga,1.39
+22/23,22/23,5,Gil Vicente,Porto,0,2,11.0,5.8,1.45,Porto,1.45
+22/23,22/23,5,Casa Pia AC,Arouca,0,0,2.13,3.35,4.2,Empate,3.35
+22/23,22/23,5,Santa Clara,Maritimo,2,1,2.1,3.3,3.8,Santa Clara,2.1
+22/23,22/23,5,Portimonense,Famalicão,1,0,2.47,3.2,3.35,Portimonense,2.47
+22/23,22/23,6,Boavista,Paços Ferreira,1,0,2.14,3.5,4.05,Boavista,2.14
+22/23,22/23,6,Chaves,Rio Ave,1,1,2.55,3.15,3.1,Empate,3.15
+22/23,22/23,6,Vitória SC,Santa Clara,1,0,2.05,3.3,3.9,Vitória SC,2.05
+22/23,22/23,6,Famalicão,Benfica,0,1,7.5,4.8,1.42,Benfica,1.42
+22/23,22/23,6,Sporting,Portimonense,4,0,1.33,5.5,10.0,Sporting,1.33
+22/23,22/23,6,Porto,Chaves,3,0,1.24,6.5,13.0,Porto,1.24
+22/23,22/23,6,Paços Ferreira,Casa Pia AC,2,3,3.05,3.1,2.55,Casa Pia AC,2.55
+22/23,22/23,6,Arouca,Boavista,1,2,2.72,3.1,2.85,Boavista,2.85
+22/23,22/23,6,Maritimo,Gil Vicente,1,2,2.75,3.3,2.65,Gil Vicente,2.65
+22/23,22/23,6,Rio Ave,Braga,2,3,6.0,4.45,1.57,Braga,1.57
+22/23,22/23,7,Vizela,Estoril Praia,0,1,2.06,3.5,3.6,Estoril Praia,3.6
+22/23,22/23,7,Portimonense,Chaves,1,0,2.26,3.3,3.4,Portimonense,2.26
+22/23,22/23,7,Gil Vicente,Rio Ave,2,2,2.05,3.5,3.65,Empate,3.5
+22/23,22/23,7,Santa Clara,Paços Ferreira,1,1,1.84,3.45,4.65,Empate,3.45
+22/23,22/23,7,Estoril Praia,Porto,1,1,8.5,5.0,1.37,Empate,5.0
+22/23,22/23,7,Boavista,Sporting,2,1,7.5,4.5,1.45,Boavista,7.5
+22/23,22/23,7,Arouca,Vitória SC,2,2,2.95,3.1,2.62,Empate,3.1
+22/23,22/23,7,Benfica,Maritimo,5,0,1.13,9.5,24.0,Benfica,1.13
+22/23,22/23,7,Casa Pia AC,Famalicão,1,0,2.39,3.1,3.3,Casa Pia AC,2.39
+22/23,22/23,7,Braga,Vizela,2,0,1.44,4.9,7.5,Braga,1.44
+22/23,22/23,8,Sporting,Gil Vicente,3,1,1.33,5.5,9.75,Sporting,1.33
+22/23,22/23,8,Porto,Braga,4,1,1.91,3.85,4.4,Porto,1.91
+22/23,22/23,8,Vizela,Portimonense,1,0,2.2,3.65,4.0,Vizela,2.2
+22/23,22/23,8,Chaves,Estoril Praia,1,1,2.24,3.3,3.3,Empate,3.3
+22/23,22/23,8,Vitória SC,Benfica,0,0,9.0,5.5,1.34,Empate,5.5
+22/23,22/23,8,Rio Ave,Santa Clara,1,0,2.42,3.1,3.3,Rio Ave,2.42
+22/23,22/23,8,Paços Ferreira,Arouca,1,1,2.6,3.2,2.87,Empate,3.2
+22/23,22/23,8,Famalicão,Boavista,4,0,2.15,3.25,3.8,Famalicão,2.15
+22/23,22/23,9,Maritimo,Casa Pia AC,1,2,3.1,3.2,2.45,Casa Pia AC,2.45
+22/23,22/23,9,Gil Vicente,Estoril Praia,0,1,2.2,3.4,3.5,Estoril Praia,3.5
+22/23,22/23,9,Santa Clara,Sporting,1,2,7.5,4.45,1.47,Sporting,1.47
+22/23,22/23,9,Benfica,Rio Ave,4,2,1.21,6.6,17.0,Benfica,1.21
+22/23,22/23,9,Portimonense,Porto,0,2,8.0,4.9,1.39,Porto,1.39
+22/23,22/23,9,Paços Ferreira,Vitória SC,0,1,3.45,3.3,2.22,Vitória SC,2.22
+22/23,22/23,9,Boavista,Maritimo,1,1,1.83,3.6,4.55,Empate,3.6
+22/23,22/23,9,Casa Pia AC,Vizela,0,1,2.47,3.2,3.0,Vizela,3.0
+22/23,22/23,9,Braga,Chaves,0,1,1.42,5.0,7.3,Chaves,7.3
+22/23,22/23,10,Arouca,Famalicão,4,1,2.92,3.15,2.6,Arouca,2.92
+22/23,22/23,11,Porto,Benfica,0,1,2.35,3.3,3.3,Benfica,3.3
+22/23,22/23,11,Famalicão,Paços Ferreira,2,1,1.9,3.45,5.25,Famalicão,1.9
+22/23,22/23,11,Estoril Praia,Braga,0,2,5.5,4.0,1.71,Braga,1.71
+22/23,22/23,11,Sporting,Casa Pia AC,3,1,1.42,5.0,10.5,Sporting,1.42
+22/23,22/23,11,Maritimo,Arouca,1,1,2.45,3.35,2.95,Empate,3.35
+22/23,22/23,11,Vizela,Santa Clara,0,1,2.0,3.35,4.0,Santa Clara,4.0
+22/23,22/23,11,Chaves,Gil Vicente,3,1,2.7,3.35,2.75,Chaves,2.7
+22/23,22/23,11,Vitória SC,Boavista,3,2,2.22,3.2,3.75,Vitória SC,2.22
+22/23,22/23,12,Rio Ave,Portimonense,1,0,2.45,3.3,3.25,Rio Ave,2.45
+22/23,22/23,12,Paços Ferreira,Maritimo,0,1,2.37,3.3,3.2,Maritimo,3.2
+22/23,22/23,12,Santa Clara,Porto,1,1,11.0,5.25,1.32,Empate,5.25
+22/23,22/23,12,Benfica,Chaves,5,0,1.15,9.0,21.0,Benfica,1.15
+22/23,22/23,12,Arouca,Sporting,1,0,5.0,3.85,1.75,Arouca,5.0
+22/23,22/23,12,Boavista,Vizela,2,2,2.75,3.25,2.62,Empate,3.25
+22/23,22/23,12,Portimonense,Estoril Praia,1,1,2.45,3.25,3.0,Empate,3.25
+22/23,22/23,12,Casa Pia AC,Rio Ave,1,0,2.07,3.25,3.8,Casa Pia AC,2.07
+22/23,22/23,12,Gil Vicente,Braga,0,1,6.3,4.35,1.55,Braga,1.55
+22/23,22/23,13,Vitória SC,Famalicão,3,2,2.45,3.1,3.3,Vitória SC,2.45
+22/23,22/23,13,Gil Vicente,Portimonense,1,2,2.27,3.4,3.3,Portimonense,3.3
+22/23,22/23,13,Vizela,Arouca,0,1,2.1,3.35,4.2,Arouca,4.2
+22/23,22/23,13,Porto,Paços Ferreira,4,0,1.13,9.0,23.0,Porto,1.13
+22/23,22/23,13,Sporting,Vitória SC,3,0,1.44,5.0,7.5,Sporting,1.44
+22/23,22/23,13,Rio Ave,Boavista,1,0,2.52,3.15,3.0,Rio Ave,2.52
+22/23,22/23,13,Braga,Casa Pia AC,0,1,1.42,5.0,7.6,Casa Pia AC,7.6
+22/23,22/23,13,Maritimo,Famalicão,0,0,2.77,3.2,2.7,Empate,3.2
+22/23,22/23,13,Estoril Praia,Benfica,1,5,12.0,6.5,1.25,Benfica,1.25
+22/23,22/23,14,Chaves,Santa Clara,0,0,2.42,3.1,3.3,Empate,3.1
+22/23,22/23,14,Arouca,Rio Ave,0,1,2.35,3.2,3.3,Rio Ave,3.3
+22/23,22/23,14,Boavista,Porto,1,4,12.0,5.8,1.27,Porto,1.27
+22/23,22/23,14,Paços Ferreira,Vizela,0,2,4.0,3.35,2.05,Vizela,2.05
+22/23,22/23,14,Vitória SC,Maritimo,1,0,2.05,3.3,4.0,Vitória SC,2.05
+22/23,22/23,14,Benfica,Gil Vicente,3,1,1.12,12.0,29.0,Benfica,1.12
+22/23,22/23,14,Casa Pia AC,Chaves,1,2,2.22,3.3,3.5,Chaves,3.5
+22/23,22/23,14,Portimonense,Braga,1,2,3.5,3.5,2.15,Braga,2.15
+22/23,22/23,14,Famalicão,Sporting,1,2,6.0,4.0,1.61,Sporting,1.61
+22/23,22/23,15,Santa Clara,Estoril Praia,3,1,2.26,3.2,3.4,Santa Clara,2.26
+22/23,22/23,16,Rio Ave,Maritimo,1,1,2.1,3.4,4.4,Empate,3.4
+22/23,22/23,17,Portimonense,Casa Pia AC,1,2,2.4,3.15,3.4,Casa Pia AC,3.4
+22/23,22/23,17,Porto,Arouca,5,1,1.18,7.5,17.0,Porto,1.18
+22/23,22/23,17,Gil Vicente,Santa Clara,1,0,2.12,3.4,3.6,Gil Vicente,2.12
+22/23,22/23,17,Sporting,Paços Ferreira,3,0,1.18,8.0,17.0,Sporting,1.18
+22/23,22/23,17,Chaves,Famalicão,0,2,2.6,3.1,3.0,Famalicão,3.0
+22/23,22/23,17,Vizela,Vitória SC,3,0,2.42,3.15,3.2,Vizela,2.42
+22/23,22/23,17,Braga,Benfica,3,0,5.0,4.05,1.7,Braga,5.0
+22/23,22/23,18,Santa Clara,Braga,0,4,7.0,4.0,1.61,Braga,1.61
+22/23,22/23,18,Benfica,Portimonense,1,0,1.17,7.9,22.0,Benfica,1.17
+22/23,22/23,18,Famalicão,Vizela,2,1,2.67,3.1,2.85,Famalicão,2.67
+22/23,22/23,18,Arouca,Estoril Praia,2,0,2.35,3.25,3.25,Arouca,2.35
+22/23,22/23,18,Vitória SC,Rio Ave,0,0,2.1,3.2,4.0,Empate,3.2
+22/23,22/23,18,Casa Pia AC,Porto,0,0,8.5,4.8,1.39,Empate,4.8
+22/23,22/23,18,Paços Ferreira,Chaves,1,1,2.7,3.3,2.67,Empate,3.3
+22/23,22/23,18,Maritimo,Sporting,1,0,9.5,5.0,1.36,Maritimo,9.5
+22/23,22/23,18,Boavista,Gil Vicente,1,0,2.49,3.3,3.05,Boavista,2.49
+22/23,22/23,19,Portimonense,Santa Clara,0,0,2.19,3.3,3.6,Empate,3.3
+22/23,22/23,19,Vizela,Maritimo,3,0,1.87,3.65,4.33,Vizela,1.87
+22/23,22/23,19,Rio Ave,Paços Ferreira,0,1,2.19,3.2,3.6,Paços Ferreira,3.6
+22/23,22/23,19,Braga,Boavista,1,0,1.33,5.5,10.0,Braga,1.33
+22/23,22/23,19,Chaves,Arouca,1,1,2.45,3.25,3.0,Empate,3.25
+22/23,22/23,19,Benfica,Sporting,2,2,1.87,3.75,4.2,Empate,3.75
+22/23,22/23,19,Porto,Famalicão,4,1,1.22,6.5,17.0,Porto,1.22
+22/23,22/23,20,Estoril Praia,Casa Pia AC,2,0,3.0,3.2,2.6,Estoril Praia,3.0
+22/23,22/23,20,Gil Vicente,Vitória SC,2,1,2.57,3.15,3.0,Gil Vicente,2.57
+22/23,22/23,20,Arouca,Portimonense,4,0,2.22,3.3,3.4,Arouca,2.22
+22/23,22/23,20,Sporting,Vizela,2,1,1.3,5.75,10.0,Sporting,1.3
+22/23,22/23,20,Paços Ferreira,Braga,1,2,8.0,4.7,1.42,Braga,1.42
+22/23,22/23,20,Santa Clara,Benfica,0,3,13.0,5.8,1.26,Benfica,1.26
+22/23,22/23,20,Vitória SC,Porto,0,1,11.0,5.3,1.33,Porto,1.33
+22/23,22/23,20,Maritimo,Estoril Praia,1,0,2.6,3.1,2.9,Maritimo,2.6
+22/23,22/23,20,Casa Pia AC,Gil Vicente,1,3,2.3,3.3,3.3,Gil Vicente,3.3
+22/23,22/23,20,Famalicão,Rio Ave,0,0,2.15,3.2,3.85,Empate,3.2
+22/23,22/23,21,Boavista,Chaves,1,1,2.05,3.3,4.0,Empate,3.3
+22/23,22/23,21,Paços Ferreira,Benfica,0,2,19.5,7.25,1.17,Benfica,1.17
+22/23,22/23,21,Casa Pia AC,Santa Clara,2,1,2.0,3.15,4.5,Casa Pia AC,2.0
+22/23,22/23,21,Vizela,Rio Ave,3,1,2.05,3.3,4.0,Vizela,2.05
+22/23,22/23,21,Boavista,Portimonense,4,2,2.02,3.4,4.05,Boavista,2.02
+22/23,22/23,21,Famalicão,Estoril Praia,1,0,2.0,3.4,4.0,Famalicão,2.0
+22/23,22/23,22,Vitória SC,Chaves,2,1,1.95,3.4,4.3,Vitória SC,1.95
+22/23,22/23,22,Paços Ferreira,Gil Vicente,2,1,3.1,3.3,2.5,Paços Ferreira,3.1
+22/23,22/23,22,Arouca,Benfica,0,3,11.0,5.2,1.33,Benfica,1.33
+22/23,22/23,22,Maritimo,Porto,0,2,12.5,5.8,1.28,Porto,1.28
+22/23,22/23,22,Sporting,Braga,5,0,1.88,3.65,4.1,Sporting,1.88
+22/23,22/23,22,Santa Clara,Boavista,2,2,2.82,2.95,2.8,Empate,2.95
+22/23,22/23,22,Benfica,Casa Pia AC,3,0,1.28,6.0,13.0,Benfica,1.28
+22/23,22/23,22,Estoril Praia,Vitória SC,0,1,2.7,3.1,2.9,Vitória SC,2.9
+22/23,22/23,22,Braga,Famalicão,4,1,1.55,4.1,6.4,Braga,1.55
+22/23,22/23,22,Chaves,Maritimo,2,1,2.25,3.2,3.55,Chaves,2.25
+22/23,22/23,22,Porto,Vizela,2,0,1.26,6.0,13.0,Porto,1.26
+22/23,22/23,22,Gil Vicente,Arouca,1,1,2.27,3.4,3.6,Empate,3.4
+22/23,22/23,23,Portimonense,Paços Ferreira,1,0,2.33,3.15,3.4,Portimonense,2.33
+22/23,22/23,23,Rio Ave,Sporting,0,1,9.5,4.8,1.37,Sporting,1.37
+22/23,22/23,23,Estoril Praia,Boavista,2,1,2.85,3.0,2.75,Estoril Praia,2.85
+22/23,22/23,23,Vizela,Chaves,0,0,1.78,3.75,5.0,Empate,3.75
+22/23,22/23,23,Arouca,Santa Clara,1,0,2.1,3.25,3.8,Arouca,2.1
+22/23,22/23,23,Vitória SC,Portimonense,1,0,1.95,3.5,4.2,Vitória SC,1.95
+22/23,22/23,23,Famalicão,Gil Vicente,0,1,2.1,3.5,3.5,Gil Vicente,3.5
+22/23,22/23,23,Sporting,Porto,1,2,2.62,3.25,2.92,Porto,2.92
+22/23,22/23,23,Maritimo,Braga,1,2,4.2,3.75,1.88,Braga,1.88
+22/23,22/23,24,Rio Ave,Estoril Praia,2,0,2.55,3.0,3.0,Rio Ave,2.55
+22/23,22/23,24,Boavista,Casa Pia AC,0,0,2.27,3.05,3.55,Empate,3.05
+22/23,22/23,24,Gil Vicente,Vizela,1,1,2.44,3.4,2.95,Empate,3.4
+22/23,22/23,24,Estoril Praia,Paços Ferreira,1,3,2.06,3.3,3.8,Paços Ferreira,3.8
+22/23,22/23,24,Portimonense,Maritimo,2,1,2.45,3.15,3.1,Portimonense,2.45
+22/23,22/23,24,Porto,Rio Ave,1,0,1.21,6.5,19.0,Porto,1.21
+22/23,22/23,24,Santa Clara,Famalicão,1,3,3.35,3.2,2.47,Famalicão,2.47
+22/23,22/23,24,Braga,Arouca,2,0,1.44,4.6,7.5,Braga,1.44
+22/23,22/23,24,Casa Pia AC,Vitória SC,0,0,2.48,3.0,3.3,Empate,3.0
+22/23,22/23,25,Chaves,Sporting,2,3,9.5,5.0,1.37,Sporting,1.37
+22/23,22/23,25,Benfica,Boavista,3,1,1.17,8.5,21.0,Benfica,1.17
+22/23,22/23,25,Famalicão,Portimonense,1,0,1.84,3.45,4.8,Famalicão,1.84
+22/23,22/23,25,Arouca,Casa Pia AC,2,0,2.4,3.1,3.25,Arouca,2.4
+22/23,22/23,25,Maritimo,Santa Clara,3,1,2.27,3.0,3.65,Maritimo,2.27
+22/23,22/23,25,Vizela,Benfica,0,2,7.9,5.0,1.4,Benfica,1.4
+22/23,22/23,25,Rio Ave,Chaves,1,0,2.05,3.4,3.8,Rio Ave,2.05
+22/23,22/23,25,Paços Ferreira,Boavista,1,3,2.67,3.1,2.88,Boavista,2.88
+22/23,22/23,25,Porto,Gil Vicente,1,2,1.2,7.5,17.0,Gil Vicente,17.0
+22/23,22/23,26,Sporting,Estoril Praia,2,0,1.2,7.0,15.0,Sporting,1.2
+22/23,22/23,26,Vitória SC,Braga,2,1,4.0,3.45,1.95,Vitória SC,4.0
+22/23,22/23,26,Boavista,Arouca,0,0,2.3,3.1,3.5,Empate,3.1
+22/23,22/23,26,Benfica,Famalicão,2,0,1.2,7.0,17.0,Benfica,1.2
+22/23,22/23,26,Estoril Praia,Vizela,0,3,2.7,3.2,2.75,Vizela,2.75
+22/23,22/23,26,Portimonense,Sporting,0,1,10.0,4.9,1.36,Sporting,1.36
+22/23,22/23,26,Chaves,Porto,1,3,9.5,4.75,1.4,Porto,1.4
+22/23,22/23,26,Gil Vicente,Maritimo,2,0,1.88,3.6,4.33,Gil Vicente,1.88
+22/23,22/23,26,Santa Clara,Vitória SC,1,3,2.95,3.2,2.75,Vitória SC,2.75
+22/23,22/23,26,Braga,Rio Ave,2,0,1.55,4.1,6.6,Braga,1.55
+22/23,22/23,27,Casa Pia AC,Paços Ferreira,2,1,1.97,3.35,4.5,Casa Pia AC,1.97
+22/23,22/23,27,Porto,Estoril Praia,3,2,1.25,6.0,11.0,Porto,1.25
+22/23,22/23,27,Chaves,Portimonense,2,0,2.4,3.35,3.15,Chaves,2.4
+22/23,22/23,27,Paços Ferreira,Santa Clara,1,0,2.07,3.4,3.7,Paços Ferreira,2.07
+22/23,22/23,27,Vitória SC,Arouca,0,2,2.15,3.3,3.9,Arouca,3.9
+22/23,22/23,27,Vizela,Braga,0,4,3.95,3.6,2.0,Braga,2.0
+22/23,22/23,27,Rio Ave,Gil Vicente,2,1,2.45,3.25,3.25,Rio Ave,2.45
+22/23,22/23,27,Maritimo,Benfica,0,3,12.0,7.0,1.3,Benfica,1.3
+22/23,22/23,27,Sporting,Boavista,3,0,1.29,6.0,13.0,Sporting,1.29
+22/23,22/23,28,Famalicão,Casa Pia AC,1,0,2.18,3.1,3.85,Famalicão,2.18
+22/23,22/23,28,Santa Clara,Rio Ave,0,2,2.8,3.0,2.87,Rio Ave,2.87
+22/23,22/23,28,Portimonense,Vizela,0,1,3.1,3.3,2.5,Vizela,2.5
+22/23,22/23,28,Arouca,Paços Ferreira,1,1,2.22,3.4,3.4,Empate,3.4
+22/23,22/23,28,Benfica,Vitória SC,5,1,1.17,8.0,19.0,Benfica,1.17
+22/23,22/23,28,Estoril Praia,Chaves,0,2,2.2,3.4,3.5,Chaves,3.5
+22/23,22/23,28,Casa Pia AC,Maritimo,2,0,2.22,3.2,4.0,Casa Pia AC,2.22
+22/23,22/23,28,Braga,Porto,0,0,3.4,3.4,2.26,Empate,3.4
+22/23,22/23,28,Boavista,Famalicão,1,2,2.67,3.05,2.92,Famalicão,2.92
+22/23,22/23,29,Estoril Praia,Gil Vicente,1,0,2.8,3.45,2.55,Estoril Praia,2.8
+22/23,22/23,29,Vizela,Casa Pia AC,3,1,1.96,3.2,4.5,Vizela,1.96
+22/23,22/23,29,Vitória SC,Paços Ferreira,0,0,2.07,3.3,3.8,Empate,3.3
+22/23,22/23,29,Sporting,Santa Clara,3,0,1.12,9.5,29.0,Sporting,1.12
+22/23,22/23,29,Chaves,Braga,1,2,6.1,4.2,1.62,Braga,1.62
+22/23,22/23,29,Maritimo,Boavista,4,2,2.3,3.25,3.3,Maritimo,2.3
+22/23,22/23,29,Rio Ave,Benfica,0,1,13.5,5.6,1.26,Benfica,1.26
+22/23,22/23,29,Porto,Portimonense,1,0,1.14,8.0,23.0,Porto,1.14
+22/23,22/23,30,Famalicão,Arouca,0,1,1.97,3.55,4.05,Arouca,4.05
+22/23,22/23,30,Gil Vicente,Sporting,0,0,9.75,5.1,1.37,Empate,5.1
+22/23,22/23,30,Santa Clara,Vizela,0,1,3.6,3.3,2.2,Vizela,2.2
+22/23,22/23,30,Benfica,Porto,1,2,1.83,3.6,4.55,Porto,4.55
+22/23,22/23,30,Boavista,Vitória SC,2,1,2.55,3.2,2.95,Boavista,2.55
+22/23,22/23,30,Arouca,Maritimo,1,0,2.32,3.2,3.4,Arouca,2.32
+22/23,22/23,30,Paços Ferreira,Famalicão,1,3,2.85,3.05,2.75,Famalicão,2.75
+22/23,22/23,30,Portimonense,Rio Ave,2,2,2.57,3.05,3.05,Empate,3.05
+22/23,22/23,30,Braga,Estoril Praia,4,1,1.27,5.75,12.0,Braga,1.27
+22/23,22/23,30,Casa Pia AC,Sporting,3,4,9.25,4.6,1.4,Sporting,1.4
+22/23,22/23,31,Gil Vicente,Chaves,0,0,2.07,3.45,3.7,Empate,3.45
+22/23,22/23,31,Famalicão,Vitória SC,2,1,2.0,3.4,4.33,Famalicão,2.0
+22/23,22/23,31,Estoril Praia,Portimonense,0,1,2.45,3.2,3.1,Portimonense,3.1
+22/23,22/23,31,Maritimo,Paços Ferreira,3,1,2.22,3.25,3.45,Maritimo,2.22
+22/23,22/23,31,Chaves,Benfica,1,0,12.0,6.2,1.27,Chaves,12.0
+22/23,22/23,31,Porto,Santa Clara,2,1,1.15,8.5,22.0,Porto,1.15
+22/23,22/23,31,Rio Ave,Casa Pia AC,1,1,2.2,3.1,3.8,Empate,3.1
+22/23,22/23,31,Braga,Gil Vicente,1,0,1.3,5.6,10.0,Braga,1.3
+22/23,22/23,31,Sporting,Arouca,1,1,1.25,6.0,13.5,Empate,6.0
+22/23,22/23,32,Vizela,Boavista,1,1,2.07,3.3,3.9,Empate,3.3
+22/23,22/23,32,Casa Pia AC,Braga,0,1,5.6,3.85,1.68,Braga,1.68
+22/23,22/23,32,Famalicão,Maritimo,3,2,2.0,3.45,4.0,Famalicão,2.0
+22/23,22/23,32,Boavista,Rio Ave,3,2,2.43,3.1,3.25,Boavista,2.43
+22/23,22/23,32,Paços Ferreira,Porto,0,2,15.5,6.5,1.22,Porto,1.22
+22/23,22/23,32,Portimonense,Gil Vicente,1,0,2.57,3.4,2.75,Portimonense,2.57
+22/23,22/23,32,Benfica,Estoril Praia,1,0,1.15,8.0,19.0,Benfica,1.15
+22/23,22/23,32,Santa Clara,Chaves,1,1,2.65,3.2,2.85,Empate,3.2
+22/23,22/23,32,Arouca,Vizela,1,0,2.77,3.2,2.7,Arouca,2.77
+22/23,22/23,33,Vitória SC,Sporting,0,2,8.5,4.5,1.42,Sporting,1.42
+22/23,22/23,33,Rio Ave,Arouca,1,0,2.35,3.2,3.3,Rio Ave,2.35
+22/23,22/23,33,Braga,Portimonense,4,1,1.25,6.5,13.0,Braga,1.25
+22/23,22/23,33,Maritimo,Vitória SC,1,2,2.45,3.25,3.0,Vitória SC,3.0
+22/23,22/23,33,Chaves,Casa Pia AC,1,0,2.3,3.2,3.4,Chaves,2.3
+22/23,22/23,33,Vizela,Paços Ferreira,1,2,1.98,3.5,4.2,Paços Ferreira,4.2
+22/23,22/23,33,Gil Vicente,Benfica,0,2,13.0,6.5,1.25,Benfica,1.25
+22/23,22/23,33,Estoril Praia,Santa Clara,3,0,2.16,3.2,3.6,Estoril Praia,2.16
+22/23,22/23,33,Porto,Boavista,1,0,1.2,6.6,17.0,Porto,1.2
+22/23,22/23,33,Sporting,Famalicão,2,1,1.21,7.0,17.0,Sporting,1.21
+22/23,22/23,34,Casa Pia AC,Portimonense,1,1,2.05,3.3,3.95,Empate,3.3
+22/23,22/23,34,Santa Clara,Gil Vicente,3,2,2.4,3.4,3.1,Santa Clara,2.4
+22/23,22/23,34,Boavista,Estoril Praia,1,0,2.36,3.2,3.1,Boavista,2.36
+22/23,22/23,34,Benfica,Braga,1,0,1.53,4.5,6.1,Benfica,1.53
+22/23,22/23,34,Maritimo,Rio Ave,2,2,1.93,3.4,4.45,Empate,3.4
+22/23,22/23,34,Vitória SC,Vizela,3,0,2.47,3.2,3.1,Vitória SC,2.47
+22/23,22/23,34,Paços Ferreira,Sporting,0,4,10.0,5.6,1.31,Sporting,1.31
+22/23,22/23,35,Famalicão,Chaves,1,2,1.78,3.75,4.65,Chaves,4.65
+22/23,22/23,35,Arouca,Porto,0,1,9.0,5.0,1.37,Porto,1.37
+22/23,22/23,35,Gil Vicente,Boavista,3,1,2.55,3.4,2.85,Gil Vicente,2.55
+22/23,22/23,35,Chaves,Paços Ferreira,2,0,2.25,3.5,3.25,Chaves,2.25
+22/23,22/23,35,Vizela,Famalicão,0,0,2.72,3.3,2.72,Empate,3.3
+22/23,22/23,35,Portimonense,Benfica,1,5,17.0,8.0,1.16,Benfica,1.16
+22/23,22/23,35,Sporting,Maritimo,2,1,1.16,8.0,19.0,Sporting,1.16
+22/23,22/23,35,Rio Ave,Vitória SC,0,1,3.55,3.2,2.25,Vitória SC,2.25
+22/23,22/23,35,Braga,Santa Clara,5,3,1.25,6.0,14.0,Braga,1.25
+22/23,22/23,35,Porto,Casa Pia AC,2,1,1.21,6.6,15.0,Porto,1.21
+22/23,22/23,36,Estoril Praia,Arouca,2,0,2.65,3.2,2.85,Estoril Praia,2.65
+22/23,22/23,36,Maritimo,Vizela,1,0,1.78,3.8,4.75,Maritimo,1.78
+22/23,22/23,36,Arouca,Chaves,1,0,2.0,3.6,3.75,Arouca,2.0
+22/23,22/23,36,Santa Clara,Portimonense,1,0,1.76,3.75,4.85,Santa Clara,1.76
+22/23,22/23,36,Boavista,Braga,1,1,5.5,4.25,1.62,Empate,4.25
+22/23,22/23,36,Famalicão,Porto,2,4,7.8,4.55,1.46,Porto,1.46
+22/23,22/23,36,Vitória SC,Gil Vicente,1,0,1.7,4.25,4.8,Vitória SC,1.7
+22/23,22/23,36,Casa Pia AC,Estoril Praia,2,2,2.25,3.25,3.25,Empate,3.25
+22/23,22/23,36,Paços Ferreira,Rio Ave,3,1,2.45,3.3,3.0,Paços Ferreira,2.45
+22/23,22/23,36,Sporting,Benfica,2,2,3.05,3.5,2.35,Empate,3.5
+22/23,22/23,37,Rio Ave,Famalicão,2,2,3.2,3.5,2.25,Empate,3.5
+22/23,22/23,37,Vizela,Sporting,1,2,6.6,4.75,1.5,Sporting,1.5
+22/23,22/23,37,Gil Vicente,Casa Pia AC,1,0,2.31,3.6,3.0,Gil Vicente,2.31
+22/23,22/23,37,Chaves,Boavista,1,4,2.25,3.5,3.15,Boavista,3.15
+22/23,22/23,37,Estoril Praia,Maritimo,3,1,2.17,3.5,3.3,Estoril Praia,2.17
+22/23,22/23,37,Benfica,Santa Clara,3,0,1.07,13.5,40.0,Benfica,1.07
+22/23,22/23,37,Portimonense,Arouca,0,2,3.45,3.75,2.2,Arouca,2.2
+22/23,22/23,37,Porto,Vitória SC,3,0,1.21,7.5,16.0,Porto,1.21
+22/23,22/23,37,Braga,Paços Ferreira,3,0,1.28,6.5,10.0,Braga,1.28
+22/23,22/23,38,Estrela Amadora,Maritimo,2,1,2.55,3.15,3.1,Estrela Amadora,2.55
+22/23,22/23,39,Maritimo,Estrela Amadora,2,1,1.94,3.6,4.05,Maritimo,1.94
+23/24,23/24,1,Braga,Famalicão,1,2,1.53,4.5,6.4,Famalicão,6.4
+23/24,23/24,1,Gil Vicente,Portimonense,5,0,1.85,3.6,4.35,Gil Vicente,1.85
+23/24,23/24,1,Farense,Casa Pia AC,0,3,2.5,3.15,3.1,Casa Pia AC,3.1
+23/24,23/24,1,Sporting,Vizela,3,2,1.22,6.5,16.0,Sporting,1.22
+23/24,23/24,1,Rio Ave,Chaves,2,0,1.91,3.5,4.3,Rio Ave,1.91
+23/24,23/24,1,Estrela Amadora,Vitória SC,0,1,2.5,3.25,2.95,Vitória SC,2.95
+23/24,23/24,1,Arouca,Estoril Praia,4,3,2.01,3.4,3.8,Arouca,2.01
+23/24,23/24,2,Moreirense,Porto,1,2,8.5,5.0,1.37,Porto,1.37
+23/24,23/24,2,Boavista,Benfica,3,2,9.5,5.25,1.34,Boavista,9.5
+23/24,23/24,2,Casa Pia AC,Sporting,1,2,9.5,5.0,1.39,Sporting,1.39
+23/24,23/24,2,Vitória SC,Gil Vicente,2,1,2.12,3.4,3.6,Vitória SC,2.12
+23/24,23/24,2,Chaves,Braga,2,4,6.0,4.35,1.55,Braga,1.55
+23/24,23/24,2,Benfica,Estrela Amadora,2,0,1.15,8.25,22.0,Benfica,1.15
+23/24,23/24,2,Portimonense,Boavista,1,4,3.1,3.3,2.4,Boavista,2.4
+23/24,23/24,2,Estoril Praia,Rio Ave,2,0,2.6,3.2,2.85,Estoril Praia,2.6
+23/24,23/24,2,Porto,Farense,2,1,1.2,7.7,20.0,Porto,1.2
+23/24,23/24,2,Vizela,Arouca,2,2,2.2,3.3,3.6,Empate,3.3
+23/24,23/24,3,Famalicão,Moreirense,0,0,2.3,3.35,3.45,Empate,3.35
+23/24,23/24,3,Estrela Amadora,Estoril Praia,2,1,2.3,3.3,3.2,Estrela Amadora,2.3
+23/24,23/24,3,Arouca,Portimonense,1,1,1.75,3.6,4.9,Empate,3.6
+23/24,23/24,3,Farense,Chaves,5,0,2.1,3.5,3.6,Farense,2.1
+23/24,23/24,3,Gil Vicente,Benfica,2,3,10.0,6.5,1.29,Benfica,1.29
+23/24,23/24,3,Boavista,Casa Pia AC,1,1,2.45,3.25,3.0,Empate,3.25
+23/24,23/24,3,Vitória SC,Vizela,2,0,1.98,3.5,4.2,Vitória SC,1.98
+23/24,23/24,3,Sporting,Famalicão,1,0,1.25,6.5,13.0,Sporting,1.25
+23/24,23/24,4,Rio Ave,Porto,1,2,9.0,4.5,1.42,Porto,1.42
+23/24,23/24,4,Vizela,Gil Vicente,1,0,2.17,3.6,3.4,Vizela,2.17
+23/24,23/24,4,Casa Pia AC,Rio Ave,1,1,2.2,3.5,3.5,Empate,3.5
+23/24,23/24,4,Famalicão,Farense,1,0,2.45,3.3,3.3,Famalicão,2.45
+23/24,23/24,4,Portimonense,Estrela Amadora,1,1,2.6,3.3,2.82,Empate,3.3
+23/24,23/24,4,Benfica,Vitória SC,4,0,1.29,6.0,12.0,Benfica,1.29
+23/24,23/24,4,Chaves,Moreirense,1,2,2.95,3.5,2.45,Moreirense,2.45
+23/24,23/24,4,Estoril Praia,Boavista,1,2,2.55,3.25,2.85,Boavista,2.85
+23/24,23/24,4,Porto,Arouca,1,1,1.2,7.0,17.0,Empate,7.0
+23/24,23/24,4,Braga,Sporting,1,1,3.3,4.0,2.1,Empate,4.0
+23/24,23/24,5,Moreirense,Braga,2,3,3.65,3.65,2.0,Braga,2.0
+23/24,23/24,6,Estrela Amadora,Porto,0,1,6.3,4.33,1.53,Porto,1.53
+23/24,23/24,6,Rio Ave,Famalicão,1,1,2.55,3.3,2.95,Empate,3.3
+23/24,23/24,6,Farense,Braga,3,1,4.5,4.0,1.75,Farense,4.5
+23/24,23/24,6,Vizela,Benfica,1,2,8.0,5.1,1.37,Benfica,1.37
+23/24,23/24,6,Arouca,Casa Pia AC,0,1,2.8,3.2,2.65,Casa Pia AC,2.65
+23/24,23/24,6,Gil Vicente,Estoril Praia,5,3,2.02,3.5,3.6,Gil Vicente,2.02
+23/24,23/24,6,Vitória SC,Portimonense,1,2,1.55,4.2,6.5,Portimonense,6.5
+23/24,23/24,6,Sporting,Moreirense,3,0,1.25,6.0,14.0,Sporting,1.25
+23/24,23/24,7,Boavista,Chaves,4,1,1.72,3.75,5.6,Boavista,1.72
+23/24,23/24,7,Famalicão,Arouca,1,0,2.15,3.3,3.7,Famalicão,2.15
+23/24,23/24,7,Estoril Praia,Vizela,2,2,2.55,3.4,2.75,Empate,3.4
+23/24,23/24,7,Moreirense,Farense,1,0,2.15,3.45,3.5,Moreirense,2.15
+23/24,23/24,7,Casa Pia AC,Vitória SC,0,0,2.45,3.25,3.2,Empate,3.25
+23/24,23/24,7,Porto,Gil Vicente,2,1,1.27,7.0,10.5,Porto,1.27
+23/24,23/24,7,Chaves,Estrela Amadora,2,2,2.63,3.4,2.7,Empate,3.4
+23/24,23/24,7,Portimonense,Benfica,1,3,15.0,6.75,1.24,Benfica,1.24
+23/24,23/24,7,Braga,Boavista,4,1,1.55,4.5,6.0,Braga,1.55
+23/24,23/24,8,Sporting,Rio Ave,2,0,1.18,7.0,19.0,Sporting,1.18
+23/24,23/24,8,Estrela Amadora,Braga,2,4,4.45,4.0,1.78,Braga,1.78
+23/24,23/24,8,Benfica,Porto,1,0,1.85,3.75,4.05,Benfica,1.85
+23/24,23/24,8,Vizela,Portimonense,2,3,1.75,3.85,4.75,Portimonense,4.75
+23/24,23/24,8,Boavista,Famalicão,2,2,2.45,3.3,2.95,Empate,3.3
+23/24,23/24,8,Farense,Sporting,2,3,8.5,5.1,1.38,Sporting,1.38
+23/24,23/24,8,Arouca,Chaves,0,2,1.98,3.6,4.0,Chaves,4.0
+23/24,23/24,8,Vitória SC,Estoril Praia,3,2,1.8,3.6,4.5,Vitória SC,1.8
+23/24,23/24,8,Rio Ave,Moreirense,0,4,2.72,3.25,2.75,Moreirense,2.75
+23/24,23/24,9,Gil Vicente,Casa Pia AC,2,0,2.47,3.25,3.0,Gil Vicente,2.47
+23/24,23/24,9,Moreirense,Boavista,1,1,1.95,3.6,3.95,Empate,3.6
+23/24,23/24,9,Chaves,Gil Vicente,4,2,2.7,3.55,2.52,Chaves,2.7
+23/24,23/24,9,Farense,Vizela,0,0,2.3,3.4,3.2,Empate,3.4
+23/24,23/24,9,Braga,Rio Ave,2,1,1.32,5.5,10.0,Braga,1.32
+23/24,23/24,9,Estoril Praia,Benfica,0,1,9.0,6.0,1.3,Benfica,1.3
+23/24,23/24,9,Casa Pia AC,Estrela Amadora,0,1,2.12,3.4,3.55,Estrela Amadora,3.55
+23/24,23/24,9,Famalicão,Vitória SC,1,3,2.87,3.05,2.67,Vitória SC,2.67
+23/24,23/24,9,Porto,Portimonense,1,0,1.2,7.5,17.0,Porto,1.2
+23/24,23/24,9,Sporting,Arouca,2,1,1.21,7.25,17.0,Sporting,1.21
+23/24,23/24,10,Arouca,Moreirense,0,1,2.6,3.25,2.87,Moreirense,2.87
+23/24,23/24,10,Portimonense,Estoril Praia,1,0,2.55,3.4,2.7,Portimonense,2.55
+23/24,23/24,10,Benfica,Casa Pia AC,1,1,1.23,6.6,13.0,Empate,6.6
+23/24,23/24,10,Vitória SC,Chaves,5,0,1.68,3.85,5.3,Vitória SC,1.68
+23/24,23/24,10,Gil Vicente,Braga,3,3,5.0,4.75,1.6,Empate,4.75
+23/24,23/24,10,Rio Ave,Farense,3,4,2.47,3.3,2.95,Farense,2.95
+23/24,23/24,10,Estrela Amadora,Famalicão,1,0,2.6,3.25,3.0,Estrela Amadora,2.6
+23/24,23/24,10,Vizela,Porto,0,2,7.2,4.75,1.45,Porto,1.45
+23/24,23/24,11,Boavista,Sporting,0,2,8.0,5.0,1.44,Sporting,1.44
+23/24,23/24,11,Porto,Estoril Praia,0,1,1.2,7.2,13.0,Estoril Praia,13.0
+23/24,23/24,11,Chaves,Benfica,0,2,10.0,6.0,1.32,Benfica,1.32
+23/24,23/24,11,Famalicão,Gil Vicente,3,1,2.15,3.5,3.45,Famalicão,2.15
+23/24,23/24,11,Braga,Portimonense,6,1,1.25,7.0,12.0,Braga,1.25
+23/24,23/24,11,Casa Pia AC,Vizela,0,1,2.2,3.4,3.5,Vizela,3.5
+23/24,23/24,11,Moreirense,Vitória SC,1,0,2.92,3.35,2.55,Moreirense,2.92
+23/24,23/24,11,Rio Ave,Boavista,2,0,2.65,3.45,2.7,Rio Ave,2.65
+23/24,23/24,11,Sporting,Estrela Amadora,3,2,1.23,7.0,13.0,Sporting,1.23
+23/24,23/24,12,Farense,Arouca,2,0,2.4,3.3,3.15,Farense,2.4
+23/24,23/24,12,Estoril Praia,Casa Pia AC,4,0,2.45,3.3,3.05,Estoril Praia,2.45
+23/24,23/24,12,Portimonense,Chaves,2,1,2.35,3.45,3.3,Portimonense,2.35
+23/24,23/24,12,Estrela Amadora,Moreirense,0,1,2.7,3.35,2.7,Moreirense,2.7
+23/24,23/24,12,Vizela,Famalicão,0,0,2.35,3.25,3.25,Empate,3.25
+23/24,23/24,12,Vitória SC,Porto,1,2,5.0,3.75,1.75,Porto,1.75
+23/24,23/24,12,Boavista,Farense,1,3,1.95,3.8,3.8,Farense,3.8
+23/24,23/24,12,Gil Vicente,Rio Ave,1,1,2.27,3.5,3.25,Empate,3.5
+23/24,23/24,12,Arouca,Braga,0,1,4.9,4.2,1.7,Braga,1.7
+23/24,23/24,12,Benfica,Sporting,2,1,2.57,3.35,2.9,Benfica,2.57
+23/24,23/24,13,Chaves,Vizela,2,1,2.9,3.4,2.5,Chaves,2.9
+23/24,23/24,13,Farense,Vitória SC,1,2,3.4,3.65,2.32,Vitória SC,2.32
+23/24,23/24,13,Rio Ave,Estrela Amadora,1,1,2.18,3.6,3.6,Empate,3.6
+23/24,23/24,13,Famalicão,Porto,0,3,7.0,4.4,1.53,Porto,1.53
+23/24,23/24,13,Casa Pia AC,Portimonense,1,0,2.0,3.55,4.25,Casa Pia AC,2.0
+23/24,23/24,13,Braga,Estoril Praia,3,1,1.35,5.5,7.6,Braga,1.35
+23/24,23/24,13,Moreirense,Benfica,0,0,6.7,4.7,1.47,Empate,4.7
+23/24,23/24,13,Boavista,Arouca,0,4,2.7,3.3,3.0,Arouca,3.0
+23/24,23/24,14,Sporting,Gil Vicente,3,1,1.14,9.6,21.0,Sporting,1.14
+23/24,23/24,14,Vizela,Braga,1,3,5.9,4.4,1.61,Braga,1.61
+23/24,23/24,14,Benfica,Farense,1,1,1.2,8.0,15.5,Empate,8.0
+23/24,23/24,14,Portimonense,Famalicão,1,1,2.55,3.3,2.95,Empate,3.3
+23/24,23/24,14,Vitória SC,Sporting,3,2,4.8,4.0,1.72,Vitória SC,4.8
+23/24,23/24,14,Porto,Casa Pia AC,3,1,1.29,6.0,13.0,Porto,1.29
+23/24,23/24,14,Estrela Amadora,Boavista,3,1,2.22,3.55,3.25,Estrela Amadora,2.22
+23/24,23/24,14,Arouca,Rio Ave,2,2,2.15,3.25,3.9,Empate,3.25
+23/24,23/24,14,Estoril Praia,Chaves,4,0,1.85,3.85,4.1,Estoril Praia,1.85
+23/24,23/24,15,Gil Vicente,Moreirense,1,1,3.3,3.45,2.22,Empate,3.45
+23/24,23/24,15,Farense,Estrela Amadora,0,0,2.07,3.55,3.6,Empate,3.55
+23/24,23/24,15,Rio Ave,Vizela,1,1,2.4,3.35,3.1,Empate,3.35
+23/24,23/24,15,Arouca,Gil Vicente,3,0,2.07,3.45,3.65,Arouca,2.07
+23/24,23/24,15,Boavista,Vitória SC,1,1,3.3,3.3,2.25,Empate,3.3
+23/24,23/24,15,Chaves,Casa Pia AC,1,3,2.65,3.2,2.85,Casa Pia AC,2.85
+23/24,23/24,15,Moreirense,Portimonense,5,2,1.72,3.9,5.25,Moreirense,1.72
+23/24,23/24,15,Famalicão,Estoril Praia,1,1,2.3,3.45,3.1,Empate,3.45
+23/24,23/24,15,Braga,Benfica,0,1,3.0,3.75,2.3,Benfica,2.3
+23/24,23/24,16,Sporting,Porto,2,0,2.22,3.4,3.3,Sporting,2.22
+23/24,23/24,16,Vitória SC,Rio Ave,1,0,1.75,3.8,5.0,Vitória SC,1.75
+23/24,23/24,16,Vizela,Moreirense,0,0,3.2,3.2,2.5,Empate,3.2
+23/24,23/24,17,Estrela Amadora,Arouca,1,4,2.85,3.3,2.6,Arouca,2.6
+23/24,23/24,17,Benfica,Famalicão,3,0,1.29,6.0,11.0,Benfica,1.29
+23/24,23/24,17,Porto,Chaves,1,0,1.25,6.8,13.0,Porto,1.25
+23/24,23/24,17,Estoril Praia,Farense,4,0,1.9,4.0,3.85,Estoril Praia,1.9
+23/24,23/24,17,Gil Vicente,Boavista,1,0,2.3,3.5,3.2,Gil Vicente,2.3
+23/24,23/24,17,Casa Pia AC,Braga,1,3,6.0,4.4,1.57,Braga,1.57
+23/24,23/24,17,Portimonense,Sporting,1,2,10.0,6.2,1.3,Sporting,1.3
+23/24,23/24,18,Sporting,Estoril Praia,5,1,1.25,6.6,11.0,Sporting,1.25
+23/24,23/24,18,Boavista,Porto,1,1,7.0,4.7,1.47,Empate,4.7
+23/24,23/24,18,Estrela Amadora,Vizela,1,1,2.9,3.35,2.55,Empate,3.35
+23/24,23/24,18,Farense,Gil Vicente,1,0,2.27,3.4,3.3,Farense,2.27
+23/24,23/24,18,Arouca,Benfica,0,3,7.7,4.75,1.5,Benfica,1.5
+23/24,23/24,18,Braga,Vitória SC,1,1,1.62,4.2,5.4,Empate,4.2
+23/24,23/24,18,Rio Ave,Portimonense,2,0,1.72,3.9,5.0,Rio Ave,1.72
+23/24,23/24,18,Famalicão,Chaves,2,2,1.66,3.8,5.8,Empate,3.8
+23/24,23/24,19,Moreirense,Casa Pia AC,1,4,1.83,3.45,5.4,Casa Pia AC,5.4
+23/24,23/24,19,Portimonense,Farense,1,0,2.62,3.4,2.8,Portimonense,2.62
+23/24,23/24,19,Casa Pia AC,Famalicão,0,2,2.82,3.15,2.77,Famalicão,2.77
+23/24,23/24,19,Chaves,Sporting,0,3,11.0,6.2,1.28,Sporting,1.28
+23/24,23/24,19,Estoril Praia,Moreirense,1,3,2.35,3.4,3.2,Moreirense,3.2
+23/24,23/24,19,Gil Vicente,Estrela Amadora,1,1,2.1,3.45,3.8,Empate,3.45
+23/24,23/24,19,Benfica,Rio Ave,4,1,1.2,8.0,16.0,Benfica,1.2
+23/24,23/24,19,Vizela,Boavista,1,4,2.05,3.3,4.2,Boavista,4.2
+23/24,23/24,19,Porto,Braga,2,0,1.8,4.0,4.33,Porto,1.8
+23/24,23/24,20,Vitória SC,Arouca,2,1,2.0,3.6,3.85,Vitória SC,2.0
+23/24,23/24,20,Famalicão,Braga,1,2,4.0,3.75,1.91,Braga,1.91
+23/24,23/24,20,Vizela,Sporting,2,5,11.25,5.6,1.31,Sporting,1.31
+23/24,23/24,20,Benfica,Boavista,2,0,1.12,10.0,23.0,Benfica,1.12
+23/24,23/24,20,Estoril Praia,Arouca,1,2,2.5,3.6,2.8,Arouca,2.8
+23/24,23/24,20,Casa Pia AC,Farense,1,3,2.25,3.25,3.55,Farense,3.55
+23/24,23/24,20,Porto,Moreirense,5,0,1.38,5.25,9.5,Porto,1.38
+23/24,23/24,20,Portimonense,Gil Vicente,0,2,2.6,3.4,2.8,Gil Vicente,2.8
+23/24,23/24,20,Chaves,Rio Ave,0,0,3.1,3.25,2.5,Empate,3.25
+23/24,23/24,20,Vitória SC,Estrela Amadora,3,0,1.61,4.1,6.0,Vitória SC,1.61
+23/24,23/24,21,Boavista,Portimonense,1,4,2.05,3.45,4.2,Portimonense,4.2
+23/24,23/24,21,Moreirense,Famalicão,1,0,2.55,3.1,3.2,Moreirense,2.55
+23/24,23/24,21,Farense,Porto,1,3,9.25,5.2,1.37,Porto,1.37
+23/24,23/24,21,Arouca,Vizela,5,0,1.83,3.8,4.3,Arouca,1.83
+23/24,23/24,21,Gil Vicente,Vitória SC,1,0,3.4,3.3,2.27,Gil Vicente,3.4
+23/24,23/24,22,Estrela Amadora,Benfica,1,4,11.0,6.2,1.29,Benfica,1.29
+23/24,23/24,22,Sporting,Casa Pia AC,8,0,1.17,8.0,20.0,Sporting,1.17
+23/24,23/24,22,Rio Ave,Estoril Praia,1,1,2.2,3.5,3.3,Empate,3.5
+23/24,23/24,22,Braga,Chaves,1,1,1.34,5.5,10.0,Empate,5.5
+23/24,23/24,22,Portimonense,Arouca,1,2,3.75,3.6,2.0,Arouca,2.0
+23/24,23/24,22,Porto,Rio Ave,0,0,1.24,7.0,17.0,Empate,7.0
+23/24,23/24,22,Chaves,Farense,1,1,2.37,3.4,3.2,Empate,3.4
+23/24,23/24,22,Vizela,Vitória SC,0,1,4.2,3.6,1.87,Vitória SC,1.87
+23/24,23/24,22,Benfica,Gil Vicente,3,0,1.18,9.0,19.5,Benfica,1.18
+23/24,23/24,22,Estoril Praia,Estrela Amadora,1,0,2.05,3.75,3.7,Estoril Praia,2.05
+23/24,23/24,22,Braga,Moreirense,1,0,1.47,4.5,7.5,Braga,1.47
+23/24,23/24,23,Casa Pia AC,Boavista,0,0,2.06,3.4,3.85,Empate,3.4
+23/24,23/24,23,Estrela Amadora,Portimonense,3,0,2.0,3.5,4.1,Estrela Amadora,2.0
+23/24,23/24,23,Farense,Famalicão,1,1,3.1,3.1,2.8,Empate,3.1
+23/24,23/24,23,Moreirense,Chaves,1,0,1.91,3.5,4.6,Moreirense,1.91
+23/24,23/24,23,Boavista,Estoril Praia,2,1,2.55,3.4,2.8,Boavista,2.55
+23/24,23/24,23,Rio Ave,Casa Pia AC,1,0,2.3,3.1,3.85,Rio Ave,2.3
+23/24,23/24,23,Sporting,Braga,5,0,1.5,4.75,6.7,Sporting,1.5
+23/24,23/24,23,Vitória SC,Benfica,2,2,5.25,4.05,1.65,Empate,4.05
+23/24,23/24,24,Arouca,Porto,3,2,8.0,4.75,1.44,Arouca,8.0
+23/24,23/24,24,Gil Vicente,Vizela,0,1,2.0,3.6,4.05,Vizela,4.05
+23/24,23/24,24,Famalicão,Rio Ave,2,1,2.2,3.2,3.8,Famalicão,2.2
+23/24,23/24,24,Chaves,Boavista,2,1,2.8,3.15,2.8,Chaves,2.8
+23/24,23/24,24,Portimonense,Vitória SC,1,1,4.2,3.7,1.95,Empate,3.7
+23/24,23/24,24,Porto,Estrela Amadora,2,0,1.2,7.2,23.0,Porto,1.2
+23/24,23/24,24,Casa Pia AC,Arouca,1,0,3.1,3.15,2.55,Casa Pia AC,3.1
+23/24,23/24,24,Benfica,Vizela,6,1,1.17,9.5,23.0,Benfica,1.17
+23/24,23/24,24,Estoril Praia,Gil Vicente,1,3,2.2,3.55,3.25,Gil Vicente,3.25
+23/24,23/24,24,Braga,Farense,2,1,1.5,5.25,6.2,Braga,1.5
+23/24,23/24,25,Moreirense,Sporting,0,2,8.5,5.0,1.37,Sporting,1.37
+23/24,23/24,25,Arouca,Famalicão,3,2,2.35,3.4,3.35,Arouca,2.35
+23/24,23/24,25,Farense,Moreirense,0,1,2.72,3.2,2.75,Moreirense,2.75
+23/24,23/24,25,Estrela Amadora,Chaves,1,1,2.0,3.5,4.1,Empate,3.5
+23/24,23/24,25,Vitória SC,Casa Pia AC,0,2,1.63,4.0,6.2,Casa Pia AC,6.2
+23/24,23/24,25,Vizela,Estoril Praia,3,3,2.35,3.5,3.0,Empate,3.5
+23/24,23/24,25,Benfica,Portimonense,4,0,1.12,10.0,28.0,Benfica,1.12
+23/24,23/24,25,Gil Vicente,Porto,1,1,7.0,4.7,1.5,Empate,4.7
+23/24,23/24,25,Rio Ave,Sporting,3,3,16.5,6.6,1.22,Empate,6.6
+23/24,23/24,26,Boavista,Braga,0,4,4.8,4.0,1.75,Braga,1.75
+23/24,23/24,26,Chaves,Arouca,1,5,3.45,3.6,2.2,Arouca,2.2
+23/24,23/24,26,Moreirense,Rio Ave,0,0,2.45,3.2,3.45,Empate,3.2
+23/24,23/24,26,Estoril Praia,Vitória SC,1,3,2.9,3.45,2.45,Vitória SC,2.45
+23/24,23/24,26,Braga,Estrela Amadora,3,0,1.38,5.6,8.2,Braga,1.38
+23/24,23/24,26,Casa Pia AC,Gil Vicente,0,0,2.7,3.2,3.05,Empate,3.2
+23/24,23/24,26,Portimonense,Vizela,0,0,2.65,3.35,2.9,Empate,3.35
+23/24,23/24,26,Sporting,Farense,3,2,1.15,8.8,21.0,Sporting,1.15
+23/24,23/24,26,Porto,Benfica,5,0,2.4,3.55,3.0,Porto,2.4
+23/24,23/24,27,Famalicão,Boavista,1,1,2.15,3.4,3.85,Empate,3.4
+23/24,23/24,27,Portimonense,Porto,0,3,14.0,7.0,1.24,Porto,1.24
+23/24,23/24,27,Estrela Amadora,Casa Pia AC,3,1,2.45,3.0,3.3,Estrela Amadora,2.45
+23/24,23/24,27,Vizela,Farense,2,1,2.22,3.4,3.6,Vizela,2.22
+23/24,23/24,27,Boavista,Moreirense,1,0,3.5,3.05,2.4,Boavista,3.5
+23/24,23/24,27,Rio Ave,Braga,0,0,4.6,4.1,1.78,Empate,4.1
+23/24,23/24,27,Vitória SC,Famalicão,1,0,2.02,3.65,3.9,Vitória SC,2.02
+23/24,23/24,27,Arouca,Sporting,0,3,8.0,5.2,1.4,Sporting,1.4
+23/24,23/24,27,Benfica,Estoril Praia,3,1,1.3,7.0,12.0,Benfica,1.3
+23/24,23/24,28,Gil Vicente,Chaves,0,0,2.0,3.55,4.3,Empate,3.55
+23/24,23/24,28,Estoril Praia,Portimonense,1,0,1.68,4.0,5.25,Estoril Praia,1.68
+23/24,23/24,28,Famalicão,Estrela Amadora,0,0,2.05,3.4,4.0,Empate,3.4
+23/24,23/24,28,Braga,Gil Vicente,2,1,1.44,5.0,7.5,Braga,1.44
+23/24,23/24,28,Farense,Rio Ave,1,1,2.67,3.1,2.92,Empate,3.1
+23/24,23/24,28,Porto,Vizela,4,1,1.16,8.5,19.0,Porto,1.16
+23/24,23/24,28,Chaves,Vitória SC,1,2,4.0,3.45,2.0,Vitória SC,2.0
+23/24,23/24,28,Moreirense,Arouca,1,0,2.2,3.35,3.6,Moreirense,2.2
+23/24,23/24,28,Casa Pia AC,Benfica,0,1,11.0,5.5,1.32,Benfica,1.32
+23/24,23/24,28,Sporting,Boavista,6,1,1.16,8.0,19.0,Sporting,1.16
+23/24,23/24,29,Gil Vicente,Famalicão,1,2,2.7,3.15,3.2,Famalicão,3.2
+23/24,23/24,29,Benfica,Chaves,1,0,1.14,9.75,67.0,Benfica,1.14
+23/24,23/24,29,Estrela Amadora,Sporting,1,2,12.0,6.5,1.27,Sporting,1.27
+23/24,23/24,29,Arouca,Farense,2,1,1.78,3.8,5.0,Arouca,1.78
+23/24,23/24,29,Vitória SC,Moreirense,1,0,1.95,3.4,4.2,Vitória SC,1.95
+23/24,23/24,29,Boavista,Rio Ave,0,0,3.05,3.1,2.63,Empate,3.1
+23/24,23/24,29,Estoril Praia,Porto,1,0,11.0,5.6,1.3,Estoril Praia,11.0
+23/24,23/24,29,Vizela,Casa Pia AC,0,4,2.4,3.3,3.75,Casa Pia AC,3.75
+23/24,23/24,30,Portimonense,Braga,3,5,8.0,4.9,1.5,Braga,1.5
+23/24,23/24,30,Farense,Boavista,2,0,2.11,3.25,4.0,Farense,2.11
+23/24,23/24,30,Famalicão,Vizela,3,2,1.83,3.6,4.75,Famalicão,1.83
+23/24,23/24,30,Rio Ave,Gil Vicente,3,0,2.55,3.1,3.2,Rio Ave,2.55
+23/24,23/24,30,Braga,Arouca,0,3,1.44,5.2,7.5,Arouca,7.5
+23/24,23/24,30,Sporting,Benfica,2,1,2.12,3.6,3.6,Sporting,2.12
+23/24,23/24,30,Chaves,Portimonense,2,3,2.25,3.4,3.4,Portimonense,3.4
+23/24,23/24,30,Moreirense,Estrela Amadora,2,2,2.2,3.25,3.7,Empate,3.25
+23/24,23/24,30,Porto,Vitória SC,1,2,1.36,5.0,9.25,Vitória SC,9.25
+23/24,23/24,31,Casa Pia AC,Estoril Praia,0,0,3.1,2.95,2.6,Empate,2.95
+23/24,23/24,31,Gil Vicente,Sporting,0,4,12.0,6.0,1.32,Sporting,1.32
+23/24,23/24,31,Vitória SC,Farense,1,1,1.57,4.2,6.0,Empate,4.2
+23/24,23/24,31,Porto,Famalicão,2,2,1.29,6.0,12.5,Empate,6.0
+23/24,23/24,31,Estoril Praia,Braga,0,1,5.0,4.1,1.67,Braga,1.67
+23/24,23/24,31,Estrela Amadora,Rio Ave,2,2,2.7,3.25,2.9,Empate,3.25
+23/24,23/24,31,Arouca,Boavista,2,1,1.72,3.9,5.2,Arouca,1.72
+23/24,23/24,31,Portimonense,Casa Pia AC,2,2,2.62,3.3,2.9,Empate,3.3
+23/24,23/24,31,Benfica,Moreirense,3,0,1.37,6.0,11.0,Benfica,1.37
+23/24,23/24,32,Vizela,Chaves,0,1,2.15,3.5,3.8,Chaves,3.8
+23/24,23/24,32,Famalicão,Sporting,0,1,9.75,5.8,1.33,Sporting,1.33
+23/24,23/24,32,Rio Ave,Arouca,1,1,2.62,3.25,2.85,Empate,3.25
+23/24,23/24,32,Moreirense,Gil Vicente,0,1,2.6,3.15,3.1,Gil Vicente,3.1
+23/24,23/24,32,Boavista,Estrela Amadora,1,1,2.9,3.15,2.67,Empate,3.15
+23/24,23/24,32,Braga,Vizela,2,1,1.27,6.6,11.0,Braga,1.27
+23/24,23/24,32,Chaves,Estoril Praia,2,2,3.0,3.25,2.55,Empate,3.25
+23/24,23/24,32,Famalicão,Portimonense,2,2,1.65,4.0,5.75,Empate,4.0
+23/24,23/24,32,Casa Pia AC,Porto,1,2,9.5,5.5,1.35,Porto,1.35
+23/24,23/24,32,Sporting,Vitória SC,3,0,1.24,7.0,15.0,Sporting,1.24
+23/24,23/24,33,Farense,Benfica,1,3,9.0,5.8,1.35,Benfica,1.35
+23/24,23/24,33,Gil Vicente,Arouca,2,2,2.47,3.6,2.85,Empate,3.6
+23/24,23/24,33,Casa Pia AC,Chaves,3,1,2.05,3.3,4.0,Casa Pia AC,2.05
+23/24,23/24,33,Vizela,Rio Ave,1,1,2.82,3.4,2.63,Empate,3.4
+23/24,23/24,33,Benfica,Braga,3,1,1.6,4.75,5.0,Benfica,1.6
+23/24,23/24,33,Vitória SC,Boavista,1,0,1.75,3.75,5.0,Vitória SC,1.75
+23/24,23/24,33,Portimonense,Moreirense,0,2,2.65,3.25,2.88,Moreirense,2.88
+23/24,23/24,33,Estoril Praia,Famalicão,1,0,2.45,3.25,3.0,Estoril Praia,2.45
+23/24,23/24,33,Porto,Sporting,2,2,2.4,3.5,3.0,Empate,3.5
+23/24,23/24,34,Estrela Amadora,Farense,0,3,1.89,3.6,4.8,Farense,4.8
+23/24,23/24,34,Moreirense,Vizela,1,0,2.25,3.4,3.4,Moreirense,2.25
+23/24,23/24,34,Boavista,Gil Vicente,1,1,2.75,3.1,2.88,Empate,3.1
+23/24,23/24,34,Rio Ave,Vitória SC,2,1,3.4,3.35,2.25,Rio Ave,3.4
+23/24,23/24,34,Sporting,Portimonense,3,0,1.08,15.0,34.0,Sporting,1.08
+23/24,23/24,34,Chaves,Porto,0,3,11.0,6.4,1.27,Porto,1.27
+23/24,23/24,34,Farense,Estoril Praia,3,2,2.75,3.05,2.8,Farense,2.75
+23/24,23/24,34,Arouca,Estrela Amadora,0,0,2.15,3.8,3.35,Empate,3.8
+23/24,23/24,34,Braga,Casa Pia AC,4,3,1.3,5.8,9.75,Braga,1.3
+23/24,23/24,34,Famalicão,Benfica,2,0,7.0,5.5,1.42,Famalicão,7.0
+23/24,23/24,35,Chaves,Famalicão,0,1,3.0,3.4,2.47,Famalicão,2.47
+23/24,23/24,35,Portimonense,Rio Ave,2,2,2.38,3.4,3.1,Empate,3.4
+23/24,23/24,35,Vizela,Estrela Amadora,4,0,3.65,3.55,2.05,Vizela,3.65
+23/24,23/24,35,Estoril Praia,Sporting,0,1,8.0,5.6,1.36,Sporting,1.36
+23/24,23/24,35,Vitória SC,Braga,2,3,3.35,3.55,2.15,Braga,2.15
+23/24,23/24,35,Gil Vicente,Farense,2,0,1.75,4.0,4.5,Gil Vicente,1.75
+23/24,23/24,35,Benfica,Arouca,5,0,1.29,6.5,10.25,Benfica,1.29
+23/24,23/24,35,Casa Pia AC,Moreirense,0,1,2.7,3.15,2.8,Moreirense,2.8
+23/24,23/24,35,Porto,Boavista,2,1,1.14,8.75,22.0,Porto,1.14
+23/24,23/24,36,Famalicão,Casa Pia AC,1,2,1.57,4.4,5.5,Casa Pia AC,5.5
+23/24,23/24,36,Rio Ave,Benfica,1,1,7.5,5.6,1.4,Empate,5.6
+23/24,23/24,36,Arouca,Vitória SC,1,3,3.1,3.6,2.32,Vitória SC,2.32
+23/24,23/24,36,Boavista,Vizela,2,2,2.1,3.3,4.1,Empate,3.3
+23/24,23/24,36,Estrela Amadora,Gil Vicente,1,0,1.7,4.15,4.85,Estrela Amadora,1.7
+23/24,23/24,36,Farense,Portimonense,1,3,2.95,4.1,2.2,Portimonense,2.2
+23/24,23/24,36,Moreirense,Estoril Praia,2,1,2.25,3.4,3.35,Moreirense,2.25
+23/24,23/24,36,Sporting,Chaves,3,0,1.09,14.0,41.0,Sporting,1.09
+23/24,23/24,36,Braga,Porto,0,1,3.5,3.75,2.1,Porto,2.1
+23/24,23/24,37,Portimonense,AVS,1,2,1.88,3.7,4.55,AVS,4.55
+23/24,23/24,38,AVS,Portimonense,2,1,2.7,3.6,2.6,AVS,2.7
+24/25,24/25,1,Sporting,Rio Ave,3,1,1.15,9.5,23.0,Sporting,1.15
+24/25,24/25,1,AVS,Nacional,1,1,2.06,3.4,3.7,Empate,3.4
+24/25,24/25,1,Casa Pia AC,Boavista,0,1,1.9,3.4,4.33,Boavista,4.33
+24/25,24/25,1,Porto,Gil Vicente,3,0,1.27,7.0,13.0,Porto,1.27
+24/25,24/25,1,Estoril Praia,Santa Clara,1,4,2.7,3.0,2.8,Santa Clara,2.8
+24/25,24/25,1,Famalicão,Benfica,2,0,5.75,4.4,1.62,Famalicão,5.75
+24/25,24/25,1,Farense,Moreirense,1,2,2.75,3.2,2.67,Moreirense,2.67
+24/25,24/25,1,Braga,Estrela Amadora,1,1,1.45,4.6,7.3,Empate,4.6
+24/25,24/25,2,Arouca,Vitória SC,0,1,3.6,3.45,2.15,Vitória SC,2.15
+24/25,24/25,2,Santa Clara,Porto,0,2,4.7,3.9,1.78,Porto,1.78
+24/25,24/25,2,Gil Vicente,AVS,4,2,2.27,3.3,3.4,Gil Vicente,2.27
+24/25,24/25,2,Rio Ave,Farense,1,0,2.1,3.4,3.75,Rio Ave,2.1
+24/25,24/25,2,Nacional,Sporting,1,6,12.0,6.6,1.24,Sporting,1.24
+24/25,24/25,2,Benfica,Casa Pia AC,3,0,1.26,6.25,13.5,Benfica,1.26
+24/25,24/25,2,Moreirense,Arouca,3,1,2.0,3.3,4.3,Moreirense,2.0
+24/25,24/25,2,Vitória SC,Estoril Praia,1,0,1.53,4.2,6.5,Vitória SC,1.53
+24/25,24/25,2,Boavista,Braga,0,1,5.5,4.1,1.63,Braga,1.63
+24/25,24/25,3,Estrela Amadora,Famalicão,0,3,3.05,3.25,2.45,Famalicão,2.45
+24/25,24/25,3,Farense,Sporting,0,5,15.0,7.6,1.2,Sporting,1.2
+24/25,24/25,3,Casa Pia AC,Santa Clara,0,2,3.05,2.9,2.72,Santa Clara,2.72
+24/25,24/25,3,Porto,Rio Ave,2,0,1.25,6.5,13.0,Porto,1.25
+24/25,24/25,3,Benfica,Estrela Amadora,1,0,1.19,8.5,17.5,Benfica,1.19
+24/25,24/25,3,Famalicão,Boavista,1,0,1.6,3.9,6.5,Famalicão,1.6
+24/25,24/25,3,Arouca,Nacional,1,0,1.85,3.8,4.25,Arouca,1.85
+24/25,24/25,3,Estoril Praia,Gil Vicente,0,0,3.0,3.2,2.45,Empate,3.2
+24/25,24/25,3,AVS,Vitória SC,1,0,5.4,3.75,1.72,AVS,5.4
+24/25,24/25,3,Braga,Moreirense,3,1,1.72,4.1,4.8,Braga,1.72
+24/25,24/25,4,Moreirense,Benfica,1,1,7.2,4.5,1.45,Empate,4.5
+24/25,24/25,4,Santa Clara,AVS,2,1,1.72,3.5,5.9,Santa Clara,1.72
+24/25,24/25,4,Boavista,Estoril Praia,0,0,2.65,3.0,2.95,Empate,3.0
+24/25,24/25,4,Estrela Amadora,Casa Pia AC,0,1,2.5,3.25,3.05,Casa Pia AC,3.05
+24/25,24/25,4,Sporting,Porto,2,0,2.02,3.5,3.8,Sporting,2.02
+24/25,24/25,4,Nacional,Farense,2,0,1.95,3.6,3.9,Nacional,1.95
+24/25,24/25,4,Rio Ave,Arouca,1,0,2.4,3.25,3.15,Rio Ave,2.4
+24/25,24/25,4,Gil Vicente,Braga,0,0,4.05,3.6,1.95,Empate,3.6
+24/25,24/25,4,Vitória SC,Famalicão,2,1,2.0,3.3,4.25,Vitória SC,2.0
+24/25,24/25,5,Arouca,Sporting,0,3,13.5,6.5,1.23,Sporting,1.23
+24/25,24/25,5,Casa Pia AC,Moreirense,3,1,3.05,3.05,2.7,Casa Pia AC,3.05
+24/25,24/25,5,AVS,Rio Ave,1,0,2.8,3.05,2.8,AVS,2.8
+24/25,24/25,5,Benfica,Santa Clara,4,1,1.28,6.0,11.25,Benfica,1.28
+24/25,24/25,5,Famalicão,Gil Vicente,1,1,1.95,3.4,4.35,Empate,3.4
+24/25,24/25,5,Porto,Farense,2,1,1.13,9.0,30.0,Porto,1.13
+24/25,24/25,5,Estoril Praia,Nacional,1,0,2.55,3.2,2.9,Estoril Praia,2.55
+24/25,24/25,5,Braga,Vitória SC,0,2,2.12,3.6,3.65,Vitória SC,3.65
+24/25,24/25,6,Estrela Amadora,Boavista,2,2,2.05,3.3,4.15,Empate,3.3
+24/25,24/25,6,Nacional,Braga,0,3,4.5,4.0,1.8,Braga,1.8
+24/25,24/25,6,Rio Ave,Estoril Praia,2,2,1.94,3.5,4.33,Empate,3.5
+24/25,24/25,6,Santa Clara,Estrela Amadora,1,0,1.72,3.6,5.5,Santa Clara,1.72
+24/25,24/25,6,Vitória SC,Porto,0,3,4.33,3.3,2.0,Porto,2.0
+24/25,24/25,6,Moreirense,Famalicão,0,0,2.92,2.95,2.8,Empate,2.95
+24/25,24/25,6,Gil Vicente,Casa Pia AC,1,1,2.15,3.2,3.9,Empate,3.2
+24/25,24/25,6,Farense,Arouca,0,1,2.87,3.35,2.5,Arouca,2.5
+24/25,24/25,6,Sporting,AVS,3,0,1.14,9.5,21.0,Sporting,1.14
+24/25,24/25,7,Boavista,Benfica,0,3,16.5,7.5,1.2,Benfica,1.2
+24/25,24/25,7,Estoril Praia,Sporting,0,3,19.0,8.0,1.17,Sporting,1.17
+24/25,24/25,7,Estrela Amadora,Moreirense,2,1,3.25,3.1,2.45,Estrela Amadora,3.25
+24/25,24/25,7,Casa Pia AC,Vitória SC,1,1,4.2,3.25,2.02,Empate,3.25
+24/25,24/25,7,Benfica,Gil Vicente,5,1,1.2,8.0,17.0,Benfica,1.2
+24/25,24/25,7,Famalicão,Nacional,0,0,1.72,3.65,5.1,Empate,3.65
+24/25,24/25,7,Porto,Arouca,4,0,1.22,6.6,16.5,Porto,1.22
+24/25,24/25,7,Braga,Rio Ave,4,0,1.57,4.2,6.0,Braga,1.57
+24/25,24/25,7,Santa Clara,Boavista,1,0,1.55,4.0,6.4,Santa Clara,1.55
+24/25,24/25,8,AVS,Farense,0,0,2.12,3.4,3.55,Empate,3.4
+24/25,24/25,8,Rio Ave,Famalicão,1,1,2.95,3.0,2.75,Empate,3.0
+24/25,24/25,8,Gil Vicente,Estrela Amadora,3,0,1.95,3.5,4.35,Gil Vicente,1.95
+24/25,24/25,8,Moreirense,Santa Clara,1,0,2.77,2.9,3.05,Moreirense,2.77
+24/25,24/25,8,Arouca,AVS,1,1,2.15,3.2,3.75,Empate,3.2
+24/25,24/25,8,Sporting,Casa Pia AC,2,0,1.14,9.0,24.0,Sporting,1.14
+24/25,24/25,8,Farense,Estoril Praia,1,0,2.1,3.5,3.6,Farense,2.1
+24/25,24/25,8,Vitória SC,Boavista,2,2,1.39,4.5,10.0,Empate,4.5
+24/25,24/25,8,Nacional,Benfica,0,2,11.75,6.5,1.27,Benfica,1.27
+24/25,24/25,8,Porto,Braga,2,1,1.47,4.8,7.0,Porto,1.47
+24/25,24/25,9,Casa Pia AC,Nacional,1,0,2.22,3.4,3.5,Casa Pia AC,2.22
+24/25,24/25,9,Santa Clara,Gil Vicente,2,1,2.1,3.0,4.3,Santa Clara,2.1
+24/25,24/25,9,Estoril Praia,Arouca,4,1,3.0,3.25,2.45,Estoril Praia,3.0
+24/25,24/25,9,Boavista,Moreirense,0,2,3.4,3.1,2.32,Moreirense,2.32
+24/25,24/25,9,Famalicão,Sporting,0,3,12.0,5.5,1.3,Sporting,1.3
+24/25,24/25,9,Braga,Farense,2,0,1.33,5.5,9.75,Braga,1.33
+24/25,24/25,9,Benfica,Rio Ave,5,0,1.14,9.0,24.0,Benfica,1.14
+24/25,24/25,9,Estrela Amadora,Vitória SC,2,2,5.1,3.5,1.75,Empate,3.5
+24/25,24/25,10,AVS,Porto,0,5,11.5,5.25,1.33,Porto,1.33
+24/25,24/25,10,Sporting,Estrela Amadora,5,1,1.09,11.0,40.0,Sporting,1.09
+24/25,24/25,10,Rio Ave,Casa Pia AC,2,2,2.45,3.25,3.15,Empate,3.25
+24/25,24/25,10,Farense,Benfica,1,2,28.0,8.5,1.14,Benfica,1.14
+24/25,24/25,10,Gil Vicente,Boavista,1,2,1.78,3.6,5.0,Boavista,5.0
+24/25,24/25,10,AVS,Famalicão,2,3,3.5,3.0,2.4,Famalicão,2.4
+24/25,24/25,10,Arouca,Braga,1,2,4.75,3.8,1.75,Braga,1.75
+24/25,24/25,10,Vitória SC,Moreirense,1,0,1.83,3.4,5.1,Vitória SC,1.83
+24/25,24/25,10,Porto,Estoril Praia,4,0,1.14,8.5,21.0,Porto,1.14
+24/25,24/25,11,Nacional,Santa Clara,2,0,2.9,3.05,2.7,Nacional,2.9
+24/25,24/25,11,Moreirense,Gil Vicente,3,2,2.2,3.1,3.9,Moreirense,2.2
+24/25,24/25,11,Casa Pia AC,Farense,1,1,2.0,3.3,4.35,Empate,3.3
+24/25,24/25,11,Estoril Praia,AVS,0,0,2.16,3.2,3.7,Empate,3.2
+24/25,24/25,11,Famalicão,Arouca,0,0,2.32,3.2,3.4,Empate,3.2
+24/25,24/25,11,Boavista,Rio Ave,0,2,2.95,3.2,2.52,Rio Ave,2.52
+24/25,24/25,11,Estrela Amadora,Nacional,2,0,2.25,3.4,3.4,Estrela Amadora,2.25
+24/25,24/25,11,Santa Clara,Vitória SC,1,0,2.77,3.0,2.92,Santa Clara,2.77
+24/25,24/25,11,Braga,Sporting,2,4,5.3,4.3,1.6,Sporting,1.6
+24/25,24/25,11,Benfica,Porto,4,1,1.95,3.6,4.1,Benfica,1.95
+24/25,24/25,12,Farense,Estrela Amadora,1,0,2.33,3.2,3.4,Farense,2.33
+24/25,24/25,12,Rio Ave,Moreirense,3,2,2.72,3.3,2.77,Rio Ave,2.72
+24/25,24/25,12,Nacional,Boavista,0,0,1.98,3.3,4.15,Empate,3.3
+24/25,24/25,12,Sporting,Santa Clara,0,1,1.25,6.5,12.5,Santa Clara,12.5
+24/25,24/25,12,Estoril Praia,Famalicão,2,1,3.3,3.1,2.38,Estoril Praia,3.3
+24/25,24/25,12,Arouca,Benfica,0,2,13.0,6.6,1.23,Benfica,1.23
+24/25,24/25,12,AVS,Braga,0,1,8.5,4.55,1.42,Braga,1.42
+24/25,24/25,13,Vitória SC,Gil Vicente,4,0,1.75,3.5,5.25,Vitória SC,1.75
+24/25,24/25,13,Porto,Casa Pia AC,2,0,1.19,7.0,19.5,Porto,1.19
+24/25,24/25,13,Moreirense,Sporting,2,1,9.0,5.4,1.35,Moreirense,9.0
+24/25,24/25,13,Braga,Estoril Praia,2,2,1.25,7.0,12.0,Empate,7.0
+24/25,24/25,13,Gil Vicente,Nacional,2,1,2.02,3.4,3.95,Gil Vicente,2.02
+24/25,24/25,13,Benfica,Vitória SC,1,0,1.31,5.75,10.5,Benfica,1.31
+24/25,24/25,13,Santa Clara,Rio Ave,1,0,1.72,3.6,5.7,Santa Clara,1.72
+24/25,24/25,13,Famalicão,Porto,1,1,8.5,4.8,1.39,Empate,4.8
+24/25,24/25,13,Boavista,Farense,1,1,2.6,3.1,3.05,Empate,3.1
+24/25,24/25,13,Casa Pia AC,AVS,1,1,1.82,3.5,5.0,Empate,3.5
+24/25,24/25,14,Estrela Amadora,Arouca,2,1,2.8,3.1,2.75,Estrela Amadora,2.8
+24/25,24/25,14,Farense,Gil Vicente,0,1,2.8,3.1,2.75,Gil Vicente,2.75
+24/25,24/25,14,Nacional,Moreirense,1,0,3.2,3.1,2.55,Nacional,3.2
+24/25,24/25,14,Sporting,Boavista,3,2,1.15,9.5,19.0,Sporting,1.15
+24/25,24/25,14,Arouca,Santa Clara,1,0,3.35,3.1,2.35,Arouca,3.35
+24/25,24/25,14,AVS,Benfica,1,1,15.0,6.5,1.22,Empate,6.5
+24/25,24/25,14,Estoril Praia,Casa Pia AC,0,2,2.95,2.9,2.75,Casa Pia AC,2.75
+24/25,24/25,15,Braga,Famalicão,3,3,1.6,4.33,7.0,Empate,4.33
+24/25,24/25,15,Porto,Estrela Amadora,2,0,1.16,7.5,21.0,Porto,1.16
+24/25,24/25,15,Rio Ave,Vitória SC,2,2,4.6,3.6,2.15,Empate,3.6
+24/25,24/25,15,Casa Pia AC,Arouca,3,1,2.42,3.1,3.55,Casa Pia AC,2.42
+24/25,24/25,15,Famalicão,Farense,1,2,1.95,3.3,4.6,Farense,4.6
+24/25,24/25,15,Boavista,AVS,0,0,2.42,3.2,3.45,Empate,3.2
+24/25,24/25,15,Moreirense,Porto,0,3,7.0,4.35,1.5,Porto,1.5
+24/25,24/25,15,Santa Clara,Braga,0,2,3.25,3.15,2.42,Braga,2.42
+24/25,24/25,15,Gil Vicente,Sporting,0,0,8.5,5.25,1.38,Empate,5.25
+24/25,24/25,16,Benfica,Estoril Praia,3,0,1.13,9.0,23.0,Benfica,1.13
+24/25,24/25,16,Vitória SC,Nacional,2,2,1.4,4.8,9.0,Empate,4.8
+24/25,24/25,16,Estrela Amadora,Rio Ave,1,0,2.57,3.3,3.0,Estrela Amadora,2.57
+24/25,24/25,16,Arouca,Gil Vicente,1,1,2.32,3.2,3.6,Empate,3.2
+24/25,24/25,16,AVS,Estrela Amadora,1,1,2.5,3.1,3.35,Empate,3.1
+24/25,24/25,16,Estoril Praia,Moreirense,2,2,3.2,3.1,2.8,Empate,3.1
+24/25,24/25,16,Porto,Boavista,4,0,1.17,8.5,19.0,Porto,1.17
+24/25,24/25,16,Farense,Vitória SC,2,2,5.25,3.5,1.83,Empate,3.5
+24/25,24/25,16,Rio Ave,Nacional,2,1,2.2,3.25,3.85,Rio Ave,2.2
+24/25,24/25,16,Braga,Casa Pia AC,1,2,1.52,4.5,8.5,Casa Pia AC,8.5
+24/25,24/25,16,Sporting,Benfica,1,0,2.55,3.55,2.8,Sporting,2.55
+24/25,24/25,17,Famalicão,Santa Clara,1,2,3.05,3.05,2.88,Santa Clara,2.88
+24/25,24/25,17,Nacional,Porto,2,0,8.0,4.75,1.44,Nacional,8.0
+24/25,24/25,17,Vitória SC,Sporting,4,4,3.85,3.55,1.98,Empate,3.55
+24/25,24/25,17,Moreirense,AVS,1,1,1.93,3.35,4.8,Empate,3.35
+24/25,24/25,17,Benfica,Braga,1,2,1.42,5.75,8.5,Braga,8.5
+24/25,24/25,17,Boavista,Arouca,1,3,4.0,3.2,2.6,Arouca,2.6
+24/25,24/25,17,Santa Clara,Farense,0,0,1.7,3.5,6.25,Empate,3.5
+24/25,24/25,17,Casa Pia AC,Famalicão,1,1,2.45,3.2,4.0,Empate,3.2
+24/25,24/25,17,Estrela Amadora,Estoril Praia,2,4,2.38,3.0,3.4,Estoril Praia,3.4
+24/25,24/25,18,Gil Vicente,Rio Ave,1,1,2.18,3.2,3.7,Empate,3.2
+24/25,24/25,19,Benfica,Famalicão,4,0,1.24,6.5,13.5,Benfica,1.24
+24/25,24/25,19,Santa Clara,Estoril Praia,2,3,1.65,3.75,6.25,Estoril Praia,6.25
+24/25,24/25,19,Rio Ave,Sporting,0,3,9.0,5.25,1.36,Sporting,1.36
+24/25,24/25,19,Vitória SC,Arouca,2,2,1.72,3.95,6.0,Empate,3.95
+24/25,24/25,19,Moreirense,Farense,0,0,1.95,3.35,4.6,Empate,3.35
+24/25,24/25,19,Nacional,AVS,3,1,2.45,3.25,4.35,Nacional,2.45
+24/25,24/25,19,Estrela Amadora,Braga,0,1,4.75,4.0,1.73,Braga,1.73
+24/25,24/25,19,Gil Vicente,Porto,3,1,8.0,4.75,1.47,Gil Vicente,8.0
+24/25,24/25,20,Boavista,Casa Pia AC,2,3,4.1,3.2,2.2,Casa Pia AC,2.2
+24/25,24/25,20,Arouca,Moreirense,1,0,2.42,3.1,3.2,Arouca,2.42
+24/25,24/25,20,Famalicão,Estrela Amadora,0,0,1.78,3.5,5.3,Empate,3.5
+24/25,24/25,20,Farense,Rio Ave,1,2,2.42,3.2,3.1,Rio Ave,3.1
+24/25,24/25,20,Casa Pia AC,Benfica,3,1,8.5,5.0,1.39,Casa Pia AC,8.5
+24/25,24/25,20,Sporting,Nacional,2,0,1.17,8.5,17.0,Sporting,1.17
+24/25,24/25,20,Estoril Praia,Vitória SC,1,0,4.33,3.5,1.86,Estoril Praia,4.33
+24/25,24/25,20,Porto,Santa Clara,1,1,1.7,3.65,5.7,Empate,3.65
+24/25,24/25,20,Braga,Boavista,3,0,1.33,5.75,10.0,Braga,1.33
+24/25,24/25,21,AVS,Gil Vicente,1,0,3.3,3.0,2.45,AVS,3.3
+24/25,24/25,21,Boavista,Famalicão,0,2,3.8,3.4,2.1,Famalicão,2.1
+24/25,24/25,21,Nacional,Arouca,1,2,2.4,3.2,3.25,Arouca,3.25
+24/25,24/25,21,Santa Clara,Casa Pia AC,2,1,2.12,3.05,4.1,Santa Clara,2.12
+24/25,24/25,21,Gil Vicente,Estoril Praia,1,2,2.2,3.1,3.8,Estoril Praia,3.8
+24/25,24/25,21,Vitória SC,AVS,2,0,1.57,4.0,6.25,Vitória SC,1.57
+24/25,24/25,21,Sporting,Farense,3,1,1.2,7.0,17.0,Sporting,1.2
+24/25,24/25,21,Estrela Amadora,Benfica,2,3,15.0,7.0,1.23,Benfica,1.23
+24/25,24/25,22,Moreirense,Braga,1,2,3.35,3.35,2.4,Braga,2.4
+24/25,24/25,22,Rio Ave,Porto,2,2,7.4,4.6,1.45,Empate,4.6
+24/25,24/25,22,Porto,Sporting,1,1,2.9,3.1,2.65,Empate,3.1
+24/25,24/25,22,AVS,Santa Clara,1,2,3.75,2.9,2.27,Santa Clara,2.27
+24/25,24/25,22,Benfica,Moreirense,3,2,1.22,7.0,15.0,Benfica,1.22
+24/25,24/25,22,Famalicão,Vitória SC,0,0,3.4,3.2,2.32,Empate,3.2
+24/25,24/25,22,Estoril Praia,Boavista,2,1,1.56,4.0,6.25,Estoril Praia,1.56
+24/25,24/25,22,Farense,Nacional,0,2,2.44,3.1,3.3,Nacional,3.3
+24/25,24/25,22,Braga,Gil Vicente,2,0,1.7,4.0,5.0,Braga,1.7
+24/25,24/25,22,Casa Pia AC,Estrela Amadora,1,0,1.93,3.3,4.55,Casa Pia AC,1.93
+24/25,24/25,23,Arouca,Rio Ave,1,1,2.07,3.4,3.8,Empate,3.4
+24/25,24/25,23,Boavista,Estrela Amadora,0,1,2.6,3.0,3.25,Estrela Amadora,3.25
+24/25,24/25,23,Moreirense,Casa Pia AC,3,2,2.55,3.0,3.15,Moreirense,2.55
+24/25,24/25,23,Nacional,Estoril Praia,2,2,2.16,3.3,3.5,Empate,3.3
+24/25,24/25,23,Santa Clara,Benfica,0,1,4.35,3.4,1.96,Benfica,1.96
+24/25,24/25,23,Sporting,Arouca,2,2,1.28,6.5,12.0,Empate,6.5
+24/25,24/25,23,Rio Ave,AVS,1,1,2.26,3.4,3.4,Empate,3.4
+24/25,24/25,23,Farense,Porto,0,1,6.0,4.0,1.62,Porto,1.62
+24/25,24/25,23,Vitória SC,Braga,0,0,2.3,3.25,3.3,Empate,3.25
+24/25,24/25,24,Gil Vicente,Famalicão,0,2,2.32,3.05,3.45,Famalicão,3.45
+24/25,24/25,24,Braga,Nacional,1,0,1.55,4.33,6.5,Braga,1.55
+24/25,24/25,24,Casa Pia AC,Gil Vicente,1,0,2.27,3.2,3.55,Casa Pia AC,2.27
+24/25,24/25,24,Benfica,Boavista,3,0,1.15,9.0,23.0,Benfica,1.15
+24/25,24/25,24,Estoril Praia,Rio Ave,2,1,2.11,3.5,3.4,Estoril Praia,2.11
+24/25,24/25,24,Arouca,Farense,2,2,1.92,3.5,4.2,Empate,3.5
+24/25,24/25,24,Estrela Amadora,Santa Clara,0,0,3.85,3.1,2.17,Empate,3.1
+24/25,24/25,24,AVS,Sporting,2,2,9.5,5.0,1.4,Empate,5.0
+24/25,24/25,24,Famalicão,Moreirense,2,0,2.45,3.1,3.2,Famalicão,2.45
+24/25,24/25,25,Porto,Vitória SC,1,1,1.82,3.6,4.75,Empate,3.6
+24/25,24/25,25,Nacional,Famalicão,2,1,2.75,3.2,2.95,Nacional,2.75
+24/25,24/25,25,Arouca,Porto,0,2,5.6,4.1,1.68,Porto,1.68
+24/25,24/25,25,Vitória SC,Casa Pia AC,1,0,1.84,3.6,5.1,Vitória SC,1.84
+24/25,24/25,25,Boavista,Santa Clara,1,0,5.2,3.4,1.78,Boavista,5.2
+24/25,24/25,25,Moreirense,Estrela Amadora,1,1,1.95,3.2,4.6,Empate,3.2
+24/25,24/25,25,Farense,AVS,0,1,2.3,3.1,3.55,AVS,3.55
+24/25,24/25,25,Rio Ave,Braga,2,1,4.2,4.0,1.95,Rio Ave,4.2
+24/25,24/25,26,Sporting,Estoril Praia,3,1,1.33,8.0,13.0,Sporting,1.33
+24/25,24/25,26,Estrela Amadora,Gil Vicente,1,1,2.8,2.95,2.88,Empate,2.95
+24/25,24/25,26,AVS,Arouca,0,1,3.35,3.1,2.35,Arouca,2.35
+24/25,24/25,26,Benfica,Nacional,3,0,1.24,6.75,12.0,Benfica,1.24
+24/25,24/25,26,Estoril Praia,Farense,2,2,2.6,3.05,3.0,Empate,3.05
+24/25,24/25,26,Braga,Porto,1,0,3.5,3.2,2.27,Braga,3.5
+24/25,24/25,26,Santa Clara,Moreirense,1,1,2.07,3.0,4.5,Empate,3.0
+24/25,24/25,26,Casa Pia AC,Sporting,1,3,6.75,4.35,1.5,Sporting,1.5
+24/25,24/25,26,Boavista,Vitória SC,1,2,5.6,3.6,1.7,Vitória SC,1.7
+24/25,24/25,27,Famalicão,Rio Ave,1,0,1.95,3.3,4.3,Famalicão,1.95
+24/25,24/25,27,Farense,Braga,0,1,4.0,3.5,2.0,Braga,2.0
+24/25,24/25,27,Gil Vicente,Santa Clara,0,1,3.0,3.0,2.9,Santa Clara,2.9
+24/25,24/25,27,Porto,AVS,2,0,1.26,6.0,14.0,Porto,1.26
+24/25,24/25,27,Sporting,Famalicão,3,1,1.33,5.25,11.5,Sporting,1.33
+24/25,24/25,27,Arouca,Estoril Praia,1,1,1.95,3.5,4.0,Empate,3.5
+24/25,24/25,27,Nacional,Casa Pia AC,3,1,2.39,3.4,3.25,Nacional,2.39
+24/25,24/25,27,Rio Ave,Benfica,2,3,9.75,6.0,1.32,Benfica,1.32
+24/25,24/25,27,Moreirense,Boavista,1,0,1.72,3.4,6.0,Moreirense,1.72
+24/25,24/25,27,Vitória SC,Estrela Amadora,2,0,1.62,3.75,6.25,Vitória SC,1.62
+24/25,24/25,28,Gil Vicente,Benfica,0,3,8.75,5.25,1.37,Benfica,1.37
+24/25,24/25,28,Casa Pia AC,Rio Ave,2,1,1.92,3.4,4.5,Casa Pia AC,1.92
+24/25,24/25,28,Estrela Amadora,Sporting,0,3,10.25,5.0,1.34,Sporting,1.34
+24/25,24/25,28,Braga,Arouca,2,1,1.7,3.8,5.0,Braga,1.7
+24/25,24/25,28,Famalicão,AVS,4,1,1.7,3.65,5.7,Famalicão,1.7
+24/25,24/25,28,Santa Clara,Nacional,1,0,1.82,3.3,5.3,Santa Clara,1.82
+24/25,24/25,28,Estoril Praia,Porto,1,2,6.0,4.1,1.54,Porto,1.54
+24/25,24/25,28,Moreirense,Vitória SC,2,2,3.95,3.1,2.18,Empate,3.1
+24/25,24/25,29,Boavista,Gil Vicente,1,3,3.3,3.1,2.45,Gil Vicente,2.45
+24/25,24/25,29,Benfica,Farense,3,2,1.17,8.5,18.5,Benfica,1.17
+24/25,24/25,29,AVS,Estoril Praia,0,3,3.15,3.2,2.39,Estoril Praia,2.39
+24/25,24/25,29,Arouca,Famalicão,1,2,2.85,3.1,2.7,Famalicão,2.7
+24/25,24/25,29,Vitória SC,Santa Clara,2,0,1.98,3.1,4.75,Vitória SC,1.98
+24/25,24/25,29,Gil Vicente,Moreirense,0,1,2.5,3.0,3.35,Moreirense,3.35
+24/25,24/25,29,Nacional,Estrela Amadora,0,1,2.1,3.55,3.9,Estrela Amadora,3.9
+24/25,24/25,29,Porto,Benfica,1,4,3.5,3.4,2.19,Benfica,2.19
+24/25,24/25,30,Farense,Casa Pia AC,0,0,2.42,3.15,3.3,Empate,3.15
+24/25,24/25,30,Rio Ave,Boavista,0,2,2.02,3.45,3.9,Boavista,3.9
+24/25,24/25,30,Sporting,Braga,1,1,1.4,4.9,8.0,Empate,4.9
+24/25,24/25,30,Gil Vicente,Vitória SC,0,1,3.7,3.2,2.22,Vitória SC,2.22
+24/25,24/25,30,Boavista,Nacional,0,1,3.25,3.25,2.38,Nacional,2.38
+24/25,24/25,30,Famalicão,Estoril Praia,3,0,1.98,3.5,3.8,Famalicão,1.98
+24/25,24/25,30,Santa Clara,Sporting,0,1,6.8,4.0,1.6,Sporting,1.6
+24/25,24/25,30,Casa Pia AC,Porto,0,1,5.5,3.85,1.72,Porto,1.72
+24/25,24/25,30,Estrela Amadora,Farense,0,1,2.62,3.2,2.95,Farense,2.95
+24/25,24/25,30,Benfica,Arouca,2,2,1.14,9.0,22.0,Empate,9.0
+24/25,24/25,30,Braga,AVS,4,1,1.45,4.4,8.0,Braga,1.45
+24/25,24/25,30,Moreirense,Rio Ave,0,2,2.26,3.15,3.55,Rio Ave,3.55
+24/25,24/25,31,Farense,Boavista,0,1,1.8,3.6,5.0,Boavista,5.0
+24/25,24/25,31,Rio Ave,Santa Clara,1,1,4.1,3.25,2.05,Empate,3.25
+24/25,24/25,31,Porto,Famalicão,2,1,1.6,4.5,6.2,Porto,1.6
+24/25,24/25,31,Sporting,Moreirense,3,1,1.18,7.7,19.5,Sporting,1.18
+24/25,24/25,31,AVS,Casa Pia AC,1,1,3.0,3.2,2.5,Empate,3.2
+24/25,24/25,31,Nacional,Gil Vicente,0,3,2.55,3.1,3.05,Gil Vicente,3.05
+24/25,24/25,31,Arouca,Estrela Amadora,1,0,2.07,3.2,4.15,Arouca,2.07
+24/25,24/25,31,Estoril Praia,Braga,0,2,4.5,3.65,1.77,Braga,1.77
+24/25,24/25,31,Vitória SC,Benfica,0,3,6.1,4.5,1.57,Benfica,1.57
+24/25,24/25,32,Famalicão,Braga,1,1,3.7,3.4,2.12,Empate,3.4
+24/25,24/25,32,Santa Clara,Arouca,2,0,1.92,3.2,4.8,Santa Clara,1.92
+24/25,24/25,32,Gil Vicente,Farense,1,0,2.5,3.05,3.2,Gil Vicente,2.5
+24/25,24/25,32,Estrela Amadora,Porto,2,0,6.6,3.95,1.62,Estrela Amadora,6.6
+24/25,24/25,32,Moreirense,Nacional,1,1,2.67,3.1,2.9,Empate,3.1
+24/25,24/25,32,Benfica,AVS,6,0,1.1,12.0,30.0,Benfica,1.1
+24/25,24/25,32,Vitória SC,Rio Ave,3,0,1.48,4.6,7.0,Vitória SC,1.48
+24/25,24/25,32,Boavista,Sporting,0,5,17.5,8.5,1.18,Sporting,1.18
+24/25,24/25,33,Casa Pia AC,Estoril Praia,1,3,2.55,3.0,3.1,Estoril Praia,3.1
+24/25,24/25,33,Porto,Moreirense,3,1,1.38,5.3,8.75,Porto,1.38
+24/25,24/25,33,Farense,Famalicão,2,1,2.9,3.25,2.55,Farense,2.9
+24/25,24/25,33,Nacional,Vitória SC,1,2,4.0,3.6,1.93,Vitória SC,1.93
+24/25,24/25,33,Braga,Santa Clara,1,1,1.83,3.6,5.0,Empate,3.6
+24/25,24/25,33,Estoril Praia,Benfica,1,2,13.0,8.0,1.19,Benfica,1.19
+24/25,24/25,33,Arouca,Casa Pia AC,0,0,2.06,3.4,3.8,Empate,3.4
+24/25,24/25,33,Sporting,Gil Vicente,2,1,1.15,8.5,30.0,Sporting,1.15
+24/25,24/25,34,Rio Ave,Estrela Amadora,2,0,2.45,3.3,3.1,Rio Ave,2.45
+24/25,24/25,34,AVS,Boavista,1,2,2.42,3.2,3.1,Boavista,3.1
+24/25,24/25,34,Nacional,Rio Ave,3,3,2.02,3.8,3.45,Empate,3.8
+24/25,24/25,34,Santa Clara,Famalicão,2,1,1.96,3.4,4.33,Santa Clara,1.96
+24/25,24/25,34,Benfica,Sporting,1,1,2.25,3.4,3.4,Empate,3.4
+24/25,24/25,34,Casa Pia AC,Braga,2,1,7.1,4.3,1.53,Casa Pia AC,7.1
+24/25,24/25,34,Gil Vicente,Arouca,1,1,2.27,3.3,3.35,Empate,3.3
+24/25,24/25,34,Estrela Amadora,AVS,0,1,2.37,3.25,3.35,AVS,3.35
+24/25,24/25,34,Moreirense,Estoril Praia,2,2,2.6,3.3,2.8,Empate,3.3
+24/25,24/25,34,Vitória SC,Farense,1,2,1.52,4.2,7.1,Farense,7.1
+24/25,24/25,34,Boavista,Porto,1,2,8.25,4.6,1.47,Porto,1.47
+24/25,24/25,35,Famalicão,Casa Pia AC,2,1,1.9,3.6,4.2,Famalicão,1.9
+24/25,24/25,35,Rio Ave,Gil Vicente,1,1,2.82,3.35,2.55,Empate,3.35
+24/25,24/25,35,Arouca,Boavista,4,1,2.04,3.7,3.7,Arouca,2.04
+24/25,24/25,35,AVS,Moreirense,0,3,1.94,3.4,4.5,Moreirense,4.5
+24/25,24/25,35,Braga,Benfica,1,1,5.5,4.7,1.6,Empate,4.7
+24/25,24/25,35,Estoril Praia,Estrela Amadora,4,0,2.65,3.3,2.65,Estoril Praia,2.65
+24/25,24/25,35,Farense,Santa Clara,1,2,2.7,3.15,2.82,Santa Clara,2.82
+24/25,24/25,35,Porto,Nacional,3,0,1.32,6.2,9.5,Porto,1.32
+24/25,24/25,35,Sporting,Vitória SC,2,0,1.34,5.6,11.5,Sporting,1.34
+24/25,24/25,36,AVS,Vizela,3,0,2.72,3.3,2.85,AVS,2.72
+24/25,24/25,37,Vizela,AVS,2,2,1.8,3.75,4.5,Empate,3.75

@@ -10,15 +10,21 @@
 -- direto pra manter o mesmo vocabulário usado no resto do pipeline
 -- (`match_stats_fotmob.yellow_cards`/`red_cards`).
 alter table public.match_events
-  add column source text not null default 'fotmob',
-  add column player_id bigint references public.players(id),
-  add column fotmob_event_id bigint;
+  add column if not exists source text not null default 'fotmob',
+  add column if not exists player_id bigint references public.players(id),
+  add column if not exists fotmob_event_id bigint;
 
 -- Único escritor por enquanto (fotmob) -- upsert idempotente por
 -- (match_id, fotmob_event_id), mesmo padrão de match_source_ids/
 -- match_shots_fotmob (on_conflict por id da fonte externa).
-alter table public.match_events
-  add constraint match_events_match_fotmob_event_unique unique (match_id, fotmob_event_id);
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'match_events_match_fotmob_event_unique'
+  ) then
+    alter table public.match_events
+      add constraint match_events_match_fotmob_event_unique unique (match_id, fotmob_event_id);
+  end if;
+end $$;
 
 create index if not exists idx_match_events_player on public.match_events(player_id);
 create index if not exists idx_match_events_team_type on public.match_events(team_id, event_type);
