@@ -1,0 +1,68 @@
+name: Ingestão de perfis de jogador (repository-fotmob — local)
+
+# Lê os 14.133 arquivos data_players/<id>.json.gz do repositório
+# jbatistacosta/repository-fotmob e popula:
+#   - players.birth_date   (atualizado para TODOS os jogadores com arquivo)
+#   - player_details_fotmob, player_market_value_history,
+#     player_career_history_fotmob, player_trophies_fotmob
+#     (apenas para jogadores ainda sem entry em player_details_fotmob,
+#      a menos que --forcar seja passado)
+#
+# Zero chamadas de rede ao FotMob — todo o scraping já está nos arquivos
+# gzipados do repository-fotmob.
+#
+# Workflow_dispatch manual — rode, espere terminar, rode de novo se
+# necessário (é idempotente: upsert em todas as tabelas).
+on:
+  workflow_dispatch:
+    inputs:
+      so_birth_date:
+        description: "Só atualiza players.birth_date (ignora perfis completos)"
+        required: false
+        type: boolean
+        default: false
+      forcar:
+        description: "Reprocessa perfis completos mesmo para jogadores já em player_details_fotmob"
+        required: false
+        type: boolean
+        default: false
+      limite:
+        description: "Processa só os N primeiros arquivos (deixe vazio para todos)"
+        required: false
+        type: string
+
+jobs:
+  ingerir-perfis-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout do quant-predictor
+        uses: actions/checkout@v4
+
+      - name: Checkout do repository-fotmob (dumps já baixados)
+        uses: actions/checkout@v4
+        with:
+          repository: jbatistacosta/repository-fotmob
+          path: _repository-fotmob
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar ingestão de perfis locais
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS="--pasta-dados _repository-fotmob"
+          if [ "${{ inputs.so_birth_date }}" = "true" ]; then ARGS="$ARGS --so-birth-date"; fi
+          if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+          python arquivos_do_claude/ingestao_perfil_jogador_local.py $ARGS
