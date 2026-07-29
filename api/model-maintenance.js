@@ -548,6 +548,7 @@ const GITHUB_REPO_OWNER = 'JBatistaCosta';
 const GITHUB_REPO_NAME = 'quant-predictor';
 const GITHUB_WORKFLOW_FILE = 'predict.yml';
 const GITHUB_WORKFLOW_FILE_BACKTEST = 'backtest_kelly.yml';
+const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO = 'treinar_modelo_custom.yml';
 
 async function verificarUsuarioLogado(supabase, authHeader) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
@@ -557,12 +558,18 @@ async function verificarUsuarioLogado(supabase, authHeader) {
   return data.user;
 }
 
-async function dispararWorkflow(supabase, authHeader, arquivoWorkflow) {
+async function dispararWorkflow(supabase, authHeader, arquivoWorkflow, inputs = {}) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
   if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar.' };
 
   const pat = process.env.GITHUB_ACTIONS_PAT;
   if (!pat) return { status: 500, error: 'GITHUB_ACTIONS_PAT não configurada -- ver comentário no topo deste arquivo.' };
+
+  // inputs só é incluído no corpo quando há valores (workflow_dispatch
+  // padrão sem inputs funciona com body={ ref: 'main' } sem a chave inputs).
+  const bodyDispatch = Object.keys(inputs).length > 0
+    ? { ref: 'main', inputs }
+    : { ref: 'main' };
 
   const resposta = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/actions/workflows/${arquivoWorkflow}/dispatches`,
@@ -573,7 +580,7 @@ async function dispararWorkflow(supabase, authHeader, arquivoWorkflow) {
         Accept: 'application/vnd.github+json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ ref: 'main' }),
+      body: JSON.stringify(bodyDispatch),
     },
   );
 
@@ -597,6 +604,96 @@ function tarefaDispararPredicoes(supabase, authHeader) {
 // bem mais caro em CPU, por isso é sempre manual, nunca no cron).
 function tarefaDispararBacktest(supabase, authHeader) {
   return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_BACKTEST);
+}
+
+// ============================================================
+// TAREFAS: Painel de Treino Customizado
+// Gerenciam configurações na tabela custom_model_configs e disparam o
+// workflow treinar_modelo_custom.yml. Chamadas pelo frontend em
+// src/pages/TreinoCustom.jsx. Exigem autenticação (mesmo mecanismo de
+// disparar-predicoes / disparar-backtest).
+// ============================================================
+
+// Salva (ou atualiza) uma configuração de modelo customizado.
+// Body esperado: { name, algorithm, features[], target?, hyperparameters?, notes? }
+// Se `id` está presente no body, faz upsert; senão, cria nova linha.
+async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { id, name, algorithm, features, target, hyperparameters, notes } = body || {};
+  if (!name || !algorithm || !Array.isArray(features) || features.length === 0) {
+    return { status: 400, error: 'Campos obrigatórios: name (texto), algorithm (string), features (array não-vazio).' };
+  }
+
+  const payload = {
+    name,
+    algorithm,
+    features,
+    target: target || '1x2',
+    hyperparameters: hyperparameters || null,
+    notes: notes || null,
+    status: 'rascunho',
+  };
+
+  let resultado;
+  if (id) {
+    // Atualiza registro existente (mantém metrics/model_key/trained_at intactos).
+    const { data, error } = await supabase
+      .from('custom_model_configs')
+      .update({ name, algorithm, features, target: target || '1x2', hyperparameters: hyperparameters || null, notes: notes || null })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    resultado = data;
+  } else {
+    const { data, error } = await supabase
+      .from('custom_model_configs')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
+    resultado = data;
+  }
+
+  return { status: 200, config: resultado };
+}
+
+// Lista todas as configurações de modelos customizados (mais recente primeiro).
+async function tarefaListarConfigsCustom(supabase) {
+  const { data, error } = await supabase
+    .from('custom_model_configs')
+    .select('id, name, algorithm, features, target, status, metrics, model_key, notes, created_at, trained_at, error_message')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return { status: 200, configs: data || [] };
+}
+
+// Dispara o workflow treinar_modelo_custom.yml com o config_id como input.
+async function tarefaDispararTreinoCustom(supabase, authHeader, configId) {
+  if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
+
+  // Verifica que o config existe antes de disparar.
+  const { data: cfg, error: cfgErr } = await supabase
+    .from('custom_model_configs')
+    .select('id, status')
+    .eq('id', configId)
+    .maybeSingle();
+  if (cfgErr) throw cfgErr;
+  if (!cfg) return { status: 404, error: `Config id=${configId} não encontrada em custom_model_configs.` };
+  if (cfg.status === 'treinando') return { status: 409, error: 'Esse modelo já está em treinamento. Aguarde.' };
+
+  // Dispara o workflow passando config_id como input do workflow_dispatch.
+  const resultado = await dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_CUSTOM_TREINO, { config_id: configId });
+  if (resultado.status === 200) {
+    // Atualiza o status para aguardando_treino enquanto o workflow não assume.
+    await supabase
+      .from('custom_model_configs')
+      .update({ status: 'aguardando_treino' })
+      .eq('id', configId);
+  }
+  return resultado;
 }
 
 // ============================================================
@@ -2955,6 +3052,28 @@ export default async function handler(req, res) {
       const resultado = await tarefaSimulacaoCarteira(supabase, req.query);
       if (resultado.error) return res.status(resultado.status).json({ error: { message: resultado.error } });
       return res.status(resultado.status).json(resultado.body);
+    }
+
+    // ------------------------------------------------------------------
+    // Painel de Treino Customizado
+    // ------------------------------------------------------------------
+
+    if (tarefa === 'salvar-config-custom') {
+      const resultado = await tarefaSalvarConfigCustom(supabase, req.headers.authorization, req.body);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'listar-configs-custom') {
+      const resultado = await tarefaListarConfigsCustom(supabase);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(corpo);
+    }
+
+    if (tarefa === 'disparar-treino-custom') {
+      const resultado = await tarefaDispararTreinoCustom(supabase, req.headers.authorization, req.query.config_id);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
 
     return res.status(400).json({
