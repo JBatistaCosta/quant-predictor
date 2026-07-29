@@ -151,11 +151,12 @@ PARAMS_DEFAULT = {
     "catboost_v8": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v8": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v8": {"num_leaves": 15, "learning_rate": 0.1},
-    # v9 — mesmas features da v8; MLP com defaults iniciais conservadores.
+    # v9 — mesmas features da v8; MLP tunado após primeira rodada mostrar log-loss ~1.07
+    # (próximo ao baseline aleatório 1.099). Arquitetura maior + mais paciência no early stopping.
     "catboost_v9": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v9": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v9": {"num_leaves": 15, "learning_rate": 0.1},
-    "mlp_v9": {"hidden_layer_sizes": (64, 32), "max_iter": 500, "learning_rate_init": 0.001},
+    "mlp_v9": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
 }
 
 # Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
@@ -568,12 +569,12 @@ def treinar_mlp(
         ("imputer", SimpleImputer(strategy="mean")),
         ("scaler", StandardScaler()),
         ("mlp", MLPClassifier(
-            hidden_layer_sizes=params.get("hidden_layer_sizes", (64, 32)),
-            max_iter=params.get("max_iter", 500),
-            learning_rate_init=params.get("learning_rate_init", 0.001),
+            hidden_layer_sizes=params.get("hidden_layer_sizes", (256, 128, 64)),
+            max_iter=params.get("max_iter", 1000),
+            learning_rate_init=params.get("learning_rate_init", 0.0005),
             early_stopping=True,
             validation_fraction=0.12,
-            n_iter_no_change=20,
+            n_iter_no_change=params.get("n_iter_no_change", 50),
             random_state=42,
             verbose=False,
         )),

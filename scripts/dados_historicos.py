@@ -298,13 +298,22 @@ def obter_squad_rating_atual(supabase: Client, team_ids: list[int], top_n: int =
 
 def _xg_marcado_sofrido(supabase: Client, match_ids: list[int], team_id: int) -> dict[str, float]:
     """xG marcado/sofrido do `team_id` num punhado de partidas (`match_ids`,
-    tipicamente os últimos 5 jogos de casa OU de fora de um time só) --
-    escala pequena o bastante pra não precisar de lote/paginação."""
+    tipicamente os últimos 5 jogos de casa OU de fora de um time só).
+    FotMob como fonte primária (~75% cobertura); FBref (match_stats) como
+    fallback por partida sem FotMob — coalesce por (match_id, team_id)."""
     if not match_ids:
         return {"marcado": np.nan, "sofrido": np.nan}
-    linhas = supabase.table("match_stats").select("match_id, team_id, xg").in_("match_id", match_ids).execute().data or []
-    marcado = [l["xg"] for l in linhas if l["team_id"] == team_id and l["xg"] is not None]
-    sofrido = [l["xg"] for l in linhas if l["team_id"] != team_id and l["xg"] is not None]
+    fb = supabase.table("match_stats").select("match_id, team_id, xg").in_("match_id", match_ids).execute().data or []
+    fm = supabase.table("match_stats_fotmob").select("match_id, team_id, xg").in_("match_id", match_ids).execute().data or []
+    xg_map: dict[tuple, float] = {}
+    for l in fb:
+        if l["xg"] is not None:
+            xg_map[(l["match_id"], l["team_id"])] = l["xg"]
+    for l in fm:
+        if l["xg"] is not None:
+            xg_map[(l["match_id"], l["team_id"])] = l["xg"]
+    marcado = [v for (_, tid), v in xg_map.items() if tid == team_id]
+    sofrido = [v for (_, tid), v in xg_map.items() if tid != team_id]
     return {
         "marcado": float(np.mean(marcado)) if marcado else np.nan,
         "sofrido": float(np.mean(sofrido)) if sofrido else np.nan,
@@ -1198,28 +1207,39 @@ def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida
 
 
 def _anexar_xg_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
-    """Busca o xG observado (`match_stats.xg`, Understat/FBref) de cada
-    partida e anexa como colunas `xg_home`/`xg_away`. Só cobre 2022+ nas 5
-    ligas de elite europeias (confirmado por consulta direta antes de usar
-    -- 2019-2021 não têm NENHUMA linha em `match_stats` pra essas ligas, e
-    2022 tem chutes mas não xG) -- fica NaN fora dessa cobertura, sem
-    quebrar nada."""
+    """xG observado por partida como `xg_home`/`xg_away`.
+    FotMob como fonte primária (~75% cobertura vs ~36% do FBref); FBref
+    (match_stats) como fallback por partida sem dado FotMob — coalesce por
+    (match_id, team_id), FotMob vence quando ambos existem."""
     match_ids = partidas["id"].astype(int).tolist()
 
-    def factory(lote, inicio, fim):
+    def factory_fb(lote, inicio, fim):
         return supabase.table("match_stats").select("match_id, team_id, xg").in_("match_id", lote).order("match_id").range(inicio, fim)
 
-    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    def factory_fm(lote, inicio, fim):
+        return supabase.table("match_stats_fotmob").select("match_id, team_id, xg").in_("match_id", lote).order("match_id").range(inicio, fim)
+
+    linhas_fb = _paginar_por_lotes_de_id(factory_fb, match_ids)
+    linhas_fm = _paginar_por_lotes_de_id(factory_fm, match_ids)
+
     partidas = partidas.copy()
-    if not linhas:
+    xg_map: dict[tuple, float] = {}
+    for l in linhas_fb:
+        if l["xg"] is not None:
+            xg_map[(l["match_id"], l["team_id"])] = l["xg"]
+    for l in linhas_fm:
+        if l["xg"] is not None:
+            xg_map[(l["match_id"], l["team_id"])] = l["xg"]
+
+    if not xg_map:
         partidas["xg_home"] = np.nan
         partidas["xg_away"] = np.nan
         return partidas
 
-    stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
+    linhas = [{"id": mid, "team_id": tid, "xg": xg} for (mid, tid), xg in xg_map.items()]
+    stats = pd.DataFrame(linhas)
     stats_home = stats.rename(columns={"team_id": "home_team_id", "xg": "xg_home"})
     stats_away = stats.rename(columns={"team_id": "away_team_id", "xg": "xg_away"})
-
     partidas = partidas.merge(stats_home[["id", "home_team_id", "xg_home"]], on=["id", "home_team_id"], how="left")
     partidas = partidas.merge(stats_away[["id", "away_team_id", "xg_away"]], on=["id", "away_team_id"], how="left")
     return partidas
@@ -1254,6 +1274,144 @@ def _anexar_xgot_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.Dat
     partidas = partidas.merge(stats_home[["id", "home_team_id", "xgot_home"]], on=["id", "home_team_id"], how="left")
     partidas = partidas.merge(stats_away[["id", "away_team_id", "xgot_away"]], on=["id", "away_team_id"], how="left")
     return partidas
+
+
+_SITUACOES_BOLA_PARADA = {"SetPiece", "FreeKick", "FromCorner"}
+
+# Features derivadas de match_shots_fotmob (nível de chute → agregado por time/partida)
+COLUNAS_SITUACAO_CHUTES = [
+    "pct_fast_break_fm",       # % chutes em contra-ataque
+    "pct_bola_parada_fm",      # % chutes de bola parada (canto/falta/pênalti/lateral)
+    "xg_chute_fm",             # xG médio por chute (qualidade de finalização)
+    "pct_gols_2tempo_fm",      # % dos gols marcados no 2º tempo
+]
+COLUNAS_FORMA_SITUACAO_CHUTES = {
+    col: {
+        "marcado_home": f"media_{col}_5j_home",
+        "sofrido_home": f"media_{col}_sofrido_5j_home",
+        "marcado_away": f"media_{col}_5j_away",
+        "sofrido_away": f"media_{col}_sofrido_5j_away",
+    }
+    for col in COLUNAS_SITUACAO_CHUTES
+}
+
+
+def _anexar_situacao_chutes_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Agrega `match_shots_fotmob` por (match_id, team_id) e anexa 4 features
+    de situação de chute: % contra-ataque, % bola parada, xG médio por chute,
+    % gols no 2º tempo. Fica NaN quando não há dado FotMob pra partida."""
+    match_ids = partidas["id"].astype(int).tolist()
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_shots_fotmob")
+            .select("match_id, team_id, xg, situation, event_type, period")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+
+    if not linhas:
+        for col in COLUNAS_SITUACAO_CHUTES:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    shots = pd.DataFrame(linhas)
+
+    def _agregar(grupo):
+        n = len(grupo)
+        pct_fb = (grupo["situation"] == "FastBreak").sum() / n if n else np.nan
+        pct_bp = grupo["situation"].isin(_SITUACOES_BOLA_PARADA).sum() / n if n else np.nan
+        xg_med = grupo["xg"].dropna().mean() if grupo["xg"].notna().any() else np.nan
+        gols = grupo[grupo["event_type"] == "Goal"]
+        pct_g2 = (gols["period"] == "2H").sum() / len(gols) if len(gols) > 0 else np.nan
+        return pd.Series({
+            "pct_fast_break_fm": pct_fb,
+            "pct_bola_parada_fm": pct_bp,
+            "xg_chute_fm": xg_med,
+            "pct_gols_2tempo_fm": pct_g2,
+        })
+
+    agg = shots.groupby(["match_id", "team_id"], group_keys=False).apply(_agregar).reset_index()
+    agg = agg.rename(columns={"match_id": "id"})
+    for col in COLUNAS_SITUACAO_CHUTES:
+        agg_home = agg.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
+        agg_away = agg.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
+        partidas = partidas.merge(agg_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(agg_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
+def obter_situacao_chutes_por_mando(
+    supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
+) -> dict[int, dict[str, float]]:
+    """AO VIVO: forma pré-jogo das features de situação de chute (% fast break,
+    % bola parada, xG médio por chute, % gols 2º tempo) -- mesmo padrão de
+    `obter_forma_recente_fotmob_por_mando`, lendo de `match_shots_fotmob`."""
+    forma: dict[int, dict[str, float]] = {}
+    for team_id in team_ids:
+        jogos_casa = (
+            supabase.table("matches").select("id").eq("status", "finished")
+            .eq("home_team_id", int(team_id)).order("match_date", desc=True)
+            .limit(ultimos_n).execute().data or []
+        )
+        jogos_fora = (
+            supabase.table("matches").select("id").eq("status", "finished")
+            .eq("away_team_id", int(team_id)).order("match_date", desc=True)
+            .limit(ultimos_n).execute().data or []
+        )
+
+        def _buscar_e_agregar(match_ids_lista):
+            if not match_ids_lista:
+                return {col: {"marcado": np.nan, "sofrido": np.nan} for col in COLUNAS_SITUACAO_CHUTES}
+            ids = [j["id"] for j in match_ids_lista]
+            linhas = (
+                supabase.table("match_shots_fotmob")
+                .select("match_id, team_id, xg, situation, event_type, period")
+                .in_("match_id", ids).execute().data or []
+            )
+            resultado: dict[str, dict[str, float]] = {}
+            for col in COLUNAS_SITUACAO_CHUTES:
+                marcados, sofridos = [], []
+                for mid in ids:
+                    proprio = [l for l in linhas if l["match_id"] == mid and l["team_id"] == team_id]
+                    advers = [l for l in linhas if l["match_id"] == mid and l["team_id"] != team_id]
+                    for lado, lista in [("marcado", proprio), ("sofrido", advers)]:
+                        if not lista:
+                            continue
+                        n = len(lista)
+                        if col == "pct_fast_break_fm":
+                            v = sum(1 for l in lista if l.get("situation") == "FastBreak") / n
+                        elif col == "pct_bola_parada_fm":
+                            v = sum(1 for l in lista if l.get("situation") in _SITUACOES_BOLA_PARADA) / n
+                        elif col == "xg_chute_fm":
+                            vals = [l["xg"] for l in lista if l.get("xg") is not None]
+                            v = float(np.mean(vals)) if vals else np.nan
+                        else:  # pct_gols_2tempo_fm
+                            gols = [l for l in lista if l.get("event_type") == "Goal"]
+                            v = sum(1 for l in gols if l.get("period") == "2H") / len(gols) if gols else np.nan
+                        (marcados if lado == "marcado" else sofridos).append(v)
+                resultado[col] = {
+                    "marcado": float(np.mean(marcados)) if marcados else np.nan,
+                    "sofrido": float(np.mean(sofridos)) if sofridos else np.nan,
+                }
+            return resultado
+
+        stats_casa = _buscar_e_agregar(jogos_casa)
+        stats_fora = _buscar_e_agregar(jogos_fora)
+        linha: dict[str, float] = {}
+        for col in COLUNAS_SITUACAO_CHUTES:
+            mapa = COLUNAS_FORMA_SITUACAO_CHUTES[col]
+            linha[mapa["marcado_home"]] = stats_casa[col]["marcado"]
+            linha[mapa["sofrido_home"]] = stats_casa[col]["sofrido"]
+            linha[mapa["marcado_away"]] = stats_fora[col]["marcado"]
+            linha[mapa["sofrido_away"]] = stats_fora[col]["sofrido"]
+        forma[team_id] = linha
+    return forma
 
 
 COLUNAS_STATS_EXTRA = ["possession", "shots", "shots_on_target", "corners", "fouls", "yellow_cards", "red_cards"]
@@ -1309,6 +1467,12 @@ COLUNAS_FORMA_XG = {
     "sofrido_home": "media_xg_sofrido_5j_home",
     "marcado_away": "media_xg_5j_away",
     "sofrido_away": "media_xg_sofrido_5j_away",
+}
+COLUNAS_FORMA_XGOT = {
+    "marcado_home": "media_xgot_5j_home",
+    "sofrido_home": "media_xgot_sofrido_5j_home",
+    "marcado_away": "media_xgot_5j_away",
+    "sofrido_away": "media_xgot_sofrido_5j_away",
 }
 
 # v7 (estatísticas de jogo do FBref, `match_stats`): mesmo espírito de
@@ -1999,16 +2163,19 @@ FEATURES_V7 = FEATURES_NUMERICAS_V7 + CAT_FEATURES
 # pré-jogo de ~22 colunas do FotMob com cobertura quase completa em TODAS
 # as temporadas 2019-2026 (checado coluna a coluna direto no banco antes de
 # implementar -- ver `arquivos_do_claude/catalogo_estatisticas_
-# disponiveis.md`). Deliberadamente NÃO inclui `touches_opp_box`
-# (cobertura irregular, 369/4460 em 2019 subindo aos poucos até 100% só em
-# 2024), `accurate_passes_total` (praticamente nunca populada -- 0 em quase
-# toda temporada, coluna com bug de captura na fonte) nem `xg`/`xgot`
-# (já usados: `xg` vem do FBref desde v1, `xgot` só como ALVO de regressão
-# -- ambos irregulares no FotMob em 2019-2022, sem motivo de duplicar com
-# pior cobertura). `possession`/`corners`/`fouls_committed`/`yellow_cards`/
-# `red_cards` aqui são intencionalmente REDUNDANTES com as equivalentes do
-# FBref (v7) -- fonte independente, útil como segundo sinal do mesmo
-# fenômeno, os modelos de árvore lidam bem com colinearidade.
+# disponiveis.md`). NÃO inclui `accurate_passes_total` (praticamente nunca
+# populada -- 0 em quase toda temporada, coluna com bug de captura na fonte)
+# nem `xg`/`xgot` (já usados: `xg` vem do FBref desde v1, `xgot` só como
+# ALVO de regressão -- ambos irregulares no FotMob em 2019-2022, sem motivo
+# de duplicar com pior cobertura). `touches_opp_box` foi adicionado em v9:
+# cobertura 8% em 2019 → 63% em 2022 → 79% em 2023 → 100% em 2024+
+# (aceitável com NaN-tolerância dos modelos de árvore; excluído do v8
+# original mas incluído aqui retroativamente pra COLUNAS_STATS_FOTMOB servir
+# de base tanto ao v8 quanto ao v9 -- v8 já tinha métricas salvas no
+# registry, não re-treina). `possession`/`corners`/`fouls_committed`/
+# `yellow_cards`/`red_cards` aqui são intencionalmente REDUNDANTES com as
+# equivalentes do FBref (v7) -- fonte independente, útil como segundo sinal
+# do mesmo fenômeno, os modelos de árvore lidam bem com colinearidade.
 #
 # `COLUNAS_STATS_FOTMOB` mapeia coluna bruta -> nome curto (sufixo "_fm"
 # pra nunca colidir com as colunas de forma do FBref, ex.:
@@ -2040,6 +2207,7 @@ COLUNAS_STATS_FOTMOB = {
     "yellow_cards": "cartoes_amarelos_fm",
     "red_cards": "cartoes_vermelhos_fm",
     "corners": "escanteios_fm",
+    "touches_opp_box": "toques_area_adv_fm",
     "possession": "posse_fm",
 }
 
@@ -2103,11 +2271,22 @@ FEATURES_NUMERICAS_V8 = FEATURES_NUMERICAS_V7 + [
 ]
 FEATURES_V8 = FEATURES_NUMERICAS_V8 + CAT_FEATURES
 
-# v9 — mesmas features da v8; novidade é a arquitetura (MLP como 4ª família
-# + stacking LogísticaRegressão + walk-forward CV por temporada).
-# Documentado aqui como referência canônica pra walkforward_cv_v9.py.
-FEATURES_NUMERICAS_V9 = FEATURES_NUMERICAS_V8
-FEATURES_V9 = FEATURES_V8
+# v9 — tudo da v8 + novidades:
+#   • xGOT médio pré-jogo (4 features, `COLUNAS_FORMA_XGOT`): forma rolling 5j
+#     separada por mando -- xGOT corrige xG por dificuldade de finalização,
+#     cobertura ~77% (melhor que xG FBref 36% pois usa FotMob como fonte).
+#   • Features de situação de chute (16 features, `COLUNAS_FORMA_SITUACAO_CHUTES`):
+#     derivadas de `match_shots_fotmob` -- % chutes em contra-ataque, % bola
+#     parada, xG médio por chute (qualidade de finalização), % gols no 2º tempo.
+#   • `touches_opp_box` (4 features via `COLUNAS_STATS_FOTMOB`): toques na
+#     área adversária -- cobertura 63%+ em 2022 e 100% em 2024+.
+#   • Arquitetura: MLP como 4ª família + stacking LogísticaRegressão +
+#     walk-forward CV por temporada (documentado em walkforward_cv_v9.py).
+FEATURES_NUMERICAS_V9 = FEATURES_NUMERICAS_V8 + [
+    *COLUNAS_FORMA_XGOT.values(),
+    *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
+]
+FEATURES_V9 = FEATURES_NUMERICAS_V9 + CAT_FEATURES
 
 # Agrupamento de features pro painel de análise exploratória do v9 --
 # cada feature de FEATURES_V9 pertence a exatamente um grupo (mapeado por
@@ -2138,7 +2317,7 @@ def grupo_da_feature(nome: str) -> str:
         return "Stats FotMob"
     if any(k in nome for k in ("gols_marcados", "gols_sofridos")):
         return "Forma (Gols)"
-    if any(k in nome for k in ("media_xg_", "xg_sofrido")):
+    if any(k in nome for k in ("media_xg_", "xg_sofrido", "media_xgot_", "xgot_sofrido")):
         return "Forma (xG)"
     # v7 FBref stats (posse, chutes, escanteios, faltas, cartoes)
     if any(k in nome for k in ("posse_", "chutes_", "escanteios_", "faltas_", "cartoes_")):
@@ -2208,9 +2387,11 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     partidas = _anexar_xgot_por_partida(supabase, partidas)
     partidas = _anexar_stats_extra_por_partida(supabase, partidas)
     partidas = _anexar_stats_fotmob_por_partida(supabase, partidas)
+    partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
+    forma_xgot = _forma_por_mando(partidas, "xgot_home", "xgot_away", COLUNAS_FORMA_XGOT)
     forma_posse = _forma_por_mando(partidas, "possession_home", "possession_away", COLUNAS_FORMA_POSSE)
     forma_chutes = _forma_por_mando(partidas, "shots_home", "shots_away", COLUNAS_FORMA_CHUTES)
     forma_chutes_alvo = _forma_por_mando(partidas, "shots_on_target_home", "shots_on_target_away", COLUNAS_FORMA_CHUTES_ALVO)
@@ -2221,6 +2402,10 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     formas_fotmob = {
         nome_curto: _forma_por_mando(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", colunas_forma_fotmob(nome_curto))
         for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items()
+    }
+    formas_situacao_chutes = {
+        col: _forma_por_mando(partidas, f"{col}_home", f"{col}_away", COLUNAS_FORMA_SITUACAO_CHUTES[col])
+        for col in COLUNAS_SITUACAO_CHUTES
     }
 
     elo = _carregar_elo_pre_jogo(supabase, league_ids)
@@ -2249,6 +2434,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
     dataset = dataset.join(forma_gols, on="id")
     dataset = dataset.join(forma_xg, on="id")
+    dataset = dataset.join(forma_xgot, on="id")
     dataset = dataset.join(forma_posse, on="id")
     dataset = dataset.join(forma_chutes, on="id")
     dataset = dataset.join(forma_chutes_alvo, on="id")
@@ -2257,6 +2443,8 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset = dataset.join(forma_cartoes_amarelos, on="id")
     dataset = dataset.join(forma_cartoes_vermelhos, on="id")
     for forma in formas_fotmob.values():
+        dataset = dataset.join(forma, on="id")
+    for forma in formas_situacao_chutes.values():
         dataset = dataset.join(forma, on="id")
 
     squad_rating = _carregar_squad_rating_pre_jogo(supabase, partidas["id"].astype(int).tolist())
@@ -2396,6 +2584,9 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
             # das anteriores: ramo próprio a partir de v5/v7, não faz parte
             # de FEATURES_NUMERICAS_V3B.
             *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in colunas_forma_fotmob(nome_curto).values()],
+            # Forma pré-jogo de xGOT e features de situação de chute (v9).
+            *COLUNAS_FORMA_XGOT.values(),
+            *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
             "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
             # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
             # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
