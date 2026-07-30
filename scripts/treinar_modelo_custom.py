@@ -117,11 +117,8 @@ def carregar_dataset(supabase, features: list[str], target_info: dict) -> pd.Dat
     disponíveis. Aqui selecionamos só as que o usuário pediu.
     """
     logger.info("Carregando dataset histórico...")
-    liga_ids = list(dh.obter_ids_ligas(supabase, dh.LIGAS_MODEL_BENCHMARKING).values())
-    if not liga_ids:
-        raise RuntimeError("Nenhuma liga encontrada para o treino.")
-
-    dataset = dh.montar_dataset_completo(supabase, liga_ids)
+    # montar_dataset_ml_empilhado já seleciona as ligas do Model Benchmarking internamente
+    dataset = dh.montar_dataset_ml_empilhado(supabase)
     if dataset.empty:
         raise RuntimeError("Dataset histórico vazio — verifique as ligas e temporadas no banco.")
 
