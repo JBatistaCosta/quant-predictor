@@ -183,6 +183,12 @@ export default function SimulacaoCarteira() {
   const [temporada, setTemporada] = useState('');
   const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
   const [bancaInicial, setBancaInicial] = useState(1000);
+  const [tipoStake, setTipoStake] = useState('kelly');
+  const [stakeFixa, setStakeFixa] = useState(10);
+  const [kellyMultiplier, setKellyMultiplier] = useState(0.25);
+  const [tetoExposicaoPct, setTetoExposicaoPct] = useState(0.15);
+  const [evMinimo, setEvMinimo] = useState(1.04); // 4%
+  const [evMaximo, setEvMaximo] = useState(1.10); // 10%
 
   const [rodando, setRodando] = useState(false);
   const [erro, setErro] = useState('');
@@ -249,7 +255,19 @@ export default function SimulacaoCarteira() {
     setErro('');
     try {
       const promessas = [...modelosSelecionados].map(async (modelo) => {
-        const params = new URLSearchParams({ tarefa: 'simulacao-carteira', modelo, mercado, usar_calibracao: usarCalibracao, banca_inicial: String(bancaInicial) });
+        const params = new URLSearchParams({
+          tarefa: 'simulacao-carteira',
+          modelo,
+          mercado,
+          usar_calibracao: usarCalibracao,
+          banca_inicial: String(bancaInicial),
+          tipo_stake: tipoStake,
+          stake_fixa: String(stakeFixa),
+          kelly_multiplier: String(kellyMultiplier),
+          teto_exposicao_pct: String(tetoExposicaoPct),
+          ev_minimo: String(evMinimo),
+          ev_maximo: String(evMaximo)
+        });
         if (ligaId) params.set('liga_id', ligaId);
         if (temporada) params.set('temporada', temporada);
         const resp = await fetch(apiUrl(`/api/model-maintenance?${params}`));
@@ -315,8 +333,9 @@ export default function SimulacaoCarteira() {
   <p class="subtitulo">
     Gerado em ${geradoEm}. Mercado: ${escaparHtml(rotuloMercado)}. Banca inicial: R$ ${fmtMoney(Number(bancaInicial))}.
     Correção: ${escaparHtml(usarCalibracao === 'nenhuma' ? 'crua' : usarCalibracao)}.
-    Test Set out-of-sample (temporada 2025+) — filtro de EV bruto p·odd ≥ 1,02, Quarter Kelly, teto de exposição 15% por
-    rodada. Execuções "Abertura"/"Fechamento" usam a odd de abertura/fechamento da Pinnacle respectivamente.
+    EV Range: ${(Number(evMinimo) * 100 - 100).toFixed(1)}% a ${(Number(evMaximo) * 100 - 100).toFixed(1)}%. 
+    Stake: ${tipoStake === 'fixa' ? 'Fixa R$ ' + stakeFixa : 'Kelly ' + (Number(kellyMultiplier)*100).toFixed(0) + '%'}.
+    Teto Exposição: ${(Number(tetoExposicaoPct)*100).toFixed(1)}% por rodada. Execuções "Abertura"/"Fechamento" usam odds Pinnacle.
   </p>
   <table>
     <thead><tr>
@@ -435,6 +454,56 @@ export default function SimulacaoCarteira() {
                 <input type="number" step="100" min="1" value={bancaInicial} onChange={(e) => setBancaInicial(e.target.value)}
                   className="w-28 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" />
               </div>
+
+              {/* Novos Filtros: Tipo de Stake */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo Stake</label>
+                <select value={tipoStake} onChange={(e) => setTipoStake(e.target.value)} className="w-24 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
+                  <option value="kelly">Kelly</option>
+                  <option value="fixa">Fixa</option>
+                </select>
+              </div>
+
+              {tipoStake === 'fixa' ? (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Stake (R$)</label>
+                  <input type="number" step="5" min="1" value={stakeFixa} onChange={(e) => setStakeFixa(e.target.value)}
+                    className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">% de Kelly</label>
+                  <select value={kellyMultiplier} onChange={(e) => setKellyMultiplier(e.target.value)} className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
+                    <option value="0.10">10%</option>
+                    <option value="0.25">25% (Padrão)</option>
+                    <option value="0.50">50%</option>
+                    <option value="0.75">75%</option>
+                    <option value="1.00">100%</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Teto Exposicao */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Teto Exp. %</label>
+                <input type="number" step="0.05" min="0.05" max="1.00" value={tetoExposicaoPct} onChange={(e) => setTetoExposicaoPct(e.target.value)}
+                  className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" title="Teto de exposição da banca por rodada" />
+              </div>
+
+              {/* EV Limits */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">EV Min</label>
+                <input type="number" step="0.01" min="1.00" value={evMinimo} onChange={(e) => setEvMinimo(e.target.value)}
+                  className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" title="Ex: 1.04 para 4% de EV minimo" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">EV Max</label>
+                <input type="number" step="0.01" min="1.00" value={evMaximo} onChange={(e) => setEvMaximo(e.target.value)}
+                  className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" title="Ex: 1.10 para 10% de EV max" />
+              </div>
+
+              <div className="flex-1"></div>
+              
               <button onClick={rodar} disabled={rodando}
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm">
                 {rodando ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />} Rodar simulação

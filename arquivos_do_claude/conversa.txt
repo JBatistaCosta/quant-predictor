@@ -1,0 +1,130 @@
+Vou verificar os logs do workflow.
+
+
+Usado 2 ferramentas
+Dois runs falharam. Vou pegar os logs do mais recente para diagnosticar:
+
+Usou github: actions list
+O falha é no checkout de repository-fotmob. Vou ver os logs detalhados:
+
+
+Usado 2 ferramentas
+O erro é claro: Not Found ao tentar fazer checkout de jbatistacosta/repository-fotmob — o GITHUB_TOKEN padrão só tem acesso ao repo atual (quant-predictor). Precisa de um PAT com acesso ao repository-fotmob.
+
+Vou verificar como os outros workflows do projeto resolvem esse problema:
+
+
+Executado um comando, leu 2 arquivos
+O checkout está idêntico ao ingerir_fotmob_dumps_locais.yml que funciona sem token: — mas a mensagem de erro é Not Found na API do GitHub. Isso significa que repository-fotmob está privado (ou ficou privado).
+
+O GITHUB_TOKEN padrão só tem acesso ao repo atual (quant-predictor). Para repos privados de terceiros, precisa de um PAT com acesso ao repository-fotmob, armazenado como secret.
+
+Duas opções:
+
+Tornar repository-fotmob público — se o conteúdo não for sensível, é a solução mais simples (sem PAT necessário)
+Criar um PAT e adicionar como secret — em GitHub → Settings → Developer Settings → Personal Access Tokens → criar token com repo scope → adicionar em quant-predictor Settings → Secrets como REPO_FOTMOB_PAT, e eu atualizo o workflow para token: ${{ secrets.REPO_FOTMOB_PAT }}
+Qual prefere?
+
+2. Já crieia o PAT com o nome REPO_FOTMOB_PAT e adicionei como secret,
+
+Perfeito. Vou atualizar os três workflows que fazem checkout de repository-fotmob com o novo token:
+
+
+Encontrado arquivos, executado um comando
+Três workflows afetados. Atualizo todos de uma vez:
+
+
+Editado 3 arquivos, leu 2 arquivos, executado 2 comandos
++3
+-7
+Commitado e pushado. Agora crio o PR e disparo o workflow correto em paralelo:
+
+Usou github: create pull request
+Usou Claude Code Remote: subscribe pr activity
+Vercel ✅ e Supabase preview 100% ✅. PR #174 pronto para merge.
+
+merge.
+Faça a ingestão de todos os dados do fotmob (para que aos poucos possamos ir adicionando-os como parametros). Crie um painel de treino no qual eu possa escolher quais parametros utilizar e criar eu mesmo novos modelos personalizados.
+
+Fazendo tudo em sequência. Primeiro merge do #174:
+
+Usou github: update pull request
+Usou github: merge pull request
+Conflito de merge — a branch divergiu depois do merge do #173. Vou resolver localmente:
+
+
+Executado 2 comandos
+Usou github: merge pull request
+PR #174 mergeado. Disparando o ingest de estádios (agora com PAT) e ao mesmo tempo inicio o planejamento do painel:
+
+Usou github: actions run trigger
+Vou resetar a branch para main e investigar o que já está ingerido vs o que falta, antes de começar a construir.
+
+
+Executado 6 comandos, leu ingestao_fotmob.py
+Agora sei o que já está no pipeline. Vou ler as definições completas de features antes de construir o painel:
+
+
+Executado um comando, leu dados_historicos.py
+Tenho tudo que preciso. Vou agir em paralelo: disparar os workflows de ingestão de perfis e dumps, e ao mesmo tempo começar a construir o painel.
+
+
+Leu 2 arquivos, executado 2 comandos, usado 2 ferramentas
+Agora vou olhar um exemplo de página existente para entender o padrão visual:
+
+
+Leu 4 arquivos, executado 2 comandos
+Ler
+dados_historicos.py
+Now I have all the column names. Let me read a few more sections to confirm the full feature sets before building everything.
+
+
+Leu 2 arquivos, pesquisado código
+Now I have everything I need. Let me build all the pieces in parallel — starting with the migration, workflow, and training script.
+
+
+Leu 2 arquivos, executado um comando
+Let me quickly check how the dataset assembly function works in dados_historicos.py:
+
+
+Pesquisado código, leu 4 arquivos, encontrado arquivos
+Now I have everything I need. Let me build all the pieces in parallel.
+
+
+Criado 3 arquivos
++250
+-0
+Now let me add the new tarefas to api/model-maintenance.js:
+
+Editado
+model-maintenance.js
++3
+-2
+Now add the feature catalog constant and new tarefa functions after tarefaDispararBacktest:
+
+/home/user/quant-predictor/api/
+model-maintenance.js
+}
+
+// ============================================================
+// TAREFA: disparar-treino-custom — dispara treinar_modelo_custom.yml
+// passando o config_id como input. Exige autenticação (mesmo mecanismo
+// de disparar-predicoes/disparar-backtest).
+async function tarefaDispararTreinoCustom(supabase, authHeader, configId) {
+  if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
+  const resultado = await dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_CUSTOM_TREINO, { config_id: configId });
+  if (resultado.status === 200) {
+    // Marca como aguardando_treino antes do workflow assumir (ele muda pra 'treinando')
+    await supabase.table('custom_model_configs')
+      .update({ status: 'aguardando_treino' })
+      .eq('id', configId);
+  }
+  return resultado;
+}
+
+// ============================================================
+// TAREFA: listar-configs-custom — lista todas as configurações salvas
+async function tarefaListarConfigsCustom(supabase) {
+  const { data, error } = await supabase
+    .table('custom_model_configs')
+    .select('id, name, algorithm, features, status, metrics, model_key, notes, created_at, trained_at, error_message')

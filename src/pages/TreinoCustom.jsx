@@ -14,94 +14,256 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Play, Save, Trash2, ChevronDown, ChevronUp, Loader2,
   AlertTriangle, CheckCircle2, Clock, XCircle, Zap, Settings2,
-  FlaskConical, BarChart3, RefreshCw,
+  FlaskConical, BarChart3, RefreshCw, FileText
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
+import RelatorioTreinoModal from '../components/RelatorioTreinoModal';
 
 // -----------------------------------------------------------------------
 // Catálogo de features disponíveis, agrupadas por tema
+// Legenda de cobertura: ▃ = Baixa (<40%) | ▅ = Média (40-80%) | █ = Alta (>80%)
+// ★ = Feature do Modelo de XI Previsto (fallback pré-escalação oficial)
 // -----------------------------------------------------------------------
 const FEATURE_GROUPS = [
   {
     grupo: 'Força de time',
     features: [
-      { key: 'elo_home', label: 'Elo mandante' },
-      { key: 'elo_away', label: 'Elo visitante' },
-      { key: 'elo_diff', label: 'Diferença de Elo' },
-      { key: 'elo_externo_home', label: 'Elo externo (ClubElo) mandante' },
-      { key: 'elo_externo_away', label: 'Elo externo (ClubElo) visitante' },
-      { key: 'forca_elenco_home', label: 'Força do elenco mandante (valor de mercado)' },
-      { key: 'forca_elenco_away', label: 'Força do elenco visitante (valor de mercado)' },
+      { key: 'elo_home', label: 'Elo mandante', cov: '█' },
+      { key: 'elo_away', label: 'Elo visitante', cov: '█' },
+      { key: 'elo_diff', label: 'Diferença de Elo', cov: '█' },
+      { key: 'elo_externo_home', label: 'Elo externo (ClubElo) mandante', cov: '▅' },
+      { key: 'elo_externo_away', label: 'Elo externo (ClubElo) visitante', cov: '▅' },
+      { key: 'squad_rating_home', label: 'Rating médio do elenco (mandante)', cov: '▅' },
+      { key: 'squad_rating_away', label: 'Rating médio do elenco (visitante)', cov: '▅' },
+      { key: 'forca_elenco_home', label: 'Força do elenco — valor de mercado (mandante)', cov: '█' },
+      { key: 'forca_elenco_away', label: 'Força do elenco — valor de mercado (visitante)', cov: '█' },
     ],
   },
   {
-    grupo: 'Forma recente',
+    grupo: 'Forma recente — Gols',
     features: [
-      { key: 'media_gols_marcados_home_5j', label: 'Média gols marcados (mandante, 5j)' },
-      { key: 'media_gols_sofridos_home_5j', label: 'Média gols sofridos (mandante, 5j)' },
-      { key: 'media_gols_marcados_away_5j', label: 'Média gols marcados (visitante, 5j)' },
-      { key: 'media_gols_sofridos_away_5j', label: 'Média gols sofridos (visitante, 5j)' },
-      { key: 'pontos_home_5j', label: 'Pontos nos últimos 5 jogos (mandante)' },
-      { key: 'pontos_away_5j', label: 'Pontos nos últimos 5 jogos (visitante)' },
+      { key: 'media_gols_marcados_home_5j', label: 'Gols marcados (mandante, 5j)', cov: '█' },
+      { key: 'media_gols_sofridos_home_5j', label: 'Gols sofridos (mandante, 5j)', cov: '█' },
+      { key: 'media_gols_marcados_away_5j', label: 'Gols marcados (visitante, 5j)', cov: '█' },
+      { key: 'media_gols_sofridos_away_5j', label: 'Gols sofridos (visitante, 5j)', cov: '█' },
+      { key: 'media_gols_marcados_home_10j', label: 'Gols marcados (mandante, 10j)', cov: '█' },
+      { key: 'media_gols_sofridos_home_10j', label: 'Gols sofridos (mandante, 10j)', cov: '█' },
+      { key: 'media_gols_marcados_away_10j', label: 'Gols marcados (visitante, 10j)', cov: '█' },
+      { key: 'media_gols_sofridos_away_10j', label: 'Gols sofridos (visitante, 10j)', cov: '█' },
+      { key: 'pontos_home_5j', label: 'Pontos (mandante, 5j)', cov: '█' },
+      { key: 'pontos_away_5j', label: 'Pontos (visitante, 5j)', cov: '█' },
     ],
   },
   {
-    grupo: 'Descanso e fadiga',
+    grupo: 'Fadiga e Contexto de Temporada',
     features: [
-      { key: 'dias_descanso_home', label: 'Dias de descanso (mandante)' },
-      { key: 'dias_descanso_away', label: 'Dias de descanso (visitante)' },
-      { key: 'fadiga_home', label: 'Fadiga mandante (jogos acumulados)' },
-      { key: 'fadiga_away', label: 'Fadiga visitante (jogos acumulados)' },
+      { key: 'days_since_last_match_home', label: 'Dias desde último jogo (mandante)', cov: '█' },
+      { key: 'days_since_last_match_away', label: 'Dias desde último jogo (visitante)', cov: '█' },
+      { key: 'is_midweek_fatigue_home', label: 'Flag de turnaround apertado (mandante)', cov: '█' },
+      { key: 'is_midweek_fatigue_away', label: 'Flag de turnaround apertado (visitante)', cov: '█' },
+      { key: 'progresso_temporada', label: 'Progresso da temporada (0→1)', cov: '█' },
     ],
   },
   {
-    grupo: 'Cartões e suspensões',
+    grupo: 'Disciplina — Cartões e Suspensões',
     features: [
-      { key: 'risco_suspensao_home', label: 'Risco de suspensão (mandante)' },
-      { key: 'risco_suspensao_away', label: 'Risco de suspensão (visitante)' },
-      { key: 'cartoes_amarelos_home_5j', label: 'Cartões amarelos (mandante, 5j)' },
-      { key: 'cartoes_amarelos_away_5j', label: 'Cartões amarelos (visitante, 5j)' },
+      { key: 'cartoes_acumulados_home', label: 'Cartões acumulados no ciclo (mandante)', cov: '█' },
+      { key: 'cartoes_acumulados_away', label: 'Cartões acumulados no ciclo (visitante)', cov: '█' },
+      { key: 'jogadores_pendurados_home', label: 'Jogadores a 1 cartão da suspensão (mandante)', cov: '█' },
+      { key: 'jogadores_pendurados_away', label: 'Jogadores a 1 cartão da suspensão (visitante)', cov: '█' },
     ],
   },
   {
-    grupo: 'Tabela e contexto',
+    grupo: 'Classificação — Tabela',
     features: [
-      { key: 'posicao_tabela_home', label: 'Posição na tabela (mandante)' },
-      { key: 'posicao_tabela_away', label: 'Posição na tabela (visitante)' },
-      { key: 'pontos_tabela_home', label: 'Pontos na tabela (mandante)' },
-      { key: 'pontos_tabela_away', label: 'Pontos na tabela (visitante)' },
-      { key: 'h2h_vitorias_home', label: 'Confronto direto: vitórias mandante' },
-      { key: 'h2h_empates', label: 'Confronto direto: empates' },
-      { key: 'h2h_vitorias_away', label: 'Confronto direto: vitórias visitante' },
+      { key: 'posicao_home', label: 'Posição na tabela (mandante)', cov: '█' },
+      { key: 'posicao_away', label: 'Posição na tabela (visitante)', cov: '█' },
+      { key: 'pontos_por_jogo_home', label: 'Pontos por jogo (mandante)', cov: '█' },
+      { key: 'pontos_por_jogo_away', label: 'Pontos por jogo (visitante)', cov: '█' },
+      { key: 'saldo_por_jogo_home', label: 'Saldo de gols por jogo (mandante)', cov: '█' },
+      { key: 'saldo_por_jogo_away', label: 'Saldo de gols por jogo (visitante)', cov: '█' },
+      { key: 'jogos_disputados_home', label: 'Jogos disputados na temp. (mandante)', cov: '█' },
+      { key: 'jogos_disputados_away', label: 'Jogos disputados na temp. (visitante)', cov: '█' },
+    ],
+  },
+  {
+    grupo: 'Confronto Direto (H2H)',
+    features: [
+      { key: 'h2h_taxa_vitoria_mandante', label: 'Taxa vitória mandante (histórico H2H)', cov: '█' },
+      { key: 'h2h_media_gols', label: 'Média de gols por jogo (H2H)', cov: '█' },
+      { key: 'h2h_n_jogos', label: 'Número de confrontos no histórico', cov: '█' },
     ],
   },
   {
     grupo: 'Árbitro',
     features: [
-      { key: 'tendencia_arbitro_home', label: 'Tendência do árbitro (favorável ao mandante)' },
-      { key: 'arbitro_cartoes_por_jogo', label: 'Cartões por jogo do árbitro' },
+      { key: 'arbitro_cartoes_media', label: 'Média de cartões por jogo (árbitro)', cov: '▅' },
+      { key: 'arbitro_faltas_media', label: 'Média de faltas por jogo (árbitro)', cov: '▅' },
+      { key: 'arbitro_n_jogos', label: 'Nº de jogos apitados pelo árbitro', cov: '▅' },
     ],
   },
   {
-    grupo: 'XI titular e mercado',
+    grupo: 'XI Titular — Real e Previsto ★',
     features: [
-      { key: 'forca_xi_home', label: 'Força do XI titular (mandante)' },
-      { key: 'forca_xi_away', label: 'Força do XI titular (visitante)' },
-      { key: 'valor_mercado_xi_home', label: 'Valor de mercado do XI (mandante, €M)' },
-      { key: 'valor_mercado_xi_away', label: 'Valor de mercado do XI (visitante, €M)' },
+      { key: 'titular_rating_home', label: 'Rating médio XI (mandante)', cov: '▅' },
+      { key: 'titular_rating_away', label: 'Rating médio XI (visitante)', cov: '▅' },
+      { key: 'titular_valor_mercado_home', label: 'Valor de mercado XI real (mandante, €M)', cov: '▅' },
+      { key: 'titular_valor_mercado_away', label: 'Valor de mercado XI real (visitante, €M)', cov: '▅' },
+      { key: 'titular_avg_age_home', label: 'Idade média XI (mandante)', cov: '▃' },
+      { key: 'titular_avg_age_away', label: 'Idade média XI (visitante)', cov: '▃' },
+      { key: 'titular_avg_height_home', label: 'Altura média XI (mandante, cm)', cov: '▃' },
+      { key: 'titular_avg_height_away', label: 'Altura média XI (visitante, cm)', cov: '▃' },
+      { key: 'venue_capacity_home', label: 'Capacidade do estádio (mandante)', cov: '▃' },
+      { key: 'previsto_valor_mercado_total_xi_home', label: 'Valor total XI previsto (mandante, €M) ★', cov: '▅' },
+      { key: 'previsto_valor_mercado_total_xi_away', label: 'Valor total XI previsto (visitante, €M) ★', cov: '▅' },
+      { key: 'previsto_valor_medio_xi_home', label: 'Valor médio XI previsto (mandante, €M) ★', cov: '▅' },
+      { key: 'previsto_valor_medio_xi_away', label: 'Valor médio XI previsto (visitante, €M) ★', cov: '▅' },
     ],
   },
   {
-    grupo: 'xG e estatísticas avançadas',
+    grupo: 'xG e Estatísticas Avançadas',
     features: [
-      { key: 'xg_home_5j', label: 'xG médio (mandante, 5j)' },
-      { key: 'xg_away_5j', label: 'xG médio (visitante, 5j)' },
-      { key: 'xg_contra_home_5j', label: 'xG sofrido médio (mandante, 5j)' },
-      { key: 'xg_contra_away_5j', label: 'xG sofrido médio (visitante, 5j)' },
+      { key: 'xg_home_5j', label: 'xG marcado (mandante, 5j)', cov: '▅' },
+      { key: 'xg_away_5j', label: 'xG marcado (visitante, 5j)', cov: '▅' },
+      { key: 'xg_sofrido_home_5j', label: 'xG sofrido (mandante, 5j)', cov: '▅' },
+      { key: 'xg_sofrido_away_5j', label: 'xG sofrido (visitante, 5j)', cov: '▅' },
+      { key: 'xg_home_10j', label: 'xG marcado (mandante, 10j)', cov: '▅' },
+      { key: 'xg_away_10j', label: 'xG marcado (visitante, 10j)', cov: '▅' },
+      { key: 'xg_sofrido_home_10j', label: 'xG sofrido (mandante, 10j)', cov: '▅' },
+      { key: 'xg_sofrido_away_10j', label: 'xG sofrido (visitante, 10j)', cov: '▅' },
+      { key: 'xg_home_5j_decay', label: 'xG marcado EWMA (mandante, 5j)', cov: '▅' },
+      { key: 'xg_away_5j_decay', label: 'xG marcado EWMA (visitante, 5j)', cov: '▅' },
+      { key: 'xg_home_10j_decay', label: 'xG marcado EWMA (mandante, 10j)', cov: '▅' },
+      { key: 'xg_away_10j_decay', label: 'xG marcado EWMA (visitante, 10j)', cov: '▅' },
+      { key: 'xg_home_20j_decay', label: 'xG marcado EWMA (mandante, 20j)', cov: '▅' },
+      { key: 'xg_away_20j_decay', label: 'xG marcado EWMA (visitante, 20j)', cov: '▅' },
+      { key: 'xg_bayesiano_home', label: 'xG Bayesiano Shrinkage EWMA (mandante)', cov: '▅' },
+      { key: 'xg_bayesiano_away', label: 'xG Bayesiano Shrinkage EWMA (visitante)', cov: '▅' },
+      { key: 'xga_bayesiano_home', label: 'xGA Bayesiano (Sofrido, mandante)', cov: '▅' },
+      { key: 'xga_bayesiano_away', label: 'xGA Bayesiano (Sofrido, visitante)', cov: '▅' },
+      { key: 'xgot_bayesiano_home', label: 'xGOT Bayesiano Shrinkage (mandante)', cov: '▅' },
+      { key: 'xgot_bayesiano_away', label: 'xGOT Bayesiano Shrinkage (visitante)', cov: '▅' },
+      { key: 'is_stat_estimated_home', label: 'Flag: estatística estimada/bayesiana (mandante)', cov: '█' },
+      { key: 'is_stat_estimated_away', label: 'Flag: estatística estimada/bayesiana (visitante)', cov: '█' },
     ],
   },
+  {
+    grupo: 'FBref: Forma Básica (v7)',
+    features: [
+      { key: 'media_posse_5j_home', label: 'Posse de bola (mandante, 5j)', cov: '▅' },
+      { key: 'media_posse_sofrida_5j_home', label: 'Posse adversária (mandante, 5j)', cov: '▅' },
+      { key: 'media_posse_5j_away', label: 'Posse de bola (visitante, 5j)', cov: '▅' },
+      { key: 'media_posse_sofrida_5j_away', label: 'Posse adversária (visitante, 5j)', cov: '▅' },
+      { key: 'media_chutes_5j_home', label: 'Chutes (mandante, 5j)', cov: '▅' },
+      { key: 'media_chutes_sofridos_5j_home', label: 'Chutes sofridos (mandante, 5j)', cov: '▅' },
+      { key: 'media_chutes_5j_away', label: 'Chutes (visitante, 5j)', cov: '▅' },
+      { key: 'media_chutes_sofridos_5j_away', label: 'Chutes sofridos (visitante, 5j)', cov: '▅' },
+      { key: 'media_chutes_alvo_5j_home', label: 'Chutes no alvo (mandante, 5j)', cov: '▅' },
+      { key: 'media_chutes_alvo_sofridos_5j_home', label: 'Chutes no alvo sofridos (mandante, 5j)', cov: '▅' },
+      { key: 'media_chutes_alvo_5j_away', label: 'Chutes no alvo (visitante, 5j)', cov: '▅' },
+      { key: 'media_chutes_alvo_sofridos_5j_away', label: 'Chutes no alvo sofridos (visitante, 5j)', cov: '▅' },
+      { key: 'media_escanteios_5j_home', label: 'Escanteios (mandante, 5j)', cov: '▅' },
+      { key: 'media_escanteios_sofridos_5j_home', label: 'Escanteios sofridos (mandante, 5j)', cov: '▅' },
+      { key: 'media_escanteios_5j_away', label: 'Escanteios (visitante, 5j)', cov: '▅' },
+      { key: 'media_escanteios_sofridos_5j_away', label: 'Escanteios sofridos (visitante, 5j)', cov: '▅' },
+      { key: 'media_faltas_5j_home', label: 'Faltas cometidas (mandante, 5j)', cov: '▅' },
+      { key: 'media_faltas_sofridas_5j_home', label: 'Faltas sofridas (mandante, 5j)', cov: '▅' },
+      { key: 'media_faltas_5j_away', label: 'Faltas cometidas (visitante, 5j)', cov: '▅' },
+      { key: 'media_faltas_sofridas_5j_away', label: 'Faltas sofridas (visitante, 5j)', cov: '▅' },
+      { key: 'media_cartoes_amarelos_5j_home', label: 'Cartões amarelos (mandante, 5j)', cov: '▅' },
+      { key: 'media_cartoes_amarelos_sofridos_5j_home', label: 'Cartões amarelos adv (mandante, 5j)', cov: '▅' },
+      { key: 'media_cartoes_amarelos_5j_away', label: 'Cartões amarelos (visitante, 5j)', cov: '▅' },
+      { key: 'media_cartoes_amarelos_sofridos_5j_away', label: 'Cartões amarelos adv (visitante, 5j)', cov: '▅' },
+      { key: 'media_cartoes_vermelhos_5j_home', label: 'Cartões vermelhos (mandante, 5j)', cov: '▃' },
+      { key: 'media_cartoes_vermelhos_5j_away', label: 'Cartões vermelhos (visitante, 5j)', cov: '▃' },
+    ],
+  },
+  {
+    grupo: 'FotMob: Situação de Chutes (v9)',
+    features: [
+      { key: 'pct_fast_break_fm_home_5j', label: '% Chutes em contra-ataque (mandante, 5j)', cov: '▅' },
+      { key: 'pct_fast_break_fm_sofrido_home_5j', label: '% Contra-ataques sofridos (mandante, 5j)', cov: '▅' },
+      { key: 'pct_fast_break_fm_away_5j', label: '% Chutes em contra-ataque (visitante, 5j)', cov: '▅' },
+      { key: 'pct_fast_break_fm_sofrido_away_5j', label: '% Contra-ataques sofridos (visitante, 5j)', cov: '▅' },
+      { key: 'pct_bola_parada_fm_home_5j', label: '% Chutes de bola parada (mandante, 5j)', cov: '▅' },
+      { key: 'pct_bola_parada_fm_sofrido_home_5j', label: '% Bola parada sofrida (mandante, 5j)', cov: '▅' },
+      { key: 'pct_bola_parada_fm_away_5j', label: '% Chutes de bola parada (visitante, 5j)', cov: '▅' },
+      { key: 'pct_bola_parada_fm_sofrido_away_5j', label: '% Bola parada sofrida (visitante, 5j)', cov: '▅' },
+      { key: 'xg_chute_fm_home_5j', label: 'xG médio por chute (mandante, 5j)', cov: '▅' },
+      { key: 'xg_chute_fm_sofrido_home_5j', label: 'xG/chute adversário (mandante, 5j)', cov: '▅' },
+      { key: 'xg_chute_fm_away_5j', label: 'xG médio por chute (visitante, 5j)', cov: '▅' },
+      { key: 'xg_chute_fm_sofrido_away_5j', label: 'xG/chute adversário (visitante, 5j)', cov: '▅' },
+      { key: 'pct_gols_2tempo_fm_home_5j', label: '% Gols no 2º tempo (mandante, 5j)', cov: '▅' },
+      { key: 'pct_gols_2tempo_fm_sofrido_home_5j', label: '% Gols sofridos no 2º tempo (mandante, 5j)', cov: '▅' },
+      { key: 'pct_gols_2tempo_fm_away_5j', label: '% Gols no 2º tempo (visitante, 5j)', cov: '▅' },
+      { key: 'pct_gols_2tempo_fm_sofrido_away_5j', label: '% Gols sofridos no 2º tempo (visitante, 5j)', cov: '▅' },
+    ],
+  },
+  // FotMob dynamic groups appended below via FOTMOB_METRICS generator
 ];
+
+// -----------------------------------------------------------------------
+// Geração Dinâmica das Estatísticas do FotMob (Centenas de colunas)
+// -----------------------------------------------------------------------
+const FOTMOB_METRICS = [
+  { short: "xgot", label: "xGOT", category: "Finalização" },
+  { short: "chutes_fm", label: "Chutes", category: "Finalização" },
+  { short: "chutes_alvo_fm", label: "Chutes no Alvo", category: "Finalização" },
+  { short: "chutes_fora_fm", label: "Chutes Fora", category: "Finalização" },
+  { short: "chutes_bloqueados_fm", label: "Chutes Bloqueados", category: "Finalização" },
+  { short: "chutes_area_fm", label: "Chutes na Área", category: "Finalização" },
+  { short: "chutes_fora_area_fm", label: "Chutes de Fora da Área", category: "Finalização" },
+  { short: "chances_claras_fm", label: "Grandes Chances", category: "Finalização" },
+  { short: "chances_claras_perdidas_fm", label: "Grandes Chances Perdidas", category: "Finalização" },
+  { short: "toques_area_adv_fm", label: "Toques na Área Adv.", category: "Ataque Geral" },
+  { short: "escanteios_fm", label: "Escanteios", category: "Ataque Geral" },
+  { short: "dribles_certos_fm", label: "Dribles Certos", category: "Ataque Geral" },
+  { short: "passes_certos_fm", label: "Passes Certos", category: "Posse e Passes" },
+  { short: "bolas_longas_certas_fm", label: "Bolas Longas Certas", category: "Posse e Passes" },
+  { short: "cruzamentos_certos_fm", label: "Cruzamentos Certos", category: "Posse e Passes" },
+  { short: "posse_fm", label: "Posse de Bola", category: "Posse e Passes" },
+  { short: "desarmes_fm", label: "Desarmes", category: "Defesa" },
+  { short: "interceptacoes_fm", label: "Interceptações", category: "Defesa" },
+  { short: "bloqueios_fm", label: "Bloqueios", category: "Defesa" },
+  { short: "afastamentos_fm", label: "Afastamentos", category: "Defesa" },
+  { short: "defesas_goleiro_fm", label: "Defesas do Goleiro", category: "Defesa" },
+  { short: "duelos_vencidos_fm", label: "Duelos (Geral)", category: "Defesa" },
+  { short: "duelos_aereos_vencidos_fm", label: "Duelos Aéreos Vencidos", category: "Defesa" },
+  { short: "faltas_fm", label: "Faltas Cometidas", category: "Faltas e Cartões" },
+  { short: "cartoes_amarelos_fm", label: "Cartões Amarelos", category: "Faltas e Cartões" },
+  { short: "cartoes_vermelhos_fm", label: "Cartões Vermelhos", category: "Faltas e Cartões" },
+];
+
+const groupedFotMob = {};
+
+groupedFotMob["Finalização"] = [
+  { key: 'xgot_bayesiano_home', label: 'xGOT Bayesiano Shrinkage (mandante)' },
+  { key: 'xgot_bayesiano_away', label: 'xGOT Bayesiano Shrinkage (visitante)' },
+];
+
+FOTMOB_METRICS.forEach(metric => {
+  if (!groupedFotMob[metric.category]) groupedFotMob[metric.category] = [];
+  
+  ['5j', '10j', '20j', '5j_decay', '10j_decay', '20j_decay'].forEach(janela => {
+    const lbl = janela.replace('_', ' ');
+    groupedFotMob[metric.category].push(
+      { key: `${metric.short}_home_${janela}`, label: `${metric.label} (mand., ${lbl})` },
+      { key: `${metric.short}_sofrido_home_${janela}`, label: `${metric.label} sofrido (mand., ${lbl})` },
+      { key: `${metric.short}_away_${janela}`, label: `${metric.label} (vis., ${lbl})` },
+      { key: `${metric.short}_sofrido_away_${janela}`, label: `${metric.label} sofrido (vis., ${lbl})` }
+    );
+  });
+});
+
+FEATURE_GROUPS.pop(); // Remove o comentário placeholder
+
+Object.keys(groupedFotMob).forEach(category => {
+  FEATURE_GROUPS.push({
+    grupo: `FotMob: ${category}`,
+    features: groupedFotMob[category]
+  });
+});
 
 const ALGORITMOS = [
   { value: 'catboost', label: 'CatBoost' },
@@ -151,6 +313,7 @@ export default function TreinoCustom() {
   const [expandidos, setExpandidos] = useState({}); // config_id → bool
   const [grupoExpandido, setGrupoExpandido] = useState({}); // grupo → bool
   const [formAberto, setFormAberto] = useState(false);
+  const [configModalAberto, setConfigModalAberto] = useState(null);
   const pollingRef = useRef(null);
 
   const authHeader = session?.access_token
@@ -656,13 +819,21 @@ export default function TreinoCustom() {
 
                     {/* Métricas (se treinado) */}
                     {cfg.metrics && (
-                      <div>
-                        <p className="text-xs text-slate-500 mb-1 font-medium flex items-center gap-1">
-                          <BarChart3 size={12} /> Métricas
-                        </p>
-                        {renderMetricas(cfg.metrics)}
+                      <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                            <BarChart3 size={14} className="text-violet-400" /> Resultados do Treinamento
+                          </p>
+                          <button 
+                            onClick={() => setConfigModalAberto(cfg)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                          >
+                            <FileText size={13} />
+                            Ver Relatório Completo
+                          </button>
+                        </div>
                         {cfg.trained_at && (
-                          <p className="text-xs text-slate-600 mt-1">Treinado em: {fmtData(cfg.trained_at)}</p>
+                          <p className="text-xs text-slate-500">Concluído em: {fmtData(cfg.trained_at)}</p>
                         )}
                       </div>
                     )}
@@ -713,6 +884,14 @@ export default function TreinoCustom() {
           })}
         </div>
       </div>
+
+      {/* Modal de Relatório */}
+      {configModalAberto && (
+        <RelatorioTreinoModal 
+          config={configModalAberto} 
+          onClose={() => setConfigModalAberto(null)} 
+        />
+      )}
     </div>
   );
 }

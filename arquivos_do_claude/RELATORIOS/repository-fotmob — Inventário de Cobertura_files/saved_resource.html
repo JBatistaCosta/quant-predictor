@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<!-- saved from url=(0253)https://0ae31fb2-2132-4e40-869f-dd4cbce6c28f.frame.claudeusercontent.com/_f/1785296212-9888/?__frame_t=0sO5CU_9Vts-vgTMTaKuwxyA.fabdfe11-73f8-4bf0-9e0c-03ce17040e91.239a21a8-6cd2-41c1-b715-ddf909b1f88f.1785346310&__frame_v=manifest.ec369d2e020e53f6.json -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><!-- frame-runtime --><!--<base href="/_f/1785296212-9888/">--><base href="."><script>window.__FRAME_PREAMBLE={"capabilities":{"downloads":"downloads.BABDwU1K.js","mcp":"mcp.hoz5jxDa.js","permissions":"permissions.ByA9Fd8x.js","self":"self.D3u1zjZe.js","user":"user.Cp1-RnjB.js"},"transforms":"_transforms.DYk1Ltlh.js","comments":"_comments.DiwQajF_.js","translate":"_translate.C5leZL2A.js"}</script><script>(function(){"use strict";const Ee="modulepreload",we=function(e){return"/"+e},Se={},ee=function(t,n,l){let i=Promise.resolve();function s(f){const c=new Event("vite:preloadError",{cancelable:!0});if(c.payload=f,window.dispatchEvent(c),!c.defaultPrevented)throw f}return i.then(f=>{for(const c of f||[])c.status==="rejected"&&s(c.reason);return t().catch(s)})},te=["light","dark","system"];function ne(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_init;return t!==null&&typeof t=="object"}function W(e){return e!==null&&typeof e=="object"&&e.__frame_size_poke===!0}function re(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_theme;if(t===null||typeof t!="object")return!1;const n=t.theme;return typeof n=="string"&&te.includes(n)}function se(e){try{typeof reportError=="function"?reportError(e):setTimeout(()=>{throw e},0)}catch{}}const oe=Object.freeze(Object.assign(Object.create(null),{user:Object.freeze(Object.assign(Object.create(null),{id:null,isOwner:!1,canEdit:!1,name:null,avatarUrl:null,email:null}))}));function Y(e){if(window===top||e.type==="auxclick"&&e.button!==1)return;const t=e.composedPath?e.composedPath():[e.target];let n=null;for(let f=0;f<t.length;f++){const c=t[f];if(c&&c.matches&&c.matches("a[href],area[href]")){n=c;break}}if(!n&&e.target&&e.target.closest&&(n=e.target.closest("a[href],area[href]")),!n)return;const l=n.getAttribute("href");if(!l)return;let i,s;try{i=new URL(l,document.baseURI),s=new URL(document.baseURI).origin}catch{return}(i.protocol==="http:"||i.protocol==="https:")&&i.origin!==s&&(e.preventDefault(),parent.postMessage({__frame_nav:!0,url:i.href},"*"))}const K={};function D(e){if(window===top)return;const t=Date.now();t-(K[e]||0)<500||(K[e]=t,parent.postMessage({__frame_engaged:!0,kind:e},"*"))}const ie=2e3,x=["wheel","touchstart","touchmove","keydown","pointerdown"];let J=0;function ae(e){e.isTrusted&&(J=Date.now())}function ce(){addEventListener("click",Y,!0),addEventListener("auxclick",Y,!0)}function le(){for(let e=0;e<x.length;e++)addEventListener(x[e],ae,{capture:!0,passive:!0});addEventListener("scroll",e=>{e.isTrusted&&Date.now()-J<ie&&D("scroll")},{capture:!0,passive:!0}),addEventListener("pointermove",e=>{e.isTrusted&&D("pointer")},{capture:!0,passive:!0}),addEventListener("click",e=>{e.isTrusted&&D("click")},{capture:!0,passive:!0})}const I="__frame_scroll",ue=150,fe=310,de=160,me=3e4;function pe(){let e=0,t=!1,n=!1,l=!1,i=0;const s=a=>{try{sessionStorage.setItem(I,JSON.stringify({y:a}))}catch{}},f=()=>{if(t){t=!1;return}n=!0,clearTimeout(e),e=setTimeout(()=>s(scrollY),ue)};try{addEventListener("scroll",f,{passive:!0}),addEventListener("pagehide",()=>{clearTimeout(e),s(scrollY)})}catch{}const c=()=>{let a;try{a=sessionStorage.getItem(I)}catch{return null}if(a===null)return null;let _;try{_=JSON.parse(a)}catch{_=null}const m=_?.y;if(!(typeof m=="number"&&Number.isFinite(m)&&m>=0)){try{sessionStorage.removeItem(I)}catch{}return null}return m};let g=!1;const p=a=>{try{const _=scrollY;scrollTo({top:a,left:0,behavior:"instant"}),i=a,l=!0,s(a);const m=scrollY;m!==_&&(t=!0),m!==a&&!g&&(g=!0,addEventListener("load",()=>{try{if(scrollY===m){const y=c();p(y!==null?y:i)}}catch{}},{once:!0}))}catch{}},o=()=>{try{return!!location.hash}catch{return!0}};let u=!1;const d=()=>{try{if(u||innerWidth>fe||innerHeight>de)return;u=!0;const a=Date.now(),_=()=>{try{removeEventListener("resize",_)}catch{}if(Date.now()-a>me||n||o())return;const m=c();p(m!==null?m:i)};addEventListener("resize",_)}catch{}};let h=!1,b=!1;return{restore(){if(h||(h=!0,o()))return;const a=c();a!==null&&(p(a),d())},promoted(){if(b||(b=!0,o()))return;const a=c();a!==null?(p(a),d()):l&&p(i)}}}function he(e,t,n){const l=[...t.values()].filter(i=>i.targets.some(s=>s.startsWith(e+".")));return{wrap(i,s){const f=`${e}.${i}`,c=l.filter(g=>g.targets.includes(f));return c.length===0?(...g)=>{try{return s(...g)}catch(p){return Promise.reject(p)}}:(...g)=>{let p=g;for(const u of c){const d=u.module.parameters;if(d)try{p=d(p)}catch{return Promise.reject({code:"transform_error",id:u.id,scope:e,message:"parameters transform failed"})}}let o;try{o=s(...p)}catch(u){o=Promise.reject(u)}return o.then(u=>{for(let d=c.length-1;d>=0;d--){const h=c[d],b=h.module.returns;if(b)try{u=b(u)}catch{return n({id:h.id,scope:e,leg:"returns"}),u}}return u},u=>{for(let d=c.length-1;d>=0;d--){const h=c[d],b=h.module.throws;if(b)try{u=b(u)}catch{return n({id:h.id,scope:e,leg:"throws"}),Promise.reject(u)}}return Promise.reject(u)})}}}}function ge(e,t,n,l=()=>{}){const i=new Set(e.changes??[]),s=new Map;for(const f of i){const c=t[f];c&&s.set(f,c)}return{contract:e.contract,changes:i,flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:s,shellOrigin:n.shellOrigin,mount:n.mount,pipe:f=>he(f,s,l)}}(function(){const e=Object.defineProperty,t=globalThis,n=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let l=0;for(let i=0;i<n.length;i++){const s=n[i];try{e(t,s,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[s]}catch{}try{e(t,s,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[s]=="function"&&l++}if(l&&window!==top)try{parent.postMessage({__frame_rtc_lockdown_failed:l},"*")}catch{}})();const _e=1e4,ye=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function G(e){for(const t of ye)if(t.endsWith(":*"))try{const n=new URL(e);if(`${n.protocol}//${n.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}const R=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities}),U=window.__FRAME_PREAMBLE?.transforms,z=window.__FRAME_PREAMBLE?.comments,$=window.__FRAME_PREAMBLE?.translate,T=/^[\w.-]+\.js$/,be=/^[a-z][a-z0-9_-]{0,63}$/;let V=null,j=null;function q(e,t,n){try{Object.defineProperty(e,t,{value:n,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:n,writable:!1,configurable:!0,enumerable:!0})}catch{}}}let B=!1;function X(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,B=!0):B&&(delete t.dataset.theme,t.style.colorScheme="",B=!1)}const A=Object.assign(Object.create(null),{mcp:Object.assign(Object.create(null),{watchTool:{handlerArg:3}})}),M=new Map;function Q(e,t){const n=M.get(e);if(!n)return;const l=Object.assign(Object.create(null),t);Object.assign(n.impl,l),n.impl.__settled=()=>Promise.reject({code:"capability_removed",message:`${e}: method not in this runtime`});const i=n.queue;n.queue=[];for(const s of i){const f=l[s.method];if(f)if(A[e]?.[s.method])try{s.resolve(f(...s.args))}catch{k(s,A[e][s.method].handlerArg,{code:"transform_error",message:`${e}.${s.method} rejected its arguments`})}else f(...s.args).then(s.resolve,s.reject);else{const c={code:"capability_removed",message:`${e}.${s.method} is not in this runtime`},g=A[e]?.[s.method];if(g){k(s,g.handlerArg,c);continue}s.reject(c)}}}function ve(e,t){const n=M.get(e);if(!n)return;n.impl.__settled=()=>Promise.reject(t);const l=n.queue;n.queue=[];for(const i of l){const s=A[e]?.[i.method];if(s){k(i,s.handlerArg,t);continue}i.reject(t)}}function N(e,t){const n=oe[e];if(!n){ve(e,t);return}Q(e,Object.fromEntries(Object.entries(n).map(([l,i])=>[l,()=>Promise.resolve(i)])))}function k(e,t,n){if(e.syncState?.dead)return;const l=e.args[t];typeof l=="function"&&queueMicrotask(()=>{if(!e.syncState?.dead)try{l({type:"error",error:n})}catch(i){se(i)}})}const F=Object.getOwnPropertyDescriptor(window,"claude");if(window!==top&&!(F&&F.writable===!1)){ce(),le();let e=null;try{e=pe()}catch{}const t=F?.value??{};q(window,"claude",t);const n=o=>{const u={impl:Object.create(null),queue:[]};M.set(o,u);const d=u.impl,h=new Proxy(d,{get:(b,a)=>{if(typeof a!="string"||a==="then"||a==="toJSON"||a==="valueOf")return;if(a==="toString")return Object.prototype.toString;const _=A[o]?.[a];return _?(...m)=>{if(typeof m[_.handlerArg]!="function")throw new TypeError(`${o}.${a} requires a handler function`);const y=d[a];if(y)return y(...m);if(d.__settled){const v={dead:!1},P={args:[...m],syncState:v};return d.__settled().catch(C=>k(P,_.handlerArg,C)),()=>{v.dead=!0}}let E=null;const S={dead:!1};return u.queue.push({method:a,args:m,resolve:v=>{E=typeof v=="function"?v:null,S.dead&&E?.()},reject:()=>{},syncState:S}),()=>{S.dead=!0,E?.()}}:(...m)=>{const y=d[a]??d.__settled;return y?y(...m):new Promise((E,S)=>{u.queue.push({method:a,args:m,resolve:E,reject:S})})}},set:()=>!1});q(t,o,h)};for(const o of Object.keys(R)){if(t[o]!==void 0){q(t,o,t[o]);continue}n(o)}let l=null,i=null,s=0;const f=o=>{o.source!==parent||!G(o.origin)||ne(o.data)&&(l=o.data.__frame_init,j=o.origin,removeEventListener("message",f),clearTimeout(s),i?.())};addEventListener("message",f),parent.postMessage({__frame_connect:!0},"*");const c=new Promise(o=>{i=o,s=setTimeout(()=>{removeEventListener("message",f),o()},_e)}),g=document.readyState==="loading"?new Promise(o=>document.addEventListener("DOMContentLoaded",()=>o(),{once:!0})):Promise.resolve();g.then(()=>{try{e?.restore()}catch{}});const p=o=>{if(!(o.source!==parent||!G(o.origin))&&W(o.data)){removeEventListener("message",p);try{e?.promoted()}catch{}}};addEventListener("message",p),c.then(async()=>{if(!l||!j){for(const r of M.keys())N(r,{code:"not_granted",message:"frame initialization did not arrive - capability unavailable"});return}X(l.theme);const o=j;let u=!1,d=!1;addEventListener("message",r=>{if(r.source!==parent||r.origin!==o)return;re(r.data)&&X(r.data.__frame_theme.theme);const w=r.data?.__fc_mode;w&&typeof w=="object"&&!u&&z&&T.test(z)&&(u=!0,h(z).then(H=>H.install?.(o,w.on===!0)).catch(()=>{}));const O=r.data?.__ft_cmd;O&&typeof O=="object"&&!d&&$&&T.test($)&&(d=!0,h($).then(H=>H.install?.(o,O)).catch(()=>{}))});const h=r=>ee(()=>import("/_runtime/"+r),void 0),b=Object.keys(l.capabilities??{});for(const r of b)Object.hasOwn(R,r)||be.test(r)&&t[r]===void 0&&(n(r),N(r,{code:"capability_disabled",message:"capability not in this runtime generation"}));const a=b.filter(r=>Object.hasOwn(R,r)).map(r=>[r,R[r]]).filter(r=>typeof r[1]=="string"&&T.test(r[1])),[_,...m]=await Promise.allSettled([U&&T.test(U)?h(U):Promise.resolve({}),...a.map(([,r])=>h(r))]),y=j;V=ge(l,_.status==="fulfilled"&&_.value?.TRANSFORMS||{},{shellOrigin:y,mount:Q},r=>parent.postMessage({__frame_cap_telemetry:r},y));const E=r=>parent.postMessage({__frame_cap_telemetry:{kind:"cap-load-error",cap:r}},y),S=V;m.forEach((r,w)=>{const O=a[w][0];if(r.status!=="fulfilled"){E(O);return}try{r.value?.install?.(S)}catch{E(O)}});for(const[r,w]of M)if(!(w.queue.length===0&&Object.keys(w.impl).length>0)){if(b.includes(r)){N(r,{code:"capability_disabled",message:"capability not available in this session"});continue}N(r,{code:"not_granted",message:"capability not available in this session"})}await g,parent.postMessage({__frame_ready:!0},j);let v=-1,P=0;const C=()=>{P=0;const r=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0);r!==v&&(v=r,parent.postMessage({__frame_size:!0,h:r},y))},L=()=>{P||(P=setTimeout(C,200))},Z=new ResizeObserver(L);Z.observe(document.documentElement),document.body&&Z.observe(document.body),document.addEventListener("load",L,!0),document.fonts?.ready.then(L,()=>{}),addEventListener("beforeprint",()=>{v=-1,C()}),L(),addEventListener("message",r=>{if(!(r.source!==parent||r.origin!==y)&&W(r.data)){try{e?.promoted()}catch{}v=-1,L()}})})}})();</script><!-- /frame-runtime --><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style><meta id="dcngeagmmhegagicpcmpinaoklddcgon"></head><body>
+<title>repository-fotmob — Inventário de Cobertura</title>
+<style>
+:root {
+  --bg:        #090D18;
+  --bg-2:      #101623;
+  --bg-3:      #16202F;
+  --bg-hov:    #1C2638;
+  --bdr:       #1A2840;
+  --bdr-2:     #213352;
+  --tx:        #BDD0EE;
+  --tx-2:      #566E97;
+  --tx-3:      #2A3D5A;
+  --acc:       #22C07A;
+  --acc-dim:   #0B4A2E;
+  --warn:      #E49225;
+  --warn-dim:  #3A200A;
+  --f-ui:      system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mo:      'SF Mono','Cascadia Code','JetBrains Mono',ui-monospace,monospace;
+  /* heatmap token levels */
+  --hm-hi-bg:   #22C07A; --hm-hi-tx:   #07180F;
+  --hm-mid-bg:  #0F6040; --hm-mid-tx:  #BDD0EE;
+  --hm-amb-bg:  #E49225; --hm-amb-tx:  #1C0A00;
+  --hm-low-bg:  #3A200A; --hm-low-tx:  #E49225;
+  --hm-zer-bg:  #16202F; --hm-zer-tx:  #2A3D5A;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:       #F0F3F9;
+    --bg-2:     #FFFFFF;
+    --bg-3:     #E5EAFA;
+    --bg-hov:   #EBF0FA;
+    --bdr:      #D0DAF0;
+    --bdr-2:    #B8C8E8;
+    --tx:       #0C1628;
+    --tx-2:     #3D5278;
+    --tx-3:     #8A9DC0;
+    --acc:      #0B9660;
+    --acc-dim:  #D0F0E3;
+    --warn:     #A86010;
+    --warn-dim: #FFF0DC;
+    --hm-hi-bg:   #0B9660; --hm-hi-tx:   #FFFFFF;
+    --hm-mid-bg:  #A8DFCB; --hm-mid-tx:  #0C4030;
+    --hm-amb-bg:  #E49225; --hm-amb-tx:  #FFFFFF;
+    --hm-low-bg:  #FEF0D8; --hm-low-tx:  #A86010;
+    --hm-zer-bg:  #E5EAFA; --hm-zer-tx:  #8A9DC0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #090D18; --bg-2: #101623; --bg-3: #16202F; --bg-hov: #1C2638;
+  --bdr: #1A2840; --bdr-2: #213352;
+  --tx: #BDD0EE; --tx-2: #566E97; --tx-3: #2A3D5A;
+  --acc: #22C07A; --acc-dim: #0B4A2E; --warn: #E49225; --warn-dim: #3A200A;
+  --hm-hi-bg:#22C07A; --hm-hi-tx:#07180F;
+  --hm-mid-bg:#0F6040; --hm-mid-tx:#BDD0EE;
+  --hm-amb-bg:#E49225; --hm-amb-tx:#1C0A00;
+  --hm-low-bg:#3A200A; --hm-low-tx:#E49225;
+  --hm-zer-bg:#16202F; --hm-zer-tx:#2A3D5A;
+}
+:root[data-theme="light"] {
+  --bg: #F0F3F9; --bg-2: #FFFFFF; --bg-3: #E5EAFA; --bg-hov: #EBF0FA;
+  --bdr: #D0DAF0; --bdr-2: #B8C8E8;
+  --tx: #0C1628; --tx-2: #3D5278; --tx-3: #8A9DC0;
+  --acc: #0B9660; --acc-dim: #D0F0E3; --warn: #A86010; --warn-dim: #FFF0DC;
+  --hm-hi-bg:#0B9660; --hm-hi-tx:#FFFFFF;
+  --hm-mid-bg:#A8DFCB; --hm-mid-tx:#0C4030;
+  --hm-amb-bg:#E49225; --hm-amb-tx:#FFFFFF;
+  --hm-low-bg:#FEF0D8; --hm-low-tx:#A86010;
+  --hm-zer-bg:#E5EAFA; --hm-zer-tx:#8A9DC0;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--f-ui);font-size:14px;background:var(--bg);color:var(--tx);
+  line-height:1.5;padding:2.5rem 1.75rem 5rem;max-width:980px;margin:0 auto;
+}
+/* ── Header ─────────────────────────────────────────── */
+.eyebrow{
+  font-family:var(--f-mo);font-size:11px;letter-spacing:.06em;
+  color:var(--tx-3);margin-bottom:.5rem;
+}
+.eyebrow b{color:var(--tx-2)}
+h1{
+  font-size:21px;font-weight:700;letter-spacing:-.025em;
+  color:var(--tx);margin-bottom:.25rem;text-wrap:balance;
+}
+.tagline{font-size:13px;color:var(--tx-2);margin-bottom:2rem}
+
+.kpi-row{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  border:1px solid var(--bdr);border-radius:5px;overflow:hidden;
+  margin-bottom:3rem;
+}
+.kpi{
+  padding:.9rem 1.1rem;border-right:1px solid var(--bdr);
+}
+.kpi:last-child{border-right:none}
+.kpi-val{
+  font-family:var(--f-mo);font-size:22px;font-weight:600;
+  color:var(--acc);font-variant-numeric:tabular-nums;line-height:1;margin-bottom:4px;
+}
+.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--tx-2)}
+.kpi-sub{font-family:var(--f-mo);font-size:10px;color:var(--tx-3);margin-top:2px}
+
+/* ── Section ──────────────────────────────────────── */
+.section{margin-bottom:2.75rem}
+.sec-head{
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--tx-3);padding-bottom:.55rem;border-bottom:1px solid var(--bdr);
+  margin-bottom:1rem;
+}
+/* ── Tables ──────────────────────────────────────── */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%}
+table th{
+  font-family:var(--f-ui);font-size:10px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;color:var(--tx-3);
+  padding:.4rem .6rem;text-align:right;border-bottom:1px solid var(--bdr);
+  white-space:nowrap;
+}
+table th.L{text-align:left;min-width:150px}
+table td{
+  padding:.48rem .6rem;border-bottom:1px solid var(--bdr);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+table tr:hover td{background:var(--bg-hov)}
+.tname{font-size:13px;font-weight:500;color:var(--tx);font-family:var(--f-ui);text-align:left}
+.tid{font-family:var(--f-mo);font-size:10px;color:var(--tx-3);text-align:left;padding-right:.75rem}
+.num{font-family:var(--f-mo);font-size:12px;text-align:right}
+.c-full{color:var(--acc);font-weight:600}
+.c-part{color:var(--warn)}
+.c-low{color:var(--warn);opacity:.5}
+.c-dash{color:var(--tx-3)}
+.c-tot{color:var(--tx);font-weight:600;border-left:1px solid var(--bdr);font-family:var(--f-mo);font-size:12px;text-align:right}
+
+/* ── xGOT heatmap cells ──────────────────────────── */
+.hm{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:38px;height:22px;border-radius:3px;
+  font-family:var(--f-mo);font-size:10px;font-weight:600;
+}
+.hm-hi  {background:var(--hm-hi-bg);  color:var(--hm-hi-tx)}
+.hm-mid {background:var(--hm-mid-bg); color:var(--hm-mid-tx)}
+.hm-amb {background:var(--hm-amb-bg); color:var(--hm-amb-tx)}
+.hm-low {background:var(--hm-low-bg); color:var(--hm-low-tx)}
+.hm-zer {background:var(--hm-zer-bg); color:var(--hm-zer-tx)}
+table td.hmc{text-align:center;padding:.38rem .4rem}
+
+/* ── Legend ──────────────────────────────────────── */
+.legend{display:flex;gap:1.25rem;flex-wrap:wrap;margin-top:.65rem;align-items:center}
+.li{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx-2)}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.swatch{width:28px;height:16px;border-radius:3px;flex-shrink:0}
+
+/* ── Field catalog ───────────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.card{background:var(--bg-2);border:1px solid var(--bdr);border-radius:5px;overflow:hidden}
+.card-hd{
+  padding:.8rem 1rem;border-bottom:1px solid var(--bdr);
+  display:flex;align-items:center;gap:.6rem;
+}
+.card-ico{
+  width:26px;height:26px;border-radius:4px;
+  background:var(--acc-dim);display:flex;align-items:center;justify-content:center;
+  font-family:var(--f-mo);font-size:11px;font-weight:700;color:var(--acc);flex-shrink:0;
+}
+.card-title{font-size:13px;font-weight:600;color:var(--tx)}
+.card-path{font-family:var(--f-mo);font-size:10px;color:var(--tx-3);margin-left:auto}
+.card-body{padding:.9rem 1rem}
+.fgrp{margin-bottom:.75rem}
+.fgrp:last-child{margin-bottom:0}
+.fglabel{
+  font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--tx-3);margin-bottom:.3rem;
+}
+.tags{display:flex;flex-wrap:wrap;gap:3px}
+.tag{
+  font-family:var(--f-mo);font-size:10px;padding:2px 5px;border-radius:2px;
+  background:var(--bg-3);color:var(--tx-2);
+}
+.tag.hi{background:var(--acc-dim);color:var(--acc)}
+.tag.warn{background:var(--warn-dim);color:var(--warn)}
+
+/* ── Coverage callout ────────────────────────────── */
+.callout{
+  font-size:12px;color:var(--tx-2);
+  border:1px solid var(--bdr);border-left:3px solid var(--acc);
+  border-radius:4px;padding:.65rem 1rem;margin-top:1rem;
+  line-height:1.55;
+}
+.callout code{font-family:var(--f-mo);font-size:11px;color:var(--acc)}
+.callout.warn{border-left-color:var(--warn)}
+.callout.warn code{color:var(--warn)}
+
+@media(max-width:680px){
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+  .kpi:nth-child(2){border-right:none}
+  .kpi:nth-child(1),.kpi:nth-child(2){border-bottom:1px solid var(--bdr)}
+  .cards{grid-template-columns:1fr}
+}
+</style>
+
+<!-- ── Header ── -->
+<p class="eyebrow">jbatistacosta / <b>repository-fotmob</b></p>
+<h1>Inventário de Cobertura de Dados</h1>
+<p class="tagline">Arquivo bruto JSON·gz do FotMob — payload completo por partida, time e jogador — vinculado aos IDs internos do quant-predictor</p>
+
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="kpi-val">15.951</div>
+    <div class="kpi-label">Partidas</div>
+    <div class="kpi-sub">8 ligas · 2019–2026</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val">295</div>
+    <div class="kpi-label">Times</div>
+    <div class="kpi-sub">elenco + desfalques + transfers</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val">14.133</div>
+    <div class="kpi-label">Jogadores</div>
+    <div class="kpi-sub">valor de mercado + carreira</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-val">~560 MB</div>
+    <div class="kpi-label">Total (gzip)</div>
+    <div class="kpi-sub">data/ + data_teams/ + data_players/</div>
+  </div>
+</div>
+
+<!-- ── 1. Partidas por temporada ── -->
+<div class="section">
+  <p class="sec-head">Partidas por liga × temporada — data/{liga}/{ano}/{match_id}.json.gz</p>
+  <div class="scroll">
+    <table id="mt">
+      <thead><tr>
+        <th class="L">Liga</th>
+        <th style="text-align:left;padding-right:.75rem"></th>
+        <th>2019</th><th>2020</th><th>2021</th><th>2022</th>
+        <th>2023</th><th>2024</th><th>2025</th><th>2026</th>
+        <th style="border-left:1px solid var(--bdr)">Total</th>
+      </tr></thead>
+      <tbody id="mt-body"><tr><td class="tname">Brasileirão</td><td class="tid">1</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-part">177</td><td class="c-tot">2.837</td></tr><tr><td class="tname">Premier League</td><td class="tid">4</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-dash">—</td><td class="c-tot">2.660</td></tr><tr><td class="tname">LaLiga</td><td class="tid">7</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">379</td><td class="num c-full">380</td><td class="num c-dash">—</td><td class="c-tot">2.659</td></tr><tr><td class="tname">Serie A (ITA)</td><td class="tid">10</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-dash">—</td><td class="c-tot">2.660</td></tr><tr><td class="tname">Bundesliga</td><td class="tid">13</td><td class="num c-full">306</td><td class="num c-full">306</td><td class="num c-full">306</td><td class="num c-full">306</td><td class="num c-full">306</td><td class="num c-full">306</td><td class="num c-full">306</td><td class="num c-dash">—</td><td class="c-tot">2.142</td></tr><tr><td class="tname">Ligue 1</td><td class="tid">16</td><td class="num c-part">279</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-full">380</td><td class="num c-part">306</td><td class="num c-part">306</td><td class="num c-part">306</td><td class="num c-dash">—</td><td class="c-tot">2.337</td></tr><tr><td class="tname">Copa Libertadores</td><td class="tid">23</td><td class="num c-full">125</td><td class="num c-full">125</td><td class="num c-full">125</td><td class="num c-full">125</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="num c-full">126</td><td class="c-tot">626</td></tr><tr><td class="tname">Copa América</td><td class="tid">30</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="num c-full">30</td><td class="num c-dash">—</td><td class="num c-dash">—</td><td class="c-tot">30</td></tr></tbody>
+    </table>
+  </div>
+  <div class="legend">
+    <div class="li"><span class="dot" style="background:var(--acc)"></span>Temporada completa</div>
+    <div class="li"><span class="dot" style="background:var(--warn)"></span>Temporada parcial</div>
+    <div class="li"><span class="dot" style="background:var(--tx-3)"></span>Sem dados</div>
+  </div>
+</div>
+
+<!-- ── 2. xGOT heatmap ── -->
+<div class="section">
+  <p class="sec-head">Cobertura de xGOT (stats de time) por liga × temporada</p>
+  <p style="font-size:12px;color:var(--tx-2);margin-bottom:.8rem">
+    % de partidas com <code style="font-family:var(--f-mo);font-size:11px;color:var(--acc)">expected_goals_on_target</code>
+    preenchido no grupo de stats de time. xGOT a nível de jogador individual tem cobertura
+    bem menor (~15–17% dos jogadores por partida).
+  </p>
+  <div class="scroll">
+    <table id="xgt">
+      <thead><tr>
+        <th class="L">Liga</th>
+        <th>2019</th><th>2020</th><th>2021</th><th>2022</th>
+        <th>2023</th><th>2024</th><th>2025</th><th>2026</th>
+      </tr></thead>
+      <tbody id="xgt-body"><tr><td class="tname">Brasileirão</td><td class="hmc"><span class="hm hm-low">3%</span></td><td class="hmc"><span class="hm hm-amb">36%</span></td><td class="hmc"><span class="hm hm-low">13%</span></td><td class="hmc"><span class="hm hm-low">13%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-mid">90%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td></tr><tr><td class="tname">Premier League</td><td class="hmc"><span class="hm hm-zer">0</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-mid">93%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-zer">—</span></td></tr><tr><td class="tname">LaLiga</td><td class="hmc"><span class="hm hm-zer">0</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-zer">—</span></td></tr><tr><td class="tname">Serie A (ITA)</td><td class="hmc"><span class="hm hm-zer">0</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">96%</span></td><td class="hmc"><span class="hm hm-mid">93%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-zer">—</span></td></tr><tr><td class="tname">Bundesliga</td><td class="hmc"><span class="hm hm-zer">0</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">96%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-zer">—</span></td></tr><tr><td class="tname">Ligue 1</td><td class="hmc"><span class="hm hm-zer">0</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">96%</span></td><td class="hmc"><span class="hm hm-hi">96%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-hi">100%</span></td><td class="hmc"><span class="hm hm-zer">—</span></td></tr></tbody>
+    </table>
+  </div>
+  <div class="legend" style="margin-top:.75rem">
+    <div class="li"><span class="swatch hm-hi"></span>≥95%</div>
+    <div class="li"><span class="swatch hm-mid"></span>70–94%</div>
+    <div class="li"><span class="swatch hm-amb"></span>30–69%</div>
+    <div class="li"><span class="swatch hm-low"></span>1–29%</div>
+    <div class="li"><span class="swatch hm-zer"></span>0% / NA</div>
+  </div>
+  <div class="callout warn" style="margin-top:.85rem">
+    Brasileirão 2019–2022 tem cobertura xGOT baixa (3–36%): o FotMob só passou a preencher
+    esse campo sistematicamente a partir de 2023. As features <code>media_xgot_5j_home/away</code>
+    do V9 terão NaN nos folds de treino mais antigos — avaliar impacto nas curvas de aprendizado fold_1/fold_2.
+  </div>
+</div>
+
+<!-- ── 3. Campos ── -->
+<div class="section">
+  <p class="sec-head">Campos disponíveis por tipo de dado</p>
+  <div class="cards">
+
+    <!-- Partida -->
+    <div class="card">
+      <div class="card-hd">
+        <div class="card-ico">PA</div>
+        <span class="card-title">Partida</span>
+        <span class="card-path">data/</span>
+      </div>
+      <div class="card-body">
+        <div class="fgrp">
+          <div class="fglabel">Metadados</div>
+          <div class="tags">
+            <span class="tag">matchId (FotMob)</span>
+            <span class="tag">leagueName</span>
+            <span class="tag">matchTimeUTC</span>
+            <span class="tag">homeTeam / awayTeam</span>
+            <span class="tag">coverageLevel</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Stats de time · por período (All/1H/2H)</div>
+          <div class="tags">
+            <span class="tag hi">xG / xGOT</span>
+            <span class="tag hi">touches_opp_box</span>
+            <span class="tag hi">xG open/set/non-pen</span>
+            <span class="tag">posse</span>
+            <span class="tag">chutes (8 campos)</span>
+            <span class="tag">passes (8 campos)</span>
+            <span class="tag">defesa (5 campos)</span>
+            <span class="tag">duelos (4 campos)</span>
+            <span class="tag">cartões / faltas</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Shotmap · ~25 chutes/jogo · 100% cobertura</div>
+          <div class="tags">
+            <span class="tag hi">expectedGoals (xG)</span>
+            <span class="tag hi">expectedGoalsOnTarget</span>
+            <span class="tag hi">situation</span>
+            <span class="tag">x / y (coordenadas)</span>
+            <span class="tag">eventType</span>
+            <span class="tag">period (1H/2H)</span>
+            <span class="tag">isOnTarget / isBlocked</span>
+            <span class="tag">playerId / teamId</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Stats por jogador · ~43 jogadores/jogo</div>
+          <div class="tags">
+            <span class="tag hi">FotMob rating</span>
+            <span class="tag hi">xG / xA / xGOT</span>
+            <span class="tag">passes (acc / into final third)</span>
+            <span class="tag">toques / toques na área</span>
+            <span class="tag">tackles / intercept.</span>
+            <span class="tag">duelos (ground / aerial)</span>
+            <span class="tag">cartões / faltas</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Outros</div>
+          <div class="tags">
+            <span class="tag">lineup (formação + xy no campo)</span>
+            <span class="tag">marketValue por jogador</span>
+            <span class="tag">momentum (por min.)</span>
+            <span class="tag">h2h recente</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time -->
+    <div class="card">
+      <div class="card-hd">
+        <div class="card-ico">TI</div>
+        <span class="card-title">Time</span>
+        <span class="card-path">data_teams/</span>
+      </div>
+      <div class="card-body">
+        <div class="fgrp">
+          <div class="fglabel">Identidade</div>
+          <div class="tags">
+            <span class="tag">id / name / shortName</span>
+            <span class="tag">country (ccode)</span>
+            <span class="tag">primaryLeagueId</span>
+            <span class="tag">latestSeason</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Elenco atual (snapshot)</div>
+          <div class="tags">
+            <span class="tag">squad (starters + subs)</span>
+            <span class="tag">coach</span>
+            <span class="tag">age / height</span>
+            <span class="tag">shirt / ccode</span>
+            <span class="tag">marketValue</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Desfalques · campo mais valioso</div>
+          <div class="tags">
+            <span class="tag hi">unavailable.type</span>
+            <span class="tag hi">injury / suspension</span>
+            <span class="tag hi">expectedReturn</span>
+            <span class="tag">expectedReturnDateUtc</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Histórico</div>
+          <div class="tags">
+            <span class="tag">transfers (contratações)</span>
+            <span class="tag">history (técnicos)</span>
+            <span class="tag">fixtures</span>
+            <span class="tag">table (classificação)</span>
+            <span class="tag">stats (temporada)</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Cuidados</div>
+          <div class="tags">
+            <span class="tag warn">dado de estado, não histórico</span>
+            <span class="tag warn">requere --forcar pra atualizar</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Jogador -->
+    <div class="card">
+      <div class="card-hd">
+        <div class="card-ico">JO</div>
+        <span class="card-title">Jogador</span>
+        <span class="card-path">data_players/</span>
+      </div>
+      <div class="card-body">
+        <div class="fgrp">
+          <div class="fglabel">Identidade</div>
+          <div class="tags">
+            <span class="tag">id / name / birthDate</span>
+            <span class="tag">positionDescription</span>
+            <span class="tag">primaryTeam</span>
+            <span class="tag">nationality</span>
+            <span class="tag">isCoach / isCaptain</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Atributos físicos</div>
+          <div class="tags">
+            <span class="tag">height</span>
+            <span class="tag">preferredFoot</span>
+            <span class="tag">shirtNumber</span>
+            <span class="tag">age</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Mercado</div>
+          <div class="tags">
+            <span class="tag hi">marketValues (série temporal)</span>
+            <span class="tag">valor atual</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Lesões</div>
+          <div class="tags">
+            <span class="tag hi">injuryInformation</span>
+            <span class="tag">tipo / expectedReturn</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Performance</div>
+          <div class="tags">
+            <span class="tag">recentMatches (30 jogos)</span>
+            <span class="tag">statSeasons (por temporada)</span>
+            <span class="tag hi">traits (radar vs pares)</span>
+            <span class="tag">careerHistory / trophies</span>
+          </div>
+        </div>
+        <div class="fgrp">
+          <div class="fglabel">Cobertura incompleta</div>
+          <div class="tags">
+            <span class="tag warn">heatmap só da temporada atual</span>
+            <span class="tag warn">stats de carreira sem breakdown de xG</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const YEARS = [2019,2020,2021,2022,2023,2024,2025,2026];
+
+// ── Match matrix ──
+const leagues = [
+  {name:'Brasileirão',     id:'1',  full:380, d:{2019:380,2020:380,2021:380,2022:380,2023:380,2024:380,2025:380,2026:177}},
+  {name:'Premier League',  id:'4',  full:380, d:{2019:380,2020:380,2021:380,2022:380,2023:380,2024:380,2025:380}},
+  {name:'LaLiga',          id:'7',  full:380, d:{2019:380,2020:380,2021:380,2022:380,2023:380,2024:379,2025:380}},
+  {name:'Serie A (ITA)',   id:'10', full:380, d:{2019:380,2020:380,2021:380,2022:380,2023:380,2024:380,2025:380}},
+  {name:'Bundesliga',      id:'13', full:306, d:{2019:306,2020:306,2021:306,2022:306,2023:306,2024:306,2025:306}},
+  {name:'Ligue 1',         id:'16', full:380, d:{2019:279,2020:380,2021:380,2022:380,2023:306,2024:306,2025:306}},
+  {name:'Copa Libertadores',id:'23',full:125, d:{2019:125,2020:125,2021:125,2022:125,2026:126}},
+  {name:'Copa América',    id:'30', full:30,  d:{2024:30}},
+];
+
+function mClass(n, full){
+  if(!n) return 'num c-dash';
+  if(n>=full*.95) return 'num c-full';
+  if(n>=50) return 'num c-part';
+  return 'num c-low';
+}
+
+const mb = document.getElementById('mt-body');
+for(const lg of leagues){
+  const total = Object.values(lg.d).reduce((a,b)=>a+b,0);
+  let r=`<tr><td class="tname">${lg.name}</td><td class="tid">${lg.id}</td>`;
+  for(const y of YEARS){
+    const n=lg.d[y];
+    r+=`<td class="${mClass(n,lg.full)}">${n??'—'}</td>`;
+  }
+  r+=`<td class="c-tot">${total.toLocaleString('pt-BR')}</td></tr>`;
+  mb.innerHTML+=r;
+}
+
+// ── xGOT heatmap ──
+const xgd=[
+  {name:'Brasileirão',    d:{2019:3,2020:36,2021:13,2022:13,2023:100,2024:90,2025:100,2026:100}},
+  {name:'Premier League', d:{2019:0,2020:100,2021:100,2022:100,2023:93,2024:100,2025:100}},
+  {name:'LaLiga',         d:{2019:0,2020:100,2021:100,2022:100,2023:100,2024:100,2025:100}},
+  {name:'Serie A (ITA)',  d:{2019:0,2020:100,2021:100,2022:96,2023:93,2024:100,2025:100}},
+  {name:'Bundesliga',     d:{2019:0,2020:100,2021:100,2022:100,2023:96,2024:100,2025:100}},
+  {name:'Ligue 1',        d:{2019:0,2020:100,2021:100,2022:96,2023:96,2024:100,2025:100}},
+];
+
+function hmClass(p){
+  if(p===undefined) return 'hm hm-zer';
+  if(p>=95) return 'hm hm-hi';
+  if(p>=70) return 'hm hm-mid';
+  if(p>=30) return 'hm hm-amb';
+  if(p>=1)  return 'hm hm-low';
+  return 'hm hm-zer';
+}
+function hmLabel(p){
+  if(p===undefined) return '—';
+  if(p===0) return '0';
+  return p+'%';
+}
+
+const xb=document.getElementById('xgt-body');
+for(const lg of xgd){
+  let r=`<tr><td class="tname">${lg.name}</td>`;
+  for(const y of YEARS){
+    const p=lg.d[y];
+    r+=`<td class="hmc"><span class="${hmClass(p)}">${hmLabel(p)}</span></td>`;
+  }
+  r+='</tr>';
+  xb.innerHTML+=r;
+}
+</script>
+
+</body></html>

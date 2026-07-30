@@ -2643,12 +2643,15 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   if (!modelo) return { status: 400, error: 'Parâmetro "modelo" é obrigatório.' };
   const mercado = MERCADOS_CARTEIRA_SUPORTADOS.has(query.mercado) ? query.mercado : '1X2';
 
-  const EV_MINIMO_PADRAO = 1.02, STAKE_MINIMA_PCT_PADRAO = 0.005, TETO_EXPOSICAO_PCT_PADRAO = 0.15, BANCA_INICIAL_PADRAO = 1000;
-  const evMinimo = query.ev_minimo != null ? Number(query.ev_minimo) : EV_MINIMO_PADRAO;
-  const stakeMinimaPct = query.stake_minima_pct != null ? Number(query.stake_minima_pct) : STAKE_MINIMA_PCT_PADRAO;
-  const tetoExposicaoPct = query.teto_exposicao_pct != null ? Number(query.teto_exposicao_pct) : TETO_EXPOSICAO_PCT_PADRAO;
-  const bancaInicial = query.banca_inicial != null ? Number(query.banca_inicial) : BANCA_INICIAL_PADRAO;
+  const evMinimo = query.ev_minimo != null ? Number(query.ev_minimo) : 1.02;
+  const evMaximo = query.ev_maximo != null ? Number(query.ev_maximo) : 2.0; // 100% default
+  const stakeMinimaPct = query.stake_minima_pct != null ? Number(query.stake_minima_pct) : 0.005;
+  const tetoExposicaoPct = query.teto_exposicao_pct != null ? Number(query.teto_exposicao_pct) : 0.15;
+  const bancaInicial = query.banca_inicial != null ? Number(query.banca_inicial) : 1000;
   const usarCalibracao = ['platt', 'isotonic'].includes(query.usar_calibracao) ? query.usar_calibracao : 'nenhuma';
+  const tipoStake = query.tipo_stake === 'fixa' ? 'fixa' : 'kelly';
+  const stakeFixa = query.stake_fixa != null ? Number(query.stake_fixa) : 10;
+  const kellyMultiplier = query.kelly_multiplier != null ? Number(query.kelly_multiplier) : 0.25;
 
   // Model Benchmarking (`predicoes`) já cobre 1X2 e over_under_2.5 (ver
   // migração `add_mercado_predicoes` + scripts/backfill_predicoes_
@@ -2720,7 +2723,7 @@ async function tarefaSimulacaoCarteira(supabase, query) {
         if (pModelo == null) continue;
       }
       const ev = pModelo * odd;
-      if (ev < evMinimo) continue;
+      if (ev < evMinimo || ev > evMaximo) continue;
 
       const oddPinnAbertura = pinnAberturaPorChave[chave] ?? null;
       const oddPinnFecha = pinnFechaPorChave[chave] ?? null;
@@ -2742,7 +2745,17 @@ async function tarefaSimulacaoCarteira(supabase, query) {
 
     diasOrdenados.forEach((dia) => {
       const bancaInicialRodada = banca;
-      const brutas = porDia[dia].map((c) => ({ ...c, stake_bruta: fracaoKellySimulacao(c.p_modelo, c.odd) * bancaInicialRodada }));
+      const brutas = porDia[dia].map((c) => {
+        let stakeBruta = 0;
+        if (tipoStake === 'fixa') {
+          stakeBruta = stakeFixa;
+        } else {
+          const b = c.odd - 1;
+          const f = b > 0 ? (c.p_modelo * b - (1 - c.p_modelo)) / b : 0;
+          stakeBruta = Math.max(0, f) * kellyMultiplier * bancaInicialRodada;
+        }
+        return { ...c, stake_bruta: stakeBruta };
+      });
       const pisoStake = stakeMinimaPct * bancaInicialRodada;
       const validas = brutas.filter((b) => b.stake_bruta >= pisoStake);
       if (validas.length === 0) return;

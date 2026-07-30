@@ -359,20 +359,90 @@ def obter_forma_recente_por_mando(
             .data
             or []
         )
-        xg_casa = _xg_marcado_sofrido(supabase, [j["id"] for j in jogos_casa], team_id)
-        xg_fora = _xg_marcado_sofrido(supabase, [j["id"] for j in jogos_fora], team_id)
+        xg_casa = _stats_marcado_sofrido_lote(supabase, "match_stats_fotmob", ["xg", "xgot", "tackles", "interceptions", "duels_won", "aerial_duels_won", "touches_opp_box"], [j["id"] for j in jogos_casa], team_id)
+        xg_fora = _stats_marcado_sofrido_lote(supabase, "match_stats_fotmob", ["xg", "xgot", "tackles", "interceptions", "duels_won", "aerial_duels_won", "touches_opp_box"], [j["id"] for j in jogos_fora], team_id)
 
         forma[team_id] = {
             "media_gols_marcados_5j_home": float(np.mean([j["home_goals"] for j in jogos_casa])) if jogos_casa else np.nan,
             "media_gols_sofridos_5j_home": float(np.mean([j["away_goals"] for j in jogos_casa])) if jogos_casa else np.nan,
             "media_gols_marcados_5j_away": float(np.mean([j["away_goals"] for j in jogos_fora])) if jogos_fora else np.nan,
             "media_gols_sofridos_5j_away": float(np.mean([j["home_goals"] for j in jogos_fora])) if jogos_fora else np.nan,
-            "media_xg_5j_home": xg_casa["marcado"],
-            "media_xg_sofrido_5j_home": xg_casa["sofrido"],
-            "media_xg_5j_away": xg_fora["marcado"],
-            "media_xg_sofrido_5j_away": xg_fora["sofrido"],
+            "media_xg_5j_home": xg_casa.get("xg", {}).get("marcado"),
+            "media_xg_sofrido_5j_home": xg_casa.get("xg", {}).get("sofrido"),
+            "media_xg_5j_away": xg_fora.get("xg", {}).get("marcado"),
+            "media_xg_sofrido_5j_away": xg_fora.get("xg", {}).get("sofrido"),
+            "xgot_home_5j": xg_casa.get("xgot", {}).get("marcado"),
+            "xgot_away_5j": xg_fora.get("xgot", {}).get("marcado"),
+            "tackles_home_5j": xg_casa.get("tackles", {}).get("marcado"),
+            "tackles_away_5j": xg_fora.get("tackles", {}).get("marcado"),
+            "interceptions_home_5j": xg_casa.get("interceptions", {}).get("marcado"),
+            "interceptions_away_5j": xg_fora.get("interceptions", {}).get("marcado"),
+            "ground_duels_won_home_5j": xg_casa.get("duels_won", {}).get("marcado"),
+            "ground_duels_won_away_5j": xg_fora.get("duels_won", {}).get("marcado"),
+            "aerials_won_home_5j": xg_casa.get("aerial_duels_won", {}).get("marcado"),
+            "aerials_won_away_5j": xg_fora.get("aerial_duels_won", {}).get("marcado"),
+            "touches_opp_box_home_5j": xg_casa.get("touches_opp_box", {}).get("marcado"),
+            "touches_opp_box_away_5j": xg_fora.get("touches_opp_box", {}).get("marcado"),
         }
     return forma
+
+
+def _stats_marcado_sofrido_lote_multi_janelas(
+    supabase: Client, tabela: str, colunas: list[str], match_ids: list[int], team_id: int
+) -> dict[str, dict[str, float]]:
+    """Versão de `_stats_marcado_sofrido_lote` que calcula médias móveis para 5j, 10j, 20j
+    e seus respectivos decays exponenciais."""
+    if not match_ids:
+        # Se não há jogos, retorna NaN para todas combinações
+        vazio = {}
+        for col in colunas:
+            vazio[col] = {}
+            for j in [5, 10, 20]:
+                vazio[col].update({
+                    f"marcado_{j}j": np.nan, f"sofrido_{j}j": np.nan,
+                    f"marcado_{j}j_decay": np.nan, f"sofrido_{j}j_decay": np.nan
+                })
+        return vazio
+        
+    linhas = supabase.table(tabela).select(f"match_id, team_id, {', '.join(colunas)}").in_("match_id", match_ids).execute().data or []
+    
+    # Ordenar linhas na mesma ordem de match_ids (do mais recente pro mais antigo)
+    linhas_ordenadas = []
+    for mid in match_ids:
+        for l in linhas:
+            if l["match_id"] == mid:
+                linhas_ordenadas.append(l)
+    
+    resultado: dict[str, dict[str, float]] = {}
+    for col in colunas:
+        marcado = [l[col] for l in linhas_ordenadas if l["team_id"] == team_id and l.get(col) is not None]
+        sofrido = [l[col] for l in linhas_ordenadas if l["team_id"] != team_id and l.get(col) is not None]
+        
+        col_res = {}
+        for janela in [5, 10, 20]:
+            marc_j = marcado[:janela]
+            sofr_j = sofrido[:janela]
+            
+            # Simple mean
+            col_res[f"marcado_{janela}j"] = float(np.mean(marc_j)) if marc_j else np.nan
+            col_res[f"sofrido_{janela}j"] = float(np.mean(sofr_j)) if sofr_j else np.nan
+            
+            # Decay (ema)
+            # Reverte array para a ordem cronológica (antigo -> recente) para calcular o EMA corretamente
+            if marc_j:
+                s = pd.Series(marc_j[::-1])
+                col_res[f"marcado_{janela}j_decay"] = float(s.ewm(span=janela, min_periods=1).mean().iloc[-1])
+            else:
+                col_res[f"marcado_{janela}j_decay"] = np.nan
+                
+            if sofr_j:
+                s = pd.Series(sofr_j[::-1])
+                col_res[f"sofrido_{janela}j_decay"] = float(s.ewm(span=janela, min_periods=1).mean().iloc[-1])
+            else:
+                col_res[f"sofrido_{janela}j_decay"] = np.nan
+
+        resultado[col] = col_res
+    return resultado
 
 
 def _stats_marcado_sofrido_lote(
@@ -1170,6 +1240,43 @@ def obter_estadio_provavel_mandante(supabase: Client, team_ids: list[int]) -> di
     return resultado
 
 
+def _forma_por_mando_multi_janelas(partidas: pd.DataFrame, col_home: str, col_away: str, prefixo: str) -> pd.DataFrame:
+    """Calcula janelas de 5j, 10j, 20j e seus repectivos decays (ewm) para uma métrica,
+    gerando um DataFrame com todas as combinações de `prefixo`."""
+    casa = partidas[["id", "match_date", "home_team_id", col_home, col_away]].sort_values(["home_team_id", "match_date"]).copy()
+    fora = partidas[["id", "match_date", "away_team_id", col_home, col_away]].sort_values(["away_team_id", "match_date"]).copy()
+    
+    colunas_finais = []
+    
+    for janela in [5, 10, 20]:
+        # Simple rolling
+        c_m_col = f"{prefixo}_home_{janela}j"
+        c_s_col = f"{prefixo}_sofrido_home_{janela}j"
+        casa[c_m_col] = casa.groupby("home_team_id")[col_home].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+        casa[c_s_col] = casa.groupby("home_team_id")[col_away].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+        
+        f_m_col = f"{prefixo}_away_{janela}j"
+        f_s_col = f"{prefixo}_sofrido_away_{janela}j"
+        fora[f_m_col] = fora.groupby("away_team_id")[col_away].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+        fora[f_s_col] = fora.groupby("away_team_id")[col_home].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+        
+        # Exponential decay rolling
+        c_m_dec_col = f"{prefixo}_home_{janela}j_decay"
+        c_s_dec_col = f"{prefixo}_sofrido_home_{janela}j_decay"
+        casa[c_m_dec_col] = casa.groupby("home_team_id")[col_home].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+        casa[c_s_dec_col] = casa.groupby("home_team_id")[col_away].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+        
+        f_m_dec_col = f"{prefixo}_away_{janela}j_decay"
+        f_s_dec_col = f"{prefixo}_sofrido_away_{janela}j_decay"
+        fora[f_m_dec_col] = fora.groupby("away_team_id")[col_away].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+        fora[f_s_dec_col] = fora.groupby("away_team_id")[col_home].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+        
+        colunas_finais.extend([c_m_col, c_s_col, f_m_col, f_s_col, c_m_dec_col, c_s_dec_col, f_m_dec_col, f_s_dec_col])
+        
+    return casa.set_index("id")[[c for c in colunas_finais if "home" in c]].join(
+        fora.set_index("id")[[c for c in colunas_finais if "away" in c]]
+    )
+
 def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str]) -> pd.DataFrame:
     """Média móvel pré-jogo (`.shift(1)` antes do `.rolling()` -- sem isso a
     média incluiria o próprio jogo que se está tentando prever, vazamento
@@ -1243,6 +1350,9 @@ def _anexar_xg_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataF
     partidas = partidas.merge(stats_home[["id", "home_team_id", "xg_home"]], on=["id", "home_team_id"], how="left")
     partidas = partidas.merge(stats_away[["id", "away_team_id", "xg_away"]], on=["id", "away_team_id"], how="left")
     return partidas
+
+
+
 
 
 def _anexar_xgot_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
@@ -1412,6 +1522,92 @@ def obter_situacao_chutes_por_mando(
             linha[mapa["sofrido_away"]] = stats_fora[col]["sofrido"]
         forma[team_id] = linha
     return forma
+
+
+def _anexar_bayesiano_por_partida(partidas: pd.DataFrame, w: int = 5, halflife_days: str = '21 days') -> pd.DataFrame:
+    """Aplica o algoritmo de Regressão Bayesiana à Média (Shrinkage) c/ EWMA Temporal
+    para xG, xGOT e xGA (xG sofrido).
+    
+    A fórmula é: stat_bayesiano = ((n * ewma_atual) + (w * prior)) / (n + w).
+    Isso empurra a EWMA do time no começo da temporada para o seu
+    baseline da temporada passada (ou média da liga se promovido).
+    Gera colunas 'xg_bayesiano', 'xgot_bayesiano', 'xga_bayesiano' e 
+    flags unificadas 'is_stat_estimated_home', 'is_stat_estimated_away'."""
+    if "xg_home" not in partidas.columns or "xgot_home" not in partidas.columns:
+        return partidas
+        
+    partidas = partidas.copy()
+    partidas["_season_year"] = partidas["season"].astype(str).str[:4].astype(int)
+    
+    # Derivar xga (xG sofrido)
+    partidas["xga_home"] = partidas["xg_away"]
+    partidas["xga_away"] = partidas["xg_home"]
+    
+    # Desempilhar pra calcular as médias do time e da liga
+    casa = partidas[["id", "league_id", "_season_year", "match_date", "home_team_id", "xg_home", "xgot_home", "xga_home"]].rename(
+        columns={"home_team_id": "team_id", "xg_home": "xg", "xgot_home": "xgot", "xga_home": "xga"}
+    )
+    fora = partidas[["id", "league_id", "_season_year", "match_date", "away_team_id", "xg_away", "xgot_away", "xga_away"]].rename(
+        columns={"away_team_id": "team_id", "xg_away": "xg", "xgot_away": "xgot", "xga_away": "xga"}
+    )
+    # Importante: Garantir datetime para o ewma(times=...)
+    df = pd.concat([casa, fora]).sort_values(["_season_year", "team_id", "match_date"]).reset_index(drop=True)
+    df["match_date"] = pd.to_datetime(df["match_date"], utc=True)
+    
+    # Contagem de histórico válido (n). cumcount() começa em 0.
+    df["n"] = df.groupby(["_season_year", "team_id"]).cumcount()
+    
+    def calcular_ewma_grupo(group, col):
+        if group[col].isna().all():
+            return group[col]
+        return group.ewm(halflife=halflife_days, times=group["match_date"])[col].mean()
+        
+    for col in ["xg", "xgot", "xga"]:
+        # EWMA temporal (aplicando sobre todo o histórico da temporada)
+        ewm_inseguro = df.groupby(["_season_year", "team_id"], group_keys=False).apply(lambda g: calcular_ewma_grupo(g, col))
+        
+        # Shift(1) para evitar vazamento de dados do futuro (cada partida usa o EWMA de *antes* dela)
+        df[f"ewma_{col}"] = df.groupby(["_season_year", "team_id"])[ewm_inseguro.name].shift(1).fillna(0)
+        
+        # Calcular prior da temporada anterior
+        league_season = df.groupby(["league_id", "_season_year"])[col].mean().to_dict()
+        team_season = df.groupby(["team_id", "_season_year"])[col].mean().reset_index()
+        team_season["_prev_season"] = team_season["_season_year"] + 1
+        prior_map = team_season.set_index(["team_id", "_prev_season"])[col].to_dict()
+        
+        def get_prior(row):
+            t_prior = prior_map.get((row["team_id"], row["_season_year"]))
+            if t_prior is not None:
+                return t_prior, 0
+            l_prior = league_season.get((row["league_id"], row["_season_year"] - 1))
+            if l_prior is not None:
+                return l_prior, 1
+            # Se não existir nada, usa o ultimate fallback da temporada atual da liga
+            return league_season.get((row["league_id"], row["_season_year"]), 1.5), 1
+            
+        priors = df.apply(get_prior, axis=1, result_type="expand")
+        df[f"{col}_prior"] = priors[0]
+        
+        # O is_stat_estimated é único e definido pelo `n` < w ou prior imputado. 
+        # Podemos usar o 'xg' como driver central desta flag booleana.
+        if col == "xg":
+            df["is_stat_estimated"] = np.where(df["n"] < w, 1, priors[1])
+            
+        # Aplica a fórmula Bayesiana
+        df[f"{col}_bayesiano"] = ((df["n"] * df[f"ewma_{col}"]) + (w * df[f"{col}_prior"])) / (df["n"] + w)
+
+    # Re-pivotar
+    home_cols = {"team_id": "home_team_id", "xg_bayesiano": "xg_bayesiano_home", "xgot_bayesiano": "xgot_bayesiano_home", "xga_bayesiano": "xga_bayesiano_home", "is_stat_estimated": "is_stat_estimated_home"}
+    away_cols = {"team_id": "away_team_id", "xg_bayesiano": "xg_bayesiano_away", "xgot_bayesiano": "xgot_bayesiano_away", "xga_bayesiano": "xga_bayesiano_away", "is_stat_estimated": "is_stat_estimated_away"}
+    
+    home_merge = df[["id", "team_id", "xg_bayesiano", "xgot_bayesiano", "xga_bayesiano", "is_stat_estimated"]].rename(columns=home_cols)
+    away_merge = df[["id", "team_id", "xg_bayesiano", "xgot_bayesiano", "xga_bayesiano", "is_stat_estimated"]].rename(columns=away_cols)
+    
+    partidas = partidas.merge(home_merge, on=["id", "home_team_id"], how="left")
+    partidas = partidas.merge(away_merge, on=["id", "away_team_id"], how="left")
+    partidas.drop(columns=["_season_year", "xga_home", "xga_away"], inplace=True)
+    
+    return partidas
 
 
 COLUNAS_STATS_EXTRA = ["possession", "shots", "shots_on_target", "corners", "fouls", "yellow_cards", "red_cards"]
@@ -1639,6 +1835,98 @@ def _calcular_classificacao_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
             jogos[h] = jogos.get(h, 0) + 1
             jogos[a] = jogos.get(a, 0) + 1
     return pd.DataFrame(linhas)
+
+
+def obter_bayesiano_atual(supabase: Client, ligas_temporadas: list[tuple[int, str]], w: int = 5, halflife_days: str = '21 days') -> dict[int, dict]:
+    """Calcula o xG, xGOT e xGA Bayesiano (Shrinkage) com EWMA AO VIVO para os times nas ligas/temporadas informadas.
+    Puxa a temporada corrente e a anterior da liga, passa pela mesma pipeline do backend, e extrai o último valor da EWMA para as previsões futuras."""
+    resultado: dict[int, dict] = {}
+    for league_id, season in set(ligas_temporadas):
+        curr_year = int(str(season)[:4])
+        prev_season1 = f"{curr_year - 1}/{curr_year}"
+        prev_season2 = f"{curr_year - 1}"
+        
+        partidas = (
+            supabase.table("matches")
+            .select("id, season, match_date, home_team_id, away_team_id")
+            .eq("league_id", league_id)
+            .eq("status", "finished")
+            .in_("season", [season, prev_season1, prev_season2])
+            .execute()
+            .data
+            or []
+        )
+        if not partidas:
+            continue
+            
+        df = pd.DataFrame(partidas)
+        # Fetch xG and xGOT
+        df = _anexar_xg_por_partida(supabase, df)
+        df = _anexar_xgot_por_partida(supabase, df)
+        
+        if "xg_home" not in df.columns or "xgot_home" not in df.columns:
+            continue
+            
+        df["_season_year"] = df["season"].astype(str).str[:4].astype(int)
+        df["xga_home"] = df["xg_away"]
+        df["xga_away"] = df["xg_home"]
+        
+        casa = df[["home_team_id", "_season_year", "match_date", "xg_home", "xgot_home", "xga_home"]].rename(
+            columns={"home_team_id": "team_id", "xg_home": "xg", "xgot_home": "xgot", "xga_home": "xga"}
+        )
+        fora = df[["away_team_id", "_season_year", "match_date", "xg_away", "xgot_away", "xga_away"]].rename(
+            columns={"away_team_id": "team_id", "xg_away": "xg", "xgot_away": "xgot", "xga_away": "xga"}
+        )
+        
+        long_df = pd.concat([casa, fora]).sort_values(["_season_year", "team_id", "match_date"]).reset_index(drop=True)
+        long_df["match_date"] = pd.to_datetime(long_df["match_date"], utc=True)
+        
+        # We need prior (from prev_season)
+        league_season_priors = {}
+        team_season_priors = {}
+        for col in ["xg", "xgot", "xga"]:
+            league_season_priors[col] = long_df.groupby(["_season_year"])[col].mean().to_dict()
+            team_season_priors[col] = long_df.groupby(["team_id", "_season_year"])[col].mean().to_dict()
+            
+        # Filter to current season to get last EWMA and n
+        curr_df = long_df[long_df["_season_year"] == curr_year].copy()
+        if curr_df.empty:
+            continue
+            
+        def get_last_ewma(group, col):
+            if group[col].isna().all():
+                return 0.0
+            return group.ewm(halflife=halflife_days, times=group["match_date"])[col].mean().iloc[-1]
+            
+        team_ids = curr_df["team_id"].unique()
+        for team_id in team_ids:
+            team_rows = curr_df[curr_df["team_id"] == team_id]
+            n_next = len(team_rows) # n for the NEXT match is exactly the number of matches already played
+            
+            res_team = {}
+            for col in ["xg", "xgot", "xga"]:
+                last_ewma = get_last_ewma(team_rows, col)
+                
+                # Get Prior
+                prior = team_season_priors[col].get((team_id, curr_year - 1))
+                is_estimado = 0
+                if prior is None:
+                    prior = league_season_priors[col].get(curr_year - 1)
+                    is_estimado = 1
+                if prior is None:
+                    prior = league_season_priors[col].get(curr_year, 1.5)
+                    is_estimado = 1
+                if n_next < w:
+                    is_estimado = 1
+                    
+                bayes = ((n_next * last_ewma) + (w * prior)) / (n_next + w)
+                res_team[f"{col}_bayesiano"] = float(bayes)
+                if col == "xg":
+                    res_team["is_stat_estimated"] = is_estimado
+                    
+            resultado[int(team_id)] = res_team
+            
+    return resultado
 
 
 def obter_classificacao_atual(supabase: Client, ligas_temporadas: list[tuple[int, str]]) -> dict[tuple[int, int], dict]:
@@ -2468,13 +2756,14 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
+    partidas = _anexar_bayesiano_por_partida(partidas)
     partidas = _anexar_stats_extra_por_partida(supabase, partidas)
     partidas = _anexar_stats_fotmob_por_partida(supabase, partidas)
     partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
-    forma_xg = _forma_por_mando(partidas, "xg_home", "xg_away", COLUNAS_FORMA_XG)
-    forma_xgot = _forma_por_mando(partidas, "xgot_home", "xgot_away", COLUNAS_FORMA_XGOT)
+    forma_xg = _forma_por_mando_multi_janelas(partidas, "xg_home", "xg_away", "xg")
+    forma_xgot = _forma_por_mando_multi_janelas(partidas, "xgot_home", "xgot_away", "xgot")
     forma_posse = _forma_por_mando(partidas, "possession_home", "possession_away", COLUNAS_FORMA_POSSE)
     forma_chutes = _forma_por_mando(partidas, "shots_home", "shots_away", COLUNAS_FORMA_CHUTES)
     forma_chutes_alvo = _forma_por_mando(partidas, "shots_on_target_home", "shots_on_target_away", COLUNAS_FORMA_CHUTES_ALVO)
@@ -2483,7 +2772,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     forma_cartoes_amarelos = _forma_por_mando(partidas, "yellow_cards_home", "yellow_cards_away", COLUNAS_FORMA_CARTOES_AMARELOS)
     forma_cartoes_vermelhos = _forma_por_mando(partidas, "red_cards_home", "red_cards_away", COLUNAS_FORMA_CARTOES_VERMELHOS)
     formas_fotmob = {
-        nome_curto: _forma_por_mando(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", colunas_forma_fotmob(nome_curto))
+        nome_curto: _forma_por_mando_multi_janelas(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", nome_curto)
         for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items()
     }
     formas_situacao_chutes = {

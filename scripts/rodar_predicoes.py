@@ -467,6 +467,7 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     classificacao_padrao = {"pontos_por_jogo": 0.0, "saldo_por_jogo": 0.0, "posicao": float("nan"), "jogos_disputados": 0}
     # v6 ao vivo: mesmas (league_id, season) já levantadas pra classificação.
     progresso_atual = dados_historicos.obter_progresso_temporada_atual(supabase, ligas_temporadas)
+    bayesiano_atual = dados_historicos.obter_bayesiano_atual(supabase, ligas_temporadas)
 
     pares_de_times = [(jogo["home_team_id"], jogo["away_team_id"]) for _, jogo in fixtures.iterrows()]
     h2h_atual = dados_historicos.obter_h2h_atual(supabase, pares_de_times)
@@ -502,6 +503,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         titular_por_time = titular_atual.get(jogo["match_id"], {})
         titular_casa = titular_por_time.get(id_casa, titular_padrao)
         titular_fora = titular_por_time.get(id_fora, titular_padrao)
+        bayes_casa = bayesiano_atual.get(id_casa, {})
+        bayes_fora = bayesiano_atual.get(id_fora, {})
 
         # v7 (FBref) + v8 (FotMob): "_home" vem do time da CASA jogando em
         # casa, "_away" vem do time de FORA jogando fora -- mesmo padrão de
@@ -544,6 +547,14 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "cartoes_acumulados_away": cartoes_fora.get("cartoes_acumulados"),
                 "jogadores_pendurados_home": cartoes_casa.get("jogadores_pendurados"),
                 "jogadores_pendurados_away": cartoes_fora.get("jogadores_pendurados"),
+                "xg_bayesiano_home": bayes_casa.get("xg_bayesiano"),
+                "xg_bayesiano_away": bayes_fora.get("xg_bayesiano"),
+                "xgot_bayesiano_home": bayes_casa.get("xgot_bayesiano"),
+                "xgot_bayesiano_away": bayes_fora.get("xgot_bayesiano"),
+                "xga_bayesiano_home": bayes_casa.get("xga_bayesiano"),
+                "xga_bayesiano_away": bayes_fora.get("xga_bayesiano"),
+                "is_stat_estimated_home": bayes_casa.get("is_stat_estimated"),
+                "is_stat_estimated_away": bayes_fora.get("is_stat_estimated"),
                 "pontos_por_jogo_home": classificacao_casa.get("pontos_por_jogo"),
                 "pontos_por_jogo_away": classificacao_fora.get("pontos_por_jogo"),
                 "saldo_por_jogo_home": classificacao_casa.get("saldo_por_jogo"),
