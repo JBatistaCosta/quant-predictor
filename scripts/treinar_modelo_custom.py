@@ -392,18 +392,43 @@ def main():
 
         # 4. Grava resultado no Supabase
         agora = datetime.now(timezone.utc).isoformat()
+        
+        feature_importance = {}
+        # Tenta extrair feature importance (árvores)
+        if hasattr(modelo, 'feature_importances_'):
+            try:
+                importances = modelo.feature_importances_
+                feature_importance = {f: float(imp) for f, imp in zip(features_finais, importances)}
+            except Exception:
+                pass
+        elif hasattr(modelo, 'get_feature_importance'):
+            try:
+                importances = modelo.get_feature_importance()
+                feature_importance = {f: float(imp) for f, imp in zip(features_finais, importances)}
+            except Exception:
+                pass
+
+        # Estrutura esperada pelo RelatorioTreinoModal.jsx do frontend
+        metrics_final = {
+            "models": {
+                algoritmo: metricas
+            },
+            "feature_importance": feature_importance,
+            "learning_curves": {} # Curvas não salvas no modo custom ainda, mas a chave previne erros
+        }
+
         atualizar_status(
             supabase,
             config_id,
             "treinado",
-            metrics=metricas,
+            metrics=metrics_final,
             trained_at=agora,
             error_message=None,
         )
         logger.info("✅ Treino concluído e métricas gravadas em custom_model_configs.")
 
         # Imprime JSON estruturado nos logs do Actions (fácil de parsear/grep)
-        print(json.dumps({"config_id": config_id, "status": "treinado", "metricas": metricas}, ensure_ascii=False))
+        print(json.dumps({"config_id": config_id, "status": "treinado", "metricas": metrics_final}, ensure_ascii=False))
 
     except Exception as exc:
         logger.exception("Erro fatal no treino customizado: %s", exc)
