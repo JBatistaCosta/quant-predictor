@@ -1,11 +1,19 @@
 -- 20260729150000_fotmob_comprehensive_schema.sql
 
--- 1. Expanded Player Stats Columns
-ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS tackles INT;
-ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS interceptions INT;
-ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS ground_duels_won INT;
-ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS aerials_won INT;
-ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS touches_opp_box INT;
+-- 1. Expanded Player Stats Columns (guarded: table was created outside migrations in production)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'match_player_stats_fotmob'
+  ) THEN
+    ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS tackles INT;
+    ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS interceptions INT;
+    ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS ground_duels_won INT;
+    ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS aerials_won INT;
+    ALTER TABLE public.match_player_stats_fotmob ADD COLUMN IF NOT EXISTS touches_opp_box INT;
+  END IF;
+END $$;
 
 -- 2. Teams
 CREATE TABLE IF NOT EXISTS public.teams_fotmob (
