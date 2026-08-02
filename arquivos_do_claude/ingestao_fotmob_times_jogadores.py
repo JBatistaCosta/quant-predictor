@@ -25,19 +25,29 @@ def parse_team_file(d: dict, fotmob_team_id: str):
     team_row = {
         "fotmob_team_id": fotmob_team_id,
         "name": d.get("name"),
+        "short_name": d.get("shortName"),
         "country": d.get("country"),
         "coach_name": (d.get("coach") or {}).get("name"),
+        "primary_league_fotmob_id": d.get("primaryLeagueId"),
+        "latest_season": d.get("latestSeason"),
         "updated_at": dt.datetime.now(dt.timezone.utc).isoformat()
     }
-    
+
     squad_rows = []
     for s in d.get("squad", []):
         for p in s.get("members", []):
+            shirt = p.get("shirt")
             squad_rows.append({
                 "fotmob_team_id": fotmob_team_id,
                 "fotmob_player_id": str(p.get("id")),
                 "is_coach": p.get("isCoach", False),
                 "market_value": p.get("marketValue"),
+                "age": p.get("age"),
+                "height_cm": p.get("height"),
+                "shirt_number": str(shirt) if shirt is not None else None,
+                "country_code": p.get("ccode"),
+                "role": (p.get("role") or {}).get("fallback"),
+                "is_captain": p.get("isCaptain") or False,
                 "captured_at": dt.datetime.now(dt.timezone.utc).isoformat()
             })
             

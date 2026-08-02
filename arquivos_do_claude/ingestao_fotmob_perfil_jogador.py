@@ -193,6 +193,8 @@ def montar_linhas(player_id, payload):
     contrato = extrair_valor_playerinfo("Contract expires", player_information).get("dateValue") \
         or extrair_valor_playerinfo("Contract end", player_information).get("dateValue")
     valor_atual = extrair_valor_playerinfo("Market value", player_information).get("numberValue")
+    nascimento_raw = extrair_valor_playerinfo("Date of birth", player_information).get("dateValue")
+    birth_date = parse_data(nascimento_raw)
 
     pos_desc = payload.get("positionDescription") or {}
     posicao_principal = (pos_desc.get("primaryPosition") or {}).get("label")
@@ -209,7 +211,7 @@ def montar_linhas(player_id, payload):
         "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
 
-    return valores_mercado, carreira, titulos, detalhes
+    return valores_mercado, carreira, titulos, detalhes, birth_date
 
 
 def main():
@@ -232,7 +234,13 @@ def main():
             alvo = todos
         else:
             ja_feitos = {r["player_id"] for r in buscar_paginado(supabase, "player_details_fotmob", "player_id")}
-            alvo = [p for p in todos if p["id"] not in ja_feitos]
+            # também re-processa quem tem perfil mas sem birth_date (backfill)
+            sem_birthdate = {
+                r["id"]
+                for r in buscar_paginado(supabase, "players", "id, birth_date")
+                if r["birth_date"] is None and r["id"] in ja_feitos
+            }
+            alvo = [p for p in todos if p["id"] not in ja_feitos or p["id"] in sem_birthdate]
         if args.limite:
             alvo = alvo[: args.limite]
 
@@ -258,7 +266,7 @@ def main():
             continue
 
         try:
-            valores_mercado, carreira, titulos, detalhes = montar_linhas(p["id"], payload)
+            valores_mercado, carreira, titulos, detalhes, birth_date = montar_linhas(p["id"], payload)
         except Exception as e:
             print(f"  falha de parse player_id={p['id']} ({p['name']}): {e}")
             falhas += 1
@@ -282,6 +290,14 @@ def main():
                     titulos, on_conflict="player_id,team_fotmob_id,league_fotmob_id,season,result"
                 ).execute()
             supabase.table("player_details_fotmob").upsert(detalhes, on_conflict="player_id").execute()
+            if birth_date:
+                hoje = dt.date.today()
+                bd = dt.date.fromisoformat(birth_date)
+                age_calc = hoje.year - bd.year - ((hoje.month, hoje.day) < (bd.month, bd.day))
+                supabase.table("players").update({
+                    "birth_date": birth_date,
+                    "age": age_calc,
+                }).eq("id", p["id"]).execute()
         except Exception as e:
             # 1 jogador com dado inesperado não pode derrubar o backfill
             # inteiro (mesma disciplina de "try/except por item" já usada

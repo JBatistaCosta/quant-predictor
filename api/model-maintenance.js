@@ -1068,6 +1068,9 @@ function montarLinhasPerfilJogador(playerId, payload) {
   const contratoInfo = extrairValorPlayerInfo('Contract expires', playerInformation).dateValue
     ?? extrairValorPlayerInfo('Contract end', playerInformation).dateValue ?? null;
   const valorAtual = extrairValorPlayerInfo('Market value', playerInformation).numberValue ?? null;
+  const nascimentoRaw = extrairValorPlayerInfo('Date of birth', playerInformation).dateValue ?? null;
+  const birthDate = parseDataFotmob(nascimentoRaw);
+  const countryCode = payload.ccode ?? payload.countryCode ?? null;
 
   const posDesc = payload.positionDescription || {};
   const posicaoPrincipal = (posDesc.primaryPosition || {}).label ?? null;
@@ -1084,7 +1087,7 @@ function montarLinhasPerfilJogador(playerId, payload) {
     captured_at: agora,
   };
 
-  return { valoresMercado, carreira, titulos, detalhes };
+  return { valoresMercado, carreira, titulos, detalhes, birthDate, countryCode };
 }
 
 async function tarefaJogadorPerfil(supabase, playerIdInterno) {
@@ -1105,7 +1108,7 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
   const payload = await resp.json();
   if (!payload) return { error: 'FotMob não retornou dado pra esse jogador (payload vazio).' };
 
-  const { valoresMercado, carreira, titulos, detalhes } = montarLinhasPerfilJogador(jogador.id, payload);
+  const { valoresMercado, carreira, titulos, detalhes, birthDate, countryCode } = montarLinhasPerfilJogador(jogador.id, payload);
 
   if (valoresMercado.length) {
     const { error } = await supabase.from('player_market_value_history').upsert(valoresMercado, { onConflict: 'player_id,value_date,team_fotmob_id' });
@@ -1127,10 +1130,26 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
   const { error: erroDetalhes } = await supabase.from('player_details_fotmob').upsert(detalhes, { onConflict: 'player_id' });
   if (erroDetalhes) throw erroDetalhes;
 
+  // Atualiza players com dados biográficos extraídos do perfil FotMob
+  const updateJogador = {};
+  if (birthDate) {
+    updateJogador.birth_date = birthDate;
+    const hoje = new Date();
+    const bd = new Date(birthDate);
+    const age = hoje.getFullYear() - bd.getFullYear()
+      - ((hoje.getMonth() < bd.getMonth() || (hoje.getMonth() === bd.getMonth() && hoje.getDate() < bd.getDate())) ? 1 : 0);
+    updateJogador.age = age;
+  }
+  if (countryCode) updateJogador.country_code = countryCode;
+  if (Object.keys(updateJogador).length > 0) {
+    const { error: erroAtualiza } = await supabase.from('players').update(updateJogador).eq('id', jogador.id);
+    if (erroAtualiza) throw erroAtualiza;
+  }
+
   return {
     player_id: jogador.id, nome: jogador.name,
     pontos_valor_mercado: valoresMercado.length, clubes_carreira: carreira.length, titulos: titulos.length,
-    detalhes_atualizados: true,
+    detalhes_atualizados: true, birth_date: birthDate ?? null, country_code: countryCode ?? null,
   };
 }
 

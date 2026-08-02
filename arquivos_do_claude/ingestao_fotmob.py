@@ -280,6 +280,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
                     "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 })
                 if team_id is not None:
+                    vl = p.get("verticalLayout") or {}
                     lineup_rows.append({
                         "match_id": match_id,
                         "team_id": team_id,
@@ -287,6 +288,9 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
                         "is_starter": is_starter,
                         "shirt_number": p.get("shirtNumber"),
                         "position_id": p.get("positionId"),
+                        "field_pos_x": vl.get("x"),
+                        "field_pos_y": vl.get("y"),
+                        "is_captain": p.get("isCaptain") or False,
                         "raw": p,
                         "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                     })
