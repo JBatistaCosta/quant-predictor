@@ -204,7 +204,7 @@ export default async function handler(req, res) {
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
-      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
+      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, corners').not('corners', 'is', null)),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
     const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
@@ -225,12 +225,23 @@ export default async function handler(req, res) {
     const oddsRows = oddsRowsBrutas.filter(r => matchIdsValidos.has(r.match_id));
 
     const corners = {};
+    const cornersDetalhado = {}; // { [match_id]: { home, away } } — usado no relatório partida a partida
     {
       const somaPorJogo = {};
       const contPorJogo = {};
+      const homePorMatch = {};
+      matchesValidos.forEach(m => { homePorMatch[m.id] = m.home_team_id; });
       corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
         somaPorJogo[r.match_id] = (somaPorJogo[r.match_id] || 0) + Number(r.corners);
         contPorJogo[r.match_id] = (contPorJogo[r.match_id] || 0) + 1;
+        if (homePorMatch[r.match_id] != null) {
+          if (!cornersDetalhado[r.match_id]) cornersDetalhado[r.match_id] = {};
+          if (Number(r.team_id) === Number(homePorMatch[r.match_id])) {
+            cornersDetalhado[r.match_id].home = Number(r.corners);
+          } else {
+            cornersDetalhado[r.match_id].away = Number(r.corners);
+          }
+        }
       });
       Object.keys(somaPorJogo).forEach(id => { if (contPorJogo[id] === 2) corners[id] = somaPorJogo[id]; });
     }
@@ -317,6 +328,12 @@ export default async function handler(req, res) {
           mandante: nomePorTime[match?.home_team_id] || `Time #${match?.home_team_id}`,
           visitante: nomePorTime[match?.away_team_id] || `Time #${match?.away_team_id}`,
           league_id: match?.league_id ?? null,
+          home_goals: match?.home_goals ?? null,
+          away_goals: match?.away_goals ?? null,
+          corners_home: cornersDetalhado[matchId]?.home ?? null,
+          corners_away: cornersDetalhado[matchId]?.away ?? null,
+          todas_probs: Object.fromEntries(selecoes.map(s => [s.selection, Number(s.probability)])),
+          todas_odds: Object.keys(oddsSel).length > 0 ? { ...oddsSel } : null,
           selecao_prevista: previstaMaior.selection,
           probabilidade_modelo: Number(previstaMaior.probability),
           odds_usada: oddsUsada,

@@ -108,13 +108,56 @@ function AjusteCalibracao({ g }) {
   );
 }
 
-// Relatório partida a partida: exige um modelo+mercado específicos (os
-// mesmos filtros já existentes na página) -- lista cada jogo já finalizado
-// com a seleção que o modelo mais favoreceu, o EV estimado contra a odd
-// real de fechamento, e se acertou. Quando o modelo é baseado em gols
-// esperados (Dixon-Coles/Poisson), mostra também o xG previsto por equipe
-// lado a lado com o xG real (match_stats) -- ausente pra modelos de
-// classificação pura (ver CONTEXTO_PROJETO.md).
+// Seleções canônicas por mercado, na ordem de exibição
+const SELECOES_POR_MERCADO = {
+  '1X2': ['home', 'draw', 'away'],
+  'over_under_2.5': ['over', 'under'],
+  'corners_over_under_9.5': ['over', 'under'],
+};
+
+function exportarCSV(partidas, filtroModelo, filtroMercado, ligasPorId) {
+  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['home', 'draw', 'away'];
+  const headers = [
+    'ID', 'Data-hora', 'Liga', 'Mandante', 'Visitante',
+    'Gols mandante', 'Gols visitante',
+    'Esc. mandante', 'Esc. visitante',
+    ...sels.map(s => `Prob. ${SELECAO_ROTULO[s] || s} (%)`),
+    ...sels.map(s => `Odd ${SELECAO_ROTULO[s] || s}`),
+    'EV estimado (%)', 'Resultado real', 'Acertou',
+    'xG mandante (prev)', 'xG mandante (real)',
+    'xG visitante (prev)', 'xG visitante (real)',
+    'xGOT mandante (prev)', 'xGOT mandante (real)',
+    'xGOT visitante (prev)', 'xGOT visitante (real)',
+  ];
+  const csvEscape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const linhas = partidas.map(p => {
+    const dt = p.match_date ? new Date(p.match_date).toLocaleString('pt-BR') : '';
+    return [
+      p.match_id, dt, ligasPorId[p.league_id] || p.league_id,
+      p.mandante, p.visitante,
+      p.home_goals ?? '', p.away_goals ?? '',
+      p.corners_home ?? '', p.corners_away ?? '',
+      ...sels.map(s => p.todas_probs?.[s] != null ? (p.todas_probs[s] * 100).toFixed(2) : ''),
+      ...sels.map(s => p.todas_odds?.[s] != null ? p.todas_odds[s].toFixed(2) : ''),
+      p.ev_estimado != null ? (p.ev_estimado * 100).toFixed(2) : '',
+      p.resultado_real ?? '',
+      p.acertou == null ? '' : p.acertou ? 'sim' : 'não',
+      p.xg_home_previsto ?? '', p.xg_home_real ?? '',
+      p.xg_away_previsto ?? '', p.xg_away_real ?? '',
+      p.xgot_home_previsto ?? '', p.xgot_home_real ?? '',
+      p.xgot_away_previsto ?? '', p.xgot_away_real ?? '',
+    ].map(csvEscape).join(',');
+  });
+  const csv = [headers.map(csvEscape).join(','), ...linhas].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `relatorio_${filtroModelo}_${filtroMercado.replace(/[^a-z0-9]/gi, '_')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -147,13 +190,24 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
 
   const temXg = partidas?.some(p => p.xg_home_previsto != null || p.xg_away_previsto != null);
   const temXgot = partidas?.some(p => p.xgot_home_previsto != null || p.xgot_away_previsto != null);
+  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['home', 'draw', 'away'];
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
-      <h2 className="text-sm font-bold text-slate-200 mb-1">Relatório partida a partida</h2>
+      <div className="flex items-start justify-between mb-1 gap-2">
+        <h2 className="text-sm font-bold text-slate-200">Relatório partida a partida</h2>
+        {partidas && partidas.length > 0 && (
+          <button
+            onClick={() => exportarCSV(partidas, filtroModelo, filtroMercado, ligasPorId)}
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors shrink-0"
+          >
+            <Download size={12} /> Exportar CSV
+          </button>
+        )}
+      </div>
       <p className="text-[11px] text-slate-500 mb-3">
-        {filtroModelo} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção que o modelo mais favoreceu.
-        {(temXg || temXgot) && ' Colunas de xG/xGOT só aparecem pra modelos que calculam esses valores de verdade (Dixon-Coles, ou os regressores dedicados catboost_xg_regressor_v1/catboost_xgot_regressor_v1).'}
+        {filtroModelo} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção favorecida.
+        {(temXg || temXgot) && ' xG/xGOT só em modelos que calculam esses valores (Dixon-Coles, regressores dedicados).'}
       </p>
 
       {carregando ? (
@@ -163,57 +217,70 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
       ) : !partidas || partidas.length === 0 ? (
         <p className="text-xs text-slate-600">Sem partidas finalizadas com previsão pra esse modelo/mercado ainda.</p>
       ) : (
-        <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-800">
+        <div className="overflow-x-auto max-h-[40rem] overflow-y-auto">
+          <table className="text-xs whitespace-nowrap">
+            <thead className="sticky top-0 bg-slate-800 z-10">
               <tr className="text-slate-500 uppercase text-[10px]">
-                <th className="text-left p-1.5">Data</th>
-                <th className="text-left p-1.5">Confronto</th>
-                <th className="text-left p-1.5">Previsão</th>
-                <th className="text-right p-1.5">Prob.</th>
-                <th className="text-right p-1.5">Odd usada</th>
-                <th className="text-right p-1.5">EV estimado</th>
-                <th className="text-center p-1.5">Resultado</th>
-                {temXg && <th className="text-right p-1.5">xG casa (prev/real)</th>}
-                {temXg && <th className="text-right p-1.5">xG fora (prev/real)</th>}
-                {temXgot && <th className="text-right p-1.5">xGOT casa (prev/real)</th>}
-                {temXgot && <th className="text-right p-1.5">xGOT fora (prev/real)</th>}
+                <th className="text-left p-1.5">ID</th>
+                <th className="text-left p-1.5">Data-hora</th>
+                <th className="text-left p-1.5">Mandante</th>
+                <th className="text-left p-1.5">Visitante</th>
+                <th className="text-center p-1.5">Gols</th>
+                <th className="text-center p-1.5">Esc. M</th>
+                <th className="text-center p-1.5">Esc. V</th>
+                {sels.map(s => (
+                  <th key={`prob-${s}`} className="text-right p-1.5">P.{SELECAO_ROTULO[s] || s}</th>
+                ))}
+                {sels.map(s => (
+                  <th key={`odd-${s}`} className="text-right p-1.5">@{SELECAO_ROTULO[s] || s}</th>
+                ))}
+                <th className="text-right p-1.5">EV</th>
+                <th className="text-center p-1.5">✓</th>
+                {temXg && <th className="text-right p-1.5">xG M (p/r)</th>}
+                {temXg && <th className="text-right p-1.5">xG V (p/r)</th>}
+                {temXgot && <th className="text-right p-1.5">xGOT M (p/r)</th>}
+                {temXgot && <th className="text-right p-1.5">xGOT V (p/r)</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {partidas.map(p => (
-                <tr key={p.match_id} className={p.acertou ? 'bg-emerald-500/5' : ''}>
-                  <td className="p-1.5 text-slate-500">{p.match_date ? new Date(p.match_date).toLocaleDateString('pt-BR') : '—'}</td>
-                  <td className="p-1.5 text-slate-300">{p.mandante} x {p.visitante} <span className="text-slate-600">({ligasPorId[p.league_id] || `#${p.league_id}`})</span></td>
-                  <td className="p-1.5 text-slate-300 font-semibold">{SELECAO_ROTULO[p.selecao_prevista] || p.selecao_prevista}</td>
-                  <td className="p-1.5 text-right text-slate-300">{(p.probabilidade_modelo * 100).toFixed(1)}%</td>
-                  <td className="p-1.5 text-right text-slate-400">{p.odds_usada != null ? p.odds_usada.toFixed(2) : '—'}</td>
-                  <td className={`p-1.5 text-right font-bold ${p.ev_estimado == null ? 'text-slate-600' : p.ev_estimado > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {p.ev_estimado != null ? `${p.ev_estimado > 0 ? '+' : ''}${(p.ev_estimado * 100).toFixed(1)}%` : '—'}
-                  </td>
-                  <td className="p-1.5 text-center">{p.acertou == null ? '—' : p.acertou ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-red-400">✗</span>}</td>
-                  {temXg && (
-                    <td className="p-1.5 text-right text-slate-400">
-                      {p.xg_home_previsto != null ? p.xg_home_previsto.toFixed(2) : '—'} / {p.xg_home_real != null ? p.xg_home_real.toFixed(2) : '—'}
+              {partidas.map(p => {
+                const isFav = s => p.selecao_prevista === s;
+                return (
+                  <tr key={p.match_id} className={p.acertou ? 'bg-emerald-500/5' : ''}>
+                    <td className="p-1.5 text-slate-600">{p.match_id}</td>
+                    <td className="p-1.5 text-slate-500">
+                      {p.match_date ? new Date(p.match_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
                     </td>
-                  )}
-                  {temXg && (
-                    <td className="p-1.5 text-right text-slate-400">
-                      {p.xg_away_previsto != null ? p.xg_away_previsto.toFixed(2) : '—'} / {p.xg_away_real != null ? p.xg_away_real.toFixed(2) : '—'}
+                    <td className="p-1.5 text-slate-300 max-w-[12rem] truncate">{p.mandante}</td>
+                    <td className="p-1.5 text-slate-300 max-w-[12rem] truncate">{p.visitante}</td>
+                    <td className="p-1.5 text-center text-slate-300 font-mono">
+                      {p.home_goals != null && p.away_goals != null ? `${p.home_goals}×${p.away_goals}` : '—'}
                     </td>
-                  )}
-                  {temXgot && (
-                    <td className="p-1.5 text-right text-slate-400">
-                      {p.xgot_home_previsto != null ? p.xgot_home_previsto.toFixed(2) : '—'} / {p.xgot_home_real != null ? p.xgot_home_real.toFixed(2) : '—'}
+                    <td className="p-1.5 text-center text-slate-400">{p.corners_home ?? '—'}</td>
+                    <td className="p-1.5 text-center text-slate-400">{p.corners_away ?? '—'}</td>
+                    {sels.map(s => (
+                      <td key={`prob-${s}`} className={`p-1.5 text-right ${isFav(s) ? 'text-sky-300 font-semibold' : 'text-slate-400'}`}>
+                        {p.todas_probs?.[s] != null ? `${(p.todas_probs[s] * 100).toFixed(1)}%` : '—'}
+                      </td>
+                    ))}
+                    {sels.map(s => (
+                      <td key={`odd-${s}`} className={`p-1.5 text-right ${isFav(s) ? 'text-slate-300' : 'text-slate-500'}`}>
+                        {p.todas_odds?.[s] != null ? p.todas_odds[s].toFixed(2) : '—'}
+                      </td>
+                    ))}
+                    <td className={`p-1.5 text-right font-bold ${p.ev_estimado == null ? 'text-slate-600' : p.ev_estimado > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {p.ev_estimado != null ? `${p.ev_estimado > 0 ? '+' : ''}${(p.ev_estimado * 100).toFixed(1)}%` : '—'}
                     </td>
-                  )}
-                  {temXgot && (
-                    <td className="p-1.5 text-right text-slate-400">
-                      {p.xgot_away_previsto != null ? p.xgot_away_previsto.toFixed(2) : '—'} / {p.xgot_away_real != null ? p.xgot_away_real.toFixed(2) : '—'}
+                    <td className="p-1.5 text-center">
+                      {p.acertou == null ? <span className="text-slate-600">—</span> : p.acertou ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-red-400">✗</span>}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    {temXg && <td className="p-1.5 text-right text-slate-500">{p.xg_home_previsto != null ? p.xg_home_previsto.toFixed(2) : '—'} / {p.xg_home_real != null ? p.xg_home_real.toFixed(2) : '—'}</td>}
+                    {temXg && <td className="p-1.5 text-right text-slate-500">{p.xg_away_previsto != null ? p.xg_away_previsto.toFixed(2) : '—'} / {p.xg_away_real != null ? p.xg_away_real.toFixed(2) : '—'}</td>}
+                    {temXgot && <td className="p-1.5 text-right text-slate-500">{p.xgot_home_previsto != null ? p.xgot_home_previsto.toFixed(2) : '—'} / {p.xgot_home_real != null ? p.xgot_home_real.toFixed(2) : '—'}</td>}
+                    {temXgot && <td className="p-1.5 text-right text-slate-500">{p.xgot_away_previsto != null ? p.xgot_away_previsto.toFixed(2) : '—'} / {p.xgot_away_real != null ? p.xgot_away_real.toFixed(2) : '—'}</td>}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
