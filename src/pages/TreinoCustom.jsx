@@ -14,7 +14,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Play, Save, Trash2, ChevronDown, ChevronUp, Loader2,
   AlertTriangle, CheckCircle2, Clock, XCircle, Zap, Settings2,
-  FlaskConical, BarChart3, RefreshCw, FileText
+  FlaskConical, BarChart3, RefreshCw, FileText, Copy, StopCircle, RotateCcw
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
@@ -311,6 +311,11 @@ export default function TreinoCustom() {
   const [form, setForm] = useState(ESTADO_FORM_INICIAL);
   const [salvando, setSalvando] = useState(false);
   const [disparando, setDisparando] = useState(null); // config_id em disparo
+  const [cancelando, setCancelando] = useState(null); // config_id sendo cancelado
+  const [copiando, setCopiando] = useState(null); // config_id sendo copiado
+  const [resetando, setResetando] = useState(null); // config_id sendo resetado
+  const [excluindo, setExcluindo] = useState(null); // config_id sendo excluído
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(null); // config_id aguardando confirm
   const [mensagem, setMensagem] = useState(null); // { tipo: 'ok'|'erro', texto }
   const [expandidos, setExpandidos] = useState({}); // config_id → bool
   const [grupoExpandido, setGrupoExpandido] = useState({}); // grupo → bool
@@ -458,6 +463,87 @@ export default function TreinoCustom() {
       mostrarMensagem('erro', e.message);
     } finally {
       setDisparando(null);
+    }
+  }
+
+  // --------- Parar treino (cancela aguardando/treinando → rascunho) ---------
+  async function cancelarTreino(configId, configName) {
+    if (!session) { mostrarMensagem('erro', 'Faça login para esta ação.'); return; }
+    setCancelando(configId);
+    try {
+      const resp = await fetch(
+        apiUrl(`/api/model-maintenance?tarefa=cancelar-treino-custom&config_id=${configId}`),
+        { method: 'POST', headers: authHeader },
+      );
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      mostrarMensagem('ok', `Treino de "${configName}" cancelado.`);
+      await carregarConfigs();
+    } catch (e) {
+      mostrarMensagem('erro', e.message);
+    } finally {
+      setCancelando(null);
+    }
+  }
+
+  // --------- Copiar config ---------
+  async function copiarConfig(configId, configName) {
+    if (!session) { mostrarMensagem('erro', 'Faça login para esta ação.'); return; }
+    setCopiando(configId);
+    try {
+      const resp = await fetch(
+        apiUrl(`/api/model-maintenance?tarefa=copiar-config-custom&config_id=${configId}`),
+        { method: 'POST', headers: authHeader },
+      );
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      mostrarMensagem('ok', `"${configName}" copiado como rascunho.`);
+      await carregarConfigs();
+    } catch (e) {
+      mostrarMensagem('erro', e.message);
+    } finally {
+      setCopiando(null);
+    }
+  }
+
+  // --------- Resetar config (limpa métricas → rascunho) ---------
+  async function resetarConfig(configId, configName) {
+    if (!session) { mostrarMensagem('erro', 'Faça login para esta ação.'); return; }
+    setResetando(configId);
+    try {
+      const resp = await fetch(
+        apiUrl(`/api/model-maintenance?tarefa=resetar-config-custom&config_id=${configId}`),
+        { method: 'POST', headers: authHeader },
+      );
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      mostrarMensagem('ok', `"${configName}" resetado para rascunho.`);
+      await carregarConfigs();
+    } catch (e) {
+      mostrarMensagem('erro', e.message);
+    } finally {
+      setResetando(null);
+    }
+  }
+
+  // --------- Excluir config ---------
+  async function excluirConfig(configId, configName) {
+    if (!session) { mostrarMensagem('erro', 'Faça login para esta ação.'); return; }
+    setExcluindo(configId);
+    setConfirmandoExclusao(null);
+    try {
+      const resp = await fetch(
+        apiUrl(`/api/model-maintenance?tarefa=excluir-config-custom&config_id=${configId}`),
+        { method: 'POST', headers: authHeader },
+      );
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      mostrarMensagem('ok', `"${configName}" excluído.`);
+      await carregarConfigs();
+    } catch (e) {
+      mostrarMensagem('erro', e.message);
+    } finally {
+      setExcluindo(null);
     }
   }
 
@@ -764,33 +850,112 @@ export default function TreinoCustom() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {/* Botão Treinar */}
-                    {(cfg.status === 'rascunho' || cfg.status === 'treinado' || cfg.status === 'erro') && session && (
+                    {/* PARAR — apenas quando em progresso */}
+                    {emProgresso && session && (
+                      <button
+                        onClick={() => cancelarTreino(cfg.id, cfg.name)}
+                        disabled={cancelando === cfg.id}
+                        title="Parar treino (reverte para rascunho)"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-medium transition-colors"
+                      >
+                        {cancelando === cfg.id
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <StopCircle size={13} />}
+                        Parar
+                      </button>
+                    )}
+
+                    {/* INICIAR / REINICIAR */}
+                    {!emProgresso && session && (
                       <button
                         onClick={() => dispararTreino(cfg.id, cfg.name)}
                         disabled={disparando === cfg.id}
-                        title="Disparar treino"
+                        title={cfg.status === 'rascunho' ? 'Iniciar treino' : 'Re-treinar'}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-medium transition-colors"
                       >
                         {disparando === cfg.id
                           ? <Loader2 size={13} className="animate-spin" />
-                          : <Play size={13} />}
-                        Treinar
+                          : cfg.status === 'rascunho'
+                            ? <Play size={13} />
+                            : <RefreshCw size={13} />}
+                        {cfg.status === 'rascunho' ? 'Iniciar' : 'Reiniciar'}
                       </button>
                     )}
-                    {/* Botão Editar */}
-                    {cfg.status === 'rascunho' && (
+
+                    {/* EDITAR */}
+                    {!emProgresso && (
                       <button
                         onClick={() => editarConfig(cfg)}
-                        title="Editar"
+                        title="Editar configuração"
                         className="px-2 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors text-xs"
                       >
                         Editar
                       </button>
                     )}
-                    {/* Expandir */}
+
+                    {/* COPIAR */}
+                    {!emProgresso && session && (
+                      <button
+                        onClick={() => copiarConfig(cfg.id, cfg.name)}
+                        disabled={copiando === cfg.id}
+                        title="Duplicar como rascunho"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-40 transition-colors"
+                      >
+                        {copiando === cfg.id
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <Copy size={13} />}
+                      </button>
+                    )}
+
+                    {/* RESETAR — apaga métricas, volta a rascunho (só para treinado/erro) */}
+                    {(cfg.status === 'treinado' || cfg.status === 'erro') && session && (
+                      <button
+                        onClick={() => resetarConfig(cfg.id, cfg.name)}
+                        disabled={resetando === cfg.id}
+                        title="Resetar — apaga métricas e volta a rascunho"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-700 disabled:opacity-40 transition-colors"
+                      >
+                        {resetando === cfg.id
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <RotateCcw size={13} />}
+                      </button>
+                    )}
+
+                    {/* EXCLUIR com confirmação inline */}
+                    {!emProgresso && session && (
+                      confirmandoExclusao === cfg.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => excluirConfig(cfg.id, cfg.name)}
+                            disabled={excluindo === cfg.id}
+                            className="px-2 py-1 rounded text-xs font-medium bg-red-700 hover:bg-red-600 text-white disabled:opacity-50 transition-colors"
+                          >
+                            {excluindo === cfg.id ? <Loader2 size={11} className="animate-spin" /> : 'Confirmar?'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmandoExclusao(null)}
+                            className="px-1.5 py-1 rounded text-xs text-slate-500 hover:text-white hover:bg-slate-700 transition-colors"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmandoExclusao(cfg.id)}
+                          title="Excluir configuração"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-700 transition-colors"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )
+                    )}
+
+                    {/* EXPANDIR */}
                     <button
-                      onClick={() => setExpandidos((e) => ({ ...e, [cfg.id]: !aberto }))}
+                      onClick={() => {
+                        setConfirmandoExclusao(null);
+                        setExpandidos((e) => ({ ...e, [cfg.id]: !aberto }));
+                      }}
                       className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 transition-colors"
                     >
                       {aberto ? <ChevronUp size={15} /> : <ChevronDown size={15} />}

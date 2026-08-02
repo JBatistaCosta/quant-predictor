@@ -697,13 +697,83 @@ async function tarefaDispararTreinoCustom(supabase, authHeader, configId) {
 }
 
 // ============================================================
-// TAREFA: deletar-config-custom — remove uma configuração pelo id
-async function tarefaDeletarConfigCustom(supabase, body) {
-  const { id } = body || {};
-  if (!id) return { status: 400, error: 'id é obrigatório.' };
-  const { error } = await supabase.table('custom_model_configs').delete().eq('id', id);
+// TAREFAS: Gestão de configs customizadas (excluir / copiar / cancelar / resetar)
+// ============================================================
+
+async function tarefaExcluirConfigCustom(supabase, authHeader, configId) {
+  if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { data: cfg } = await supabase
+    .from('custom_model_configs').select('id, status, name').eq('id', configId).maybeSingle();
+  if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
+  if (cfg.status === 'treinando') return { status: 409, error: 'Não é possível excluir um modelo em treinamento. Pare primeiro.' };
+
+  const { error } = await supabase.from('custom_model_configs').delete().eq('id', configId);
   if (error) throw error;
-  return { status: 200, deletado: id };
+  return { status: 200, excluido: configId, name: cfg.name };
+}
+
+async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
+  if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { data: cfg } = await supabase
+    .from('custom_model_configs')
+    .select('name, algorithm, features, target, hyperparameters, notes')
+    .eq('id', configId).maybeSingle();
+  if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
+
+  const { data: copia, error } = await supabase
+    .from('custom_model_configs')
+    .insert({
+      name: `[cópia] ${cfg.name}`,
+      algorithm: cfg.algorithm,
+      features: cfg.features,
+      target: cfg.target,
+      hyperparameters: cfg.hyperparameters,
+      notes: cfg.notes,
+      status: 'rascunho',
+    })
+    .select().single();
+  if (error) throw error;
+  return { status: 200, config: copia };
+}
+
+// Reverte aguardando_treino/treinando → rascunho (o workflow pode ainda terminar
+// e sobrescrever — mas o usuário sinaliza intenção de cancelar).
+async function tarefaCancelarTreinoCustom(supabase, authHeader, configId) {
+  if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { error } = await supabase.from('custom_model_configs')
+    .update({ status: 'rascunho', error_message: null })
+    .eq('id', configId)
+    .in('status', ['aguardando_treino', 'treinando']);
+  if (error) throw error;
+  return { status: 200, mensagem: 'Treino cancelado. Modelo revertido para rascunho.' };
+}
+
+// Limpa métricas, erro e datas — volta a rascunho sem re-treinar.
+async function tarefaResetarConfigCustom(supabase, authHeader, configId) {
+  if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { data: cfg } = await supabase
+    .from('custom_model_configs').select('id, status').eq('id', configId).maybeSingle();
+  if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
+  if (cfg.status === 'treinando' || cfg.status === 'aguardando_treino')
+    return { status: 409, error: 'Não é possível resetar um modelo em treinamento. Pare primeiro.' };
+
+  const { error } = await supabase.from('custom_model_configs')
+    .update({ status: 'rascunho', metrics: null, error_message: null, trained_at: null, model_key: null })
+    .eq('id', configId);
+  if (error) throw error;
+  return { status: 200, mensagem: 'Modelo resetado para rascunho.' };
 }
 
 // ============================================================
@@ -3346,8 +3416,30 @@ export default async function handler(req, res) {
       return res.status(status).json(corpo);
     }
 
-    if (tarefa === 'deletar-config-custom') {
-      const resultado = await tarefaDeletarConfigCustom(supabase, req.body || {});
+    if (tarefa === 'excluir-config-custom') {
+      const configId = (req.body || {}).config_id || req.query.config_id;
+      const resultado = await tarefaExcluirConfigCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'copiar-config-custom') {
+      const configId = (req.body || {}).config_id || req.query.config_id;
+      const resultado = await tarefaCopiarConfigCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'cancelar-treino-custom') {
+      const configId = (req.body || {}).config_id || req.query.config_id;
+      const resultado = await tarefaCancelarTreinoCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'resetar-config-custom') {
+      const configId = (req.body || {}).config_id || req.query.config_id;
+      const resultado = await tarefaResetarConfigCustom(supabase, req.headers.authorization, configId);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
