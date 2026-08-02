@@ -78,6 +78,7 @@ ALGORITMOS_SKLEARN = {"logistic_regression", "random_forest"}
 # somente a janela de 5j existe. Configs salvas antes da correção do frontend
 # precisam ter as chaves traduzidas automaticamente no momento do treino.
 _FOTMOB_SHORTS_V8 = frozenset({
+    # v8 — stats básicos do FotMob
     "chutes_fm", "chutes_alvo_fm", "chutes_fora_fm", "chutes_bloqueados_fm",
     "chutes_area_fm", "chutes_fora_area_fm", "chances_claras_fm",
     "chances_claras_perdidas_fm", "passes_certos_fm", "bolas_longas_certas_fm",
@@ -86,6 +87,8 @@ _FOTMOB_SHORTS_V8 = frozenset({
     "duelos_aereos_vencidos_fm", "dribles_certos_fm", "faltas_fm",
     "cartoes_amarelos_fm", "cartoes_vermelhos_fm", "escanteios_fm",
     "toques_area_adv_fm", "posse_fm",
+    # v9 — situação de chutes (mesmo padrão de nomes no dataset: media_{metric}_5j_{pos})
+    "pct_fast_break_fm", "pct_bola_parada_fm", "xg_chute_fm", "pct_gols_2tempo_fm",
 })
 _FOTMOB_POSICOES_V8 = ("sofrido_home", "sofrido_away", "home", "away")
 
@@ -298,30 +301,38 @@ def treinar_via_ml(
     test_df: pd.DataFrame,
     target_col: str,
     tipo: str,
-) -> tuple[dict, object, list[str]]:
+) -> tuple[dict, object, list[str], list | None]:
     """Treina usando as funções existentes em modelos_ml.py."""
-    # Resolve nome interno (catboost_v1 é o slot genérico)
     nome_interno = f"{algoritmo}_v1"
     treinar_fn, prever_fn = ml.TREINADORES.get(nome_interno, (None, None))
 
     if treinar_fn is None:
         raise RuntimeError(f"Algoritmo {algoritmo!r} não encontrado em modelos_ml.TREINADORES.")
 
-    # Hiperparâmetros: mescla defaults com os do usuário
     defaults = ml.PARAMS_DEFAULT.get(nome_interno, {})
     params = {**defaults, **(hyperparameters or {})}
 
-    # CAT_FEATURES (="liga") deve sempre estar em features — treinar_catboost/
-    # xgboost/lightgbm exigem ela internamente como coluna categórica.
+    # CAT_FEATURES (="liga") deve sempre estar em features
     features = list(dict.fromkeys([*ml.CAT_FEATURES, *features]))
 
     logger.info("Treinando %s com params=%s, %d features (incl. liga)", algoritmo, params, len(features))
 
-    modelo, extra, _ = treinar_fn(
+    # Separa os últimos 15% do treino como validação para early stopping e
+    # curvas de aprendizado. Treino cronológico: os mais recentes ficam no val.
+    val_df_fit = None
+    train_fit = train_df
+    if len(train_df) >= 200:
+        val_n = max(50, int(len(train_df) * 0.15))
+        train_fit = train_df.iloc[:-val_n].copy()
+        val_df_fit = train_df.iloc[-val_n:].copy()
+
+    modelo, extra, curva = treinar_fn(
         params=params,
-        train_df=train_df,
+        train_df=train_fit,
         coluna_alvo=target_col,
         features=features,
+        val_df=val_df_fit,
+        test_df=val_df_fit,
     )
 
     # Passa test_df completo + features explícito para evitar que prever_fn
@@ -336,7 +347,7 @@ def treinar_via_ml(
     metricas["params"] = params
 
     logger.info("Métricas: %s", metricas)
-    return metricas, modelo, features
+    return metricas, modelo, features, curva
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +411,7 @@ def treinar_via_sklearn(
     metricas["params"] = hp
 
     logger.info("Métricas: %s", metricas)
-    return metricas, pipe, features_num
+    return metricas, pipe, features_num, None  # sklearn não gera curvas de aprendizado
 
 
 # ---------------------------------------------------------------------------
@@ -443,13 +454,14 @@ def main():
         train_df, test_df = split_dataset(dataset, target_info["coluna"], features_usadas)
 
         # 3. Treina o modelo
+        curva_aprendizado = None
         if algoritmo in ALGORITMOS_ML:
-            metricas, modelo, features_finais = treinar_via_ml(
+            metricas, modelo, features_finais, curva_aprendizado = treinar_via_ml(
                 algoritmo, features_usadas, hyperparameters,
                 train_df, test_df, target_info["coluna"], target_info["tipo"],
             )
         elif algoritmo in ALGORITMOS_SKLEARN:
-            metricas, modelo, features_finais = treinar_via_sklearn(
+            metricas, modelo, features_finais, _ = treinar_via_sklearn(
                 algoritmo, features_usadas, hyperparameters,
                 train_df, test_df, target_info["coluna"], target_info["tipo"],
             )
@@ -479,13 +491,14 @@ def main():
             except Exception:
                 pass
 
-        # Estrutura esperada pelo RelatorioTreinoModal.jsx do frontend
+        learning_curves = {}
+        if curva_aprendizado is not None:
+            learning_curves[algoritmo] = curva_aprendizado
+
         metrics_final = {
-            "models": {
-                algoritmo: metricas
-            },
+            "models": {algoritmo: metricas},
             "feature_importance": feature_importance,
-            "learning_curves": {} # Curvas não salvas no modo custom ainda, mas a chave previne erros
+            "learning_curves": learning_curves,
         }
 
         atualizar_status(
