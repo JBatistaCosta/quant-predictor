@@ -2945,45 +2945,111 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
 
     dataset = dataset.rename(columns={"id": "match_id"})
 
-    dataset = dataset[
-        [
-            "match_id", "match_date", "liga", *FEATURES_NUMERICAS_V3B,
-            # progresso_temporada é da linhagem v6 (v5 + progresso), não de
-            # v3b (v5 + XI titular) -- as duas estendem v5 em direções
-            # diferentes, por isso entra à parte aqui em vez de já vir de
-            # FEATURES_NUMERICAS_V3B.
-            "progresso_temporada",
-            # Forma pré-jogo das estatísticas do FBref (v7) -- mesma razão de
-            # progresso_temporada ficar à parte: ramo próprio a partir de v5,
-            # não faz parte de FEATURES_NUMERICAS_V3B.
-            *COLUNAS_FORMA_POSSE.values(),
-            *COLUNAS_FORMA_CHUTES.values(),
-            *COLUNAS_FORMA_CHUTES_ALVO.values(),
-            *COLUNAS_FORMA_ESCANTEIOS.values(),
-            *COLUNAS_FORMA_FALTAS.values(),
-            *COLUNAS_FORMA_CARTOES_AMARELOS.values(),
-            *COLUNAS_FORMA_CARTOES_VERMELHOS.values(),
-            # Forma pré-jogo das estatísticas do FotMob (v8) -- mesma razão
-            # das anteriores: ramo próprio a partir de v5/v7, não faz parte
-            # de FEATURES_NUMERICAS_V3B.
-            *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in colunas_forma_fotmob(nome_curto).values()],
-            # Forma pré-jogo de xGOT e features de situação de chute (v9).
-            *COLUNAS_FORMA_XGOT.values(),
-            *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
-            # Features do XI titular expandidas (v10): idade, altura e venue.
-            # Ficam NaN quando sem cobertura de lineup, mesmo comportamento
-            # tolerante de titular_rating/valor_mercado (v3B).
-            "titular_avg_age_home", "titular_avg_age_away",
-            "titular_avg_height_home", "titular_avg_height_away",
-            "venue_capacity_home",
-            "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
-            # xg_home/xg_away/xgot_home/xgot_away: NÃO são features (vazariam o
-            # resultado do próprio jogo) -- são o xG/xGOT OBSERVADO daquela
-            # partida, usados só como ALVO de regressão em
-            # scripts/treinar_regressor_xg.py / treinar_regressor_xgot.py.
-            "xg_home", "xg_away", "xgot_home", "xgot_away",
-        ]
+    # ------------------------------------------------------------------
+    # Features derivadas: diferenciais e momentos pré-jogo.
+    # Calculadas após todos os joins — NaN-tolerante (subtração de NaN
+    # produz NaN, que CatBoost/XGBoost/LightGBM lidam nativamente).
+    # posicao_diff: positivo = mandante tem posição melhor (número menor).
+    # xg_momentum: positivo = mandante acelerando; negativo = desacelerando.
+    # ------------------------------------------------------------------
+    dataset["elo_diff"] = dataset["elo_home"] - dataset["elo_away"]
+    for _h, _a, _out in [
+        ("xg_bayesiano_home",         "xg_bayesiano_away",          "xg_diff_bayesiano"),
+        ("xgot_bayesiano_home",        "xgot_bayesiano_away",        "xgot_diff_bayesiano"),
+        ("squad_rating_home",          "squad_rating_away",          "squad_rating_diff"),
+        ("titular_rating_home",        "titular_rating_away",        "rating_diff_xi"),
+        ("titular_valor_mercado_home", "titular_valor_mercado_away", "valor_diff_xi"),
+        ("titular_avg_age_home",       "titular_avg_age_away",       "age_diff_xi"),
+        ("titular_avg_height_home",    "titular_avg_height_away",    "height_diff_xi"),
+        ("posicao_away",               "posicao_home",               "posicao_diff"),
+        ("pontos_por_jogo_home",       "pontos_por_jogo_away",       "pontos_diff"),
+    ]:
+        if _h in dataset.columns and _a in dataset.columns:
+            dataset[_out] = dataset[_h] - dataset[_a]
+    for _side in ("home", "away"):
+        _5j, _10j = f"xg_{_side}_5j", f"xg_{_side}_10j"
+        if _5j in dataset.columns and _10j in dataset.columns:
+            dataset[f"xg_momentum_{_side}"] = dataset[_5j] - dataset[_10j]
+
+    # ------------------------------------------------------------------
+    # Seleção final de colunas com filtro seguro (só inclui o que existe).
+    # Substituiu o `dataset[*FEATURES_NUMERICAS_V3B]` original que causava
+    # KeyError porque COLUNAS_FORMA_XG/XGOT foram substituídas pelas
+    # colunas multi-janela de _forma_por_mando_multi_janelas mas a lista
+    # de constantes não foi atualizada.
+    # ------------------------------------------------------------------
+    _COLUNAS_DESEJADAS = [
+        "match_id", "match_date", "liga",
+        # Elo
+        "elo_home", "elo_away",
+        # Forma de gols (5j, mando separado)
+        *COLUNAS_FORMA_GOLS.values(),
+        # xG e xGOT multi-janela (5j / 10j / 20j + EWMA)
+        *[
+            f"xg_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
+        *[
+            f"xgot_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
+        # xG / xGOT / xGA Bayesiano e flags de estimativa
+        "xg_bayesiano_home", "xg_bayesiano_away",
+        "xga_bayesiano_home", "xga_bayesiano_away",
+        "xgot_bayesiano_home", "xgot_bayesiano_away",
+        "is_stat_estimated_home", "is_stat_estimated_away",
+        # Força do elenco
+        "squad_rating_home", "squad_rating_away",
+        # Fadiga
+        "days_since_last_match_home", "days_since_last_match_away",
+        "is_midweek_fatigue_home", "is_midweek_fatigue_away",
+        # Disciplina / cartões
+        "cartoes_acumulados_home", "cartoes_acumulados_away",
+        "jogadores_pendurados_home", "jogadores_pendurados_away",
+        # Classificação
+        "pontos_por_jogo_home", "pontos_por_jogo_away",
+        "saldo_por_jogo_home", "saldo_por_jogo_away",
+        "posicao_home", "posicao_away",
+        "jogos_disputados_home", "jogos_disputados_away",
+        # H2H
+        "h2h_taxa_vitoria_mandante", "h2h_media_gols", "h2h_n_jogos",
+        # Árbitro
+        "arbitro_cartoes_media", "arbitro_faltas_media", "arbitro_n_jogos",
+        # XI Titular (v3B + v10)
+        "titular_rating_home", "titular_rating_away",
+        "titular_valor_mercado_home", "titular_valor_mercado_away",
+        "titular_avg_age_home", "titular_avg_age_away",
+        "titular_avg_height_home", "titular_avg_height_away",
+        # Venue / contexto de temporada
+        "venue_capacity_home",
+        "progresso_temporada",
+        # FBref (v7)
+        *COLUNAS_FORMA_POSSE.values(),
+        *COLUNAS_FORMA_CHUTES.values(),
+        *COLUNAS_FORMA_CHUTES_ALVO.values(),
+        *COLUNAS_FORMA_ESCANTEIOS.values(),
+        *COLUNAS_FORMA_FALTAS.values(),
+        *COLUNAS_FORMA_CARTOES_AMARELOS.values(),
+        *COLUNAS_FORMA_CARTOES_VERMELHOS.values(),
+        # FotMob (v8)
+        *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in colunas_forma_fotmob(nome_curto).values()],
+        # Situação de chutes FotMob (v9)
+        *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
+        # Features derivadas (v11)
+        "elo_diff",
+        "xg_diff_bayesiano", "xgot_diff_bayesiano",
+        "squad_rating_diff",
+        "rating_diff_xi", "valor_diff_xi", "age_diff_xi", "height_diff_xi",
+        "xg_momentum_home", "xg_momentum_away",
+        "posicao_diff", "pontos_diff",
+        # Alvos
+        "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
+        # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
+        "xg_home", "xg_away", "xgot_home", "xgot_away",
     ]
+    dataset = dataset[[c for c in _COLUNAS_DESEJADAS if c in dataset.columns]]
 
     # NaN em elo/xG (times/temporadas sem essa fonte -- ver
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM

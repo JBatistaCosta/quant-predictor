@@ -134,6 +134,23 @@ const FEATURE_GROUPS = [
     ],
   },
   {
+    grupo: 'Features Derivadas — Diferenciais e Momentos (v11)',
+    features: [
+      { key: 'elo_diff', label: 'Diferença de Elo (mand. − vis.)', cov: '█' },
+      { key: 'xg_diff_bayesiano', label: 'Diferença de xG bayesiano (mand. − vis.)', cov: '▅' },
+      { key: 'xgot_diff_bayesiano', label: 'Diferença de xGOT bayesiano (mand. − vis.)', cov: '▅' },
+      { key: 'squad_rating_diff', label: 'Diferença de rating do elenco (mand. − vis.)', cov: '▅' },
+      { key: 'rating_diff_xi', label: 'Diferença de rating do XI (mand. − vis.)', cov: '▅' },
+      { key: 'valor_diff_xi', label: 'Diferença de valor de mercado do XI (€M)', cov: '▅' },
+      { key: 'age_diff_xi', label: 'Diferença de idade média do XI', cov: '▃' },
+      { key: 'height_diff_xi', label: 'Diferença de altura média do XI (cm)', cov: '▃' },
+      { key: 'xg_momentum_home', label: 'Momentum xG atacante (mand., 5j−10j)', cov: '▅' },
+      { key: 'xg_momentum_away', label: 'Momentum xG atacante (vis., 5j−10j)', cov: '▅' },
+      { key: 'posicao_diff', label: 'Diferença de posição na tabela (vis.−mand.)', cov: '█' },
+      { key: 'pontos_diff', label: 'Diferença de pts/jogo (mand. − vis.)', cov: '█' },
+    ],
+  },
+  {
     grupo: 'FBref: Forma Básica (v7)',
     features: [
       { key: 'media_posse_5j_home', label: 'Posse de bola (mandante, 5j)', cov: '▅' },
