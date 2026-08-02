@@ -3340,6 +3340,46 @@ export default async function handler(req, res) {
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
 
+    // =====================================================================
+    // Exploração de Dados — leitura paginada de qualquer tabela pública
+    // =====================================================================
+    if (tarefa === 'explorar-schema') {
+      const tabela = req.query.tabela || '';
+      if (!tabela) return res.status(400).json({ error: { message: 'Parâmetro tabela é obrigatório.' } });
+      // Busca colunas via information_schema (service role tem acesso)
+      const { data, error } = await supabase
+        .from('information_schema.columns')
+        .select('column_name,data_type,is_nullable,column_default')
+        .eq('table_schema', 'public')
+        .eq('table_name', tabela)
+        .order('ordinal_position');
+      if (error) {
+        // PostgREST pode não expor information_schema — retorna vazio (frontend deriva de primeira linha)
+        return res.status(200).json({ colunas: [] });
+      }
+      return res.status(200).json({ colunas: data || [] });
+    }
+
+    if (tarefa === 'explorar-dados') {
+      const { tabela, pagina = '0', por_pagina = '100', coluna_busca = '', busca = '' } = req.query;
+      if (!tabela) return res.status(400).json({ error: { message: 'Parâmetro tabela é obrigatório.' } });
+      // Valida nome da tabela: só letras, números e underscores
+      if (!/^[a-z][a-z0-9_]*$/.test(tabela)) {
+        return res.status(400).json({ error: { message: 'Nome de tabela inválido.' } });
+      }
+      const pg = Math.max(0, parseInt(pagina, 10));
+      const pp = Math.min(500, Math.max(10, parseInt(por_pagina, 10)));
+      const inicio = pg * pp;
+      const fim = inicio + pp - 1;
+      let query = supabase.from(tabela).select('*', { count: 'exact' }).range(inicio, fim);
+      if (busca && coluna_busca && /^[a-z][a-z0-9_]*$/.test(coluna_busca)) {
+        query = query.ilike(coluna_busca, `%${busca}%`);
+      }
+      const { data, count, error } = await query;
+      if (error) return res.status(400).json({ error: { message: error.message } });
+      return res.status(200).json({ dados: data, total: count, pagina: pg, por_pagina: pp });
+    }
+
     return res.status(400).json({
       error: { message: 'Especifique ?tarefa=elo (com liga_id ou escopo=geral), ?tarefa=calibracao, ?tarefa=odds-descobrir ou ?tarefa=odds&liga_id=X.' },
     });
