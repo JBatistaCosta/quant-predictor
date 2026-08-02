@@ -263,7 +263,10 @@ def treinar_via_ml(
         features=features,
     )
 
-    probs, classes = prever_fn(modelo, extra, test_df[features])
+    # Passa test_df completo + features explícito para evitar que prever_fn
+    # caia no default global FEATURES (que contém colunas antigas como
+    # media_xg_5j_home) ao receber um df já fatiado sem todas as colunas.
+    probs, classes = prever_fn(modelo, extra, test_df, features)
 
     y_true = test_df[target_col].values
     metricas = calcular_metricas(y_true, probs, tipo)
