@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Database, Search, ChevronLeft, ChevronRight, RefreshCw,
-  Table2, Filter, X, Copy, ChevronDown, Eye,
+  Table2, Filter, X, Copy, ChevronDown, Eye, Download, Loader2,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -95,7 +95,16 @@ export default function ExploracaoDados() {
   const [erro, setErro] = useState(null);
   const [linhaExpandida, setLinhaExpandida] = useState(null);
   const [contagens, setContagens] = useState({});
+  const [exportando, setExportando] = useState(false);
+  const [menuExportAberto, setMenuExportAberto] = useState(false);
   const buscaRef = useRef(null);
+  const menuExportRef = useRef(null);
+
+  useEffect(() => {
+    const fechar = (e) => { if (menuExportRef.current && !menuExportRef.current.contains(e.target)) setMenuExportAberto(false); };
+    document.addEventListener('mousedown', fechar);
+    return () => document.removeEventListener('mousedown', fechar);
+  }, []);
 
   const tabelasFiltradas = TABELAS.filter((t) => {
     const matchGrupo = !grupoAtivo || t.grupo === grupoAtivo;
@@ -161,6 +170,61 @@ export default function ExploracaoDados() {
 
   const copiarLinha = (linha) => {
     navigator.clipboard.writeText(JSON.stringify(linha, null, 2));
+  };
+
+  const baixarArquivo = (blob, nome) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nome; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toCSV = (linhas) => {
+    if (!linhas.length) return '';
+    const cols = Object.keys(linhas[0]);
+    const esc = (v) => {
+      if (v == null) return '';
+      const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    return [cols.join(','), ...linhas.map((l) => cols.map((c) => esc(l[c])).join(','))].join('\n');
+  };
+
+  const exportarPaginaCSV = () => {
+    setMenuExportAberto(false);
+    baixarArquivo(new Blob([toCSV(dados)], { type: 'text/csv;charset=utf-8;' }), `${tabelaSelecionada}_p${pagina + 1}.csv`);
+  };
+
+  const exportarPaginaJSON = () => {
+    setMenuExportAberto(false);
+    baixarArquivo(new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' }), `${tabelaSelecionada}_p${pagina + 1}.json`);
+  };
+
+  const exportarTudoCSV = async () => {
+    if (!tabelaSelecionada || exportando) return;
+    setMenuExportAberto(false);
+    setExportando(true);
+    try {
+      const CHUNK = 1000;
+      let todas = [];
+      let pg = 0;
+      while (true) {
+        const inicio = pg * CHUNK;
+        let q = supabase.from(tabelaSelecionada).select('*').range(inicio, inicio + CHUNK - 1);
+        if (busca && colunaBusca) q = q.ilike(colunaBusca, `%${busca}%`);
+        const { data, error } = await q;
+        if (error) throw error;
+        todas = [...todas, ...(data || [])];
+        if (!data || data.length < CHUNK) break;
+        pg++;
+      }
+      const sufixo = busca ? '_filtrado' : '_completo';
+      baixarArquivo(new Blob([toCSV(todas)], { type: 'text/csv;charset=utf-8;' }), `${tabelaSelecionada}${sufixo}.csv`);
+    } catch (e) {
+      alert(`Erro ao exportar: ${e.message}`);
+    } finally {
+      setExportando(false);
+    }
   };
 
   return (
@@ -297,6 +361,47 @@ export default function ExploracaoDados() {
                   >
                     <RefreshCw size={14} className={carregando ? 'animate-spin' : ''} />
                   </button>
+
+                  {/* Exportação */}
+                  {dados.length > 0 && (
+                    <div className="relative" ref={menuExportRef}>
+                      <button
+                        onClick={() => setMenuExportAberto((v) => !v)}
+                        disabled={exportando}
+                        className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                        title="Exportar dados"
+                      >
+                        {exportando
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <Download size={13} />}
+                        Exportar
+                        <ChevronDown size={11} />
+                      </button>
+                      {menuExportAberto && (
+                        <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl z-50 min-w-[190px] overflow-hidden">
+                          <div className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700">
+                            Página atual ({dados.length} linhas)
+                          </div>
+                          <button onClick={exportarPaginaCSV} className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-slate-100 transition-colors">
+                            CSV (.csv)
+                          </button>
+                          <button onClick={exportarPaginaJSON} className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-slate-100 transition-colors">
+                            JSON (.json)
+                          </button>
+                          {total != null && total > porPagina && (
+                            <>
+                              <div className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-t border-slate-700">
+                                Tudo ({total.toLocaleString('pt-BR')} linhas)
+                              </div>
+                              <button onClick={exportarTudoCSV} className="w-full text-left px-4 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-slate-100 transition-colors">
+                                CSV completo (.csv)
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
