@@ -86,7 +86,10 @@ function devigar(oddsPorSelecao) {
 }
 
 function chaveMercado(m) {
-  return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
+  // v9 gravou '1x2' (minúscula) — normaliza antes do switch
+  if (m === '1X2' || m === '1x2') return '1X2';
+  if (m === 'over_under_2.5') return 'over_under_2_5';
+  return 'corners_over_under_9_5';
 }
 
 // O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
@@ -170,7 +173,8 @@ export default async function handler(req, res) {
       buscarTudoPaginado(() => {
         let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
         if (modelo) q = q.eq('model_name', modelo);
-        if (mercado) q = q.eq('market', mercado);
+        // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
+        if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
         return q;
       }),
       // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
@@ -183,7 +187,12 @@ export default async function handler(req, res) {
             return q;
           }),
     ]);
-    const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
+    // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
+    // pra garantir consistência em chaveMercado, chaveOdds e chaveGrupo.
+    const predicoes = [
+      ...predicoesAntigas.map(p => ({ ...p, market: p.market === '1x2' ? '1X2' : p.market })),
+      ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw),
+    ];
     if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [] });
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
