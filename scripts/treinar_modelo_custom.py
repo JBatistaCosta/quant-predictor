@@ -149,7 +149,13 @@ def carregar_dataset(supabase, features: list[str], target_info: dict) -> pd.Dat
             "foram ingeridos corretamente."
         )
 
-    cols_necessarias = features + [target_info["coluna"], "match_date"]
+    # ml.CAT_FEATURES (="liga") precisa estar no dataset independente da
+    # seleção do usuário — treinar_catboost/lightgbm/xgboost acessam
+    # train_df["liga"] internamente mesmo quando "liga" não foi escolhida
+    # como feature; sem isso, falha com KeyError: 'liga'.
+    cols_necessarias = list(dict.fromkeys(
+        ml.CAT_FEATURES + features + [target_info["coluna"], "match_date"]
+    ))
     cols_presentes = [c for c in cols_necessarias if c in dataset.columns]
     dataset = dataset[cols_presentes].dropna(subset=[target_info["coluna"]]).copy()
 
