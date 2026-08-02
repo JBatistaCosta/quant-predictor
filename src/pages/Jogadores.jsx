@@ -9,7 +9,7 @@
 // mais de 11 mil linhas).
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { UserRound, Search, Loader2, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowUpDown, RotateCcw, UploadCloud, Star } from 'lucide-react';
+import { UserRound, Search, Loader2, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowUpDown, RotateCcw, UploadCloud, Star, Globe } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 
@@ -101,6 +101,10 @@ export default function Jogadores() {
   const [tamanhoLote, setTamanhoLote] = useState(LOTES_IMPORTACAO[0]);
   const [msgImportacao, setMsgImportacao] = useState('');
   const [erroImportacao, setErroImportacao] = useState('');
+
+  const [importandoBio, setImportandoBio] = useState(false);
+  const [msgBio, setMsgBio] = useState('');
+  const [erroBio, setErroBio] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => { setBusca(buscaDigitada); setPagina(0); }, 400);
@@ -214,6 +218,48 @@ export default function Jogadores() {
     }
   };
 
+  const buscarDadosBiograficos = async () => {
+    setImportandoBio(true); setMsgBio(''); setErroBio('');
+    try {
+      const { data: candidatos, error: erroCandidatos } = await supabase
+        .from('players')
+        .select('id, name')
+        .is('birth_date', null)
+        .not('fotmob_player_id', 'is', null)
+        .neq('fotmob_player_id', '0')
+        .neq('fotmob_player_id', '-1')
+        .order('market_value', { ascending: false, nullsFirst: false })
+        .limit(tamanhoLote);
+      if (erroCandidatos) throw erroCandidatos;
+
+      if (!candidatos || candidatos.length === 0) {
+        setMsgBio('Nenhum jogador pendente — todos já têm data de nascimento preenchida.');
+        return;
+      }
+
+      let ok = 0, falhas = 0;
+      for (let i = 0; i < candidatos.length; i++) {
+        const jogador = candidatos[i];
+        setMsgBio(`Buscando ${i + 1}/${candidatos.length}: ${jogador.name || jogador.id}...`);
+        try {
+          const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${jogador.id}`));
+          const dados = await resp.json();
+          if (!resp.ok || dados.error) throw new Error(dados.error?.message || dados.error || 'falha desconhecida');
+          ok++;
+        } catch {
+          falhas++;
+        }
+        if (i < candidatos.length - 1) await new Promise(r => setTimeout(r, PACING_IMPORTACAO_MS));
+      }
+      setMsgBio(`Concluído: ${ok} jogadores atualizados, ${falhas} falhas.`);
+    } catch (e) {
+      setErroBio(e.message);
+    } finally {
+      setImportandoBio(false);
+      setVersao(v => v + 1);
+    }
+  };
+
   if (!supabaseAtivo) {
     return (
       <div className="max-w-5xl mx-auto bg-slate-800 border border-red-500/30 rounded-2xl p-6 text-center">
@@ -250,19 +296,28 @@ export default function Jogadores() {
             <select
               value={tamanhoLote}
               onChange={(e) => setTamanhoLote(Number(e.target.value))}
-              disabled={importando}
+              disabled={importando || importandoBio}
               className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100"
             >
               {LOTES_IMPORTACAO.map(n => <option key={n} value={n}>{n}/{n}</option>)}
             </select>
             <button
               onClick={importarEmMassa}
-              disabled={importando || resetando}
+              disabled={importando || importandoBio || resetando}
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Importa em lote o perfil avançado (valor de mercado, carreira, títulos) dos próximos jogadores sem essa informação"
             >
               {importando ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
               Importar em massa
+            </button>
+            <button
+              onClick={buscarDadosBiograficos}
+              disabled={importandoBio || importando || resetando}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Busca dados biográficos (nascimento, nacionalidade, altura, pé preferido) dos jogadores sem data de nascimento"
+            >
+              {importandoBio ? <Loader2 className="animate-spin" size={15} /> : <Globe size={15} />}
+              Buscar biográficos
             </button>
           </div>
         </div>
@@ -276,6 +331,11 @@ export default function Jogadores() {
       {(msgImportacao || erroImportacao) && (
         <div className={`text-sm px-4 py-3 rounded-xl mb-4 ${erroImportacao ? 'bg-red-950/30 border border-red-600/40 text-red-300' : 'bg-emerald-950/20 border border-emerald-600/30 text-emerald-300'}`}>
           {erroImportacao || msgImportacao}
+        </div>
+      )}
+      {(msgBio || erroBio) && (
+        <div className={`text-sm px-4 py-3 rounded-xl mb-4 ${erroBio ? 'bg-red-950/30 border border-red-600/40 text-red-300' : 'bg-emerald-950/20 border border-emerald-600/30 text-emerald-300'}`}>
+          {erroBio || msgBio}
         </div>
       )}
 
