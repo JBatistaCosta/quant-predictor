@@ -246,16 +246,29 @@ groupedFotMob["Finalização"] = [
 
 FOTMOB_METRICS.forEach(metric => {
   if (!groupedFotMob[metric.category]) groupedFotMob[metric.category] = [];
-  
-  ['5j', '10j', '20j', '5j_decay', '10j_decay', '20j_decay'].forEach(janela => {
-    const lbl = janela.replace('_', ' ');
+
+  if (!metric.short.endsWith('_fm')) {
+    // Métricas no formato multi-janela novo (ex: xgot) — chave: {metric}_home_{janela}
+    // O dataset gera essas colunas via _forma_por_mando_multi_janelas com o mesmo nome.
+    ['5j', '10j', '20j', '5j_decay', '10j_decay', '20j_decay'].forEach(janela => {
+      const lbl = janela.replace('_decay', ' decay').replace(/_/g, ' ');
+      groupedFotMob[metric.category].push(
+        { key: `${metric.short}_home_${janela}`, label: `${metric.label} (mand., ${lbl})` },
+        { key: `${metric.short}_sofrido_home_${janela}`, label: `${metric.label} sofrido (mand., ${lbl})` },
+        { key: `${metric.short}_away_${janela}`, label: `${metric.label} (vis., ${lbl})` },
+        { key: `${metric.short}_sofrido_away_${janela}`, label: `${metric.label} sofrido (vis., ${lbl})` }
+      );
+    });
+  } else {
+    // Métricas FotMob v8 — somente 5j disponível no dataset.
+    // Chave correta: media_{metric}_5j_{position}  (ex: media_chutes_area_fm_5j_home)
     groupedFotMob[metric.category].push(
-      { key: `${metric.short}_home_${janela}`, label: `${metric.label} (mand., ${lbl})` },
-      { key: `${metric.short}_sofrido_home_${janela}`, label: `${metric.label} sofrido (mand., ${lbl})` },
-      { key: `${metric.short}_away_${janela}`, label: `${metric.label} (vis., ${lbl})` },
-      { key: `${metric.short}_sofrido_away_${janela}`, label: `${metric.label} sofrido (vis., ${lbl})` }
+      { key: `media_${metric.short}_5j_home`, label: `${metric.label} (mand., 5j)` },
+      { key: `media_${metric.short}_sofrido_5j_home`, label: `${metric.label} sofrido (mand., 5j)` },
+      { key: `media_${metric.short}_5j_away`, label: `${metric.label} (vis., 5j)` },
+      { key: `media_${metric.short}_sofrido_5j_away`, label: `${metric.label} sofrido (vis., 5j)` }
     );
-  });
+  }
 });
 
 FEATURE_GROUPS.pop(); // Remove o comentário placeholder

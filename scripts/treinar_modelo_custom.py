@@ -69,6 +69,62 @@ ALGORITMOS_ML = {"catboost", "xgboost", "lightgbm"}
 # Algoritmos nativos sklearn (logistic_regression, random_forest)
 ALGORITMOS_SKLEARN = {"logistic_regression", "random_forest"}
 
+# ---------------------------------------------------------------------------
+# Migração de chaves de features — FotMob v8
+# ---------------------------------------------------------------------------
+# O frontend gerava as chaves FotMob no formato {metric}_{position}_{window}
+# (ex: chutes_area_fm_home_5j), mas o dataset armazena essas colunas como
+# media_{metric}_{window}_{position} (ex: media_chutes_area_fm_5j_home), e
+# somente a janela de 5j existe. Configs salvas antes da correção do frontend
+# precisam ter as chaves traduzidas automaticamente no momento do treino.
+_FOTMOB_SHORTS_V8 = frozenset({
+    "chutes_fm", "chutes_alvo_fm", "chutes_fora_fm", "chutes_bloqueados_fm",
+    "chutes_area_fm", "chutes_fora_area_fm", "chances_claras_fm",
+    "chances_claras_perdidas_fm", "passes_certos_fm", "bolas_longas_certas_fm",
+    "cruzamentos_certos_fm", "desarmes_fm", "interceptacoes_fm", "bloqueios_fm",
+    "afastamentos_fm", "defesas_goleiro_fm", "duelos_vencidos_fm",
+    "duelos_aereos_vencidos_fm", "dribles_certos_fm", "faltas_fm",
+    "cartoes_amarelos_fm", "cartoes_vermelhos_fm", "escanteios_fm",
+    "toques_area_adv_fm", "posse_fm",
+})
+_FOTMOB_POSICOES_V8 = ("sofrido_home", "sofrido_away", "home", "away")
+
+
+def _migrar_chave_fotmob_v8(key: str) -> str | None:
+    """Tenta converter chave FotMob v8 do formato antigo frontend para dataset.
+
+    Retorna:
+      - str  com o nome correto se 5j e reconhecida como FotMob v8
+      - None se a janela não existe no dataset (10j / 20j / decay)
+      - key inalterada se não for reconhecida como FotMob v8
+    """
+    for metric in sorted(_FOTMOB_SHORTS_V8, key=len, reverse=True):
+        prefix = f"{metric}_"
+        if not key.startswith(prefix):
+            continue
+        rest = key[len(prefix):]
+        for pos in _FOTMOB_POSICOES_V8:
+            if rest == f"{pos}_5j":
+                nova = f"media_{metric}_5j_{pos}"
+                if nova != key:
+                    logger.info("Feature migrada (FotMob v8): %s → %s", key, nova)
+                return nova
+            if rest.startswith(f"{pos}_"):
+                logger.warning(
+                    "Feature FotMob v8 descartada (janela não existe no dataset): %s", key
+                )
+                return None
+    return key
+
+
+def _migrar_features(features: list[str]) -> list[str]:
+    """Aplica migração de chaves FotMob v8 sobre a lista de features.
+
+    Chaves com janelas inexistentes (10j/20j/decay) são removidas aqui
+    para que o log de 'features faltando' fique mais limpo.
+    """
+    return [nova for key in features if (nova := _migrar_chave_fotmob_v8(key)) is not None]
+
 
 # ---------------------------------------------------------------------------
 # Utilitários Supabase
@@ -123,6 +179,11 @@ def carregar_dataset(supabase, features: list[str], target_info: dict) -> pd.Dat
         raise RuntimeError("Dataset histórico vazio — verifique as ligas e temporadas no banco.")
 
     logger.info("Dataset carregado: %d partidas, %d colunas", len(dataset), len(dataset.columns))
+
+    # Migra chaves FotMob v8 do formato antigo do frontend (metric_pos_window)
+    # para o formato do dataset (media_metric_window_pos), e remove janelas
+    # inexistentes (10j/20j/decay) antes da validação de features_disponiveis.
+    features = _migrar_features(features)
 
     # Adiciona coluna de alvo se for btts (não é gerada por padrão)
     if target_info["coluna"] == "resultado_btts" and "resultado_btts" not in dataset.columns:
