@@ -697,6 +697,255 @@ async function tarefaDispararTreinoCustom(supabase, authHeader, configId) {
 }
 
 // ============================================================
+// TAREFA: deletar-config-custom — remove uma configuração pelo id
+async function tarefaDeletarConfigCustom(supabase, body) {
+  const { id } = body || {};
+  if (!id) return { status: 400, error: 'id é obrigatório.' };
+  const { error } = await supabase.table('custom_model_configs').delete().eq('id', id);
+  if (error) throw error;
+  return { status: 200, deletado: id };
+}
+
+// ============================================================
+// CATÁLOGO DE FEATURES — retornado por ?tarefa=catalogo-features
+// Grupos organizados por tema; cada feature tem col (nome no dataset) e label (UI).
+// stats_fotmob e situacao_chutes usam o padrão media_{base}_5j_{home|away}
+// (4 variantes por stat: marcado_home, sofrido_home, marcado_away, sofrido_away).
+
+function _variantesFotmob(base, label) {
+  return [
+    { col: `media_${base}_5j_home`,         label: `${label} marcado (casa)` },
+    { col: `media_${base}_sofrido_5j_home`,  label: `${label} sofrido (casa)` },
+    { col: `media_${base}_5j_away`,          label: `${label} marcado (fora)` },
+    { col: `media_${base}_sofrido_5j_away`,  label: `${label} sofrido (fora)` },
+  ];
+}
+
+const CATALOGO_FEATURES = [
+  {
+    grupo: 'ELO',
+    descricao: 'Rating Elo pré-jogo',
+    features: [
+      { col: 'elo_home', label: 'ELO mandante' },
+      { col: 'elo_away', label: 'ELO visitante' },
+    ],
+  },
+  {
+    grupo: 'Forma — Gols',
+    descricao: 'Média de gols marcados/sofridos nos últimos 5 jogos',
+    features: [
+      { col: 'media_gols_marcados_5j_home', label: 'Gols marcados (casa)' },
+      { col: 'media_gols_sofridos_5j_home', label: 'Gols sofridos (casa)' },
+      { col: 'media_gols_marcados_5j_away', label: 'Gols marcados (fora)' },
+      { col: 'media_gols_sofridos_5j_away', label: 'Gols sofridos (fora)' },
+    ],
+  },
+  {
+    grupo: 'Forma — xG',
+    descricao: 'Expected Goals médio nos últimos 5 jogos (Understat)',
+    features: [
+      { col: 'media_xg_5j_home',          label: 'xG gerado (casa)' },
+      { col: 'media_xg_sofrido_5j_home',  label: 'xG sofrido (casa)' },
+      { col: 'media_xg_5j_away',          label: 'xG gerado (fora)' },
+      { col: 'media_xg_sofrido_5j_away',  label: 'xG sofrido (fora)' },
+    ],
+  },
+  {
+    grupo: 'Forma — xGOT',
+    descricao: 'Expected Goals on Target médio nos últimos 5 jogos (FotMob)',
+    features: [
+      { col: 'media_xgot_5j_home',         label: 'xGOT gerado (casa)' },
+      { col: 'media_xgot_sofrido_5j_home', label: 'xGOT sofrido (casa)' },
+      { col: 'media_xgot_5j_away',         label: 'xGOT gerado (fora)' },
+      { col: 'media_xgot_sofrido_5j_away', label: 'xGOT sofrido (fora)' },
+    ],
+  },
+  {
+    grupo: 'Elenco',
+    descricao: 'Força do elenco e do XI titular',
+    features: [
+      { col: 'squad_rating_home',          label: 'Rating do elenco (casa)' },
+      { col: 'squad_rating_away',          label: 'Rating do elenco (fora)' },
+      { col: 'titular_rating_home',        label: 'Rating do XI titular (casa)' },
+      { col: 'titular_rating_away',        label: 'Rating do XI titular (fora)' },
+      { col: 'titular_valor_mercado_home', label: 'Valor de mercado titular (casa)' },
+      { col: 'titular_valor_mercado_away', label: 'Valor de mercado titular (fora)' },
+    ],
+  },
+  {
+    grupo: 'Fadiga',
+    descricao: 'Dias desde o último jogo e acúmulo de jogos em semana cheia',
+    features: [
+      { col: 'days_since_last_match_home', label: 'Dias desde último jogo (casa)' },
+      { col: 'days_since_last_match_away', label: 'Dias desde último jogo (fora)' },
+      { col: 'is_midweek_fatigue_home',    label: 'Fadiga de semana cheia (casa)' },
+      { col: 'is_midweek_fatigue_away',    label: 'Fadiga de semana cheia (fora)' },
+    ],
+  },
+  {
+    grupo: 'Disciplina',
+    descricao: 'Cartões acumulados e jogadores pendurados',
+    features: [
+      { col: 'cartoes_acumulados_home',    label: 'Cartões acumulados (casa)' },
+      { col: 'cartoes_acumulados_away',    label: 'Cartões acumulados (fora)' },
+      { col: 'jogadores_pendurados_home',  label: 'Jogadores pendurados (casa)' },
+      { col: 'jogadores_pendurados_away',  label: 'Jogadores pendurados (fora)' },
+    ],
+  },
+  {
+    grupo: 'Classificação',
+    descricao: 'Posição e pontuação no campeonato pré-jogo',
+    features: [
+      { col: 'pontos_por_jogo_home',   label: 'Pontos/jogo (casa)' },
+      { col: 'pontos_por_jogo_away',   label: 'Pontos/jogo (fora)' },
+      { col: 'saldo_por_jogo_home',    label: 'Saldo de gols/jogo (casa)' },
+      { col: 'saldo_por_jogo_away',    label: 'Saldo de gols/jogo (fora)' },
+      { col: 'posicao_home',           label: 'Posição na tabela (casa)' },
+      { col: 'posicao_away',           label: 'Posição na tabela (fora)' },
+      { col: 'jogos_disputados_home',  label: 'Jogos disputados (casa)' },
+      { col: 'jogos_disputados_away',  label: 'Jogos disputados (fora)' },
+    ],
+  },
+  {
+    grupo: 'H2H',
+    descricao: 'Histórico de confrontos diretos',
+    features: [
+      { col: 'h2h_taxa_vitoria_mandante', label: '% vitórias do mandante (H2H)' },
+      { col: 'h2h_media_gols',            label: 'Média de gols (H2H)' },
+      { col: 'h2h_n_jogos',              label: 'Número de confrontos' },
+    ],
+  },
+  {
+    grupo: 'Árbitro',
+    descricao: 'Histórico do árbitro escalado',
+    features: [
+      { col: 'arbitro_cartoes_media', label: 'Cartões médios por jogo' },
+      { col: 'arbitro_faltas_media',  label: 'Faltas médias por jogo' },
+      { col: 'arbitro_n_jogos',      label: 'Nº de jogos apitados' },
+    ],
+  },
+  {
+    grupo: 'Progresso',
+    descricao: 'Progresso da temporada (0=início, 1=final)',
+    features: [
+      { col: 'progresso_temporada', label: 'Progresso da temporada' },
+    ],
+  },
+  {
+    grupo: 'Titulares + Estádio',
+    descricao: 'Idade/altura média do XI titular e capacidade do estádio (V10)',
+    features: [
+      { col: 'titular_avg_age_home',    label: 'Idade média do titular (casa)' },
+      { col: 'titular_avg_age_away',    label: 'Idade média do titular (fora)' },
+      { col: 'titular_avg_height_home', label: 'Altura média do titular (casa)' },
+      { col: 'titular_avg_height_away', label: 'Altura média do titular (fora)' },
+      { col: 'venue_capacity_home',     label: 'Capacidade do estádio (casa)' },
+    ],
+  },
+  {
+    grupo: 'Stats FBref — Ataque',
+    descricao: 'Posse e chutes dos últimos 5 jogos (FBref)',
+    features: [
+      ..._variantesFotmob('posse', 'Posse de bola'),
+      ..._variantesFotmob('chutes', 'Chutes totais'),
+      ..._variantesFotmob('chutes_alvo', 'Chutes no alvo'),
+      ..._variantesFotmob('escanteios', 'Escanteios'),
+    ],
+  },
+  {
+    grupo: 'Stats FBref — Disciplina',
+    descricao: 'Faltas e cartões dos últimos 5 jogos (FBref)',
+    features: [
+      ..._variantesFotmob('faltas', 'Faltas'),
+      ..._variantesFotmob('cartoes_amarelos', 'Cartões amarelos'),
+      ..._variantesFotmob('cartoes_vermelhos', 'Cartões vermelhos'),
+    ],
+  },
+  {
+    grupo: 'Stats FotMob — Chutes',
+    descricao: 'Volume e localização dos chutes (últimos 5 jogos, FotMob)',
+    features: [
+      ..._variantesFotmob('chutes_fm', 'Chutes totais FM'),
+      ..._variantesFotmob('chutes_alvo_fm', 'Chutes no alvo FM'),
+      ..._variantesFotmob('chutes_fora_fm', 'Chutes fora FM'),
+      ..._variantesFotmob('chutes_bloqueados_fm', 'Chutes bloqueados FM'),
+      ..._variantesFotmob('chutes_area_fm', 'Chutes dentro da área FM'),
+      ..._variantesFotmob('chutes_fora_area_fm', 'Chutes fora da área FM'),
+    ],
+  },
+  {
+    grupo: 'Stats FotMob — Chances',
+    descricao: 'Grandes chances criadas e perdidas (FotMob)',
+    features: [
+      ..._variantesFotmob('chances_claras_fm', 'Chances claras'),
+      ..._variantesFotmob('chances_claras_perdidas_fm', 'Chances claras perdidas'),
+      ..._variantesFotmob('toques_area_adv_fm', 'Toques na área adversária'),
+    ],
+  },
+  {
+    grupo: 'Stats FotMob — Passes',
+    descricao: 'Passes certos, bolas longas e cruzamentos (FotMob)',
+    features: [
+      ..._variantesFotmob('passes_certos_fm', 'Passes certos'),
+      ..._variantesFotmob('bolas_longas_certas_fm', 'Bolas longas certas'),
+      ..._variantesFotmob('cruzamentos_certos_fm', 'Cruzamentos certos'),
+      ..._variantesFotmob('posse_fm', 'Posse de bola FM'),
+    ],
+  },
+  {
+    grupo: 'Stats FotMob — Defesa',
+    descricao: 'Ações defensivas (FotMob)',
+    features: [
+      ..._variantesFotmob('desarmes_fm', 'Desarmes'),
+      ..._variantesFotmob('interceptacoes_fm', 'Interceptações'),
+      ..._variantesFotmob('bloqueios_fm', 'Bloqueios'),
+      ..._variantesFotmob('afastamentos_fm', 'Afastamentos'),
+      ..._variantesFotmob('defesas_goleiro_fm', 'Defesas do goleiro'),
+    ],
+  },
+  {
+    grupo: 'Stats FotMob — Duelos',
+    descricao: 'Duelos terrestres e aéreos (FotMob)',
+    features: [
+      ..._variantesFotmob('duelos_vencidos_fm', 'Duelos vencidos'),
+      ..._variantesFotmob('duelos_aereos_vencidos_fm', 'Duelos aéreos vencidos'),
+      ..._variantesFotmob('dribles_certos_fm', 'Dribles certos'),
+    ],
+  },
+  {
+    grupo: 'Stats FotMob — Disciplina',
+    descricao: 'Faltas, cartões e escanteios (FotMob)',
+    features: [
+      ..._variantesFotmob('faltas_fm', 'Faltas FM'),
+      ..._variantesFotmob('cartoes_amarelos_fm', 'Cartões amarelos FM'),
+      ..._variantesFotmob('cartoes_vermelhos_fm', 'Cartões vermelhos FM'),
+      ..._variantesFotmob('escanteios_fm', 'Escanteios FM'),
+    ],
+  },
+  {
+    grupo: 'Situação de Chutes',
+    descricao: 'Perfil de chute: contra-ataque, bola parada, qualidade, timing (FotMob)',
+    features: [
+      ..._variantesFotmob('pct_fast_break_fm', '% Chutes em contra-ataque'),
+      ..._variantesFotmob('pct_bola_parada_fm', '% Chutes de bola parada'),
+      ..._variantesFotmob('xg_chute_fm', 'xG médio por chute'),
+      ..._variantesFotmob('pct_gols_2tempo_fm', '% Gols no 2º tempo'),
+    ],
+  },
+  {
+    grupo: 'Liga',
+    descricao: 'Identificador de liga (feature categórica — sempre incluída)',
+    features: [
+      { col: 'liga', label: 'Liga (categórica)' },
+    ],
+  },
+];
+
+function tarefaCatalogoFeatures() {
+  return { catalogo: CATALOGO_FEATURES };
+}
+
+// ============================================================
 // TAREFA: jogador-perfil — sync SOB DEMANDA de 1 jogador (endpoint
 // /api/data/playerData?id=X do FotMob, diferente do matchDetails usado no
 // resto do pipeline — esse é POR JOGADOR, não por partida). Rápido o
@@ -3062,6 +3311,10 @@ export default async function handler(req, res) {
     // Painel de Treino Customizado
     // ------------------------------------------------------------------
 
+    if (tarefa === 'catalogo-features') {
+      return res.status(200).json(tarefaCatalogoFeatures());
+    }
+
     if (tarefa === 'salvar-config-custom') {
       const resultado = await tarefaSalvarConfigCustom(supabase, req.headers.authorization, req.body);
       const { status, ...corpo } = resultado;
@@ -3074,10 +3327,57 @@ export default async function handler(req, res) {
       return res.status(status).json(corpo);
     }
 
-    if (tarefa === 'disparar-treino-custom') {
-      const resultado = await tarefaDispararTreinoCustom(supabase, req.headers.authorization, req.query.config_id);
+    if (tarefa === 'deletar-config-custom') {
+      const resultado = await tarefaDeletarConfigCustom(supabase, req.body || {});
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'disparar-treino-custom') {
+      const configId = (req.body || {}).config_id || req.query.config_id;
+      const resultado = await tarefaDispararTreinoCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    // =====================================================================
+    // Exploração de Dados — leitura paginada de qualquer tabela pública
+    // =====================================================================
+    if (tarefa === 'explorar-schema') {
+      const tabela = req.query.tabela || '';
+      if (!tabela) return res.status(400).json({ error: { message: 'Parâmetro tabela é obrigatório.' } });
+      // Busca colunas via information_schema (service role tem acesso)
+      const { data, error } = await supabase
+        .from('information_schema.columns')
+        .select('column_name,data_type,is_nullable,column_default')
+        .eq('table_schema', 'public')
+        .eq('table_name', tabela)
+        .order('ordinal_position');
+      if (error) {
+        // PostgREST pode não expor information_schema — retorna vazio (frontend deriva de primeira linha)
+        return res.status(200).json({ colunas: [] });
+      }
+      return res.status(200).json({ colunas: data || [] });
+    }
+
+    if (tarefa === 'explorar-dados') {
+      const { tabela, pagina = '0', por_pagina = '100', coluna_busca = '', busca = '' } = req.query;
+      if (!tabela) return res.status(400).json({ error: { message: 'Parâmetro tabela é obrigatório.' } });
+      // Valida nome da tabela: só letras, números e underscores
+      if (!/^[a-z][a-z0-9_]*$/.test(tabela)) {
+        return res.status(400).json({ error: { message: 'Nome de tabela inválido.' } });
+      }
+      const pg = Math.max(0, parseInt(pagina, 10));
+      const pp = Math.min(500, Math.max(10, parseInt(por_pagina, 10)));
+      const inicio = pg * pp;
+      const fim = inicio + pp - 1;
+      let query = supabase.from(tabela).select('*', { count: 'exact' }).range(inicio, fim);
+      if (busca && coluna_busca && /^[a-z][a-z0-9_]*$/.test(coluna_busca)) {
+        query = query.ilike(coluna_busca, `%${busca}%`);
+      }
+      const { data, count, error } = await query;
+      if (error) return res.status(400).json({ error: { message: error.message } });
+      return res.status(200).json({ dados: data, total: count, pagina: pg, por_pagina: pp });
     }
 
     return res.status(400).json({

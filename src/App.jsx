@@ -28,6 +28,7 @@ const SimulacaoCarteira = lazy(() => import('./pages/SimulacaoCarteira'));
 const RodadaPrevisoes = lazy(() => import('./pages/RodadaPrevisoes'));
 const TreinoCustom = lazy(() => import('./pages/TreinoCustom'));
 const ModeloV9 = lazy(() => import('./pages/ModeloV9'));
+const ExploracaoDados = lazy(() => import('./pages/ExploracaoDados'));
 
 function CarregandoPagina() {
   return (
@@ -102,6 +103,9 @@ export default function App() {
             } />
             <Route path="/modelo-v9" element={
               <ProtectedRoute><Layout><ModeloV9 /></Layout></ProtectedRoute>
+            } />
+            <Route path="/explorar-dados" element={
+              <ProtectedRoute><Layout><ExploracaoDados /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />

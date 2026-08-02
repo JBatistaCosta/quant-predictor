@@ -244,10 +244,11 @@ def treinar_via_ml(
     defaults = ml.PARAMS_DEFAULT.get(nome_interno, {})
     params = {**defaults, **(hyperparameters or {})}
 
-    logger.info("Treinando %s com params=%s, %d features", algoritmo, params, len(features))
+    # CAT_FEATURES (="liga") deve sempre estar em features — treinar_catboost/
+    # xgboost/lightgbm exigem ela internamente como coluna categórica.
+    features = list(dict.fromkeys([*ml.CAT_FEATURES, *features]))
 
-    # cat_features: só os que estão na lista do usuário
-    cat_features_usadas = [f for f in ml.CAT_FEATURES if f in features]
+    logger.info("Treinando %s com params=%s, %d features (incl. liga)", algoritmo, params, len(features))
 
     modelo, extra = treinar_fn(
         params=params,

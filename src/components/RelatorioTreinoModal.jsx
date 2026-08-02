@@ -48,20 +48,20 @@ export default function RelatorioTreinoModal({ config, onClose }) {
 
         {/* Abas */}
         <div className="flex border-b border-slate-800 px-6">
-          <button 
-            className={px-4 py-3 text-sm font-medium border-b-2 transition-colors {abaAtiva === 'resumo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}}
+          <button
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${abaAtiva === 'resumo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
             onClick={() => setAbaAtiva('resumo')}
           >
             Resumo & Métricas
           </button>
-          <button 
-            className={px-4 py-3 text-sm font-medium border-b-2 transition-colors {abaAtiva === 'importancia' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}}
+          <button
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${abaAtiva === 'importancia' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
             onClick={() => setAbaAtiva('importancia')}
           >
             Importância (Features)
           </button>
-          <button 
-            className={px-4 py-3 text-sm font-medium border-b-2 transition-colors {abaAtiva === 'curvas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}}
+          <button
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${abaAtiva === 'curvas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
             onClick={() => setAbaAtiva('curvas')}
           >
             Curvas de Aprendizado
