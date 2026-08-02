@@ -256,7 +256,7 @@ def treinar_via_ml(
 
     logger.info("Treinando %s com params=%s, %d features (incl. liga)", algoritmo, params, len(features))
 
-    modelo, extra = treinar_fn(
+    modelo, extra, _ = treinar_fn(
         params=params,
         train_df=train_df,
         coluna_alvo=target_col,
