@@ -549,6 +549,7 @@ const GITHUB_REPO_NAME = 'quant-predictor';
 const GITHUB_WORKFLOW_FILE = 'predict.yml';
 const GITHUB_WORKFLOW_FILE_BACKTEST = 'backtest_kelly.yml';
 const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO = 'treinar_modelo_custom.yml';
+const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO_WF = 'treinar_modelo_custom_wf.yml';
 
 async function verificarUsuarioLogado(supabase, authHeader) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
@@ -615,33 +616,46 @@ function tarefaDispararBacktest(supabase, authHeader) {
 // ============================================================
 
 // Salva (ou atualiza) uma configuração de modelo customizado.
-// Body esperado: { name, algorithm, features[], target?, hyperparameters?, notes? }
+// Body esperado: { name, algorithm, features[], target?, hyperparameters?, notes?, mode?, algorithms? }
+// mode: 'simples' (padrão) ou 'walk_forward_cv'. No modo WF, `algorithms` é um array de strings.
 // Se `id` está presente no body, faz upsert; senão, cria nova linha.
 async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
   if (!usuario) return { status: 401, error: 'Não autenticado.' };
 
-  const { id, name, algorithm, features, target, hyperparameters, notes } = body || {};
-  if (!name || !algorithm || !Array.isArray(features) || features.length === 0) {
-    return { status: 400, error: 'Campos obrigatórios: name (texto), algorithm (string), features (array não-vazio).' };
+  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms } = body || {};
+  if (!name || !Array.isArray(features) || features.length === 0) {
+    return { status: 400, error: 'Campos obrigatórios: name (texto), features (array não-vazio).' };
   }
 
-  const payload = {
+  const modoFinal = mode === 'walk_forward_cv' ? 'walk_forward_cv' : 'simples';
+
+  if (modoFinal === 'simples') {
+    if (!algorithm) return { status: 400, error: 'Campo algorithm é obrigatório no modo simples.' };
+  } else {
+    if (!Array.isArray(algorithms) || algorithms.length === 0) {
+      return { status: 400, error: 'No modo walk_forward_cv, selecione ao menos 1 algoritmo em algorithms[].' };
+    }
+  }
+
+  const algorithmsFinal = modoFinal === 'walk_forward_cv' ? (algorithms || []) : [];
+
+  const camposComuns = {
     name,
-    algorithm,
+    algorithm: algorithm || null,
     features,
     target: target || '1x2',
     hyperparameters: hyperparameters || null,
     notes: notes || null,
-    status: 'rascunho',
+    mode: modoFinal,
+    algorithms: algorithmsFinal,
   };
 
   let resultado;
   if (id) {
-    // Atualiza registro existente (mantém metrics/model_key/trained_at intactos).
     const { data, error } = await supabase
       .from('custom_model_configs')
-      .update({ name, algorithm, features, target: target || '1x2', hyperparameters: hyperparameters || null, notes: notes || null })
+      .update(camposComuns)
       .eq('id', id)
       .select()
       .single();
@@ -650,7 +664,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
   } else {
     const { data, error } = await supabase
       .from('custom_model_configs')
-      .insert(payload)
+      .insert({ ...camposComuns, status: 'rascunho' })
       .select()
       .single();
     if (error) throw error;
@@ -664,30 +678,33 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 async function tarefaListarConfigsCustom(supabase) {
   const { data, error } = await supabase
     .from('custom_model_configs')
-    .select('id, name, algorithm, features, target, status, metrics, model_key, notes, created_at, trained_at, error_message')
+    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, created_at, trained_at, error_message')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return { status: 200, configs: data || [] };
 }
 
-// Dispara o workflow treinar_modelo_custom.yml com o config_id como input.
+// Dispara o workflow de treino (simples ou walk_forward_cv) com o config_id como input.
 async function tarefaDispararTreinoCustom(supabase, authHeader, configId) {
   if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
 
   // Verifica que o config existe antes de disparar.
   const { data: cfg, error: cfgErr } = await supabase
     .from('custom_model_configs')
-    .select('id, status')
+    .select('id, status, mode')
     .eq('id', configId)
     .maybeSingle();
   if (cfgErr) throw cfgErr;
   if (!cfg) return { status: 404, error: `Config id=${configId} não encontrada em custom_model_configs.` };
   if (cfg.status === 'treinando') return { status: 409, error: 'Esse modelo já está em treinamento. Aguarde.' };
 
-  // Dispara o workflow passando config_id como input do workflow_dispatch.
-  const resultado = await dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_CUSTOM_TREINO, { config_id: configId });
+  // Seleciona o workflow correto baseado no mode da config.
+  const workflowFile = cfg.mode === 'walk_forward_cv'
+    ? GITHUB_WORKFLOW_FILE_CUSTOM_TREINO_WF
+    : GITHUB_WORKFLOW_FILE_CUSTOM_TREINO;
+
+  const resultado = await dispararWorkflow(supabase, authHeader, workflowFile, { config_id: configId });
   if (resultado.status === 200) {
-    // Atualiza o status para aguardando_treino enquanto o workflow não assume.
     await supabase
       .from('custom_model_configs')
       .update({ status: 'aguardando_treino' })
@@ -722,7 +739,7 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
 
   const { data: cfg } = await supabase
     .from('custom_model_configs')
-    .select('name, algorithm, features, target, hyperparameters, notes')
+    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode')
     .eq('id', configId).maybeSingle();
   if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
 
@@ -731,10 +748,12 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
     .insert({
       name: `[cópia] ${cfg.name}`,
       algorithm: cfg.algorithm,
+      algorithms: cfg.algorithms || [],
       features: cfg.features,
       target: cfg.target,
       hyperparameters: cfg.hyperparameters,
       notes: cfg.notes,
+      mode: cfg.mode || 'simples',
       status: 'rascunho',
     })
     .select().single();
@@ -774,6 +793,278 @@ async function tarefaResetarConfigCustom(supabase, authHeader, configId) {
     .eq('id', configId);
   if (error) throw error;
   return { status: 200, mensagem: 'Modelo resetado para rascunho.' };
+}
+
+// ============================================================
+// TAREFA: relatorio-teste — lista paginada de partidas da fase de teste
+// com todas as probabilidades estimadas pelos modelos e resultado real.
+// Suporta tanto o modo simples (model_name = config.name) quanto o WF
+// (model_names = metrics.model_names[]).
+// GET ?tarefa=relatorio-teste&config_id=UUID[&pagina=N]
+// ============================================================
+
+async function tarefaRelatorioTeste(supabase, configId, pagina) {
+  if (!configId) return { status: 400, error: 'config_id é obrigatório.' };
+
+  const pgNum = Math.max(0, parseInt(pagina || '0', 10));
+  const POR_PAGINA = 50;
+
+  const { data: cfg, error: cfgErr } = await supabase
+    .from('custom_model_configs')
+    .select('id, name, metrics, target, mode')
+    .eq('id', configId)
+    .maybeSingle();
+  if (cfgErr) throw cfgErr;
+  if (!cfg) return { status: 404, error: 'Config não encontrada.' };
+
+  const metrics = cfg.metrics || {};
+  const modelNames = (metrics.model_names?.length) ? metrics.model_names : [cfg.name];
+  const refModel = modelNames[0];
+
+  // Busca todos os match_ids do modelo de referência (1 modelo = mesmas partidas).
+  // buscarTudoPaginado evita corte silencioso em 1000 linhas do PostgREST.
+  const todasLinhas = await buscarTudoPaginado(() =>
+    supabase
+      .from('model_predictions')
+      .select('match_id')
+      .eq('model_name', refModel)
+      .order('match_id', { ascending: false })
+  );
+
+  // Deduplica match_ids mantendo a ordem
+  const seenIds = new Set();
+  const todosMatchIds = [];
+  for (const r of todasLinhas) {
+    if (!seenIds.has(r.match_id)) {
+      seenIds.add(r.match_id);
+      todosMatchIds.push(r.match_id);
+    }
+  }
+
+  const total = todosMatchIds.length;
+  const pageIds = todosMatchIds.slice(pgNum * POR_PAGINA, (pgNum + 1) * POR_PAGINA);
+
+  if (pageIds.length === 0) {
+    return { status: 200, jogos: [], pagina: pgNum, por_pagina: POR_PAGINA, total, model_names: modelNames, target: cfg.target };
+  }
+
+  // Busca detalhes dos jogos + todas as predições em paralelo
+  const [matchResult, predResult] = await Promise.all([
+    supabase
+      .from('matches')
+      .select(`id, match_date, season, goals_home, goals_away,
+        home_team:teams!home_team_id(name),
+        away_team:teams!away_team_id(name),
+        league:leagues!league_id(name)`)
+      .in('id', pageIds),
+    supabase
+      .from('model_predictions')
+      .select('match_id, model_name, selection, probability')
+      .in('model_name', modelNames)
+      .in('match_id', pageIds),
+  ]);
+  if (matchResult.error) throw matchResult.error;
+  if (predResult.error) throw predResult.error;
+
+  const matchMap = {};
+  for (const m of matchResult.data || []) {
+    matchMap[m.id] = {
+      match_id: m.id,
+      match_date: m.match_date,
+      season: m.season,
+      league: m.league?.name ?? null,
+      home_team: m.home_team?.name ?? null,
+      away_team: m.away_team?.name ?? null,
+      goals_home: m.goals_home,
+      goals_away: m.goals_away,
+      probabilities: {},
+    };
+  }
+  for (const p of predResult.data || []) {
+    if (!matchMap[p.match_id]) continue;
+    matchMap[p.match_id].probabilities[`${p.model_name}||${p.selection}`] = p.probability;
+  }
+
+  // Ordena por data decrescente
+  const jogos = pageIds
+    .map((id) => matchMap[id])
+    .filter(Boolean)
+    .sort((a, b) => (a.match_date > b.match_date ? -1 : a.match_date < b.match_date ? 1 : 0));
+
+  return { status: 200, jogos, pagina: pgNum, por_pagina: POR_PAGINA, total, model_names: modelNames, target: cfg.target };
+}
+
+// ============================================================
+// TAREFA: backtest-custom — carteira simulada EV+ para modelos customizados.
+// Usa predições de model_predictions + odds Pinnacle pre_closing de odds_market.
+// Só suporta mercados com odds disponíveis: 1x2 e over_under_2.5.
+// Aplica Quarter Kelly com teto de 15% por rodada (mesmo regime da carteira
+// principal em tarefaSimulacaoCarteira). Quando há múltiplos modelos (WF mode),
+// faz a média das probabilidades antes de calcular o edge.
+// GET ?tarefa=backtest-custom&config_id=UUID
+// ============================================================
+
+async function tarefaBacktestCustom(supabase, configId) {
+  if (!configId) return { status: 400, error: 'config_id é obrigatório.' };
+
+  const { data: cfg, error: cfgErr } = await supabase
+    .from('custom_model_configs')
+    .select('id, name, metrics, target, mode')
+    .eq('id', configId)
+    .maybeSingle();
+  if (cfgErr) throw cfgErr;
+  if (!cfg) return { status: 404, error: 'Config não encontrada.' };
+
+  const metrics = cfg.metrics || {};
+  const modelNames = metrics.model_names?.length ? metrics.model_names : [cfg.name];
+
+  // Mapeamento target → market key em model_predictions e em odds_market
+  const MARKET_PRED_MAP = { '1x2': '1X2', 'over_under_2.5': 'over_under_2.5' };
+  const marketPred = MARKET_PRED_MAP[cfg.target];
+  if (!marketPred) {
+    return {
+      status: 200,
+      suportado: false,
+      mensagem: `Carteira simulada não disponível para o mercado "${cfg.target}" — odds Pinnacle não disponíveis no banco para este mercado.`,
+    };
+  }
+
+  // Busca predições + odds em paralelo (match_ids descobertos a partir das predições)
+  const [predicoes, oddsRaw] = await Promise.all([
+    buscarTudoPaginado(() =>
+      supabase
+        .from('model_predictions')
+        .select('match_id, model_name, selection, probability')
+        .in('model_name', modelNames)
+        .eq('market', marketPred)
+    ),
+    buscarTudoPaginado(() =>
+      supabase
+        .from('odds_market')
+        .select('match_id, selection, odds')
+        .eq('market', marketPred)
+        .eq('snapshot', 'pre_closing')
+        .eq('bookmaker', 'pinnacle')
+    ),
+  ]);
+
+  if (!predicoes.length) {
+    return { status: 200, suportado: true, n_apostas: 0, curva_banca: [], roi_pct: 0, mensagem: 'Nenhuma predição encontrada no banco.' };
+  }
+
+  const matchIdsSet = new Set(predicoes.map((p) => p.match_id));
+
+  const todasMatches = await buscarTudoPaginado(() =>
+    supabase
+      .from('matches')
+      .select('id, league_id, season, status, goals_home, goals_away, match_date')
+      .in('id', [...matchIdsSet])
+  );
+
+  const matchPorId = {};
+  todasMatches.forEach((m) => { matchPorId[m.id] = m; });
+
+  const oddsPorChave = {};
+  oddsRaw
+    .filter((o) => matchIdsSet.has(o.match_id))
+    .forEach((o) => { oddsPorChave[`${o.match_id}__${o.selection}`] = Number(o.odds); });
+
+  function calcResultado(m) {
+    if (m.status !== 'finished' || m.goals_home == null || m.goals_away == null) return null;
+    if (marketPred === 'over_under_2.5') return (m.goals_home + m.goals_away) > 2.5 ? 'over' : 'under';
+    return m.goals_home > m.goals_away ? 'home' : m.goals_home < m.goals_away ? 'away' : 'draw';
+  }
+
+  // Agrega probabilidades por (match_id, selection) — média entre os modelos do ensemble
+  const predPorChave = {};
+  for (const p of predicoes) {
+    const chave = `${p.match_id}__${p.selection}`;
+    if (!predPorChave[chave]) predPorChave[chave] = { match_id: p.match_id, selection: p.selection, probs: [] };
+    predPorChave[chave].probs.push(Number(p.probability));
+  }
+
+  const candidatos = [];
+  for (const pred of Object.values(predPorChave)) {
+    const match = matchPorId[pred.match_id];
+    if (!match) continue;
+    const resultado = calcResultado(match);
+    if (!resultado) continue;
+    const chave = `${pred.match_id}__${pred.selection}`;
+    const odd = oddsPorChave[chave];
+    if (!odd) continue;
+    const pMedia = pred.probs.reduce((a, b) => a + b, 0) / pred.probs.length;
+    const ev = pMedia * odd;
+    if (ev < 1.02) continue; // filtro EV bruto mínimo (mesmo critério da carteira principal)
+    candidatos.push({
+      data: String(match.match_date).slice(0, 10),
+      selection: pred.selection,
+      p_modelo: pMedia,
+      odd,
+      ev,
+      resultado_real: resultado,
+      acertou: resultado === pred.selection,
+    });
+  }
+
+  if (!candidatos.length) {
+    return { status: 200, suportado: true, n_apostas: 0, curva_banca: [], roi_pct: 0, mensagem: 'Nenhuma aposta com EV ≥ 1,02 encontrada.' };
+  }
+
+  // Simulação Quarter Kelly rodada-a-rodada (dia = unidade de rodada)
+  const porDia = {};
+  candidatos.forEach((c) => { (porDia[c.data] = porDia[c.data] || []).push(c); });
+  const diasOrdenados = Object.keys(porDia).sort();
+
+  const BANCA_INICIAL = 1000;
+  let banca = BANCA_INICIAL;
+  let totalInvestido = 0;
+  let lucroTotal = 0;
+  let n_apostas = 0;
+  let n_acertos = 0;
+  const curva_banca = [];
+
+  for (const dia of diasOrdenados) {
+    const apostas = porDia[dia];
+    const stakes = apostas.map((a) => {
+      const b = a.odd - 1;
+      if (b <= 0) return 0;
+      const f = (a.p_modelo * b - (1 - a.p_modelo)) / b;
+      return Math.max(0, f) * 0.25 * banca; // Quarter Kelly
+    });
+    const totalExp = stakes.reduce((s, v) => s + v, 0);
+    const teto = banca * 0.15; // teto de 15% por rodada
+    const escala = totalExp > teto ? teto / totalExp : 1;
+
+    for (let i = 0; i < apostas.length; i++) {
+      const stakeReal = stakes[i] * escala;
+      if (stakeReal < banca * 0.005) continue; // piso de 0,5%
+      const lucro = apostas[i].acertou ? stakeReal * (apostas[i].odd - 1) : -stakeReal;
+      banca += lucro;
+      lucroTotal += lucro;
+      totalInvestido += stakeReal;
+      n_apostas++;
+      if (apostas[i].acertou) n_acertos++;
+    }
+    curva_banca.push({ data: dia, banca: Math.round(banca * 100) / 100 });
+  }
+
+  const roi_pct = totalInvestido > 0 ? (lucroTotal / totalInvestido) * 100 : 0;
+
+  return {
+    status: 200,
+    suportado: true,
+    n_apostas,
+    n_acertos,
+    taxa_acerto: n_apostas > 0 ? n_acertos / n_apostas : 0,
+    banca_inicial: BANCA_INICIAL,
+    banca_final: Math.round(banca * 100) / 100,
+    lucro_total: Math.round(lucroTotal * 100) / 100,
+    total_investido: Math.round(totalInvestido * 100) / 100,
+    roi_pct: Math.round(roi_pct * 100) / 100,
+    model_names: modelNames,
+    mercado: marketPred,
+    curva_banca,
+  };
 }
 
 // ============================================================
@@ -3447,6 +3738,21 @@ export default async function handler(req, res) {
     if (tarefa === 'disparar-treino-custom') {
       const configId = (req.body || {}).config_id || req.query.config_id;
       const resultado = await tarefaDispararTreinoCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'relatorio-teste') {
+      const configId = req.query.config_id;
+      const pagina = req.query.pagina;
+      const resultado = await tarefaRelatorioTeste(supabase, configId, pagina);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'backtest-custom') {
+      const configId = req.query.config_id;
+      const resultado = await tarefaBacktestCustom(supabase, configId);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
