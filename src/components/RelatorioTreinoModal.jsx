@@ -517,22 +517,11 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
         <div className="flex items-center gap-2">
           {carregando && <Loader2 size={14} className="animate-spin text-slate-500" />}
           {total > 0 && (
-<<<<<<< HEAD
-            <button
-              onClick={exportarCSV}
-              disabled={exportando || carregando}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-600 text-slate-300 hover:text-white hover:border-violet-500 hover:bg-violet-900/20 disabled:opacity-40 transition-colors"
-            >
-              {exportando ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-              {exportando ? 'Exportando…' : 'Exportar CSV'}
-            </button>
-=======
             <BotaoExportar
               onClick={exportarTodos}
               carregando={exportando}
               titulo={exportando ? 'Exportando…' : `Exportar CSV (${total.toLocaleString()})`}
             />
->>>>>>> 2c4eb16 (feat: add CSV export to training/test report modal)
           )}
         </div>
       </div>
