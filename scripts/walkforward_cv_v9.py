@@ -17,11 +17,11 @@ Mercados treinados:
   - over_under_2.5 (binário: over/under)
   - btts           (binário: yes/no — Both Teams To Score)
 
-Stacking v9:
-  - Meta-features: probabilidades dos 4 base models sobre Val de todos os
-    folds (OOF) → shape (n_val_total, 4 × 3 = 12 para 1x2, 4 × 2 = 8 para binários)
+Stacking v9 (duas variantes para 1X2; apenas stacking_v9 para mercados binários):
+  - stacking_v9:         4 base models → meta-features (n_val_total, 4×3=12 / 4×2=8)
+  - stacking_v9_sem_mlp: 3 base models (sem MLP) → (n_val_total, 3×3=9) — apenas 1X2
   - Meta-modelo: LogisticRegression calibrada
-  - Avaliado no Test set do fold_3
+  - Avaliados no Test set do fold_3
 
 Feature coverage:
   - % não-nulos por feature no dataset completo
@@ -67,6 +67,7 @@ FOLDS = [
 ]
 
 MODELOS_BASE = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9"]
+MODELOS_SEM_MLP = ["catboost_v9", "xgboost_v9", "lightgbm_v9"]
 COLUNA_ALVO = "resultado"
 CLASSES_1X2 = np.array([dh.RESULTADO_HOME, dh.RESULTADO_DRAW, dh.RESULTADO_AWAY])
 CLASSES_BINARIAS = np.array([0, 1])
@@ -314,11 +315,17 @@ def calcular_importancia_catboost(
 # Stacking meta-modelo
 # ---------------------------------------------------------------------------
 
-def montar_meta_X(probs_por_modelo: dict[str, np.ndarray], classes_por_modelo: dict[str, np.ndarray]) -> np.ndarray:
-    """Concatena as probabilidades de todos os modelos base num array de meta-
-    features — colunas ordenadas pela ordem de MODELOS_BASE x CLASSES_1X2."""
+def montar_meta_X(
+    probs_por_modelo: dict[str, np.ndarray],
+    classes_por_modelo: dict[str, np.ndarray],
+    modelos: list[str] | None = None,
+) -> np.ndarray:
+    """Concatena as probabilidades dos modelos base num array de meta-features.
+    `modelos` controla quais modelos entram — padrão = MODELOS_BASE (todos os 4)."""
+    if modelos is None:
+        modelos = MODELOS_BASE
     blocos = []
-    for nome in MODELOS_BASE:
+    for nome in modelos:
         probs = probs_por_modelo[nome]
         classes = classes_por_modelo[nome]
         # Reordena colunas pra garantir [home, draw, away] consistente
@@ -721,6 +728,44 @@ def main() -> None:
                 **metricas_stacking,
             })
             predicoes_v9.extend(construir_predicoes(test_df_fold3, stacking_probs, stacking_classes, "stacking_v9"))
+
+        # --- Variante sem MLP (CatBoost + XGBoost + LightGBM) ---
+        if all(m in test_probs_por_modelo for m in MODELOS_SEM_MLP):
+            logger.info("Treinando stacking_v9_sem_mlp (sem MLP)...")
+            oof_sem_mlp = {m: oof_probs_concat[m] for m in MODELOS_SEM_MLP}
+            cls_sem_mlp = {m: oof_classes_concat[m] for m in MODELOS_SEM_MLP}
+            meta_X_train_sem_mlp = montar_meta_X(oof_sem_mlp, cls_sem_mlp, MODELOS_SEM_MLP)
+            meta_modelo_sem_mlp = ml.treinar_stacking_v9(meta_X_train_sem_mlp, oof_y_concat)
+
+            meta_X_test_sem_mlp = montar_meta_X(
+                {m: test_probs_por_modelo[m] for m in MODELOS_SEM_MLP},
+                {m: test_classes_por_modelo[m] for m in MODELOS_SEM_MLP},
+                MODELOS_SEM_MLP,
+            )
+            probs_sem_mlp, classes_sem_mlp = ml.prever_stacking_v9(meta_modelo_sem_mlp, meta_X_test_sem_mlp)
+            metricas_sem_mlp = calcular_metricas(
+                test_df_fold3.reset_index(drop=True), probs_sem_mlp, classes_sem_mlp
+            )
+            logger.info("JSON:resultado:%s", json.dumps({
+                "modelo": "stacking_v9_sem_mlp",
+                "fold": "fold_3",
+                "logloss": metricas_sem_mlp["logloss_test"],
+                "brier_score": metricas_sem_mlp["brier_score_test"],
+                "accuracy": metricas_sem_mlp["accuracy_test"],
+            }))
+            resultados_wf.append({
+                "modelo": "stacking_v9_sem_mlp",
+                "fold": FOLDS[-1]["nome"],
+                "market": "1X2",
+                "train_max_ano": FOLDS[-1]["treino_max_ano"],
+                "val_ano": FOLDS[-1]["val_ano"],
+                "test_ano": FOLDS[-1]["test_ano"],
+                "n_treino": len(train_fold3),
+                "n_val": len(val_fold3),
+                "n_test": len(test_df_fold3),
+                **metricas_sem_mlp,
+            })
+            predicoes_v9.extend(construir_predicoes(test_df_fold3, probs_sem_mlp, classes_sem_mlp, "stacking_v9_sem_mlp"))
     else:
         logger.warning("Stacking pulado — nem todos os folds foram completados.")
 
@@ -778,7 +823,7 @@ def main() -> None:
         logger.info("  model_v9_feature_coverage: %d linhas", len(cobertura))
 
     # model_predictions — previsões OOF por partida (SimulacaoCarteira / backtest)
-    MODELOS_V9 = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9", "stacking_v9"]
+    MODELOS_V9 = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9", "stacking_v9", "stacking_v9_sem_mlp"]
     logger.info("Limpando previsões v9 anteriores de model_predictions...")
     for _mv9 in MODELOS_V9:
         supabase_client.table("model_predictions").delete().eq("model_name", _mv9).eq("market", "1x2").execute()
