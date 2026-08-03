@@ -169,6 +169,7 @@ export default function ModeloV9() {
   const [cobertura, setCobertura] = useState([]);
 
   const [metricaWF, setMetricaWF] = useState('logloss_test');
+  const [mercadoWF, setMercadoWF] = useState('1X2');
   const [ligaFold, setLigaFold] = useState('fold_3');
   const [filtroGrupo, setFiltroGrupo] = useState('Todos');
   const [buscaFeature, setBuscaFeature] = useState('');
@@ -195,6 +196,11 @@ export default function ModeloV9() {
 
   useEffect(() => { carregar(); }, []);
 
+  const resultadosFiltrados = useMemo(
+    () => resultados.filter(r => (r.market || '1X2') === mercadoWF),
+    [resultados, mercadoWF]
+  );
+
   const grupos = useMemo(() => ['Todos', ...[...new Set(cobertura.map(c => c.feature_group))].sort()], [cobertura]);
   const coberturaFiltrada = useMemo(() => {
     let dados = cobertura;
@@ -214,15 +220,15 @@ export default function ModeloV9() {
 
   // Ligas disponíveis no fold selecionado (união de todos os modelos)
   const ligasPorFold = useMemo(() => {
-    const rows = resultados.filter(r => r.fold === ligaFold && r.logloss_por_liga);
+    const rows = resultadosFiltrados.filter(r => r.fold === ligaFold && r.logloss_por_liga);
     const ligas = new Set();
     rows.forEach(r => Object.keys(r.logloss_por_liga || {}).forEach(l => ligas.add(l)));
     return [...ligas].sort();
-  }, [resultados, ligaFold]);
+  }, [resultadosFiltrados, ligaFold]);
 
   const modelosDisponiveisFold = useMemo(() => {
-    return resultados.filter(r => r.fold === ligaFold && r.logloss_por_liga).map(r => r.modelo);
-  }, [resultados, ligaFold]);
+    return resultadosFiltrados.filter(r => r.fold === ligaFold && r.logloss_por_liga).map(r => r.modelo);
+  }, [resultadosFiltrados, ligaFold]);
 
   const maxImportanciaGrupo = importanciaAgrupada[0]?.total || 1;
   const maxImportanciaFeature = importancia[0]?.importance_mean || 1;
@@ -294,6 +300,31 @@ export default function ModeloV9() {
             ))}
           </div>
 
+          {/* Seletor de mercado */}
+          <div className="flex gap-2 items-center">
+            <span className="text-xs text-slate-500 font-semibold">Mercado:</span>
+            {[
+              { val: '1X2', label: '1X2' },
+              { val: 'over_under_2.5', label: 'Over/Under 2.5' },
+              { val: 'btts', label: 'BTTS' },
+            ].map(({ val, label }) => (
+              <button key={val} onClick={() => setMercadoWF(val)}
+                className={`text-xs px-3 py-1 rounded-lg font-bold transition-colors ${
+                  mercadoWF === val ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'text-slate-400 hover:text-slate-200 border border-slate-700'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {resultadosFiltrados.length === 0 && (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-500 text-sm">
+              Nenhum resultado para o mercado <span className="font-bold text-slate-300">{mercadoWF}</span> ainda.
+              Rode o workflow <code className="bg-slate-700 px-1 rounded">walkforward_cv_v9.yml</code> para gerar.
+            </div>
+          )}
+
+          {resultadosFiltrados.length > 0 && (<>
           {/* Seletor de métrica */}
           <div className="flex gap-2 items-center">
             <span className="text-xs text-slate-500 font-semibold">Métrica:</span>
@@ -312,7 +343,7 @@ export default function ModeloV9() {
             <p className="text-xs text-slate-500 font-semibold mb-3 uppercase tracking-wide">
               {metricaWF.replace('_test', '').replace('_', ' ')} por fold
             </p>
-            <MiniBarChart dados={resultados} metrica={metricaWF} />
+            <MiniBarChart dados={resultadosFiltrados} metrica={metricaWF} />
           </div>
 
           {/* Tabela detalhada */}
@@ -332,7 +363,7 @@ export default function ModeloV9() {
                   </tr>
                 </thead>
                 <tbody>
-                  {resultados.map((r, i) => (
+                  {resultadosFiltrados.map((r, i) => (
                     <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/20">
                       <td className="px-4 py-2.5">{badgeModelo(r.modelo)}</td>
                       <td className="px-4 py-2.5 text-slate-300 font-mono text-xs">{r.fold}</td>
@@ -393,7 +424,7 @@ export default function ModeloV9() {
                   <tbody>
                     {ligasPorFold.map(liga => {
                       const rowsModelo = modelosDisponiveisFold.map(m =>
-                        resultados.find(r => r.fold === ligaFold && r.modelo === m)?.logloss_por_liga?.[liga]
+                        resultadosFiltrados.find(r => r.fold === ligaFold && r.modelo === m)?.logloss_por_liga?.[liga]
                       );
                       const loglossValues = rowsModelo.map(v => v?.logloss).filter(v => v != null);
                       const melhorLogloss = loglossValues.length ? Math.min(...loglossValues) : null;
@@ -422,6 +453,7 @@ export default function ModeloV9() {
               <p className="text-[10px] text-slate-600">Log-loss mais baixo por linha em verde.</p>
             </div>
           )}
+          </>)}
         </div>
       )}
 

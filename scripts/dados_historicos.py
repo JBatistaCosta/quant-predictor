@@ -47,6 +47,9 @@ RESULTADO_HOME, RESULTADO_DRAW, RESULTADO_AWAY = 0, 1, 2
 # Códigos do alvo binário `resultado_over25` (mercado Over/Under 2.5 gols).
 RESULTADO_UNDER25, RESULTADO_OVER25 = 0, 1
 
+# Códigos do alvo binário `resultado_btts` (Both Teams To Score).
+RESULTADO_BTTS_NO, RESULTADO_BTTS_YES = 0, 1
+
 # Códigos do alvo binário `resultado_corners_ou95` (mercado Over/Under 9.5
 # escanteios totais -- soma casa+visitante).
 RESULTADO_CORNERS_UNDER95, RESULTADO_CORNERS_OVER95 = 0, 1
@@ -2814,6 +2817,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     # `resultado` (elo/forma/xG pré-jogo), só troca o alvo. RESULTADO_OVER25
     # = 1 quando total de gols > 2.5.
     dataset["resultado_over25"] = (dataset["home_goals"] + dataset["away_goals"] > 2.5).astype(int)
+    dataset["resultado_btts"] = ((dataset["home_goals"] > 0) & (dataset["away_goals"] > 0)).astype(int)
     # Alvo multiclasse pro mercado "faixa de gols" (0-1/2-3/4-6/7+) -- mesma
     # base de gols, sem dado novo (ver `codigo_faixa_gols`).
     dataset["resultado_faixa_gols"] = (dataset["home_goals"] + dataset["away_goals"]).apply(codigo_faixa_gols)
@@ -3063,7 +3067,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         "xg_momentum_home", "xg_momentum_away",
         "posicao_diff", "pontos_diff",
         # Alvos
-        "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95", "resultado_faixa_corners",
+        "resultado", "resultado_over25", "resultado_btts", "resultado_faixa_gols", "resultado_corners_ou95", "resultado_faixa_corners",
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
     ]
