@@ -54,6 +54,7 @@ from supabase import create_client
 
 import dados_historicos as dh
 import modelos_ml as ml
+import calibracao as cal_lib
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("walkforward_cv_v9")
@@ -89,10 +90,60 @@ MERCADOS_BINARIOS = [
 
 TAMANHO_LOTE_UPSERT = 500
 
+# Mapeamento classe → seleção para cada mercado (usado ao serializar model_calibration)
+_MAPA_SEL_1X2 = {dh.RESULTADO_HOME: "home", dh.RESULTADO_DRAW: "draw", dh.RESULTADO_AWAY: "away"}
+METODOS_CALIBRACAO = ("platt", "isotonic")
+
 
 # ---------------------------------------------------------------------------
 # Utilitários de split e métricas
 # ---------------------------------------------------------------------------
+
+def _linhas_model_calibration(
+    nome: str,
+    market: str,
+    mapa_cls_sel: dict,
+    info_por_metodo: dict,
+    agora: str,
+) -> list[dict]:
+    """Serializa calibradores do fold_3 em linhas para upsert em model_calibration."""
+    linhas = []
+    for metodo, info in info_por_metodo.items():
+        cals = info["cals"]
+        val_classes = info["val_classes"]
+        for col_idx, cls_int in enumerate(val_classes):
+            sel = mapa_cls_sel.get(int(cls_int))
+            if sel is None:
+                continue
+            cal = cals.get(col_idx)
+            if cal is None or isinstance(cal, cal_lib.CalibradorIdentidade):
+                continue
+            row: dict = {
+                "model_name": nome,
+                "market": market,
+                "selection": sel,
+                "method": metodo,
+                "platt_coef": None,
+                "platt_intercept": None,
+                "isotonic_x": None,
+                "isotonic_y": None,
+                "log_loss_bruto": round(float(info["logloss_bruto"]), 6),
+                "log_loss_calibrado": round(float(info["logloss_cal"]), 6),
+                "n_treino": int(info["n_treino"]),
+                "n_teste": int(info["n_teste"]),
+                "fitted_at": agora,
+            }
+            if isinstance(cal, cal_lib.CalibradorPlatt):
+                row["platt_coef"] = float(cal.a)
+                row["platt_intercept"] = float(cal.b)
+            elif isinstance(cal, cal_lib.CalibradorIsotonic):
+                row["isotonic_x"] = cal.modelo.X_thresholds_.tolist()
+                row["isotonic_y"] = cal.modelo.y_thresholds_.tolist()
+            else:
+                continue
+            linhas.append(row)
+    return linhas
+
 
 def split_por_ano(dataset: pd.DataFrame, treino_max_ano: int, val_ano: int, test_ano: int):
     """Divide o dataset por ano do match_date — preserva ordenação cronológica."""
@@ -398,14 +449,15 @@ def treinar_mercado_binario(
     coluna_alvo: str,
     market_str: str,
     mapa_selecao: dict,
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], dict]:
     """Executa walk-forward CV + stacking para um mercado binário.
 
-    Retorna (resultados_wf, predicoes) — mesma estrutura do loop 1X2 principal,
-    mas com `market` preenchido no resultado e nas previsões OOF.
+    Retorna (resultados_wf, predicoes, calibradores_fold3) onde
+    calibradores_fold3 = {nome: {metodo: info_dict}} para uso em model_calibration.
     """
     resultados_wf: list[dict] = []
     predicoes: list[dict] = []
+    calibradores_fold3: dict = {}  # {nome: {metodo: info_dict}}
 
     oof_y_list: list[np.ndarray] = []
     oof_probs_por_modelo: dict[str, list[np.ndarray]] = {m: [] for m in MODELOS_BASE}
@@ -466,6 +518,34 @@ def treinar_mercado_binario(
             predicoes.extend(construir_predicoes_mercado(
                 test_df, test_probs, test_classes, nome, market_str, mapa_selecao
             ))
+
+            # --- Calibração Platt e Isotonic (mercado binário) ---
+            val_y_bin = val_df[coluna_alvo].values
+            for metodo in METODOS_CALIBRACAO:
+                try:
+                    cals = cal_lib.ajustar_calibracao_np(val_probs, val_y_bin, val_classes, metodo)
+                    tp_cal = cal_lib.aplicar_calibracao_np(test_probs, cals)
+                    m_cal = calcular_metricas_binario(
+                        test_df.reset_index(drop=True), tp_cal, test_classes, coluna_alvo
+                    )
+                    resultados_wf[-1][f"logloss_calibrado_{metodo}"] = m_cal["logloss_test"]
+                    resultados_wf[-1][f"brier_calibrado_{metodo}"] = m_cal["brier_score_test"]
+                    predicoes.extend(construir_predicoes_mercado(
+                        test_df, tp_cal, test_classes,
+                        f"{nome}_calibrado_{metodo}", market_str, mapa_selecao,
+                    ))
+                    if fold_nome == "fold_3":
+                        calibradores_fold3.setdefault(nome, {})[metodo] = {
+                            "cals": cals, "val_classes": val_classes,
+                            "logloss_bruto": metricas["logloss_test"],
+                            "logloss_cal": m_cal["logloss_test"],
+                            "n_treino": len(val_df), "n_teste": len(test_df),
+                        }
+                except Exception as exc:
+                    logger.warning(
+                        "Calibração %s [%s] falhou para %s/%s: %s",
+                        metodo, market_str, nome, fold_nome, exc,
+                    )
 
             oof_probs_por_modelo[nome].append(val_probs)
             oof_classes_por_modelo[nome] = val_classes
@@ -534,7 +614,7 @@ def treinar_mercado_binario(
     else:
         logger.warning("  [%s] Stacking pulado — nem todos os folds foram completados.", market_str)
 
-    return resultados_wf, predicoes
+    return resultados_wf, predicoes, calibradores_fold3
 
 
 # ---------------------------------------------------------------------------
@@ -626,6 +706,9 @@ def main() -> None:
     # Modelos treinados no fold_3 pra feature importance
     modelo_catboost_fold3: object | None = None
 
+    # Calibradores do fold_3 pra model_calibration (1X2)
+    calibradores_fold3_1x2: dict = {}  # {nome: {metodo: info_dict}}
+
     for fold in FOLDS:
         fold_nome = fold["nome"]
         logger.info("--- %s | treino ≤ %d | val %d | test %d ---",
@@ -675,6 +758,28 @@ def main() -> None:
 
             # Coleta predições OOF do test set pra persistir em model_predictions
             predicoes_v9.extend(construir_predicoes(test_df, test_probs, test_classes, nome))
+
+            # --- Calibração Platt e Isotonic (1X2) ---
+            val_y = val_df[COLUNA_ALVO].values
+            for metodo in METODOS_CALIBRACAO:
+                try:
+                    cals = cal_lib.ajustar_calibracao_np(val_probs, val_y, val_classes, metodo)
+                    tp_cal = cal_lib.aplicar_calibracao_np(test_probs, cals)
+                    m_cal = calcular_metricas(test_df.reset_index(drop=True), tp_cal, test_classes)
+                    resultados_wf[-1][f"logloss_calibrado_{metodo}"] = m_cal["logloss_test"]
+                    resultados_wf[-1][f"brier_calibrado_{metodo}"] = m_cal["brier_score_test"]
+                    predicoes_v9.extend(
+                        construir_predicoes(test_df, tp_cal, test_classes, f"{nome}_calibrado_{metodo}")
+                    )
+                    if fold_nome == "fold_3":
+                        calibradores_fold3_1x2.setdefault(nome, {})[metodo] = {
+                            "cals": cals, "val_classes": val_classes,
+                            "logloss_bruto": metricas["logloss_test"],
+                            "logloss_cal": m_cal["logloss_test"],
+                            "n_treino": len(val_df), "n_teste": len(test_df),
+                        }
+                except Exception as exc:
+                    logger.warning("Calibração %s falhou para %s/%s: %s", metodo, nome, fold_nome, exc)
 
             # Acumula OOF predictions no val set pra stacking
             oof_probs_por_modelo[nome].append(val_probs)
@@ -802,13 +907,18 @@ def main() -> None:
     # Mercados binários adicionais (Over/Under 2.5 e BTTS)
     # ------------------------------------------------------------------
     predicoes_binarios: list[dict] = []
+    calibradores_fold3_binarios: dict = {}  # {market_str: {mapa_selecao, calibradores}}
     for cfg in MERCADOS_BINARIOS:
         logger.info("=== Treinando mercado binário: %s ===", cfg["market"])
-        res_bin, pred_bin = treinar_mercado_binario(
+        res_bin, pred_bin, cals_f3 = treinar_mercado_binario(
             dataset, cfg["coluna_alvo"], cfg["market"], cfg["mapa_selecao"]
         )
         resultados_wf.extend(res_bin)
         predicoes_binarios.extend(pred_bin)
+        calibradores_fold3_binarios[cfg["market"]] = {
+            "mapa_selecao": cfg["mapa_selecao"],
+            "calibradores": cals_f3,
+        }
         logger.info("  %s: %d resultados, %d previsões", cfg["market"], len(res_bin), len(pred_bin))
 
     # ------------------------------------------------------------------
@@ -847,8 +957,9 @@ def main() -> None:
 
     # model_predictions — previsões OOF por partida (SimulacaoCarteira / backtest)
     MODELOS_V9 = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9", "stacking_v9", "stacking_v9_sem_mlp"]
+    MODELOS_V9_CAL = [f"{m}_calibrado_{mt}" for m in MODELOS_BASE for mt in METODOS_CALIBRACAO]
     logger.info("Limpando previsões v9 anteriores de model_predictions...")
-    for _mv9 in MODELOS_V9:
+    for _mv9 in MODELOS_V9 + MODELOS_V9_CAL:
         _executar_com_retry(
             lambda mv=_mv9: supabase_client.table("model_predictions")
                 .delete().eq("model_name", mv).eq("market", "1x2").execute()
@@ -861,7 +972,7 @@ def main() -> None:
     for cfg in MERCADOS_BINARIOS:
         mkt = cfg["market"]
         logger.info("Limpando previsões v9 %s de model_predictions...", mkt)
-        for _mv9 in MODELOS_V9:
+        for _mv9 in MODELOS_V9 + MODELOS_V9_CAL:
             _executar_com_retry(
                 lambda mv=_mv9, m=mkt: supabase_client.table("model_predictions")
                     .delete().eq("model_name", mv).eq("market", m).execute()
@@ -869,6 +980,34 @@ def main() -> None:
     if predicoes_binarios:
         inserir_em_lotes(supabase_client, "model_predictions", predicoes_binarios)
         logger.info("  model_predictions (v9 OOF binários): %d linhas", len(predicoes_binarios))
+
+    # ------------------------------------------------------------------
+    # model_calibration — parâmetros calibrados do fold_3 para produção
+    # ------------------------------------------------------------------
+    agora = datetime.now(timezone.utc).isoformat()
+    calibracao_linhas: list[dict] = []
+
+    for nome, info_por_metodo in calibradores_fold3_1x2.items():
+        calibracao_linhas.extend(
+            _linhas_model_calibration(nome, "1X2", _MAPA_SEL_1X2, info_por_metodo, agora)
+        )
+
+    for market_str, bin_info in calibradores_fold3_binarios.items():
+        mapa_sel = bin_info["mapa_selecao"]
+        for nome, info_por_metodo in bin_info["calibradores"].items():
+            calibracao_linhas.extend(
+                _linhas_model_calibration(nome, market_str, mapa_sel, info_por_metodo, agora)
+            )
+
+    if calibracao_linhas:
+        logger.info("Atualizando model_calibration para modelos v9 (%d linhas)...", len(calibracao_linhas))
+        for mv9 in MODELOS_BASE:
+            _executar_com_retry(
+                lambda mv=mv9: supabase_client.table("model_calibration")
+                    .delete().eq("model_name", mv).execute()
+            )
+        inserir_em_lotes(supabase_client, "model_calibration", calibracao_linhas)
+        logger.info("  model_calibration (v9): %d linhas", len(calibracao_linhas))
 
     logger.info("=== Walk-forward CV v9 concluído ===")
 

@@ -151,3 +151,58 @@ def aplicar_calibracao(
         calibradas[selecao] = calibrador.aplicar(probs[f"prob_{selecao}"])
     total = sum(calibradas.values())
     return {f"prob_{selecao}": calibradas[selecao] / total for selecao in quais_selecoes}
+
+
+# ---------------------------------------------------------------------------
+# API numpy-nativa — para pipelines WF (walkforward_cv_v9, treinar_modelo_custom_wf)
+# que trabalham diretamente com arrays em vez de dicts por match_id.
+# ---------------------------------------------------------------------------
+
+def ajustar_calibracao_np(
+    val_probs: np.ndarray,
+    val_y: np.ndarray,
+    classes: np.ndarray,
+    metodo: str = "platt",
+) -> dict[int, Calibrador]:
+    """Calibra one-vs-rest por índice de coluna em val_probs.
+
+    val_probs : (n_val, n_classes) — probabilidades brutas no val set
+    val_y     : (n_val,) — rótulos verdadeiros (inteiros)
+    classes   : (n_classes,) — classe que cada coluna representa
+    metodo    : 'platt' ou 'isotonic'
+
+    Retorna dict {col_idx: Calibrador}.
+    """
+    if metodo not in _AJUSTADORES:
+        raise ValueError(f"método desconhecido: {metodo!r} (esperado: {METODOS})")
+    ajustar = _AJUSTADORES[metodo]
+    calibradores: dict[int, Calibrador] = {}
+    for col_idx in range(val_probs.shape[1]):
+        cls = classes[col_idx]
+        alvo_bin = (val_y == cls).astype(float)
+        probs_col = val_probs[:, col_idx]
+        if len(probs_col) < AMOSTRA_MINIMA or len(np.unique(alvo_bin)) < 2:
+            calibradores[col_idx] = CalibradorIdentidade()
+        else:
+            calibradores[col_idx] = ajustar(probs_col, alvo_bin)
+    return calibradores
+
+
+def aplicar_calibracao_np(
+    test_probs: np.ndarray,
+    calibradores: dict[int, Calibrador],
+) -> np.ndarray:
+    """Aplica calibradores one-vs-rest e renormaliza cada linha.
+
+    test_probs   : (n_test, n_classes)
+    calibradores : {col_idx: Calibrador} (de ajustar_calibracao_np)
+
+    Retorna (n_test, n_classes) renormalizado pra somar 1 por linha.
+    """
+    out = np.empty_like(test_probs, dtype=float)
+    for col_idx, cal in calibradores.items():
+        col = test_probs[:, col_idx]
+        out[:, col_idx] = [cal.aplicar(float(p)) for p in col]
+    row_sums = out.sum(axis=1, keepdims=True)
+    row_sums = np.where(row_sums <= 0, 1.0, row_sums)
+    return out / row_sums
