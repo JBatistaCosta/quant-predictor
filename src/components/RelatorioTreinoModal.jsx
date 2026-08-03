@@ -464,6 +464,8 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
       const header = [
         'Data', 'Liga', 'Mandante', 'Visitante', 'Gols Casa', 'Gols Visitante',
         ...algos.flatMap(algo => selections.map(sel => `${sel}${algos.length > 1 ? ` [${algo.slice(0, 3)}]` : ''} %`)),
+        ...selections.map(sel => `Aber. ${sel}`),
+        ...selections.map(sel => `Fech. ${sel}`),
       ];
       const rows = todosJogos.map(jogo => [
         fmtData(jogo.match_date),
@@ -479,6 +481,8 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
             return p != null ? (p * 100).toFixed(1) : '';
           });
         }),
+        ...selections.map(sel => jogo.odds_abertura?.[sel] != null ? Number(jogo.odds_abertura[sel]).toFixed(2) : ''),
+        ...selections.map(sel => jogo.odds_fechamento?.[sel] != null ? Number(jogo.odds_fechamento[sel]).toFixed(2) : ''),
       ]);
       downloadCSV(`relatorio_teste_${configId}.csv`, [header, ...rows]);
     } finally {
@@ -547,6 +551,16 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
                     </th>
                   ))
                 )}
+                {selections.map((sel) => (
+                  <th key={`aber_${sel}`} className="text-center py-2 px-1 font-medium whitespace-nowrap text-xs text-amber-400/70">
+                    {sel}<br /><span className="font-normal text-slate-600 text-[10px]">aber.</span>
+                  </th>
+                ))}
+                {selections.map((sel) => (
+                  <th key={`fech_${sel}`} className="text-center py-2 px-1 font-medium whitespace-nowrap text-xs text-sky-400/70">
+                    {sel}<br /><span className="font-normal text-slate-600 text-[10px]">fech.</span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -573,6 +587,16 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
                       );
                     });
                   })}
+                  {selections.map((sel) => (
+                    <td key={`aber_${sel}`} className="py-2 px-1 text-center font-mono text-xs text-amber-300/70">
+                      {jogo.odds_abertura?.[sel] != null ? Number(jogo.odds_abertura[sel]).toFixed(2) : '—'}
+                    </td>
+                  ))}
+                  {selections.map((sel) => (
+                    <td key={`fech_${sel}`} className="py-2 px-1 text-center font-mono text-xs text-sky-300/70">
+                      {jogo.odds_fechamento?.[sel] != null ? Number(jogo.odds_fechamento[sel]).toFixed(2) : '—'}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
