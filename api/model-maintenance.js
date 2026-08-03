@@ -848,8 +848,12 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
     return { status: 200, jogos: [], pagina: pgNum, por_pagina: POR_PAGINA, total, model_names: modelNames, target: cfg.target };
   }
 
-  // Busca detalhes dos jogos + todas as predições em paralelo
-  const [matchResult, predResult] = await Promise.all([
+  // Map target → odds_market.market para buscar odds de abertura/fechamento
+  const MARKET_ODDS_MAP = { '1x2': '1X2', 'over_under_2.5': 'over_under_2.5', 'btts': 'btts' };
+  const oddsMarketKey = MARKET_ODDS_MAP[cfg.target] || null;
+
+  // Busca detalhes dos jogos + predições + odds de mercado em paralelo
+  const [matchResult, predResult, oddsAbRaw, oddsFechRaw] = await Promise.all([
     supabase
       .from('matches')
       .select(`id, match_date, season, home_goals, away_goals,
@@ -862,9 +866,27 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
       .select('match_id, model_name, selection, probability')
       .in('model_name', modelNames)
       .in('match_id', pageIds),
+    oddsMarketKey
+      ? supabase.from('odds_market')
+          .select('match_id, selection, odds, bookmaker')
+          .in('match_id', pageIds)
+          .eq('market', oddsMarketKey)
+          .eq('snapshot', 'pre_closing')
+          .in('bookmaker', ['pinnacle', 'media_mercado'])
+      : Promise.resolve({ data: [] }),
+    oddsMarketKey
+      ? supabase.from('odds_market')
+          .select('match_id, selection, odds, bookmaker')
+          .in('match_id', pageIds)
+          .eq('market', oddsMarketKey)
+          .eq('snapshot', 'closing')
+          .in('bookmaker', ['pinnacle', 'media_mercado'])
+      : Promise.resolve({ data: [] }),
   ]);
   if (matchResult.error) throw matchResult.error;
   if (predResult.error) throw predResult.error;
+  if (oddsAbRaw.error) throw oddsAbRaw.error;
+  if (oddsFechRaw.error) throw oddsFechRaw.error;
 
   const matchMap = {};
   for (const m of matchResult.data || []) {
@@ -878,12 +900,27 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
       goals_home: m.home_goals,
       goals_away: m.away_goals,
       probabilities: {},
+      odds_abertura: {},
+      odds_fechamento: {},
     };
   }
   for (const p of predResult.data || []) {
     if (!matchMap[p.match_id]) continue;
     matchMap[p.match_id].probabilities[`${p.model_name}||${p.selection}`] = p.probability;
   }
+  // Preenche odds — prefere pinnacle sobre media_mercado quando ambos existem
+  const attachOdds = (rows, campo) => {
+    const visto = {};
+    for (const r of (rows || [])) {
+      const key = `${r.match_id}__${r.selection}`;
+      if (!visto[key] || r.bookmaker === 'pinnacle') {
+        visto[key] = true;
+        if (matchMap[r.match_id]) matchMap[r.match_id][campo][r.selection] = Number(r.odds);
+      }
+    }
+  };
+  attachOdds(oddsAbRaw.data, 'odds_abertura');
+  attachOdds(oddsFechRaw.data, 'odds_fechamento');
 
   // Ordena por data decrescente
   const jogos = pageIds
