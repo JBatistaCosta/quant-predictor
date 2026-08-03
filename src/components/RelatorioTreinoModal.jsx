@@ -104,18 +104,29 @@ function TabResumoWF({ metrics }) {
   const folds = metrics.folds || [];
   const algorithms = metrics.algorithms || [];
 
+  function melhorCalibrado(m) {
+    const p = m.logloss_calibrado_platt;
+    const i = m.logloss_calibrado_isotonic;
+    if (p == null && i == null) return null;
+    if (p == null) return i;
+    if (i == null) return p;
+    return Math.min(Number(p), Number(i));
+  }
+
   function exportar() {
     const header = ['Fold', 'Ano Teste', 'N Teste',
-      ...algorithms.flatMap(a => [`${a} LogLoss`, `${a} Acurácia %`, `${a} Brier`])
+      ...algorithms.flatMap(a => [`${a} LogLoss`, `${a} Acurácia %`, `${a} Brier`, `${a} LL Cal`])
     ];
     const rows = folds.map(fold => [
       fold.fold, fold.test_ano, fold.n_test,
       ...algorithms.flatMap(a => {
         const m = fold.models?.[a] || {};
+        const cal = melhorCalibrado(m);
         return [
           m.logloss_test != null ? Number(m.logloss_test).toFixed(4) : '',
           m.accuracy_test != null ? (Number(m.accuracy_test) * 100).toFixed(1) : '',
           m.brier_score_test != null ? Number(m.brier_score_test).toFixed(4) : '',
+          cal != null ? Number(cal).toFixed(4) : '',
         ];
       }),
     ]);
@@ -136,7 +147,7 @@ function TabResumoWF({ metrics }) {
             <tr className="border-b border-slate-700">
               <th className="text-left text-slate-400 py-2 pr-4 font-medium text-xs">Fold / Test</th>
               {algorithms.map((algo) => (
-                <th key={algo} colSpan={3} className="text-center pb-2 px-2 font-medium text-xs" style={{ color: corAlgo(algo) }}>
+                <th key={algo} colSpan={4} className="text-center pb-2 px-2 font-medium text-xs" style={{ color: corAlgo(algo) }}>
                   {algo}
                 </th>
               ))}
@@ -148,6 +159,7 @@ function TabResumoWF({ metrics }) {
                   <th className="text-center text-slate-500 text-xs font-normal py-1 px-1">LogLoss</th>
                   <th className="text-center text-slate-500 text-xs font-normal py-1 px-1">Acurácia</th>
                   <th className="text-center text-slate-500 text-xs font-normal py-1 px-1">Brier</th>
+                  <th className="text-center text-emerald-600 text-xs font-normal py-1 px-1" title="Melhor LogLoss calibrado (Platt ou Isotonic)">LL Cal</th>
                 </React.Fragment>
               ))}
             </tr>
@@ -161,11 +173,16 @@ function TabResumoWF({ metrics }) {
                 </td>
                 {algorithms.map((algo) => {
                   const m = fold.models?.[algo] || {};
+                  const cal = melhorCalibrado(m);
+                  const melhorou = cal != null && m.logloss_test != null && cal < Number(m.logloss_test);
                   return (
                     <React.Fragment key={algo}>
                       <td className="text-center px-1 font-mono text-xs text-white py-2">{fmt4(m.logloss_test)}</td>
                       <td className="text-center px-1 font-mono text-xs text-white py-2">{fmtPct(m.accuracy_test)}</td>
                       <td className="text-center px-1 font-mono text-xs text-white py-2">{fmt4(m.brier_score_test)}</td>
+                      <td className={`text-center px-1 font-mono text-xs py-2 ${cal != null ? (melhorou ? 'text-emerald-400' : 'text-slate-400') : 'text-slate-600'}`}>
+                        {cal != null ? fmt4(cal) : '—'}
+                      </td>
                     </React.Fragment>
                   );
                 })}

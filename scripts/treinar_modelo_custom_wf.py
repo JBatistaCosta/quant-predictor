@@ -36,6 +36,7 @@ from supabase import create_client
 sys.path.insert(0, os.path.dirname(__file__))
 import dados_historicos as dh
 import modelos_ml as ml
+import calibracao as cal_lib
 
 logging.basicConfig(
     level=logging.INFO,
@@ -262,7 +263,9 @@ def treinar_fold_ml(
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
     target_col: str,
-) -> tuple[np.ndarray, np.ndarray, object, list | None]:
+) -> tuple[np.ndarray, np.ndarray, object, list | None, np.ndarray, np.ndarray]:
+    """Retorna (probs, classes, modelo, curva, val_probs, val_classes).
+    val_probs/val_classes são as predições no val set, usadas para calibração."""
     nome_interno = f"{algoritmo}_v1"
     treinar_fn, prever_fn = ml.TREINADORES.get(nome_interno, (None, None))
     if treinar_fn is None:
@@ -281,8 +284,9 @@ def treinar_fold_ml(
         test_df=val_df,
     )
     curva = _amostrar_curva(curva_bruta or [])
+    val_probs, val_classes = prever_fn(modelo, extra, val_df, feats)
     probs, classes = prever_fn(modelo, extra, test_df, feats)
-    return probs, classes, modelo, curva
+    return probs, classes, modelo, curva, val_probs, val_classes
 
 
 def treinar_fold_sklearn(
@@ -477,12 +481,17 @@ def main():
             for algo in algoritmos:
                 logger.info("  Treinando %s...", algo)
                 try:
+                    val_probs_cal = None
+                    val_classes_cal = None
+                    val_df_para_calib = None
+
                     if algo in ALGORITMOS_ML:
                         # Para ML usa val_df apenas quando há partidas suficientes
                         val_para_fit = val_df if len(val_df) >= 50 else None
-                        probs, classes, modelo, curva = treinar_fold_ml(
+                        val_df_para_calib = val_para_fit if val_para_fit is not None else train_df.iloc[-max(50, len(train_df)//7):]
+                        probs, classes, modelo, curva, val_probs_cal, val_classes_cal = treinar_fold_ml(
                             algo, features_usadas, hyperparams if isinstance(hyperparams, dict) else {},
-                            train_df, val_para_fit if val_para_fit is not None else train_df.iloc[-max(50, len(train_df)//7):],
+                            train_df, val_df_para_calib,
                             test_df, target_col,
                         )
                         if fold_nome == "fold_3" and curva:
@@ -521,6 +530,28 @@ def main():
                         imp = extrair_importancia(modelo, feats_para_imp, algo)
                         if imp:
                             feature_importance[algo] = imp
+
+                    # --- Calibração Platt e Isotonic (apenas ML com val set disponível) ---
+                    if val_probs_cal is not None and val_df_para_calib is not None:
+                        val_y = val_df_para_calib[target_col].values
+                        for metodo in ("platt", "isotonic"):
+                            try:
+                                cals = cal_lib.ajustar_calibracao_np(val_probs_cal, val_y, val_classes_cal, metodo)
+                                tp_cal = cal_lib.aplicar_calibracao_np(probs, cals)
+                                m_cal = calcular_metricas_fold(
+                                    test_df.reset_index(drop=True), tp_cal, val_classes_cal, target_col, tipo
+                                )
+                                fold_resultado["models"][algo][f"logloss_calibrado_{metodo}"] = m_cal["logloss_test"]
+                                fold_resultado["models"][algo][f"brier_calibrado_{metodo}"] = m_cal.get("brier_score_test")
+                                logger.info("    [%s] logloss_cal=%.4f", metodo, m_cal["logloss_test"])
+                                if fold_nome == "fold_3":
+                                    salvar_predicoes_fold3(
+                                        supabase, test_df.reset_index(drop=True),
+                                        tp_cal, val_classes_cal,
+                                        f"{model_name_por_algo[algo]}_calibrado_{metodo}", target_key,
+                                    )
+                            except Exception as exc_cal:
+                                logger.warning("Calibração %s falhou para %s/%s: %s", metodo, algo, fold_nome, exc_cal)
 
                 except Exception as exc:
                     logger.error("  Erro em %s / %s: %s", algo, fold_nome, exc)
