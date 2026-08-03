@@ -28,6 +28,34 @@ function fmtData(iso) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function downloadCSV(filename, rows) {
+  const BOM = '﻿';
+  const csv = BOM + rows.map(r =>
+    r.map(cell => {
+      const s = String(cell ?? '');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(',')
+  ).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function BotaoExportar({ onClick, carregando = false, titulo = 'Exportar CSV' }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={carregando}
+      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:border-slate-500 disabled:opacity-50 transition-colors"
+    >
+      {carregando ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+      {titulo}
+    </button>
+  );
+}
+
 const COLORS = {
   catboost: '#8b5cf6',
   xgboost: '#10b981',
@@ -76,11 +104,32 @@ function TabResumoWF({ metrics }) {
   const folds = metrics.folds || [];
   const algorithms = metrics.algorithms || [];
 
+  function exportar() {
+    const header = ['Fold', 'Ano Teste', 'N Teste',
+      ...algorithms.flatMap(a => [`${a} LogLoss`, `${a} Acurácia %`, `${a} Brier`])
+    ];
+    const rows = folds.map(fold => [
+      fold.fold, fold.test_ano, fold.n_test,
+      ...algorithms.flatMap(a => {
+        const m = fold.models?.[a] || {};
+        return [
+          m.logloss_test != null ? Number(m.logloss_test).toFixed(4) : '',
+          m.accuracy_test != null ? (Number(m.accuracy_test) * 100).toFixed(1) : '',
+          m.brier_score_test != null ? Number(m.brier_score_test).toFixed(4) : '',
+        ];
+      }),
+    ]);
+    downloadCSV('resumo_treinamento_wf.csv', [header, ...rows]);
+  }
+
   return (
     <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        Fold 1: Test 2023 | Fold 2: Test 2024 | Fold 3: Test 2025 (out-of-sample real)
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">
+          Fold 1: Test 2023 | Fold 2: Test 2024 | Fold 3: Test 2025 (out-of-sample real)
+        </p>
+        <BotaoExportar onClick={exportar} />
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
@@ -141,8 +190,20 @@ function TabPorLiga({ metrics }) {
   const ligasList = Object.entries(ligasData)
     .sort((a, b) => a[1].logloss - b[1].logloss);
 
+  function exportar() {
+    const header = ['Liga', 'LogLoss', 'Acurácia %', 'N'];
+    const rows = ligasList.map(([liga, s]) => [
+      liga,
+      s.logloss != null ? Number(s.logloss).toFixed(4) : '',
+      s.accuracy != null ? (Number(s.accuracy) * 100).toFixed(1) : '',
+      s.n ?? '',
+    ]);
+    downloadCSV(`por_liga_fold3_${algoAtivo}.csv`, [header, ...rows]);
+  }
+
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
       <div className="flex gap-2">
         {algorithms.map((algo) => (
           <button
@@ -158,6 +219,8 @@ function TabPorLiga({ metrics }) {
             {algo}
           </button>
         ))}
+      </div>
+        <BotaoExportar onClick={exportar} />
       </div>
       <p className="text-xs text-slate-500">Fold 3 — Test {fold3.test_ano} · {Object.keys(ligasData).length} ligas</p>
       {ligasList.length === 0 ? (
@@ -385,6 +448,44 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
   const selections = TARGET_SELECTIONS[target] || [];
   const algos = (modelNames || []).map(extrairAlgo);
 
+  async function exportarTodos() {
+    setExportando(true);
+    try {
+      const todosJogos = [];
+      let pg = 0;
+      let totalPg = 1;
+      while (pg < totalPg) {
+        const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=relatorio-teste&config_id=${configId}&pagina=${pg}`));
+        const d = await resp.json();
+        todosJogos.push(...(d.jogos || []));
+        totalPg = Math.ceil((d.total || 0) / (d.por_pagina || 50));
+        pg++;
+      }
+      const header = [
+        'Data', 'Liga', 'Mandante', 'Visitante', 'Gols Casa', 'Gols Visitante',
+        ...algos.flatMap(algo => selections.map(sel => `${sel}${algos.length > 1 ? ` [${algo.slice(0, 3)}]` : ''} %`)),
+      ];
+      const rows = todosJogos.map(jogo => [
+        fmtData(jogo.match_date),
+        jogo.league || '',
+        jogo.home_team || '',
+        jogo.away_team || '',
+        jogo.goals_home ?? '',
+        jogo.goals_away ?? '',
+        ...algos.flatMap((algo, idx) => {
+          const mn = modelNames?.[idx] || '';
+          return selections.map(sel => {
+            const p = jogo.probabilities?.[`${mn}||${sel}`];
+            return p != null ? (p * 100).toFixed(1) : '';
+          });
+        }),
+      ]);
+      downloadCSV(`relatorio_teste_${configId}.csv`, [header, ...rows]);
+    } finally {
+      setExportando(false);
+    }
+  }
+
   if (carregando && !dados) {
     return (
       <div className="flex items-center justify-center py-16 gap-2 text-slate-500">
@@ -416,6 +517,7 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
         <div className="flex items-center gap-2">
           {carregando && <Loader2 size={14} className="animate-spin text-slate-500" />}
           {total > 0 && (
+<<<<<<< HEAD
             <button
               onClick={exportarCSV}
               disabled={exportando || carregando}
@@ -424,6 +526,13 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
               {exportando ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
               {exportando ? 'Exportando…' : 'Exportar CSV'}
             </button>
+=======
+            <BotaoExportar
+              onClick={exportarTodos}
+              carregando={exportando}
+              titulo={exportando ? 'Exportando…' : `Exportar CSV (${total.toLocaleString()})`}
+            />
+>>>>>>> 2c4eb16 (feat: add CSV export to training/test report modal)
           )}
         </div>
       </div>
