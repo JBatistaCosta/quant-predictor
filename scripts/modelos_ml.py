@@ -49,6 +49,8 @@ from dados_historicos import (
     RESULTADO_FAIXA_4_6,
     RESULTADO_FAIXA_7MAIS,
     RESULTADO_HOME,
+    RESULTADO_BTTS_NO,
+    RESULTADO_BTTS_YES,
     RESULTADO_OVER25,
     RESULTADO_UNDER25,
 )
@@ -62,6 +64,7 @@ from dados_historicos import (
 ROTULOS_SAIDA = {
     "resultado": {RESULTADO_HOME: "prob_home", RESULTADO_DRAW: "prob_draw", RESULTADO_AWAY: "prob_away"},
     "resultado_over25": {RESULTADO_UNDER25: "prob_under", RESULTADO_OVER25: "prob_over"},
+    "resultado_btts": {RESULTADO_BTTS_NO: "prob_btts_no", RESULTADO_BTTS_YES: "prob_btts_yes"},
     "resultado_corners_ou95": {RESULTADO_CORNERS_UNDER95: "prob_corners_under", RESULTADO_CORNERS_OVER95: "prob_corners_over"},
     "resultado_faixa_gols": {
         RESULTADO_FAIXA_0_1: "prob_faixa_0_1",

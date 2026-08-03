@@ -12,10 +12,15 @@ Por fold e por modelo (catboost_v9 / xgboost_v9 / lightgbm_v9 / mlp_v9):
   - Avalia no Test set: logloss, Brier Score, acurácia por liga
   - Gera OOF predictions no Val set → alimentam o stacking meta-modelo
 
+Mercados treinados:
+  - 1x2            (multiclasse: home/draw/away)
+  - over_under_2.5 (binário: over/under)
+  - btts           (binário: yes/no — Both Teams To Score)
+
 Stacking v9:
   - Meta-features: probabilidades dos 4 base models sobre Val de todos os
-    folds (OOF) → shape (n_val_total, 4 × 3 = 12)
-  - Meta-modelo: LogisticRegression multinomial calibrada
+    folds (OOF) → shape (n_val_total, 4 × 3 = 12 para 1x2, 4 × 2 = 8 para binários)
+  - Meta-modelo: LogisticRegression calibrada
   - Avaliado no Test set do fold_3
 
 Feature coverage:
@@ -64,6 +69,21 @@ FOLDS = [
 MODELOS_BASE = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9"]
 COLUNA_ALVO = "resultado"
 CLASSES_1X2 = np.array([dh.RESULTADO_HOME, dh.RESULTADO_DRAW, dh.RESULTADO_AWAY])
+CLASSES_BINARIAS = np.array([0, 1])
+
+# Configuração de cada mercado binário adicional
+MERCADOS_BINARIOS = [
+    {
+        "coluna_alvo": "resultado_over25",
+        "market": "over_under_2.5",
+        "mapa_selecao": {dh.RESULTADO_UNDER25: "under", dh.RESULTADO_OVER25: "over"},
+    },
+    {
+        "coluna_alvo": "resultado_btts",
+        "market": "btts",
+        "mapa_selecao": {dh.RESULTADO_BTTS_NO: "no", dh.RESULTADO_BTTS_YES: "yes"},
+    },
+]
 
 TAMANHO_LOTE_UPSERT = 500
 
@@ -130,6 +150,34 @@ def construir_predicoes(test_df: pd.DataFrame, probs: np.ndarray, classes: np.nd
                 "match_id": int(match_id),
                 "model_name": model_name,
                 "market": "1x2",
+                "selection": sel,
+                "probability": round(p, 5),
+            })
+    return linhas
+
+
+def construir_predicoes_mercado(
+    test_df: pd.DataFrame,
+    probs: np.ndarray,
+    classes: np.ndarray,
+    model_name: str,
+    market: str,
+    mapa_selecao: dict,
+) -> list[dict]:
+    """Versão genérica de construir_predicoes para qualquer mercado (binário ou multiclasse)."""
+    col_por_codigo: dict[int, int] = {int(c): i for i, c in enumerate(classes)}
+    ids = test_df.reset_index(drop=True)["match_id"].tolist()
+    linhas: list[dict] = []
+    for row_i, match_id in enumerate(ids):
+        for codigo, sel in mapa_selecao.items():
+            col_i = col_por_codigo.get(int(codigo))
+            if col_i is None:
+                continue
+            p = float(np.clip(probs[row_i, col_i], 1e-7, 1 - 1e-7))
+            linhas.append({
+                "match_id": int(match_id),
+                "model_name": model_name,
+                "market": market,
                 "selection": sel,
                 "probability": round(p, 5),
             })
@@ -283,6 +331,204 @@ def montar_meta_X(probs_por_modelo: dict[str, np.ndarray], classes_por_modelo: d
     return np.hstack(blocos)
 
 
+def montar_meta_X_binario(probs_por_modelo: dict[str, np.ndarray], classes_por_modelo: dict[str, np.ndarray]) -> np.ndarray:
+    """Versão binária de montar_meta_X — colunas [0, 1] por modelo (4 × 2 = 8 cols)."""
+    blocos = []
+    for nome in MODELOS_BASE:
+        probs = probs_por_modelo[nome]
+        classes = classes_por_modelo[nome]
+        bloco = np.zeros((len(probs), 2))
+        for i, c in enumerate(classes):
+            if int(c) in (0, 1):
+                bloco[:, int(c)] = probs[:, i]
+        blocos.append(bloco)
+    return np.hstack(blocos)
+
+
+def calcular_metricas_binario(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray, coluna_alvo: str) -> dict:
+    """Métricas para mercado binário (logloss, Brier score, acurácia)."""
+    y = df[coluna_alvo].values
+    ordered = np.zeros((len(probs), 2))
+    for i, c in enumerate(classes):
+        if int(c) in (0, 1):
+            ordered[:, int(c)] = probs[:, i]
+    ordered = np.clip(ordered, 1e-7, 1 - 1e-7)
+    logloss = log_loss(y, ordered, labels=[0, 1])
+    p1 = ordered[:, 1]
+    brier = float(np.mean((p1 - y) ** 2))
+    acc = float(np.mean((p1 >= 0.5).astype(int) == y))
+
+    por_liga: dict[str, dict] = {}
+    for liga, grupo in df.groupby("liga"):
+        mask = grupo.index
+        y_l = grupo[coluna_alvo].values
+        p_l = ordered[df.index.get_indexer(mask)]
+        if len(y_l) < 10:
+            continue
+        p1_l = p_l[:, 1]
+        por_liga[str(liga)] = {
+            "logloss": round(float(log_loss(y_l, p_l, labels=[0, 1])), 5),
+            "brier_score": round(float(np.mean((p1_l - y_l) ** 2)), 5),
+            "accuracy": round(float(np.mean((p1_l >= 0.5).astype(int) == y_l)), 4),
+            "n": len(y_l),
+        }
+
+    return {
+        "logloss_test": round(float(logloss), 5),
+        "brier_score_test": round(brier, 5),
+        "accuracy_test": round(acc, 4),
+        "logloss_por_liga": por_liga,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Treinamento walk-forward para mercados binários (OU25, BTTS)
+# ---------------------------------------------------------------------------
+
+def treinar_mercado_binario(
+    dataset: pd.DataFrame,
+    coluna_alvo: str,
+    market_str: str,
+    mapa_selecao: dict,
+) -> tuple[list[dict], list[dict]]:
+    """Executa walk-forward CV + stacking para um mercado binário.
+
+    Retorna (resultados_wf, predicoes) — mesma estrutura do loop 1X2 principal,
+    mas com `market` preenchido no resultado e nas previsões OOF.
+    """
+    resultados_wf: list[dict] = []
+    predicoes: list[dict] = []
+
+    oof_y_list: list[np.ndarray] = []
+    oof_probs_por_modelo: dict[str, list[np.ndarray]] = {m: [] for m in MODELOS_BASE}
+    oof_classes_por_modelo: dict[str, np.ndarray | None] = {m: None for m in MODELOS_BASE}
+
+    for fold in FOLDS:
+        fold_nome = fold["nome"]
+        logger.info("  [%s %s] treino ≤ %d | val %d | test %d",
+                    market_str, fold_nome, fold["treino_max_ano"], fold["val_ano"], fold["test_ano"])
+
+        train_df, val_df, test_df = split_por_ano(
+            dataset, fold["treino_max_ano"], fold["val_ano"], fold["test_ano"]
+        )
+        if train_df.empty or val_df.empty or test_df.empty:
+            logger.warning("  [%s] Fold %s com split vazio — pulando.", market_str, fold_nome)
+            continue
+
+        for nome in MODELOS_BASE:
+            try:
+                treinar_fn, prever_fn = ml.TREINADORES[nome]
+                features = ml.FEATURES_POR_MODELO[nome]
+                params = ml.PARAMS_DEFAULT[nome]
+                modelo, extra, _ = treinar_fn(
+                    params, train_df,
+                    coluna_alvo=coluna_alvo,
+                    features=features,
+                    val_df=val_df,
+                    test_df=test_df,
+                )
+                val_probs, val_classes = prever_fn(modelo, extra, val_df, features=features)
+                test_probs, test_classes = prever_fn(modelo, extra, test_df, features=features)
+            except Exception as exc:
+                logger.error("  [%s] Erro em %s fold %s: %s", market_str, nome, fold_nome, exc)
+                continue
+
+            model_name_mercado = f"{nome}__{market_str.replace('.', '_').replace('/', '_')}"
+            metricas = calcular_metricas_binario(
+                test_df.reset_index(drop=True), test_probs, test_classes, coluna_alvo
+            )
+            logger.info("  JSON:resultado_binario:%s", json.dumps({
+                "market": market_str, "modelo": nome, "fold": fold_nome,
+                "logloss": metricas["logloss_test"],
+                "brier_score": metricas["brier_score_test"],
+                "accuracy": metricas["accuracy_test"],
+            }))
+            resultados_wf.append({
+                "modelo": nome,
+                "fold": fold_nome,
+                "market": market_str,
+                "train_max_ano": fold["treino_max_ano"],
+                "val_ano": fold["val_ano"],
+                "test_ano": fold["test_ano"],
+                "n_treino": len(train_df),
+                "n_val": len(val_df),
+                "n_test": len(test_df),
+                **metricas,
+            })
+            predicoes.extend(construir_predicoes_mercado(
+                test_df, test_probs, test_classes, nome, market_str, mapa_selecao
+            ))
+
+            oof_probs_por_modelo[nome].append(val_probs)
+            oof_classes_por_modelo[nome] = val_classes
+
+        oof_y_list.append(val_df[coluna_alvo].values)
+
+    # Stacking binário
+    if all(len(oof_probs_por_modelo[m]) == len(FOLDS) for m in MODELOS_BASE):
+        logger.info("  [%s] Treinando stacking meta-modelo binário...", market_str)
+        oof_probs_concat = {m: np.vstack(oof_probs_por_modelo[m]) for m in MODELOS_BASE}
+        oof_y_concat = np.concatenate(oof_y_list)
+        meta_X_train = montar_meta_X_binario(oof_probs_concat, oof_classes_por_modelo)
+        meta_modelo = ml.treinar_stacking_v9(meta_X_train, oof_y_concat)
+
+        # Refit no fold_3 para avaliação de stacking
+        _, _, test_df_f3 = split_por_ano(
+            dataset, FOLDS[-1]["treino_max_ano"], FOLDS[-1]["val_ano"], FOLDS[-1]["test_ano"]
+        )
+        test_probs_por_modelo: dict[str, np.ndarray] = {}
+        test_classes_por_modelo: dict[str, np.ndarray] = {}
+        for nome in MODELOS_BASE:
+            features = ml.FEATURES_POR_MODELO[nome]
+            params = ml.PARAMS_DEFAULT[nome]
+            treinar_fn, prever_fn = ml.TREINADORES[nome]
+            train_f3, val_f3, _ = split_por_ano(
+                dataset, FOLDS[-1]["treino_max_ano"], FOLDS[-1]["val_ano"], FOLDS[-1]["test_ano"]
+            )
+            try:
+                modelo_f3, extra_f3, _ = treinar_fn(
+                    params, train_f3, coluna_alvo=coluna_alvo,
+                    features=features, val_df=val_f3, test_df=test_df_f3,
+                )
+                tp, tc = prever_fn(modelo_f3, extra_f3, test_df_f3, features=features)
+                test_probs_por_modelo[nome] = tp
+                test_classes_por_modelo[nome] = tc
+            except Exception as exc:
+                logger.error("  [%s] Refit fold_3 falhou para %s: %s", market_str, nome, exc)
+
+        if len(test_probs_por_modelo) == len(MODELOS_BASE):
+            meta_X_test = montar_meta_X_binario(test_probs_por_modelo, test_classes_por_modelo)
+            stacking_probs, stacking_classes = ml.prever_stacking_v9(meta_modelo, meta_X_test)
+            metricas_st = calcular_metricas_binario(
+                test_df_f3.reset_index(drop=True), stacking_probs, stacking_classes, coluna_alvo
+            )
+            logger.info("  JSON:resultado_binario:%s", json.dumps({
+                "market": market_str, "modelo": "stacking_v9", "fold": "fold_3",
+                "logloss": metricas_st["logloss_test"],
+                "brier_score": metricas_st["brier_score_test"],
+                "accuracy": metricas_st["accuracy_test"],
+            }))
+            resultados_wf.append({
+                "modelo": "stacking_v9",
+                "fold": FOLDS[-1]["nome"],
+                "market": market_str,
+                "train_max_ano": FOLDS[-1]["treino_max_ano"],
+                "val_ano": FOLDS[-1]["val_ano"],
+                "test_ano": FOLDS[-1]["test_ano"],
+                "n_treino": len(train_f3),
+                "n_val": len(val_f3),
+                "n_test": len(test_df_f3),
+                **metricas_st,
+            })
+            predicoes.extend(construir_predicoes_mercado(
+                test_df_f3, stacking_probs, stacking_classes, "stacking_v9", market_str, mapa_selecao
+            ))
+    else:
+        logger.warning("  [%s] Stacking pulado — nem todos os folds foram completados.", market_str)
+
+    return resultados_wf, predicoes
+
+
 # ---------------------------------------------------------------------------
 # Upload Supabase
 # ---------------------------------------------------------------------------
@@ -380,6 +626,7 @@ def main() -> None:
             resultados_wf.append({
                 "modelo": nome,
                 "fold": fold_nome,
+                "market": "1X2",
                 "train_max_ano": fold["treino_max_ano"],
                 "val_ano": fold["val_ano"],
                 "test_ano": fold["test_ano"],
@@ -464,6 +711,7 @@ def main() -> None:
             resultados_wf.append({
                 "modelo": "stacking_v9",
                 "fold": FOLDS[-1]["nome"],
+                "market": "1X2",
                 "train_max_ano": FOLDS[-1]["treino_max_ano"],
                 "val_ano": FOLDS[-1]["val_ano"],
                 "test_ano": FOLDS[-1]["test_ano"],
@@ -475,6 +723,19 @@ def main() -> None:
             predicoes_v9.extend(construir_predicoes(test_df_fold3, stacking_probs, stacking_classes, "stacking_v9"))
     else:
         logger.warning("Stacking pulado — nem todos os folds foram completados.")
+
+    # ------------------------------------------------------------------
+    # Mercados binários adicionais (Over/Under 2.5 e BTTS)
+    # ------------------------------------------------------------------
+    predicoes_binarios: list[dict] = []
+    for cfg in MERCADOS_BINARIOS:
+        logger.info("=== Treinando mercado binário: %s ===", cfg["market"])
+        res_bin, pred_bin = treinar_mercado_binario(
+            dataset, cfg["coluna_alvo"], cfg["market"], cfg["mapa_selecao"]
+        )
+        resultados_wf.extend(res_bin)
+        predicoes_binarios.extend(pred_bin)
+        logger.info("  %s: %d resultados, %d previsões", cfg["market"], len(res_bin), len(pred_bin))
 
     # ------------------------------------------------------------------
     # Feature importance (CatBoost fold_3)
@@ -526,7 +787,21 @@ def main() -> None:
             supabase_client.table("model_predictions").insert(
                 predicoes_v9[inicio: inicio + TAMANHO_LOTE_UPSERT]
             ).execute()
-        logger.info("  model_predictions (v9 OOF): %d linhas", len(predicoes_v9))
+        logger.info("  model_predictions (v9 OOF 1X2): %d linhas", len(predicoes_v9))
+
+    # Previsões dos mercados binários (OU25 e BTTS)
+    for cfg in MERCADOS_BINARIOS:
+        mkt = cfg["market"]
+        logger.info("Limpando previsões v9 %s de model_predictions...", mkt)
+        for _mv9 in MODELOS_V9:
+            supabase_client.table("model_predictions").delete().eq("model_name", _mv9).eq("market", mkt).execute()
+    pred_bin_total = predicoes_binarios
+    if pred_bin_total:
+        for inicio in range(0, len(pred_bin_total), TAMANHO_LOTE_UPSERT):
+            supabase_client.table("model_predictions").insert(
+                pred_bin_total[inicio: inicio + TAMANHO_LOTE_UPSERT]
+            ).execute()
+        logger.info("  model_predictions (v9 OOF binários): %d linhas", len(pred_bin_total))
 
     logger.info("=== Walk-forward CV v9 concluído ===")
 
