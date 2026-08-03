@@ -291,8 +291,11 @@ const ALGORITMOS = [
 
 const TARGETS = [
   { value: '1x2', label: 'Resultado 1X2' },
-  { value: 'over_under_2.5', label: 'Over/Under 2.5' },
+  { value: 'over_under_2.5', label: 'Over/Under 2,5 gols' },
   { value: 'btts', label: 'Ambas marcam (BTTS)' },
+  { value: 'faixa_gols', label: 'Faixa de total de gols (0-1 / 2-3 / 4-6 / 7+)' },
+  { value: 'corners_over_under_9.5', label: 'Escanteios O/U 9,5' },
+  { value: 'faixa_corners', label: 'Faixa de total de escanteios (≤8 / 9-10 / 11-12 / 13+)' },
 ];
 
 const STATUS_INFO = {

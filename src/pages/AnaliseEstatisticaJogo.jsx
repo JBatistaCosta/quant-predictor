@@ -60,8 +60,8 @@ const COR_MERCADO = '#c98500';  // âmbar (PALETA[3]) — evita colidir com o ve
                                  // já usado em outras telas pra "melhor odd"/edge positivo
 
 const OPCOES_N = [10, 20, 38];
-const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2,5 gols', 'corners_over_under_9.5': 'Escanteios O/U 9,5' };
-const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
+const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2,5 gols', 'corners_over_under_9.5': 'Escanteios O/U 9,5', 'faixa_gols': 'Faixa de total de gols', 'faixa_corners': 'Faixa de total de escanteios' };
+const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under', '0-1': '0-1', '2-3': '2-3', '4-6': '4-6', '7+': '7+', '≤8': '≤8', '9-10': '9-10', '11-12': '11-12', '13+': '13+' };
 
 function Escudo({ url, tamanho = 20 }) {
   return url
