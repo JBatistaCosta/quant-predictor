@@ -62,6 +62,9 @@ TARGETS = {
     "1x2": {"coluna": "resultado", "tipo": "multiclasse", "classes": 3},
     "over_under_2.5": {"coluna": "resultado_over25", "tipo": "binario", "classes": 2},
     "btts": {"coluna": "resultado_btts", "tipo": "binario", "classes": 2},
+    "faixa_gols": {"coluna": "resultado_faixa_gols", "tipo": "multiclasse", "classes": 4},
+    "corners_over_under_9.5": {"coluna": "resultado_corners_ou95", "tipo": "binario", "classes": 2},
+    "faixa_corners": {"coluna": "resultado_faixa_corners", "tipo": "multiclasse", "classes": 4},
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -74,6 +77,9 @@ _TARGET_PRED_META = {
     "1x2": {"market": "1X2", "class_to_sel": {0: "home", 1: "draw", 2: "away"}},
     "over_under_2.5": {"market": "over_under_2.5", "class_to_sel": {0: "under", 1: "over"}},
     "btts": {"market": "btts", "class_to_sel": {0: "no", 1: "yes"}},
+    "faixa_gols": {"market": "faixa_gols", "class_to_sel": {0: "0-1", 1: "2-3", 2: "4-6", 3: "7+"}},
+    "corners_over_under_9.5": {"market": "corners_over_under_9.5", "class_to_sel": {0: "under", 1: "over"}},
+    "faixa_corners": {"market": "faixa_corners", "class_to_sel": {0: "≤8", 1: "9-10", 2: "11-12", 3: "13+"}},
 }
 
 # ---------------------------------------------------------------------------

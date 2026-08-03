@@ -56,6 +56,9 @@ RESULTADO_CORNERS_UNDER95, RESULTADO_CORNERS_OVER95 = 0, 1
 # usuário: 0-1 / 2-3 / 4-6 / 7+).
 RESULTADO_FAIXA_0_1, RESULTADO_FAIXA_2_3, RESULTADO_FAIXA_4_6, RESULTADO_FAIXA_7MAIS = 0, 1, 2, 3
 
+# Códigos do alvo multiclasse `resultado_faixa_corners` (≤8 / 9-10 / 11-12 / 13+).
+RESULTADO_FAIXA_CORNERS_8MENOS, RESULTADO_FAIXA_CORNERS_9_10, RESULTADO_FAIXA_CORNERS_11_12, RESULTADO_FAIXA_CORNERS_13MAIS = 0, 1, 2, 3
+
 
 def codigo_faixa_gols(total_gols: float) -> int:
     """Bucket do total de gols (casa+visitante) nas 4 faixas -- usado tanto
@@ -71,6 +74,18 @@ def codigo_faixa_gols(total_gols: float) -> int:
     if total_gols <= 6:
         return RESULTADO_FAIXA_4_6
     return RESULTADO_FAIXA_7MAIS
+
+
+def codigo_faixa_corners(total: float) -> int:
+    """Bucket do total de escanteios (casa+visitante) nas 4 faixas (≤8 / 9-10 / 11-12 / 13+).
+    Mesmos limites usados na Análise Estatística por jogo."""
+    if total <= 8:
+        return RESULTADO_FAIXA_CORNERS_8MENOS
+    if total <= 10:
+        return RESULTADO_FAIXA_CORNERS_9_10
+    if total <= 12:
+        return RESULTADO_FAIXA_CORNERS_11_12
+    return RESULTADO_FAIXA_CORNERS_13MAIS
 
 TAMANHO_PAGINA = 1000
 
@@ -2942,6 +2957,9 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     dataset["resultado_corners_ou95"] = np.where(
         dataset["total_corners"].notna(), (dataset["total_corners"] > 9.5).astype(float), np.nan
     )
+    dataset["resultado_faixa_corners"] = dataset["total_corners"].apply(
+        lambda x: float(codigo_faixa_corners(x)) if pd.notna(x) else np.nan
+    )
 
     dataset = dataset.rename(columns={"id": "match_id"})
 
@@ -3045,7 +3063,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         "xg_momentum_home", "xg_momentum_away",
         "posicao_diff", "pontos_diff",
         # Alvos
-        "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95",
+        "resultado", "resultado_over25", "resultado_faixa_gols", "resultado_corners_ou95", "resultado_faixa_corners",
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
     ]

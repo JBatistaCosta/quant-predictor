@@ -121,6 +121,8 @@ const SELECOES_POR_MERCADO = {
   '1X2': ['home', 'draw', 'away'],
   'over_under_2.5': ['over', 'under'],
   'corners_over_under_9.5': ['over', 'under'],
+  'faixa_gols': ['0-1', '2-3', '4-6', '7+'],
+  'faixa_corners': ['≤8', '9-10', '11-12', '13+'],
 };
 
 function exportarCSV(partidas, filtroModelo, filtroMercado, ligasPorId) {
