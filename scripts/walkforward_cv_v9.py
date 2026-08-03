@@ -44,6 +44,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 
 import numpy as np
@@ -540,15 +541,43 @@ def treinar_mercado_binario(
 # Upload Supabase
 # ---------------------------------------------------------------------------
 
+def _executar_com_retry(fn, max_tentativas: int = 4, espera_inicial: float = 2.0):
+    """Executa fn() com retry exponencial — tolera WSAECONNRESET (WinError 10054) e afins."""
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            if tentativa == max_tentativas:
+                raise
+            espera = espera_inicial * (2 ** (tentativa - 1))
+            logger.warning(
+                "  Tentativa %d/%d falhou (%s). Aguardando %.0fs antes de repetir...",
+                tentativa, max_tentativas, exc, espera,
+            )
+            time.sleep(espera)
+
+
 def upsert_em_lotes(supabase_client, tabela: str, linhas: list[dict]) -> None:
     for inicio in range(0, len(linhas), TAMANHO_LOTE_UPSERT):
         lote = linhas[inicio: inicio + TAMANHO_LOTE_UPSERT]
-        supabase_client.table(tabela).upsert(lote, on_conflict="id").execute()
+        _executar_com_retry(
+            lambda lote=lote: supabase_client.table(tabela).upsert(lote, on_conflict="id").execute()
+        )
+
+
+def inserir_em_lotes(supabase_client, tabela: str, linhas: list[dict]) -> None:
+    for inicio in range(0, len(linhas), TAMANHO_LOTE_UPSERT):
+        lote = linhas[inicio: inicio + TAMANHO_LOTE_UPSERT]
+        _executar_com_retry(
+            lambda lote=lote: supabase_client.table(tabela).insert(lote).execute()
+        )
 
 
 def limpar_tabela(supabase_client, tabela: str) -> None:
     """Remove todas as linhas (pra recomputar do zero em cada run)."""
-    supabase_client.table(tabela).delete().neq("id", 0).execute()
+    _executar_com_retry(
+        lambda: supabase_client.table(tabela).delete().neq("id", 0).execute()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -803,35 +832,29 @@ def main() -> None:
 
     limpar_tabela(supabase_client, "model_v9_walkforward_results")
     if resultados_wf:
-        supabase_client.table("model_v9_walkforward_results").insert(resultados_wf).execute()
+        inserir_em_lotes(supabase_client, "model_v9_walkforward_results", resultados_wf)
         logger.info("  model_v9_walkforward_results: %d linhas", len(resultados_wf))
 
     limpar_tabela(supabase_client, "model_v9_feature_importance")
     if importancia_linhas:
-        for inicio in range(0, len(importancia_linhas), TAMANHO_LOTE_UPSERT):
-            supabase_client.table("model_v9_feature_importance").insert(
-                importancia_linhas[inicio: inicio + TAMANHO_LOTE_UPSERT]
-            ).execute()
+        inserir_em_lotes(supabase_client, "model_v9_feature_importance", importancia_linhas)
         logger.info("  model_v9_feature_importance: %d linhas", len(importancia_linhas))
 
     limpar_tabela(supabase_client, "model_v9_feature_coverage")
     if cobertura:
-        for inicio in range(0, len(cobertura), TAMANHO_LOTE_UPSERT):
-            supabase_client.table("model_v9_feature_coverage").insert(
-                cobertura[inicio: inicio + TAMANHO_LOTE_UPSERT]
-            ).execute()
+        inserir_em_lotes(supabase_client, "model_v9_feature_coverage", cobertura)
         logger.info("  model_v9_feature_coverage: %d linhas", len(cobertura))
 
     # model_predictions — previsões OOF por partida (SimulacaoCarteira / backtest)
     MODELOS_V9 = ["catboost_v9", "xgboost_v9", "lightgbm_v9", "mlp_v9", "stacking_v9", "stacking_v9_sem_mlp"]
     logger.info("Limpando previsões v9 anteriores de model_predictions...")
     for _mv9 in MODELOS_V9:
-        supabase_client.table("model_predictions").delete().eq("model_name", _mv9).eq("market", "1x2").execute()
+        _executar_com_retry(
+            lambda mv=_mv9: supabase_client.table("model_predictions")
+                .delete().eq("model_name", mv).eq("market", "1x2").execute()
+        )
     if predicoes_v9:
-        for inicio in range(0, len(predicoes_v9), TAMANHO_LOTE_UPSERT):
-            supabase_client.table("model_predictions").insert(
-                predicoes_v9[inicio: inicio + TAMANHO_LOTE_UPSERT]
-            ).execute()
+        inserir_em_lotes(supabase_client, "model_predictions", predicoes_v9)
         logger.info("  model_predictions (v9 OOF 1X2): %d linhas", len(predicoes_v9))
 
     # Previsões dos mercados binários (OU25 e BTTS)
@@ -839,14 +862,13 @@ def main() -> None:
         mkt = cfg["market"]
         logger.info("Limpando previsões v9 %s de model_predictions...", mkt)
         for _mv9 in MODELOS_V9:
-            supabase_client.table("model_predictions").delete().eq("model_name", _mv9).eq("market", mkt).execute()
-    pred_bin_total = predicoes_binarios
-    if pred_bin_total:
-        for inicio in range(0, len(pred_bin_total), TAMANHO_LOTE_UPSERT):
-            supabase_client.table("model_predictions").insert(
-                pred_bin_total[inicio: inicio + TAMANHO_LOTE_UPSERT]
-            ).execute()
-        logger.info("  model_predictions (v9 OOF binários): %d linhas", len(pred_bin_total))
+            _executar_com_retry(
+                lambda mv=_mv9, m=mkt: supabase_client.table("model_predictions")
+                    .delete().eq("model_name", mv).eq("market", m).execute()
+            )
+    if predicoes_binarios:
+        inserir_em_lotes(supabase_client, "model_predictions", predicoes_binarios)
+        logger.info("  model_predictions (v9 OOF binários): %d linhas", len(predicoes_binarios))
 
     logger.info("=== Walk-forward CV v9 concluído ===")
 
