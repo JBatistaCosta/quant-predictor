@@ -852,7 +852,7 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
   const [matchResult, predResult] = await Promise.all([
     supabase
       .from('matches')
-      .select(`id, match_date, season, goals_home, goals_away,
+      .select(`id, match_date, season, home_goals, away_goals,
         home_team:teams!home_team_id(name),
         away_team:teams!away_team_id(name),
         league:leagues!league_id(name)`)
@@ -875,8 +875,8 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
       league: m.league?.name ?? null,
       home_team: m.home_team?.name ?? null,
       away_team: m.away_team?.name ?? null,
-      goals_home: m.goals_home,
-      goals_away: m.goals_away,
+      goals_home: m.home_goals,
+      goals_away: m.away_goals,
       probabilities: {},
     };
   }
