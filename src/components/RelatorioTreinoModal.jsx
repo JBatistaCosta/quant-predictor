@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, BarChart3, TrendingUp, Target, Activity, ChevronLeft, ChevronRight, Wallet, Loader2, AlertTriangle } from 'lucide-react';
+import { X, BarChart3, TrendingUp, Target, Activity, ChevronLeft, ChevronRight, Wallet, Loader2, AlertTriangle, Download } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   LineChart, Line, Legend,
@@ -300,6 +300,7 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
+  const [exportando, setExportando] = useState(false);
 
   const carregar = useCallback(async (pg) => {
     setCarregando(true);
@@ -318,6 +319,68 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
   }, [configId]);
 
   useEffect(() => { carregar(0); }, [carregar]);
+
+  const exportarCSV = useCallback(async () => {
+    if (!dados) return;
+    setExportando(true);
+    try {
+      const sels = TARGET_SELECTIONS[target] || [];
+      const algList = (modelNames || []).map(extrairAlgo);
+
+      // Cabeçalho
+      const cabecalho = ['Data', 'Liga', 'Mandante', 'Visitante', 'Gols_Mandante', 'Gols_Visitante'];
+      for (const algo of algList) {
+        for (const sel of sels) {
+          cabecalho.push(algList.length > 1 ? `${algo}_${sel}` : sel);
+        }
+      }
+
+      // Busca todas as páginas
+      const totalPgs = Math.ceil((dados.total || 0) / (dados.por_pagina || 50));
+      const todasLinhas = [];
+      for (let pg = 0; pg < totalPgs; pg++) {
+        const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=relatorio-teste&config_id=${configId}&pagina=${pg}`));
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const d = await resp.json();
+        for (const jogo of d.jogos || []) {
+          const linha = [
+            fmtData(jogo.match_date),
+            jogo.league || '',
+            jogo.home_team || '',
+            jogo.away_team || '',
+            jogo.goals_home ?? '',
+            jogo.goals_away ?? '',
+          ];
+          for (let ai = 0; ai < (modelNames || []).length; ai++) {
+            const mn = modelNames[ai] || '';
+            const algo = algList[ai] || '';
+            for (const sel of sels) {
+              const prob = jogo.probabilities?.[`${mn}||${sel}`];
+              linha.push(prob != null ? (prob * 100).toFixed(2) : '');
+            }
+          }
+          todasLinhas.push(linha);
+        }
+      }
+
+      const escapar = (v) => {
+        const s = String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const csv = [cabecalho, ...todasLinhas].map((l) => l.map(escapar).join(',')).join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `relatorio_teste_${configId.slice(0, 8)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErro(`Exportação falhou: ${e.message}`);
+    } finally {
+      setExportando(false);
+    }
+  }, [dados, configId, target, modelNames]);
 
   const selections = TARGET_SELECTIONS[target] || [];
   const algos = (modelNames || []).map(extrairAlgo);
@@ -345,12 +408,24 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
           {total} partidas analisadas na fase de teste
           {total > 0 && ` · Página ${pagina + 1} de ${totalPaginas}`}
         </p>
-        {carregando && <Loader2 size={14} className="animate-spin text-slate-500" />}
+        <div className="flex items-center gap-2">
+          {carregando && <Loader2 size={14} className="animate-spin text-slate-500" />}
+          {total > 0 && (
+            <button
+              onClick={exportarCSV}
+              disabled={exportando || carregando}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-600 text-slate-300 hover:text-white hover:border-violet-500 hover:bg-violet-900/20 disabled:opacity-40 transition-colors"
+            >
+              {exportando ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              {exportando ? 'Exportando…' : 'Exportar CSV'}
+            </button>
+          )}
+        </div>
       </div>
 
       {jogos.length === 0 ? (
