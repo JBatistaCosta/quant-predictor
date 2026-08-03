@@ -1,0 +1,45 @@
+name: Treino de Modelo Customizado (Walk-Forward CV)
+
+# Disparado pelo frontend via api/model-maintenance?tarefa=disparar-treino-custom,
+# quando a config tem mode='walk_forward_cv'.
+#
+# Fluxo idêntico ao treinar_modelo_custom.yml mas usa o script de walk-forward
+# CV com 3 folds temporais (fold1/2/3) e múltiplos algoritmos por run.
+#
+# Timeout: 90min — 3 folds × 3 algoritmos ≈ 9 runs de treinamento.
+# Random Forest e Logistic Regression terminam rápido; CatBoost/XGBoost/LightGBM
+# podem demorar 5-15 min cada um dependendo do dataset.
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_id:
+        description: "UUID da linha em custom_model_configs (obrigatório)"
+        required: true
+        type: string
+
+jobs:
+  treinar-modelo-custom-wf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Treinar modelo customizado (Walk-Forward CV)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          CONFIG_ID: ${{ inputs.config_id }}
+        run: python scripts/treinar_modelo_custom_wf.py

@@ -289,6 +289,15 @@ const ALGORITMOS = [
   { value: 'dixon_coles', label: 'Dixon-Coles' },
 ];
 
+// Algoritmos disponíveis para o modo Walk-Forward CV
+const ALGORITMOS_WF = [
+  { value: 'catboost', label: 'CatBoost' },
+  { value: 'xgboost', label: 'XGBoost' },
+  { value: 'lightgbm', label: 'LightGBM' },
+  { value: 'logistic_regression', label: 'Regressão Logística' },
+  { value: 'random_forest', label: 'Random Forest' },
+];
+
 const TARGETS = [
   { value: '1x2', label: 'Resultado 1X2' },
   { value: 'over_under_2.5', label: 'Over/Under 2,5 gols' },
@@ -309,7 +318,9 @@ const STATUS_INFO = {
 const ESTADO_FORM_INICIAL = {
   id: null,
   name: '',
+  mode: 'simples',
   algorithm: 'catboost',
+  algorithms: ['catboost', 'xgboost', 'lightgbm'],
   features: [],
   target: '1x2',
   notes: '',
@@ -407,7 +418,9 @@ export default function TreinoCustom() {
     setForm({
       id: cfg.id,
       name: cfg.name,
-      algorithm: cfg.algorithm,
+      mode: cfg.mode || 'simples',
+      algorithm: cfg.algorithm || 'catboost',
+      algorithms: cfg.algorithms?.length ? cfg.algorithms : ['catboost', 'xgboost', 'lightgbm'],
       features: cfg.features || [],
       target: cfg.target || '1x2',
       notes: cfg.notes || '',
@@ -427,6 +440,9 @@ export default function TreinoCustom() {
     e.preventDefault();
     if (!form.name.trim()) { mostrarMensagem('erro', 'Informe um nome para o modelo.'); return; }
     if (form.features.length === 0) { mostrarMensagem('erro', 'Selecione pelo menos 1 feature.'); return; }
+    if (form.mode === 'walk_forward_cv' && form.algorithms.length === 0) {
+      mostrarMensagem('erro', 'Selecione pelo menos 1 algoritmo para o modo Walk-Forward CV.'); return;
+    }
 
     let hyperparameters = null;
     if (form.hyperparameters.trim()) {
@@ -442,7 +458,9 @@ export default function TreinoCustom() {
         body: JSON.stringify({
           id: form.id || undefined,
           name: form.name.trim(),
-          algorithm: form.algorithm,
+          mode: form.mode,
+          algorithm: form.mode === 'simples' ? form.algorithm : null,
+          algorithms: form.mode === 'walk_forward_cv' ? form.algorithms : [],
           features: form.features,
           target: form.target,
           notes: form.notes.trim() || null,
@@ -651,19 +669,83 @@ export default function TreinoCustom() {
               />
             </div>
 
-            {/* Algoritmo e Target */}
+            {/* Modo de treinamento */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Modo de treinamento *</label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'simples', label: 'Simples', desc: 'Split único (treino ≤ 2023 / teste ≥ 2024), 1 algoritmo' },
+                  { value: 'walk_forward_cv', label: 'Walk-Forward CV', desc: '3 folds temporais, múltiplos algoritmos' },
+                ].map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, mode: m.value }))}
+                    className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium border transition-colors text-left ${
+                      form.mode === m.value
+                        ? 'bg-violet-600 border-violet-500 text-white'
+                        : 'bg-slate-700 border-slate-600 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    <div>{m.label}</div>
+                    <div className={`text-xs mt-0.5 font-normal ${form.mode === m.value ? 'text-violet-200' : 'text-slate-500'}`}>{m.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Algoritmo (simples) ou Algoritmos (WF) + Target */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Algoritmo *</label>
-                <select
-                  value={form.algorithm}
-                  onChange={(e) => setForm((f) => ({ ...f, algorithm: e.target.value }))}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                >
-                  {ALGORITMOS.map((a) => (
-                    <option key={a.value} value={a.value}>{a.label}</option>
-                  ))}
-                </select>
+                {form.mode === 'simples' ? (
+                  <>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Algoritmo *</label>
+                    <select
+                      value={form.algorithm}
+                      onChange={(e) => setForm((f) => ({ ...f, algorithm: e.target.value }))}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    >
+                      {ALGORITMOS.map((a) => (
+                        <option key={a.value} value={a.value}>{a.label}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                      Algoritmos *{' '}
+                      <span className="text-slate-500 font-normal">({form.algorithms.length} selecionado{form.algorithms.length !== 1 ? 's' : ''})</span>
+                    </label>
+                    <div className="space-y-1.5">
+                      {ALGORITMOS_WF.map((a) => {
+                        const ativo = form.algorithms.includes(a.value);
+                        return (
+                          <label
+                            key={a.value}
+                            className={`flex items-center gap-2 cursor-pointer rounded px-2.5 py-1.5 text-sm transition-colors ${
+                              ativo ? 'bg-violet-900/40 text-violet-300' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={ativo}
+                              onChange={() =>
+                                setForm((f) => ({
+                                  ...f,
+                                  algorithms: ativo
+                                    ? f.algorithms.filter((k) => k !== a.value)
+                                    : [...f.algorithms, a.value],
+                                }))
+                              }
+                              className="accent-violet-500 w-3.5 h-3.5"
+                            />
+                            {a.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">Mercado alvo *</label>
@@ -851,9 +933,18 @@ export default function TreinoCustom() {
                       </span>
                     </div>
                     <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                      <span className="text-xs text-slate-500">
-                        {ALGORITMOS.find((a) => a.value === cfg.algorithm)?.label || cfg.algorithm}
-                      </span>
+                      {cfg.mode === 'walk_forward_cv' ? (
+                        <span className="text-xs bg-violet-900/40 text-violet-400 border border-violet-800 rounded px-1.5 py-0.5 font-medium">WF-CV</span>
+                      ) : null}
+                      {cfg.mode === 'walk_forward_cv' ? (
+                        <span className="text-xs text-slate-500">
+                          {(cfg.algorithms || []).join(', ') || '—'}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-500">
+                          {ALGORITMOS.find((a) => a.value === cfg.algorithm)?.label || cfg.algorithm}
+                        </span>
+                      )}
                       <span className="text-xs text-slate-600">·</span>
                       <span className="text-xs text-slate-500">
                         {TARGETS.find((t) => t.value === cfg.target)?.label || cfg.target}
