@@ -69,6 +69,13 @@ ALGORITMOS_ML = {"catboost", "xgboost", "lightgbm"}
 # Algoritmos nativos sklearn (logistic_regression, random_forest)
 ALGORITMOS_SKLEARN = {"logistic_regression", "random_forest"}
 
+# Mapeamento: target_key → nome do mercado e tradução int→string usados em model_predictions
+_TARGET_PRED_META = {
+    "1x2": {"market": "1X2", "class_to_sel": {0: "home", 1: "draw", 2: "away"}},
+    "over_under_2.5": {"market": "over_under_2.5", "class_to_sel": {0: "under", 1: "over"}},
+    "btts": {"market": "btts", "class_to_sel": {0: "no", 1: "yes"}},
+}
+
 # ---------------------------------------------------------------------------
 # Migração de chaves de features — FotMob v8
 # ---------------------------------------------------------------------------
@@ -218,7 +225,7 @@ def carregar_dataset(supabase, features: list[str], target_info: dict) -> pd.Dat
     # train_df["liga"] internamente mesmo quando "liga" não foi escolhida
     # como feature; sem isso, falha com KeyError: 'liga'.
     cols_necessarias = list(dict.fromkeys(
-        ml.CAT_FEATURES + features + [target_info["coluna"], "match_date"]
+        ml.CAT_FEATURES + features + [target_info["coluna"], "match_date", "match_id"]
     ))
     cols_presentes = [c for c in cols_necessarias if c in dataset.columns]
     dataset = dataset[cols_presentes].dropna(subset=[target_info["coluna"]]).copy()
@@ -301,7 +308,7 @@ def treinar_via_ml(
     test_df: pd.DataFrame,
     target_col: str,
     tipo: str,
-) -> tuple[dict, object, list[str], list | None]:
+) -> tuple[dict, object, list[str], list | None, np.ndarray, np.ndarray]:
     """Treina usando as funções existentes em modelos_ml.py."""
     nome_interno = f"{algoritmo}_v1"
     treinar_fn, prever_fn = ml.TREINADORES.get(nome_interno, (None, None))
@@ -347,7 +354,7 @@ def treinar_via_ml(
     metricas["params"] = params
 
     logger.info("Métricas: %s", metricas)
-    return metricas, modelo, features, curva
+    return metricas, modelo, features, curva, probs, classes
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +369,7 @@ def treinar_via_sklearn(
     test_df: pd.DataFrame,
     target_col: str,
     tipo: str,
-) -> tuple[dict, object, list[str]]:
+) -> tuple[dict, object, list[str], None, np.ndarray, np.ndarray]:
     """Treina com Pipeline sklearn (imputer + scaler + classificador)."""
     hp = hyperparameters or {}
 
@@ -411,7 +418,65 @@ def treinar_via_sklearn(
     metricas["params"] = hp
 
     logger.info("Métricas: %s", metricas)
-    return metricas, pipe, features_num, None  # sklearn não gera curvas de aprendizado
+    return metricas, pipe, features_num, None, probs, pipe.named_steps['clf'].classes_
+
+
+# ---------------------------------------------------------------------------
+# Salvar predições por partida
+# ---------------------------------------------------------------------------
+
+def salvar_predicoes_no_banco(
+    supabase,
+    test_df: pd.DataFrame,
+    probs: np.ndarray,
+    classes: np.ndarray,
+    model_name: str,
+    target_key: str,
+) -> None:
+    """Grava probabilidades por partida em model_predictions (upsert)."""
+    meta = _TARGET_PRED_META.get(target_key)
+    if meta is None:
+        logger.warning("target_key %r sem meta de predição — predições não salvas.", target_key)
+        return
+
+    if "match_id" not in test_df.columns:
+        logger.warning("match_id ausente no test_df — predições não salvas.")
+        return
+
+    market = meta["market"]
+    class_to_sel = meta["class_to_sel"]
+    match_ids = test_df["match_id"].values
+
+    rows = []
+    for i, match_id in enumerate(match_ids):
+        for col_idx, cls_int in enumerate(classes):
+            sel = class_to_sel.get(int(cls_int))
+            if sel is None:
+                continue
+            rows.append({
+                "match_id": int(match_id),
+                "model_name": model_name,
+                "market": market,
+                "selection": sel,
+                "probability": round(float(probs[i, col_idx]), 6),
+            })
+
+    if not rows:
+        logger.warning("Nenhuma linha a inserir em model_predictions.")
+        return
+
+    logger.info(
+        "Salvando %d predições em model_predictions (modelo=%s, mercado=%s)...",
+        len(rows), model_name, market,
+    )
+    batch_size = 500
+    for start in range(0, len(rows), batch_size):
+        supabase.table("model_predictions").upsert(
+            rows[start : start + batch_size],
+            on_conflict="match_id,model_name,market,selection",
+        ).execute()
+
+    logger.info("✅ %d predições salvas em model_predictions.", len(rows))
 
 
 # ---------------------------------------------------------------------------
@@ -456,12 +521,12 @@ def main():
         # 3. Treina o modelo
         curva_aprendizado = None
         if algoritmo in ALGORITMOS_ML:
-            metricas, modelo, features_finais, curva_aprendizado = treinar_via_ml(
+            metricas, modelo, features_finais, curva_aprendizado, probs_test, classes_test = treinar_via_ml(
                 algoritmo, features_usadas, hyperparameters,
                 train_df, test_df, target_info["coluna"], target_info["tipo"],
             )
         elif algoritmo in ALGORITMOS_SKLEARN:
-            metricas, modelo, features_finais, _ = treinar_via_sklearn(
+            metricas, modelo, features_finais, _, probs_test, classes_test = treinar_via_sklearn(
                 algoritmo, features_usadas, hyperparameters,
                 train_df, test_df, target_info["coluna"], target_info["tipo"],
             )
@@ -510,6 +575,10 @@ def main():
             error_message=None,
         )
         logger.info("✅ Treino concluído e métricas gravadas em custom_model_configs.")
+
+        # 5. Salva predições por partida para que o modelo apareça em Estatísticas,
+        #    Backtest e Simulação de Carteira automaticamente.
+        salvar_predicoes_no_banco(supabase, test_df, probs_test, classes_test, cfg["name"], target_key)
 
         # Imprime JSON estruturado nos logs do Actions (fácil de parsear/grep)
         print(json.dumps({"config_id": config_id, "status": "treinado", "metricas": metrics_final}, ensure_ascii=False))
