@@ -473,10 +473,12 @@ export default async function handler(req, res) {
           for (let i = 0; i < 5; i++) {
             const fatia = ordenado.slice(i * tamanho, i === 4 ? ordenado.length : (i + 1) * tamanho);
             if (fatia.length === 0) continue;
+            const fatiaComMkt = fatia.filter(l => l.p_mercado != null);
             quintis.push({
               previsto_medio: fatia.reduce((s, l) => s + l.p_modelo, 0) / fatia.length,
               real: fatia.reduce((s, l) => s + l.y, 0) / fatia.length,
               n: fatia.length,
+              mercado_medio: fatiaComMkt.length > 0 ? fatiaComMkt.reduce((s, l) => s + l.p_mercado, 0) / fatiaComMkt.length : null,
             });
           }
         }

@@ -2772,7 +2772,7 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     forma_cartoes_amarelos = _forma_por_mando(partidas, "yellow_cards_home", "yellow_cards_away", COLUNAS_FORMA_CARTOES_AMARELOS)
     forma_cartoes_vermelhos = _forma_por_mando(partidas, "red_cards_home", "red_cards_away", COLUNAS_FORMA_CARTOES_VERMELHOS)
     formas_fotmob = {
-        nome_curto: _forma_por_mando_multi_janelas(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", nome_curto)
+        nome_curto: _forma_por_mando(partidas, f"{col_raw}_fm_home", f"{col_raw}_fm_away", colunas_forma_fotmob(nome_curto))
         for col_raw, nome_curto in COLUNAS_STATS_FOTMOB.items()
     }
     formas_situacao_chutes = {

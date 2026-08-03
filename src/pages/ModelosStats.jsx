@@ -51,6 +51,7 @@ function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }
 
 function Calibracao({ quintis }) {
   if (!quintis || quintis.length === 0) return <p className="text-xs text-slate-600">Sem dado suficiente.</p>;
+  const temMercado = quintis.some(q => q.mercado_medio != null);
   return (
     <div className="space-y-1">
       {quintis.map((q, i) => {
@@ -61,12 +62,19 @@ function Calibracao({ quintis }) {
             <div className="flex-1 bg-slate-800 rounded h-3 relative overflow-hidden">
               <div className="absolute inset-y-0 bg-slate-600" style={{ width: `${q.previsto_medio * 100}%` }} />
               <div className={`absolute inset-y-0 ${Math.abs(diff) > 0.08 ? 'bg-red-500/70' : 'bg-emerald-500/70'}`} style={{ width: '2px', left: `${q.real * 100}%` }} />
+              {q.mercado_medio != null && (
+                <div className="absolute inset-y-0 bg-sky-400/80" style={{ width: '2px', left: `${q.mercado_medio * 100}%` }} />
+              )}
             </div>
-            <span className="text-slate-400 w-32 shrink-0 text-right">prev {(q.previsto_medio * 100).toFixed(0)}% · real {(q.real * 100).toFixed(0)}% (n={q.n})</span>
+            <span className="text-slate-400 w-48 shrink-0 text-right">
+              prev {(q.previsto_medio * 100).toFixed(0)}% · real {(q.real * 100).toFixed(0)}%{q.mercado_medio != null ? ` · mkt ${(q.mercado_medio * 100).toFixed(0)}%` : ''} (n={q.n})
+            </span>
           </div>
         );
       })}
-      <p className="text-[10px] text-slate-600 mt-1">Barra cinza = previsto médio. Traço = frequência real (verde se perto, vermelho se longe &gt;8pp).</p>
+      <p className="text-[10px] text-slate-600 mt-1">
+        Barra cinza = previsto médio. Traço verde/vermelho = frequência real{temMercado ? '. Traço azul = probabilidade implícita do mercado' : ''}.
+      </p>
     </div>
   );
 }

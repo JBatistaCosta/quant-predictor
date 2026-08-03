@@ -184,22 +184,22 @@ const FEATURE_GROUPS = [
   {
     grupo: 'FotMob: Situação de Chutes (v9)',
     features: [
-      { key: 'pct_fast_break_fm_home_5j', label: '% Chutes em contra-ataque (mandante, 5j)', cov: '▅' },
-      { key: 'pct_fast_break_fm_sofrido_home_5j', label: '% Contra-ataques sofridos (mandante, 5j)', cov: '▅' },
-      { key: 'pct_fast_break_fm_away_5j', label: '% Chutes em contra-ataque (visitante, 5j)', cov: '▅' },
-      { key: 'pct_fast_break_fm_sofrido_away_5j', label: '% Contra-ataques sofridos (visitante, 5j)', cov: '▅' },
-      { key: 'pct_bola_parada_fm_home_5j', label: '% Chutes de bola parada (mandante, 5j)', cov: '▅' },
-      { key: 'pct_bola_parada_fm_sofrido_home_5j', label: '% Bola parada sofrida (mandante, 5j)', cov: '▅' },
-      { key: 'pct_bola_parada_fm_away_5j', label: '% Chutes de bola parada (visitante, 5j)', cov: '▅' },
-      { key: 'pct_bola_parada_fm_sofrido_away_5j', label: '% Bola parada sofrida (visitante, 5j)', cov: '▅' },
-      { key: 'xg_chute_fm_home_5j', label: 'xG médio por chute (mandante, 5j)', cov: '▅' },
-      { key: 'xg_chute_fm_sofrido_home_5j', label: 'xG/chute adversário (mandante, 5j)', cov: '▅' },
-      { key: 'xg_chute_fm_away_5j', label: 'xG médio por chute (visitante, 5j)', cov: '▅' },
-      { key: 'xg_chute_fm_sofrido_away_5j', label: 'xG/chute adversário (visitante, 5j)', cov: '▅' },
-      { key: 'pct_gols_2tempo_fm_home_5j', label: '% Gols no 2º tempo (mandante, 5j)', cov: '▅' },
-      { key: 'pct_gols_2tempo_fm_sofrido_home_5j', label: '% Gols sofridos no 2º tempo (mandante, 5j)', cov: '▅' },
-      { key: 'pct_gols_2tempo_fm_away_5j', label: '% Gols no 2º tempo (visitante, 5j)', cov: '▅' },
-      { key: 'pct_gols_2tempo_fm_sofrido_away_5j', label: '% Gols sofridos no 2º tempo (visitante, 5j)', cov: '▅' },
+      { key: 'media_pct_fast_break_fm_5j_home', label: '% Chutes em contra-ataque (mandante, 5j)', cov: '▅' },
+      { key: 'media_pct_fast_break_fm_sofrido_5j_home', label: '% Contra-ataques sofridos (mandante, 5j)', cov: '▅' },
+      { key: 'media_pct_fast_break_fm_5j_away', label: '% Chutes em contra-ataque (visitante, 5j)', cov: '▅' },
+      { key: 'media_pct_fast_break_fm_sofrido_5j_away', label: '% Contra-ataques sofridos (visitante, 5j)', cov: '▅' },
+      { key: 'media_pct_bola_parada_fm_5j_home', label: '% Chutes de bola parada (mandante, 5j)', cov: '▅' },
+      { key: 'media_pct_bola_parada_fm_sofrido_5j_home', label: '% Bola parada sofrida (mandante, 5j)', cov: '▅' },
+      { key: 'media_pct_bola_parada_fm_5j_away', label: '% Chutes de bola parada (visitante, 5j)', cov: '▅' },
+      { key: 'media_pct_bola_parada_fm_sofrido_5j_away', label: '% Bola parada sofrida (visitante, 5j)', cov: '▅' },
+      { key: 'media_xg_chute_fm_5j_home', label: 'xG médio por chute (mandante, 5j)', cov: '▅' },
+      { key: 'media_xg_chute_fm_sofrido_5j_home', label: 'xG/chute adversário (mandante, 5j)', cov: '▅' },
+      { key: 'media_xg_chute_fm_5j_away', label: 'xG médio por chute (visitante, 5j)', cov: '▅' },
+      { key: 'media_xg_chute_fm_sofrido_5j_away', label: 'xG/chute adversário (visitante, 5j)', cov: '▅' },
+      { key: 'media_pct_gols_2tempo_fm_5j_home', label: '% Gols no 2º tempo (mandante, 5j)', cov: '▅' },
+      { key: 'media_pct_gols_2tempo_fm_sofrido_5j_home', label: '% Gols sofridos no 2º tempo (mandante, 5j)', cov: '▅' },
+      { key: 'media_pct_gols_2tempo_fm_5j_away', label: '% Gols no 2º tempo (visitante, 5j)', cov: '▅' },
+      { key: 'media_pct_gols_2tempo_fm_sofrido_5j_away', label: '% Gols sofridos no 2º tempo (visitante, 5j)', cov: '▅' },
     ],
   },
   // FotMob dynamic groups appended below via FOTMOB_METRICS generator
@@ -271,7 +271,7 @@ FOTMOB_METRICS.forEach(metric => {
   }
 });
 
-FEATURE_GROUPS.pop(); // Remove o comentário placeholder
+// (nenhum pop aqui — o grupo de Situação de Chutes acima é real, não placeholder)
 
 Object.keys(groupedFotMob).forEach(category => {
   FEATURE_GROUPS.push({
