@@ -3158,7 +3158,9 @@ const MERCADOS_CARTEIRA_SUPORTADOS = new Set(['1X2', 'over_under_2.5']);
 async function tarefaModelosDisponiveis(supabase, mercado = '1X2') {
   const mercadoValido = MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2';
   const [predAntigas, predBenchmarking, todasMatches, ligas] = await Promise.all([
-    buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', mercadoValido)),
+    mercadoValido === '1X2'
+      ? buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').in('market', ['1X2', '1x2']))
+      : buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', mercadoValido)),
     buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id').eq('mercado', mercadoValido)),
     buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status')),
     buscarTudoPaginado(() => supabase.from('leagues').select('id, name')),
@@ -3287,7 +3289,9 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   // historicas.py) -- cada mercado usa suas próprias colunas de prob e seu
   // próprio normalizador (formato de saída idêntico ao do pipeline antigo).
   const [predicoesAntigas, predicoesBenchmarkingRaw, calibracoesRaw] = await Promise.all([
-    buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado)),
+    mercado === '1X2'
+      ? buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).in('market', ['1X2', '1x2']))
+      : buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado)),
     mercado === '1X2'
       ? buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo).eq('mercado', '1X2'))
       : buscarTudoPaginado(() => supabase.from('predicoes').select('match_id, model_name, prob_under, prob_over').eq('model_name', modelo).eq('mercado', mercado)),
