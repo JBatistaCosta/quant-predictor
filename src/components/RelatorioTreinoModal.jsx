@@ -473,6 +473,7 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
       let totalPg = 1;
       while (pg < totalPg) {
         const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=relatorio-teste&config_id=${configId}&pagina=${pg}`));
+        if (!resp.ok) throw new Error(`Erro HTTP ${resp.status}`);
         const d = await resp.json();
         todosJogos.push(...(d.jogos || []));
         totalPg = Math.ceil((d.total || 0) / (d.por_pagina || 50));
@@ -502,6 +503,8 @@ function TabRelatorioTeste({ configId, target, modelNames }) {
         ...selections.map(sel => jogo.odds_fechamento?.[sel] != null ? Number(jogo.odds_fechamento[sel]).toFixed(2) : ''),
       ]);
       downloadCSV(`relatorio_teste_${configId}.csv`, [header, ...rows]);
+    } catch (e) {
+      setErro(`Exportação falhou: ${e.message}`);
     } finally {
       setExportando(false);
     }
