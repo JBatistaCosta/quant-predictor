@@ -198,7 +198,7 @@ def construir_predicoes(test_df: pd.DataFrame, probs: np.ndarray, classes: np.nd
         for sel in ("home", "draw", "away"):
             if sel not in col_por_sel:
                 continue
-            p = float(np.clip(probs[row_i, col_por_sel[sel]], 1e-7, 1 - 1e-7))
+            p = float(np.clip(probs[row_i, col_por_sel[sel]], 1e-5, 1 - 1e-5))
             linhas.append({
                 "match_id": int(match_id),
                 "model_name": model_name,
@@ -226,7 +226,7 @@ def construir_predicoes_mercado(
             col_i = col_por_codigo.get(int(codigo))
             if col_i is None:
                 continue
-            p = float(np.clip(probs[row_i, col_i], 1e-7, 1 - 1e-7))
+            p = float(np.clip(probs[row_i, col_i], 1e-5, 1 - 1e-5))
             linhas.append({
                 "match_id": int(match_id),
                 "model_name": model_name,
