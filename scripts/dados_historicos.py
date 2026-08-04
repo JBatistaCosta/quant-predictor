@@ -191,7 +191,7 @@ def carregar_partidas_finalizadas(
     def factory(inicio, fim):
         query = (
             supabase.table("matches")
-            .select("id, league_id, season, match_date, home_team_id, away_team_id, home_goals, away_goals")
+            .select("id, league_id, season, match_date, home_team_id, away_team_id, home_goals, away_goals, match_stage, is_neutral")
             .in_("league_id", league_ids)
             .eq("status", "finished")
             .order("match_date")
@@ -1763,6 +1763,20 @@ FEATURES_NUMERICAS = [
 CAT_FEATURES = ["liga"]
 FEATURES = FEATURES_NUMERICAS + CAT_FEATURES
 
+# Mapeamento ordinal para match_stage — usada em montar_dataset_ml_empilhado
+# para criar a coluna numérica `match_stage_ord` selecionável como feature.
+# Ordem crescente de "pressão/importância" do jogo.
+MATCH_STAGE_ORDER = {
+    "regular_season": 0,
+    "group_stage":    1,
+    "early_round":    2,
+    "round_of_16":    3,
+    "quarter_final":  4,
+    "semi_final":     5,
+    "final":          6,
+    "playoff":        7,
+}
+
 # v2 (parâmetros de jogador): tudo da v1 + força do elenco (`squad_rating_
 # home`/`_away`, ver `_carregar_squad_rating_pre_jogo`/`obter_squad_rating_
 # atual`) -- dixon_coles_v1 não ganha v2 (é um modelo Poisson de força de
@@ -2806,8 +2820,18 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
         elo_home = pd.DataFrame(columns=["id", "home_team_id", "elo_home"])
         elo_away = pd.DataFrame(columns=["id", "away_team_id", "elo_away"])
 
-    dataset = partidas[["id", "match_date", "season", "league_id", "home_team_id", "away_team_id", "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away", "progresso_temporada"]].copy()
+    base_cols = ["id", "match_date", "season", "league_id", "home_team_id", "away_team_id",
+                 "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away",
+                 "progresso_temporada"]
+    for col in ("match_stage", "is_neutral"):
+        if col in partidas.columns:
+            base_cols.append(col)
+    dataset = partidas[base_cols].copy()
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
+    if "match_stage" in dataset.columns:
+        dataset["match_stage_ord"] = dataset["match_stage"].map(MATCH_STAGE_ORDER).fillna(0).astype(int)
+    if "is_neutral" in dataset.columns:
+        dataset["is_neutral"] = dataset["is_neutral"].fillna(False).astype(int)
     dataset["resultado"] = np.select(
         [dataset["home_goals"] > dataset["away_goals"], dataset["home_goals"] == dataset["away_goals"]],
         [RESULTADO_HOME, RESULTADO_DRAW],

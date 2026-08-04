@@ -56,6 +56,23 @@ const FEATURE_GROUPS = [
     ],
   },
   {
+    grupo: 'Contexto da Partida',
+    features: [
+      {
+        key: 'match_stage_ord',
+        label: 'Fase da partida — ordinal (0=liga regular … 7=final/playoff)',
+        cov: '▅',
+        tip: 'Útil principalmente em modelos que incluam copas (UCL, Copa do Brasil). Em modelos só de liga doméstica, quase todas as partidas são 0.',
+      },
+      {
+        key: 'is_neutral',
+        label: 'Palco neutro (0/1)',
+        cov: '▃',
+        tip: 'Coluna nova — dados históricos ainda não populados. Só terá variância em ingestões futuras.',
+      },
+    ],
+  },
+  {
     grupo: 'Disciplina — Cartões e Suspensões',
     features: [
       { key: 'cartoes_acumulados_home', label: 'Cartões acumulados no ciclo (mandante)', cov: '█' },
@@ -1000,6 +1017,7 @@ export default function TreinoCustom() {
                             return (
                               <label
                                 key={f.key}
+                                title={f.tip || undefined}
                                 className={`flex items-center gap-2 cursor-pointer rounded px-2 py-1 text-xs transition-colors ${
                                   ativo ? 'bg-violet-900/40 text-violet-300' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
                                 }`}
@@ -1010,7 +1028,8 @@ export default function TreinoCustom() {
                                   onChange={() => toggleFeature(f.key)}
                                   className="accent-violet-500 w-3 h-3"
                                 />
-                                {f.label}
+                                <span className="flex-1">{f.label}</span>
+                                {f.cov && <span className="shrink-0 opacity-50" title={`Cobertura: ${f.cov === '█' ? 'Alta (>80%)' : f.cov === '▅' ? 'Média (40-80%)' : 'Baixa (<40%)'}`}>{f.cov}</span>}
                               </label>
                             );
                           })}
