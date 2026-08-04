@@ -14,7 +14,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Play, Save, Trash2, ChevronDown, ChevronUp, Loader2,
   AlertTriangle, CheckCircle2, Clock, XCircle, Zap, Settings2,
-  FlaskConical, BarChart3, RefreshCw, FileText, Copy, StopCircle, RotateCcw
+  FlaskConical, BarChart3, RefreshCw, FileText, Copy, StopCircle, RotateCcw,
+  Layers, Bookmark, X as XIcon
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
@@ -464,6 +465,11 @@ export default function TreinoCustom() {
   const [grupoExpandido, setGrupoExpandido] = useState({}); // grupo → bool
   const [formAberto, setFormAberto] = useState(false);
   const [configModalAberto, setConfigModalAberto] = useState(null);
+  const [sidebarAberta, setSidebarAberta] = useState(false);
+  const [templatesCustoms, setTemplatesCustoms] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('qp_templates_custom') || '[]'); }
+    catch { return []; }
+  });
   const pollingRef = useRef(null);
 
   const authHeader = session?.access_token
@@ -502,6 +508,11 @@ export default function TreinoCustom() {
     }
     return () => clearInterval(pollingRef.current);
   }, [configs, carregarConfigs]);
+
+  // Persiste templates do usuário no localStorage
+  useEffect(() => {
+    localStorage.setItem('qp_templates_custom', JSON.stringify(templatesCustoms));
+  }, [templatesCustoms]);
 
   // --------- Mensagens temporárias ---------
   function mostrarMensagem(tipo, texto) {
@@ -563,8 +574,43 @@ export default function TreinoCustom() {
       notes: tpl.config.notes,
       hyperparameters: tpl.config.hyperparameters,
     });
+    setSidebarAberta(false);
     setFormAberto(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function salvarComoTemplate() {
+    if (!form.name.trim() || form.features.length === 0) {
+      mostrarMensagem('erro', 'Preencha pelo menos nome e features antes de salvar como template.');
+      return;
+    }
+    const algoDesc = form.mode === 'walk_forward_cv'
+      ? form.algorithms.join('+') + ' WF-CV'
+      : form.algorithm + ' Simples';
+    const tplTarget = TARGETS.find((t) => t.value === form.target)?.label || form.target;
+    const novo = {
+      id: `custom_${Date.now()}`,
+      label: form.name,
+      desc: `${form.features.length} features · ${algoDesc} · ${tplTarget}`,
+      cor: 'slate',
+      custom: true,
+      config: {
+        name: form.name,
+        mode: form.mode,
+        algorithm: form.algorithm,
+        algorithms: form.algorithms,
+        features: form.features,
+        target: form.target,
+        notes: form.notes,
+        hyperparameters: form.hyperparameters,
+      },
+    };
+    setTemplatesCustoms((prev) => [novo, ...prev]);
+    mostrarMensagem('ok', `Template "${form.name}" salvo.`);
+  }
+
+  function excluirTemplateCustom(id) {
+    setTemplatesCustoms((prev) => prev.filter((t) => t.id !== id));
   }
 
   // --------- Salvar configuração ---------
@@ -755,6 +801,12 @@ export default function TreinoCustom() {
             <RefreshCw size={14} />
           </button>
           <button
+            onClick={() => setSidebarAberta(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-sm font-medium transition-colors"
+          >
+            <Layers size={16} /> Modelos pré-configurados
+          </button>
+          <button
             onClick={novaConfigForm}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
           >
@@ -789,27 +841,6 @@ export default function TreinoCustom() {
           </div>
 
           <form onSubmit={salvarConfig} className="space-y-5">
-            {/* Templates recomendados */}
-            {!form.id && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Templates recomendados</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {TEMPLATES_RECOMENDADOS.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      onClick={() => carregarTemplate(tpl)}
-                      className={`text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${TEMPLATE_CORES[tpl.cor]}`}
-                    >
-                      <div className="font-medium">{tpl.label}</div>
-                      <div className="text-xs mt-0.5 opacity-70">{tpl.desc}</div>
-                    </button>
-                  ))}
-                </div>
-                <div className="border-t border-slate-700 pt-1" />
-              </div>
-            )}
-
             {/* Nome */}
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Nome do modelo *</label>
@@ -1314,10 +1345,131 @@ export default function TreinoCustom() {
 
       {/* Modal de Relatório */}
       {configModalAberto && (
-        <RelatorioTreinoModal 
-          config={configModalAberto} 
-          onClose={() => setConfigModalAberto(null)} 
+        <RelatorioTreinoModal
+          config={configModalAberto}
+          onClose={() => setConfigModalAberto(null)}
         />
+      )}
+
+      {/* Drawer lateral — Modelos pré-configurados */}
+      {sidebarAberta && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          {/* Overlay */}
+          <div
+            className="flex-1 bg-black/50"
+            onClick={() => setSidebarAberta(false)}
+          />
+          {/* Painel */}
+          <div className="w-96 h-full bg-slate-900 border-l border-slate-700 flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 shrink-0">
+              <h3 className="font-semibold text-white flex items-center gap-2">
+                <Layers size={16} className="text-violet-400" />
+                Modelos pré-configurados
+              </h3>
+              <button
+                onClick={() => setSidebarAberta(false)}
+                className="text-slate-500 hover:text-white transition-colors"
+              >
+                <XIcon size={18} />
+              </button>
+            </div>
+
+            {/* Conteúdo */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-5">
+              {/* Templates fixos */}
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+                  Recomendados pela análise estatística
+                </p>
+                <div className="space-y-2">
+                  {TEMPLATES_RECOMENDADOS.map((tpl) => (
+                    <div
+                      key={tpl.id}
+                      className={`rounded-lg border px-3 py-3 ${TEMPLATE_CORES[tpl.cor]}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium leading-snug">{tpl.label}</p>
+                          <p className="text-xs mt-0.5 opacity-70">{tpl.desc}</p>
+                        </div>
+                        <button
+                          onClick={() => carregarTemplate(tpl)}
+                          className="shrink-0 px-3 py-1 text-xs rounded-md bg-white/10 hover:bg-white/20 transition-colors font-medium"
+                        >
+                          Usar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Templates do usuário */}
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <Bookmark size={10} /> Meus templates
+                  {templatesCustoms.length > 0 && (
+                    <span className="ml-1 text-slate-600">({templatesCustoms.length})</span>
+                  )}
+                </p>
+                {templatesCustoms.length === 0 ? (
+                  <p className="text-xs text-slate-600 italic">
+                    Nenhum template salvo ainda. Configure um modelo e clique em "Salvar como template" abaixo.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {templatesCustoms.map((tpl) => (
+                      <div
+                        key={tpl.id}
+                        className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-200 leading-snug truncate">{tpl.label}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{tpl.desc}</p>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              onClick={() => carregarTemplate(tpl)}
+                              className="px-3 py-1 text-xs rounded-md bg-violet-600 hover:bg-violet-500 text-white transition-colors"
+                            >
+                              Usar
+                            </button>
+                            <button
+                              onClick={() => excluirTemplateCustom(tpl.id)}
+                              className="px-2 py-1 text-xs rounded-md text-red-400 hover:bg-red-900/30 transition-colors"
+                              title="Remover template"
+                            >
+                              <XIcon size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Rodapé — salvar configuração atual */}
+            <div className="border-t border-slate-700 p-4 shrink-0">
+              <button
+                onClick={salvarComoTemplate}
+                disabled={!formAberto || !form.name.trim() || form.features.length === 0}
+                className="w-full py-2.5 text-sm rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Bookmark size={14} />
+                Salvar configuração atual como template
+              </button>
+              {(!formAberto || !form.name.trim() || form.features.length === 0) && (
+                <p className="text-xs text-slate-600 text-center mt-1.5">
+                  Preencha nome e features no formulário para ativar
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
