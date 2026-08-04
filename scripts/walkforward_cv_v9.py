@@ -289,7 +289,7 @@ def treinar_modelo_fold(
     """Treina `nome` em train_df; retorna (val_probs, val_classes, test_probs,
     test_classes, modelo, extra, curva) — val_probs são as OOF predictions pro stacking."""
     treinar_fn, prever_fn = ml.TREINADORES[nome]
-    features = ml.FEATURES_POR_MODELO[nome]
+    features = [f for f in ml.FEATURES_POR_MODELO[nome] if f in train_df.columns]
     params = ml.PARAMS_DEFAULT[nome]
 
     modelo, extra, curva_bruta = treinar_fn(
@@ -478,7 +478,7 @@ def treinar_mercado_binario(
         for nome in MODELOS_BASE:
             try:
                 treinar_fn, prever_fn = ml.TREINADORES[nome]
-                features = ml.FEATURES_POR_MODELO[nome]
+                features = [f for f in ml.FEATURES_POR_MODELO[nome] if f in train_df.columns]
                 params = ml.PARAMS_DEFAULT[nome]
                 modelo, extra, _ = treinar_fn(
                     params, train_df,
@@ -567,12 +567,12 @@ def treinar_mercado_binario(
         test_probs_por_modelo: dict[str, np.ndarray] = {}
         test_classes_por_modelo: dict[str, np.ndarray] = {}
         for nome in MODELOS_BASE:
-            features = ml.FEATURES_POR_MODELO[nome]
             params = ml.PARAMS_DEFAULT[nome]
             treinar_fn, prever_fn = ml.TREINADORES[nome]
             train_f3, val_f3, _ = split_por_ano(
                 dataset, FOLDS[-1]["treino_max_ano"], FOLDS[-1]["val_ano"], FOLDS[-1]["test_ano"]
             )
+            features = [f for f in ml.FEATURES_POR_MODELO[nome] if f in train_f3.columns]
             try:
                 modelo_f3, extra_f3, _ = treinar_fn(
                     params, train_f3, coluna_alvo=coluna_alvo,
