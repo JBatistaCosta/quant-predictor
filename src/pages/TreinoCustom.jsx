@@ -280,6 +280,122 @@ Object.keys(groupedFotMob).forEach(category => {
   });
 });
 
+// -----------------------------------------------------------------------
+// Templates recomendados — configurações pré-preenchidas baseadas em
+// análise estatística: budget de features, causalidade e hiperparâmetros
+// validados para o tamanho de dataset (~8-10k linhas de treino).
+// -----------------------------------------------------------------------
+const TEMPLATES_RECOMENDADOS = [
+  {
+    id: 'baseline_1x2',
+    label: 'Baseline 1X2',
+    desc: 'Elo + forma-gols + tabela · 11 features',
+    cor: 'violet',
+    config: {
+      name: 'Baseline 1X2 — Elo + Forma',
+      mode: 'walk_forward_cv',
+      algorithm: 'catboost',
+      algorithms: ['catboost', 'xgboost', 'lightgbm'],
+      target: '1x2',
+      features: [
+        'elo_home', 'elo_away',
+        'media_gols_marcados_5j_home', 'media_gols_sofridos_5j_home',
+        'media_gols_marcados_5j_away', 'media_gols_sofridos_5j_away',
+        'posicao_home', 'posicao_away',
+        'pontos_por_jogo_home', 'pontos_por_jogo_away',
+        'progresso_temporada',
+      ],
+      notes: 'Template estatístico recomendado para 1X2. Budget 11 features (~500 amostras/folha). depth=4 reduz overfitting no dataset atual (~8-10k linhas).',
+      hyperparameters: JSON.stringify({
+        catboost: { depth: 4, learning_rate: 0.04, l2_leaf_reg: 3 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
+  {
+    id: 'xg_premium_ou25',
+    label: 'xG Premium O/U 2,5',
+    desc: 'xG Bayesiano + xGOT + H2H · 9 features',
+    cor: 'teal',
+    config: {
+      name: 'xG Premium — Over/Under 2,5',
+      mode: 'walk_forward_cv',
+      algorithm: 'lightgbm',
+      algorithms: ['lightgbm', 'xgboost'],
+      target: 'over_under_2.5',
+      features: [
+        'xg_bayesiano_home', 'xg_bayesiano_away',
+        'xga_bayesiano_home', 'xga_bayesiano_away',
+        'xgot_bayesiano_home', 'xgot_bayesiano_away',
+        'media_gols_marcados_5j_home', 'media_gols_marcados_5j_away',
+        'h2h_media_gols',
+      ],
+      notes: 'Template xG para O/U 2.5. Cobertura ▅ — funciona melhor nas 5 ligas europeias com dados Understat. Para Brasileirão, substituir xG por forma-gols.',
+      hyperparameters: JSON.stringify({
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
+  {
+    id: 'btts_xg',
+    label: 'BTTS — Ambas Marcam',
+    desc: 'xG ataque × xGA defesa · 8 features',
+    cor: 'amber',
+    config: {
+      name: 'BTTS xG — Ambas Marcam',
+      mode: 'walk_forward_cv',
+      algorithm: 'lightgbm',
+      algorithms: ['lightgbm', 'xgboost'],
+      target: 'btts',
+      features: [
+        'xg_bayesiano_home', 'xg_bayesiano_away',
+        'xga_bayesiano_home', 'xga_bayesiano_away',
+        'media_gols_marcados_5j_home', 'media_gols_sofridos_5j_home',
+        'media_gols_marcados_5j_away', 'media_gols_sofridos_5j_away',
+      ],
+      notes: 'Template BTTS. Mecanismo: xG de ataque de cada time cruzado com xGA do adversário. Forma-gols cobre o mesmo sinal quando xG não tem cobertura.',
+      hyperparameters: JSON.stringify({
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
+  {
+    id: 'escanteios_fotmob',
+    label: 'Escanteios O/U 9,5',
+    desc: 'FBref escanteios + chutes bloqueados FotMob · 10 features',
+    cor: 'orange',
+    config: {
+      name: 'Escanteios — FBref + FotMob',
+      mode: 'walk_forward_cv',
+      algorithm: 'lightgbm',
+      algorithms: ['lightgbm', 'xgboost'],
+      target: 'corners_over_under_9.5',
+      features: [
+        'media_escanteios_5j_home', 'media_escanteios_sofridos_5j_home',
+        'media_escanteios_5j_away', 'media_escanteios_sofridos_5j_away',
+        'media_chutes_bloqueados_fm_5j_home', 'media_chutes_bloqueados_fm_sofrido_5j_home',
+        'media_chutes_bloqueados_fm_5j_away', 'media_chutes_bloqueados_fm_sofrido_5j_away',
+        'media_chutes_area_fm_5j_home', 'media_chutes_area_fm_5j_away',
+      ],
+      notes: 'Template escanteios. Chutes bloqueados é o sinal mais direto (bola desviada → linha de fundo → escanteio). Cobertura ▅ FotMob.',
+      hyperparameters: JSON.stringify({
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
+];
+
+const TEMPLATE_CORES = {
+  violet: 'border-violet-700 bg-violet-900/20 text-violet-300 hover:bg-violet-900/40',
+  teal:   'border-teal-700 bg-teal-900/20 text-teal-300 hover:bg-teal-900/40',
+  amber:  'border-amber-700 bg-amber-900/20 text-amber-300 hover:bg-amber-900/40',
+  orange: 'border-orange-700 bg-orange-900/20 text-orange-300 hover:bg-orange-900/40',
+};
+
 const ALGORITMOS = [
   { value: 'catboost', label: 'CatBoost' },
   { value: 'xgboost', label: 'XGBoost' },
@@ -433,6 +549,22 @@ export default function TreinoCustom() {
   function novaConfigForm() {
     setForm(ESTADO_FORM_INICIAL);
     setFormAberto(true);
+  }
+
+  function carregarTemplate(tpl) {
+    setForm({
+      id: null,
+      name: tpl.config.name,
+      mode: tpl.config.mode,
+      algorithm: tpl.config.algorithm,
+      algorithms: tpl.config.algorithms,
+      features: tpl.config.features,
+      target: tpl.config.target,
+      notes: tpl.config.notes,
+      hyperparameters: tpl.config.hyperparameters,
+    });
+    setFormAberto(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // --------- Salvar configuração ---------
@@ -657,6 +789,27 @@ export default function TreinoCustom() {
           </div>
 
           <form onSubmit={salvarConfig} className="space-y-5">
+            {/* Templates recomendados */}
+            {!form.id && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Templates recomendados</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {TEMPLATES_RECOMENDADOS.map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      onClick={() => carregarTemplate(tpl)}
+                      className={`text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${TEMPLATE_CORES[tpl.cor]}`}
+                    >
+                      <div className="font-medium">{tpl.label}</div>
+                      <div className="text-xs mt-0.5 opacity-70">{tpl.desc}</div>
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-slate-700 pt-1" />
+              </div>
+            )}
+
             {/* Nome */}
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Nome do modelo *</label>
