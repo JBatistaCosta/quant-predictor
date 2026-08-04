@@ -2406,7 +2406,10 @@ async function resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes,
   const apiId = String(timeApi.id);
   if (crosswalk[apiId]) return crosswalk[apiId];
 
-  const candidato = todosOsTimes.find(t => nomesBatemTime(t.name, timeApi.name));
+  const candidato = todosOsTimes.find(t =>
+    nomesBatemTime(t.name, timeApi.name) ||
+    (t.aliases || []).some(alias => nomesBatemTime(alias, timeApi.name))
+  );
   let teamId;
   if (candidato) {
     teamId = candidato.id;
@@ -2414,7 +2417,7 @@ async function resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes,
     const { data: novo, error } = await supabase.from('teams').insert({ name: timeApi.name, crest_url: timeApi.logo || null }).select('id').single();
     if (error || !novo) return null;
     teamId = novo.id;
-    todosOsTimes.push({ id: teamId, name: timeApi.name }); // evita recriar duplicado dentro do mesmo run
+    todosOsTimes.push({ id: teamId, name: timeApi.name, aliases: [] });
   }
 
   await supabase.from('team_source_ids').upsert(
@@ -2440,7 +2443,7 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
 
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases');
 
   const linhas = [];
   for (const f of fixtures) {
@@ -2517,7 +2520,10 @@ async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, time
   const fmId = String(timeFm.id);
   if (crosswalk[fmId]) return crosswalk[fmId];
 
-  const candidato = todosOsTimes.find(t => nomesBatemTime(t.name, timeFm.name));
+  const candidato = todosOsTimes.find(t =>
+    nomesBatemTime(t.name, timeFm.name) ||
+    (t.aliases || []).some(alias => nomesBatemTime(alias, timeFm.name))
+  );
   let teamId;
   if (candidato) {
     teamId = candidato.id;
@@ -2525,7 +2531,7 @@ async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, time
     const { data: novo, error } = await supabase.from('teams').insert({ name: timeFm.name, crest_url: `https://images.fotmob.com/image_resources/logo/teamlogo/${fmId}_xsmall.png` }).select('id').single();
     if (error || !novo) return null;
     teamId = novo.id;
-    todosOsTimes.push({ id: teamId, name: timeFm.name });
+    todosOsTimes.push({ id: teamId, name: timeFm.name, aliases: [] });
   }
 
   await supabase.from('team_source_ids').upsert(
@@ -2610,7 +2616,7 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
   const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases');
 
   const linhas = [];
   for (const fx of fixtures) {
@@ -2939,7 +2945,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite }) {
   const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases');
 
   // Casa cada fixture do FotMob com nosso jogo por ID DE TIME (via
   // crosswalk, resolvendo/criando time se necessário) + mesmo dia — muito
