@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
+import { supabase, supabaseAtivo } from '../supabaseClient';
 import RelatorioTreinoModal from '../components/RelatorioTreinoModal';
 
 // -----------------------------------------------------------------------
@@ -460,6 +461,8 @@ const ESTADO_FORM_INICIAL = {
   notes: '',
   hyperparameters: '',
   todas_ligas: false,
+  league_ids: null,
+  seasons: null,
 };
 
 // -----------------------------------------------------------------------
@@ -488,6 +491,10 @@ export default function TreinoCustom() {
     try { return JSON.parse(localStorage.getItem('qp_templates_custom') || '[]'); }
     catch { return []; }
   });
+  const [ligasDisponiveis, setLigasDisponiveis] = useState([]); // [{id, name}]
+  const [temporadaRange, setTemporadaRange] = useState({ min: null, max: null }); // limites globais pro seletor de temporadas
+  const [escopoLigasManual, setEscopoLigasManual] = useState(false);
+  const [escopoTemporadasManual, setEscopoTemporadasManual] = useState(false);
   const pollingRef = useRef(null);
 
   const authHeader = session?.access_token
@@ -513,6 +520,29 @@ export default function TreinoCustom() {
   useEffect(() => {
     carregarConfigs();
   }, [carregarConfigs]);
+
+  // Carrega catálogo de ligas + intervalo global de temporadas disponíveis,
+  // pra alimentar os seletores manuais de escopo do treino. Consulta direta
+  // via cliente Supabase (leitura pública, mesmo padrão de RatingClubes.jsx/
+  // ModelosStats.jsx) -- evita criar mais um endpoint em model-maintenance.js
+  // (já no limite de 12 funções serverless do plano Hobby). Min/max de season
+  // usam 2 queries de 1 linha cada (order + limit(1)) em vez de paginar toda
+  // `matches` pra computar distinct no cliente.
+  useEffect(() => {
+    if (!supabaseAtivo) return;
+    (async () => {
+      const [ligasResp, minResp, maxResp] = await Promise.all([
+        supabase.from('leagues').select('id, name').order('name'),
+        supabase.from('matches').select('season').eq('status', 'finished').order('season', { ascending: true }).limit(1),
+        supabase.from('matches').select('season').eq('status', 'finished').order('season', { ascending: false }).limit(1),
+      ]);
+      setLigasDisponiveis(ligasResp.data || []);
+      setTemporadaRange({
+        min: minResp.data?.[0]?.season || null,
+        max: maxResp.data?.[0]?.season || null,
+      });
+    })();
+  }, []);
 
   // Polling leve: verifica configs em progresso a cada 15s
   useEffect(() => {
@@ -571,13 +601,19 @@ export default function TreinoCustom() {
       notes: cfg.notes || '',
       hyperparameters: cfg.hyperparameters ? JSON.stringify(cfg.hyperparameters, null, 2) : '',
       todas_ligas: !!cfg.todas_ligas,
+      league_ids: cfg.league_ids || null,
+      seasons: cfg.seasons || null,
     });
+    setEscopoLigasManual(!!(cfg.league_ids && cfg.league_ids.length));
+    setEscopoTemporadasManual(!!(cfg.seasons && cfg.seasons.length));
     setFormAberto(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function novaConfigForm() {
     setForm(ESTADO_FORM_INICIAL);
+    setEscopoLigasManual(false);
+    setEscopoTemporadasManual(false);
     setFormAberto(true);
   }
 
@@ -593,7 +629,11 @@ export default function TreinoCustom() {
       notes: tpl.config.notes,
       hyperparameters: tpl.config.hyperparameters,
       todas_ligas: !!tpl.config.todas_ligas,
+      league_ids: tpl.config.league_ids || null,
+      seasons: tpl.config.seasons || null,
     });
+    setEscopoLigasManual(!!(tpl.config.league_ids && tpl.config.league_ids.length));
+    setEscopoTemporadasManual(!!(tpl.config.seasons && tpl.config.seasons.length));
     setSidebarAberta(false);
     setFormAberto(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -641,6 +681,12 @@ export default function TreinoCustom() {
     if (form.mode === 'walk_forward_cv' && form.algorithms.length === 0) {
       mostrarMensagem('erro', 'Selecione pelo menos 1 algoritmo para o modo Walk-Forward CV.'); return;
     }
+    if (escopoLigasManual && (!form.league_ids || form.league_ids.length === 0)) {
+      mostrarMensagem('erro', 'Selecione pelo menos 1 liga no escopo manual, ou desmarque a opção.'); return;
+    }
+    if (escopoTemporadasManual && (!form.seasons || form.seasons.length === 0)) {
+      mostrarMensagem('erro', 'Defina o intervalo de temporadas no escopo manual, ou desmarque a opção.'); return;
+    }
 
     let hyperparameters = null;
     if (form.hyperparameters.trim()) {
@@ -664,6 +710,8 @@ export default function TreinoCustom() {
           notes: form.notes.trim() || null,
           hyperparameters,
           todas_ligas: form.todas_ligas,
+          league_ids: escopoLigasManual ? form.league_ids : null,
+          seasons: escopoTemporadasManual ? form.seasons : null,
         }),
       });
       const dados = await resp.json();
@@ -986,6 +1034,135 @@ export default function TreinoCustom() {
               </label>
             </div>
 
+            {/* Escopo manual: ligas específicas */}
+            <div className="border border-slate-700 rounded-lg overflow-hidden">
+              <label className="flex items-start gap-2 cursor-pointer px-3 py-2.5 hover:bg-slate-700/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={escopoLigasManual}
+                  onChange={() => {
+                    const ativar = !escopoLigasManual;
+                    setEscopoLigasManual(ativar);
+                    if (!ativar) setForm((f) => ({ ...f, league_ids: null }));
+                  }}
+                  className="accent-violet-500 w-3.5 h-3.5 mt-0.5"
+                />
+                <span className="text-sm text-slate-300">
+                  Selecionar ligas específicas
+                  <span className="block text-xs text-slate-500 font-normal mt-0.5">
+                    Escolha exatamente quais ligas/copas entram no treino. Tem prioridade sobre "todas as ligas" acima.
+                    {form.league_ids?.length ? ` ${form.league_ids.length} liga(s) selecionada(s).` : ''}
+                  </span>
+                </span>
+              </label>
+              {escopoLigasManual && (
+                <div className="px-3 py-2.5 border-t border-slate-700 bg-slate-800">
+                  {ligasDisponiveis.length === 0 ? (
+                    <p className="text-xs text-slate-500">Carregando ligas...</p>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                      {ligasDisponiveis.map((liga) => {
+                        const ativo = (form.league_ids || []).includes(liga.id);
+                        return (
+                          <label
+                            key={liga.id}
+                            className={`flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 text-xs transition-colors ${
+                              ativo ? 'bg-violet-900/40 text-violet-300' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={ativo}
+                              onChange={() => {
+                                const atuais = form.league_ids || [];
+                                const novos = ativo ? atuais.filter((id) => id !== liga.id) : [...atuais, liga.id];
+                                setForm((f) => ({ ...f, league_ids: novos }));
+                              }}
+                              className="accent-violet-500 w-3 h-3 shrink-0"
+                            />
+                            <span className="truncate">{liga.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Escopo manual: intervalo de temporadas */}
+            <div className="border border-slate-700 rounded-lg overflow-hidden">
+              <label className="flex items-start gap-2 cursor-pointer px-3 py-2.5 hover:bg-slate-700/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={escopoTemporadasManual}
+                  onChange={() => {
+                    const ativar = !escopoTemporadasManual;
+                    setEscopoTemporadasManual(ativar);
+                    if (!ativar) setForm((f) => ({ ...f, seasons: null }));
+                  }}
+                  className="accent-violet-500 w-3.5 h-3.5 mt-0.5"
+                />
+                <span className="text-sm text-slate-300">
+                  Selecionar intervalo de temporadas
+                  <span className="block text-xs text-slate-500 font-normal mt-0.5">
+                    Por padrão, cada liga usa suas temporadas mais recentes (ou histórico completo, se "todas as ligas" estiver marcado). Aqui você fixa o intervalo exato de anos.
+                    {form.seasons?.length ? ` ${form.seasons[0]}–${form.seasons[form.seasons.length - 1]}.` : ''}
+                  </span>
+                </span>
+              </label>
+              {escopoTemporadasManual && (
+                <div className="px-3 py-2.5 border-t border-slate-700 bg-slate-800 flex items-center gap-3">
+                  {temporadaRange.min && temporadaRange.max ? (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-slate-400">De</label>
+                        <select
+                          value={form.seasons?.[0] || temporadaRange.min}
+                          onChange={(e) => {
+                            const de = e.target.value;
+                            const ate = form.seasons?.[form.seasons.length - 1] || temporadaRange.max;
+                            const ateFinal = ate < de ? de : ate;
+                            const anos = [];
+                            for (let a = Number(de); a <= Number(ateFinal); a++) anos.push(String(a));
+                            setForm((f) => ({ ...f, seasons: anos }));
+                          }}
+                          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        >
+                          {Array.from(
+                            { length: Number(temporadaRange.max) - Number(temporadaRange.min) + 1 },
+                            (_, i) => String(Number(temporadaRange.min) + i)
+                          ).map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-xs text-slate-400">Até</label>
+                        <select
+                          value={form.seasons?.[form.seasons.length - 1] || temporadaRange.max}
+                          onChange={(e) => {
+                            const ate = e.target.value;
+                            const de = form.seasons?.[0] || temporadaRange.min;
+                            const deFinal = de > ate ? ate : de;
+                            const anos = [];
+                            for (let a = Number(deFinal); a <= Number(ate); a++) anos.push(String(a));
+                            setForm((f) => ({ ...f, seasons: anos }));
+                          }}
+                          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        >
+                          {Array.from(
+                            { length: Number(temporadaRange.max) - Number(temporadaRange.min) + 1 },
+                            (_, i) => String(Number(temporadaRange.min) + i)
+                          ).map((ano) => <option key={ano} value={ano}>{ano}</option>)}
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-500">Carregando temporadas disponíveis...</p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Features */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -1163,12 +1340,28 @@ export default function TreinoCustom() {
                       {cfg.mode === 'walk_forward_cv' ? (
                         <span className="text-xs bg-violet-900/40 text-violet-400 border border-violet-800 rounded px-1.5 py-0.5 font-medium">WF-CV</span>
                       ) : null}
-                      {cfg.todas_ligas ? (
+                      {cfg.todas_ligas && !cfg.league_ids?.length ? (
                         <span
                           className="text-xs bg-sky-900/40 text-sky-400 border border-sky-800 rounded px-1.5 py-0.5 font-medium"
                           title="Treinado com todas as ligas e copas do banco, histórico completo"
                         >
                           Todas as ligas
+                        </span>
+                      ) : null}
+                      {cfg.league_ids?.length ? (
+                        <span
+                          className="text-xs bg-teal-900/40 text-teal-400 border border-teal-800 rounded px-1.5 py-0.5 font-medium"
+                          title="Ligas selecionadas manualmente"
+                        >
+                          {cfg.league_ids.length} liga{cfg.league_ids.length !== 1 ? 's' : ''}
+                        </span>
+                      ) : null}
+                      {cfg.seasons?.length ? (
+                        <span
+                          className="text-xs bg-amber-900/40 text-amber-400 border border-amber-800 rounded px-1.5 py-0.5 font-medium"
+                          title="Intervalo de temporadas selecionado manualmente"
+                        >
+                          {cfg.seasons[0]}–{cfg.seasons[cfg.seasons.length - 1]}
                         </span>
                       ) : null}
                       {cfg.mode === 'walk_forward_cv' ? (
