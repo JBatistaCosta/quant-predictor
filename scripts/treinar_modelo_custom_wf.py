@@ -132,13 +132,23 @@ def marcar_erro(supabase, config_id: str, msg: str):
 # ---------------------------------------------------------------------------
 
 def carregar_dataset(
-    supabase, features: list[str], target_info: dict, todas_ligas: bool = False
+    supabase,
+    features: list[str],
+    target_info: dict,
+    todas_ligas: bool = False,
+    league_ids: list[int] | None = None,
+    seasons: list[str] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
-    logger.info("Carregando dataset ML empilhado (todas_ligas=%s)...", todas_ligas)
+    logger.info(
+        "Carregando dataset ML empilhado (todas_ligas=%s, league_ids=%s, seasons=%s)...",
+        todas_ligas, league_ids, seasons,
+    )
     dataset = dh.montar_dataset_ml_empilhado(
         supabase,
-        anos_por_liga=None if todas_ligas else 7,
+        anos_por_liga=None if (todas_ligas or seasons) else 7,
         todas_as_ligas=todas_ligas,
+        league_ids_manual=league_ids,
+        seasons=seasons,
     )
     if dataset.empty:
         raise RuntimeError("Dataset vazio.")
@@ -431,6 +441,8 @@ def main():
         hyperparams   = cfg.get("hyperparameters") or {}
         algoritmos    = cfg.get("algorithms") or []
         todas_ligas   = bool(cfg.get("todas_ligas"))
+        league_ids    = cfg.get("league_ids") or None
+        seasons       = cfg.get("seasons") or None
 
         if not algoritmos:
             raise ValueError("Lista de algoritmos (algorithms) vazia na configuração.")
@@ -445,7 +457,7 @@ def main():
                     config_name, target_key, algoritmos, len(features_req))
 
         # Carrega dataset completo uma vez só
-        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas)
+        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas, league_ids, seasons)
 
         target_col = target_info["coluna"]
         tipo       = target_info["tipo"]

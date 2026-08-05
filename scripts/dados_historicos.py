@@ -2747,7 +2747,11 @@ def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
 
 
 def montar_dataset_ml_empilhado(
-    supabase: Client, anos_por_liga: int | None = 6, todas_as_ligas: bool = False
+    supabase: Client,
+    anos_por_liga: int | None = 6,
+    todas_as_ligas: bool = False,
+    league_ids_manual: list[int] | None = None,
+    seasons: list[str] | None = None,
 ) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
     temporadas de CADA uma das 6 ligas do Model Benchmarking (5 de elite
@@ -2766,6 +2770,14 @@ def montar_dataset_ml_empilhado(
     com `todas_as_ligas=True` por padrão nesse caso, já que truncar
     temporadas contradiria "todas as partidas disponíveis".
 
+    `league_ids_manual` (lista de `leagues.id`) tem prioridade máxima sobre
+    `todas_as_ligas`/benchmark -- usado quando o usuário escolhe ligas
+    específicas no Treino Customizado. `seasons` (lista de temporadas, ex.
+    `["2022","2023","2024"]`) tem prioridade sobre `anos_por_liga`: filtra
+    exatamente essas temporadas na query e desliga o corte automático (não
+    faz sentido truncar "últimas N temporadas" depois de já ter pedido
+    temporadas específicas).
+
     Features (todas calculadas SEM olhar o resultado do próprio jogo):
     `elo_home`/`elo_away` (rating pré-jogo, `team_elo_history`), forma de
     gols e de xG dos últimos `JANELA_ROLLING_ML` jogos -- SEPARADA por
@@ -2778,23 +2790,31 @@ def montar_dataset_ml_empilhado(
     com NaN numérico nativamente, e só os modelos v2 de fato usam a coluna
     de squad rating.
     """
-    if todas_as_ligas:
+    if league_ids_manual:
+        resposta = supabase.table("leagues").select("id, name").in_("id", league_ids_manual).execute()
+        ligas = {linha["name"]: linha["id"] for linha in (resposta.data or [])}
+    elif todas_as_ligas:
         resposta = supabase.table("leagues").select("id, name").execute()
         ligas = {linha["name"]: linha["id"] for linha in (resposta.data or [])}
     else:
         ligas = obter_ids_ligas(supabase, LIGAS_MODEL_BENCHMARKING)
     if not ligas:
-        logger.error("Nenhuma liga encontrada em `leagues` pro escopo pedido (todas_as_ligas=%s).", todas_as_ligas)
+        logger.error(
+            "Nenhuma liga encontrada em `leagues` pro escopo pedido (league_ids_manual=%s, todas_as_ligas=%s).",
+            league_ids_manual, todas_as_ligas,
+        )
         return pd.DataFrame()
 
-    league_ids = list(ligas.values())
+    liga_ids_resolvidos = list(ligas.values())
     nome_da_liga = {v: k for k, v in ligas.items()}
 
-    partidas = carregar_partidas_finalizadas(supabase, league_ids)
+    partidas = carregar_partidas_finalizadas(supabase, liga_ids_resolvidos, temporadas=seasons)
     if partidas.empty:
         return partidas
 
-    if anos_por_liga is not None:
+    if seasons:
+        partidas = partidas.sort_values("match_date").reset_index(drop=True)
+    elif anos_por_liga is not None:
         partidas_recortadas = []
         for league_id, grupo in partidas.groupby("league_id"):
             temporadas_recentes = sorted(grupo["season"].unique())[-anos_por_liga:]
@@ -2829,7 +2849,7 @@ def montar_dataset_ml_empilhado(
         for col in COLUNAS_SITUACAO_CHUTES
     }
 
-    elo = _carregar_elo_pre_jogo(supabase, league_ids)
+    elo = _carregar_elo_pre_jogo(supabase, liga_ids_resolvidos)
     if not elo.empty:
         elo_home = elo.rename(columns={"match_id": "id", "team_id": "home_team_id", "rating_antes": "elo_home"})
         elo_away = elo.rename(columns={"match_id": "id", "team_id": "away_team_id", "rating_antes": "elo_away"})

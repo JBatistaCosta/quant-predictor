@@ -181,22 +181,35 @@ def marcar_erro(supabase, config_id: str, msg: str):
 # Preparação do dataset
 # ---------------------------------------------------------------------------
 
-def carregar_dataset(supabase, features: list[str], target_info: dict, todas_ligas: bool = False) -> pd.DataFrame:
+def carregar_dataset(
+    supabase,
+    features: list[str],
+    target_info: dict,
+    todas_ligas: bool = False,
+    league_ids: list[int] | None = None,
+    seasons: list[str] | None = None,
+) -> pd.DataFrame:
     """Carrega o dataset completo com as features solicitadas.
 
     Reutiliza dh.montar_dataset_completo, que já faz todos os joins,
     rolling windows, elo, squad_rating etc. — devolvendo TODAS as features
     disponíveis. Aqui selecionamos só as que o usuário pediu.
     """
-    logger.info("Carregando dataset histórico (todas_ligas=%s)...", todas_ligas)
+    logger.info(
+        "Carregando dataset histórico (todas_ligas=%s, league_ids=%s, seasons=%s)...",
+        todas_ligas, league_ids, seasons,
+    )
     # Por padrão, montar_dataset_ml_empilhado só usa as 6 ligas do Model
-    # Benchmarking (últimas 6 temporadas cada). Quando o usuário pede
-    # cobertura total do banco, troca pra TODAS as ligas cadastradas e
+    # Benchmarking (últimas 6 temporadas cada). league_ids/seasons explícitos
+    # (escolha manual do usuário no painel) têm prioridade sobre todas_ligas;
+    # sem escolha manual, todas_ligas troca pra TODAS as ligas cadastradas e
     # desliga o corte de temporadas recentes (histórico completo).
     dataset = dh.montar_dataset_ml_empilhado(
         supabase,
-        anos_por_liga=None if todas_ligas else 6,
+        anos_por_liga=None if (todas_ligas or seasons) else 6,
         todas_as_ligas=todas_ligas,
+        league_ids_manual=league_ids,
+        seasons=seasons,
     )
     if dataset.empty:
         raise RuntimeError("Dataset histórico vazio — verifique as ligas e temporadas no banco.")
@@ -515,6 +528,8 @@ def main():
         target_key = cfg.get("target") or "1x2"
         hyperparameters = cfg.get("hyperparameters")
         todas_ligas = bool(cfg.get("todas_ligas"))
+        league_ids = cfg.get("league_ids") or None
+        seasons = cfg.get("seasons") or None
 
         logger.info(
             "Config carregada: algoritmo=%s, target=%s, %d features",
@@ -529,7 +544,7 @@ def main():
             raise ValueError(f"Target {target_key!r} não suportado. Use: {list(TARGETS)}")
 
         # 2. Carrega e prepara dataset
-        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas)
+        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas, league_ids, seasons)
         train_df, test_df = split_dataset(dataset, target_info["coluna"], features_usadas)
 
         # 3. Treina o modelo

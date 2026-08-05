@@ -623,9 +623,15 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
   if (!usuario) return { status: 401, error: 'Não autenticado.' };
 
-  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms, todas_ligas } = body || {};
+  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms, todas_ligas, league_ids, seasons } = body || {};
   if (!name || !Array.isArray(features) || features.length === 0) {
     return { status: 400, error: 'Campos obrigatórios: name (texto), features (array não-vazio).' };
+  }
+  if (league_ids !== undefined && league_ids !== null && !Array.isArray(league_ids)) {
+    return { status: 400, error: 'league_ids deve ser um array de IDs de leagues (ou null/omitido).' };
+  }
+  if (seasons !== undefined && seasons !== null && !Array.isArray(seasons)) {
+    return { status: 400, error: 'seasons deve ser um array de temporadas (ou null/omitido).' };
   }
 
   const modoFinal = mode === 'walk_forward_cv' ? 'walk_forward_cv' : 'simples';
@@ -650,6 +656,8 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
     mode: modoFinal,
     algorithms: algorithmsFinal,
     todas_ligas: !!todas_ligas,
+    league_ids: (Array.isArray(league_ids) && league_ids.length > 0) ? league_ids : null,
+    seasons: (Array.isArray(seasons) && seasons.length > 0) ? seasons : null,
   };
 
   let resultado;
@@ -679,7 +687,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 async function tarefaListarConfigsCustom(supabase) {
   const { data, error } = await supabase
     .from('custom_model_configs')
-    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, todas_ligas, created_at, trained_at, error_message')
+    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, todas_ligas, league_ids, seasons, created_at, trained_at, error_message')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return { status: 200, configs: data || [] };
@@ -740,7 +748,7 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
 
   const { data: cfg } = await supabase
     .from('custom_model_configs')
-    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode, todas_ligas')
+    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode, todas_ligas, league_ids, seasons')
     .eq('id', configId).maybeSingle();
   if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
 
@@ -756,6 +764,8 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
       notes: cfg.notes,
       mode: cfg.mode || 'simples',
       todas_ligas: !!cfg.todas_ligas,
+      league_ids: cfg.league_ids || null,
+      seasons: cfg.seasons || null,
       status: 'rascunho',
     })
     .select().single();
