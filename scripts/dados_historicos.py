@@ -2746,7 +2746,9 @@ def _progresso_temporada(partidas: pd.DataFrame) -> pd.DataFrame:
     return partidas
 
 
-def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.DataFrame:
+def montar_dataset_ml_empilhado(
+    supabase: Client, anos_por_liga: int | None = 6, todas_as_ligas: bool = False
+) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
     temporadas de CADA uma das 6 ligas do Model Benchmarking (5 de elite
     europeias + Brasileirão, ver `LIGAS_MODEL_BENCHMARKING`) em vez de usar
@@ -2755,6 +2757,14 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     temporadas mais recentes DELA MESMA (acesso/rebaixamento faz o rótulo
     de temporada não se alinhar perfeitamente entre ligas, então o corte é
     sempre relativo à própria liga).
+
+    `todas_as_ligas=True` troca as 6 ligas do benchmark por TODAS as linhas
+    de `leagues` (ligas domésticas menores, copas nacionais/continentais,
+    torneios internacionais) -- usado pelo Treino Customizado quando o
+    usuário pede cobertura total do banco. `anos_por_liga=None` desliga o
+    corte de temporadas recentes (histórico completo por liga) -- combinado
+    com `todas_as_ligas=True` por padrão nesse caso, já que truncar
+    temporadas contradiria "todas as partidas disponíveis".
 
     Features (todas calculadas SEM olhar o resultado do próprio jogo):
     `elo_home`/`elo_away` (rating pré-jogo, `team_elo_history`), forma de
@@ -2768,9 +2778,13 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     com NaN numérico nativamente, e só os modelos v2 de fato usam a coluna
     de squad rating.
     """
-    ligas = obter_ids_ligas(supabase, LIGAS_MODEL_BENCHMARKING)
+    if todas_as_ligas:
+        resposta = supabase.table("leagues").select("id, name").execute()
+        ligas = {linha["name"]: linha["id"] for linha in (resposta.data or [])}
+    else:
+        ligas = obter_ids_ligas(supabase, LIGAS_MODEL_BENCHMARKING)
     if not ligas:
-        logger.error("Nenhuma das ligas do Model Benchmarking foi encontrada em `leagues`.")
+        logger.error("Nenhuma liga encontrada em `leagues` pro escopo pedido (todas_as_ligas=%s).", todas_as_ligas)
         return pd.DataFrame()
 
     league_ids = list(ligas.values())
@@ -2780,11 +2794,14 @@ def montar_dataset_ml_empilhado(supabase: Client, anos_por_liga: int = 6) -> pd.
     if partidas.empty:
         return partidas
 
-    partidas_recortadas = []
-    for league_id, grupo in partidas.groupby("league_id"):
-        temporadas_recentes = sorted(grupo["season"].unique())[-anos_por_liga:]
-        partidas_recortadas.append(grupo[grupo["season"].isin(temporadas_recentes)])
-    partidas = pd.concat(partidas_recortadas, ignore_index=True).sort_values("match_date").reset_index(drop=True)
+    if anos_por_liga is not None:
+        partidas_recortadas = []
+        for league_id, grupo in partidas.groupby("league_id"):
+            temporadas_recentes = sorted(grupo["season"].unique())[-anos_por_liga:]
+            partidas_recortadas.append(grupo[grupo["season"].isin(temporadas_recentes)])
+        partidas = pd.concat(partidas_recortadas, ignore_index=True).sort_values("match_date").reset_index(drop=True)
+    else:
+        partidas = partidas.sort_values("match_date").reset_index(drop=True)
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)

@@ -459,6 +459,7 @@ const ESTADO_FORM_INICIAL = {
   target: '1x2',
   notes: '',
   hyperparameters: '',
+  todas_ligas: false,
 };
 
 // -----------------------------------------------------------------------
@@ -569,6 +570,7 @@ export default function TreinoCustom() {
       target: cfg.target || '1x2',
       notes: cfg.notes || '',
       hyperparameters: cfg.hyperparameters ? JSON.stringify(cfg.hyperparameters, null, 2) : '',
+      todas_ligas: !!cfg.todas_ligas,
     });
     setFormAberto(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -590,6 +592,7 @@ export default function TreinoCustom() {
       target: tpl.config.target,
       notes: tpl.config.notes,
       hyperparameters: tpl.config.hyperparameters,
+      todas_ligas: !!tpl.config.todas_ligas,
     });
     setSidebarAberta(false);
     setFormAberto(true);
@@ -660,6 +663,7 @@ export default function TreinoCustom() {
           target: form.target,
           notes: form.notes.trim() || null,
           hyperparameters,
+          todas_ligas: form.todas_ligas,
         }),
       });
       const dados = await resp.json();
@@ -962,6 +966,26 @@ export default function TreinoCustom() {
               </div>
             </div>
 
+            <div>
+              <label
+                className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-700 px-3 py-2.5 hover:bg-slate-700/50 transition-colors"
+                title="Por padrão o treino usa só as 6 ligas do Model Benchmarking (5 europeias + Brasileirão), últimas temporadas. Marcando esta opção, entram TODAS as ligas e copas cadastradas (MLS, Championship, Primeira Liga, Eredivisie, Libertadores, Copa do Brasil, Champions League, Copa do Mundo, Eurocopa, Copa América), com histórico completo (sem corte de temporadas recentes)."
+              >
+                <input
+                  type="checkbox"
+                  checked={form.todas_ligas}
+                  onChange={() => setForm((f) => ({ ...f, todas_ligas: !f.todas_ligas }))}
+                  className="accent-violet-500 w-3.5 h-3.5 mt-0.5"
+                />
+                <span className="text-sm text-slate-300">
+                  Incluir todas as ligas e copas do banco
+                  <span className="block text-xs text-slate-500 font-normal mt-0.5">
+                    Em vez das 6 ligas do Model Benchmarking, usa todo o histórico de todas as competições cadastradas (domésticas menores, copas nacionais/continentais e torneios internacionais).
+                  </span>
+                </span>
+              </label>
+            </div>
+
             {/* Features */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -1138,6 +1162,14 @@ export default function TreinoCustom() {
                     <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                       {cfg.mode === 'walk_forward_cv' ? (
                         <span className="text-xs bg-violet-900/40 text-violet-400 border border-violet-800 rounded px-1.5 py-0.5 font-medium">WF-CV</span>
+                      ) : null}
+                      {cfg.todas_ligas ? (
+                        <span
+                          className="text-xs bg-sky-900/40 text-sky-400 border border-sky-800 rounded px-1.5 py-0.5 font-medium"
+                          title="Treinado com todas as ligas e copas do banco, histórico completo"
+                        >
+                          Todas as ligas
+                        </span>
                       ) : null}
                       {cfg.mode === 'walk_forward_cv' ? (
                         <span className="text-xs text-slate-500">

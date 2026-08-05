@@ -181,16 +181,23 @@ def marcar_erro(supabase, config_id: str, msg: str):
 # Preparação do dataset
 # ---------------------------------------------------------------------------
 
-def carregar_dataset(supabase, features: list[str], target_info: dict) -> pd.DataFrame:
+def carregar_dataset(supabase, features: list[str], target_info: dict, todas_ligas: bool = False) -> pd.DataFrame:
     """Carrega o dataset completo com as features solicitadas.
 
     Reutiliza dh.montar_dataset_completo, que já faz todos os joins,
     rolling windows, elo, squad_rating etc. — devolvendo TODAS as features
     disponíveis. Aqui selecionamos só as que o usuário pediu.
     """
-    logger.info("Carregando dataset histórico...")
-    # montar_dataset_ml_empilhado já seleciona as ligas do Model Benchmarking internamente
-    dataset = dh.montar_dataset_ml_empilhado(supabase)
+    logger.info("Carregando dataset histórico (todas_ligas=%s)...", todas_ligas)
+    # Por padrão, montar_dataset_ml_empilhado só usa as 6 ligas do Model
+    # Benchmarking (últimas 6 temporadas cada). Quando o usuário pede
+    # cobertura total do banco, troca pra TODAS as ligas cadastradas e
+    # desliga o corte de temporadas recentes (histórico completo).
+    dataset = dh.montar_dataset_ml_empilhado(
+        supabase,
+        anos_por_liga=None if todas_ligas else 6,
+        todas_as_ligas=todas_ligas,
+    )
     if dataset.empty:
         raise RuntimeError("Dataset histórico vazio — verifique as ligas e temporadas no banco.")
 
@@ -507,6 +514,7 @@ def main():
         features_req = cfg["features"] or []
         target_key = cfg.get("target") or "1x2"
         hyperparameters = cfg.get("hyperparameters")
+        todas_ligas = bool(cfg.get("todas_ligas"))
 
         logger.info(
             "Config carregada: algoritmo=%s, target=%s, %d features",
@@ -521,7 +529,7 @@ def main():
             raise ValueError(f"Target {target_key!r} não suportado. Use: {list(TARGETS)}")
 
         # 2. Carrega e prepara dataset
-        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info)
+        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas)
         train_df, test_df = split_dataset(dataset, target_info["coluna"], features_usadas)
 
         # 3. Treina o modelo
