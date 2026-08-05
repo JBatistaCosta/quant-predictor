@@ -623,7 +623,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
   if (!usuario) return { status: 401, error: 'Não autenticado.' };
 
-  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms } = body || {};
+  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms, todas_ligas } = body || {};
   if (!name || !Array.isArray(features) || features.length === 0) {
     return { status: 400, error: 'Campos obrigatórios: name (texto), features (array não-vazio).' };
   }
@@ -649,6 +649,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
     notes: notes || null,
     mode: modoFinal,
     algorithms: algorithmsFinal,
+    todas_ligas: !!todas_ligas,
   };
 
   let resultado;
@@ -678,7 +679,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 async function tarefaListarConfigsCustom(supabase) {
   const { data, error } = await supabase
     .from('custom_model_configs')
-    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, created_at, trained_at, error_message')
+    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, todas_ligas, created_at, trained_at, error_message')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return { status: 200, configs: data || [] };
@@ -739,7 +740,7 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
 
   const { data: cfg } = await supabase
     .from('custom_model_configs')
-    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode')
+    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode, todas_ligas')
     .eq('id', configId).maybeSingle();
   if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
 
@@ -754,6 +755,7 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
       hyperparameters: cfg.hyperparameters,
       notes: cfg.notes,
       mode: cfg.mode || 'simples',
+      todas_ligas: !!cfg.todas_ligas,
       status: 'rascunho',
     })
     .select().single();
@@ -2406,7 +2408,10 @@ async function resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes,
   const apiId = String(timeApi.id);
   if (crosswalk[apiId]) return crosswalk[apiId];
 
-  const candidato = todosOsTimes.find(t => nomesBatemTime(t.name, timeApi.name));
+  const candidato = todosOsTimes.find(t =>
+    nomesBatemTime(t.name, timeApi.name) ||
+    (t.aliases || []).some(alias => nomesBatemTime(alias, timeApi.name))
+  );
   let teamId;
   if (candidato) {
     teamId = candidato.id;
@@ -2414,7 +2419,7 @@ async function resolverOuCriarTimeApiFootball(supabase, crosswalk, todosOsTimes,
     const { data: novo, error } = await supabase.from('teams').insert({ name: timeApi.name, crest_url: timeApi.logo || null }).select('id').single();
     if (error || !novo) return null;
     teamId = novo.id;
-    todosOsTimes.push({ id: teamId, name: timeApi.name }); // evita recriar duplicado dentro do mesmo run
+    todosOsTimes.push({ id: teamId, name: timeApi.name, aliases: [] });
   }
 
   await supabase.from('team_source_ids').upsert(
@@ -2440,7 +2445,7 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
 
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases');
 
   const linhas = [];
   for (const f of fixtures) {
@@ -2517,7 +2522,10 @@ async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, time
   const fmId = String(timeFm.id);
   if (crosswalk[fmId]) return crosswalk[fmId];
 
-  const candidato = todosOsTimes.find(t => nomesBatemTime(t.name, timeFm.name));
+  const candidato = todosOsTimes.find(t =>
+    nomesBatemTime(t.name, timeFm.name) ||
+    (t.aliases || []).some(alias => nomesBatemTime(alias, timeFm.name))
+  );
   let teamId;
   if (candidato) {
     teamId = candidato.id;
@@ -2525,7 +2533,7 @@ async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, time
     const { data: novo, error } = await supabase.from('teams').insert({ name: timeFm.name, crest_url: `https://images.fotmob.com/image_resources/logo/teamlogo/${fmId}_xsmall.png` }).select('id').single();
     if (error || !novo) return null;
     teamId = novo.id;
-    todosOsTimes.push({ id: teamId, name: timeFm.name });
+    todosOsTimes.push({ id: teamId, name: timeFm.name, aliases: [] });
   }
 
   await supabase.from('team_source_ids').upsert(
@@ -2610,7 +2618,7 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
   const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases');
 
   const linhas = [];
   for (const fx of fixtures) {
@@ -2939,7 +2947,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite }) {
   const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases');
 
   // Casa cada fixture do FotMob com nosso jogo por ID DE TIME (via
   // crosswalk, resolvendo/criando time se necessário) + mesmo dia — muito

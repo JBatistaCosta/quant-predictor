@@ -61,6 +61,11 @@ Outras pendências menores (não urgentes):
 - `team_strengths`, `league_model_params` — pesos treinados persistidos (ataque/defesa por time, mando/rho por liga)
 - `odds_market.snapshot` — distingue `pre_closing` (capturado dias antes) de `closing` (fechamento real, coluna "C" do football-data.co.uk)
 - View `v_market_edge` — compara odds do modelo com mercado (já devigado), separado por `snapshot`
+- **`leagues.territory_type`** — `'country'` / `'confederation'` / `'global'` / `'region'` / `'multi-region'` (adicionado ago/2026; todas as 16 ligas já populadas; suporta ingestão futura de competições regionais como Campeonato Paulista com código ISO 3166-2 BR-SP)
+- **`leagues.territory_code`** — ISO 3166 Alpha-3 para ligas nacionais (BRA, ENG, DEU…), código de confederação para internacionais (UEFA, CONMEBOL, FIFA); Copa América corrigida para `type='international'`
+- **`matches.match_stage`** — fase normalizada (7 buckets: `regular_season`, `group_stage`, `early_round`, `round_of_16`, `quarter_final`, `semi_final`, `final`, `playoff`); derivada de `matches.stage` bruta; índice `idx_matches_league_stage(league_id, match_stage)` para filtros no pipeline ML
+- **`matches.is_neutral`** — boolean (default FALSE); a preencher na ingestão futura para palco neutro
+- **`matches.aggregate_advantage`** — integer nullable: NULL = jogo único/grupos; positivo = mandante leva vantagem no agregado; negativo = visitante; 0 = agregado empatado (2ª mão)
 
 ## Modelo de produção
 - **Dixon-Coles** (`modelo_dixon_coles.py`) — gols, mercados 1X2 e over/under 2.5
