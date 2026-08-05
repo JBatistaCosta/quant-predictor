@@ -3088,6 +3088,8 @@ def montar_dataset_ml_empilhado(
         # Venue / contexto de temporada
         "venue_capacity_home",
         "progresso_temporada",
+        # Contexto da partida (v12 -- match_stage/is_neutral)
+        "match_stage_ord", "is_neutral",
         # FBref (v7)
         *COLUNAS_FORMA_POSSE.values(),
         *COLUNAS_FORMA_CHUTES.values(),
