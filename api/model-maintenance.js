@@ -623,7 +623,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
   if (!usuario) return { status: 401, error: 'Não autenticado.' };
 
-  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms, todas_ligas, league_ids, seasons } = body || {};
+  const { id, name, algorithm, features, target, hyperparameters, notes, mode, algorithms, todas_ligas, league_ids, seasons, stacking_groups } = body || {};
   if (!name || !Array.isArray(features) || features.length === 0) {
     return { status: 400, error: 'Campos obrigatórios: name (texto), features (array não-vazio).' };
   }
@@ -632,6 +632,9 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
   }
   if (seasons !== undefined && seasons !== null && !Array.isArray(seasons)) {
     return { status: 400, error: 'seasons deve ser um array de temporadas (ou null/omitido).' };
+  }
+  if (stacking_groups !== undefined && stacking_groups !== null && !Array.isArray(stacking_groups)) {
+    return { status: 400, error: 'stacking_groups deve ser um array (ou null/omitido).' };
   }
 
   const modoFinal = mode === 'walk_forward_cv' ? 'walk_forward_cv' : 'simples';
@@ -646,6 +649,22 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 
   const algorithmsFinal = modoFinal === 'walk_forward_cv' ? (algorithms || []) : [];
 
+  // Cada grupo: { name: string, algorithms: string[] }. Só faz sentido no
+  // modo walk_forward_cv, e cada grupo precisa ter >=2 algoritmos que
+  // também estejam em algorithmsFinal (senão o meta-modelo não teria o que
+  // combinar). Grupos inválidos são descartados aqui em vez de rejeitar a
+  // request inteira -- o frontend já filtra isso na UI, mas não custa nada
+  // ser defensivo contra uma config salva por outra via/versão antiga.
+  const stackingGroupsFinal = modoFinal === 'walk_forward_cv' && Array.isArray(stacking_groups)
+    ? stacking_groups
+        .filter((g) => g && typeof g.name === 'string' && g.name.trim() && Array.isArray(g.algorithms))
+        .map((g) => ({
+          name: g.name.trim(),
+          algorithms: [...new Set(g.algorithms.filter((a) => algorithmsFinal.includes(a)))],
+        }))
+        .filter((g) => g.algorithms.length >= 2)
+    : [];
+
   const camposComuns = {
     name,
     algorithm: algorithm || null,
@@ -658,6 +677,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
     todas_ligas: !!todas_ligas,
     league_ids: (Array.isArray(league_ids) && league_ids.length > 0) ? league_ids : null,
     seasons: (Array.isArray(seasons) && seasons.length > 0) ? seasons : null,
+    stacking_groups: stackingGroupsFinal,
   };
 
   let resultado;
@@ -687,7 +707,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 async function tarefaListarConfigsCustom(supabase) {
   const { data, error } = await supabase
     .from('custom_model_configs')
-    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, todas_ligas, league_ids, seasons, created_at, trained_at, error_message')
+    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, todas_ligas, league_ids, seasons, stacking_groups, created_at, trained_at, error_message')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return { status: 200, configs: data || [] };
@@ -748,7 +768,7 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
 
   const { data: cfg } = await supabase
     .from('custom_model_configs')
-    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode, todas_ligas, league_ids, seasons')
+    .select('name, algorithm, algorithms, features, target, hyperparameters, notes, mode, todas_ligas, league_ids, seasons, stacking_groups')
     .eq('id', configId).maybeSingle();
   if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
 
@@ -766,6 +786,7 @@ async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
       todas_ligas: !!cfg.todas_ligas,
       league_ids: cfg.league_ids || null,
       seasons: cfg.seasons || null,
+      stacking_groups: cfg.stacking_groups || [],
       status: 'rascunho',
     })
     .select().single();
