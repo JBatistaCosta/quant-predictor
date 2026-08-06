@@ -6,16 +6,18 @@ name: Estimativa Sob Demanda — Modelo Customizado
 # Fluxo:
 #   1. Usuário clica em "Estimar com modelo personalizado" na página do jogo,
 #      escolhe uma configuração treinada e (se walk_forward_cv) um algoritmo
-#      ou grupo de stacking específico dela.
-#   2. API insere uma linha em custom_model_ondemand_predictions
-#      (status=pendente) e dispara este workflow com input request_id.
-#   3. estimar_partida_custom.py seta status=processando, retreina o
-#      modelo escolhido em todo o histórico do escopo da config (exceto a
-#      própria partida) e prevê só essa partida.
+#      ou grupo de stacking específico dela -- só aparecem opções que já têm
+#      um artefato treinado e persistido (custom_model_configs.
+#      model_artifacts, ver treinar_modelo_custom.py/treinar_modelo_custom_
+#      wf.py/model_artifacts.py).
+#   2. API valida que o artefato existe (senão nem dispara) e insere uma
+#      linha em custom_model_ondemand_predictions (status=pendente).
+#   3. estimar_partida_custom.py seta status=processando, carrega o
+#      artefato já treinado (SEM retreinar) e prevê só essa partida.
 #   4. Status final: concluido (com probabilities/fair_odds) ou erro.
 #
-# Timeout: 30min — retreino de um único algoritmo/grupo pequeno é bem mais
-# rápido que o treino completo com walk-forward de 3 folds.
+# Timeout: 10min -- o script nunca treina, só monta a feature da partida-
+# alvo (algumas queries no Supabase) e aplica o modelo já pronto.
 
 on:
   workflow_dispatch:
@@ -28,7 +30,7 @@ on:
 jobs:
   estimar-partida-custom:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: Checkout do repositório
