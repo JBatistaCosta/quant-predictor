@@ -2,13 +2,15 @@
 // Painel "Estimar com modelo personalizado", usado em AnaliseEstatisticaJogo.jsx.
 // Deixa o usuário escolher uma configuração já treinada em custom_model_configs
 // (e, se for modo walk_forward_cv, um algoritmo específico ou grupo de
-// stacking dela) e disparar uma estimativa sob demanda pra ESSA partida —
+// stacking dela) e aplicar o modelo JÁ TREINADO pra essa partida —
 // api/model-maintenance?tarefa=estimar-partida-custom dispara
 // .github/workflows/estimar_partida_custom.yml, que roda
-// scripts/estimar_partida_custom.py (retreina do zero no histórico do
-// escopo da config e prevê só essa partida). O resultado é pollado direto
-// via cliente Supabase em custom_model_ondemand_predictions (policy de
-// leitura pública).
+// scripts/estimar_partida_custom.py. Esse script NUNCA treina: só carrega
+// o artefato persistido (custom_model_configs.model_artifacts, gravado no
+// fim de um treino bem-sucedido no painel Treino Customizado) e prevê --
+// por isso só entram no seletor de algoritmo as opções que já têm um
+// artefato pronto. O resultado é pollado direto via cliente Supabase em
+// custom_model_ondemand_predictions (policy de leitura pública).
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sparkles, Loader2, ChevronDown, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../AuthContext';
@@ -31,7 +33,7 @@ export default function EstimativaModeloCustom({ matchId }) {
   const [configId, setConfigId] = useState('');
   const [algoritmo, setAlgoritmo] = useState('');
   const [disparando, setDisparando] = useState(false);
-  const [resultado, setResultado] = useState(null); // { status, probabilities, fair_odds, error_message, n_treino }
+  const [resultado, setResultado] = useState(null); // { status, probabilities, fair_odds, error_message }
   const [erro, setErro] = useState('');
   const pollingRef = useRef(null);
 
@@ -44,7 +46,10 @@ export default function EstimativaModeloCustom({ matchId }) {
       try {
         const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=listar-configs-custom'));
         const dados = await resp.json();
-        setConfigs((dados.configs || []).filter((c) => c.status === 'treinado'));
+        // Só entram configs com pelo menos 1 algoritmo/grupo com artefato
+        // persistido -- sem isso não tem o que aplicar (o script nunca
+        // treina, só prevê com um modelo já pronto).
+        setConfigs((dados.configs || []).filter((c) => c.status === 'treinado' && Object.keys(c.model_artifacts || {}).length > 0));
       } catch {
         setErro('Falha ao carregar modelos personalizados.');
       } finally {
@@ -54,14 +59,15 @@ export default function EstimativaModeloCustom({ matchId }) {
   }, [aberto, configs.length]);
 
   const configSelecionada = configs.find((c) => c.id === configId) || null;
+  const artefatosDisponiveis = configSelecionada?.model_artifacts || {};
   const opcoesAlgoritmo = !configSelecionada
     ? []
     : configSelecionada.mode === 'walk_forward_cv'
       ? [
           ...(configSelecionada.algorithms || []).map((a) => ({ value: a, label: a })),
           ...(configSelecionada.stacking_groups || []).map((g) => ({ value: `stacking:${g.name}`, label: `★ ${g.name}` })),
-        ]
-      : configSelecionada.algorithm
+        ].filter((o) => artefatosDisponiveis[o.value])
+      : configSelecionada.algorithm && artefatosDisponiveis[configSelecionada.algorithm]
         ? [{ value: configSelecionada.algorithm, label: configSelecionada.algorithm }]
         : [];
 
@@ -101,7 +107,7 @@ export default function EstimativaModeloCustom({ matchId }) {
       pollingRef.current = setInterval(async () => {
         const { data } = await supabase
           .from('custom_model_ondemand_predictions')
-          .select('status, probabilities, fair_odds, error_message, n_treino')
+          .select('status, probabilities, fair_odds, error_message')
           .eq('id', dados.request_id)
           .maybeSingle();
         if (!data) return;
@@ -184,7 +190,7 @@ export default function EstimativaModeloCustom({ matchId }) {
               </div>
 
               <p className="text-[10px] text-slate-600">
-                Retreina o modelo do zero em todo o histórico disponível (exceto essa partida) e prevê só ela — pode levar de 1 a ~20 minutos, dependendo do algoritmo e do tamanho do dataset da configuração.
+                Aplica o modelo já treinado (mesmos parâmetros/hiperparâmetros encontrados no treino) pra estimar só essa partida — não retreina.
               </p>
 
               {erro && (
@@ -194,7 +200,7 @@ export default function EstimativaModeloCustom({ matchId }) {
               {emAndamento && (
                 <p className="text-xs text-slate-400 flex items-center gap-1.5">
                   <Loader2 size={13} className="animate-spin" />
-                  {resultado.status === 'pendente' ? 'Na fila...' : 'Calculando... (instantâneo se o modelo já tiver sido usado antes, senão retreina do zero)'}
+                  {resultado.status === 'pendente' ? 'Na fila...' : 'Aplicando o modelo...'}
                 </p>
               )}
 
@@ -226,11 +232,7 @@ export default function EstimativaModeloCustom({ matchId }) {
                       ))}
                     </tbody>
                   </table>
-                  <p className="text-[10px] text-slate-600 mt-1.5">
-                    {resultado.n_treino != null
-                      ? `Retreinado com ${resultado.n_treino.toLocaleString()} partidas.`
-                      : 'Modelo já treinado reaproveitado (sem retreino).'}
-                  </p>
+                  <p className="text-[10px] text-slate-600 mt-1.5">Modelo já treinado aplicado — sem retreino.</p>
                 </div>
               )}
             </>

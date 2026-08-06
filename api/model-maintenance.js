@@ -730,7 +730,7 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 async function tarefaListarConfigsCustom(supabase) {
   const { data, error } = await supabase
     .from('custom_model_configs')
-    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, notes, mode, todas_ligas, league_ids, seasons, stacking_groups, created_at, trained_at, error_message')
+    .select('id, name, algorithm, algorithms, features, target, status, metrics, model_key, model_artifacts, notes, mode, todas_ligas, league_ids, seasons, stacking_groups, created_at, trained_at, error_message')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return { status: 200, configs: data || [] };
@@ -785,7 +785,7 @@ async function tarefaEstimarPartidaCustom(supabase, authHeader, body) {
 
   const { data: cfg, error: cfgErr } = await supabase
     .from('custom_model_configs')
-    .select('id, mode, algorithm, algorithms, stacking_groups')
+    .select('id, mode, algorithm, algorithms, stacking_groups, model_artifacts')
     .eq('id', configId)
     .maybeSingle();
   if (cfgErr) throw cfgErr;
@@ -801,6 +801,17 @@ async function tarefaEstimarPartidaCustom(supabase, authHeader, body) {
     if (!grupo) return { status: 400, error: `Grupo de stacking "${nomeGrupo}" não existe nessa configuração.` };
   } else if (!algoritmosValidos.includes(algorithm)) {
     return { status: 400, error: `Algoritmo "${algorithm}" não faz parte dessa configuração.` };
+  }
+
+  // A estimativa sob demanda nunca treina -- só aplica um modelo já
+  // treinado e persistido (ver scripts/model_artifacts.py). Sem artefato
+  // pro algoritmo/grupo pedido, nem dispara o workflow (ele ia falhar do
+  // mesmo jeito lá dentro, só que minutos depois).
+  if (!(cfg.model_artifacts || {})[algorithm]) {
+    return {
+      status: 400,
+      error: `"${algorithm}" ainda não tem um modelo treinado e persistido nessa configuração -- treine (ou retreine) no painel Treino Customizado primeiro.`,
+    };
   }
 
   const { data: match } = await supabase.from('matches').select('id').eq('id', matchId).maybeSingle();
