@@ -1,0 +1,52 @@
+name: Estimativa Sob Demanda — Modelo Customizado
+
+# Disparado pelo frontend via api/model-maintenance?tarefa=estimar-partida-custom,
+# que chama a GitHub Actions API com request_id como input.
+#
+# Fluxo:
+#   1. Usuário clica em "Estimar com modelo personalizado" na página do jogo,
+#      escolhe uma configuração treinada e (se walk_forward_cv) um algoritmo
+#      ou grupo de stacking específico dela.
+#   2. API insere uma linha em custom_model_ondemand_predictions
+#      (status=pendente) e dispara este workflow com input request_id.
+#   3. estimar_partida_custom.py seta status=processando, retreina o
+#      modelo escolhido em todo o histórico do escopo da config (exceto a
+#      própria partida) e prevê só essa partida.
+#   4. Status final: concluido (com probabilities/fair_odds) ou erro.
+#
+# Timeout: 30min — retreino de um único algoritmo/grupo pequeno é bem mais
+# rápido que o treino completo com walk-forward de 3 folds.
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "UUID da linha em custom_model_ondemand_predictions (obrigatório)"
+        required: true
+        type: string
+
+jobs:
+  estimar-partida-custom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Estimar partida
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: python scripts/estimar_partida_custom.py
