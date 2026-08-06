@@ -45,6 +45,7 @@ from supabase import create_client
 sys.path.insert(0, os.path.dirname(__file__))
 import dados_historicos as dh
 import modelos_ml as ml
+import model_artifacts as ma
 
 logging.basicConfig(
     level=logging.INFO,
@@ -608,6 +609,28 @@ def main():
         # 5. Salva predições por partida para que o modelo apareça em Estatísticas,
         #    Backtest e Simulação de Carteira automaticamente.
         salvar_predicoes_no_banco(supabase, test_df, probs_test, classes_test, cfg["name"], target_key)
+
+        # 6. Refit final no dataset INTEIRO (treino + teste do backtest, não
+        #    só o split de treino) e persiste o artefato -- permite que
+        #    estimar_partida_custom.py pule o retreino numa estimativa sob
+        #    demanda futura pra essa config. Não falha o treino se der
+        #    errado (a config já foi marcada "treinado" com sucesso acima;
+        #    persistência é um bônus, não um requisito).
+        if algoritmo in ALGORITMOS_ML or algoritmo in ALGORITMOS_SKLEARN:
+            try:
+                dataset_completo = pd.concat([train_df, test_df], ignore_index=True).sort_values("match_date").reset_index(drop=True)
+                train_fit, val_fit = ma.split_treino_val(dataset_completo)
+                estado_final, _ = ma.treinar_e_prever(
+                    algoritmo, features_usadas, hyperparameters, train_fit, val_fit, {},
+                    target_info["coluna"], target_info["tipo"],
+                )
+                path = ma.salvar_artefato(supabase, config_id, algoritmo, estado_final)
+                supabase.table("custom_model_configs").update({
+                    "model_artifacts": {algoritmo: {"path": path, "trained_at": agora}},
+                }).eq("id", config_id).execute()
+                logger.info("Artefato final persistido em %s.", path)
+            except Exception as exc_artefato:
+                logger.warning("Falha ao persistir artefato final (treino em si já foi salvo com sucesso): %s", exc_artefato)
 
         # Imprime JSON estruturado nos logs do Actions (fácil de parsear/grep)
         print(json.dumps({"config_id": config_id, "status": "treinado", "metricas": metrics_final}, ensure_ascii=False))

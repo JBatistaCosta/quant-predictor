@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import dados_historicos as dh
 import modelos_ml as ml
 import calibracao as cal_lib
+import model_artifacts as ma
 
 logging.basicConfig(
     level=logging.INFO,
@@ -197,31 +198,12 @@ def split_por_fold(dataset: pd.DataFrame, treino_max_ano: int, val_ano: int, tes
 # Métricas
 # ---------------------------------------------------------------------------
 
-def _reordenar_probs(probs: np.ndarray, classes: np.ndarray, classes_sorted: np.ndarray) -> np.ndarray:
-    """Reordena as colunas de `probs` (na ordem de `classes`, que pode variar
-    por algoritmo) pra ordem canônica `classes_sorted` -- necessário tanto pra
-    calcular métricas quanto pra concatenar probabilidades de vários
-    algoritmos em features de stacking (mesmo padrão de `montar_meta_X` em
-    walkforward_cv_v9.py, generalizado pra qualquer conjunto de classes)."""
-    ordered = np.zeros((len(probs), len(classes_sorted)))
-    for i, c in enumerate(classes):
-        idx = np.where(classes_sorted == c)[0]
-        if len(idx):
-            ordered[:, idx[0]] = probs[:, i]
-    return ordered
-
-
-def montar_meta_features(
-    probs_por_algo: dict[str, np.ndarray],
-    classes_por_algo: dict[str, np.ndarray],
-    algos: list[str],
-    classes_sorted: np.ndarray,
-) -> np.ndarray:
-    """Concatena as probabilidades (já reordenadas na ordem canônica de
-    classes) dos algoritmos do grupo de stacking -- shape final
-    (n, len(algos) * len(classes_sorted))."""
-    blocos = [_reordenar_probs(probs_por_algo[a], classes_por_algo[a], classes_sorted) for a in algos]
-    return np.hstack(blocos)
+# _reordenar_probs/montar_meta_features moram em modelos_ml.py (perto de
+# treinar_stacking_v9/prever_stacking_v9, que consomem o resultado delas) --
+# reaproveitadas também por model_artifacts.py sem criar import circular
+# entre este script e ele.
+_reordenar_probs = ml.reordenar_probs
+montar_meta_features = ml.montar_meta_features
 
 
 def calcular_metricas_fold(
@@ -681,6 +663,50 @@ def main():
                     fold_resultado["models"][chave_resultado] = {"erro": str(exc_stack)}
 
             resultados_folds.append(fold_resultado)
+
+        # ── Refit final + persistência de artefatos ─────────────────────────
+        # Diferente das métricas por fold acima (que usam só o histórico até
+        # o ano de cada fold, pra avaliação honesta), o artefato persistido
+        # aqui é um refit no dataset INTEIRO disponível (todas as
+        # temporadas), de cada algoritmo e de cada grupo de stacking --
+        # permite que estimar_partida_custom.py pule o retreino numa
+        # estimativa sob demanda futura pra essa config. Não falha o treino
+        # se der errado (config já foi marcada "treinado" com sucesso pelas
+        # métricas por fold).
+        artefatos_persistidos: dict[str, dict] = {}
+        try:
+            dataset_completo = dataset.dropna(subset=[target_col]).reset_index(drop=True)
+            for algo in algoritmos:
+                try:
+                    train_fit, val_fit = ma.split_treino_val(dataset_completo)
+                    estado_final, _ = ma.treinar_e_prever(
+                        algo, features_usadas, hyperparams, train_fit, val_fit, {}, target_col, tipo,
+                    )
+                    path = ma.salvar_artefato(supabase, config_id, algo, estado_final)
+                    artefatos_persistidos[algo] = {"path": path, "trained_at": datetime.now(timezone.utc).isoformat()}
+                except Exception as exc_algo:
+                    logger.warning("Falha ao persistir artefato final de %s: %s", algo, exc_algo)
+
+            for grupo in stacking_groups:
+                nome_grupo = grupo.get("name") or "Stacking"
+                algos_grupo = [a for a in (grupo.get("algorithms") or []) if a in algoritmos]
+                if len(algos_grupo) < 2:
+                    continue
+                try:
+                    estado_stacking = ma.treinar_estado_stacking(
+                        algos_grupo, features_usadas, hyperparams, dataset_completo, target_col, tipo,
+                    )
+                    chave = f"stacking:{nome_grupo}"
+                    path = ma.salvar_artefato(supabase, config_id, chave, estado_stacking)
+                    artefatos_persistidos[chave] = {"path": path, "trained_at": datetime.now(timezone.utc).isoformat()}
+                except Exception as exc_stack:
+                    logger.warning("Falha ao persistir artefato final de stacking '%s': %s", nome_grupo, exc_stack)
+
+            if artefatos_persistidos:
+                supabase.table("custom_model_configs").update({"model_artifacts": artefatos_persistidos}).eq("id", config_id).execute()
+                logger.info("Artefatos persistidos: %s", list(artefatos_persistidos.keys()))
+        except Exception as exc_artefatos:
+            logger.warning("Falha geral ao persistir artefatos finais (treino em si já foi salvo com sucesso): %s", exc_artefatos)
 
         # ── Métricas finais ──────────────────────────────────────────────────
         agora = datetime.now(timezone.utc).isoformat()

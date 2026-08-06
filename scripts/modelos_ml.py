@@ -643,6 +643,35 @@ def prever_stacking_v9(
     return meta_modelo.predict_proba(meta_X), meta_modelo.classes_
 
 
+def reordenar_probs(probs: np.ndarray, classes: np.ndarray, classes_sorted: np.ndarray) -> np.ndarray:
+    """Reordena as colunas de `probs` (na ordem de `classes`, que pode variar
+    por algoritmo) pra ordem canônica `classes_sorted` -- usado tanto pra
+    calcular métricas quanto pra concatenar probabilidades de vários
+    algoritmos em features de stacking (`montar_meta_features` abaixo).
+    Mora aqui (não em treinar_modelo_custom_wf.py) pra poder ser reaproveitado
+    também por model_artifacts.py sem import circular entre os dois."""
+    ordered = np.zeros((len(probs), len(classes_sorted)))
+    for i, c in enumerate(classes):
+        idx = np.where(classes_sorted == c)[0]
+        if len(idx):
+            ordered[:, idx[0]] = probs[:, i]
+    return ordered
+
+
+def montar_meta_features(
+    probs_por_algo: dict[str, np.ndarray],
+    classes_por_algo: dict[str, np.ndarray],
+    algos: list[str],
+    classes_sorted: np.ndarray,
+) -> np.ndarray:
+    """Concatena as probabilidades (já reordenadas na ordem canônica de
+    classes) dos algoritmos de um grupo de stacking -- shape final
+    (n, len(algos) * len(classes_sorted)). Generaliza `montar_meta_X` de
+    walkforward_cv_v9.py pra qualquer conjunto de classes/algoritmos."""
+    blocos = [reordenar_probs(probs_por_algo[a], classes_por_algo[a], classes_sorted) for a in algos]
+    return np.hstack(blocos)
+
+
 # Corrige os placeholders mlp depois de definir as funções.
 TREINADORES["mlp_v9"] = (treinar_mlp, prever_mlp)
 TREINADORES["mlp_v10"] = (treinar_mlp, prever_mlp)

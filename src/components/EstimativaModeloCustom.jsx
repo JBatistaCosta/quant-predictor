@@ -194,7 +194,7 @@ export default function EstimativaModeloCustom({ matchId }) {
               {emAndamento && (
                 <p className="text-xs text-slate-400 flex items-center gap-1.5">
                   <Loader2 size={13} className="animate-spin" />
-                  {resultado.status === 'pendente' ? 'Na fila...' : 'Retreinando e calculando...'}
+                  {resultado.status === 'pendente' ? 'Na fila...' : 'Calculando... (instantâneo se o modelo já tiver sido usado antes, senão retreina do zero)'}
                 </p>
               )}
 
@@ -226,7 +226,11 @@ export default function EstimativaModeloCustom({ matchId }) {
                       ))}
                     </tbody>
                   </table>
-                  <p className="text-[10px] text-slate-600 mt-1.5">Treinado com {resultado.n_treino?.toLocaleString()} partidas.</p>
+                  <p className="text-[10px] text-slate-600 mt-1.5">
+                    {resultado.n_treino != null
+                      ? `Retreinado com ${resultado.n_treino.toLocaleString()} partidas.`
+                      : 'Modelo já treinado reaproveitado (sem retreino).'}
+                  </p>
                 </div>
               )}
             </>

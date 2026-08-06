@@ -7,3 +7,4 @@ scipy==1.13.1
 supabase==2.9.1
 requests==2.32.3
 scikit-learn==1.5.2
+joblib==1.4.2
