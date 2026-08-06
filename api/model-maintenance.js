@@ -175,6 +175,16 @@ function* fatiar(array, tamanho) {
   for (let i = 0; i < array.length; i += tamanho) yield array.slice(i, i + tamanho);
 }
 
+async function buscarTudoPaginadoIn(ids, criarQuery) {
+  const resultado = [];
+  for (const lote of fatiar(ids, 200)) {
+    const { data, error } = await criarQuery(lote);
+    if (error) throw error;
+    resultado.push(...(data || []));
+  }
+  return resultado;
+}
+
 // ============================================================
 // TAREFA: elo — Elo interno (não confundir com team_elo_external, o rating
 // do ClubElo). Dois escopos: 'liga' (parte de 1500, sem depender de nada
@@ -3454,10 +3464,23 @@ async function tarefaSimulacaoCarteira(supabase, query) {
 
   const matchIdsSet = new Set(predicoes.map((p) => p.match_id));
 
+  const matchIdsArray = [...matchIdsSet];
   const [todasMatches, pinnacleAberturaRaw, pinnacleFechaRaw] = await Promise.all([
-    buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status, home_goals, away_goals, match_date')),
-    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle')),
-    buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle')),
+    buscarTudoPaginado(() => {
+      let q = supabase.from('matches')
+        .select('id, league_id, season, status, home_goals, away_goals, match_date')
+        .gte('season', TEMPORADA_TESTE_MINIMA)
+        .eq('status', 'finished');
+      if (ligaIdNum) q = q.eq('league_id', ligaIdNum);
+      if (temporada) q = q.eq('season', temporada);
+      return q;
+    }),
+    matchIdsArray.length > 0
+      ? buscarTudoPaginadoIn(matchIdsArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
+      : Promise.resolve([]),
+    matchIdsArray.length > 0
+      ? buscarTudoPaginadoIn(matchIdsArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
+      : Promise.resolve([]),
   ]);
 
   const ligaIdNum = liga_id ? Number(liga_id) : null;
