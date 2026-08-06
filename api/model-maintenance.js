@@ -176,11 +176,17 @@ function* fatiar(array, tamanho) {
 }
 
 async function buscarTudoPaginadoIn(ids, criarQuery) {
+  const TAMANHO_PAGINA = 1000;
   const resultado = [];
   for (const lote of fatiar(ids, 200)) {
-    const { data, error } = await criarQuery(lote);
-    if (error) throw error;
-    resultado.push(...(data || []));
+    let pagina = 0;
+    while (true) {
+      const { data, error } = await criarQuery(lote).range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANHO_PAGINA) break;
+      pagina++;
+    }
   }
   return resultado;
 }
@@ -3306,27 +3312,41 @@ const MERCADOS_CARTEIRA_SUPORTADOS = new Set(['1X2', 'over_under_2.5']);
 
 async function tarefaModelosDisponiveis(supabase, mercado = '1X2') {
   const mercadoValido = MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2';
-  const [predAntigas, predBenchmarking, todasMatches, ligas] = await Promise.all([
-    mercadoValido === '1X2'
-      ? buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').in('market', ['1X2', '1x2']))
-      : buscarTudoPaginado(() => supabase.from('model_predictions').select('model_name, match_id').eq('market', mercadoValido)),
-    buscarTudoPaginado(() => supabase.from('predicoes').select('model_name, match_id').eq('mercado', mercadoValido)),
-    buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status')),
+
+  // Stage 1: só partidas finalizadas do período de teste (pequeno conjunto)
+  const [matchesFiltradas, ligas] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season')
+      .gte('season', TEMPORADA_TESTE_MINIMA).eq('status', 'finished')),
     buscarTudoPaginado(() => supabase.from('leagues').select('id, name')),
   ]);
 
   const matchInfo = {};
-  todasMatches.forEach((m) => { matchInfo[m.id] = m; });
+  matchesFiltradas.forEach((m) => { matchInfo[m.id] = m; });
+  const matchIds = matchesFiltradas.map((m) => m.id);
 
-  const contagem = {}; // model_name -> Set(match_id) finalizado, só período de teste
-  const ligasPorModelo = {}; // model_name -> Set(league_id)
-  const temporadasPorModelo = {}; // model_name -> Set(season), só período de teste
+  if (matchIds.length === 0) {
+    return { modelos: [], ligas: ligas.sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+
+  // Stage 2: predições filtradas por esses match_ids (evita varrer tabelas inteiras)
+  const [predAntigas, predBenchmarking] = await Promise.all([
+    buscarTudoPaginadoIn(matchIds, (ids) =>
+      mercadoValido === '1X2'
+        ? supabase.from('model_predictions').select('model_name, match_id').in('market', ['1X2', '1x2']).in('match_id', ids)
+        : supabase.from('model_predictions').select('model_name, match_id').eq('market', mercadoValido).in('match_id', ids)),
+    buscarTudoPaginadoIn(matchIds, (ids) =>
+      supabase.from('predicoes').select('model_name, match_id').eq('mercado', mercadoValido).in('match_id', ids)),
+  ]);
+
+  const contagem = {};
+  const ligasPorModelo = {};
+  const temporadasPorModelo = {};
 
   const processar = (linhas) => {
     linhas.forEach((l) => {
       if (!ehModeloBruto(l.model_name)) return;
       const m = matchInfo[l.match_id];
-      if (!m || m.status !== 'finished' || !ehTemporadaDeTeste(m.season)) return;
+      if (!m) return;
       (contagem[l.model_name] = contagem[l.model_name] || new Set()).add(l.match_id);
       (ligasPorModelo[l.model_name] = ligasPorModelo[l.model_name] || new Set()).add(m.league_id);
       (temporadasPorModelo[l.model_name] = temporadasPorModelo[l.model_name] || new Set()).add(m.season);
@@ -3433,11 +3453,13 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   const stakeFixa = query.stake_fixa != null ? Number(query.stake_fixa) : 10;
   const kellyMultiplier = query.kelly_multiplier != null ? Number(query.kelly_multiplier) : 0.25;
 
-  // Model Benchmarking (`predicoes`) já cobre 1X2 e over_under_2.5 (ver
-  // migração `add_mercado_predicoes` + scripts/backfill_predicoes_
-  // historicas.py) -- cada mercado usa suas próprias colunas de prob e seu
-  // próprio normalizador (formato de saída idêntico ao do pipeline antigo).
-  const [predicoesAntigas, predicoesBenchmarkingRaw, calibracoesRaw] = await Promise.all([
+  const ligaIdNum = liga_id ? Number(liga_id) : null;
+
+  // Stage 1: predições do modelo + calibrações + partidas finalizadas do
+  // período de teste — tudo em paralelo. Matches já filtrados no BD
+  // (season>=TEMPORADA_TESTE_MINIMA, status=finished, liga_id e temporada
+  // opcionais) evitam varrer a tabela inteira.
+  const [predicoesAntigas, predicoesBenchmarkingRaw, calibracoesRaw, todasMatchesFiltradas] = await Promise.all([
     mercado === '1X2'
       ? buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).in('market', ['1X2', '1x2']))
       : buscarTudoPaginado(() => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado)),
@@ -3447,6 +3469,15 @@ async function tarefaSimulacaoCarteira(supabase, query) {
     usarCalibracao === 'nenhuma'
       ? Promise.resolve([])
       : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', modelo).eq('market', mercado)),
+    buscarTudoPaginado(() => {
+      let q = supabase.from('matches')
+        .select('id, league_id, season, status, home_goals, away_goals, match_date')
+        .gte('season', TEMPORADA_TESTE_MINIMA)
+        .eq('status', 'finished');
+      if (ligaIdNum) q = q.eq('league_id', ligaIdNum);
+      if (temporada) q = q.eq('season', temporada);
+      return q;
+    }),
   ]);
   const predicoesBenchmarking = mercado === '1X2'
     ? normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)
@@ -3462,37 +3493,23 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   });
   if (predicoes.length === 0) return { status: 200, body: { parametros: {}, execucoes: [] } };
 
+  // Interseção: só partidas com predição DO modelo E dentro do período de teste
   const matchIdsSet = new Set(predicoes.map((p) => p.match_id));
-
-  const matchIdsArray = [...matchIdsSet];
-  const [todasMatches, pinnacleAberturaRaw, pinnacleFechaRaw] = await Promise.all([
-    buscarTudoPaginado(() => {
-      let q = supabase.from('matches')
-        .select('id, league_id, season, status, home_goals, away_goals, match_date')
-        .gte('season', TEMPORADA_TESTE_MINIMA)
-        .eq('status', 'finished');
-      if (ligaIdNum) q = q.eq('league_id', ligaIdNum);
-      if (temporada) q = q.eq('season', temporada);
-      return q;
-    }),
-    matchIdsArray.length > 0
-      ? buscarTudoPaginadoIn(matchIdsArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
-      : Promise.resolve([]),
-    matchIdsArray.length > 0
-      ? buscarTudoPaginadoIn(matchIdsArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
-      : Promise.resolve([]),
-  ]);
-
-  const ligaIdNum = liga_id ? Number(liga_id) : null;
-  const matchesValidos = todasMatches.filter(
-    (m) => matchIdsSet.has(m.id)
-      && ehTemporadaDeTeste(m.season)
-      && (!ligaIdNum || m.league_id === ligaIdNum)
-      && (!temporada || String(m.season) === String(temporada))
-  );
+  const matchesValidos = todasMatchesFiltradas.filter((m) => matchIdsSet.has(m.id));
   const matchIdsValidos = new Set(matchesValidos.map((m) => m.id));
+  const matchIdsValidosArray = [...matchIdsValidos];
   const matchPorId = {};
   matchesValidos.forEach((m) => { matchPorId[m.id] = m; });
+
+  // Stage 2: odds apenas para partidas válidas (conjunto pequeno, ~centenas de IDs)
+  const [pinnacleAberturaRaw, pinnacleFechaRaw] = await Promise.all([
+    matchIdsValidosArray.length > 0
+      ? buscarTudoPaginadoIn(matchIdsValidosArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
+      : Promise.resolve([]),
+    matchIdsValidosArray.length > 0
+      ? buscarTudoPaginadoIn(matchIdsValidosArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
+      : Promise.resolve([]),
+  ]);
 
   const pinnAberturaPorChave = {};
   pinnacleAberturaRaw.filter((r) => matchIdsValidos.has(r.match_id)).forEach((r) => { pinnAberturaPorChave[`${r.match_id}__${r.selection}`] = Number(r.odds); });
