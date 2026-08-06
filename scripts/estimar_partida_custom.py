@@ -47,7 +47,6 @@ from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(__file__))
 import dados_historicos as dh
-import modelos_ml as ml
 import model_artifacts as ma
 from treinar_modelo_custom import TARGETS, _TARGET_PRED_META, _migrar_features
 
@@ -173,11 +172,20 @@ def main():
         if dataset.empty:
             raise RuntimeError("Dataset vazio — verifique o escopo de ligas/temporadas da configuração.")
 
-        features_usadas = _migrar_features(features_req)
         if target_col == "resultado_btts" and "resultado_btts" not in dataset.columns:
             if "home_goals" in dataset.columns and "away_goals" in dataset.columns:
                 dataset["resultado_btts"] = ((dataset["home_goals"] > 0) & (dataset["away_goals"] > 0)).astype(int)
 
+        # Propositalmente NÃO recorta `dataset` pras colunas de
+        # `features_usadas` aqui -- prever_fn/pipe.predict_proba já
+        # selecionam só as colunas que precisam (via `estado["features"]`/
+        # `estado["features_num"]`, gravadas no artefato no momento do
+        # treino). Recortar cedo faria o caminho rápido (artefato existente)
+        # quebrar se as features atualmente configuradas divergissem por
+        # qualquer motivo das que o artefato foi treinado com -- mais raro
+        # depois que salvar/resetar já limpam model_artifacts em qualquer
+        # edição, mas não custa manter os dois caminhos desacoplados.
+        features_usadas = _migrar_features(features_req)
         features_disponiveis = set(dataset.columns)
         faltando = [f for f in features_usadas if f not in features_disponiveis]
         if faltando:
@@ -185,12 +193,6 @@ def main():
             features_usadas = [f for f in features_usadas if f in features_disponiveis]
         if not features_usadas:
             raise RuntimeError("Nenhuma feature válida disponível no dataset.")
-
-        cols_necessarias = list(dict.fromkeys(
-            ml.CAT_FEATURES + features_usadas + [target_col, "match_date", "match_id"]
-        ))
-        cols_presentes = [c for c in cols_necessarias if c in dataset.columns]
-        dataset = dataset[cols_presentes].copy()
 
         linha_alvo = dataset[dataset["match_id"] == match_id].reset_index(drop=True)
         if linha_alvo.empty:
