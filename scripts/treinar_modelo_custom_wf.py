@@ -197,6 +197,33 @@ def split_por_fold(dataset: pd.DataFrame, treino_max_ano: int, val_ano: int, tes
 # Métricas
 # ---------------------------------------------------------------------------
 
+def _reordenar_probs(probs: np.ndarray, classes: np.ndarray, classes_sorted: np.ndarray) -> np.ndarray:
+    """Reordena as colunas de `probs` (na ordem de `classes`, que pode variar
+    por algoritmo) pra ordem canônica `classes_sorted` -- necessário tanto pra
+    calcular métricas quanto pra concatenar probabilidades de vários
+    algoritmos em features de stacking (mesmo padrão de `montar_meta_X` em
+    walkforward_cv_v9.py, generalizado pra qualquer conjunto de classes)."""
+    ordered = np.zeros((len(probs), len(classes_sorted)))
+    for i, c in enumerate(classes):
+        idx = np.where(classes_sorted == c)[0]
+        if len(idx):
+            ordered[:, idx[0]] = probs[:, i]
+    return ordered
+
+
+def montar_meta_features(
+    probs_por_algo: dict[str, np.ndarray],
+    classes_por_algo: dict[str, np.ndarray],
+    algos: list[str],
+    classes_sorted: np.ndarray,
+) -> np.ndarray:
+    """Concatena as probabilidades (já reordenadas na ordem canônica de
+    classes) dos algoritmos do grupo de stacking -- shape final
+    (n, len(algos) * len(classes_sorted))."""
+    blocos = [_reordenar_probs(probs_por_algo[a], classes_por_algo[a], classes_sorted) for a in algos]
+    return np.hstack(blocos)
+
+
 def calcular_metricas_fold(
     test_df: pd.DataFrame,
     probs: np.ndarray,
@@ -207,12 +234,7 @@ def calcular_metricas_fold(
     y = test_df[target_col].values
     classes_sorted = np.sort(classes)
 
-    ordered = np.zeros((len(probs), len(classes_sorted)))
-    for i, c in enumerate(classes):
-        idx = np.where(classes_sorted == c)[0]
-        if len(idx):
-            ordered[:, idx[0]] = probs[:, i]
-    ordered = np.clip(ordered, 1e-7, 1 - 1e-7)
+    ordered = np.clip(_reordenar_probs(probs, classes, classes_sorted), 1e-7, 1 - 1e-7)
 
     ll = log_loss(y, ordered, labels=classes_sorted)
     acc = accuracy_score(y, classes_sorted[np.argmax(ordered, axis=1)])
@@ -310,10 +332,14 @@ def treinar_fold_sklearn(
     features: list[str],
     hyperparameters: dict | None,
     train_df: pd.DataFrame,
+    val_df: pd.DataFrame | None,
     test_df: pd.DataFrame,
     target_col: str,
     tipo: str,
-) -> tuple[np.ndarray, np.ndarray, object, None]:
+) -> tuple[np.ndarray, np.ndarray, object, None, np.ndarray | None, np.ndarray | None]:
+    """Retorna (probs, classes, modelo, curva=None, val_probs, val_classes) --
+    mesma interface de `treinar_fold_ml`, com val_probs/val_classes usados
+    tanto pra calibração quanto pra treinar meta-modelos de stacking."""
     hp = hyperparameters or {}
     features_num = [f for f in features if f not in ml.CAT_FEATURES]
     if not features_num:
@@ -343,7 +369,9 @@ def treinar_fold_sklearn(
     pipe.fit(train_df[features_num].values, train_df[target_col].values)
     probs = pipe.predict_proba(test_df[features_num].values)
     classes = pipe.named_steps["clf"].classes_
-    return probs, classes, pipe, None
+    val_probs = pipe.predict_proba(val_df[features_num].values) if val_df is not None and not val_df.empty else None
+    val_classes = classes if val_probs is not None else None
+    return probs, classes, pipe, None, val_probs, val_classes
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +471,16 @@ def main():
         todas_ligas   = bool(cfg.get("todas_ligas"))
         league_ids    = cfg.get("league_ids") or None
         seasons       = cfg.get("seasons") or None
+        # Cada grupo: {"name": "Stacking 1", "algorithms": ["catboost","xgboost"]}.
+        # Grupos com algoritmo fora de `algoritmos` ou com <2 algoritmos válidos
+        # são ignorados silenciosamente (validado também na API/UI, mas
+        # revalida aqui pra nunca quebrar o treino por uma config antiga/
+        # editada direto no banco).
+        stacking_groups_req = cfg.get("stacking_groups") or []
+        stacking_groups = [
+            g for g in stacking_groups_req
+            if isinstance(g, dict) and len([a for a in (g.get("algorithms") or []) if a in algoritmos]) >= 2
+        ]
 
         if not algoritmos:
             raise ValueError("Lista de algoritmos (algorithms) vazia na configuração.")
@@ -453,8 +491,9 @@ def main():
         if not target_info:
             raise ValueError(f"Target {target_key!r} não suportado.")
 
-        logger.info("Config: name=%s, target=%s, algoritmos=%s, %d features",
-                    config_name, target_key, algoritmos, len(features_req))
+        logger.info("Config: name=%s, target=%s, algoritmos=%s, %d features, stacking_groups=%s",
+                    config_name, target_key, algoritmos, len(features_req),
+                    [g["name"] for g in stacking_groups])
 
         # Carrega dataset completo uma vez só
         dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas, league_ids, seasons)
@@ -468,7 +507,11 @@ def main():
         learning_curves: dict[str, list] = {}
         # model_name_por_algo: {"catboost": "Meu Modelo [catboost]", ...}
         model_name_por_algo = {algo: f"{config_name} [{algo}]" for algo in algoritmos}
-        model_names = list(model_name_por_algo.values())
+        model_name_por_grupo = {
+            (g.get("name") or "Stacking"): f"{config_name} [Stacking: {g.get('name') or 'Stacking'}]"
+            for g in stacking_groups
+        }
+        model_names = list(model_name_por_algo.values()) + list(model_name_por_grupo.values())
 
         # ── Walk-forward CV ──────────────────────────────────────────────────
         for fold in FOLDS:
@@ -497,17 +540,24 @@ def main():
                 "models":        {},
             }
 
+            # val_df_para_calib é o mesmo pra todo algoritmo do fold (não depende
+            # do algoritmo) -- calculado uma vez só e reaproveitado tanto pra
+            # calibração quanto pras predições de val usadas no meta-modelo de
+            # stacking abaixo.
+            val_para_fit = val_df if len(val_df) >= 50 else None
+            val_df_para_calib = val_para_fit if val_para_fit is not None else train_df.iloc[-max(50, len(train_df)//7):]
+
+            # Acumuladores por algoritmo dentro do fold, reaproveitados pelo
+            # bloco de stacking logo abaixo (probs/classes de teste e de val).
+            probs_por_algo: dict[str, np.ndarray] = {}
+            classes_por_algo: dict[str, np.ndarray] = {}
+            val_probs_por_algo: dict[str, np.ndarray] = {}
+            val_classes_por_algo: dict[str, np.ndarray] = {}
+
             for algo in algoritmos:
                 logger.info("  Treinando %s...", algo)
                 try:
-                    val_probs_cal = None
-                    val_classes_cal = None
-                    val_df_para_calib = None
-
                     if algo in ALGORITMOS_ML:
-                        # Para ML usa val_df apenas quando há partidas suficientes
-                        val_para_fit = val_df if len(val_df) >= 50 else None
-                        val_df_para_calib = val_para_fit if val_para_fit is not None else train_df.iloc[-max(50, len(train_df)//7):]
                         probs, classes, modelo, curva, val_probs_cal, val_classes_cal = treinar_fold_ml(
                             algo, features_usadas, hyperparams if isinstance(hyperparams, dict) else {},
                             train_df, val_df_para_calib,
@@ -516,14 +566,20 @@ def main():
                         if fold_nome == "fold_3" and curva:
                             learning_curves[f"{algo}_fold_3"] = curva
                     elif algo in ALGORITMOS_SKLEARN:
-                        probs, classes, modelo, _ = treinar_fold_sklearn(
+                        probs, classes, modelo, _, val_probs_cal, val_classes_cal = treinar_fold_sklearn(
                             algo, features_usadas, hyperparams if isinstance(hyperparams, dict) else {},
-                            train_df, test_df, target_col, tipo,
+                            train_df, val_df_para_calib, test_df, target_col, tipo,
                         )
                         curva = None
                     else:
                         logger.warning("Algoritmo %r não suportado — pulando.", algo)
                         continue
+
+                    probs_por_algo[algo] = probs
+                    classes_por_algo[algo] = classes
+                    if val_probs_cal is not None:
+                        val_probs_por_algo[algo] = val_probs_cal
+                        val_classes_por_algo[algo] = val_classes_cal
 
                     metricas = calcular_metricas_fold(
                         test_df.reset_index(drop=True), probs, classes, target_col, tipo
@@ -550,8 +606,8 @@ def main():
                         if imp:
                             feature_importance[algo] = imp
 
-                    # --- Calibração Platt e Isotonic (apenas ML com val set disponível) ---
-                    if val_probs_cal is not None and val_df_para_calib is not None:
+                    # --- Calibração Platt e Isotonic (algoritmos com val set disponível) ---
+                    if val_probs_cal is not None:
                         val_y = val_df_para_calib[target_col].values
                         for metodo in ("platt", "isotonic"):
                             try:
@@ -576,6 +632,54 @@ def main():
                     logger.error("  Erro em %s / %s: %s", algo, fold_nome, exc)
                     fold_resultado["models"][algo] = {"erro": str(exc)}
 
+            # ── Stacking: meta-modelo por grupo escolhido pelo usuário ────────
+            # Cada grupo treina uma LogisticRegression sobre as probabilidades
+            # (val set) dos algoritmos que o compõem, e avalia no test set do
+            # mesmo fold -- mesmo padrão já usado acima pra calibração Platt/
+            # Isotonic (fit no val, aplica no test), consistente e sem
+            # reintroduzir vazamento de dados.
+            for grupo in stacking_groups:
+                nome_grupo = grupo.get("name") or "Stacking"
+                algos_grupo = [a for a in (grupo.get("algorithms") or []) if a in algoritmos]
+                chave_resultado = f"stacking:{nome_grupo}"
+
+                if len(algos_grupo) < 2:
+                    continue
+                if not all(a in probs_por_algo and a in val_probs_por_algo for a in algos_grupo):
+                    logger.warning("  Stacking '%s' pulado no %s — algum algoritmo base falhou ou não tem predição de val.", nome_grupo, fold_nome)
+                    continue
+
+                logger.info("  Treinando stacking '%s' (%s)...", nome_grupo, "+".join(algos_grupo))
+                try:
+                    classes_sorted = np.sort(classes_por_algo[algos_grupo[0]])
+                    meta_X_val = montar_meta_features(val_probs_por_algo, val_classes_por_algo, algos_grupo, classes_sorted)
+                    meta_y_val = val_df_para_calib[target_col].values
+                    meta_modelo = ml.treinar_stacking_v9(meta_X_val, meta_y_val)
+
+                    meta_X_test = montar_meta_features(probs_por_algo, classes_por_algo, algos_grupo, classes_sorted)
+                    stacking_probs, stacking_classes = ml.prever_stacking_v9(meta_modelo, meta_X_test)
+
+                    metricas_stack = calcular_metricas_fold(
+                        test_df.reset_index(drop=True), stacking_probs, stacking_classes, target_col, tipo
+                    )
+                    metricas_stack["base_algorithms"] = algos_grupo
+                    fold_resultado["models"][chave_resultado] = metricas_stack
+
+                    logger.info("    logloss=%.4f  acc=%.3f  brier=%.4f",
+                                metricas_stack.get("logloss_test", 0),
+                                metricas_stack.get("accuracy_test", 0),
+                                metricas_stack.get("brier_score_test", 0))
+
+                    if fold_nome == "fold_3":
+                        salvar_predicoes_fold3(
+                            supabase, test_df.reset_index(drop=True),
+                            stacking_probs, stacking_classes,
+                            model_name_por_grupo[nome_grupo], target_key,
+                        )
+                except Exception as exc_stack:
+                    logger.error("  Erro no stacking '%s' / %s: %s", nome_grupo, fold_nome, exc_stack)
+                    fold_resultado["models"][chave_resultado] = {"erro": str(exc_stack)}
+
             resultados_folds.append(fold_resultado)
 
         # ── Métricas finais ──────────────────────────────────────────────────
@@ -585,6 +689,7 @@ def main():
             "mode":              "walk_forward_cv",
             "target":            target_key,
             "algorithms":        algoritmos,
+            "stacking_groups":   stacking_groups,
             "model_names":       model_names,
             "folds":             resultados_folds,
             "feature_importance": feature_importance,

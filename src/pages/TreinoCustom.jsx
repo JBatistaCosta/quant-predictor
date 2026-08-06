@@ -463,6 +463,7 @@ const ESTADO_FORM_INICIAL = {
   todas_ligas: false,
   league_ids: null,
   seasons: null,
+  stacking_groups: [],
 };
 
 // -----------------------------------------------------------------------
@@ -495,6 +496,8 @@ export default function TreinoCustom() {
   const [temporadaRange, setTemporadaRange] = useState({ min: null, max: null }); // limites globais pro seletor de temporadas
   const [escopoLigasManual, setEscopoLigasManual] = useState(false);
   const [escopoTemporadasManual, setEscopoTemporadasManual] = useState(false);
+  const [novoGrupoNome, setNovoGrupoNome] = useState('');
+  const [novoGrupoAlgos, setNovoGrupoAlgos] = useState([]);
   const pollingRef = useRef(null);
 
   const authHeader = session?.access_token
@@ -603,9 +606,12 @@ export default function TreinoCustom() {
       todas_ligas: !!cfg.todas_ligas,
       league_ids: cfg.league_ids || null,
       seasons: cfg.seasons || null,
+      stacking_groups: cfg.stacking_groups || [],
     });
     setEscopoLigasManual(!!(cfg.league_ids && cfg.league_ids.length));
     setEscopoTemporadasManual(!!(cfg.seasons && cfg.seasons.length));
+    setNovoGrupoNome('');
+    setNovoGrupoAlgos([]);
     setFormAberto(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -614,6 +620,8 @@ export default function TreinoCustom() {
     setForm(ESTADO_FORM_INICIAL);
     setEscopoLigasManual(false);
     setEscopoTemporadasManual(false);
+    setNovoGrupoNome('');
+    setNovoGrupoAlgos([]);
     setFormAberto(true);
   }
 
@@ -631,9 +639,12 @@ export default function TreinoCustom() {
       todas_ligas: !!tpl.config.todas_ligas,
       league_ids: tpl.config.league_ids || null,
       seasons: tpl.config.seasons || null,
+      stacking_groups: tpl.config.stacking_groups || [],
     });
     setEscopoLigasManual(!!(tpl.config.league_ids && tpl.config.league_ids.length));
     setEscopoTemporadasManual(!!(tpl.config.seasons && tpl.config.seasons.length));
+    setNovoGrupoNome('');
+    setNovoGrupoAlgos([]);
     setSidebarAberta(false);
     setFormAberto(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -712,6 +723,7 @@ export default function TreinoCustom() {
           todas_ligas: form.todas_ligas,
           league_ids: escopoLigasManual ? form.league_ids : null,
           seasons: escopoTemporadasManual ? form.seasons : null,
+          stacking_groups: form.mode === 'walk_forward_cv' ? form.stacking_groups : [],
         }),
       });
       const dados = await resp.json();
@@ -983,12 +995,17 @@ export default function TreinoCustom() {
                               type="checkbox"
                               checked={ativo}
                               onChange={() =>
-                                setForm((f) => ({
-                                  ...f,
-                                  algorithms: ativo
+                                setForm((f) => {
+                                  const algorithms = ativo
                                     ? f.algorithms.filter((k) => k !== a.value)
-                                    : [...f.algorithms, a.value],
-                                }))
+                                    : [...f.algorithms, a.value];
+                                  // Remove o algoritmo desmarcado de qualquer grupo de
+                                  // stacking, e descarta grupos que ficarem com <2.
+                                  const stacking_groups = f.stacking_groups
+                                    .map((g) => ({ ...g, algorithms: g.algorithms.filter((k) => algorithms.includes(k)) }))
+                                    .filter((g) => g.algorithms.length >= 2);
+                                  return { ...f, algorithms, stacking_groups };
+                                })
                               }
                               className="accent-violet-500 w-3.5 h-3.5"
                             />
@@ -1013,6 +1030,102 @@ export default function TreinoCustom() {
                 </select>
               </div>
             </div>
+
+            {/* Stacking (só faz sentido no modo Walk-Forward CV, com >=2 algoritmos escolhidos) */}
+            {form.mode === 'walk_forward_cv' && (
+              <div className="border border-slate-700 rounded-lg overflow-hidden">
+                <div className="px-3 py-2.5 bg-slate-750">
+                  <span className="text-sm font-medium text-slate-300">
+                    Stacking (opcional){' '}
+                    <span className="text-slate-500 font-normal">
+                      {form.stacking_groups.length > 0
+                        ? `(${form.stacking_groups.length} grupo${form.stacking_groups.length !== 1 ? 's' : ''})`
+                        : ''}
+                    </span>
+                  </span>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Combine as previsões de 2+ algoritmos já selecionados acima num meta-modelo (regressão logística sobre as probabilidades), treinado e avaliado por fold junto com os algoritmos base. Ex.: Stacking 1 = CatBoost + XGBoost, Stacking 2 = XGBoost + LightGBM + Regressão Logística + Random Forest.
+                  </p>
+                </div>
+
+                {form.stacking_groups.length > 0 && (
+                  <div className="px-3 py-2 border-t border-slate-700 bg-slate-800 space-y-1.5">
+                    {form.stacking_groups.map((grupo, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2 rounded bg-slate-700/50 px-2.5 py-1.5">
+                        <div className="text-xs">
+                          <span className="text-violet-300 font-medium">★ {grupo.name}</span>
+                          <span className="text-slate-500"> — {grupo.algorithms.join(' + ')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setForm((f) => ({ ...f, stacking_groups: f.stacking_groups.filter((_, i) => i !== idx) }))}
+                          className="text-slate-500 hover:text-red-400 transition-colors shrink-0"
+                          title="Remover grupo"
+                        >
+                          <XIcon size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {form.algorithms.length < 2 ? (
+                  <p className="px-3 py-2.5 border-t border-slate-700 text-xs text-slate-500">
+                    Selecione ao menos 2 algoritmos acima para poder criar um grupo de stacking.
+                  </p>
+                ) : (
+                  <div className="px-3 py-2.5 border-t border-slate-700 bg-slate-800 space-y-2">
+                    <input
+                      type="text"
+                      value={novoGrupoNome}
+                      onChange={(e) => setNovoGrupoNome(e.target.value)}
+                      placeholder={`Nome do grupo (ex.: Stacking ${form.stacking_groups.length + 1})`}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {ALGORITMOS_WF.filter((a) => form.algorithms.includes(a.value)).map((a) => {
+                        const ativo = novoGrupoAlgos.includes(a.value);
+                        return (
+                          <label
+                            key={a.value}
+                            className={`flex items-center gap-1.5 cursor-pointer rounded px-2 py-1 text-xs transition-colors border ${
+                              ativo ? 'bg-violet-900/40 text-violet-300 border-violet-700' : 'text-slate-400 border-slate-600 hover:text-slate-200'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={ativo}
+                              onChange={() =>
+                                setNovoGrupoAlgos((atuais) =>
+                                  ativo ? atuais.filter((k) => k !== a.value) : [...atuais, a.value]
+                                )
+                              }
+                              className="accent-violet-500 w-3 h-3"
+                            />
+                            {a.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!novoGrupoNome.trim() || novoGrupoAlgos.length < 2}
+                      onClick={() => {
+                        setForm((f) => ({
+                          ...f,
+                          stacking_groups: [...f.stacking_groups, { name: novoGrupoNome.trim(), algorithms: novoGrupoAlgos }],
+                        }));
+                        setNovoGrupoNome('');
+                        setNovoGrupoAlgos([]);
+                      }}
+                      className="text-xs bg-violet-600 hover:bg-violet-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded px-3 py-1.5 font-medium transition-colors"
+                    >
+                      Adicionar grupo de stacking
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <label
@@ -1362,6 +1475,14 @@ export default function TreinoCustom() {
                           title="Intervalo de temporadas selecionado manualmente"
                         >
                           {cfg.seasons[0]}–{cfg.seasons[cfg.seasons.length - 1]}
+                        </span>
+                      ) : null}
+                      {cfg.stacking_groups?.length ? (
+                        <span
+                          className="text-xs bg-violet-900/40 text-violet-300 border border-violet-700 rounded px-1.5 py-0.5 font-medium"
+                          title={cfg.stacking_groups.map((g) => `${g.name}: ${g.algorithms.join(' + ')}`).join(' · ')}
+                        >
+                          ★ {cfg.stacking_groups.length} grupo{cfg.stacking_groups.length !== 1 ? 's' : ''} stacking
                         </span>
                       ) : null}
                       {cfg.mode === 'walk_forward_cv' ? (

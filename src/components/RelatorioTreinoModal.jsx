@@ -67,6 +67,18 @@ const COLOR_DEFAULT = '#94a3b8';
 
 function corAlgo(algo) { return COLORS[algo] || COLOR_DEFAULT; }
 
+// Combina os algoritmos base com os grupos de stacking (se houver) numa
+// única lista pra exibir nas tabelas de resumo por fold -- cada grupo de
+// stacking guarda seus resultados em `fold.models["stacking:{name}"]`
+// (ver treinar_modelo_custom_wf.py), sem feature_importance associada
+// (por isso não entra em TabImportanciaWF, que deriva a lista direto de
+// metrics.feature_importance).
+function modelosParaResumoWF(metrics) {
+  const algoritmos = (metrics.algorithms || []).map((a) => ({ key: a, label: a }));
+  const grupos = (metrics.stacking_groups || []).map((g) => ({ key: `stacking:${g.name}`, label: `★ ${g.name}` }));
+  return [...algoritmos, ...grupos];
+}
+
 // ──────────────────────────────────────────────────────────────
 // Sub-componentes de tab
 // ──────────────────────────────────────────────────────────────
@@ -102,7 +114,7 @@ function TabResumoSimples({ metrics }) {
 
 function TabResumoWF({ metrics }) {
   const folds = metrics.folds || [];
-  const algorithms = metrics.algorithms || [];
+  const modelos = modelosParaResumoWF(metrics);
 
   function melhorCalibrado(m) {
     const p = m.logloss_calibrado_platt;
@@ -115,12 +127,12 @@ function TabResumoWF({ metrics }) {
 
   function exportar() {
     const header = ['Fold', 'Ano Teste', 'N Teste',
-      ...algorithms.flatMap(a => [`${a} LogLoss`, `${a} Acurácia %`, `${a} Brier`, `${a} LL Cal`])
+      ...modelos.flatMap(({ label }) => [`${label} LogLoss`, `${label} Acurácia %`, `${label} Brier`, `${label} LL Cal`])
     ];
     const rows = folds.map(fold => [
       fold.fold, fold.test_ano, fold.n_test,
-      ...algorithms.flatMap(a => {
-        const m = fold.models?.[a] || {};
+      ...modelos.flatMap(({ key }) => {
+        const m = fold.models?.[key] || {};
         const cal = melhorCalibrado(m);
         return [
           m.logloss_test != null ? Number(m.logloss_test).toFixed(4) : '',
@@ -138,6 +150,7 @@ function TabResumoWF({ metrics }) {
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">
           Fold 1: Test 2023 | Fold 2: Test 2024 | Fold 3: Test 2025 (out-of-sample real)
+          {modelos.some(({ key }) => key.startsWith('stacking:')) && ' · ★ = grupo de stacking'}
         </p>
         <BotaoExportar onClick={exportar} />
       </div>
@@ -146,16 +159,16 @@ function TabResumoWF({ metrics }) {
           <thead>
             <tr className="border-b border-slate-700">
               <th className="text-left text-slate-400 py-2 pr-4 font-medium text-xs">Fold / Test</th>
-              {algorithms.map((algo) => (
-                <th key={algo} colSpan={4} className="text-center pb-2 px-2 font-medium text-xs" style={{ color: corAlgo(algo) }}>
-                  {algo}
+              {modelos.map(({ key, label }) => (
+                <th key={key} colSpan={4} className="text-center pb-2 px-2 font-medium text-xs" style={{ color: corAlgo(key) }}>
+                  {label}
                 </th>
               ))}
             </tr>
             <tr className="border-b border-slate-700">
               <th className="text-left text-slate-500 py-1 pr-4 text-xs font-normal">n_teste</th>
-              {algorithms.map((algo) => (
-                <React.Fragment key={algo}>
+              {modelos.map(({ key }) => (
+                <React.Fragment key={key}>
                   <th className="text-center text-slate-500 text-xs font-normal py-1 px-1">LogLoss</th>
                   <th className="text-center text-slate-500 text-xs font-normal py-1 px-1">Acurácia</th>
                   <th className="text-center text-slate-500 text-xs font-normal py-1 px-1">Brier</th>
@@ -171,12 +184,12 @@ function TabResumoWF({ metrics }) {
                   <div className="text-white font-medium">{fold.fold}</div>
                   <div className="text-slate-500 text-xs">Test {fold.test_ano} · {fold.n_test?.toLocaleString()} jogos</div>
                 </td>
-                {algorithms.map((algo) => {
-                  const m = fold.models?.[algo] || {};
+                {modelos.map(({ key }) => {
+                  const m = fold.models?.[key] || {};
                   const cal = melhorCalibrado(m);
                   const melhorou = cal != null && m.logloss_test != null && cal < Number(m.logloss_test);
                   return (
-                    <React.Fragment key={algo}>
+                    <React.Fragment key={key}>
                       <td className="text-center px-1 font-mono text-xs text-white py-2">{fmt4(m.logloss_test)}</td>
                       <td className="text-center px-1 font-mono text-xs text-white py-2">{fmtPct(m.accuracy_test)}</td>
                       <td className="text-center px-1 font-mono text-xs text-white py-2">{fmt4(m.brier_score_test)}</td>
@@ -198,12 +211,12 @@ function TabResumoWF({ metrics }) {
 function TabPorLiga({ metrics }) {
   const folds = metrics.folds || [];
   const fold3 = folds.find((f) => f.fold === 'fold_3') || folds[folds.length - 1];
-  const algorithms = metrics.algorithms || [];
-  const [algoAtivo, setAlgoAtivo] = useState(algorithms[0] || '');
+  const modelos = modelosParaResumoWF(metrics);
+  const [modeloAtivo, setModeloAtivo] = useState(modelos[0]?.key || '');
 
   if (!fold3) return <p className="text-slate-500 text-sm">Dados de folds não disponíveis.</p>;
 
-  const ligasData = fold3.models?.[algoAtivo]?.logloss_por_liga || {};
+  const ligasData = fold3.models?.[modeloAtivo]?.logloss_por_liga || {};
   const ligasList = Object.entries(ligasData)
     .sort((a, b) => a[1].logloss - b[1].logloss);
 
@@ -215,25 +228,25 @@ function TabPorLiga({ metrics }) {
       s.accuracy != null ? (Number(s.accuracy) * 100).toFixed(1) : '',
       s.n ?? '',
     ]);
-    downloadCSV(`por_liga_fold3_${algoAtivo}.csv`, [header, ...rows]);
+    downloadCSV(`por_liga_fold3_${modeloAtivo}.csv`, [header, ...rows]);
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
       <div className="flex gap-2">
-        {algorithms.map((algo) => (
+        {modelos.map(({ key, label }) => (
           <button
-            key={algo}
-            onClick={() => setAlgoAtivo(algo)}
+            key={key}
+            onClick={() => setModeloAtivo(key)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
-              algoAtivo === algo
+              modeloAtivo === key
                 ? 'border-violet-500 text-white'
                 : 'border-slate-700 text-slate-400 hover:border-slate-600'
             }`}
-            style={algoAtivo === algo ? { backgroundColor: corAlgo(algo) + '33', borderColor: corAlgo(algo) } : {}}
+            style={modeloAtivo === key ? { backgroundColor: corAlgo(key) + '33', borderColor: corAlgo(key) } : {}}
           >
-            {algo}
+            {label}
           </button>
         ))}
       </div>
