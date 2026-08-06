@@ -550,6 +550,7 @@ const GITHUB_WORKFLOW_FILE = 'predict.yml';
 const GITHUB_WORKFLOW_FILE_BACKTEST = 'backtest_kelly.yml';
 const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO = 'treinar_modelo_custom.yml';
 const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO_WF = 'treinar_modelo_custom_wf.yml';
+const GITHUB_WORKFLOW_FILE_ESTIMAR_PARTIDA_CUSTOM = 'estimar_partida_custom.yml';
 
 async function verificarUsuarioLogado(supabase, authHeader) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
@@ -740,6 +741,68 @@ async function tarefaDispararTreinoCustom(supabase, authHeader, configId) {
       .eq('id', configId);
   }
   return resultado;
+}
+
+// Dispara a estimativa sob demanda de UMA partida com um modelo customizado
+// (retreina do zero em todo o histórico do escopo da config, ver
+// scripts/estimar_partida_custom.py). Body: { config_id, match_id, algorithm }.
+// `algorithm` é um dos algorithms/algorithm da config, ou "stacking:{nome}"
+// pra um grupo de custom_model_configs.stacking_groups. Chamado pelo botão
+// "Estimar com modelo personalizado" em AnaliseEstatisticaJogo.jsx -- o
+// frontend faz o polling do resultado direto via cliente Supabase (a
+// tabela tem policy de leitura pública), então não existe uma tarefa de
+// status separada aqui.
+async function tarefaEstimarPartidaCustom(supabase, authHeader, body) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { config_id: configId, match_id: matchId, algorithm } = body || {};
+  if (!configId || !matchId || !algorithm) {
+    return { status: 400, error: 'Campos obrigatórios: config_id, match_id, algorithm.' };
+  }
+
+  const { data: cfg, error: cfgErr } = await supabase
+    .from('custom_model_configs')
+    .select('id, mode, algorithm, algorithms, stacking_groups')
+    .eq('id', configId)
+    .maybeSingle();
+  if (cfgErr) throw cfgErr;
+  if (!cfg) return { status: 404, error: `Config id=${configId} não encontrada em custom_model_configs.` };
+
+  // Valida que o algorithm pedido de fato existe nessa config, pra não
+  // disparar um workflow que sabidamente vai falhar.
+  const algoritmosValidos = cfg.mode === 'walk_forward_cv' ? (cfg.algorithms || []) : (cfg.algorithm ? [cfg.algorithm] : []);
+  const ehStacking = typeof algorithm === 'string' && algorithm.startsWith('stacking:');
+  if (ehStacking) {
+    const nomeGrupo = algorithm.slice('stacking:'.length);
+    const grupo = (cfg.stacking_groups || []).find((g) => g.name === nomeGrupo);
+    if (!grupo) return { status: 400, error: `Grupo de stacking "${nomeGrupo}" não existe nessa configuração.` };
+  } else if (!algoritmosValidos.includes(algorithm)) {
+    return { status: 400, error: `Algoritmo "${algorithm}" não faz parte dessa configuração.` };
+  }
+
+  const { data: match } = await supabase.from('matches').select('id').eq('id', matchId).maybeSingle();
+  if (!match) return { status: 404, error: `Partida id=${matchId} não encontrada.` };
+
+  const { data: request, error: insertErr } = await supabase
+    .from('custom_model_ondemand_predictions')
+    .insert({ config_id: configId, match_id: matchId, algorithm, status: 'pendente', requested_by: usuario.id })
+    .select('id')
+    .single();
+  if (insertErr) throw insertErr;
+
+  const resultado = await dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_ESTIMAR_PARTIDA_CUSTOM, { request_id: request.id });
+  if (resultado.status !== 200) {
+    // Disparo falhou (ex.: sem GITHUB_ACTIONS_PAT) -- marca erro em vez de
+    // deixar a requisição presa em "pendente" pro frontend ficar pollando
+    // pra sempre sem nunca receber uma resposta final.
+    await supabase
+      .from('custom_model_ondemand_predictions')
+      .update({ status: 'erro', error_message: resultado.error || 'Falha ao disparar workflow.' })
+      .eq('id', request.id);
+    return resultado;
+  }
+  return { status: 200, request_id: request.id };
 }
 
 // ============================================================
@@ -3818,6 +3881,12 @@ export default async function handler(req, res) {
     if (tarefa === 'disparar-treino-custom') {
       const configId = (req.body || {}).config_id || req.query.config_id;
       const resultado = await tarefaDispararTreinoCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'estimar-partida-custom') {
+      const resultado = await tarefaEstimarPartidaCustom(supabase, req.headers.authorization, req.body);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }

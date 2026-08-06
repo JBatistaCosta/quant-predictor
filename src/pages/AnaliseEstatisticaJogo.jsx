@@ -31,6 +31,7 @@ import { extractJsonFromImage } from '../utils/ocr';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 import { negBinomialPMF } from '../utils/distributions';
 import { apiUrl } from '../utils/apiUrl';
+import EstimativaModeloCustom from '../components/EstimativaModeloCustom';
 
 // Mesmo prompt de AnaliseEvento.jsx (OCR_STATS_PROMPT) — extrai xG/xGA/chutes/
 // escanteios dos DOIS times de uma vez a partir da tabela "Estatística média".
@@ -1015,6 +1016,8 @@ export default function AnaliseEstatisticaJogo() {
           onLimparOcr={() => { setOcrOverride(null); setOcrSuccess(''); setOcrError(''); }}
         />
       </div>
+
+      <EstimativaModeloCustom matchId={jogo.id} />
 
       {modelosDisponiveis.length > 1 && (
         <div className="mb-3 flex items-center gap-2">
