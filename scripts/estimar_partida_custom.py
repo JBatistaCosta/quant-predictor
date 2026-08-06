@@ -4,19 +4,29 @@
 Disparado pelo botão "Estimar com modelo personalizado" na página do jogo
 (src/pages/AnaliseEstatisticaJogo.jsx). Diferente de treinar_modelo_custom.py/
 treinar_modelo_custom_wf.py (que treinam e fazem backtest histórico), este
-script NÃO faz split cronológico treino/teste pra avaliação -- ele retreina
-o modelo escolhido em TODO o histórico disponível no escopo da config
-(exceto a própria partida-alvo) e prevê só essa partida. Mesmo padrão já
-usado pelo pipeline principal (`rodar_predicoes.py`: "o modelo final que
-prevê as fixtures do dia é sempre refeito no dataset INTEIRO"), aqui restrito
-a UM modelo (config_id) e UMA partida (match_id) escolhidos pelo usuário.
+script NÃO faz split cronológico treino/teste pra avaliação -- ele prevê só
+a partida-alvo.
 
-Suporta tanto um algoritmo único (config modo simples, ou um dos algoritmos
-de uma config walk_forward_cv) quanto um grupo de stacking definido na
-config (meta-modelo LogisticRegression sobre os algoritmos do grupo, mesmo
-padrão fit-no-val de treinar_modelo_custom_wf.py, com um único split 85/15
-em vez de walk-forward de 3 folds -- não faz sentido walk-forward pra uma
-previsão pontual).
+Dois caminhos, dependendo se já existe um artefato persistido pro
+algoritmo/grupo pedido em custom_model_configs.model_artifacts (ver
+model_artifacts.py):
+  - RÁPIDO (com artefato): carrega o modelo já treinado do bucket
+    custom-model-artifacts e só PREVÊ na partida-alvo -- segundos, sem
+    retreinar.
+  - LENTO (sem artefato -- config antiga, ou esse passo falhou no treino):
+    retreina o algoritmo escolhido em TODO o histórico disponível no escopo
+    da config (exceto a própria partida-alvo), igual ao pipeline principal
+    faz (`rodar_predicoes.py`: "o modelo final é sempre refeito no dataset
+    INTEIRO"). Ao final, persiste o artefato resultante, pra QUALQUER
+    estimativa futura com essa mesma config+algoritmo cair no caminho
+    rápido.
+
+Em ambos os casos, a montagem de features da partida-alvo (elo/forma/xG
+pré-jogo etc.) é feita do zero -- ela depende da data da partida e do
+histórico recente dos dois times, não do modelo em si, então não tem como
+"pular" mesmo com o modelo já treinado. É bem mais rápida que o retreino
+(sem nenhum fit de gradient boosting), mas ainda envolve várias queries no
+Supabase.
 
 Variáveis de ambiente:
   SUPABASE_URL, SUPABASE_KEY   — acesso ao banco (service_role)
@@ -33,20 +43,12 @@ import os
 import sys
 from datetime import datetime, timezone
 
-import numpy as np
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression as LR
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
 from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(__file__))
 import dados_historicos as dh
-import modelos_ml as ml
-from treinar_modelo_custom import TARGETS, _TARGET_PRED_META, _migrar_features, ALGORITMOS_ML, ALGORITMOS_SKLEARN
-from treinar_modelo_custom_wf import montar_meta_features
+import model_artifacts as ma
+from treinar_modelo_custom import TARGETS, _TARGET_PRED_META, _migrar_features
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +60,8 @@ logger = logging.getLogger("estimar_partida_custom")
 # Mínimo de partidas no pool de treino (histórico do escopo da config, sem
 # contar a partida-alvo) pra considerar a estimativa confiável o bastante
 # pra calcular. Abaixo disso, mais vale errar cedo com uma mensagem clara do
-# que devolver uma probabilidade baseada em ruído.
+# que devolver uma probabilidade baseada em ruído. Só se aplica ao caminho
+# lento (com artefato já pronto, não há retreino a validar).
 MIN_PARTIDAS_TREINO = 100
 
 
@@ -77,125 +80,21 @@ def marcar_erro(supabase, request_id: str, msg: str):
         logger.error("Falha ao gravar erro no Supabase: %s", e)
 
 
-# ---------------------------------------------------------------------------
-# Treino + predição (algoritmo único, sem avaliação de métricas -- só
-# treina uma vez e prevê nos dataframes pedidos)
-# ---------------------------------------------------------------------------
+def persistir_artefato_novo(supabase, config_id: str, chave: str, estado: dict) -> None:
+    """Sobe o artefato recém-treinado e atualiza custom_model_configs.
+    model_artifacts (merge, não sobrescreve outras chaves) -- pra qualquer
+    estimativa futura dessa config+algoritmo cair no caminho rápido."""
+    try:
+        path = ma.salvar_artefato(supabase, config_id, chave, estado)
+        cfg_atual = supabase.table("custom_model_configs").select("model_artifacts").eq("id", config_id).single().execute()
+        artefatos = dict(cfg_atual.data.get("model_artifacts") or {})
+        artefatos[chave] = {"path": path, "trained_at": datetime.now(timezone.utc).isoformat()}
+        supabase.table("custom_model_configs").update({"model_artifacts": artefatos}).eq("id", config_id).execute()
+        logger.info("Artefato persistido em %s -- próximas estimativas dessa config+algoritmo serão instantâneas.", path)
+    except Exception as exc:
+        # Não derruba a estimativa em si por causa disso -- só loga.
+        logger.warning("Falha ao persistir artefato (a estimativa em si já foi calculada): %s", exc)
 
-def _treinar_e_prever(
-    algoritmo: str,
-    features: list[str],
-    hyperparameters: dict | None,
-    train_df: pd.DataFrame,
-    val_df: pd.DataFrame | None,
-    dfs_para_prever: dict[str, pd.DataFrame],
-    target_col: str,
-    tipo: str,
-) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Treina `algoritmo` uma vez em `train_df` (usando `val_df` pra early
-    stopping quando aplicável) e prevê em cada df de `dfs_para_prever`.
-    Retorna {nome: (probs, classes)}."""
-    if algoritmo in ALGORITMOS_ML:
-        nome_interno = f"{algoritmo}_v1"
-        treinar_fn, prever_fn = ml.TREINADORES.get(nome_interno, (None, None))
-        if treinar_fn is None:
-            raise ValueError(f"Algoritmo {algoritmo!r} não encontrado em modelos_ml.TREINADORES.")
-        defaults = ml.PARAMS_DEFAULT.get(nome_interno, {})
-        params = {**defaults, **(hyperparameters or {})}
-        feats = list(dict.fromkeys([*ml.CAT_FEATURES, *features]))
-
-        modelo, extra, _ = treinar_fn(
-            params=params, train_df=train_df, coluna_alvo=target_col,
-            features=feats, val_df=val_df, test_df=val_df,
-        )
-        return {nome: prever_fn(modelo, extra, df, feats) for nome, df in dfs_para_prever.items()}
-
-    if algoritmo in ALGORITMOS_SKLEARN:
-        hp = hyperparameters or {}
-        if algoritmo == "logistic_regression":
-            clf = LR(
-                max_iter=hp.get("max_iter", 1000), C=hp.get("C", 1.0), solver=hp.get("solver", "lbfgs"),
-                multi_class="multinomial" if tipo == "multiclasse" else "ovr",
-            )
-        else:
-            clf = RandomForestClassifier(
-                n_estimators=hp.get("n_estimators", 200), max_depth=hp.get("max_depth"),
-                min_samples_leaf=hp.get("min_samples_leaf", 5), n_jobs=-1, random_state=42,
-            )
-        features_num = [f for f in features if f not in ml.CAT_FEATURES]
-        if not features_num:
-            raise ValueError(f"Sem features numéricas para {algoritmo}.")
-        pipe = Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler()), ("clf", clf)])
-        pipe.fit(train_df[features_num].values, train_df[target_col].values)
-        return {
-            nome: (pipe.predict_proba(df[features_num].values), pipe.named_steps["clf"].classes_)
-            for nome, df in dfs_para_prever.items()
-        }
-
-    if algoritmo == "dixon_coles":
-        raise NotImplementedError(
-            "Dixon-Coles customizado ainda não implementado — "
-            "use catboost/xgboost/lightgbm/logistic_regression/random_forest."
-        )
-
-    raise ValueError(f"Algoritmo desconhecido: {algoritmo!r}")
-
-
-def _split_treino_val(pool_treino: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame | None]:
-    """Split cronológico único: últimos 15% do pool viram val (early
-    stopping dos algoritmos de árvore + treino do meta-modelo de stacking).
-    Sem val quando o pool é pequeno demais pra valer a pena reservar parte
-    dele (mesmo limiar de treinar_via_ml em treinar_modelo_custom.py)."""
-    if len(pool_treino) < 200:
-        return pool_treino, None
-    val_n = max(50, int(len(pool_treino) * 0.15))
-    return pool_treino.iloc[:-val_n].reset_index(drop=True), pool_treino.iloc[-val_n:].reset_index(drop=True)
-
-
-def estimar_algoritmo_unico(
-    algoritmo: str, features: list[str], hyperparameters: dict | None,
-    pool_treino: pd.DataFrame, linha_alvo: pd.DataFrame, target_col: str, tipo: str,
-) -> tuple[np.ndarray, np.ndarray]:
-    train_fit, val_fit = _split_treino_val(pool_treino)
-    preds = _treinar_e_prever(algoritmo, features, hyperparameters, train_fit, val_fit, {"alvo": linha_alvo}, target_col, tipo)
-    return preds["alvo"]
-
-
-def estimar_stacking(
-    algos_grupo: list[str], features: list[str], hyperparameters: dict | None,
-    pool_treino: pd.DataFrame, linha_alvo: pd.DataFrame, target_col: str, tipo: str,
-) -> tuple[np.ndarray, np.ndarray]:
-    train_fit, val_fit = _split_treino_val(pool_treino)
-    if val_fit is None:
-        raise ValueError(
-            f"Pool de treino pequeno demais pra separar um val set de stacking "
-            f"({len(pool_treino)} partidas, mínimo 200)."
-        )
-
-    probs_val_por_algo: dict[str, np.ndarray] = {}
-    classes_val_por_algo: dict[str, np.ndarray] = {}
-    probs_alvo_por_algo: dict[str, np.ndarray] = {}
-    classes_alvo_por_algo: dict[str, np.ndarray] = {}
-    for algo in algos_grupo:
-        preds = _treinar_e_prever(
-            algo, features, hyperparameters, train_fit, val_fit,
-            {"val": val_fit, "alvo": linha_alvo}, target_col, tipo,
-        )
-        probs_val_por_algo[algo], classes_val_por_algo[algo] = preds["val"]
-        probs_alvo_por_algo[algo], classes_alvo_por_algo[algo] = preds["alvo"]
-
-    classes_sorted = np.sort(classes_val_por_algo[algos_grupo[0]])
-    meta_X_val = montar_meta_features(probs_val_por_algo, classes_val_por_algo, algos_grupo, classes_sorted)
-    meta_y_val = val_fit[target_col].values
-    meta_modelo = ml.treinar_stacking_v9(meta_X_val, meta_y_val)
-
-    meta_X_alvo = montar_meta_features(probs_alvo_por_algo, classes_alvo_por_algo, algos_grupo, classes_sorted)
-    return ml.prever_stacking_v9(meta_modelo, meta_X_alvo)
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     request_id = os.environ.get("REQUEST_ID", "").strip()
@@ -228,6 +127,7 @@ def main():
         seasons = cfg.get("seasons") or None
         stacking_groups = cfg.get("stacking_groups") or []
         algoritmos_validos = cfg.get("algorithms") or ([cfg["algorithm"]] if cfg.get("algorithm") else [])
+        artefato_existente = (cfg.get("model_artifacts") or {}).get(algoritmo_escolhido)
 
         if not features_req:
             raise ValueError("Configuração sem features selecionadas.")
@@ -251,13 +151,16 @@ def main():
             raise ValueError(f"Algoritmo {algoritmo_escolhido!r} não faz parte desta configuração.")
 
         logger.info(
-            "Config: target=%s, algoritmo=%s, %d features, match_id=%s",
-            target_key, algoritmo_escolhido, len(features_req), match_id,
+            "Config: target=%s, algoritmo=%s, %d features, match_id=%s, artefato_existente=%s",
+            target_key, algoritmo_escolhido, len(features_req), match_id, bool(artefato_existente),
         )
 
         # Monta o dataset com o histórico do escopo da config + a partida-alvo
         # (mesmo pipeline de features de montar_dataset_ml_empilhado -- ver
         # docstring do parâmetro match_id_extra em dados_historicos.py).
+        # Necessário nos dois caminhos (rápido e lento): a feature da
+        # partida-alvo depende da data dela e do histórico recente dos times,
+        # não do modelo já treinado.
         dataset = dh.montar_dataset_ml_empilhado(
             supabase,
             anos_por_liga=None if (todas_ligas or seasons) else 6,
@@ -269,11 +172,20 @@ def main():
         if dataset.empty:
             raise RuntimeError("Dataset vazio — verifique o escopo de ligas/temporadas da configuração.")
 
-        features_usadas = _migrar_features(features_req)
         if target_col == "resultado_btts" and "resultado_btts" not in dataset.columns:
             if "home_goals" in dataset.columns and "away_goals" in dataset.columns:
                 dataset["resultado_btts"] = ((dataset["home_goals"] > 0) & (dataset["away_goals"] > 0)).astype(int)
 
+        # Propositalmente NÃO recorta `dataset` pras colunas de
+        # `features_usadas` aqui -- prever_fn/pipe.predict_proba já
+        # selecionam só as colunas que precisam (via `estado["features"]`/
+        # `estado["features_num"]`, gravadas no artefato no momento do
+        # treino). Recortar cedo faria o caminho rápido (artefato existente)
+        # quebrar se as features atualmente configuradas divergissem por
+        # qualquer motivo das que o artefato foi treinado com -- mais raro
+        # depois que salvar/resetar já limpam model_artifacts em qualquer
+        # edição, mas não custa manter os dois caminhos desacoplados.
+        features_usadas = _migrar_features(features_req)
         features_disponiveis = set(dataset.columns)
         faltando = [f for f in features_usadas if f not in features_disponiveis]
         if faltando:
@@ -282,36 +194,39 @@ def main():
         if not features_usadas:
             raise RuntimeError("Nenhuma feature válida disponível no dataset.")
 
-        cols_necessarias = list(dict.fromkeys(
-            ml.CAT_FEATURES + features_usadas + [target_col, "match_date", "match_id"]
-        ))
-        cols_presentes = [c for c in cols_necessarias if c in dataset.columns]
-        dataset = dataset[cols_presentes].copy()
-
         linha_alvo = dataset[dataset["match_id"] == match_id].reset_index(drop=True)
         if linha_alvo.empty:
             raise RuntimeError(
                 f"Partida match_id={match_id} não apareceu no dataset final — "
                 "provavelmente fora do escopo de ligas/temporadas da configuração."
             )
-        pool_treino = dataset[dataset["match_id"] != match_id].dropna(subset=[target_col]).reset_index(drop=True)
 
-        if len(pool_treino) < MIN_PARTIDAS_TREINO:
-            raise RuntimeError(
-                f"Histórico de treino insuficiente pro escopo da configuração "
-                f"({len(pool_treino)} partidas, mínimo {MIN_PARTIDAS_TREINO})."
-            )
+        n_treino_usado: int | None = None
 
-        logger.info("Pool de treino: %d partidas | prevendo match_id=%s", len(pool_treino), match_id)
-
-        if eh_stacking:
-            probabilidades, classes_final = estimar_stacking(
-                algos_do_grupo, features_usadas, hyperparameters, pool_treino, linha_alvo, target_col, tipo,
-            )
+        if artefato_existente:
+            # ── Caminho rápido: carrega o modelo já treinado e só prevê ──
+            logger.info("Artefato encontrado (%s) -- pulando retreino.", artefato_existente["path"])
+            estado = ma.carregar_artefato(supabase, artefato_existente["path"])
+            probabilidades, classes_final = ma.prever_com_estado(estado, linha_alvo)
         else:
-            probabilidades, classes_final = estimar_algoritmo_unico(
-                algoritmo_escolhido, features_usadas, hyperparameters, pool_treino, linha_alvo, target_col, tipo,
-            )
+            # ── Caminho lento: retreina do zero (e persiste pro futuro) ──
+            pool_treino = dataset[dataset["match_id"] != match_id].dropna(subset=[target_col]).reset_index(drop=True)
+            if len(pool_treino) < MIN_PARTIDAS_TREINO:
+                raise RuntimeError(
+                    f"Histórico de treino insuficiente pro escopo da configuração "
+                    f"({len(pool_treino)} partidas, mínimo {MIN_PARTIDAS_TREINO})."
+                )
+            n_treino_usado = len(pool_treino)
+            logger.info("Sem artefato -- retreinando em %d partidas | prevendo match_id=%s", len(pool_treino), match_id)
+
+            if eh_stacking:
+                estado = ma.treinar_estado_stacking(algos_do_grupo, features_usadas, hyperparameters, pool_treino, target_col, tipo)
+            else:
+                train_fit, val_fit = ma.split_treino_val(pool_treino)
+                estado, _ = ma.treinar_e_prever(algoritmo_escolhido, features_usadas, hyperparameters, train_fit, val_fit, {}, target_col, tipo)
+
+            probabilidades, classes_final = ma.prever_com_estado(estado, linha_alvo)
+            persistir_artefato_novo(supabase, config_id, algoritmo_escolhido, estado)
 
         meta = _TARGET_PRED_META[target_key]
         class_to_sel = meta["class_to_sel"]
@@ -329,7 +244,7 @@ def main():
         atualizar_status(
             supabase, request_id, "concluido",
             probabilities=probs_dict, fair_odds=fair_odds,
-            n_treino=len(pool_treino),
+            n_treino=n_treino_usado,
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
         logger.info("✅ Estimativa concluída: %s", probs_dict)

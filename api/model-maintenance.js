@@ -699,9 +699,15 @@ async function tarefaSalvarConfigCustom(supabase, authHeader, body) {
 
   let resultado;
   if (id) {
+    // Qualquer edição de uma config existente invalida os artefatos
+    // persistidos (model_artifacts) -- eles foram treinados com o estado
+    // ANTERIOR de features/algoritmo/hiperparâmetros/escopo, e continuar
+    // servindo-os pra estimar-partida-custom depois de uma edição seria uma
+    // previsão silenciosamente errada (modelo de outra configuração). O
+    // próximo treino bem-sucedido já os repopula automaticamente.
     const { data, error } = await supabase
       .from('custom_model_configs')
-      .update(camposComuns)
+      .update({ ...camposComuns, model_artifacts: {} })
       .eq('id', id)
       .select()
       .single();
@@ -901,7 +907,7 @@ async function tarefaResetarConfigCustom(supabase, authHeader, configId) {
     return { status: 409, error: 'Não é possível resetar um modelo em treinamento. Pare primeiro.' };
 
   const { error } = await supabase.from('custom_model_configs')
-    .update({ status: 'rascunho', metrics: null, error_message: null, trained_at: null, model_key: null })
+    .update({ status: 'rascunho', metrics: null, error_message: null, trained_at: null, model_key: null, model_artifacts: {} })
     .eq('id', configId);
   if (error) throw error;
   return { status: 200, mensagem: 'Modelo resetado para rascunho.' };
