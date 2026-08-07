@@ -119,7 +119,7 @@ export default function RodadaPrevisoes() {
     try {
       const { data: todosOsJogos, error: erroJogos } = await supabase
         .from('matches')
-        .select('id, round, status, match_date, home_team_id, away_team_id')
+        .select('id, round, status, match_date, home_team_id, away_team_id, home_goals, away_goals')
         .eq('league_id', LIGA_ID).eq('season', temporadaAlvo)
         .not('round', 'is', null).neq('status', 'cancelled');
       if (erroJogos) throw erroJogos;
@@ -316,7 +316,13 @@ export default function RodadaPrevisoes() {
             return (
               <div key={j.id} className="bg-slate-900 border border-slate-700/50 rounded-lg overflow-hidden">
                 <div className="px-4 py-2 bg-slate-800/50 flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-200">{j.mandante} x {j.visitante}</span>
+                  <span className="font-medium text-slate-200 flex items-center gap-2">
+                    {j.mandante}
+                    {j.status === 'finished' && j.home_goals != null && j.away_goals != null
+                      ? <span className="font-mono font-bold text-emerald-300 tabular-nums">{j.home_goals} – {j.away_goals}</span>
+                      : <span className="text-slate-500">x</span>}
+                    {j.visitante}
+                  </span>
                   <span className="text-slate-500 text-xs flex items-center gap-2">
                     {j.match_date ? new Date(j.match_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
                     <span className="px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300">{ROTULO_STATUS[j.status] || j.status}</span>
