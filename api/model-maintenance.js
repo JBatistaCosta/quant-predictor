@@ -2938,9 +2938,13 @@ const MAPA_STATS_JOGADOR = {
 
 function montarStatsJogador(statsGrupos) {
   const porChave = {};
+  const porTitulo = {};
   for (const grupo of statsGrupos || []) {
-    for (const info of Object.values(grupo.stats || {})) {
-      if (info && info.key) porChave[info.key] = info.stat;
+    for (const [titulo, info] of Object.entries(grupo.stats || {})) {
+      if (info && info.key) {
+        porChave[info.key] = info.stat;
+        porTitulo[titulo] = info.stat;
+      }
     }
   }
   const out = {};
@@ -2948,6 +2952,17 @@ function montarStatsJogador(statsGrupos) {
     const stat = porChave[chave];
     out[coluna] = stat && stat.value != null ? parser(stat.value) : null;
   }
+  // Stats defensivos/duelos vêm como "X/Y (Z%)" — extrai só o numerador
+  const fracaoOuInt = (stat) => {
+    if (!stat || stat.value == null) return null;
+    const m = String(stat.value).match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  out.tackles          = fracaoOuInt(porTitulo['Tackles won']);
+  out.interceptions    = fracaoOuInt(porTitulo['Interceptions']);
+  out.ground_duels_won = fracaoOuInt(porTitulo['Ground duels won']);
+  out.aerials_won      = fracaoOuInt(porTitulo['Aerial duels won']);
+  out.touches_opp_box  = extrairIntValor((porTitulo['Touches in opposition box'] || {}).value);
   return out;
 }
 
@@ -2973,6 +2988,60 @@ async function upsertJogadoresDoJogo(supabase, matchIdInterno, playerStatsPayloa
   const mapa = {};
   if (!error) (data || []).forEach(r => { mapa[r.fotmob_player_id] = r.id; });
   return mapa;
+}
+
+// Extrai escalação (match_lineup_fotmob) e dados ricos de dimensão de jogador
+// a partir de content.lineup — traz firstName/lastName/idade/valor de mercado/
+// país/posição habitual/posição em campo, que o bloco playerStats não tem.
+function montarLinhasLineup(matchIdInterno, lineupPayload, crosswalkTimes) {
+  const lineupRows = [];
+  const playerDimRows = [];
+  const agora = new Date().toISOString();
+  const lineup = lineupPayload || {};
+  for (const [side, key] of [['home', 'homeTeam'], ['away', 'awayTeam']]) {
+    const team = lineup[key] || {};
+    const teamId = crosswalkTimes[String(team.id || '')] || null;
+    for (const [grupo, isStarter] of [['starters', true], ['subs', false]]) {
+      for (const p of team[grupo] || []) {
+        const pid = String(p.id || '');
+        if (!pid || pid === '0' || pid === '-1') continue;
+        playerDimRows.push({
+          fotmob_player_id: pid,
+          name: p.name || null,
+          first_name: p.firstName || null,
+          last_name: p.lastName || null,
+          shirt_number: p.shirtNumber ?? null,
+          country_name: p.countryName || null,
+          country_code: p.countryCode || null,
+          age: p.age ?? null,
+          market_value: p.marketValue ?? null,
+          usual_position_id: p.usualPlayingPositionId ?? null,
+          last_team_id: teamId,
+          last_seen_match_id: matchIdInterno,
+          photo_url: `https://images.fotmob.com/image_resources/playerimages/${pid}.png`,
+          raw_lineup: p,
+          updated_at: agora,
+        });
+        if (teamId) {
+          const vl = p.verticalLayout || {};
+          lineupRows.push({
+            match_id: matchIdInterno,
+            team_id: teamId,
+            fotmob_player_id: pid,
+            is_starter: isStarter,
+            shirt_number: p.shirtNumber ?? null,
+            position_id: p.positionId ?? null,
+            field_pos_x: vl.x ?? null,
+            field_pos_y: vl.y ?? null,
+            is_captain: p.isCaptain || false,
+            raw: p,
+            captured_at: agora,
+          });
+        }
+      }
+    }
+  }
+  return { lineupRows, playerDimRows };
 }
 
 function montarLinhasPlayerStats(matchIdInterno, playerStatsPayload, crosswalkTimes, mapaPlayerIdInterno) {
@@ -3068,7 +3137,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
   const todosCandidatos = [];
   for (const lid of ligasAlvo) {
     let q = supabase.from('matches')
-      .select('id, match_date, home_team_id, away_team_id, league_id, season')
+      .select('id, match_date, home_team_id, away_team_id, league_id, season, home_goals')
       .eq('league_id', lid).neq('status', 'cancelled');
     if (temporada) q = q.eq('season', temporada);
     if (modoValido === 'encerradas') {
@@ -3091,16 +3160,25 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     };
   }
 
-  // 3. Filtra os que ainda não têm FotMob match_id registrado
+  // 3. Filtra os que ainda não têm FotMob match_id registrado OU têm stats mas falta placar
   const todosIds = todosCandidatos.map(j => j.id);
-  const idsProntos = new Set();
+  // Map<matchId, fotmobSourceId> — jogos já importados; also used to skip fixture lookup
+  const fotmobIdConhecido = new Map();
   for (const lote of fatiar(todosIds, 200)) {
     const { data: ja } = await supabase.from('match_source_ids')
-      .select('match_id').eq('source', 'fotmob').in('match_id', lote);
-    (ja || []).forEach(r => idsProntos.add(r.match_id));
+      .select('match_id, source_id').eq('source', 'fotmob').in('match_id', lote);
+    (ja || []).forEach(r => fotmobIdConhecido.set(r.match_id, r.source_id));
   }
 
-  const pendentesTotal = todosCandidatos.filter(j => !idsProntos.has(j.id));
+  // Pendente = sem source_id (nunca importado) OU com source_id mas sem placar ainda
+  const pendentesTotal = todosCandidatos.filter(j =>
+    !fotmobIdConhecido.has(j.id) || j.home_goals === null
+  );
+  // Conjunto dos que já têm stats mas faltam apenas o placar
+  const apenasPlaycar = new Set(
+    todosCandidatos.filter(j => fotmobIdConhecido.has(j.id) && j.home_goals === null).map(j => j.id)
+  );
+
   const loteProcessar = pendentesTotal.slice(0, limiteJogos);
   const restantes = Math.max(0, pendentesTotal.length - loteProcessar.length);
 
@@ -3108,7 +3186,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     return {
       mensagem: 'Todos os jogos elegíveis já têm detalhe FotMob importado.',
       total_candidatos: todosCandidatos.length,
-      ja_importados: idsProntos.size,
+      ja_importados: fotmobIdConhecido.size,
       restantes: 0,
     };
   }
@@ -3162,9 +3240,13 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     if (processados > 0) await esperar(700);
     processados++;
 
-    const index = await getFixtureIndex(jogo._fotmobLeagueId, jogo.league_id, jogo.season);
-    const dia = jogo.match_date?.slice(0, 10);
-    const fotmobMatchId = index.get(`${dia}|${jogo.home_team_id}|${jogo.away_team_id}`);
+    // Se já importado, usa o fotmobMatchId conhecido (sem precisar buscar fixture list)
+    let fotmobMatchId = fotmobIdConhecido.get(jogo.id) || null;
+    if (!fotmobMatchId) {
+      const index = await getFixtureIndex(jogo._fotmobLeagueId, jogo.league_id, jogo.season);
+      const dia = jogo.match_date?.slice(0, 10);
+      fotmobMatchId = index.get(`${dia}|${jogo.home_team_id}|${jogo.away_team_id}`) || null;
+    }
     if (!fotmobMatchId) { semCasamentoOuFalha.push({ match_id: jogo.id, motivo: 'sem_casamento' }); continue; }
 
     try {
@@ -3173,31 +3255,64 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
       const payload = await resp.json();
       const content = payload.content || {};
 
-      await supabase.from('match_stats_fotmob').upsert(
-        montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
-        { onConflict: 'match_id,team_id' }
-      );
-
-      const mapaPlayerIdInterno = await upsertJogadoresDoJogo(supabase, jogo.id, content.playerStats, crosswalk);
-      const linhasJogadores = montarLinhasPlayerStats(jogo.id, content.playerStats, crosswalk, mapaPlayerIdInterno);
-      if (linhasJogadores.length) {
-        await supabase.from('match_player_stats_fotmob').upsert(linhasJogadores, { onConflict: 'match_id,fotmob_player_id' });
+      // Atualiza placar se ausente na tabela matches (independente de ter stats ou não)
+      if (jogo.home_goals === null) {
+        const homeG = payload.general?.homeScore?.current ?? null;
+        const awayG = payload.general?.awayScore?.current ?? null;
+        if (homeG !== null) {
+          await supabase.from('matches').update({ home_goals: homeG, away_goals: awayG }).eq('id', jogo.id);
+        }
       }
 
-      const linhasShots = montarLinhasShots(jogo.id, content.shotmap, crosswalk, mapaPlayerIdInterno);
-      for (const lote of fatiar(linhasShots, 200)) {
-        await supabase.from('match_shots_fotmob').upsert(lote, { onConflict: 'fotmob_shot_id' });
+      // Jogo que já tem stats mas só precisava do placar — não re-importa tudo
+      if (!apenasPlaycar.has(jogo.id)) {
+        await supabase.from('match_stats_fotmob').upsert(
+          montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
+          { onConflict: 'match_id,team_id' }
+        );
+
+        // Lineup: dimensão de jogador enriquecida (firstName/idade/país/posição)
+        // + match_lineup_fotmob (titular/reserva, posição em campo, capitão)
+        const { lineupRows, playerDimRows } = montarLinhasLineup(jogo.id, content.lineup, crosswalk);
+        let mapaPlayerIdInterno = {};
+        if (playerDimRows.length) {
+          const dedupDim = [...new Map(playerDimRows.map(r => [r.fotmob_player_id, r])).values()];
+          const { data: dimData } = await supabase.from('players').upsert(dedupDim, { onConflict: 'fotmob_player_id' }).select('id, fotmob_player_id');
+          (dimData || []).forEach(r => { mapaPlayerIdInterno[r.fotmob_player_id] = r.id; });
+        }
+
+        // Também popula players a partir de playerStats (cobre jogadores eventualmente
+        // ausentes do lineup — e.g. GK do lado oposto em partidas antigas)
+        const statsPlayerMap = await upsertJogadoresDoJogo(supabase, jogo.id, content.playerStats, crosswalk);
+        Object.assign(mapaPlayerIdInterno, statsPlayerMap);
+
+        const linhasJogadores = montarLinhasPlayerStats(jogo.id, content.playerStats, crosswalk, mapaPlayerIdInterno);
+        if (linhasJogadores.length) {
+          await supabase.from('match_player_stats_fotmob').upsert(linhasJogadores, { onConflict: 'match_id,fotmob_player_id' });
+        }
+
+        if (lineupRows.length) {
+          const lineupComPlayerId = lineupRows.map(r => ({
+            ...r, player_id: mapaPlayerIdInterno[r.fotmob_player_id] || null,
+          }));
+          await supabase.from('match_lineup_fotmob').upsert(lineupComPlayerId, { onConflict: 'match_id,team_id,fotmob_player_id' });
+        }
+
+        const linhasShots = montarLinhasShots(jogo.id, content.shotmap, crosswalk, mapaPlayerIdInterno);
+        for (const lote of fatiar(linhasShots, 200)) {
+          await supabase.from('match_shots_fotmob').upsert(lote, { onConflict: 'fotmob_shot_id' });
+        }
+
+        await supabase.from('match_context_fotmob').upsert(
+          montarContexto(jogo.id, fotmobMatchId, content.matchFacts, content.weather),
+          { onConflict: 'match_id' }
+        );
+
+        await supabase.from('match_source_ids').upsert(
+          { match_id: jogo.id, source: 'fotmob', source_id: String(fotmobMatchId), source_name: content.general?.matchName || null },
+          { onConflict: 'match_id,source' }
+        );
       }
-
-      await supabase.from('match_context_fotmob').upsert(
-        montarContexto(jogo.id, fotmobMatchId, content.matchFacts, content.weather),
-        { onConflict: 'match_id' }
-      );
-
-      await supabase.from('match_source_ids').upsert(
-        { match_id: jogo.id, source: 'fotmob', source_id: String(fotmobMatchId), source_name: content.general?.matchName || null },
-        { onConflict: 'match_id,source' }
-      );
       sucesso++;
     } catch (erro) {
       semCasamentoOuFalha.push({ match_id: jogo.id, motivo: erro.message });
@@ -3213,7 +3328,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     temporada: temporada || 'todas',
     modo: modoValido,
     total_candidatos: todosCandidatos.length,
-    ja_importados: idsProntos.size,
+    ja_importados: fotmobIdConhecido.size,
     processados_agora: processados,
     sucesso,
     sem_casamento_ou_falha: semCasamentoOuFalha.length ? semCasamentoOuFalha : undefined,
