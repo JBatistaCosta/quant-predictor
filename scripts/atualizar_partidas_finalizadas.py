@@ -5,6 +5,13 @@ explícitos via dispatch manual) com uma varredura automática de TODAS as ligas
 com mapeamento FotMob — útil como cron diário pra corrigir lacunas que o
 sync-matches não preenche (ele só registra partidas, não ingere stats).
 
+Detecção de partidas encerradas: usa match_date < NOW()-2h (janela de 120 min)
+em vez de status='finished', pois o sync-matches pode não ter atualizado o
+status ainda. Status 'cancelled' e 'postponed' são sempre excluídos.
+
+--ao-vivo: processa partidas com match_date nos últimos 120 min (em andamento
+ou recém-encerradas sem status atualizado).
+
 Pré-requisito: crosswalk de times (team_source_ids, source='fotmob') já
 resolvido pra cada liga processada — mesmo requisito do ingestao_fotmob.py.
 Times sem crosswalk têm placar atualizado mas stats puladas (aviso no log).
@@ -13,7 +20,7 @@ Pacing: 1.3s entre chamadas de API (mesmo do ingestao_fotmob.py).
 
 Uso:
     python scripts/atualizar_partidas_finalizadas.py [--limite N] [--league-id ID]
-        [--modo tudo|placar|stats] [--forcar]
+        [--modo tudo|placar|stats] [--forcar] [--ao-vivo]
 """
 
 import argparse
@@ -58,6 +65,8 @@ def main():
                     help="tudo=placar+stats | placar=só placares faltando | stats=só stats faltando")
     ap.add_argument("--forcar", action="store_true",
                     help="Reprocessa mesmo partidas que já têm dados parciais")
+    ap.add_argument("--ao-vivo", action="store_true",
+                    help="Processa partidas com match_date nos últimos 120 min (em andamento ou recém-encerradas)")
     args = ap.parse_args()
 
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -103,22 +112,36 @@ def main():
     else:
         has_stats = set()
 
+    # ── Janela de tempo para detecção de partidas ─────────────────────────────
+    agora_utc = dt.datetime.now(dt.timezone.utc)
+    corte_utc = agora_utc - dt.timedelta(minutes=120)
+    corte_iso = corte_utc.isoformat()
+    agora_iso = agora_utc.isoformat()
+
+    if args.ao_vivo:
+        descricao_filtro = f"ao vivo (match_date entre {corte_iso[:16]} e {agora_iso[:16]} UTC)"
+    else:
+        descricao_filtro = f"encerradas (match_date < {corte_iso[:16]} UTC, excluindo cancelled/postponed)"
+    print(f"Modo: {descricao_filtro}")
+
     # ── Partidas finalizadas que precisam de atualização ──────────────────────
-    print("Buscando partidas finalizadas pendentes...")
+    print("Buscando partidas pendentes...")
     pendentes = []
     for lid in ligas_alvo:
         page = 0
         while True:
-            chunk = (
+            q = (
                 supabase.table("matches")
                 .select("id, home_team_id, away_team_id, match_date, league_id, home_goals, away_goals")
                 .eq("league_id", lid)
-                .eq("status", "finished")
                 .order("id")
                 .range(page * 1000, page * 1000 + 999)
-                .execute()
-                .data
             )
+            if args.ao_vivo:
+                q = q.gte("match_date", corte_iso).lte("match_date", agora_iso)
+            else:
+                q = q.lt("match_date", corte_iso).not_.in_("status", ["cancelled", "postponed"])
+            chunk = q.execute().data
             for m in chunk:
                 if args.forcar:
                     pendentes.append(m)
@@ -170,9 +193,13 @@ def main():
                 continue
 
             for fx in fixtures:
-                if fx["status"]["finished"] and not fx["status"].get("cancelled"):
-                    k = (str(fx["home"]["id"]), str(fx["away"]["id"]))
-                    index.setdefault(k, []).append(fx)
+                if fx["status"].get("cancelled"):
+                    continue
+                # ao_vivo inclui jogos não finalizados (em andamento); encerradas só finalizados
+                if not args.ao_vivo and not fx["status"]["finished"]:
+                    continue
+                k = (str(fx["home"]["id"]), str(fx["away"]["id"]))
+                index.setdefault(k, []).append(fx)
             break  # temporada correta encontrada
 
         fixture_cache[key] = index
