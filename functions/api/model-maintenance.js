@@ -722,6 +722,7 @@ function montarLinhasPerfilJogador(playerId, payload) {
   const contratoInfo = extrairValorPlayerInfo('Contract expires', playerInformation).dateValue
     ?? extrairValorPlayerInfo('Contract end', playerInformation).dateValue ?? null;
   const valorAtual = extrairValorPlayerInfo('Market value', playerInformation).numberValue ?? null;
+  const birthDate = parseDataFotmob((payload.birthDate || {}).utcTime);
 
   const posDesc = payload.positionDescription || {};
   const posicaoPrincipal = (posDesc.primaryPosition || {}).label ?? null;
@@ -738,7 +739,7 @@ function montarLinhasPerfilJogador(playerId, payload) {
     captured_at: agora,
   };
 
-  return { valoresMercado, carreira, titulos, detalhes };
+  return { valoresMercado, carreira, titulos, detalhes, birthDate };
 }
 
 async function tarefaJogadorPerfil(supabase, playerIdInterno) {
@@ -759,7 +760,7 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
   const payload = await resp.json();
   if (!payload) return { error: 'FotMob não retornou dado pra esse jogador (payload vazio).' };
 
-  const { valoresMercado, carreira, titulos, detalhes } = montarLinhasPerfilJogador(jogador.id, payload);
+  const { valoresMercado, carreira, titulos, detalhes, birthDate } = montarLinhasPerfilJogador(jogador.id, payload);
 
   if (valoresMercado.length) {
     const { error } = await supabase.from('player_market_value_history').upsert(valoresMercado, { onConflict: 'player_id,value_date,team_fotmob_id' });
@@ -781,10 +782,14 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
   const { error: erroDetalhes } = await supabase.from('player_details_fotmob').upsert(detalhes, { onConflict: 'player_id' });
   if (erroDetalhes) throw erroDetalhes;
 
+  if (birthDate) {
+    await supabase.from('players').update({ birth_date: birthDate }).eq('id', jogador.id);
+  }
+
   return {
     player_id: jogador.id, nome: jogador.name,
     pontos_valor_mercado: valoresMercado.length, clubes_carreira: carreira.length, titulos: titulos.length,
-    detalhes_atualizados: true,
+    detalhes_atualizados: true, birth_date: birthDate,
   };
 }
 

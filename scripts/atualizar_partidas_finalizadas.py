@@ -264,15 +264,21 @@ def main():
             time.sleep(PACING_SEGUNDOS)
             continue
 
-        # Atualizar placar se faltando
+        # Atualizar placar se faltando.
+        # FotMob usa header.teams[].score como placar definitivo; general.homeScore.current
+        # é o placar ao vivo e pode ser None em partidas já encerradas.
         if m["home_goals"] is None and args.modo in ("tudo", "placar"):
             try:
-                home_g = d["general"]["homeScore"].get("current")
-                away_g = d["general"]["awayScore"].get("current")
+                header_teams = d.get("header", {}).get("teams", [])
+                home_g = (header_teams[0].get("score") if header_teams else None) \
+                         or d["general"]["homeScore"].get("current")
+                away_g = (header_teams[1].get("score") if len(header_teams) > 1 else None) \
+                         or d["general"]["awayScore"].get("current")
                 if home_g is not None:
-                    supabase.table("matches").update(
-                        {"home_goals": home_g, "away_goals": away_g}
-                    ).eq("id", match_id).execute()
+                    update_data = {"home_goals": home_g, "away_goals": away_g}
+                    if d["general"].get("finished"):
+                        update_data["status"] = "finished"
+                    supabase.table("matches").update(update_data).eq("id", match_id).execute()
             except Exception as exc:
                 print(f"  [{i+1}/{len(pendentes)}] Aviso: placar match_id={match_id}: {exc}")
 
