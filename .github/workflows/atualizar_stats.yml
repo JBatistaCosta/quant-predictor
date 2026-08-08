@@ -47,6 +47,11 @@ on:
         required: false
         type: boolean
         default: false
+      ao_vivo:
+        description: "Processa partidas com match_date nos últimos 120 min (em andamento ou recém-encerradas)"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   atualizar-stats:
@@ -77,4 +82,5 @@ jobs:
           if [ -n "${{ inputs.league_id }}" ]; then ARGS="$ARGS --league-id ${{ inputs.league_id }}"; fi
           if [ -n "${{ inputs.modo }}" ]; then ARGS="$ARGS --modo ${{ inputs.modo }}"; fi
           if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          if [ "${{ inputs.ao_vivo }}" = "true" ]; then ARGS="$ARGS --ao-vivo"; fi
           python scripts/atualizar_partidas_finalizadas.py $ARGS

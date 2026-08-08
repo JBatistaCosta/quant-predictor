@@ -80,7 +80,11 @@ function formatarMensagemAcao(tarefa, corpo) {
   }
   if (tarefa === 'partidas-fotmob') {
     if (corpo.mensagem) return corpo.mensagem;
-    return `FotMob — ${corpo.processados_agora ?? 0} jogo(s) processado(s) agora (${corpo.sucesso ?? 0} com sucesso), ${corpo.restantes ?? 0} restante(s) no backlog.`;
+    const modoLabel = corpo.modo === 'ao_vivo' ? ' (ao vivo)' : ' (encerradas)';
+    return `FotMob${modoLabel} — ${corpo.processados_agora ?? 0} jogo(s) processado(s) agora (${corpo.sucesso ?? 0} com sucesso), ${corpo.restantes ?? 0} restante(s) no backlog.`;
+  }
+  if (tarefa === 'disparar-atualizar-stats') {
+    return `Workflow disparado: ${corpo.workflow || 'atualizar_stats.yml'} — acompanhe em GitHub Actions (≈1 min pra iniciar).`;
   }
   if (tarefa === 'disparar-predicoes') {
     return 'Disparado! Roda no GitHub Actions (até ~15 min) e cobre as 10 partidas mais próximas entre as 6 ligas do pipeline, só entre as que já têm odds capturada — clique em "Recarregar" daqui a pouco.';
@@ -195,13 +199,16 @@ export default function RodadaPrevisoes() {
     carregarRodada(temporada, nova);
   }
 
-  async function acionar(tarefa, { auth = false } = {}) {
-    setAcao(tarefa);
+  async function acionar(tarefa, { auth = false, modo } = {}) {
+    const acoKey = modo ? `${tarefa}:${modo}` : tarefa;
+    setAcao(acoKey);
     setMensagemAcao(null);
     try {
       let url = `/api/model-maintenance?tarefa=${tarefa}`;
       if (tarefa === 'odds') url += `&liga_id=${LIGA_ID}`;
-      if (tarefa === 'partidas-fotmob') url += `&liga_id=${LIGA_ID}&temporada=${temporada}&limite=15`;
+      if (tarefa === 'partidas-fotmob') {
+        url += `&liga_id=${LIGA_ID}&temporada=${temporada}&limite=15&modo=${modo || 'encerradas'}`;
+      }
       const opcoes = { method: tarefa === 'disparar-predicoes' ? 'POST' : 'GET' };
       if (auth) opcoes.headers = { Authorization: `Bearer ${session?.access_token || ''}` };
       const resp = await fetch(apiUrl(url), opcoes);
@@ -278,13 +285,31 @@ export default function RodadaPrevisoes() {
           Disparar previsões
         </button>
         <button
-          onClick={() => acionar('partidas-fotmob')}
+          onClick={() => acionar('partidas-fotmob', { modo: 'encerradas' })}
           disabled={acao !== null}
-          title="Enriquece os jogos JÁ FINALIZADOS (rodada anterior) com estatística do FotMob — não existe dado pré-jogo."
+          title="Enriquece jogos encerrados (match_date < agora-2h) com estatística do FotMob — rodada anterior."
           className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium border border-slate-700 disabled:opacity-50"
         >
-          {acao === 'partidas-fotmob' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-          Importar FotMob (rodada anterior)
+          {acao === 'partidas-fotmob:encerradas' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          FotMob (encerradas)
+        </button>
+        <button
+          onClick={() => acionar('partidas-fotmob', { modo: 'ao_vivo' })}
+          disabled={acao !== null}
+          title="Importa stats de jogos em andamento ou recém-encerrados (match_date nos últimos 120 min) via FotMob."
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-amber-950/40 text-amber-300 text-sm font-medium border border-amber-700/50 disabled:opacity-50"
+        >
+          {acao === 'partidas-fotmob:ao_vivo' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          FotMob (ao vivo)
+        </button>
+        <button
+          onClick={() => acionar('disparar-atualizar-stats', { auth: true })}
+          disabled={acao !== null || !session}
+          title={!session ? 'Faça login pra disparar o workflow.' : 'Dispara o workflow atualizar_stats.yml no GitHub Actions — varre todas as ligas com FotMob sem limite de tempo.'}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {acao === 'disparar-atualizar-stats' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          Atualizar todas (Actions)
         </button>
       </div>
 

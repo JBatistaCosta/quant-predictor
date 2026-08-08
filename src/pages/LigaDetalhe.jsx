@@ -155,13 +155,17 @@ export default function LigaDetalhe() {
   // faz rodadas sucessivas (limite seguro por rodada em LIMITE_POR_RODADA)
   // até acumular o alvo ou a API confirmar que não sobrou mais nada
   // pendente — mesmo padrão de "Resetar/recalcular rating" em Jogadores.jsx.
-  const importarPartidas = async (fonte) => {
+  const importarPartidas = async (fonte, modo) => {
     if (!leagueIdPipeline || !temporada) return;
-    setImportando(fonte); setMsgImportacao(''); setErroImportacao('');
-    const rodadaLimite = LIMITE_POR_RODADA[fonte];
-    const url = fonte === 'fotmob'
-      ? `/api/model-maintenance?tarefa=partidas-fotmob&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}`
-      : `/api/sync-match-stats?liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}`;
+    const chave = fonte === 'fotmob' ? `fotmob-${modo || 'encerradas'}` : fonte;
+    setImportando(chave); setMsgImportacao(''); setErroImportacao('');
+    const rodadaLimite = LIMITE_POR_RODADA[fonte] || LIMITE_POR_RODADA['fotmob'];
+    let url;
+    if (fonte === 'fotmob') {
+      url = `/api/model-maintenance?tarefa=partidas-fotmob&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}&modo=${modo || 'encerradas'}`;
+    } else {
+      url = `/api/sync-match-stats?liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}`;
+    }
     try {
       let totalProcessado = 0;
       let rodada = 0;
@@ -180,7 +184,10 @@ export default function LigaDetalhe() {
         );
         if (dados.parado_por_rate_limit || !dados.restantes || dados.restantes <= 0 || !dados.processados_agora) break;
       }
-      setMsgImportacao(`Importação concluída (${fonte === 'fotmob' ? 'FotMob' : 'API-Football'}): ${totalProcessado} jogo(s) processado(s) na temporada ${temporada}.`);
+      const label = fonte === 'fotmob'
+        ? (modo === 'ao_vivo' ? 'FotMob Ao Vivo' : 'FotMob')
+        : 'API-Football';
+      setMsgImportacao(`Importação concluída (${label}): ${totalProcessado} jogo(s) processado(s) na temporada ${temporada}.`);
     } catch (e) {
       setErroImportacao(e.message);
     } finally {
@@ -353,13 +360,22 @@ export default function LigaDetalhe() {
                 Detalhe (API-Football)
               </button>
               <button
-                onClick={() => importarPartidas('fotmob')}
+                onClick={() => importarPartidas('fotmob', 'encerradas')}
                 disabled={!!importando}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={`Importa o máximo de detalhe (stats por time/jogador, mapa de chutes, estádio/clima, via FotMob) da temporada ${temporada}`}
+                title={`Importa stats de partidas encerradas (match_date < agora-2h) via FotMob da temporada ${temporada}`}
               >
-                {importando === 'fotmob' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
-                Detalhe (FotMob)
+                {importando === 'fotmob-encerradas' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+                Encerradas (FotMob)
+              </button>
+              <button
+                onClick={() => importarPartidas('fotmob', 'ao_vivo')}
+                disabled={!!importando}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-amber-600/60 text-amber-300 text-sm hover:bg-amber-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Importa stats de partidas com match_date nos últimos 120 min (em andamento ou recém-encerradas) via FotMob`}
+              >
+                {importando === 'fotmob-ao_vivo' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+                Ao Vivo (FotMob)
               </button>
             </div>
           </div>
