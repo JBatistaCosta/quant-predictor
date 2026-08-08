@@ -3068,7 +3068,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
   const todosCandidatos = [];
   for (const lid of ligasAlvo) {
     let q = supabase.from('matches')
-      .select('id, match_date, home_team_id, away_team_id, league_id, season')
+      .select('id, match_date, home_team_id, away_team_id, league_id, season, home_goals')
       .eq('league_id', lid).neq('status', 'cancelled');
     if (temporada) q = q.eq('season', temporada);
     if (modoValido === 'encerradas') {
@@ -3091,16 +3091,25 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     };
   }
 
-  // 3. Filtra os que ainda não têm FotMob match_id registrado
+  // 3. Filtra os que ainda não têm FotMob match_id registrado OU têm stats mas falta placar
   const todosIds = todosCandidatos.map(j => j.id);
-  const idsProntos = new Set();
+  // Map<matchId, fotmobSourceId> — jogos já importados; also used to skip fixture lookup
+  const fotmobIdConhecido = new Map();
   for (const lote of fatiar(todosIds, 200)) {
     const { data: ja } = await supabase.from('match_source_ids')
-      .select('match_id').eq('source', 'fotmob').in('match_id', lote);
-    (ja || []).forEach(r => idsProntos.add(r.match_id));
+      .select('match_id, source_id').eq('source', 'fotmob').in('match_id', lote);
+    (ja || []).forEach(r => fotmobIdConhecido.set(r.match_id, r.source_id));
   }
 
-  const pendentesTotal = todosCandidatos.filter(j => !idsProntos.has(j.id));
+  // Pendente = sem source_id (nunca importado) OU com source_id mas sem placar ainda
+  const pendentesTotal = todosCandidatos.filter(j =>
+    !fotmobIdConhecido.has(j.id) || j.home_goals === null
+  );
+  // Conjunto dos que já têm stats mas faltam apenas o placar
+  const apenasPlaycar = new Set(
+    todosCandidatos.filter(j => fotmobIdConhecido.has(j.id) && j.home_goals === null).map(j => j.id)
+  );
+
   const loteProcessar = pendentesTotal.slice(0, limiteJogos);
   const restantes = Math.max(0, pendentesTotal.length - loteProcessar.length);
 
@@ -3108,7 +3117,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     return {
       mensagem: 'Todos os jogos elegíveis já têm detalhe FotMob importado.',
       total_candidatos: todosCandidatos.length,
-      ja_importados: idsProntos.size,
+      ja_importados: fotmobIdConhecido.size,
       restantes: 0,
     };
   }
@@ -3162,9 +3171,13 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     if (processados > 0) await esperar(700);
     processados++;
 
-    const index = await getFixtureIndex(jogo._fotmobLeagueId, jogo.league_id, jogo.season);
-    const dia = jogo.match_date?.slice(0, 10);
-    const fotmobMatchId = index.get(`${dia}|${jogo.home_team_id}|${jogo.away_team_id}`);
+    // Se já importado, usa o fotmobMatchId conhecido (sem precisar buscar fixture list)
+    let fotmobMatchId = fotmobIdConhecido.get(jogo.id) || null;
+    if (!fotmobMatchId) {
+      const index = await getFixtureIndex(jogo._fotmobLeagueId, jogo.league_id, jogo.season);
+      const dia = jogo.match_date?.slice(0, 10);
+      fotmobMatchId = index.get(`${dia}|${jogo.home_team_id}|${jogo.away_team_id}`) || null;
+    }
     if (!fotmobMatchId) { semCasamentoOuFalha.push({ match_id: jogo.id, motivo: 'sem_casamento' }); continue; }
 
     try {
@@ -3173,31 +3186,43 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
       const payload = await resp.json();
       const content = payload.content || {};
 
-      await supabase.from('match_stats_fotmob').upsert(
-        montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
-        { onConflict: 'match_id,team_id' }
-      );
-
-      const mapaPlayerIdInterno = await upsertJogadoresDoJogo(supabase, jogo.id, content.playerStats, crosswalk);
-      const linhasJogadores = montarLinhasPlayerStats(jogo.id, content.playerStats, crosswalk, mapaPlayerIdInterno);
-      if (linhasJogadores.length) {
-        await supabase.from('match_player_stats_fotmob').upsert(linhasJogadores, { onConflict: 'match_id,fotmob_player_id' });
+      // Atualiza placar se ausente na tabela matches (independente de ter stats ou não)
+      if (jogo.home_goals === null) {
+        const homeG = payload.general?.homeScore?.current ?? null;
+        const awayG = payload.general?.awayScore?.current ?? null;
+        if (homeG !== null) {
+          await supabase.from('matches').update({ home_goals: homeG, away_goals: awayG }).eq('id', jogo.id);
+        }
       }
 
-      const linhasShots = montarLinhasShots(jogo.id, content.shotmap, crosswalk, mapaPlayerIdInterno);
-      for (const lote of fatiar(linhasShots, 200)) {
-        await supabase.from('match_shots_fotmob').upsert(lote, { onConflict: 'fotmob_shot_id' });
+      // Jogo que já tem stats mas só precisava do placar — não re-importa tudo
+      if (!apenasPlaycar.has(jogo.id)) {
+        await supabase.from('match_stats_fotmob').upsert(
+          montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
+          { onConflict: 'match_id,team_id' }
+        );
+
+        const mapaPlayerIdInterno = await upsertJogadoresDoJogo(supabase, jogo.id, content.playerStats, crosswalk);
+        const linhasJogadores = montarLinhasPlayerStats(jogo.id, content.playerStats, crosswalk, mapaPlayerIdInterno);
+        if (linhasJogadores.length) {
+          await supabase.from('match_player_stats_fotmob').upsert(linhasJogadores, { onConflict: 'match_id,fotmob_player_id' });
+        }
+
+        const linhasShots = montarLinhasShots(jogo.id, content.shotmap, crosswalk, mapaPlayerIdInterno);
+        for (const lote of fatiar(linhasShots, 200)) {
+          await supabase.from('match_shots_fotmob').upsert(lote, { onConflict: 'fotmob_shot_id' });
+        }
+
+        await supabase.from('match_context_fotmob').upsert(
+          montarContexto(jogo.id, fotmobMatchId, content.matchFacts, content.weather),
+          { onConflict: 'match_id' }
+        );
+
+        await supabase.from('match_source_ids').upsert(
+          { match_id: jogo.id, source: 'fotmob', source_id: String(fotmobMatchId), source_name: content.general?.matchName || null },
+          { onConflict: 'match_id,source' }
+        );
       }
-
-      await supabase.from('match_context_fotmob').upsert(
-        montarContexto(jogo.id, fotmobMatchId, content.matchFacts, content.weather),
-        { onConflict: 'match_id' }
-      );
-
-      await supabase.from('match_source_ids').upsert(
-        { match_id: jogo.id, source: 'fotmob', source_id: String(fotmobMatchId), source_name: content.general?.matchName || null },
-        { onConflict: 'match_id,source' }
-      );
       sucesso++;
     } catch (erro) {
       semCasamentoOuFalha.push({ match_id: jogo.id, motivo: erro.message });
@@ -3213,7 +3238,7 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
     temporada: temporada || 'todas',
     modo: modoValido,
     total_candidatos: todosCandidatos.length,
-    ja_importados: idsProntos.size,
+    ja_importados: fotmobIdConhecido.size,
     processados_agora: processados,
     sucesso,
     sem_casamento_ou_falha: semCasamentoOuFalha.length ? semCasamentoOuFalha : undefined,
