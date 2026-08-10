@@ -12,6 +12,21 @@ import { apiUrl } from '../utils/apiUrl';
 
 const OPCOES_N = [10, 20, 40];
 
+function calcularIdade(dateStr) {
+  if (!dateStr) return null;
+  const hoje = new Date();
+  const nasc = new Date(dateStr);
+  let idade = hoje.getFullYear() - nasc.getFullYear();
+  if (hoje.getMonth() < nasc.getMonth() || (hoje.getMonth() === nasc.getMonth() && hoje.getDate() < nasc.getDate())) idade--;
+  return idade;
+}
+
+function formatarDataNasc(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 function formatarValorMercado(v) {
   if (v == null) return '—';
   if (v >= 1_000_000) return `€${(v / 1_000_000).toFixed(1)}M`;
@@ -190,7 +205,7 @@ export default function JogadorDetalhe() {
 
       const { data: j, error: erroJogador } = await supabase
         .from('players')
-        .select('id, name, photo_url, age, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))')
+        .select('id, name, photo_url, age, birth_date, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))')
         .eq('id', id)
         .single();
 
@@ -273,17 +288,19 @@ export default function JogadorDetalhe() {
       const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${id}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao sincronizar.');
-      const [{ data: mv }, { data: carreira }, { data: trof }, { data: det }] = await Promise.all([
+      const [{ data: mv }, { data: carreira }, { data: trof }, { data: det }, { data: jogadorAtualizado }] = await Promise.all([
         supabase.from('player_market_value_history').select('value_date, value_eur, team_name').eq('player_id', id).order('value_date'),
         supabase.from('player_career_history_fotmob').select('team_name, start_date, end_date, active, transfer_type, appearances, goals, assists').eq('player_id', id).order('start_date', { ascending: false }),
         supabase.from('player_trophies_fotmob').select('team_name, league_name, season, result').eq('player_id', id),
         supabase.from('player_details_fotmob').select('*').eq('player_id', id).maybeSingle(),
+        supabase.from('players').select('id, name, photo_url, age, birth_date, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))').eq('id', id).single(),
       ]);
       setValorMercadoHist(mv || []);
       setCarreiraHist(carreira || []);
       setTitulos(trof || []);
       setDetalhesAvancados(det || null);
-      setMsgSinc(`Sincronizado: ${dados.pontos_valor_mercado} pontos de valor, ${dados.clubes_carreira} clubes na carreira, ${dados.titulos} títulos.`);
+      if (jogadorAtualizado) setJogador(jogadorAtualizado);
+      setMsgSinc(`Sincronizado: ${dados.pontos_valor_mercado} pontos de valor, ${dados.clubes_carreira} clubes na carreira, ${dados.titulos} títulos${dados.birth_date ? ` · nascimento ${formatarDataNasc(dados.birth_date)}` : ''}.`);
     } catch (e) {
       setErroSinc(e.message);
     } finally {
@@ -345,7 +362,13 @@ export default function JogadorDetalhe() {
               )
             )}
             {jogador.country_name && <span>{jogador.country_name}</span>}
-            {jogador.age != null && <span>{jogador.age} anos</span>}
+            {(jogador.birth_date || jogador.age != null) && (
+              <span>
+                {jogador.birth_date
+                  ? `${formatarDataNasc(jogador.birth_date)} · ${calcularIdade(jogador.birth_date)} anos`
+                  : `${jogador.age} anos`}
+              </span>
+            )}
           </div>
         </div>
         <div className="bg-slate-900 rounded-xl px-4 py-2 text-center shrink-0">

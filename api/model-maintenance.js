@@ -3255,12 +3255,17 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
       const payload = await resp.json();
       const content = payload.content || {};
 
-      // Atualiza placar se ausente na tabela matches (independente de ter stats ou não)
+      // Atualiza placar se ausente na tabela matches (independente de ter stats ou não).
+      // FotMob usa header.teams[].score como placar definitivo; general.homeScore.current
+      // é o placar ao vivo e pode ser null em partidas já encerradas.
       if (jogo.home_goals === null) {
-        const homeG = payload.general?.homeScore?.current ?? null;
-        const awayG = payload.general?.awayScore?.current ?? null;
+        const headerTeams = payload.header?.teams || [];
+        const homeG = headerTeams[0]?.score ?? payload.general?.homeScore?.current ?? null;
+        const awayG = headerTeams[1]?.score ?? payload.general?.awayScore?.current ?? null;
         if (homeG !== null) {
-          await supabase.from('matches').update({ home_goals: homeG, away_goals: awayG }).eq('id', jogo.id);
+          const updateData = { home_goals: homeG, away_goals: awayG };
+          if (payload.general?.finished) updateData.status = 'finished';
+          await supabase.from('matches').update(updateData).eq('id', jogo.id);
         }
       }
 
