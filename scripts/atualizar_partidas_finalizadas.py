@@ -167,13 +167,19 @@ def main():
     fixture_cache: dict = {}
 
     def get_fixture_index(fotmob_league_id: str, year: int) -> dict:
-        """Busca e cacheia fixture list. Tenta formato 'AAAA' e depois 'AAAA-1/AAAA'."""
+        """Busca e cacheia fixture list. Tenta formato 'AAAA' (ligas de temporada = ano
+        civil, ex. Brasileirão) e depois 'AAAA-1/AAAA' / 'AAAA/AAAA+1' (ligas europeias
+        de calendário ago-mai, ex. Eredivisie/5 grandes — FotMob exige intervalo, "AAAA"
+        sozinho devolve 0 fixtures). As duas variantes de intervalo cobrem tanto partidas
+        do fim de temporada (jan-jun, pertencem a "AAAA-1/AAAA") quanto do início
+        (jul-dez, pertencem a "AAAA/AAAA+1") — sem isso, jogos de agosto (abertura da
+        temporada) nunca casavam com nenhum fixture."""
         key = (fotmob_league_id, year)
         if key in fixture_cache:
             return fixture_cache[key]
 
         index: dict = {}
-        for season_str in [str(year), f"{year - 1}/{year}"]:
+        for season_str in [str(year), f"{year - 1}/{year}", f"{year}/{year + 1}"]:
             try:
                 r = requests.get(
                     f"{BASE}/fixtures",
