@@ -270,13 +270,20 @@ def main():
         if m["home_goals"] is None and args.modo in ("tudo", "placar"):
             try:
                 header_teams = d.get("header", {}).get("teams", [])
-                home_g = (header_teams[0].get("score") if header_teams else None) \
-                         or d["general"]["homeScore"].get("current")
-                away_g = (header_teams[1].get("score") if len(header_teams) > 1 else None) \
-                         or d["general"]["awayScore"].get("current")
+                general = d.get("general", {}) or {}
+                # `or` trocado por checagem explícita de None: placar 0 é um valor
+                # válido (ex. vitória 2-0) e era falso-negativo com `or`, caindo pro
+                # fallback abaixo e estourando KeyError quando general.homeScore não
+                # existe no payload (chave nem sempre presente em partidas encerradas).
+                home_g = header_teams[0].get("score") if header_teams else None
+                if home_g is None:
+                    home_g = (general.get("homeScore") or {}).get("current")
+                away_g = header_teams[1].get("score") if len(header_teams) > 1 else None
+                if away_g is None:
+                    away_g = (general.get("awayScore") or {}).get("current")
                 if home_g is not None:
                     update_data = {"home_goals": home_g, "away_goals": away_g}
-                    if d["general"].get("finished"):
+                    if general.get("finished"):
                         update_data["status"] = "finished"
                     supabase.table("matches").update(update_data).eq("id", match_id).execute()
             except Exception as exc:
