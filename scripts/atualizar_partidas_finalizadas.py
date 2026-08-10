@@ -132,7 +132,7 @@ def main():
         while True:
             q = (
                 supabase.table("matches")
-                .select("id, home_team_id, away_team_id, match_date, league_id, home_goals, away_goals")
+                .select("id, home_team_id, away_team_id, match_date, league_id, home_goals, away_goals, season")
                 .eq("league_id", lid)
                 .order("id")
                 .range(page * 1000, page * 1000 + 999)
@@ -163,23 +163,37 @@ def main():
         print("Nada a fazer.")
         return
 
-    # ── Cache de fixture lists por (fotmob_league_id, year) ───────────────────
+    # ── Cache de fixture lists por (fotmob_league_id, temporada) ───────────────
     fixture_cache: dict = {}
 
-    def get_fixture_index(fotmob_league_id: str, year: int) -> dict:
-        """Busca e cacheia fixture list. Tenta formato 'AAAA' (ligas de temporada = ano
-        civil, ex. Brasileirão) e depois 'AAAA-1/AAAA' / 'AAAA/AAAA+1' (ligas europeias
-        de calendário ago-mai, ex. Eredivisie/5 grandes — FotMob exige intervalo, "AAAA"
-        sozinho devolve 0 fixtures). As duas variantes de intervalo cobrem tanto partidas
-        do fim de temporada (jan-jun, pertencem a "AAAA-1/AAAA") quanto do início
-        (jul-dez, pertencem a "AAAA/AAAA+1") — sem isso, jogos de agosto (abertura da
-        temporada) nunca casavam com nenhum fixture."""
-        key = (fotmob_league_id, year)
+    def get_fixture_index(fotmob_league_id: str, temporada) -> dict:
+        """Busca e cacheia fixture list pra UMA temporada (matches.season, ex. '2026' —
+        já é o ano de INÍCIO da temporada, mesma convenção usada em toda a base). Tenta
+        o formato 'AAAA' primeiro (ligas de temporada = ano civil, ex. Brasileirão) e
+        'AAAA/AAAA+1' depois (ligas europeias de calendário ago-mai — FotMob exige
+        intervalo, 'AAAA' sozinho devolve 0 fixtures).
+
+        Importante: a chave de cache (e a escolha de temporada) usa `matches.season`,
+        NÃO o ano civil de `match_date` — dois jogos com o mesmo ano civil podem ser de
+        temporadas europeias DIFERENTES (ex. um jogo de maio/2026, cauda da temporada
+        2025/2026, e um de agosto/2026, abertura da 2026/2027, têm `match_date.year`
+        igual a 2026 mas pertencem a fixture lists distintas). Cachear por ano civil
+        causava um bug real: a primeira temporada resolvida pra um dado ano ficava
+        presa no cache e era reusada (errada) pro resto dos jogos daquele ano civil —
+        os jogos de abertura de temporada (agosto) ficavam presos em "sem ID FotMob
+        identificado" pra sempre porque a fixture list cacheada era da temporada
+        ANTERIOR, já encerrada."""
+        key = (fotmob_league_id, str(temporada))
         if key in fixture_cache:
             return fixture_cache[key]
 
         index: dict = {}
-        for season_str in [str(year), f"{year - 1}/{year}", f"{year}/{year + 1}"]:
+        candidatos_temporada = [str(temporada)]
+        try:
+            candidatos_temporada.append(f"{int(temporada)}/{int(temporada) + 1}")
+        except (TypeError, ValueError):
+            pass
+        for season_str in candidatos_temporada:
             try:
                 r = requests.get(
                     f"{BASE}/fixtures",
@@ -246,8 +260,8 @@ def main():
             if not m.get("match_date"):
                 n_sem_id += 1
                 continue
-            year = dt.datetime.fromisoformat(str(m["match_date"]).replace("Z", "+00:00")).year
-            index = get_fixture_index(fotmob_league_id, year)
+            temporada = m.get("season") or dt.datetime.fromisoformat(str(m["match_date"]).replace("Z", "+00:00")).year
+            index = get_fixture_index(fotmob_league_id, temporada)
             fx = casar_fixture(index, m["home_team_id"], m["away_team_id"], m["match_date"])
             if not fx:
                 n_sem_id += 1
