@@ -25,6 +25,11 @@ const MERCADO_CONTEXTO = 'Restrito ao período de teste out-of-sample (temporada
 // Mercados oferecidos aqui -- restrito aos que têm odds REAIS de abertura/
 // fechamento da Pinnacle em `odds_market` (sem isso a simulação nunca gera
 // nenhuma aposta, ver MERCADOS_CARTEIRA_SUPORTADOS em api/model-maintenance.js).
+// BTTS só tem candidatos no pipeline antigo (model_predictions, market=
+// 'btts') -- o Model Benchmarking (`predicoes`) não treina esse mercado
+// ainda, então fica sempre 0 apostas pra modelos exclusivos de lá, igual já
+// acontece com modelos "só Model Benchmarking" no 1X2/O-U sem o par
+// abertura/fechamento.
 // Escanteios (stats_glm_v1, pipeline antigo) e os mercados novos do Model
 // Benchmarking (corners_ou95/faixa_gols) já têm modelo treinado, mas NENHUMA
 // odd de mercado nesse projeto -- entrariam sempre com 0 apostas, por isso
@@ -33,6 +38,7 @@ const MERCADO_CONTEXTO = 'Restrito ao período de teste out-of-sample (temporada
 const MERCADOS_CARTEIRA = [
   { chave: '1X2', rotulo: '1X2' },
   { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
+  { chave: 'btts', rotulo: 'Ambas Marcam (BTTS)' },
 ];
 
 const ROTULO_EXECUCAO = { abertura: 'Abertura', fechamento: 'Fechamento' };
