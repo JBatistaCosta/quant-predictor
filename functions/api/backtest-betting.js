@@ -71,13 +71,62 @@ function calcularResultadosReais(matches, corners) {
   return porMatch;
 }
 
-function devigar(oddsPorSelecao) {
-  const implicitas = {};
-  let soma = 0;
-  for (const [sel, odd] of Object.entries(oddsPorSelecao)) { implicitas[sel] = 1 / odd; soma += implicitas[sel]; }
+// Devigging: remove a margem da casa das odds. Dois métodos, ambos derivados
+// da mesma família de fórmulas (ver true_odds_calculator.xlsm, planilha de
+// referência): "Odds Ratio" (Cheung) resolve c em
+// sum(q_i / (c + q_i - c*q_i)) = 1, onde q_i = 1/odd_i (prob. implícita
+// bruta); "Logarithmic function" (power) resolve c em sum(odd_i^c) = 1 e usa
+// odd_i^c direto como probabilidade. A planilha só tem fórmula fechada pra
+// 2/3 seleções (quadrática/cúbica via Cardano) — aqui é bissecção genérica,
+// que resolve pra qualquer N e bate com a planilha até a 10ª casa decimal
+// (validado manualmente). Substitui a normalização simples (implícita/soma)
+// usada antes, que não corrige a distorção de margem entre favorito e zebra.
+function resolverParametroDevig(g) {
+  const g0 = g(0);
+  if (Math.abs(g0) < 1e-14) return 0;
+  let tHi = 0, gHi = g0;
+  while (gHi > 0) {
+    tHi = tHi === 0 ? 1 : tHi * 2;
+    gHi = g(tHi);
+    if (tHi > 1e15) break; // odds degeneradas (<=1) não deveriam chegar aqui
+  }
+  let tLo = 0, gLo = g0;
+  for (let i = 0; i < 200; i++) {
+    const tMid = (tLo + tHi) / 2;
+    const gMid = g(tMid);
+    if (Math.abs(gMid) < 1e-12) return tMid;
+    if ((gMid > 0) === (gLo > 0)) { tLo = tMid; gLo = gMid; } else { tHi = tMid; }
+  }
+  return (tLo + tHi) / 2;
+}
+
+function devigarOddsRatio(oddsPorSelecao) {
+  const selecoes = Object.keys(oddsPorSelecao);
+  const q = selecoes.map((s) => 1 / oddsPorSelecao[s]);
+  const t = resolverParametroDevig((x) => {
+    const c = 1 + x;
+    return q.reduce((acc, qi) => acc + qi / (c + qi - c * qi), 0) - 1;
+  });
+  const c = 1 + t;
   const normalizadas = {};
-  for (const sel of Object.keys(implicitas)) normalizadas[sel] = implicitas[sel] / soma;
+  selecoes.forEach((s, i) => { normalizadas[s] = q[i] / (c + q[i] - c * q[i]); });
   return normalizadas;
+}
+
+function devigarLogaritmico(oddsPorSelecao) {
+  const selecoes = Object.keys(oddsPorSelecao);
+  const odds = selecoes.map((s) => oddsPorSelecao[s]);
+  const t = resolverParametroDevig((x) => odds.reduce((acc, o) => acc + Math.pow(o, -x), 0) - 1);
+  const c = -t;
+  const normalizadas = {};
+  selecoes.forEach((s, i) => { normalizadas[s] = Math.pow(odds[i], c); });
+  return normalizadas;
+}
+
+// Padrão Odds Ratio (método mais citado na literatura pra devig de odds
+// esportivas); passe metodo='logaritmico' pra usar o outro.
+function devigar(oddsPorSelecao, metodo = 'odds_ratio') {
+  return metodo === 'logaritmico' ? devigarLogaritmico(oddsPorSelecao) : devigarOddsRatio(oddsPorSelecao);
 }
 
 // Normaliza `predicoes`/`market_odds` (pipeline "Model Benchmarking", ver
