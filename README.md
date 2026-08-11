@@ -90,7 +90,141 @@ compilado pro Firebase precisa saber a URL do Vercel pra chamar a API
    Hosting, adicione-o na variável de ambiente `CORS_EXTRA_ORIGINS` no painel
    do Vercel (aceita lista separada por vírgula) e faça redeploy das funções.
 
-## 4. Por que isso resolve o problema do OCR
+## 4. Publicar na AWS (Elastic Beanstalk) — outra alternativa ao passo 2
+
+**Diferente do Firebase (passo 3), aqui front-end E as 12 funções de `api/*.js`
+rodam juntos, no mesmo servidor e no mesmo domínio** (`server/app.js` reúne
+tudo num app Express só). Vantagens práticas: não existe limite de "12
+funções serverless" (é um servidor único, não funções separadas) e a
+navegação fica mais fluida — o navegador nunca precisa sair do domínio da
+AWS pra chamar a API, então não depende de CORS liberado noutro domínio.
+
+Você **não precisa saber nada de AWS de antemão** — o passo a passo abaixo
+cobre desde criar a conta até publicar. É mais longo que o Vercel porque a
+AWS não tem um comando único tipo `vercel`; em compensação, depois de feito
+uma vez, atualizar é só `eb deploy`.
+
+### 4.1. Criar a conta AWS (uma vez só)
+
+1. Entre em https://aws.amazon.com/pt/, clique em "Criar uma conta da AWS" e
+   siga o cadastro (pede cartão de crédito pra confirmar identidade, mas o
+   Elastic Beanstalk em si não cobra nada extra — você paga só a instância de
+   servidor que ele cria por trás, e o nível gratuito da AWS cobre isso por
+   12 meses num uso pequeno como esse app).
+
+### 4.2. Criar um usuário com permissão (IAM) e pegar as chaves de acesso
+
+A AWS não deixa fazer login "pela linha de comando" com o e-mail/senha da
+conta — precisa de um **usuário IAM** com uma **chave de acesso** (o
+equivalente a usuário+senha, só que pra ferramentas). É isso que "configurar
+permissões e chaves" quer dizer, na prática:
+
+1. Faça login em https://console.aws.amazon.com/ com a conta criada acima.
+2. Na busca do topo, digite "IAM" e entre no serviço IAM.
+3. Menu lateral → **Users** → **Create user**.
+4. Dê um nome (ex.: `quant-predictor-deploy`) → **Next**.
+5. Em "Permissions options", escolha **Attach policies directly** e marque
+   `AdministratorAccess-AWSElasticBeanstalk` (política pronta da própria AWS,
+   já cobre tudo que o Elastic Beanstalk precisa) → **Next** → **Create user**.
+6. Clique no usuário recém-criado → aba **Security credentials** → seção
+   "Access keys" → **Create access key**.
+7. Escolha o caso de uso **Command Line Interface (CLI)** → confirme o aviso
+   → **Next** → **Create access key**.
+8. A AWS mostra a **Access key ID** e a **Secret access key** — essa é a
+   ÚNICA vez que a chave secreta aparece na tela. Clique em **Download .csv
+   file** e guarde esse arquivo num lugar seguro (nunca comitar no Git).
+
+Se mais tarde algo falhar com erro de permissão ("not authorized to perform
+...") ou de credencial ("Unable to locate credentials" / "InvalidClientTokenId"),
+volta nessa tela (IAM → Users → o usuário → Security credentials) pra
+conferir se a chave ainda existe e criar uma nova se precisar (chave antiga
+pode ser desativada em "Actions" sem afetar nada até você confirmar que a
+nova funciona).
+
+### 4.3. Instalar as ferramentas de linha de comando (uma vez só)
+
+No terminal:
+
+```
+pip install awsebcli --upgrade --user
+```
+
+(precisa do Python instalado — se não tiver, baixe em https://python.org.
+Alternativa sem Python: instalar via `brew install awsebcli` no Mac, ou ver
+https://github.com/aws/aws-elastic-beanstalk-cli-setup pro Windows.)
+
+Depois, rode:
+
+```
+eb --version
+```
+
+Se aparecer a versão, funcionou.
+
+### 4.4. Conectar as chaves da AWS nesta pasta e criar o ambiente
+
+Ainda no terminal, dentro da pasta deste projeto:
+
+```
+eb init
+```
+
+Ele pergunta a região (escolha uma perto de você, ex. `sa-east-1` — São
+Paulo), depois pede a **Access key ID** e a **Secret access key** do passo
+4.2 (cole os valores do arquivo .csv baixado). Em seguida:
+- "Select an application" → crie uma nova, aceite o nome padrão.
+- Se perguntar a plataforma, escolha **Node.js** (versão mais recente
+  disponível).
+- Se perguntar sobre CodeCommit → **No**. Sobre SSH → pode responder **No**
+  também (não é necessário pro deploy funcionar).
+
+Agora crie o ambiente (isso já sobe a primeira versão do site — demora uns
+5-10 minutos na primeira vez):
+
+```
+eb create quant-predictor-prod
+```
+
+### 4.5. Configurar as variáveis de ambiente (chaves do Supabase, APIs, etc.)
+
+As funções em `api/*.js` (Supabase, API-Football, OCR por IA etc.) leem
+essas chaves de variáveis de ambiente do servidor — sem elas, os endpoints
+respondem erro. Rode (troque `SEU_VALOR_AQUI` pelas chaves reais, as mesmas
+já usadas no painel do Vercel):
+
+```
+eb setenv SUPABASE_URL=SEU_VALOR_AQUI SUPABASE_KEY=SEU_VALOR_AQUI SUPABASE_SERVICE_ROLE_KEY=SEU_VALOR_AQUI API_FOOTBALL_KEY=SEU_VALOR_AQUI FOOTBALL_DATA_KEY=SEU_VALOR_AQUI ODDS_API_KEY=SEU_VALOR_AQUI ODDSPAPI_KEY=SEU_VALOR_AQUI THE_STATSAPI_KEY=SEU_VALOR_AQUI ANTHROPIC_API_KEY=SEU_VALOR_AQUI GEMINI_API_KEY=SEU_VALOR_AQUI CRON_SECRET=SEU_VALOR_AQUI GITHUB_ACTIONS_PAT=SEU_VALOR_AQUI
+```
+
+(Só precisa preencher as que você já usa hoje no Vercel — pode omitir as
+que não usa, ex. se não usa OCR com Gemini, pode pular `GEMINI_API_KEY`.)
+
+### 4.6. Publicar atualizações depois da primeira vez
+
+Sempre que quiser subir uma mudança de código pra AWS:
+
+```
+eb deploy
+```
+
+Pra ver a URL pública do site (algo como
+`quant-predictor-prod.xxxxx.sa-east-1.elasticbeanstalk.com`):
+
+```
+eb open
+```
+
+### 4.7. Importante: os crons (tarefas agendadas) continuam no Vercel
+
+Essa publicação na AWS cobre o site e a API sob demanda. As 3 tarefas
+agendadas (`vercel.json` — sincronizar partidas, odds, Elo) continuam rodando
+só no Vercel, de propósito: rodar a MESMA tarefa a partir de dois lugares ao
+mesmo tempo arrisca gravação duplicada/concorrente no banco Supabase. Se no
+futuro você quiser aposentar o Vercel de vez, isso pede migrar os crons pra
+AWS EventBridge Scheduler (chamando os mesmos endpoints com o header
+`Authorization: Bearer <CRON_SECRET>`) — decisão separada, não feita aqui.
+
+## 5. Por que isso resolve o problema do OCR
 
 O leitor de imagens (botões "Ler Estatísticas" e "Ler Odds da Casa") usa
 `<input type="file">` para abrir a galeria/câmera do celular. Dentro do
@@ -99,7 +233,7 @@ vez publicado no Vercel, o app roda como um site normal no navegador do seu
 celular, com acesso total à câmera e à galeria — os botões devem funcionar
 imediatamente, sem nenhuma mudança de código.
 
-## 5. Estrutura do projeto
+## 6. Estrutura do projeto
 
 ```
 ├── index.html          # HTML raiz
@@ -107,6 +241,8 @@ imediatamente, sem nenhuma mudança de código.
 │   ├── main.jsx         # ponto de entrada do React
 │   ├── App.jsx          # todo o app (calculadora, OCR, Monte Carlo, Kelly)
 │   └── index.css        # diretivas do Tailwind
+├── api/                 # funções serverless (Vercel) — também usadas pela AWS
+├── server/              # app Express que serve front-end + api/ juntos (AWS)
 ├── tailwind.config.js
 ├── postcss.config.js
 ├── vite.config.js
