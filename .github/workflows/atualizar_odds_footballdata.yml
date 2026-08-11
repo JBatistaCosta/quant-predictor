@@ -1,0 +1,60 @@
+name: Atualizar Odds football-data.co.uk (5 ligas europeias)
+
+# Roda arquivos_do_claude/ingestao_odds_footballdata.py pras 5 ligas
+# europeias (PL/PD/SA/BL1/FL1) numa temporada — fonte gratuita, sem chave
+# de API, sem limite de requisições (só um CSV estático por liga/temporada
+# em football-data.co.uk). Idempotente: pula partidas que já têm odds
+# gravadas, então é seguro rodar de novo a qualquer momento pra pegar só
+# o que falta (ex.: temporada em andamento cujo CSV da fonte só ficou
+# completo depois da primeira importação).
+#
+# Só manual (workflow_dispatch) — não é um cron regular, é pra rodar
+# quando alguém notar um buraco de cobertura (ver CONTEXTO_PROJETO.md,
+# achados de "buraco de odds fechado").
+
+on:
+  workflow_dispatch:
+    inputs:
+      temporada:
+        description: "Temporada no formato usado em matches.season (ex: 2025)"
+        required: true
+        type: string
+        default: "2025"
+      ligas:
+        description: "Códigos separados por vírgula (PL,PD,SA,BL1,FL1) ou 'todas'"
+        required: false
+        type: string
+        default: "todas"
+
+jobs:
+  atualizar-odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Instalar dependências
+        run: pip install pandas requests supabase
+
+      - name: Atualizar odds por liga
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          set -e
+          LIGAS="${{ inputs.ligas }}"
+          if [ -z "$LIGAS" ] || [ "$LIGAS" = "todas" ]; then
+            LIGAS="PL,PD,SA,BL1,FL1"
+          fi
+          IFS=',' read -ra ARR <<< "$LIGAS"
+          for LIGA in "${ARR[@]}"; do
+            echo "=== $LIGA / ${{ inputs.temporada }} ==="
+            python arquivos_do_claude/ingestao_odds_footballdata.py "$LIGA" "${{ inputs.temporada }}"
+          done

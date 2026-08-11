@@ -155,6 +155,25 @@ def main():
     if not jogos:
         sys.exit(f"Nenhum jogo de {liga_cod}/{temporada} no banco.")
 
+    # Idempotência: pula partidas que já têm odds gravadas (sem isso, rodar
+    # de novo pra pegar só o fim de uma temporada em andamento -- ex.: o CSV
+    # da fonte foi baixado no meio do campeonato e a segunda metade só ficou
+    # disponível depois -- duplicava as linhas já gravadas, já que o INSERT
+    # no fim do script não é upsert).
+    ids_jogos = [j["id"] for j in jogos]
+    ja_tem_odds = set()
+    inicio = 0
+    while True:
+        lote = (supabase.table("odds_market").select("match_id")
+                .in_("match_id", ids_jogos)
+                .range(inicio, inicio + 999).execute().data)
+        ja_tem_odds.update(r["match_id"] for r in lote)
+        if len(lote) < 1000:
+            break
+        inicio += 1000
+    if ja_tem_odds:
+        print(f"  {len(ja_tem_odds)} partida(s) já com odds gravadas -- serão puladas.")
+
     nossos = pd.DataFrame(jogos)
     nossos["data"] = pd.to_datetime(nossos["match_date"], utc=True).dt.date
 
@@ -188,7 +207,7 @@ def main():
         if "confira" in metodo:
             print(f"  ATENÇÃO ({metodo}): '{nome_fd}' -> '{nome_por_id[mapa_times[nome_fd]]}'")
 
-    registros, sem_match, sem_odds = [], 0, 0
+    registros, sem_match, sem_odds, ja_gravadas = [], 0, 0, 0
     for _, linha in df.iterrows():
         home_id = mapa_times.get(linha["HomeTeam"])
         away_id = mapa_times.get(linha["AwayTeam"])
@@ -203,6 +222,9 @@ def main():
             sem_match += 1
             continue
         match_id = int(cand.iloc[0]["id"])
+        if match_id in ja_tem_odds:
+            ja_gravadas += 1
+            continue
 
         teve_odds = False
         for prefixo, nome_casa in BOOKMAKERS:
@@ -235,7 +257,8 @@ def main():
         supabase.table("odds_market").insert(registros[i : i + 500]).execute()
 
     print(f"\n{liga_cod}/{temporada}: {len(registros)} linhas de odds gravadas "
-          f"({sem_match} partidas sem correspondência, {sem_odds} partidas casadas sem odds na fonte).")
+          f"({sem_match} partidas sem correspondência, {sem_odds} partidas casadas sem odds na fonte, "
+          f"{ja_gravadas} já tinham odds gravadas antes).")
 
 
 if __name__ == "__main__":
