@@ -2735,6 +2735,7 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
 
   const { data: ligaCadastroExistente } = await supabase.from('ligas').select('id').eq('pipeline_league_id', leagueId).maybeSingle();
   let ligaCadastroId = ligaCadastroExistente?.id;
+  let avisoCadastroLigas = null;
   if (!ligaCadastroId) {
     const { data: novaLigaCadastro, error: erroLigaCadastro } = await supabase
       .from('ligas')
@@ -2744,7 +2745,17 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
         pipeline_league_id: leagueId,
       })
       .select('id').single();
-    if (!erroLigaCadastro && novaLigaCadastro) ligaCadastroId = novaLigaCadastro.id;
+    if (!erroLigaCadastro && novaLigaCadastro) {
+      ligaCadastroId = novaLigaCadastro.id;
+    } else if (erroLigaCadastro) {
+      // Não falha a importação inteira por causa disso (as partidas já foram
+      // resolvidas até aqui) — mas sem isso a liga fica invisível no painel
+      // /ligas (lê da tabela `ligas`, não de `leagues`), silenciosamente, até
+      // alguém notar. Já aconteceu na prática: import de liga_id já cadastrada
+      // em `leagues`/`liga_fonte_externa` sem passar tipo/nome (só faz falta
+      // pra CRIAR liga nova) engolia o erro de tipo NOT NULL sem avisar.
+      avisoCadastroLigas = `Não foi possível criar o cadastro em "ligas" (aparece em /ligas): ${erroLigaCadastro.message}. Informe nome/tipo/pais/confederacao na chamada, ou crie a linha manualmente.`;
+    }
   }
 
   const respFixtures = await fetch(`https://www.fotmob.com/api/data/fixtures?id=${fmIdStr}&season=${encodeURIComponent(temporada)}`, { headers: FOTMOB_HEADERS });
@@ -2790,6 +2801,7 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
   return {
     league_id: leagueId, liga_id: ligaCadastroId, liga_criada: ligaCriada,
     fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados,
+    ...(avisoCadastroLigas ? { aviso: avisoCadastroLigas } : {}),
   };
 }
 
