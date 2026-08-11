@@ -1,12 +1,29 @@
 // src/pages/RatingClubes.jsx — rota /ratings
-// Painel do Elo interno por clube (team_elo/team_elo_history, ver
-// api/model-maintenance.js ?tarefa=elo). Dois escopos: "liga" (um rating por
-// liga doméstica, com seletor de país) e "geral" (cross-liga, só ajusta em
-// jogos de Champions League). Ranking atual + timeline de rating ao longo do
-// tempo pros times selecionados na tabela (clique pra incluir/remover, até 6).
+// Painel do Elo interno por clube. Dois modelos de cálculo distintos:
+//   - escopo (DB) "global" (scripts/elo_global.py, cron diário): UM único
+//     pool de rating, juntando TODAS as partidas de TODAS as competições —
+//     a UI organiza esse mesmo rating em 3 níveis (Federação = país,
+//     Confederação, Geral = mundial sem filtro), só mudando o FILTRO
+//     aplicado sobre os mesmos números, não o cálculo.
+//   - escopo (DB) "liga": o modelo antigo, um Elo ISOLADO por competição
+//     individual (Brasileirão nunca se cruza com Premier League) — mantido
+//     como opção à parte ("Por competição"), é o que dados_historicos.py
+//     consome como feature de modelo, não pode mudar de forma.
+// Ranking atual + timeline de rating ao longo do tempo pros times
+// selecionados na tabela (clique pra incluir/remover, até 6).
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Landmark, Shield, TrendingUp } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { CONFEDERACOES, confederacaoDoPais } from '../utils/confederacoes';
+
+// Nomes de exibição pros códigos de país (ISO 3166 alpha-3) que aparecem em
+// leagues.territory_code hoje — cai no próprio código se não tiver entrada
+// (nunca quebra pra país novo, só fica menos bonito até alguém adicionar aqui).
+const NOME_PAIS = {
+  BRA: 'Brasil', ENG: 'Inglaterra', ESP: 'Espanha', FRA: 'França', ITA: 'Itália',
+  DEU: 'Alemanha', NED: 'Holanda', POR: 'Portugal', USA: 'Estados Unidos',
+};
+const nomePais = (codigo) => NOME_PAIS[codigo] || codigo;
 
 // Paleta categórica (passo escuro, validada contra superfície slate-900/800) —
 // ordem fixa, nunca ciclada por rank (ver skill de dataviz do projeto).
@@ -44,18 +61,21 @@ function deslocarDias(dataISO, dias) {
 
 // Reconstrói o ranking "como estava" numa data: pra cada time do roster, pega
 // o rating_depois da partida mais recente até essa data (sem partida ainda =
-// 1500, valor inicial de todo time no Elo). Só busca até 300 linhas mais
-// recentes (ordenado desc) — como cada rodada já cobre todos os times da liga
-// de uma vez, isso é sempre suficiente pra achar o rating mais recente de
-// cada um sem precisar paginar o histórico inteiro.
+// 1500, valor inicial de todo time no Elo). Filtra direto pelos team_ids do
+// roster (em vez de confiar num limite fixo de linhas mais recentes) — no
+// escopo "global" (todas as competições juntas), um limite fixo pequeno
+// podia ficar todo tomado por partidas de OUTRAS ligas/países acontecendo
+// perto da mesma data, sem sequer chegar nos times do roster filtrado.
 async function buscarRankingNaData(escopoAtual, ligaIdAtual, dataAlvo, roster) {
+  const teamIds = roster.map(r => r.team_id);
   let query = supabase
     .from('team_elo_history')
     .select('team_id, match_date, rating_depois')
     .eq('escopo', escopoAtual)
+    .in('team_id', teamIds)
     .lte('match_date', dataAlvo)
     .order('match_date', { ascending: false })
-    .limit(300);
+    .limit(teamIds.length * 6 + 50);
   query = escopoAtual === 'liga' ? query.eq('league_id', ligaIdAtual) : query;
   const { data } = await query;
 
@@ -190,11 +210,24 @@ function EloTimelineChart({ series }) {
   );
 }
 
+// Nível de organização escolhido na UI. 'federacao'/'confederacao'/'geral'
+// são só filtros diferentes sobre o MESMO escopo (DB) "global"; 'liga' é o
+// modelo antigo, um cálculo isolado à parte (ver comentário no topo do arquivo).
+const NIVEIS = [
+  ['federacao', 'Federação'],
+  ['confederacao', 'Confederação'],
+  ['geral', 'Geral'],
+  ['liga', 'Por competição'],
+];
+
 export default function RatingClubes() {
-  const [escopo, setEscopo] = useState('liga');
+  const [nivel, setNivel] = useState('federacao');
   const [ligas, setLigas] = useState([]);
   const [ligaId, setLigaId] = useState('');
-  const [ranking, setRanking] = useState([]); // roster + rating atual (team_elo)
+  const [paisSelecionado, setPaisSelecionado] = useState('');
+  const [confederacaoSelecionada, setConfederacaoSelecionada] = useState('UEFA');
+  const [mapaFederacao, setMapaFederacao] = useState(new Map()); // team_id -> pais_codigo
+  const [rankingBase, setRankingBase] = useState([]); // roster + rating atual (team_elo), sem filtro de nível
   const [carregandoRanking, setCarregandoRanking] = useState(false);
   const [modoRanking, setModoRanking] = useState('atual'); // 'atual' | 'data'
   const [dataSelecionada, setDataSelecionada] = useState(hojeISO());
@@ -207,6 +240,9 @@ export default function RatingClubes() {
   const coresRef = useRef(new Map());
   const proximoSlotRef = useRef(0);
 
+  // escopo real gravado no banco por trás do nível escolhido na UI.
+  const escopo = nivel === 'liga' ? 'liga' : 'global';
+
   useEffect(() => {
     if (!supabaseAtivo) return;
     supabase.from('leagues').select('id, name, external_id').order('name').then(({ data }) => {
@@ -215,7 +251,23 @@ export default function RatingClubes() {
     });
   }, []);
 
-  // Ranking atual (liga escolhida, ou geral) — reseta cores/seleção quando o contexto muda.
+  // Mapa time -> país, usado pra filtrar por federação/confederação. Busca
+  // uma vez só (a view não muda por sessão) e reaproveita nos 3 níveis.
+  const [carregandoMapa, setCarregandoMapa] = useState(false);
+  useEffect(() => {
+    if (!supabaseAtivo || nivel === 'liga' || mapaFederacao.size > 0) return;
+    (async () => {
+      setCarregandoMapa(true);
+      const linhas = await buscarPaginado(supabase.from('team_federacao').select('team_id, pais_codigo'));
+      setMapaFederacao(new Map(linhas.map(l => [l.team_id, l.pais_codigo])));
+      setCarregandoMapa(false);
+    })();
+  }, [nivel]);
+
+  // Ranking base (escopo global inteiro, ou liga escolhida) — reseta
+  // cores/seleção quando o escopo (global<->liga) ou a liga mudam. Os
+  // filtros de federação/confederação são aplicados depois, client-side
+  // (useMemo abaixo), sem precisar buscar de novo a cada troca de país.
   useEffect(() => {
     if (!supabaseAtivo) return;
     if (escopo === 'liga' && !ligaId) return;
@@ -227,15 +279,46 @@ export default function RatingClubes() {
       let query = supabase.from('team_elo').select('team_id, rating, partidas, teams(name, crest_url)').eq('escopo', escopo);
       query = escopo === 'liga' ? query.eq('league_id', ligaId) : query;
       const { data } = await query.order('rating', { ascending: false });
-      const linhas = data || [];
-      setRanking(linhas);
-      setSelecionados(linhas.slice(0, 5).map(l => l.team_id));
+      setRankingBase(data || []);
       setCarregandoRanking(false);
     })();
   }, [escopo, ligaId]);
 
+  // Países com pelo menos 1 time no ranking base — popula o seletor de
+  // federação e escolhe um default (Brasil se existir, senão o primeiro).
+  const paisesDisponiveis = useMemo(() => {
+    if (nivel === 'liga' || mapaFederacao.size === 0) return [];
+    const codigos = new Set();
+    for (const l of rankingBase) {
+      const c = mapaFederacao.get(l.team_id);
+      if (c) codigos.add(c);
+    }
+    return [...codigos].sort((a, b) => nomePais(a).localeCompare(nomePais(b)));
+  }, [rankingBase, mapaFederacao, nivel]);
+
+  useEffect(() => {
+    if (nivel !== 'federacao' || paisSelecionado || paisesDisponiveis.length === 0) return;
+    setPaisSelecionado(paisesDisponiveis.includes('BRA') ? 'BRA' : paisesDisponiveis[0]);
+  }, [nivel, paisesDisponiveis, paisSelecionado]);
+
+  // Ranking filtrado pelo nível escolhido — é isso que a tabela/timeline usam.
+  const ranking = useMemo(() => {
+    if (nivel === 'liga' || nivel === 'geral') return rankingBase;
+    if (nivel === 'federacao') {
+      if (!paisSelecionado) return [];
+      return rankingBase.filter(l => mapaFederacao.get(l.team_id) === paisSelecionado);
+    }
+    // confederacao
+    return rankingBase.filter(l => confederacaoDoPais(mapaFederacao.get(l.team_id)) === confederacaoSelecionada);
+  }, [rankingBase, nivel, paisSelecionado, confederacaoSelecionada, mapaFederacao]);
+
+  // Reseta a seleção da timeline sempre que o recorte exibido muda.
+  useEffect(() => {
+    setSelecionados(ranking.slice(0, 5).map(l => l.team_id));
+  }, [ranking]);
+
   // Ranking reconstruído numa data escolhida — só roda quando o modo "nessa
-  // data" está ativo, usa o roster (nomes/escudos) já carregado no efeito acima.
+  // data" está ativo, usa o roster (nomes/escudos) já filtrado acima.
   useEffect(() => {
     if (!supabaseAtivo || modoRanking !== 'data' || ranking.length === 0) return;
     if (escopo === 'liga' && !ligaId) return;
@@ -308,21 +391,42 @@ export default function RatingClubes() {
         <h1 className="text-2xl font-extrabold text-slate-100">Rating dos Clubes (Elo)</h1>
       </div>
 
-      {/* Filtros — uma linha só, acima do conteúdo, escopo tudo abaixo */}
+      {/* Filtros — uma linha só, acima do conteúdo, nível de organização tudo abaixo */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
-          {[['liga', 'Por liga (país)'], ['geral', 'Geral (cross-liga)']].map(([v, rotulo]) => (
+          {NIVEIS.map(([v, rotulo]) => (
             <button
               key={v}
-              onClick={() => setEscopo(v)}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${escopo === v ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+              onClick={() => setNivel(v)}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${nivel === v ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
             >
               {rotulo}
             </button>
           ))}
         </div>
 
-        {escopo === 'liga' && (
+        {nivel === 'federacao' && (
+          <select
+            value={paisSelecionado}
+            onChange={(e) => setPaisSelecionado(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 font-semibold"
+          >
+            {paisesDisponiveis.length === 0 && <option value="">Carregando países...</option>}
+            {paisesDisponiveis.map(c => <option key={c} value={c}>{nomePais(c)}</option>)}
+          </select>
+        )}
+
+        {nivel === 'confederacao' && (
+          <select
+            value={confederacaoSelecionada}
+            onChange={(e) => setConfederacaoSelecionada(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 font-semibold"
+          >
+            {Object.entries(CONFEDERACOES).map(([codigo, nome]) => <option key={codigo} value={codigo}>{nome}</option>)}
+          </select>
+        )}
+
+        {nivel === 'liga' && (
           <select
             value={ligaId}
             onChange={(e) => setLigaId(e.target.value)}
@@ -385,7 +489,7 @@ export default function RatingClubes() {
           {(() => {
             const emDataMode = modoRanking === 'data';
             const linhasExibidas = emDataMode ? rankingNaData : ranking;
-            const carregando = emDataMode ? carregandoRankingData : carregandoRanking;
+            const carregando = emDataMode ? carregandoRankingData : (carregandoRanking || (nivel !== 'liga' && carregandoMapa));
             if (carregando) return <div className="text-slate-500 text-center py-10 text-sm">Carregando...</div>;
             if (linhasExibidas.length === 0) return <div className="text-slate-500 text-center py-10 text-sm">Sem rating calculado ainda pra esse recorte.</div>;
             return (
