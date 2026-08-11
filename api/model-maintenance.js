@@ -3729,6 +3729,27 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   if (!modelo) return { status: 400, error: 'Parâmetro "modelo" é obrigatório.' };
   const mercado = MERCADOS_CARTEIRA_SUPORTADOS.has(query.mercado) ? query.mercado : '1X2';
 
+  // Intervalo personalizado de datas (opcional, combina em AND com liga/
+  // temporada -- mesmo padrão dos outros filtros). NÃO substitui o piso
+  // TEMPORADA_TESTE_MINIMA logo abaixo (pedido explícito do usuário: esse
+  // piso não é desligável por nenhum filtro da UI) -- só estreita ainda
+  // mais o período de teste já filtrado por season.
+  const dataInicioRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const dataInicio = dataInicioRegex.test(query.data_inicio || '') ? query.data_inicio : null;
+  const dataFimBruta = dataInicioRegex.test(query.data_fim || '') ? query.data_fim : null;
+  if (dataInicio && dataFimBruta && dataInicio > dataFimBruta) {
+    return { status: 400, error: 'data_inicio não pode ser depois de data_fim.' };
+  }
+  // match_date é timestamptz -- data_fim precisa virar limite EXCLUSIVO do
+  // dia seguinte pra incluir o dia inteiro (senão "2026-05-10" corta às
+  // 00:00 e perde todos os jogos daquele dia).
+  let dataFimExclusiva = null;
+  if (dataFimBruta) {
+    const d = new Date(`${dataFimBruta}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    dataFimExclusiva = d.toISOString().slice(0, 10);
+  }
+
   const evMinimo = query.ev_minimo != null ? Number(query.ev_minimo) : 1.02;
   const evMaximo = query.ev_maximo != null ? Number(query.ev_maximo) : 2.0; // 100% default
   const stakeMinimaPct = query.stake_minima_pct != null ? Number(query.stake_minima_pct) : 0.005;
@@ -3762,6 +3783,8 @@ async function tarefaSimulacaoCarteira(supabase, query) {
         .eq('status', 'finished');
       if (ligaIdNum) q = q.eq('league_id', ligaIdNum);
       if (temporada) q = q.eq('season', temporada);
+      if (dataInicio) q = q.gte('match_date', dataInicio);
+      if (dataFimExclusiva) q = q.lt('match_date', dataFimExclusiva);
       return q;
     }),
   ]);
@@ -3951,6 +3974,7 @@ async function tarefaSimulacaoCarteira(supabase, query) {
     body: {
       parametros: {
         modelo, mercado, liga_id: ligaIdNum, temporada: temporada || null, temporada_minima_teste: TEMPORADA_TESTE_MINIMA,
+        data_inicio: dataInicio, data_fim: dataFimBruta,
         usar_calibracao: usarCalibracao, ev_minimo: evMinimo, stake_minima_pct: stakeMinimaPct,
         teto_exposicao_pct: tetoExposicaoPct, banca_inicial: bancaInicial,
       },
