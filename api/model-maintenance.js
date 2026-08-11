@@ -2298,6 +2298,21 @@ function normalizarTexto2(s) {
 // ou sigla diferente da OddsPapi. Sem ambiguidade (comparação 1:1 direta
 // entre as duas listas fechadas de 20 times), não precisa de confirmação
 // time a time como o caso QPR (que tinha colisão entre ligas).
+//
+// BUG REAL corrigido (achado rodando o backfill de BTTS em produção): as
+// duas entradas abaixo ('atleticomineiromg', 'caparanaensepr') são pro
+// nome usado por /v4/fixtures (tarefaOddsHistorico) -- convenção DIFERENTE
+// de /v4/odds-by-tournaments (tarefaOddsSync, de onde vieram as 6 entradas
+// acima, ex. 'camineiro'). /v4/fixtures sufixa a UF no nome ("Atletico
+// Mineiro MG", "CA Paranaense PR" -- confirmado nos 20 nomes distintos de
+// `oddspapi_cache.fixtures_finalizadas_liga_1`); o sufixo de UF sozinho não
+// quebra o casamento por substring pros outros 18 times (é só um sufixo a
+// mais no nome já contido), mas quebra pra esses 2 porque nosso nome local
+// ("Clube Atlético Mineiro", "Club Athletico Paranaense") tem um prefixo
+// ("Clube"/"Club") sem raiz em comum com a sigla curta da OddsPapi ("CA").
+// Sem esse fix, TODAS as partidas desses 2 times ficavam presas como "sem
+// casamento" em tarefaOddsHistorico -- inclusive 5 sem NENHUM mercado
+// extraído (nem 1X2/O-U), não só sem BTTS.
 const ALIASES_ODDSPAPI = {
   'camineiro': 'atleticomineiro',
   'chapecoenseaf': 'chapecoense',
@@ -2305,6 +2320,8 @@ const ALIASES_ODDSPAPI = {
   'gremiofbpa': 'gremiofbportoalegrense',
   'rbbragantino': 'redbullbragantino',
   'sccorinthianspaulista': 'sccorinthians',
+  'atleticomineiromg': 'clubeatleticomineiro',
+  'caparanaensepr': 'clubathleticoparanaense',
 };
 function nomesBatem(a, b) {
   let x = normalizarTexto2(a), y = normalizarTexto2(b);
