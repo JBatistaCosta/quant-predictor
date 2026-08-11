@@ -1,13 +1,23 @@
 name: Recalcular Elo Global (todas as competições)
 
-# Recalcula o escopo='global' de team_elo/team_elo_history (scripts/elo_global.py)
+# Atualiza o escopo='global' de team_elo/team_elo_history (scripts/elo_global.py)
 # — um único pool de rating por time, juntando TODAS as partidas de TODAS as
 # competições (domésticas + continentais + internacionais). Usado só pelo
 # painel /ratings (RatingClubes.jsx), não alimenta o pipeline de ML (que
 # continua consumindo escopo='liga', isolado por competição, sem mudança).
 #
-# Full recompute a cada execução — ~30 mil partidas processam em segundos,
-# sem custo de cota externa (não chama nenhuma API de terceiros).
+# Dois modos (ver docstring do script pro detalhe de quando usar cada um):
+#   - incremental (cron diário): só aplica as partidas novas por cima do
+#     rating atual -- mais barato, certo pro dia a dia (jogos novos das
+#     ligas que já estavam na base).
+#   - completo (só manual, workflow_dispatch): recalcula tudo do zero.
+#     OBRIGATÓRIO rodar depois de adicionar uma liga ou temporada nova —
+#     partidas históricas "novas" (com data no passado) só entram na ordem
+#     cronológica certa com um recompute completo; o modo incremental
+#     detecta esse caso e aborta sozinho pedindo pra rodar completo.
+#
+# Sem custo de cota externa (não chama nenhuma API de terceiros) — ~30 mil
+# partidas processam em segundos, bem longe do timeout de 30min do job.
 #
 # Roda 30min depois do sync-matches (06:00 UTC, ver vercel.json) pra já
 # pegar os placares do dia atualizados.
@@ -16,6 +26,15 @@ on:
   schedule:
     - cron: "30 6 * * *"
   workflow_dispatch:
+    inputs:
+      modo:
+        description: "completo = recalcula tudo (usar ao adicionar liga/temporada nova) | incremental = só as partidas novas"
+        required: false
+        type: choice
+        options:
+          - incremental
+          - completo
+        default: incremental
 
 jobs:
   elo-global:
@@ -36,8 +55,11 @@ jobs:
       - name: Instalar dependências
         run: pip install -r scripts/requirements.txt
 
-      - name: Recalcular Elo global
+      - name: Atualizar Elo global
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python scripts/elo_global.py
+        run: |
+          MODO="${{ inputs.modo }}"
+          if [ -z "$MODO" ]; then MODO="incremental"; fi
+          python scripts/elo_global.py --modo "$MODO"
