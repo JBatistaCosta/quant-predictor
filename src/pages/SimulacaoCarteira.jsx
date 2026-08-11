@@ -187,6 +187,8 @@ export default function SimulacaoCarteira() {
   const [modelosSelecionados, setModelosSelecionados] = useState(new Set());
   const [ligaId, setLigaId] = useState('');
   const [temporada, setTemporada] = useState('');
+  const [dataInicio, setDataInicio] = useState('');
+  const [dataFim, setDataFim] = useState('');
   const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
   const [bancaInicial, setBancaInicial] = useState(1000);
   const [tipoStake, setTipoStake] = useState('kelly');
@@ -257,6 +259,7 @@ export default function SimulacaoCarteira() {
 
   const rodar = async () => {
     if (modelosSelecionados.size === 0) { setErro('Selecione pelo menos 1 modelo.'); return; }
+    if (dataInicio && dataFim && dataInicio > dataFim) { setErro('Data início não pode ser depois de data fim.'); return; }
     setRodando(true);
     setErro('');
     try {
@@ -276,6 +279,8 @@ export default function SimulacaoCarteira() {
         });
         if (ligaId) params.set('liga_id', ligaId);
         if (temporada) params.set('temporada', temporada);
+        if (dataInicio) params.set('data_inicio', dataInicio);
+        if (dataFim) params.set('data_fim', dataFim);
         const resp = await fetch(apiUrl(`/api/model-maintenance?${params}`));
         const dados = await resp.json();
         if (!resp.ok) throw new Error(`${modelo}: ${dados.error?.message || 'erro'}`);
@@ -342,6 +347,7 @@ export default function SimulacaoCarteira() {
     EV Range: ${(Number(evMinimo) * 100 - 100).toFixed(1)}% a ${(Number(evMaximo) * 100 - 100).toFixed(1)}%. 
     Stake: ${tipoStake === 'fixa' ? 'Fixa R$ ' + stakeFixa : 'Kelly ' + (Number(kellyMultiplier)*100).toFixed(0) + '%'}.
     Teto Exposição: ${(Number(tetoExposicaoPct)*100).toFixed(1)}% por rodada. Execuções "Abertura"/"Fechamento" usam odds Pinnacle.
+    ${dataInicio || dataFim ? `Período: ${dataInicio || 'início do teste'} a ${dataFim || 'hoje'}.` : ''}
   </p>
   <table>
     <thead><tr>
@@ -446,6 +452,16 @@ export default function SimulacaoCarteira() {
                   <option value="">Todas as temporadas</option>
                   {temporadasDisponiveis.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1" title="Estreita ainda mais o período de teste (2025+) — não substitui esse piso.">Data início</label>
+                <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1" title="Estreita ainda mais o período de teste (2025+) — não substitui esse piso.">Data fim</label>
+                <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
+                  className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correção</label>
