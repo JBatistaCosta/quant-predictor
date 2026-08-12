@@ -163,21 +163,44 @@ navegador, já logado no Console da AWS.
 1. Baixe o código: no GitHub, na página do repositório/branch, clique em
    **Code** (botão verde) → **Download ZIP**. Isso baixa a pasta inteira do
    projeto sem precisar de `git` nem terminal.
-2. No Console da AWS (https://console.aws.amazon.com/), busque **Elastic
+2. **Importante — reempacote o ZIP antes de subir pra AWS** (passo que, se
+   pulado, causa o erro mais comum aqui: *"failed to generate a Procfile for
+   Node.js... Provide package.json, server.js, or app.js"*, mesmo esses
+   arquivos existindo no projeto). O ZIP do GitHub vem com uma pasta extra
+   por dentro (tipo `quant-predictor-main/` envolvendo tudo), e a AWS exige
+   os arquivos (`package.json`, `Procfile` etc.) **direto na raiz** do zip,
+   não dentro de uma subpasta. Corrija assim:
+   1. Descompacte o ZIP baixado.
+   2. Entre na pasta que foi criada (`quant-predictor-main` ou parecido).
+   3. Selecione TODOS os arquivos/pastas **de dentro** dela (Ctrl+A no
+      Windows / Cmd+A no Mac) — não selecione a pasta em si.
+   4. Compacte essa seleção num ZIP novo: botão direito → "Enviar para" →
+      "Pasta compactada" (Windows) ou botão direito → "Comprimir N itens"
+      (Mac).
+   5. Confira: abrindo esse ZIP novo, `package.json` e `Procfile` devem
+      aparecer direto na lista, sem nenhuma pasta por cima.
+3. No Console da AWS (https://console.aws.amazon.com/), busque **Elastic
    Beanstalk** → **Create application**.
-3. Preencha:
+4. Preencha:
    - **Application name**: `quant-predictor` (use esse nome exato — é o que
      o deploy automático do passo 4.3-C espera por padrão; se usar outro
      nome, ajuste lá).
    - Clique em **Environment information** pra expandir e confira o
      **Environment name** — troque para `quant-predictor-prod` (mesmo
      motivo do nome da aplicação acima).
+   - **Region** (canto superior direito do Console, antes mesmo de entrar em
+     Elastic Beanstalk): escolha `sa-east-1` (São Paulo) se possível — é a
+     região mais perto do Brasil e a que o deploy automático (4.3-C) espera
+     por padrão. Se você já criou um ambiente noutra região (ex.
+     `us-east-2`), sem problema, só ajuste a variável `AWS_REGION` no passo
+     4.3-C depois.
    - **Platform**: **Node.js** (deixe a versão mais recente sugerida).
    - **Application code**: escolha **Upload your code** → **Choose file** →
-     selecione o `.zip` baixado no passo 1.
+     selecione o `.zip` já reempacotado no passo 2 (não o ZIP original do
+     GitHub).
    - Em "Presets", escolha **Single instance (free tier eligible)** — fica
      dentro do nível gratuito.
-4. Antes de clicar em criar, adicione as chaves que os endpoints precisam:
+5. Antes de clicar em criar, adicione as chaves que os endpoints precisam:
    role até **Configure more options** → no bloco **Software** clique em
    **Edit** → seção **Environment properties** → adicione uma por uma (nome
    e valor) as mesmas chaves já usadas no painel do Vercel: `SUPABASE_URL`,
@@ -186,16 +209,19 @@ navegador, já logado no Console da AWS.
    `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `CRON_SECRET`,
    `GITHUB_ACTIONS_PAT` (só as que você já usa — pode pular o resto) →
    **Save**.
-5. Clique em **Create app**. Leva uns 5-10 minutos na primeira vez — a barra
+6. Clique em **Create app**. Leva uns 5-10 minutos na primeira vez — a barra
    de status fica em "Launching environment" e depois vira **Health: Ok**
-   (verde) quando terminar.
-6. A URL pública do site aparece no topo da página do ambiente (algo como
+   (verde) quando terminar. Se aparecer erro citando "Procfile" ou "engine
+   execution", quase sempre é o problema do passo 2 (zip com pasta extra) —
+   apague o ambiente com erro e recrie com o zip reempacotado direito.
+7. A URL pública do site aparece no topo da página do ambiente (algo como
    `quant-predictor-env.xxxxx.sa-east-1.elasticbeanstalk.com`) — clique pra
    abrir.
-7. **Pra atualizar depois** (ex. depois de uma mudança de código): baixe um
-   ZIP novo do GitHub (passo 1) e, na página do ambiente, clique em **Upload
-   and deploy** → selecione o novo ZIP → **Deploy**.
-8. Ao terminar de usar o computador público, saia da sessão do Console
+8. **Pra atualizar depois** (ex. depois de uma mudança de código): baixe um
+   ZIP novo do GitHub, reempacote de novo (passo 2) e, na página do
+   ambiente, clique em **Upload and deploy** → selecione o novo ZIP →
+   **Deploy**.
+9. Ao terminar de usar o computador público, saia da sessão do Console
    (canto superior direito → **Sign out**) antes de sair do navegador.
 
 Depois de fazer isso a primeira vez, o jeito mais prático de manter
