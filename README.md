@@ -101,8 +101,11 @@ AWS pra chamar a API, então não depende de CORS liberado noutro domínio.
 
 Você **não precisa saber nada de AWS de antemão** — o passo a passo abaixo
 cobre desde criar a conta até publicar. É mais longo que o Vercel porque a
-AWS não tem um comando único tipo `vercel`; em compensação, depois de feito
-uma vez, atualizar é só `eb deploy`.
+AWS não tem um comando único tipo `vercel`. Tem dois jeitos de publicar (veja
+o passo 4.3): **pelo Console no navegador** (sem instalar nada, sem digitar
+chave secreta — melhor se você está num computador público/compartilhado) ou
+**pela linha de comando** (mais rápido pra atualizar com frequência, mas só
+recomendado no seu próprio computador).
 
 ### 4.1. Criar a conta AWS (uma vez só)
 
@@ -141,7 +144,66 @@ conferir se a chave ainda existe e criar uma nova se precisar (chave antiga
 pode ser desativada em "Actions" sem afetar nada até você confirmar que a
 nova funciona).
 
-### 4.3. Instalar as ferramentas de linha de comando (uma vez só)
+**Essa chave (Access key ID + Secret access key) só é usada no caminho "linha
+de comando" (4.4-B) — se você vai publicar pelo Console (4.3-A, recomendado
+num computador público/compartilhado), pode pular a criação da chave e ir
+direto pro próximo passo.** Nunca digite a Secret access key num computador
+que não é seu — se você já criou a chave e não vai usá-la agora, mais seguro
+é desativá-la ou excluí-la (mesma tela, botão "Actions") até precisar de
+verdade num computador de confiança.
+
+### 4.3. Como publicar — escolha um caminho
+
+**4.3-A — Pelo Console da AWS, sem instalar nada (recomendado se você está
+num computador público ou compartilhado)**
+
+Não precisa instalar nada nem digitar nenhuma chave secreta — só usa o
+navegador, já logado no Console da AWS.
+
+1. Baixe o código: no GitHub, na página do repositório/branch, clique em
+   **Code** (botão verde) → **Download ZIP**. Isso baixa a pasta inteira do
+   projeto sem precisar de `git` nem terminal.
+2. No Console da AWS (https://console.aws.amazon.com/), busque **Elastic
+   Beanstalk** → **Create application**.
+3. Preencha:
+   - **Application name**: `quant-predictor` (ou o nome que quiser).
+   - **Platform**: **Node.js** (deixe a versão mais recente sugerida).
+   - **Application code**: escolha **Upload your code** → **Choose file** →
+     selecione o `.zip` baixado no passo 1.
+   - Em "Presets", escolha **Single instance (free tier eligible)** — fica
+     dentro do nível gratuito.
+4. Antes de clicar em criar, adicione as chaves que os endpoints precisam:
+   role até **Configure more options** → no bloco **Software** clique em
+   **Edit** → seção **Environment properties** → adicione uma por uma (nome
+   e valor) as mesmas chaves já usadas no painel do Vercel: `SUPABASE_URL`,
+   `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `API_FOOTBALL_KEY`,
+   `FOOTBALL_DATA_KEY`, `ODDS_API_KEY`, `ODDSPAPI_KEY`, `THE_STATSAPI_KEY`,
+   `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `CRON_SECRET`,
+   `GITHUB_ACTIONS_PAT` (só as que você já usa — pode pular o resto) →
+   **Save**.
+5. Clique em **Create app**. Leva uns 5-10 minutos na primeira vez — a barra
+   de status fica em "Launching environment" e depois vira **Health: Ok**
+   (verde) quando terminar.
+6. A URL pública do site aparece no topo da página do ambiente (algo como
+   `quant-predictor-env.xxxxx.sa-east-1.elasticbeanstalk.com`) — clique pra
+   abrir.
+7. **Pra atualizar depois** (ex. depois de uma mudança de código): baixe um
+   ZIP novo do GitHub (passo 1) e, na página do ambiente, clique em **Upload
+   and deploy** → selecione o novo ZIP → **Deploy**.
+8. Ao terminar de usar o computador público, saia da sessão do Console
+   (canto superior direito → **Sign out**) antes de sair do navegador.
+
+Pule o restante da seção 4 (4.4 a 4.7) se for usar só esse caminho — eles
+cobrem o mesmo processo pela linha de comando, útil se você for atualizar o
+código com frequência a partir do SEU PRÓPRIO computador.
+
+**4.3-B — Pela linha de comando (CLI)**
+
+Mais rápido pra quem atualiza com frequência, mas precisa instalar
+ferramentas e digitar a Secret access key do passo 4.2 — só faça isso no seu
+próprio computador, nunca num computador público/compartilhado.
+
+### 4.4. Instalar as ferramentas de linha de comando (uma vez só)
 
 No terminal:
 
@@ -161,7 +223,7 @@ eb --version
 
 Se aparecer a versão, funcionou.
 
-### 4.4. Conectar as chaves da AWS nesta pasta e criar o ambiente
+### 4.5. Conectar as chaves da AWS nesta pasta e criar o ambiente
 
 Ainda no terminal, dentro da pasta deste projeto:
 
@@ -185,7 +247,7 @@ Agora crie o ambiente (isso já sobe a primeira versão do site — demora uns
 eb create quant-predictor-prod
 ```
 
-### 4.5. Configurar as variáveis de ambiente (chaves do Supabase, APIs, etc.)
+### 4.6. Configurar as variáveis de ambiente (chaves do Supabase, APIs, etc.)
 
 As funções em `api/*.js` (Supabase, API-Football, OCR por IA etc.) leem
 essas chaves de variáveis de ambiente do servidor — sem elas, os endpoints
@@ -199,7 +261,7 @@ eb setenv SUPABASE_URL=SEU_VALOR_AQUI SUPABASE_KEY=SEU_VALOR_AQUI SUPABASE_SERVI
 (Só precisa preencher as que você já usa hoje no Vercel — pode omitir as
 que não usa, ex. se não usa OCR com Gemini, pode pular `GEMINI_API_KEY`.)
 
-### 4.6. Publicar atualizações depois da primeira vez
+### 4.7. Publicar atualizações depois da primeira vez
 
 Sempre que quiser subir uma mudança de código pra AWS:
 
@@ -214,7 +276,7 @@ Pra ver a URL pública do site (algo como
 eb open
 ```
 
-### 4.7. Importante: os crons (tarefas agendadas) continuam no Vercel
+### 4.8. Importante: os crons (tarefas agendadas) continuam no Vercel
 
 Essa publicação na AWS cobre o site e a API sob demanda. As 3 tarefas
 agendadas (`vercel.json` — sincronizar partidas, odds, Elo) continuam rodando
