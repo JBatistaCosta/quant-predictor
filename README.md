@@ -166,7 +166,12 @@ navegador, já logado no Console da AWS.
 2. No Console da AWS (https://console.aws.amazon.com/), busque **Elastic
    Beanstalk** → **Create application**.
 3. Preencha:
-   - **Application name**: `quant-predictor` (ou o nome que quiser).
+   - **Application name**: `quant-predictor` (use esse nome exato — é o que
+     o deploy automático do passo 4.3-C espera por padrão; se usar outro
+     nome, ajuste lá).
+   - Clique em **Environment information** pra expandir e confira o
+     **Environment name** — troque para `quant-predictor-prod` (mesmo
+     motivo do nome da aplicação acima).
    - **Platform**: **Node.js** (deixe a versão mais recente sugerida).
    - **Application code**: escolha **Upload your code** → **Choose file** →
      selecione o `.zip` baixado no passo 1.
@@ -193,15 +198,51 @@ navegador, já logado no Console da AWS.
 8. Ao terminar de usar o computador público, saia da sessão do Console
    (canto superior direito → **Sign out**) antes de sair do navegador.
 
-Pule o restante da seção 4 (4.4 a 4.7) se for usar só esse caminho — eles
-cobrem o mesmo processo pela linha de comando, útil se você for atualizar o
-código com frequência a partir do SEU PRÓPRIO computador.
+Depois de fazer isso a primeira vez, o jeito mais prático de manter
+atualizado é o passo **4.3-C** logo abaixo (deploy automático a cada
+mudança, sem repetir o upload de ZIP manualmente). Pule o restante da seção
+4 (4.4 a 4.7) se não for usar a linha de comando — eles cobrem o mesmo
+processo via CLI, útil só se for atualizar a partir do SEU PRÓPRIO
+computador com frequência.
 
 **4.3-B — Pela linha de comando (CLI)**
 
 Mais rápido pra quem atualiza com frequência, mas precisa instalar
 ferramentas e digitar a Secret access key do passo 4.2 — só faça isso no seu
 próprio computador, nunca num computador público/compartilhado.
+
+**4.3-C — Deploy automático a cada atualização, igual ao Vercel (recomendado
+depois de fazer a 4.3-A pelo menos uma vez)**
+
+Isso resolve a pergunta "vou ter que repetir o processo toda vez?" — com
+isso configurado, **não**: toda vez que uma mudança de código for
+mesclada/enviada pra branch `main` do GitHub, a AWS é atualizada sozinha,
+exatamente como já acontece com o Vercel hoje. Configuração única:
+
+1. Pré-requisito: já ter criado a aplicação e o ambiente pelo Console
+   (4.3-A), usando os nomes `quant-predictor` / `quant-predictor-prod`
+   sugeridos ali (ou ajustar as variáveis do passo 3 abaixo pros nomes que
+   você usou).
+2. No GitHub, entre no repositório → **Settings** → **Secrets and variables**
+   → **Actions** → aba **Secrets** → **New repository secret**. Cadastre
+   duas, uma de cada vez:
+   - `AWS_ACCESS_KEY_ID` — a Access key ID do passo 4.2.
+   - `AWS_SECRET_ACCESS_KEY` — a Secret access key do passo 4.2.
+
+   Essa é a ÚNICA vez que a chave secreta precisa ser digitada em algum
+   lugar — o GitHub guarda de forma criptografada e nunca mais mostra o
+   valor pra ninguém, nem pra você. Se possível, cadastre essas 2 secrets a
+   partir de um computador de confiança (não é obrigatório — o GitHub não
+   expõe o valor de volta — mas evita digitar a chave em qualquer teclado
+   que não seja seu).
+3. Se você usou nomes diferentes de `quant-predictor` / `quant-predictor-prod`
+   / região diferente de `sa-east-1` no passo 4.3-A, cadastre também (mesma
+   tela, aba **Variables** em vez de **Secrets**): `EB_APPLICATION_NAME`,
+   `EB_ENVIRONMENT_NAME`, `AWS_REGION` com os valores corretos.
+4. Pronto. O workflow `.github/workflows/deploy-aws.yml` já está no
+   repositório — a partir da próxima atualização mesclada na `main`, ele
+   builda e publica na AWS sozinho (acompanhe em **Actions**, na aba do
+   repositório no GitHub, procurando por "Deploy AWS").
 
 ### 4.4. Instalar as ferramentas de linha de comando (uma vez só)
 

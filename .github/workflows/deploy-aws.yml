@@ -1,0 +1,43 @@
+name: Deploy AWS (Elastic Beanstalk)
+
+# Deploy automático na AWS a cada push na main — mesmo comportamento do
+# Vercel (que já faz isso sozinho via integração com o GitHub). Só funciona
+# depois que o ambiente Elastic Beanstalk já existir (criado uma vez pelo
+# Console, ver README.md seção 4.3-A) e das 2 secrets abaixo cadastradas em
+# Settings → Secrets and variables → Actions deste repositório:
+#   - AWS_ACCESS_KEY_ID
+#   - AWS_SECRET_ACCESS_KEY
+# (mesma chave do usuário IAM criado no passo 4.2 do README — cadastrada
+# UMA VEZ aqui, nunca mais precisa ser digitada em lugar nenhum depois disso)
+#
+# Nomes de aplicação/ambiente esperados (usar exatamente esses ao criar pelo
+# Console, ou ajustar via Settings → Secrets and variables → Actions →
+# Variables): quant-predictor / quant-predictor-prod, região sa-east-1.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Empacotar código-fonte
+        run: |
+          zip -r deploy.zip . \
+            -x "node_modules/*" ".git/*" "dist/*" "functions/node_modules/*" "*.log"
+
+      - name: Deploy no Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ vars.EB_APPLICATION_NAME || 'quant-predictor' }}
+          environment_name: ${{ vars.EB_ENVIRONMENT_NAME || 'quant-predictor-prod' }}
+          region: ${{ vars.AWS_REGION || 'sa-east-1' }}
+          version_label: gh-${{ github.run_number }}-${{ github.sha }}
+          deployment_package: deploy.zip
+          use_existing_version_if_available: true
