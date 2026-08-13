@@ -3451,6 +3451,38 @@ async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo 
 // testados em produção), diferente do enriquecimento por partida acima.
 // ============================================================
 
+// Diagnóstico do endpoint /odds da API-Football -- gasta 1 chamada só, dumpa
+// a resposta crua pra inspecionar o shape real (tem bookmaker de verdade?
+// que mercados? cobre a temporada pedida?) antes de decidir se vale a pena
+// escrever um parser/backfill de verdade (disciplina do projeto: nunca
+// adivinhar formato de API paga às cegas). Não escreve nada no banco.
+async function tarefaTesteOddsApiFootball(supabase, apiKey, ligaId, temporada) {
+  const { data: fonte } = await supabase
+    .from('liga_fonte_externa').select('identificador')
+    .eq('league_id', ligaId).eq('sistema', 'api_football').maybeSingle();
+  if (!fonte) return { error: `Liga id=${ligaId} ainda não tem crosswalk API-Football cadastrado (liga_fonte_externa, sistema=api_football).` };
+
+  const temporadaAlvo = temporada || new Date().getUTCFullYear() - 1; // temporada mais recente com boa chance de estar encerrada
+  const resposta = await fetch(
+    `https://v3.football.api-sports.io/odds?league=${fonte.identificador}&season=${temporadaAlvo}`,
+    { headers: { 'x-apisports-key': apiKey } }
+  );
+  const dados = await resposta.json();
+  if (!resposta.ok) return { error: `API-Football /odds: HTTP ${resposta.status} — ${JSON.stringify(dados).slice(0, 300)}` };
+
+  const primeiro = dados.response?.[0] || null;
+  return {
+    liga_id: ligaId,
+    api_football_league_id: fonte.identificador,
+    temporada: temporadaAlvo,
+    results: dados.results,
+    paging: dados.paging,
+    errors: dados.errors,
+    primeira_fixture_bruta: primeiro,
+    bookmakers_na_primeira_fixture: primeiro?.bookmakers?.map((b) => b.name) || null,
+  };
+}
+
 async function tarefaImportarJogosApiFootball(supabase, apiKey, ligaId, temporada) {
   if (!ligaId || !temporada) return { error: 'Informe ?liga_id=X (de public.leagues) e ?temporada=AAAA.' };
   const { data: fonte } = await supabase
@@ -4167,6 +4199,15 @@ export default async function handler(req, res) {
       const resultado = await tarefaDispararAtualizarStats(supabase, req.headers.authorization, { liga_id: _lid, limite: _lim, modo: _modo, forcar });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'teste-odds-api-football') {
+      const apiKey = process.env.API_FOOTBALL_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
+      if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=teste-odds-api-football precisa de ?liga_id=X[&temporada=AAAA].' } });
+      const resultado = await tarefaTesteOddsApiFootball(supabase, apiKey, liga_id, temporada);
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
     }
 
     if (tarefa === 'importar-jogos-api-football') {
