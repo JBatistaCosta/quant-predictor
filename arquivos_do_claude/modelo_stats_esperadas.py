@@ -142,6 +142,10 @@ def carregar_dados(supabase, liga_ext_id):
     if not stats:
         return pd.DataFrame()
     dfs = pd.DataFrame(stats)
+    # match_stats pode ter linha duplicada pro mesmo (match_id, team_id) --
+    # sem isso o merge many-to-one abaixo multiplica linhas e desalinha o
+    # `.to_numpy()` direto (ValueError de tamanho).
+    dfs = dfs.drop_duplicates(subset=["match_id", "team_id"], keep="last")
 
     # largo: uma linha por jogo com val_home / val_away para cada stat
     df = dfj.copy()
@@ -207,6 +211,12 @@ def rodar_liga(supabase, liga_ext_id):
                         "selection": sel,
                         "probability": round(float(p), 5),
                     })
+
+    # Dedup por chave de conflito antes de gravar -- ver mesmo comentário em
+    # modelo_dixon_coles.py (fixture duplicada pro mesmo match_id quebra o
+    # upsert inteiro).
+    estimativas = list({(e["match_id"], e["model_name"], e["stat"]): e for e in estimativas}.values())
+    previsoes = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
 
     for i in range(0, len(estimativas), 500):
         supabase.table("model_stat_estimates").upsert(

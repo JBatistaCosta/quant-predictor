@@ -104,6 +104,12 @@ def rodar_liga_walkforward(supabase, liga_ext_id):
     print(f"  {n_previstos} jogos previstos, {pulados_total} pulados | "
           f"log loss walk-forward: {log_loss:.4f}")
 
+    # Dedup por chave de conflito antes de gravar -- ver mesmo comentário em
+    # modelo_dixon_coles.py (fixture duplicada pro mesmo match_id quebra o
+    # upsert inteiro).
+    previsoes = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
+    estimativas_xg = list({(e["match_id"], e["model_name"]): e for e in estimativas_xg}.values())
+
     for i in range(0, len(previsoes), 500):
         supabase.table("model_predictions").upsert(
             previsoes[i : i + 500],

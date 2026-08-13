@@ -274,20 +274,26 @@ def rodar_liga(supabase, liga_ext_id):
     print(f"  log loss 1X2 (teste {TEMPORADA_TESTE}): modelo {log_loss:.4f} vs baseline {baseline:.4f} "
           f"{'-> modelo MELHOR' if log_loss < baseline else '-> modelo pior que baseline'}")
 
-    # Grava previsões (upsert: rodar de novo não duplica)
-    for i in range(0, len(previsoes), 500):
+    # Grava previsões (upsert: rodar de novo não duplica). Dedup por chave de
+    # conflito antes de gravar -- `matches` pode ter fixture duplicada pro
+    # mesmo match_id (visto em produção), o que faz o Postgres rejeitar o
+    # upsert inteiro ("cannot affect row a second time" -- ele não aceita
+    # duas linhas com a MESMA chave dentro do mesmo INSERT/UPSERT).
+    previsoes_dedup = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
+    for i in range(0, len(previsoes_dedup), 500):
         supabase.table("model_predictions").upsert(
-            previsoes[i : i + 500],
+            previsoes_dedup[i : i + 500],
             on_conflict="match_id,model_name,market,selection",
         ).execute()
-    print(f"  {len(previsoes)} previsões gravadas em model_predictions")
+    print(f"  {len(previsoes_dedup)} previsões gravadas em model_predictions")
 
-    for i in range(0, len(estimativas_xg), 500):
+    estimativas_xg_dedup = list({(e["match_id"], e["model_name"]): e for e in estimativas_xg}.values())
+    for i in range(0, len(estimativas_xg_dedup), 500):
         supabase.table("model_match_estimates").upsert(
-            estimativas_xg[i : i + 500],
+            estimativas_xg_dedup[i : i + 500],
             on_conflict="match_id,model_name",
         ).execute()
-    print(f"  {len(estimativas_xg)} estimativas de xG gravadas em model_match_estimates")
+    print(f"  {len(estimativas_xg_dedup)} estimativas de xG gravadas em model_match_estimates")
 
     return {"liga": liga_ext_id, "log_loss": log_loss, "baseline": baseline, "jogos": n}
 
