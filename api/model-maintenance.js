@@ -87,9 +87,10 @@
 //   ?tarefa=config-get&model_name=X -> lê a config de um modelo em model_config.
 //   ?tarefa=config-set&model_name=X (POST, corpo JSON) -> faz merge do corpo na config salva.
 //   ?tarefa=disparar-predicoes (POST) -> dispara o workflow_dispatch do predict.yml no GitHub
-//                                   Actions (Model Benchmarking: dixon_coles_v1/catboost_v1/
-//                                   xgboost_v1/lightgbm_v1 rodam de verdade, gravam em
-//                                   market_odds/predicoes). ÚNICA tarefa deste arquivo que exige
+//                                   Actions (Model Benchmarking: dixon_coles_v1 roda de verdade,
+//                                   grava em market_odds/predicoes -- v1-v8 dos modelos de árvore
+//                                   removidos, superados pela v9/v10 em model_predictions).
+//                                   ÚNICA tarefa deste arquivo que exige
 //                                   autenticação (header Authorization: Bearer <access_token do
 //                                   Supabase Auth>) -- as outras são só chamadas manualmente/por
 //                                   cron, nunca pelo frontend; esta é clicável em
