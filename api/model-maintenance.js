@@ -3462,6 +3462,17 @@ async function tarefaTesteOddsApiFootball(supabase, apiKey, ligaId, temporada) {
     .eq('league_id', ligaId).eq('sistema', 'api_football').maybeSingle();
   if (!fonte) return { error: `Liga id=${ligaId} ainda não tem crosswalk API-Football cadastrado (liga_fonte_externa, sistema=api_football).` };
 
+  // /leagues?id=X tem um campo "coverage" por temporada que diz se odds é
+  // suportado NESSA liga específica -- resolve de vez se o resultado vazio é
+  // "sem cobertura pra essa competição" (plano nenhum resolve) ou "cobertura
+  // existe, algo mais está errado" (aí sim vale investigar tier/plano).
+  const respLeague = await fetch(
+    `https://v3.football.api-sports.io/leagues?id=${fonte.identificador}`,
+    { headers: { 'x-apisports-key': apiKey } }
+  );
+  const dadosLeague = await respLeague.json();
+  const coberturaPorTemporada = (dadosLeague.response?.[0]?.seasons || []).map((s) => ({ year: s.year, odds: s.coverage?.odds ?? null }));
+
   const temporadaAlvo = temporada || new Date().getUTCFullYear() - 1; // temporada mais recente com boa chance de estar encerrada
   const resposta = await fetch(
     `https://v3.football.api-sports.io/odds?league=${fonte.identificador}&season=${temporadaAlvo}`,
@@ -3474,6 +3485,7 @@ async function tarefaTesteOddsApiFootball(supabase, apiKey, ligaId, temporada) {
   const resultado = {
     liga_id: ligaId,
     api_football_league_id: fonte.identificador,
+    cobertura_odds_por_temporada: coberturaPorTemporada,
     temporada: temporadaAlvo,
     results: dados.results,
     paging: dados.paging,
