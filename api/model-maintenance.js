@@ -3471,7 +3471,7 @@ async function tarefaTesteOddsApiFootball(supabase, apiKey, ligaId, temporada) {
   if (!resposta.ok) return { error: `API-Football /odds: HTTP ${resposta.status} — ${JSON.stringify(dados).slice(0, 300)}` };
 
   const primeiro = dados.response?.[0] || null;
-  return {
+  const resultado = {
     liga_id: ligaId,
     api_football_league_id: fonte.identificador,
     temporada: temporadaAlvo,
@@ -3481,6 +3481,35 @@ async function tarefaTesteOddsApiFootball(supabase, apiKey, ligaId, temporada) {
     primeira_fixture_bruta: primeiro,
     bookmakers_na_primeira_fixture: primeiro?.bookmakers?.map((b) => b.name) || null,
   };
+
+  // /odds?league=X&season=Y (busca em lote) veio vazio -- tenta por fixture
+  // específico (/odds?fixture=X), padrão de consulta diferente que alguns
+  // planos/endpoints da API-Football só suportam desse jeito (achado real:
+  // a OddsPapi teve o mesmo tipo de diferença entre listar torneio inteiro
+  // vs. partida específica).
+  if (!dados.results) {
+    const respFixtures = await fetch(
+      `https://v3.football.api-sports.io/fixtures?league=${fonte.identificador}&season=${temporadaAlvo}&status=FT`,
+      { headers: { 'x-apisports-key': apiKey } }
+    );
+    const dadosFixtures = await respFixtures.json();
+    const fixtureId = dadosFixtures.response?.[0]?.fixture?.id || null;
+    resultado.fixture_id_testado = fixtureId;
+    if (fixtureId) {
+      const respOddsFixture = await fetch(
+        `https://v3.football.api-sports.io/odds?fixture=${fixtureId}`,
+        { headers: { 'x-apisports-key': apiKey } }
+      );
+      const dadosOddsFixture = await respOddsFixture.json();
+      const primeiroPorFixture = dadosOddsFixture.response?.[0] || null;
+      resultado.results_por_fixture = dadosOddsFixture.results;
+      resultado.errors_por_fixture = dadosOddsFixture.errors;
+      resultado.primeira_fixture_bruta_por_fixture = primeiroPorFixture;
+      resultado.bookmakers_por_fixture = primeiroPorFixture?.bookmakers?.map((b) => b.name) || null;
+    }
+  }
+
+  return resultado;
 }
 
 async function tarefaImportarJogosApiFootball(supabase, apiKey, ligaId, temporada) {
