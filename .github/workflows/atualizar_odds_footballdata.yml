@@ -1,12 +1,12 @@
-name: Atualizar Odds football-data.co.uk (5 ligas europeias)
+name: Atualizar Odds football-data.co.uk (8 ligas europeias)
 
-# Roda arquivos_do_claude/ingestao_odds_footballdata.py pras 5 ligas
-# europeias (PL/PD/SA/BL1/FL1) numa temporada — fonte gratuita, sem chave
-# de API, sem limite de requisições (só um CSV estático por liga/temporada
-# em football-data.co.uk). Idempotente: pula partidas que já têm odds
-# gravadas, então é seguro rodar de novo a qualquer momento pra pegar só
-# o que falta (ex.: temporada em andamento cujo CSV da fonte só ficou
-# completo depois da primeira importação).
+# Roda arquivos_do_claude/ingestao_odds_footballdata.py pras 8 ligas
+# europeias (PL/PD/SA/BL1/FL1 + ELC/DED/PPL) numa temporada — fonte
+# gratuita, sem chave de API, sem limite de requisições (só um CSV
+# estático por liga/temporada em football-data.co.uk). Idempotente: pula
+# partidas que já têm odds gravadas, então é seguro rodar de novo a
+# qualquer momento pra pegar só o que falta (ex.: temporada em andamento
+# cujo CSV da fonte só ficou completo depois da primeira importação).
 #
 # Só manual (workflow_dispatch) — não é um cron regular, é pra rodar
 # quando alguém notar um buraco de cobertura (ver CONTEXTO_PROJETO.md,
@@ -21,7 +21,7 @@ on:
         type: string
         default: "2025"
       ligas:
-        description: "Códigos separados por vírgula (PL,PD,SA,BL1,FL1) ou 'todas'"
+        description: "Códigos separados por vírgula (PL,PD,SA,BL1,FL1,ELC,DED,PPL) ou 'todas'"
         required: false
         type: string
         default: "todas"
@@ -51,7 +51,7 @@ jobs:
           set -e
           LIGAS="${{ inputs.ligas }}"
           if [ -z "$LIGAS" ] || [ "$LIGAS" = "todas" ]; then
-            LIGAS="PL,PD,SA,BL1,FL1"
+            LIGAS="PL,PD,SA,BL1,FL1,ELC,DED,PPL"
           fi
           IFS=',' read -ra ARR <<< "$LIGAS"
           for LIGA in "${ARR[@]}"; do
