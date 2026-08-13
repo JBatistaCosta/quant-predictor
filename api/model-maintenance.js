@@ -1995,6 +1995,22 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
 //   2. /v4/historical-odds?fixtureId=X&bookmakers=pinnacle,bet365,betano --
 //      odds da PRIMEIRA fixture da lista acima, só como amostra.
 // ============================================================
+// BUG REAL corrigido: `from` era fixo em '2026-01-01' (só fazia sentido pro
+// caso original, Brasileirão 2026) -- pra qualquer liga com histórico mais
+// antigo (ex.: Champions League, temporadas 2023/2024), a chamada a
+// /v4/fixtures nem devolvia essas partidas, e o backfill silenciosamente só
+// pegava uma fração pequena do total. Calculado a partir da PRIMEIRA partida
+// finalizada da liga no nosso banco (com folga de 7 dias) -- mesmo custo de
+// cota (é 1 chamada só, cacheada, independente do tamanho da janela).
+async function primeiraDataFinalizadaIso(supabase, ligaId) {
+  const { data } = await supabase.from('matches').select('match_date')
+    .eq('league_id', ligaId).eq('status', 'finished')
+    .order('match_date', { ascending: true }).limit(1);
+  const primeira = data?.[0]?.match_date ? new Date(data[0].match_date) : new Date('2019-01-01T00:00:00Z');
+  primeira.setUTCDate(primeira.getUTCDate() - 7);
+  return primeira.toISOString();
+}
+
 async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
   const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
   if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
@@ -2002,7 +2018,7 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
   const fixtures = await chamarOddspapi('/v4/fixtures', {
     tournamentId: mapa.tournament_id,
     statusId: 2, // Finished
-    from: '2026-01-01T00:00:00Z',
+    from: await primeiraDataFinalizadaIso(supabase, ligaId),
     to: new Date().toISOString(),
   }, apiKey);
 
@@ -2138,10 +2154,10 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   const outcomeOU25 = Object.fromEntries(mercadoOU25.outcomes.map((o) => [String(o.outcomeId), o.outcomeName.toLowerCase()]));
   const outcomeBTTS = Object.fromEntries(mercadoBTTS.outcomes.map((o) => [String(o.outcomeId), o.outcomeName.toLowerCase()]));
 
-  const fixtures = await buscarOuCache(supabase, `fixtures_finalizadas_liga_${ligaId}`, () => chamarOddspapi('/v4/fixtures', {
+  const fixtures = await buscarOuCache(supabase, `fixtures_finalizadas_liga_${ligaId}`, async () => chamarOddspapi('/v4/fixtures', {
     tournamentId: mapa.tournament_id,
     statusId: 2, // Finished
-    from: '2026-01-01T00:00:00Z',
+    from: await primeiraDataFinalizadaIso(supabase, ligaId),
     to: new Date().toISOString(),
   }, apiKey));
   if (!Array.isArray(fixtures) || fixtures.length === 0) {
