@@ -3,8 +3,9 @@ Ingestão de odds reais de mercado via football-data.co.uk -> tabela
 odds_market no Supabase.
 
 Fonte 100% gratuita, sem chave de API, sem limite de requisições — é só
-um CSV estático por liga/temporada. Cobre as 5 ligas europeias (sem
-Brasileirão, que não está no escopo dessa fonte).
+um CSV estático por liga/temporada. Cobre as 5 ligas europeias "grandes"
++ Championship/Eredivisie/Primeira Liga (sem Brasileirão, que não está no
+escopo dessa fonte -- ver ingestao_odds_footballdata_brasil.py).
 
 Grava 4 "casas" por partida: Bet365, Pinnacle, William Hill e a MÉDIA do
 mercado (Avg — consenso entre várias casas, ótimo pra comparar com a odd
@@ -40,6 +41,12 @@ LIGAS = {
     "SA":  "I1",
     "BL1": "D1",
     "FL1": "F1",
+    # Cobertura confirmada testando as URLs reais (2023/24 a 2025/26) antes
+    # de adicionar -- mesmas colunas de bookmaker (B365/PS/WH/Avg) e mesmo
+    # formato 1X2 + over/under 2.5 das 5 ligas acima, zero custo de cota.
+    "ELC": "E1",  # Championship
+    "DED": "N1",  # Eredivisie
+    "PPL": "P1",  # Primeira Liga
 }
 
 # (prefixo no CSV, nome de exibição) das casas que vamos gravar
@@ -80,6 +87,13 @@ ALIASES_MANUAIS = {
     "brest": "Stade Brestois 29",
     "lyon": "Olympique Lyonnais",
     "rennes": "Stade Rennais FC 1901",
+    # Championship (ELC) -- achados rodando ELC/2023-2025 pela 1ª vez.
+    "west brom": "West Bromwich Albion FC",
+    "qpr": "Queens Park Rangers FC",
+    # Primeira Liga (PPL) -- achados rodando PPL/2023-2025 pela 1ª vez.
+    "sp braga": "Sporting Clube de Braga",
+    "sp lisbon": "Sporting Clube de Portugal",
+    "guimaraes": "Vitória SC",
 }
 _TOKENS_IGNORADOS = {
     "fc", "cf", "afc", "fbpa", "fbc", "sc", "ac", "ssc", "as", "rc", "cd",
