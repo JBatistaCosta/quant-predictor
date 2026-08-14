@@ -9,7 +9,7 @@
     "build:firebase": "vite build --mode firebase",
     "build:aws": "vite build --mode aws",
     "preview": "vite preview",
-    "deploy:firebase": "npm run build:firebase && firebase deploy",
+    "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting",
     "start": "node server/index.js"
   },
   "dependencies": {
