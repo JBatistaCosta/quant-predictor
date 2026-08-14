@@ -3549,6 +3549,178 @@ async function tarefaImportarJogosFotmob(supabase, ligaId, temporada) {
   return tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId: fonte.identificador, temporada: temporadaApi, temporadaArmazenada: temporada });
 }
 
+// ============================================================
+// TAREFA: importar-odds-footiqo -- painel /configuracoes
+// Porta pra JS a mesma lógica de arquivos_do_claude/ingestao_odds_footiqo.py
+// (já validada em produção: 97/97 partidas da Libertadores 2026 casaram).
+// O CSV é parseado no FRONTEND (não dá pra fazer upload de arquivo binário
+// nesse endpoint sem parser multipart) -- aqui só chega o corpo já como
+// array de objetos (uma linha do CSV = um objeto com as chaves originais
+// do cabeçalho: matchDate, homeTeam, awayTeam, H, D, A, O05..U45, BTTSY/N).
+// Exige login (mesmo mecanismo de salvar-config-custom) -- é uma escrita
+// disparada pelo frontend, ProtectedRoute só esconde o botão, não impede
+// chamada direta.
+// ============================================================
+
+// Chave = nome normalizado como a Footiqo escreve; valor = nome (bruto) do
+// NOSSO banco. Duas ambiguidades resolvidas por inferência (time mais
+// frequente na competição, ver docstring de ingestao_odds_footiqo.py):
+// "U. Catolica" -> Chile (não Equador); "Nacional" -> Uruguai (não
+// Colômbia/Bolívia). Se a inferência errar numa linha específica, ela só
+// fica sem correspondência (não grava odd no time errado).
+const ALIASES_FOOTIQO = {
+  'estudiantes l p': 'Estudiantes de La Plata',
+  'ind rivadavia': 'CS Independiente Rivadavia',
+  'u catolica': 'CD Universidad Católica',
+  'nacional': 'Club Nacional de Football',
+  'sporting cristal': 'CS Cristal',
+  'ind del valle': 'CAR Independiente del Valle',
+  'u de deportes': 'Club Universitario de Deportes',
+  'deportes tolima': 'CD Tolima',
+  'flamengo rj': 'CR Flamengo',
+  'ind medellin': 'CD Independiente Medellín',
+  'ldu quito': 'LDU de Quito',
+  'la guaira': 'Deportivo La Guaira FC',
+  'libertad asuncion': 'Club Libertad Asuncion',
+  'cerro porteno': 'Club Cerro Porteño',
+  'universidad central': 'Universidad Central de Venezuela FC',
+  'penarol': 'CA Peñarol',
+  'santa fe': 'Independiente Santa Fe',
+  'junior': 'CDP Junior FC',
+};
+
+const LINHAS_OU_FOOTIQO = [['O05', 'U05', '0.5'], ['O15', 'U15', '1.5'], ['O25', 'U25', '2.5'], ['O35', 'U35', '3.5'], ['O45', 'U45', '4.5']];
+
+function resolverTimeFootiqo(nomeFootiqo, idPorNomeNorm) {
+  const norm = normalizarNomeTime(nomeFootiqo);
+  if (idPorNomeNorm[norm]) return idPorNomeNorm[norm];
+  const aliasBruto = ALIASES_FOOTIQO[norm];
+  if (aliasBruto) {
+    const normAlias = normalizarNomeTime(aliasBruto);
+    if (idPorNomeNorm[normAlias]) return idPorNomeNorm[normAlias];
+  }
+  for (const candidatoNorm in idPorNomeNorm) {
+    if (nomesBatemTime(norm, candidatoNorm)) return idPorNomeNorm[candidatoNorm];
+  }
+  return null;
+}
+
+// "DD-MM-AA HH:MM", ano de 2 dígitos -- Footiqo só tem dado de 2015 em
+// diante, "AA" nunca vai significar 19xx.
+function pararDataFootiqo(matchDate) {
+  const m = /^(\d{2})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec((matchDate || '').trim());
+  if (!m) return null;
+  const [, dd, mm, aa, hh, min] = m;
+  return new Date(Date.UTC(2000 + Number(aa), Number(mm) - 1, Number(dd), Number(hh), Number(min)));
+}
+
+function paraFloatFootiqo(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function tarefaImportarOddsFootiqo(supabase, authHeader, body) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const ligaId = body?.liga_id;
+  const linhas = body?.linhas;
+  if (!ligaId) return { status: 400, error: 'Informe liga_id.' };
+  if (!Array.isArray(linhas) || linhas.length === 0) return { status: 400, error: 'Informe linhas (array não vazio, uma por partida do CSV).' };
+
+  const jogos = [];
+  for (let inicio = 0; ; inicio += 1000) {
+    const { data: lote } = await supabase.from('matches').select('id, match_date, home_team_id, away_team_id')
+      .eq('league_id', ligaId).range(inicio, inicio + 999);
+    jogos.push(...(lote || []));
+    if (!lote || lote.length < 1000) break;
+  }
+  if (jogos.length === 0) return { status: 400, error: `Nenhum jogo da liga_id=${ligaId} no banco.` };
+
+  const idsTimes = [...new Set(jogos.flatMap((j) => [j.home_team_id, j.away_team_id]))];
+  const { data: timesRows } = await supabase.from('teams').select('id, name').in('id', idsTimes);
+  const idPorNomeNorm = {};
+  (timesRows || []).forEach((t) => { idPorNomeNorm[normalizarNomeTime(t.name)] = t.id; });
+
+  const idsJogos = jogos.map((j) => j.id);
+  const jaTemOdds = new Set();
+  for (let inicio = 0; ; inicio += 1000) {
+    const { data: lote } = await supabase.from('odds_market').select('match_id').in('match_id', idsJogos).range(inicio, inicio + 999);
+    (lote || []).forEach((r) => jaTemOdds.add(r.match_id));
+    if (!lote || lote.length < 1000) break;
+  }
+
+  // (home_team_id, away_team_id) -> jogos candidatos (normalmente 1, pode
+  // ter mais de 1 em mata-mata ida/volta -- desempate pela data mais
+  // próxima, não só a primeira da lista).
+  const porParTimes = {};
+  jogos.forEach((j) => {
+    const chave = `${j.home_team_id}:${j.away_team_id}`;
+    (porParTimes[chave] ||= []).push(j);
+  });
+
+  const nomesSemMatch = new Set();
+  const registros = [];
+  let semMatch = 0, semOdds = 0, jaGravadas = 0;
+
+  for (const linha of linhas) {
+    const homeId = resolverTimeFootiqo(linha.homeTeam, idPorNomeNorm);
+    const awayId = resolverTimeFootiqo(linha.awayTeam, idPorNomeNorm);
+    if (!homeId) nomesSemMatch.add(linha.homeTeam);
+    if (!awayId) nomesSemMatch.add(linha.awayTeam);
+    if (!homeId || !awayId) { semMatch++; continue; }
+
+    const dataFootiqo = pararDataFootiqo(linha.matchDate);
+    if (!dataFootiqo) { semMatch++; continue; }
+
+    const candidatos = porParTimes[`${homeId}:${awayId}`] || [];
+    let melhor = null, melhorDiffMs = Infinity;
+    for (const c of candidatos) {
+      const diffMs = Math.abs(new Date(c.match_date).getTime() - dataFootiqo.getTime());
+      if (diffMs <= 3 * 86400000 && diffMs < melhorDiffMs) { melhor = c; melhorDiffMs = diffMs; }
+    }
+    if (!melhor) { semMatch++; continue; }
+    if (jaTemOdds.has(melhor.id)) { jaGravadas++; continue; }
+
+    let teveOdds = false;
+    for (const [selecao, col] of [['home', 'H'], ['draw', 'D'], ['away', 'A']]) {
+      const odd = paraFloatFootiqo(linha[col]);
+      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: '1X2', selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+    }
+    for (const [colOver, colUnder, faixa] of LINHAS_OU_FOOTIQO) {
+      const mercado = `over_under_${faixa}`;
+      for (const [selecao, col] of [['over', colOver], ['under', colUnder]]) {
+        const odd = paraFloatFootiqo(linha[col]);
+        if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: mercado, selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+      }
+    }
+    for (const [selecao, col] of [['yes', 'BTTSY'], ['no', 'BTTSN']]) {
+      const odd = paraFloatFootiqo(linha[col]);
+      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: 'btts', selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+    }
+    if (!teveOdds) semOdds++;
+  }
+
+  // Dedup por chave de conflito antes de gravar -- mesma cautela do script Python.
+  const registrosUnicos = Object.values(Object.fromEntries(registros.map((r) => [`${r.match_id}|${r.bookmaker}|${r.market}|${r.selection}`, r])));
+
+  for (let i = 0; i < registrosUnicos.length; i += 500) {
+    const { error } = await supabase.from('odds_market').insert(registrosUnicos.slice(i, i + 500));
+    if (error) return { status: 500, error: `Falha gravando em odds_market: ${error.message}` };
+  }
+
+  return {
+    status: 200,
+    liga_id: ligaId,
+    linhas_recebidas: linhas.length,
+    odds_gravadas: registrosUnicos.length,
+    sem_correspondencia: semMatch,
+    sem_correspondencia_nomes: [...nomesSemMatch].sort(),
+    sem_odds_na_fonte: semOdds,
+    ja_tinham_odds: jaGravadas,
+  };
+}
+
 // Dumpa a resposta crua de /teams?id=X pra inspecionar o shape real antes de
 // generalizar o parser (disciplina do projeto: nunca adivinhar formato de API
 // paga/limitada). Não escreve nada no banco.
@@ -4297,6 +4469,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'salvar-config-custom') {
       const resultado = await tarefaSalvarConfigCustom(supabase, req.headers.authorization, req.body);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'importar-odds-footiqo') {
+      const resultado = await tarefaImportarOddsFootiqo(supabase, req.headers.authorization, req.body);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
