@@ -103,7 +103,7 @@ function ImportacaoFootiqo() {
         </div>
         <div>
           <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Arquivo CSV da Footiqo</label>
-          <input type="file" accept=".csv" onChange={lerArquivo}
+          <input type="file" accept=".csv,text/csv,text/plain,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/octet-stream" onChange={lerArquivo}
             className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-700 file:text-slate-200 file:text-xs file:font-bold" />
         </div>
       </div>
