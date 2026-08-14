@@ -3201,7 +3201,10 @@ function montarContexto(matchIdInterno, fotmobMatchId, matchFacts, weather) {
   };
 }
 
-async function tarefaPartidasFotmob(supabase, { ligaId, temporada, limite, modo = 'encerradas' }) {
+async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, limite, modo = 'encerradas' }) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar.' };
+
   const limiteJogos = Math.min(parseInt(limite, 10) || MAX_PARTIDAS_POR_CHAMADA_FOTMOB, MAX_PARTIDAS_POR_CHAMADA_FOTMOB);
   const modoValido = modo === 'ao_vivo' ? 'ao_vivo' : 'encerradas';
 
@@ -4402,7 +4405,8 @@ export default async function handler(req, res) {
 
     if (tarefa === 'partidas-fotmob') {
       const { modo } = req.query;
-      const resultado = await tarefaPartidasFotmob(supabase, { ligaId: liga_id, temporada, limite, modo });
+      const resultado = await tarefaPartidasFotmob(supabase, req.headers.authorization, { ligaId: liga_id, temporada, limite, modo });
+      if (resultado.status === 401) return res.status(401).json({ error: { message: resultado.error } });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
