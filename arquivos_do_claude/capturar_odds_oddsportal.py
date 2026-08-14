@@ -43,11 +43,15 @@ Uso:
     python capturar_odds_oddsportal.py --liga-slug-custom brazil-copa-do-brasil --season 2024 --liga-nome "Copa do Brasil"
 
 Prioridade do projeto é a Pinnacle (casa "sharp", referência de mercado
-eficiente pra comparar com a odd justa do modelo) -- passe
---target-bookmaker Pinnacle pra capturar só ela (mais rápido, menos
-requisições) ou deixe sem o filtro pra capturar todas as casas disponíveis
-na página (a comparação Pinnacle-vs-modelo continua funcionando de
-qualquer forma, só grava odds de mais casas junto).
+eficiente pra comparar com a odd justa do modelo). Mas a Pinnacle não
+apareceu confirmada em nenhuma raspagem real ainda (esse script nunca
+rodou contra o oddsportal.com de verdade) -- na PRIMEIRA captura de cada
+competição, rode SEM --target-bookmaker (captura todas as casas) e
+confira a linha "Casas encontradas" no final da saída antes de travar as
+próximas corridas só na Pinnacle com --target-bookmaker Pinnacle. Se ela
+não aparecer pra alguma partida específica (cobertura não é 100%, ex. em
+jogos de fase inicial de mata-mata), o filtro simplesmente não grava
+nenhuma linha pra aquela partida, sem erro.
 """
 
 import argparse

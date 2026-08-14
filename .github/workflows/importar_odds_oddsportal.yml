@@ -52,10 +52,10 @@ on:
         type: string
         default: "1x2,btts,over_under_2_5"
       bookmaker_alvo:
-        description: "Só captura odds dessa casa (prioridade do projeto: Pinnacle, referência de mercado eficiente). Deixe em branco pra capturar todas as casas."
+        description: "Só captura odds dessa casa (ex.: Pinnacle). Deixe em branco pra capturar todas as casas -- recomendado nas primeiras rodadas de cada competição, pra confirmar no log ('Casas encontradas') se a Pinnacle realmente aparece antes de travar os runs seguintes só nela."
         required: false
         type: string
-        default: "Pinnacle"
+        default: ""
       modo:
         description: "O que rodar"
         required: true
