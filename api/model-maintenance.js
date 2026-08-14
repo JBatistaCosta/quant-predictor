@@ -2237,8 +2237,18 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   const { data: completosRows } = await supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico_completo');
   const idsCompletos = new Set((completosRows || []).map((r) => r.match_id));
 
+  // Mais RECENTE primeiro -- achado real testando em produção: sem filtro
+  // de season, a ordem crua de /v4/fixtures é cronológica ASCENDENTE (mais
+  // antiga primeiro), e a OddsPapi não tem retenção de histórico até a
+  // partida mais antiga do nosso banco (ex.: Libertadores 2019-2022 dá 404
+  // "No historical odds found" em toda tentativa). Processar do mais novo
+  // pro mais antigo maximiza sucesso por chamada e naturalmente processa o
+  // "máximo de temporadas possível" que a API realmente tiver, em vez de
+  // gastar o limite de fixtures da chamada em partidas fadadas a falhar.
+  const fixturesRecentesPrimeiro = [...fixtures].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
   const pendentes = [];
-  for (const fx of fixtures) {
+  for (const fx of fixturesRecentesPrimeiro) {
     if (!fx.startTime || pendentes.length >= limiteReal) continue;
     const partida = nossosJogos.find((m) => {
       if (idsCompletos.has(m.id) || pendentes.some((p) => p.match.id === m.id)) return false;
