@@ -2275,7 +2275,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   const jaExiste = new Set((existentesRows || []).map((r) => `${r.match_id}|${r.bookmaker}|${r.market}|${r.selection}`));
 
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  let processados = 0, sucesso = 0;
+  let processados = 0, sucesso = 0, semHistorico = 0;
   const falhas = [];
 
   for (const { fixtureId, startTime, match } of pendentes) {
@@ -2320,7 +2320,22 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
       );
       sucesso++;
     } catch (erro) {
-      falhas.push({ match_id: match.id, motivo: erro.message });
+      // "No historical odds found" é um resultado ESTÁVEL (registro
+      // histórico não muda com o tempo) -- achado real testando em
+      // produção: sem marcar como completo mesmo em erro, essas partidas
+      // nunca saem de `pendentes` e ficam tentando pra sempre em toda
+      // chamada futura (loop "rodar até restantes_estimado=0" do painel de
+      // Configurações nunca terminaria). Marca como completo mesmo assim
+      // pra não retentar de novo, mas conta separado de sucesso de verdade.
+      if (/No historical odds found/i.test(erro.message)) {
+        await supabase.from('match_source_ids').upsert(
+          { match_id: match.id, source: 'oddspapi_historico_completo', source_id: fixtureId },
+          { onConflict: 'match_id,source' }
+        );
+        semHistorico++;
+      } else {
+        falhas.push({ match_id: match.id, motivo: erro.message });
+      }
     }
   }
 
@@ -2332,6 +2347,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
     ja_importados_antes: idsCompletos.size,
     processados_agora: processados,
     sucesso,
+    sem_historico_na_fonte: semHistorico || undefined,
     falhas: falhas.length ? falhas : undefined,
     restantes_estimado: totalFinalizadosLocal - idsCompletos.size - processados,
   };
