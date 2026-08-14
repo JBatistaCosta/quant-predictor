@@ -1,20 +1,27 @@
 // src/pages/Configuracoes.jsx
-// Painel de configurações/manutenção do sistema. Primeira seção: importação
-// de odds históricas exportadas manualmente da Footiqo (footiqo.com) --
-// fonte gratuita que cobre Champions League/Copa Libertadores, que nem
-// football-data.co.uk nem OddsPapi nem API-Football cobrem com arquivo
-// histórico real (investigado numa sessão anterior, ver CONTEXTO_PROJETO.md).
-// O CSV é parseado aqui no navegador; só o array de linhas já parseado vai
-// pro servidor (tarefa=importar-odds-footiqo em api/model-maintenance.js),
-// que faz o casamento com nossas partidas e grava em odds_market.
+// Painel de configurações/manutenção do sistema. Duas seções:
+// 1) Importação de odds históricas exportadas manualmente da Footiqo
+//    (footiqo.com) -- fonte gratuita que cobre Champions League/Copa
+//    Libertadores, que nem football-data.co.uk nem OddsPapi nem API-Football
+//    cobrem com arquivo histórico real (investigado numa sessão anterior, ver
+//    CONTEXTO_PROJETO.md). O CSV é parseado aqui no navegador; só o array de
+//    linhas já parseado vai pro servidor (tarefa=importar-odds-footiqo em
+//    api/model-maintenance.js), que faz o casamento com nossas partidas e
+//    grava em odds_market.
+// 2) Disparo do enriquecimento de estatísticas via FotMob (tarefa=
+//    partidas-fotmob) pra ligas já vinculadas em liga_fonte_externa --
+//    processa em lotes (limite do Vercel), então o frontend chama em rounds
+//    sucessivos até `restantes` zerar, mesmo padrão de
+//    resetarERecalcularRating em Jogadores.jsx.
 import React, { useEffect, useState } from 'react';
-import { Settings, Upload, Loader2, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { Settings, Upload, Loader2, AlertTriangle, CheckCircle2, Info, Database } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
 import { parseCsv } from '../utils/parseCsv';
 
 const COLUNAS_ESPERADAS = ['matchDate', 'homeTeam', 'awayTeam', 'H', 'D', 'A'];
+const MAX_RODADAS_FOTMOB = 500; // rede de segurança contra loop infinito, mesmo padrão de Jogadores.jsx
 
 function ImportacaoFootiqo() {
   const { session } = useAuth();
@@ -153,6 +160,125 @@ function ImportacaoFootiqo() {
   );
 }
 
+function ImportacaoFotmob() {
+  const { session } = useAuth();
+  const [ligas, setLigas] = useState([]);
+  const [ligaId, setLigaId] = useState('');
+  const [temporada, setTemporada] = useState('');
+  const [rodando, setRodando] = useState(false);
+  const [progresso, setProgresso] = useState('');
+  const [erro, setErro] = useState('');
+  const [resumo, setResumo] = useState(null);
+
+  useEffect(() => {
+    if (!supabaseAtivo) return;
+    (async () => {
+      const { data: fontes } = await supabase.from('liga_fonte_externa').select('league_id').eq('sistema', 'fotmob');
+      const ids = [...new Set((fontes || []).map((f) => f.league_id))];
+      if (ids.length === 0) { setLigas([]); return; }
+      const { data: ligasData } = await supabase.from('leagues').select('id, name').in('id', ids).order('name');
+      setLigas(ligasData || []);
+    })();
+  }, []);
+
+  const importar = async () => {
+    if (!session) { setErro('Faça login pra importar.'); return; }
+    if (!ligaId) { setErro('Selecione a liga.'); return; }
+
+    setRodando(true); setErro(''); setResumo(null);
+    let totalSucesso = 0, totalProcessados = 0, rodada = 0, restantes = null, liga = '';
+    try {
+      for (rodada = 1; rodada <= MAX_RODADAS_FOTMOB; rodada++) {
+        const params = new URLSearchParams({ tarefa: 'partidas-fotmob', liga_id: ligaId });
+        if (temporada.trim()) params.set('temporada', temporada.trim());
+        const resp = await fetch(apiUrl(`/api/model-maintenance?${params.toString()}`), {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
+
+        liga = dados.liga || liga;
+        totalSucesso += dados.sucesso || 0;
+        totalProcessados += dados.processados_agora || 0;
+        restantes = dados.restantes ?? 0;
+        setProgresso(`Rodada ${rodada}: ${totalSucesso}/${totalProcessados} partidas importadas até agora, ${restantes} restante(s).`);
+        if (!restantes) break;
+      }
+      if (restantes) {
+        setErro(`Parou depois de ${rodada} rodadas com ${restantes} partida(s) ainda restantes (limite de segurança atingido) — clique de novo pra continuar.`);
+      } else {
+        setResumo({ liga, rodadas: rodada, sucesso: totalSucesso, processados: totalProcessados });
+      }
+    } catch (err) {
+      setErro(`${err.message} — pode retomar sem perder progresso clicando de novo.`);
+    } finally {
+      setRodando(false);
+      setProgresso('');
+    }
+  };
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-4">
+      <div>
+        <h2 className="text-lg font-bold text-slate-100">FotMob — Importação de Estatísticas</h2>
+        <p className="text-slate-400 text-sm mt-1">
+          Busca o detalhe completo (stats por time, jogadores, chutes com xG, contexto) das partidas já
+          encerradas de uma liga já vinculada ao FotMob — cobre tanto temporadas anteriores quanto os jogos
+          já encerrados da temporada atual. Deixe "Temporada" em branco pra processar tudo que ainda falta;
+          preencha (ex: 2024 ou 2024/2025) pra restringir a uma só. Processa em lotes automaticamente até não
+          sobrar nada pendente.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Liga</label>
+          <select value={ligaId} onChange={(e) => setLigaId(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100">
+            <option value="">Selecione...</option>
+            {ligas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          {ligas.length === 0 && (
+            <p className="text-xs text-slate-500 mt-1">Nenhuma liga vinculada ao FotMob ainda (liga_fonte_externa).</p>
+          )}
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Temporada (opcional)</label>
+          <input type="text" value={temporada} onChange={(e) => setTemporada(e.target.value)}
+            placeholder="ex: 2024 ou 2024/2025 — em branco = todas"
+            className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100 placeholder:text-slate-500" />
+        </div>
+      </div>
+
+      {progresso && (
+        <div className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-300 flex items-center gap-2">
+          <Loader2 size={16} className="animate-spin text-blue-400 shrink-0" /> {progresso}
+        </div>
+      )}
+
+      {erro && (
+        <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-2.5 rounded-lg flex items-start gap-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {erro}
+        </div>
+      )}
+
+      <button onClick={importar} disabled={rodando || !ligaId}
+        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-5 py-2.5 rounded-lg text-sm flex items-center gap-2">
+        {rodando ? <Loader2 size={16} className="animate-spin" /> : <Database size={16} />} Importar do FotMob
+      </button>
+
+      {resumo && (
+        <div className="bg-emerald-950/30 border border-emerald-600/40 rounded-xl p-4 text-sm">
+          <div className="flex items-center gap-2 text-emerald-300 font-bold">
+            <CheckCircle2 size={16} /> {resumo.sucesso}/{resumo.processados} partida(s) importadas — {resumo.liga}
+          </div>
+          <p className="text-xs text-slate-400 mt-1">Concluído em {resumo.rodadas} rodada(s). Nada mais pendente pra essa liga/temporada.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Configuracoes() {
   if (!supabaseAtivo) {
     return (
@@ -173,6 +299,7 @@ export default function Configuracoes() {
       </div>
 
       <ImportacaoFootiqo />
+      <ImportacaoFotmob />
     </div>
   );
 }
