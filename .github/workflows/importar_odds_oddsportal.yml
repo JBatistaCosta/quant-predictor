@@ -1,0 +1,164 @@
+name: Importar Odds OddsPortal
+
+# Captura odds históricas do OddsPortal via OddsHarvester
+# (github.com/jordantete/OddsHarvester) e grava um CSV normalizado no
+# próprio repo (arquivos_do_claude/odds_oddsportal/) + importa pra
+# odds_market no Supabase. Ver docstrings de
+# arquivos_do_claude/capturar_odds_oddsportal.py e
+# arquivos_do_claude/ingestao_odds_oddsportal.py pros detalhes de formato
+# e a lista de ligas com slug confirmado.
+#
+# Só workflow_dispatch, disparado MANUALMENTE -- scraping via navegador
+# real (Playwright) é mais pesado e mais sujeito a bloqueio do que as
+# outras fontes de odds do projeto (CSV estático via HTTP), então cada
+# corrida é observada nos logs antes de repetir, sem cron automático.
+# Uso é só pra consumo próprio do projeto (sem republicação dos dados),
+# conforme o aviso do próprio OddsHarvester (README: "educational purposes
+# only... ensure compliance with their terms of service").
+on:
+  workflow_dispatch:
+    inputs:
+      liga:
+        description: "Liga (slug já confirmado no OddsHarvester)"
+        required: true
+        type: choice
+        default: libertadores
+        options:
+          - libertadores
+          - sudamericana
+          - brasileirao-serie-b
+          - champions-league
+          - copa-do-mundo
+          - outro (slug custom)
+      liga_slug_custom:
+        description: "Só se liga=outro: slug real do OddsPortal (ex.: brazil-copa-do-brasil), confirmado à mão em oddsportal.com antes de rodar"
+        required: false
+        type: string
+      liga_nome_custom:
+        description: "Só se liga=outro: nome curto pro arquivo CSV (ex.: copa-do-brasil)"
+        required: false
+        type: string
+      season:
+        description: "Temporada: '2024', '2023-2024' ou 'current'"
+        required: true
+        type: string
+      liga_id_supabase:
+        description: "id de public.leagues no Supabase (pra casar/gravar as partidas)"
+        required: true
+        type: string
+      markets:
+        description: "Mercados OddsHarvester, separados por vírgula"
+        required: false
+        type: string
+        default: "1x2,btts,over_under_2_5"
+      bookmaker_alvo:
+        description: "Só captura odds dessa casa (prioridade do projeto: Pinnacle, referência de mercado eficiente). Deixe em branco pra capturar todas as casas."
+        required: false
+        type: string
+        default: "Pinnacle"
+      modo:
+        description: "O que rodar"
+        required: true
+        type: choice
+        default: capturar-e-importar
+        options:
+          - capturar-e-importar
+          - so-capturar
+          - so-importar-de-csv-existente
+      csv_existente:
+        description: "Só se modo=so-importar-de-csv-existente: caminho do CSV já commitado no repo"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  odds-oddsportal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        if: inputs.modo != 'so-importar-de-csv-existente'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configurar Python 3.11 (só importação)
+        if: inputs.modo == 'so-importar-de-csv-existente'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências de captura
+        if: inputs.modo != 'so-importar-de-csv-existente'
+        run: pip install "oddsharvester>=0.10" pandas supabase
+
+      - name: Instalar dependências de importação
+        if: inputs.modo == 'so-importar-de-csv-existente'
+        run: pip install pandas supabase
+
+      - name: Instalar navegador (Chromium)
+        if: inputs.modo != 'so-importar-de-csv-existente'
+        run: playwright install chromium --with-deps
+
+      - name: Resolver liga/slug
+        if: inputs.modo != 'so-importar-de-csv-existente'
+        id: liga
+        run: |
+          if [ "${{ inputs.liga }}" = "outro (slug custom)" ]; then
+            if [ -z "${{ inputs.liga_slug_custom }}" ] || [ -z "${{ inputs.liga_nome_custom }}" ]; then
+              echo "liga=outro exige liga_slug_custom e liga_nome_custom preenchidos." >&2
+              exit 1
+            fi
+            echo "args=--liga-slug-custom ${{ inputs.liga_slug_custom }} --liga-nome ${{ inputs.liga_nome_custom }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=--liga ${{ inputs.liga }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Capturar odds do OddsPortal
+        if: inputs.modo != 'so-importar-de-csv-existente'
+        id: capturar
+        run: |
+          ARGS="${{ steps.liga.outputs.args }} --season ${{ inputs.season }} --markets ${{ inputs.markets }}"
+          if [ -n "${{ inputs.bookmaker_alvo }}" ]; then
+            ARGS="$ARGS --target-bookmaker ${{ inputs.bookmaker_alvo }}"
+          fi
+          python arquivos_do_claude/capturar_odds_oddsportal.py $ARGS | tee captura.log
+          CSV_PATH=$(grep -oP '(?<=-> )\S+\.csv' captura.log | tail -1)
+          echo "csv_path=$CSV_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Commitar CSV capturado
+        if: inputs.modo != 'so-importar-de-csv-existente'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ steps.capturar.outputs.csv_path }}"
+          if ! git diff --cached --quiet; then
+            git commit -m "data: odds OddsPortal - ${{ inputs.liga }} ${{ inputs.season }}"
+            git push
+          else
+            echo "CSV sem mudanças, nada pra commitar."
+          fi
+
+      - name: Determinar CSV pra importação
+        id: csv_final
+        run: |
+          if [ "${{ inputs.modo }}" = "so-importar-de-csv-existente" ]; then
+            echo "path=${{ inputs.csv_existente }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=${{ steps.capturar.outputs.csv_path }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Importar pro Supabase (odds_market)
+        if: inputs.modo != 'so-capturar'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python arquivos_do_claude/ingestao_odds_oddsportal.py \
+            "${{ steps.csv_final.outputs.path }}" \
+            --liga-id "${{ inputs.liga_id_supabase }}"
