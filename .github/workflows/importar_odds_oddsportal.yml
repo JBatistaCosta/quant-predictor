@@ -123,12 +123,17 @@ jobs:
         if: inputs.modo != 'so-importar-de-csv-existente'
         id: capturar
         run: |
+          set -o pipefail
           ARGS="${{ steps.liga.outputs.args }} --season ${{ inputs.season }} --markets ${{ inputs.markets }}"
           if [ -n "${{ inputs.bookmaker_alvo }}" ]; then
             ARGS="$ARGS --target-bookmaker ${{ inputs.bookmaker_alvo }}"
           fi
           python arquivos_do_claude/capturar_odds_oddsportal.py $ARGS | tee captura.log
           CSV_PATH=$(grep -oP '(?<=-> )\S+\.csv' captura.log | tail -1)
+          if [ -z "$CSV_PATH" ]; then
+            echo "Captura não gerou CSV (ver log acima). Abortando antes do commit." >&2
+            exit 1
+          fi
           echo "csv_path=$CSV_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Commitar CSV capturado
