@@ -2221,21 +2221,40 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   // SEM filtro de season -- pedido do usuário: processar o máximo de
   // temporadas possível por chamada, não só a mais recente (a fixtures
   // cache já cobre a janela inteira desde a partida mais antiga finalizada
-  // no nosso banco). round IS NOT NULL continua obrigatório (evita o corte
-  // silencioso de 1000 linhas do PostgREST por causa de partida triplicada
-  // por fonte sem round, mesmo bug documentado alhures) -- mas agora com
-  // paginação de verdade (buscarTudoPaginado), já que sem o filtro de
-  // season uma liga grande passa fácil de 1000 linhas.
-  const nossosJogos = await buscarTudoPaginado(() => {
+  // no nosso banco). Paginado de verdade (buscarTudoPaginado) já que sem o
+  // filtro de season uma liga grande passa fácil de 1000 linhas.
+  //
+  // round IS NOT NULL foi REMOVIDO daqui -- achado real testando as 9 ligas
+  // recém-mapeadas (Libertadores/Sudamericana/Copa do Brasil/Champions/
+  // Club World Cup/Copa América/Eurocopa/Copa do Mundo/Série B): esse
+  // filtro (pensado só pro caso do Brasileirão, com jogo triplicado por
+  // fonte) zerava CINCO delas por completo (Série B, Copa do Brasil, Club
+  // World Cup, Copa América, Intercontinental Cup nunca têm round
+  // preenchido) -- e nenhuma delas tem duplicata de verdade (confirmado
+  // por query: total de linhas bate 1:1 com jogos distintos por
+  // home/away/data/temporada), só a Copa Sudamericana tem (963 linhas,
+  // 849 jogos distintos). Trocado por deduplicação de verdade em memória
+  // (prefere a linha com round quando existe mais de uma pro mesmo jogo,
+  // senão pega a primeira) -- resolve o motivo original do filtro sem
+  // excluir ligas que nunca tiveram round preenchido nessa fonte.
+  const todosOsJogos = await buscarTudoPaginado(() => {
     let q = supabase.from('matches')
-      .select('id, season, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
-      .eq('league_id', ligaId).eq('status', 'finished').not('round', 'is', null);
+      .select('id, season, round, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
+      .eq('league_id', ligaId).eq('status', 'finished');
     if (temporada) q = q.eq('season', temporada);
     return q;
   });
+  const jogosPorChave = new Map();
+  for (const m of todosOsJogos) {
+    const chave = `${m.home?.id}|${m.away?.id}|${new Date(m.match_date).toISOString().slice(0, 10)}|${m.season}`;
+    const existente = jogosPorChave.get(chave);
+    if (!existente || (m.round != null && existente.round == null)) jogosPorChave.set(chave, m);
+  }
+  const nossosJogos = [...jogosPorChave.values()];
 
   const { data: completosRows } = await supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico_completo');
-  const idsCompletos = new Set((completosRows || []).map((r) => r.match_id));
+  const idsCompletosGlobal = new Set((completosRows || []).map((r) => r.match_id));
+  const idsCompletos = new Set(nossosJogos.filter((m) => idsCompletosGlobal.has(m.id)).map((m) => m.id));
 
   // Mais RECENTE primeiro -- achado real testando em produção: sem filtro
   // de season, a ordem crua de /v4/fixtures é cronológica ASCENDENTE (mais
