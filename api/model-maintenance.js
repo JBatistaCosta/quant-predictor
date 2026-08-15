@@ -2446,7 +2446,15 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
     sucesso,
     sem_historico_na_fonte: semHistorico || undefined,
     falhas: falhas.length ? falhas : undefined,
-    restantes_estimado: totalFinalizadosLocal - idsCompletos.size - processados,
+    // BUG REAL corrigido: usava `processados` (tudo que ENTROU no lote),
+    // mas quem falhou (erroTransitorio/erroInsert, ver `falhas` acima) não
+    // é marcado como completo em match_source_ids -- continua pendente pra
+    // próxima chamada. Contar `processados` inteiro aqui subestimava o que
+    // faltava sempre que havia falha na rodada (comum com o rate limit da
+    // OddsPapi), fazendo o número parecer "travado" por várias rodadas
+    // mesmo com progresso real acontecendo (só sucesso+sem_historico ficam
+    // de fato completos).
+    restantes_estimado: totalFinalizadosLocal - idsCompletos.size - (sucesso + semHistorico),
   };
 }
 
