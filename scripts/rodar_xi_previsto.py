@@ -57,7 +57,11 @@ def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1
     timeout` já na página 17 -- mesma classe de bug já corrigida em
     treinar_modelo_xi.py. Ordenar pela PRÓPRIA coluna filtrada (`player_id`,
     presente nas 3 tabelas que usam esta função) deixa o planner usar o
-    índice certo."""
+    índice certo, mas ainda não bastou sozinho: com lote de 1000 player_id
+    o OFFSET voltou a dar timeout mais adiante (~14k linhas). Os 3 chamadores
+    desta função em `montar_features_elenco_atual` reduziram o lote pra 100
+    player_id -- resultado por lote fica bem menor, tira a necessidade de
+    OFFSET profundo."""
     linhas: list[dict] = []
     pagina = 0
     while True:
@@ -130,7 +134,7 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
     df_ratings = pd.DataFrame(ratings_rows) if ratings_rows else pd.DataFrame(columns=["player_id", "rating"])
 
     valores_rows = []
-    for lote in _dividir_em_lotes(player_ids):
+    for lote in _dividir_em_lotes(player_ids, 100):
         valores_rows.extend(
             _buscar_paginado_por_lote(
                 lambda l: supabase.table("player_market_value_history").select("player_id, value_date, value_eur").in_("player_id", l), lote
@@ -147,7 +151,7 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
             valor_mais_recente[v["player_id"]] = float(v["value_eur"])
 
     stats_rows = []
-    for lote in _dividir_em_lotes(player_ids):
+    for lote in _dividir_em_lotes(player_ids, 100):
         stats_rows.extend(
             _buscar_paginado_por_lote(
                 lambda l: supabase.table("match_player_stats_fotmob").select("player_id, match_id, minutes_played").in_("player_id", l).gt("minutes_played", 0),
@@ -170,7 +174,7 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
                 ultimo_jogo_data[s["player_id"]] = data_jogo
 
     lineup_rows = []
-    for lote in _dividir_em_lotes(player_ids):
+    for lote in _dividir_em_lotes(player_ids, 100):
         lineup_rows.extend(
             _buscar_paginado_por_lote(lambda l: supabase.table("match_lineup_fotmob").select("player_id, is_starter").in_("player_id", l), lote)
         )
