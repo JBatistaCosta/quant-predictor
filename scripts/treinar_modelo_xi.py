@@ -61,11 +61,27 @@ def _paginar(query_factory, tamanho_pagina: int = 1000) -> list[dict]:
     return linhas
 
 
+def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores: list, colunas: str) -> list[dict]:
+    """Filtra `coluna_filtro IN valores` em lotes de 1000 (limite do
+    `.in_()`) E pagina o resultado de cada lote (`_paginar`) -- um lote de
+    1000 match_id pode facilmente devolver mais de 1000 linhas (~22
+    jogadores/partida), então as duas paginações são necessárias."""
+    linhas: list[dict] = []
+    for i in range(0, len(valores), 1000):
+        lote = valores[i : i + 1000]
+        linhas.extend(
+            _paginar(
+                lambda ini, fim, lote=lote: supabase.table(tabela).select(colunas).in_(coluna_filtro, lote).order(coluna_filtro).range(ini, fim)
+            )
+        )
+    return linhas
+
+
 def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Buscando dados de lineup no Supabase...")
     lineup_rows = _paginar(
         lambda i, f: supabase.table("match_lineup_fotmob")
-        .select("match_id, team_id, player_id, is_starter, is_home, position_id, rating")
+        .select("match_id, team_id, player_id, is_starter, position_id")
         .order("match_id")
         .range(i, f)
     )
@@ -79,14 +95,19 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     df_matches = pd.DataFrame(matches_resp.data).rename(columns={"id": "match_id"})
 
     player_ids = df_lineup["player_id"].unique().tolist()
-    players_rows = []
-    for i in range(0, len(player_ids), 1000):
-        lote = player_ids[i : i + 1000]
-        resp = supabase.table("players").select("id, usual_position_id, market_value").in_("id", lote).execute()
-        players_rows.extend(resp.data or [])
+    players_rows = _buscar_por_lotes(supabase, "players", "id", player_ids, "id, usual_position_id, market_value")
     df_players = pd.DataFrame(players_rows).rename(columns={"id": "player_id"})
 
-    df = df_lineup.merge(df_matches, on="match_id", how="left").merge(df_players, on="player_id", how="left")
+    # rating por jogador/partida não vive em match_lineup_fotmob (só tem
+    # team_rating, agregado do time inteiro) -- é match_player_stats_fotmob.rating.
+    stats_rows = _buscar_por_lotes(supabase, "match_player_stats_fotmob", "match_id", match_ids, "match_id, player_id, rating")
+    df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["match_id", "player_id", "rating"])
+
+    df = (
+        df_lineup.merge(df_matches, on="match_id", how="left")
+        .merge(df_players, on="player_id", how="left")
+        .merge(df_stats, on=["match_id", "player_id"], how="left")
+    )
     return df
 
 
