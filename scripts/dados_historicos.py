@@ -1854,18 +1854,29 @@ def _calcular_classificacao_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
                 )
             # atualiza DEPOIS de registrar o snapshot -- nunca vaza o
             # resultado do PRÓPRIO jogo que se está tentando prever.
+            # BUG REAL corrigido: partida ainda não disputada (home_goals/
+            # away_goals None -- injetada via match_ids_extra, ver
+            # montar_dataset_ml_empilhado) tem snapshot registrado
+            # normalmente (linha acima), mas NÃO atualiza pontos/saldo/
+            # jogos -- sem resultado, não há o que somar à tabela. Sem essa
+            # guarda, `hg > ag` comparava None > None e quebrava a
+            # montagem do dataset inteiro assim que qualquer partida futura
+            # entrava no mesmo (league_id, season) de partidas já
+            # encerradas (achado real rodando prever_partidas_futuras_
+            # custom.py em produção).
             h, a, hg, ag = row.home_team_id, row.away_team_id, row.home_goals, row.away_goals
-            if hg > ag:
-                pontos[h] = pontos.get(h, 0) + 3
-            elif hg == ag:
-                pontos[h] = pontos.get(h, 0) + 1
-                pontos[a] = pontos.get(a, 0) + 1
-            else:
-                pontos[a] = pontos.get(a, 0) + 3
-            saldo[h] = saldo.get(h, 0) + (hg - ag)
-            saldo[a] = saldo.get(a, 0) + (ag - hg)
-            jogos[h] = jogos.get(h, 0) + 1
-            jogos[a] = jogos.get(a, 0) + 1
+            if hg is not None and ag is not None:
+                if hg > ag:
+                    pontos[h] = pontos.get(h, 0) + 3
+                elif hg == ag:
+                    pontos[h] = pontos.get(h, 0) + 1
+                    pontos[a] = pontos.get(a, 0) + 1
+                else:
+                    pontos[a] = pontos.get(a, 0) + 3
+                saldo[h] = saldo.get(h, 0) + (hg - ag)
+                saldo[a] = saldo.get(a, 0) + (ag - hg)
+                jogos[h] = jogos.get(h, 0) + 1
+                jogos[a] = jogos.get(a, 0) + 1
     return pd.DataFrame(linhas)
 
 
@@ -2056,7 +2067,13 @@ def _calcular_h2h_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
                     "h2h_n_jogos": n,
                 }
             )
-            historico.append((row.home_team_id, row.away_team_id, row.home_goals, row.away_goals))
+            # Mesma guarda de _calcular_classificacao_pre_jogo: partida
+            # ainda não disputada não vira histórico de confronto direto
+            # (home_goals/away_goals None) -- sem isso, um 2º jogo futuro
+            # do mesmo par de times dentro da janela (ex.: ida e volta de
+            # copa) faria resumir_h2h comparar None > None.
+            if row.home_goals is not None and row.away_goals is not None:
+                historico.append((row.home_team_id, row.away_team_id, row.home_goals, row.away_goals))
     return pd.DataFrame(linhas)
 
 

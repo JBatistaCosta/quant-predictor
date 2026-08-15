@@ -427,8 +427,27 @@ def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame, features: list[st
 
 # treinar(params, train_df, coluna_alvo=..., features=...) -> (modelo, extra)
 # | prever(modelo, extra, df, features=...) -> (probs, classes)
-# v1-v8 (+v3B) removidos -- superadas pela v9, sem uso em produção.
+# v2-v8 (+v3B) removidos -- superadas pela v9, sem uso em produção.
+#
+# v1 NÃO foi removido (BUG REAL corrigido: chegou a ser removido nessa
+# limpeza, achando que não tinha uso em produção -- errado. `model_
+# artifacts.py` (treinar_e_prever/prever_com_estado, usado por TODO o
+# Treino Customizado: treino simples/walk-forward, "Estimar partida" sob
+# demanda e a previsão em lote de partidas futuras,
+# `prever_partidas_futuras_custom.py`) monta a chave `f"{algoritmo}_v1"`
+# pra QUALQUER config customizada com algoritmo catboost/xgboost/lightgbm
+# -- sem essa entrada, treino E predição desses algoritmos ficam
+# quebrados pra sempre nesse painel, não só predição. Achado real: rodar
+# o job de previsão em lote pela primeira vez gerou `KeyError:
+# 'xgboost_v1'` pra toda config com artefato xgboost/stacking com membro
+# xgboost). Mesmas funções de treino/predição já usadas pela v9/v10 --
+# "v1" aqui não é sobre feature set nenhum, é só o algoritmo puro sem
+# nenhum extra, exatamente o que o Treino Customizado precisa (o usuário
+# escolhe as features na hora, não uma versão fixa).
 TREINADORES = {
+    "catboost_v1": (treinar_catboost, prever_catboost),
+    "xgboost_v1": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v1": (treinar_lightgbm, prever_lightgbm),
     # v9 — mesmas features da v8, 4ª família de algoritmo (MLP) adicionada;
     # stacking sobre as 4 famílias base é treinado separadamente em
     # `walkforward_cv_v9.py` (precisa de OOF predictions, não entra aqui).
