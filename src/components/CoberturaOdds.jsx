@@ -4,8 +4,9 @@
 // cria_views_cobertura_estatisticas_odds) -- agregação pesada roda no
 // Postgres, não no navegador.
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 function corPct(pct) {
   if (pct >= 90) return 'bg-emerald-500';
@@ -30,21 +31,47 @@ export default function CoberturaOdds() {
   const [linhas, setLinhas] = useState([]);
   const [bookmakers, setBookmakers] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [atualizando, setAtualizando] = useState(false);
+  const [erro, setErro] = useState('');
   const [ligaAberta, setLigaAberta] = useState(null);
+
+  const carregarDados = async () => {
+    const [{ data: odds, error: erroOdds }, { data: bks, error: erroBks }] = await Promise.all([
+      supabase.from('vw_cobertura_odds').select('*').order('liga').order('season'),
+      supabase.from('vw_cobertura_odds_bookmaker').select('*'),
+    ]);
+    if (erroOdds || erroBks) throw new Error((erroOdds || erroBks).message);
+    setLinhas(odds || []);
+    setBookmakers(bks || []);
+  };
 
   useEffect(() => {
     if (!supabaseAtivo) return;
     (async () => {
-      setCarregando(true);
-      const [{ data: odds }, { data: bks }] = await Promise.all([
-        supabase.from('vw_cobertura_odds').select('*').order('liga').order('season'),
-        supabase.from('vw_cobertura_odds_bookmaker').select('*'),
-      ]);
-      setLinhas(odds || []);
-      setBookmakers(bks || []);
-      setCarregando(false);
+      setCarregando(true); setErro('');
+      try {
+        await carregarDados();
+      } catch (err) {
+        setErro(err.message || 'Falha ao carregar a cobertura de odds.');
+      } finally {
+        setCarregando(false);
+      }
     })();
   }, []);
+
+  const atualizar = async () => {
+    setAtualizando(true); setErro('');
+    try {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=refresh-cobertura-odds'));
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao atualizar.');
+      await carregarDados();
+    } catch (err) {
+      setErro(err.message || 'Falha ao atualizar a cobertura de odds.');
+    } finally {
+      setAtualizando(false);
+    }
+  };
 
   if (!supabaseAtivo) return null;
   if (carregando) {
@@ -61,9 +88,22 @@ export default function CoberturaOdds() {
 
   return (
     <div className="space-y-3">
-      <p className="text-slate-400 text-sm">
-        Cobertura de <span className="text-slate-300 font-semibold">odds_market</span> por liga e temporada — % de partidas finalizadas com pelo menos uma odd gravada.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-slate-400 text-sm">
+          Cobertura de <span className="text-slate-300 font-semibold">odds_market</span> por liga e temporada — % de partidas finalizadas com pelo menos uma odd gravada.
+          Dados pré-calculados (a tabela já passa de 1,5 milhão de linhas) — clique em "Atualizar" pra recalcular agora.
+        </p>
+        <button onClick={atualizar} disabled={atualizando}
+          className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-lg px-3 py-1.5">
+          <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} /> Atualizar
+        </button>
+      </div>
+
+      {erro && (
+        <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-2.5 rounded-lg flex items-start gap-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {erro}
+        </div>
+      )}
 
       {Object.entries(porLiga).map(([liga, info]) => {
         const pctTotal = info.finalizadas > 0 ? (100 * info.com_odds) / info.finalizadas : 0;
