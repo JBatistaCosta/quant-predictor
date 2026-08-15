@@ -2330,9 +2330,23 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   }
   const nossosJogos = [...jogosPorChave.values()];
 
-  const { data: completosRows } = await supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico_completo');
-  const idsCompletosGlobal = new Set((completosRows || []).map((r) => r.match_id));
-  const idsCompletos = new Set(nossosJogos.filter((m) => idsCompletosGlobal.has(m.id)).map((m) => m.id));
+  // BUG REAL corrigido (achado monitorando o backfill em produção): essa
+  // query buscava o `source='oddspapi_historico_completo' de TODAS as
+  // ligas numa chamada só, sem paginação -- clássico truncamento silencioso
+  // de 1000 linhas do PostgREST (gotcha já documentado no projeto). Com o
+  // backfill rodando, o total global passou de 1000 linhas nesta mesma
+  // sessão, e a liga cujas linhas completas caíssem fora da primeira
+  // "página" ficava com `idsCompletos` sempre vazio -- reprocessando as
+  // mesmas poucas partidas mais recentes pra sempre, sem nunca reconhecer
+  // progresso já feito (confirmado: Copa Sudamericana, 6 partidas
+  // completas no banco, `ja_importados_antes` sempre retornando 0). Trocado
+  // por busca paginada e já filtrada só pelos ids desta liga (mais barato
+  // também -- não precisa mais buscar o total global a cada chamada).
+  const idsNossosJogos = nossosJogos.map((m) => m.id);
+  const completosRows = await buscarTudoPaginadoIn(idsNossosJogos, (lote) =>
+    supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico_completo').in('match_id', lote)
+  );
+  const idsCompletos = new Set(completosRows.map((r) => r.match_id));
 
   // Mais RECENTE primeiro -- achado real testando em produção: sem filtro
   // de season, a ordem crua de /v4/fixtures é cronológica ASCENDENTE (mais
