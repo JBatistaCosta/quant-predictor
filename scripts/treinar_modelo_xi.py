@@ -44,47 +44,57 @@ TARGET = "is_starter"
 FRACAO_TESTE = 0.2
 
 
-def _paginar(query_factory, tamanho_pagina: int = 1000) -> list[dict]:
-    """PostgREST corta em 1000 linhas sem `.range()` -- mesma disciplina de
-    paginação usada em todo o resto do repo (ver dados_historicos.py)."""
+def _paginar_keyset(query_factory, tamanho_pagina: int = 1000) -> list[dict]:
+    """Pagina por CURSOR na chave primária `id` (indexada), não por OFFSET.
+
+    Achado rodando em produção: match_lineup_fotmob já tem 190k+ linhas, e
+    OFFSET grande dá `statement timeout` no Postgres (cada página reescaneia
+    do início) -- mesma classe de bug já documentada em dados_historicos.py
+    pra match_player_stats_fotmob (>250k linhas). `query_factory(cursor)`
+    deve devolver a query já com `.select(...)` incluindo `id`, ordenada por
+    `id` e filtrada por `.gt('id', cursor)` -- só o `.limit()` é aplicado
+    aqui."""
     linhas: list[dict] = []
-    pagina = 0
+    cursor = 0
     while True:
-        inicio = pagina * tamanho_pagina
-        fim = inicio + tamanho_pagina - 1
-        resp = query_factory(inicio, fim).execute()
-        lote = resp.data or []
+        lote = query_factory(cursor).gt("id", cursor).order("id").limit(tamanho_pagina).execute().data or []
+        if not lote:
+            break
         linhas.extend(lote)
+        cursor = lote[-1]["id"]
         if len(lote) < tamanho_pagina:
             break
-        pagina += 1
     return linhas
 
 
 def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores: list, colunas: str) -> list[dict]:
-    """Filtra `coluna_filtro IN valores` em lotes de 1000 (limite do
-    `.in_()`) E pagina o resultado de cada lote (`_paginar`) -- um lote de
-    1000 match_id pode facilmente devolver mais de 1000 linhas (~22
-    jogadores/partida), então as duas paginações são necessárias."""
+    """Filtra `coluna_filtro IN valores` em lotes de 1000 (limite prático do
+    `.in_()`) E pagina o resultado de cada lote por keyset (`id`) -- um lote
+    de 1000 match_id pode devolver mais de 1000 linhas (~22 jogadores/
+    partida), então as duas camadas de paginação são necessárias."""
+    pedia_id = "id" in [c.strip() for c in colunas.split(",")]
+    colunas_com_id = colunas if pedia_id else f"id, {colunas}"
     linhas: list[dict] = []
     for i in range(0, len(valores), 1000):
-        lote = valores[i : i + 1000]
+        lote_valores = valores[i : i + 1000]
         linhas.extend(
-            _paginar(
-                lambda ini, fim, lote=lote: supabase.table(tabela).select(colunas).in_(coluna_filtro, lote).order(coluna_filtro).range(ini, fim)
+            _paginar_keyset(
+                lambda cursor, lote_valores=lote_valores: supabase.table(tabela).select(colunas_com_id).in_(coluna_filtro, lote_valores)
             )
         )
+    if not pedia_id:
+        for linha in linhas:
+            linha.pop("id", None)
     return linhas
 
 
 def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Buscando dados de lineup no Supabase...")
-    lineup_rows = _paginar(
-        lambda i, f: supabase.table("match_lineup_fotmob")
-        .select("match_id, team_id, player_id, is_starter, position_id")
-        .order("match_id")
-        .range(i, f)
+    lineup_rows = _paginar_keyset(
+        lambda cursor: supabase.table("match_lineup_fotmob").select("id, match_id, team_id, player_id, is_starter, position_id")
     )
+    for linha in lineup_rows:
+        linha.pop("id", None)
     if not lineup_rows:
         return pd.DataFrame()
     df_lineup = pd.DataFrame(lineup_rows)

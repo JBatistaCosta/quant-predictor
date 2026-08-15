@@ -46,6 +46,27 @@ def _dividir_em_lotes(itens: list, tamanho: int = 1000):
         yield itens[i : i + tamanho]
 
 
+def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1000) -> list[dict]:
+    """PostgREST corta em 1000 linhas sem `.range()` -- um jogador pode ter
+    dezenas/centenas de linhas de histórico (market_value_history,
+    match_player_stats_fotmob, match_lineup_fotmob), então um lote de até
+    1000 player_id facilmente devolve mais de 1000 linhas. Diferente da
+    paginação por keyset de treinar_modelo_xi.py (full-table scan de 190k+
+    linhas, onde OFFSET dava timeout), aqui cada lote já é filtrado por
+    `.in_(player_id, lote)` -- escopo bem menor, OFFSET simples basta."""
+    linhas: list[dict] = []
+    pagina = 0
+    while True:
+        inicio = pagina * tamanho_pagina
+        resp = query_factory(lote).range(inicio, inicio + tamanho_pagina - 1).execute()
+        pagina_dados = resp.data or []
+        linhas.extend(pagina_dados)
+        if len(pagina_dados) < tamanho_pagina:
+            break
+        pagina += 1
+    return linhas
+
+
 def buscar_fixtures(supabase: Client, dias: int) -> pd.DataFrame:
     hoje = dt.datetime.utcnow()
     limite = hoje + dt.timedelta(days=dias)
@@ -107,7 +128,9 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
     valores_rows = []
     for lote in _dividir_em_lotes(player_ids):
         valores_rows.extend(
-            supabase.table("player_market_value_history").select("player_id, value_date, value_eur").in_("player_id", lote).execute().data or []
+            _buscar_paginado_por_lote(
+                lambda l: supabase.table("player_market_value_history").select("player_id, value_date, value_eur").in_("player_id", l), lote
+            )
         )
     valor_mais_recente: dict[int, float] = {}
     data_mais_recente: dict[int, str] = {}
@@ -122,7 +145,10 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
     stats_rows = []
     for lote in _dividir_em_lotes(player_ids):
         stats_rows.extend(
-            supabase.table("match_player_stats_fotmob").select("player_id, match_id, minutes_played").in_("player_id", lote).gt("minutes_played", 0).execute().data or []
+            _buscar_paginado_por_lote(
+                lambda l: supabase.table("match_player_stats_fotmob").select("player_id, match_id, minutes_played").in_("player_id", l).gt("minutes_played", 0),
+                lote,
+            )
         )
     ultimo_jogo_data: dict[int, str] = {}
     if stats_rows:
@@ -141,7 +167,9 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
 
     lineup_rows = []
     for lote in _dividir_em_lotes(player_ids):
-        lineup_rows.extend(supabase.table("match_lineup_fotmob").select("player_id, is_starter").in_("player_id", lote).execute().data or [])
+        lineup_rows.extend(
+            _buscar_paginado_por_lote(lambda l: supabase.table("match_lineup_fotmob").select("player_id, is_starter").in_("player_id", l), lote)
+        )
     df_lineup = pd.DataFrame(lineup_rows) if lineup_rows else pd.DataFrame(columns=["player_id", "is_starter"])
     hierarquia_por_jogador = df_lineup.groupby("player_id")["is_starter"].mean().to_dict() if not df_lineup.empty else {}
 
