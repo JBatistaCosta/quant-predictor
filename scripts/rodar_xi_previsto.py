@@ -50,15 +50,19 @@ def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1
     """PostgREST corta em 1000 linhas sem `.range()` -- um jogador pode ter
     dezenas/centenas de linhas de histórico (market_value_history,
     match_player_stats_fotmob, match_lineup_fotmob), então um lote de até
-    1000 player_id facilmente devolve mais de 1000 linhas. Diferente da
-    paginação por keyset de treinar_modelo_xi.py (full-table scan de 190k+
-    linhas, onde OFFSET dava timeout), aqui cada lote já é filtrado por
-    `.in_(player_id, lote)` -- escopo bem menor, OFFSET simples basta."""
+    1000 player_id facilmente devolve mais de 1000 linhas.
+
+    Achado rodando em produção: sem `.order()` explícito, OFFSET numa
+    tabela grande (match_player_stats_fotmob, 250k+ linhas) deu `statement
+    timeout` já na página 17 -- mesma classe de bug já corrigida em
+    treinar_modelo_xi.py. Ordenar pela PRÓPRIA coluna filtrada (`player_id`,
+    presente nas 3 tabelas que usam esta função) deixa o planner usar o
+    índice certo."""
     linhas: list[dict] = []
     pagina = 0
     while True:
         inicio = pagina * tamanho_pagina
-        resp = query_factory(lote).range(inicio, inicio + tamanho_pagina - 1).execute()
+        resp = query_factory(lote).order("player_id").range(inicio, inicio + tamanho_pagina - 1).execute()
         pagina_dados = resp.data or []
         linhas.extend(pagina_dados)
         if len(pagina_dados) < tamanho_pagina:
