@@ -187,6 +187,8 @@ function ImportacaoFootiqo() {
   );
 }
 
+const FOTMOB_TODAS_LIGAS = '__todas__';
+
 function ImportacaoFotmob() {
   const { session } = useAuth();
   const [ligas, setLigas] = useState([]);
@@ -216,7 +218,8 @@ function ImportacaoFotmob() {
     let totalSucesso = 0, totalProcessados = 0, rodada = 0, restantes = null, liga = '';
     try {
       for (rodada = 1; rodada <= MAX_RODADAS_FOTMOB; rodada++) {
-        const params = new URLSearchParams({ tarefa: 'partidas-fotmob', liga_id: ligaId });
+        const params = new URLSearchParams({ tarefa: 'partidas-fotmob' });
+        if (ligaId !== FOTMOB_TODAS_LIGAS) params.set('liga_id', ligaId);
         if (temporada.trim()) params.set('temporada', temporada.trim());
         const resp = await fetch(apiUrl(`/api/model-maintenance?${params.toString()}`), {
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -252,8 +255,9 @@ function ImportacaoFotmob() {
           Busca o detalhe completo (stats por time, jogadores, chutes com xG, contexto) das partidas já
           encerradas de uma liga já vinculada ao FotMob — cobre tanto temporadas anteriores quanto os jogos
           já encerrados da temporada atual. Deixe "Temporada" em branco pra processar tudo que ainda falta;
-          preencha (ex: 2024 ou 2024/2025) pra restringir a uma só. Processa em lotes automaticamente até não
-          sobrar nada pendente.
+          preencha (ex: 2024 ou 2024/2025) pra restringir a uma só. Escolha "Todas as ligas vinculadas" pra
+          rodar de uma vez em todas em vez de repetir liga por liga (pode levar bem mais rodadas). Processa
+          em lotes automaticamente até não sobrar nada pendente.
         </p>
       </div>
 
@@ -263,6 +267,7 @@ function ImportacaoFotmob() {
           <select value={ligaId} onChange={(e) => setLigaId(e.target.value)}
             className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100">
             <option value="">Selecione...</option>
+            {ligas.length > 0 && <option value={FOTMOB_TODAS_LIGAS}>Todas as ligas vinculadas ({ligas.length})</option>}
             {ligas.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
           {ligas.length === 0 && (
