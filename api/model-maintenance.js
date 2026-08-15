@@ -2181,8 +2181,11 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 // Reduzido de 6 pra 4: desde que BOOKMAKERS_HISTORICO passou de 3 pra 6
 // casas, cada fixture agora precisa de 2 chamadas a /v4/historical-odds
 // (ver LOTES_BOOKMAKERS_HISTORICO logo abaixo) -- mantém margem segura
-// contra o timeout de 60s da function.
-const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 4;
+// contra o timeout de 60s da function. Reduzido de novo pra 3 (de 4) depois
+// de trocar o cooldown entre lotes pra 5s uniforme (era 1s, insuficiente) --
+// com 3 fixtures x 2 lotes = 6 chamadas, 5 intervalos de 5s = 25s + latência
+// real da API, ainda com folga segura.
+const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 3;
 
 // BUG REAL corrigido (achado testando em produção antes de rodar o backfill
 // inteiro): a maioria dos pontos de /v4/historical-odds é preço AO VIVO,
@@ -2345,11 +2348,10 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   const jaExiste = new Set((existentesRows || []).map((r) => `${r.match_id}|${r.bookmaker}|${r.market}|${r.selection}`));
 
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  let processados = 0, sucesso = 0, semHistorico = 0;
+  let processados = 0, sucesso = 0, semHistorico = 0, chamadasFeitas = 0;
   const falhas = [];
 
   for (const { fixtureId, startTime, match } of pendentes) {
-    if (processados > 0) await esperar(5000); // cooldown documentado do endpoint (5000ms)
     processados++;
     const linhas = [];
     const agora = new Date().toISOString();
@@ -2361,8 +2363,15 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
     // específico não é fatal (só significa que aquelas casas não têm essa
     // partida), guarda só erro de verdade (ex.: rate limit) pra decidir
     // depois se marca a partida como completa ou deixa pra retentar.
+    //
+    // Cooldown UNIFORME de 5s entre QUALQUER chamada a /v4/historical-odds
+    // (achado real testando em produção: 1s entre lotes da mesma partida
+    // não bastava, a OddsPapi pediu "wait 2.3-2.75 seconds" via 429 --
+    // contador único (chamadasFeitas) em vez de dois cooldowns diferentes
+    // por fixture/por lote, pra não ter zona cinzenta entre os dois).
     for (let i = 0; i < LOTES_BOOKMAKERS_HISTORICO.length; i++) {
-      if (i > 0) await esperar(1000); // cooldown extra entre lotes da MESMA partida
+      if (chamadasFeitas > 0) await esperar(5000);
+      chamadasFeitas++;
       try {
         const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: LOTES_BOOKMAKERS_HISTORICO[i].join(',') }, apiKey);
         for (const bookmakerSlug of LOTES_BOOKMAKERS_HISTORICO[i]) {
