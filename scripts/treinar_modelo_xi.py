@@ -106,8 +106,16 @@ def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores
 
 def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Buscando dados de lineup no Supabase...")
+    # NÃO selecionar match_lineup_fotmob.position_id: é a posição no gráfico
+    # de FORMAÇÃO TÁTICA, só existe pra quem está no XI -- achado testando
+    # métricas em produção: 99,99% dos titulares têm position_id preenchido
+    # contra só 30,7% dos reservas, então vira um proxy quase perfeito do
+    # PRÓPRIO ALVO (accuracy/AUC saíam ~1.0, vazamento clássico) e nem
+    # existiria pra uma partida futura (rodar_xi_previsto.py nunca teve
+    # acesso a isso). posicao_num usa só players.usual_position_id (mesma
+    # fonte usada ao vivo).
     lineup_rows = _paginar_keyset(
-        lambda cursor: supabase.table("match_lineup_fotmob").select("id, match_id, team_id, player_id, is_starter, position_id")
+        lambda cursor: supabase.table("match_lineup_fotmob").select("id, match_id, team_id, player_id, is_starter")
     )
     for linha in lineup_rows:
         linha.pop("id", None)
@@ -152,7 +160,7 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hierarquia_elenco"] = np.where(df["jogos_acumulados"] > 0, df["titular_acumulado"] / df["jogos_acumulados"], 0.5)
     df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
     df["media_rating_5j"] = df.groupby("player_id")["rating"].shift(1).rolling(5, min_periods=1).mean().fillna(6.0)
-    df["posicao_num"] = df["position_id"].fillna(df["usual_position_id"]).fillna(0).astype(int)
+    df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
     df["valor_mercado_eur"] = df["market_value"].fillna(100000)
     df["is_lesionado"] = 0  # sem histórico de lesão (só snapshot atual, ver player_availability_fotmob) -- treino não tem esse sinal, é 0 constante de propósito; ao vivo (rodar_xi_previsto.py) usa o snapshot real.
     return df.dropna(subset=["match_date", "player_id", "team_id"])
