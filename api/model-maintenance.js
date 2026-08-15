@@ -1888,6 +1888,18 @@ const BOOKMAKERS_ALVO = ['pinnacle', 'bet365', 'betano'];
 // representação de mercado pro caso de uso do projeto).
 const BOOKMAKERS_HISTORICO = ['pinnacle', 'bet365', 'betano', 'williamhill', 'betfair-ex', '1xbet'];
 
+// LIMITE REAL da OddsPapi (achado testando em produção, não documentado
+// antes): /v4/historical-odds aceita no MÁXIMO 3 bookmakers por chamada --
+// HTTP 400 "Too many bookmakers specified" acima disso. Com 6 casas em
+// BOOKMAKERS_HISTORICO, cada fixture agora precisa de 2 chamadas (uma por
+// lote de 3) em vez de uma só -- ainda grátis, só mais latência.
+function loteados(array, tamanho) {
+  const lotes = [];
+  for (let i = 0; i < array.length; i += tamanho) lotes.push(array.slice(i, i + tamanho));
+  return lotes;
+}
+const LOTES_BOOKMAKERS_HISTORICO = loteados(BOOKMAKERS_HISTORICO, 3);
+
 // Slug da OddsPapi -> nome já usado em odds_market.bookmaker nas outras
 // fontes do projeto -- sem isso, William Hill/Betfair Exchange virariam
 // casas "novas" (rótulo diferente) em vez de somar ao dado que já existe
@@ -2075,9 +2087,12 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
     if (!fixtures[i]?.fixtureId) continue;
     tentativas++;
     try {
+      // Só o primeiro lote (limite de 3 bookmakers por chamada da OddsPapi)
+      // -- essa função é só amostra/inspeção de formato, não precisa das 6
+      // casas pra isso.
       historico = await chamarOddspapi('/v4/historical-odds', {
         fixtureId: fixtures[i].fixtureId,
-        bookmakers: BOOKMAKERS_HISTORICO.join(','),
+        bookmakers: LOTES_BOOKMAKERS_HISTORICO[0].join(','),
       }, apiKey);
       amostraFixture = fixtures[i];
     } catch (e) {
@@ -2163,7 +2178,11 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 // por chamada, avisado ao usuário antes de rodar (ver skill do projeto,
 // disciplina de cota).
 // ============================================================
-const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 6;
+// Reduzido de 6 pra 4: desde que BOOKMAKERS_HISTORICO passou de 3 pra 6
+// casas, cada fixture agora precisa de 2 chamadas a /v4/historical-odds
+// (ver LOTES_BOOKMAKERS_HISTORICO logo abaixo) -- mantém margem segura
+// contra o timeout de 60s da function.
+const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 4;
 
 // BUG REAL corrigido (achado testando em produção antes de rodar o backfill
 // inteiro): a maioria dos pontos de /v4/historical-odds é preço AO VIVO,
@@ -2332,63 +2351,70 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   for (const { fixtureId, startTime, match } of pendentes) {
     if (processados > 0) await esperar(5000); // cooldown documentado do endpoint (5000ms)
     processados++;
-    try {
-      const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: BOOKMAKERS_HISTORICO.join(',') }, apiKey);
-      const linhas = [];
-      const agora = new Date().toISOString();
+    const linhas = [];
+    const agora = new Date().toISOString();
+    let algumComDado = false;
+    let erroTransitorio = null;
 
-      for (const bookmakerSlug of BOOKMAKERS_HISTORICO) {
-        const bdata = historico.bookmakers?.[bookmakerSlug];
-        if (!bdata) continue;
-        const bookmaker = nomeCanonicoBookmaker(bookmakerSlug); // ex.: 'williamhill' -> 'william_hill', pra somar no mesmo rótulo já usado via football-data.co.uk
+    // 1 chamada por LOTE de até 3 casas (limite real da OddsPapi, ver
+    // LOTES_BOOKMAKERS_HISTORICO) -- "No historical odds found" num lote
+    // específico não é fatal (só significa que aquelas casas não têm essa
+    // partida), guarda só erro de verdade (ex.: rate limit) pra decidir
+    // depois se marca a partida como completa ou deixa pra retentar.
+    for (let i = 0; i < LOTES_BOOKMAKERS_HISTORICO.length; i++) {
+      if (i > 0) await esperar(1000); // cooldown extra entre lotes da MESMA partida
+      try {
+        const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: LOTES_BOOKMAKERS_HISTORICO[i].join(',') }, apiKey);
+        for (const bookmakerSlug of LOTES_BOOKMAKERS_HISTORICO[i]) {
+          const bdata = historico.bookmakers?.[bookmakerSlug];
+          if (!bdata) continue;
+          algumComDado = true;
+          const bookmaker = nomeCanonicoBookmaker(bookmakerSlug); // ex.: 'williamhill' -> 'william_hill', pra somar no mesmo rótulo já usado via football-data.co.uk
 
-        for (const [marketId, marketData] of Object.entries(bdata.markets || {})) {
-          const info = mercadosPorId.get(marketId);
-          if (!info) continue; // marketId fora da cache -- pula sem travar o resto
-          const market = slugMercadoHistorico(info.marketName, info.handicap, info.period);
+          for (const [marketId, marketData] of Object.entries(bdata.markets || {})) {
+            const info = mercadosPorId.get(marketId);
+            if (!info) continue; // marketId fora da cache -- pula sem travar o resto
+            const market = slugMercadoHistorico(info.marketName, info.handicap, info.period);
 
-          for (const [outcomeId, outcomeData] of Object.entries(marketData?.outcomes || {})) {
-            const outcomeInfo = (info.outcomes || []).find((o) => String(o.outcomeId) === String(outcomeId));
-            if (!outcomeInfo) continue;
-            const selection = slugSelecaoHistorico(outcomeInfo.outcomeName);
-            const preco = extrairPrecoFechamento(outcomeData, startTime);
-            if (preco == null) continue;
-            const chave = `${match.id}|${bookmaker}|${market}|${selection}`;
-            if (jaExiste.has(chave)) continue;
-            jaExiste.add(chave);
-            linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora });
+            for (const [outcomeId, outcomeData] of Object.entries(marketData?.outcomes || {})) {
+              const outcomeInfo = (info.outcomes || []).find((o) => String(o.outcomeId) === String(outcomeId));
+              if (!outcomeInfo) continue;
+              const selection = slugSelecaoHistorico(outcomeInfo.outcomeName);
+              const preco = extrairPrecoFechamento(outcomeData, startTime);
+              if (preco == null) continue;
+              const chave = `${match.id}|${bookmaker}|${market}|${selection}`;
+              if (jaExiste.has(chave)) continue;
+              jaExiste.add(chave);
+              linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora });
+            }
           }
         }
-      }
-
-      if (linhas.length > 0) {
-        const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
-        if (erroInsert) { falhas.push({ match_id: match.id, motivo: erroInsert.message }); continue; }
-      }
-
-      await supabase.from('match_source_ids').upsert(
-        { match_id: match.id, source: 'oddspapi_historico_completo', source_id: fixtureId },
-        { onConflict: 'match_id,source' }
-      );
-      sucesso++;
-    } catch (erro) {
-      // "No historical odds found" é um resultado ESTÁVEL (registro
-      // histórico não muda com o tempo) -- achado real testando em
-      // produção: sem marcar como completo mesmo em erro, essas partidas
-      // nunca saem de `pendentes` e ficam tentando pra sempre em toda
-      // chamada futura (loop "rodar até restantes_estimado=0" do painel de
-      // Configurações nunca terminaria). Marca como completo mesmo assim
-      // pra não retentar de novo, mas conta separado de sucesso de verdade.
-      if (/No historical odds found/i.test(erro.message)) {
-        await supabase.from('match_source_ids').upsert(
-          { match_id: match.id, source: 'oddspapi_historico_completo', source_id: fixtureId },
-          { onConflict: 'match_id,source' }
-        );
-        semHistorico++;
-      } else {
-        falhas.push({ match_id: match.id, motivo: erro.message });
+      } catch (erro) {
+        // "No historical odds found" é um resultado ESTÁVEL (registro
+        // histórico não muda com o tempo) -- só afeta as casas desse lote,
+        // não impede os outros lotes/o resto da partida.
+        if (!/No historical odds found/i.test(erro.message)) erroTransitorio = erro.message;
       }
     }
+
+    if (linhas.length > 0) {
+      const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
+      if (erroInsert) { falhas.push({ match_id: match.id, motivo: erroInsert.message }); continue; }
+    }
+
+    if (erroTransitorio) {
+      // erro de verdade (ex.: rate limit) em pelo menos um lote -- não
+      // marca como completo, deixa pra retentar (as linhas que já vieram
+      // dos outros lotes já foram gravadas acima, sem duplicar depois).
+      falhas.push({ match_id: match.id, motivo: erroTransitorio });
+      continue;
+    }
+
+    await supabase.from('match_source_ids').upsert(
+      { match_id: match.id, source: 'oddspapi_historico_completo', source_id: fixtureId },
+      { onConflict: 'match_id,source' }
+    );
+    if (algumComDado) sucesso++; else semHistorico++;
   }
 
   return {
