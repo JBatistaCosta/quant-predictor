@@ -2042,6 +2042,63 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
 }
 
 // ============================================================
+// TAREFA: odds-sync-diagnostico — NÃO escreve nada, só chamada manual de
+// inspeção (mesmo espírito de af-diagnostico-time/statsapi-diagnostico).
+// Existe pra responder 2 perguntas antes de generalizar tarefaOddsSync:
+//   1. `tournamentIds` (plural) em /v4/odds-by-tournaments aceita MAIS DE
+//      1 torneio numa chamada só? Só o parâmetro `bookmaker` (singular) já
+//      foi confirmado como 1-valor-só (ver comentário em tarefaOddsDescobrir
+//      -- doc pública sugeria lista, não é aceito); `tournamentIds` nunca
+//      foi testado com mais de 1 valor neste projeto. Se aceitar, dá pra
+//      sincronizar VÁRIAS ligas numa chamada só (mesmo custo de 1 liga).
+//   2. Qual o formato real de `bookmakerOdds[bookmaker].markets` pra
+//      mercados ALÉM dos 3 já usados (1X2/O-U 2.5/BTTS)? tarefaOddsSync usa
+//      bookmakerOutcomeId direto (ex.: 'home'/'draw'/'away', '2.5/over') --
+//      precisa confirmar se isso é consistente nos outros marketId antes de
+//      generalizar o parser (regra do projeto: nunca adivinhar formato de
+//      resposta de API paga).
+// CUSTO: 1 chamada real de cota (mesmo endpoint pago de tarefaOddsSync) —
+// só chamar quando for de fato investigar, não colocar em cron.
+// ============================================================
+async function tarefaOddsSyncDiagnostico(supabase, apiKey, { tournamentIds, bookmaker }) {
+  if (!tournamentIds) return { error: 'tarefa=odds-sync-diagnostico precisa de ?tournament_ids=A,B (ids de torneio da OddsPapi, não league_id nosso -- ver liga_oddspapi_tournament).' };
+  const bk = bookmaker || 'pinnacle';
+
+  const resposta = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds, bookmaker: bk, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+  if (!Array.isArray(resposta)) return { erro: 'Resposta inesperada (não é array).', resposta_crua: resposta };
+
+  const idsTestados = String(tournamentIds).split(',').map((s) => s.trim());
+  // Tenta achar sozinho qual campo do fixture identifica o torneio de origem
+  // -- sem isso confirmado, não dá pra saber se os fixtures retornados vêm
+  // de fato dos 2+ torneios pedidos ou só do primeiro.
+  const candidatosChaveTorneio = ['tournamentId', 'tournament_id', 'competitionId', 'leagueId'];
+  const chaveTorneio = candidatosChaveTorneio.find((k) => resposta[0]?.[k] != null);
+  const torneiosDistintos = chaveTorneio ? [...new Set(resposta.map((fx) => String(fx[chaveTorneio])))] : null;
+
+  const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
+  const nomePorMarketId = Object.fromEntries((mercadosCacheRaw?.valor || []).map((m) => [String(m.marketId), m.marketName]));
+
+  const primeiraComMercado = resposta.find((fx) => fx.bookmakerOdds?.[bk]?.markets && Object.keys(fx.bookmakerOdds[bk].markets).length > 0);
+  const marketsFixture = primeiraComMercado?.bookmakerOdds?.[bk]?.markets || {};
+  const marketIds = Object.keys(marketsFixture);
+
+  return {
+    tournament_ids_testados: idsTestados,
+    bookmaker: bk,
+    total_fixtures_retornados: resposta.length,
+    campo_usado_pra_identificar_torneio: chaveTorneio || 'NENHUM campo óbvio -- ver chaves_disponiveis_no_fixture',
+    torneios_distintos_encontrados: torneiosDistintos,
+    batching_parece_funcionar: idsTestados.length > 1 && torneiosDistintos ? torneiosDistintos.length > 1 : null,
+    chaves_disponiveis_no_fixture: resposta[0] ? Object.keys(resposta[0]) : [],
+    total_markets_no_fixture_de_amostra: marketIds.length,
+    market_ids_com_nome: marketIds.map((id) => ({ marketId: id, marketName: nomePorMarketId[id] || '(fora da cache local)' })),
+    // Só os 6 primeiros mercados, em detalhe, pra não devolver um payload
+    // gigante -- o suficiente pra ver o formato de outcomes/bookmakerOutcomeId.
+    amostra_markets_em_detalhe: Object.fromEntries(marketIds.slice(0, 6).map((id) => [id, marketsFixture[id]])),
+  };
+}
+
+// ============================================================
 // TAREFA: odds-historico-descobrir — FASE 1 do backfill de odds de rodadas
 // JÁ ENCERRADAS (pedido do usuário: "importar odds de todas as rodadas
 // anteriores do Brasileirão").
@@ -4888,6 +4945,14 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       return res.status(200).json(await tarefaOddsDescobrir(supabase, apiKey, forcar === 'true'));
+    }
+
+    if (tarefa === 'odds-sync-diagnostico') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      const resultado = await tarefaOddsSyncDiagnostico(supabase, apiKey, { tournamentIds: req.query.tournament_ids, bookmaker: req.query.bookmaker });
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
     }
 
     if (tarefa === 'odds') {
