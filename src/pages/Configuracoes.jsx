@@ -99,9 +99,14 @@ function ImportacaoFootiqo() {
 
     setImportando(true); setErro(''); setResultado(null);
     try {
+      // Pega a sessão de novo em vez de reusar o `session` capturado no
+      // clique -- o token guardado no fechamento pode já estar vencido
+      // mesmo com o usuário continuando logado de verdade.
+      const { data: { session: sessaoAtual } } = await supabase.auth.getSession();
+      if (!sessaoAtual) throw new Error('Sessão expirou -- faça login de novo e clique em Importar.');
       const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=importar-odds-footiqo'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessaoAtual.access_token}` },
         body: JSON.stringify({ liga_id: Number(ligaId), linhas }),
       });
       const data = await resp.json();
@@ -218,11 +223,20 @@ function ImportacaoFotmob() {
     let totalSucesso = 0, totalProcessados = 0, rodada = 0, restantes = null, liga = '';
     try {
       for (rodada = 1; rodada <= MAX_RODADAS_FOTMOB; rodada++) {
+        // Pega a sessão de novo a cada rodada (em vez de reusar o `session`
+        // capturado no clique) -- achado real reportado pelo usuário: o
+        // token preso no fechamento do useAuth() pode já estar vencido (ou
+        // vencer no meio de um "Todas as ligas", que roda dezenas de
+        // rodadas), e o backend rejeita com 401 mesmo com o usuário
+        // continuando logado de verdade. getSession() renova sozinho se
+        // precisar.
+        const { data: { session: sessaoAtual } } = await supabase.auth.getSession();
+        if (!sessaoAtual) throw new Error('Sessão expirou -- faça login de novo e clique em Importar.');
         const params = new URLSearchParams({ tarefa: 'partidas-fotmob' });
         if (ligaId !== FOTMOB_TODAS_LIGAS) params.set('liga_id', ligaId);
         if (temporada.trim()) params.set('temporada', temporada.trim());
         const resp = await fetch(apiUrl(`/api/model-maintenance?${params.toString()}`), {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers: { Authorization: `Bearer ${sessaoAtual.access_token}` },
         });
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
