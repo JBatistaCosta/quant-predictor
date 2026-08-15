@@ -2301,10 +2301,24 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   // (prefere a linha com round quando existe mais de uma pro mesmo jogo,
   // senão pega a primeira) -- resolve o motivo original do filtro sem
   // excluir ligas que nunca tiveram round preenchido nessa fonte.
+  // BUG REAL corrigido (achado monitorando o backfill em produção): sem
+  // .order() aqui, o Postgres não garante a mesma ordem de linhas entre
+  // chamadas -- pra ligas com jogo duplicado por chave (home/away/data/
+  // temporada) e round nulo nos dois lados (só a Copa Sudamericana tem
+  // isso), o "representante" escolhido em jogosPorChave podia trocar de
+  // chamada pra chamada. Resultado: o match_id marcado completo numa
+  // rodada não batia com o representante da rodada seguinte, então
+  // `idsCompletos` nunca reconhecia progresso anterior (ficava sempre ~0)
+  // -- a liga reprocessava as mesmas poucas partidas mais recentes pra
+  // sempre, sem nunca avançar (confirmado: match_source_ids tinha só 6
+  // linhas completas pra liga 46 depois de dezenas de rodadas). .order()
+  // também deixa a paginação de buscarTudoPaginado seguro pra ligas
+  // grandes (>1000 finalizadas), que sem ordem explícita não tem garantia
+  // de retornar cada linha exatamente uma vez entre páginas.
   const todosOsJogos = await buscarTudoPaginado(() => {
     let q = supabase.from('matches')
       .select('id, season, round, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
-      .eq('league_id', ligaId).eq('status', 'finished');
+      .eq('league_id', ligaId).eq('status', 'finished').order('id', { ascending: true });
     if (temporada) q = q.eq('season', temporada);
     return q;
   });
