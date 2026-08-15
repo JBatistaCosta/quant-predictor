@@ -109,7 +109,30 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
     if not team_ids:
         return pd.DataFrame()
 
-    jogadores = supabase.table("players").select("id, last_team_id, usual_position_id, market_value").in_("last_team_id", team_ids).execute().data or []
+    # Achado em produção: sem paginação, essa consulta cortava em 1000
+    # linhas silenciosamente (PostgREST) -- com ~228 times numa janela de 7
+    # dias x ~40 jogadores/elenco, o total passa de 9000 linhas fácil, e a
+    # maioria dos times sobrava com só 0-1 jogador no resultado truncado
+    # (ex.: time_id=220 tem 43 jogadores reais, só 1 aparecia). Pagina por
+    # OFFSET ordenado por `last_team_id` (a própria coluna filtrada).
+    jogadores = []
+    pagina = 0
+    while True:
+        inicio = pagina * 1000
+        lote = (
+            supabase.table("players")
+            .select("id, last_team_id, usual_position_id, market_value")
+            .in_("last_team_id", team_ids)
+            .order("last_team_id")
+            .range(inicio, inicio + 999)
+            .execute()
+            .data
+            or []
+        )
+        jogadores.extend(lote)
+        if len(lote) < 1000:
+            break
+        pagina += 1
     if not jogadores:
         return pd.DataFrame()
     df = pd.DataFrame(jogadores).rename(columns={"id": "player_id", "last_team_id": "team_id"})
