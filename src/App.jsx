@@ -25,6 +25,7 @@ const Jogadores = lazy(() => import('./pages/Jogadores'));
 const JogadorDetalhe = lazy(() => import('./pages/JogadorDetalhe'));
 const ModelBenchmarking = lazy(() => import('./pages/ModelBenchmarking'));
 const SimulacaoCarteira = lazy(() => import('./pages/SimulacaoCarteira'));
+const CarteiraPaperTrading = lazy(() => import('./pages/CarteiraPaperTrading'));
 const RodadaPrevisoes = lazy(() => import('./pages/RodadaPrevisoes'));
 const TreinoCustom = lazy(() => import('./pages/TreinoCustom'));
 const ModeloV9 = lazy(() => import('./pages/ModeloV9'));
@@ -96,6 +97,9 @@ export default function App() {
             } />
             <Route path="/simulacao-carteira" element={
               <ProtectedRoute><Layout><SimulacaoCarteira /></Layout></ProtectedRoute>
+            } />
+            <Route path="/carteira-paper-trading" element={
+              <ProtectedRoute><Layout><CarteiraPaperTrading /></Layout></ProtectedRoute>
             } />
             <Route path="/rodada-atual" element={
               <ProtectedRoute><Layout><RodadaPrevisoes /></Layout></ProtectedRoute>
