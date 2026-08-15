@@ -143,6 +143,16 @@
 //                                   "2024") — a versão fotmob converte automaticamente pro formato
 //                                   "2024/2025" só na chamada externa, nunca no que é gravado.
 //                                   Sem lote: 1 chamada externa já traz a temporada inteira.
+//   ?tarefa=paper-carteira-criar (POST, auth) / -listar / -detalhe&carteira_id=X /
+//   -apostar&carteira_id=X (POST, auth) / -resolver[&carteira_id=X] (POST, auth) /
+//   -alternar-ativa&carteira_id=X (POST, auth) / -excluir&carteira_id=X (POST, auth) /
+//   -rodar-todas (cron, sem auth)
+//                               -> Carteira (Paper Trading): apostas simuladas com banca
+//                                   PERSISTENTE sobre partidas AINDA NÃO disputadas (status=
+//                                   scheduled) das ligas domésticas, usando odds ao vivo já
+//                                   sincronizadas (odds_market, snapshot=pre_closing) e predições
+//                                   já existentes pra essas partidas -- ver comentário detalhado
+//                                   na seção "TAREFAS: Carteira (Paper Trading)" abaixo.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
@@ -4460,6 +4470,372 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   };
 }
 
+// ============================================================
+// TAREFAS: Carteira (Paper Trading)
+// Diferente de tarefaSimulacaoCarteira (recalculada do zero sobre histórico
+// JÁ RESOLVIDO), aqui a banca é PERSISTENTE e evolui sobre partidas AINDA
+// NÃO disputadas (matches.status='scheduled') das LIGAS_DOMESTICAS (únicas
+// com odds ao vivo sincronizadas via tarefaOddsSync/tarefaOddsTodas em
+// odds_market, snapshot='pre_closing'), nos mesmos 3 mercados já cobertos
+// em treino (MERCADOS_CARTEIRA_SUPORTADOS). Duas tabelas novas
+// (paper_trading_carteiras/paper_trading_apostas, ver migração
+// create_paper_trading): uma carteira guarda modelo+mercado+parâmetros de
+// stake/EV+banca_atual; cada aposta é uma linha presa a ela.
+//
+//   ?tarefa=paper-carteira-criar (POST, auth)         -> cria carteira nova
+//   ?tarefa=paper-carteira-listar                     -> lista todas + resumo (banca/ROI/pendentes)
+//   ?tarefa=paper-carteira-detalhe&carteira_id=X       -> carteira + histórico completo de apostas
+//   ?tarefa=paper-carteira-apostar&carteira_id=X (POST, auth)
+//                               -> varre partidas agendadas com odds+predição do modelo/mercado da
+//                                   carteira ainda não apostadas, aplica filtro de EV, dimensiona
+//                                   stake (Kelly/fixa) contra a banca_atual e debita
+//   ?tarefa=paper-carteira-resolver[&carteira_id=X] (POST, auth)
+//                               -> resolve apostas pendentes cuja partida já tem resultado
+//                                   (finished/cancelled), credita a banca_atual. Sem carteira_id,
+//                                   resolve todas.
+//   ?tarefa=paper-carteira-alternar-ativa&carteira_id=X (POST, auth) -> pausa/reativa
+//   ?tarefa=paper-carteira-excluir&carteira_id=X (POST, auth)        -> apaga carteira + apostas
+//   ?tarefa=paper-carteira-rodar-todas -> cron diário (vercel.json): apostar+resolver em
+//                                   sequência pra TODAS as carteiras ativas. Sem checagem de auth
+//                                   de propósito (mesmo padrão de odds-todas/elo-rotativo -- só o
+//                                   cron chama, nunca o frontend).
+// ============================================================
+
+async function buscarPredicoesCarteira(supabase, matchIds, modelo, mercado) {
+  const [antigasRaw, benchRaw] = await Promise.all([
+    mercado === '1X2'
+      ? buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).in('market', ['1X2', '1x2']).in('match_id', ids))
+      : buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado).in('match_id', ids)),
+    mercado === '1X2'
+      ? buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo).eq('mercado', '1X2').in('match_id', ids))
+      : buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('predicoes').select('match_id, model_name, prob_under, prob_over').eq('model_name', modelo).eq('mercado', mercado).in('match_id', ids)),
+  ]);
+  const bench = mercado === '1X2' ? normalizarPredicoesBenchmarking(benchRaw) : normalizarPredicoesBenchmarkingOverUnder(benchRaw);
+  return [...antigasRaw, ...bench];
+}
+
+// Melhor (maior) odd por (match_id, selection) entre as casas capturadas --
+// mesmo critério já usado em rodar_predicoes.py (calcular_melhor_odd_por_
+// partida): é a odd que de fato dá mais valor pro apostador.
+function melhorOddPorChave(linhasOdds) {
+  const mapa = {};
+  linhasOdds.forEach((r) => {
+    const chave = `${r.match_id}__${r.selection}`;
+    const odd = Number(r.odds);
+    const atual = mapa[chave];
+    if (!atual || odd > atual.odd) mapa[chave] = { odd, bookmaker: r.bookmaker };
+  });
+  return mapa;
+}
+
+// Núcleo de "apostar" -- sem checagem de auth (chamado tanto pela tarefa
+// clicável no frontend quanto pelo cron rodar-todas). Varre partidas
+// agendadas, aplica EV, dimensiona stake e credita/debita banca_atual.
+async function apostarCarteira(supabase, carteira) {
+  const ligasAlvo = carteira.liga_id ? [carteira.liga_id] : LIGAS_DOMESTICAS;
+  const matchesAgendadas = await buscarTudoPaginado(() =>
+    supabase.from('matches').select('id, league_id, match_date, status').eq('status', 'scheduled').in('league_id', ligasAlvo));
+  if (matchesAgendadas.length === 0) {
+    return { apostas_novas: 0, motivo: 'Nenhuma partida agendada nas ligas configuradas.', banca_atual: Number(carteira.banca_atual) };
+  }
+  const matchIds = matchesAgendadas.map((m) => m.id);
+  const matchPorId = Object.fromEntries(matchesAgendadas.map((m) => [m.id, m]));
+
+  const [predicoesRaw, oddsRaw, calibracoesRaw, jaApostado] = await Promise.all([
+    buscarPredicoesCarteira(supabase, matchIds, carteira.modelo, carteira.mercado),
+    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('odds_market').select('match_id, selection, odds, bookmaker').eq('market', carteira.mercado).eq('snapshot', 'pre_closing').in('match_id', ids)),
+    carteira.usar_calibracao === 'nenhuma'
+      ? Promise.resolve([])
+      : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', carteira.modelo).eq('market', carteira.mercado)),
+    buscarTudoPaginado(() => supabase.from('paper_trading_apostas').select('match_id, selection').eq('carteira_id', carteira.id)),
+  ]);
+
+  if (predicoesRaw.length === 0) return { apostas_novas: 0, motivo: `Sem predição de "${carteira.modelo}" pra nenhuma partida agendada.`, banca_atual: Number(carteira.banca_atual) };
+
+  const oddsPorChave = melhorOddPorChave(oddsRaw.filter((r) => matchPorId[r.match_id]));
+  const calibPorSelecao = {};
+  calibracoesRaw.forEach((c) => {
+    if (c.method !== carteira.usar_calibracao) return;
+    calibPorSelecao[c.selection] = c.method === 'platt'
+      ? { tipo: 'platt', a: Number(c.platt_coef), b: Number(c.platt_intercept) }
+      : { tipo: 'isotonic', x: c.isotonic_x, y: c.isotonic_y };
+  });
+  const jaApostadoSet = new Set(jaApostado.map((a) => `${a.match_id}__${a.selection}`));
+
+  const evMinimo = Number(carteira.ev_minimo);
+  const evMaximo = Number(carteira.ev_maximo);
+  const candidatos = [];
+  for (const p of predicoesRaw) {
+    const match = matchPorId[p.match_id];
+    if (!match) continue;
+    const chave = `${p.match_id}__${p.selection}`;
+    if (jaApostadoSet.has(chave)) continue;
+    const melhor = oddsPorChave[chave];
+    if (!melhor) continue;
+
+    let pModelo = Number(p.probability);
+    if (carteira.usar_calibracao !== 'nenhuma') {
+      const calib = calibPorSelecao[p.selection];
+      if (!calib) continue;
+      pModelo = calib.tipo === 'platt' ? aplicarPlattPredicao(pModelo, calib.a, calib.b) : aplicarIsotonicPredicao(pModelo, calib.x, calib.y);
+      if (pModelo == null) continue;
+    }
+    const ev = pModelo * melhor.odd;
+    if (ev < evMinimo || ev > evMaximo) continue;
+
+    candidatos.push({ match_id: p.match_id, selection: p.selection, odd: melhor.odd, bookmaker: melhor.bookmaker, p_modelo: pModelo, ev, data_partida: match.match_date });
+  }
+
+  if (candidatos.length === 0) return { apostas_novas: 0, motivo: 'Nenhum candidato passou o filtro de EV (ou já foi apostado antes).', banca_atual: Number(carteira.banca_atual) };
+
+  const bancaBase = Number(carteira.banca_atual);
+  const brutas = candidatos.map((c) => {
+    let stakeBruta;
+    if (carteira.tipo_stake === 'fixa') {
+      stakeBruta = Number(carteira.stake_fixa);
+    } else {
+      const b = c.odd - 1;
+      const f = b > 0 ? (c.p_modelo * b - (1 - c.p_modelo)) / b : 0;
+      stakeBruta = Math.max(0, f) * Number(carteira.kelly_multiplier) * bancaBase;
+    }
+    return { ...c, stake_bruta: stakeBruta };
+  });
+  const piso = Number(carteira.stake_minima_pct) * bancaBase;
+  const validas = brutas.filter((b) => b.stake_bruta >= piso);
+  if (validas.length === 0) return { apostas_novas: 0, motivo: 'Candidatos ficaram abaixo do piso de stake mínima.', banca_atual: bancaBase };
+
+  const somaStakes = validas.reduce((s, v) => s + v.stake_bruta, 0);
+  const teto = Number(carteira.teto_exposicao_pct) * bancaBase;
+  // Nunca alavanca: além do teto de exposição, o lote nunca pode comprometer
+  // mais do que a própria banca_atual disponível.
+  const fatorEscala = somaStakes > 0 ? Math.min(1, teto / somaStakes, bancaBase / somaStakes) : 1;
+
+  const apostasParaInserir = [];
+  let banca = bancaBase;
+  for (const v of validas) {
+    const stake = v.stake_bruta * fatorEscala;
+    if (stake <= 0 || stake > banca) continue;
+    apostasParaInserir.push({
+      carteira_id: carteira.id, match_id: v.match_id, selection: v.selection, bookmaker: v.bookmaker,
+      odd: v.odd, p_modelo: v.p_modelo, ev: v.ev, stake, status: 'pendente', banca_antes: banca, data_partida: v.data_partida,
+    });
+    banca -= stake;
+  }
+  if (apostasParaInserir.length === 0) return { apostas_novas: 0, motivo: 'Nenhuma aposta sobrou depois do dimensionamento de stake.', banca_atual: banca };
+
+  const { error: erroInsert } = await supabase.from('paper_trading_apostas').insert(apostasParaInserir);
+  if (erroInsert) throw erroInsert;
+  await supabase.from('paper_trading_carteiras').update({ banca_atual: banca, updated_at: new Date().toISOString() }).eq('id', carteira.id);
+
+  return { apostas_novas: apostasParaInserir.length, banca_atual: banca };
+}
+
+// Núcleo de "resolver" -- idem, sem checagem de auth própria. anulada =
+// stake devolvido sem lucro/prejuízo (partida cancelada).
+async function resolverCarteira(supabase, carteira) {
+  const pendentes = await buscarTudoPaginado(() => supabase.from('paper_trading_apostas').select('*').eq('carteira_id', carteira.id).eq('status', 'pendente'));
+  if (pendentes.length === 0) return { resolvidas: 0, banca_atual: Number(carteira.banca_atual) };
+
+  const matchIds = [...new Set(pendentes.map((p) => p.match_id))];
+  const matches = await buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('matches').select('id, status, home_goals, away_goals').in('id', ids));
+  const matchPorId = Object.fromEntries(matches.map((m) => [m.id, m]));
+
+  let banca = Number(carteira.banca_atual);
+  let resolvidas = 0;
+  const agora = new Date().toISOString();
+  for (const aposta of pendentes) {
+    const match = matchPorId[aposta.match_id];
+    if (!match) continue;
+
+    if (match.status === 'cancelled') {
+      banca += Number(aposta.stake);
+      await supabase.from('paper_trading_apostas').update({ status: 'anulada', resultado_liquido: 0, banca_depois: banca, resolvido_em: agora }).eq('id', aposta.id);
+      resolvidas++;
+      continue;
+    }
+
+    const resultadoReal = calcularResultadoMercadoSimulacao(match, carteira.mercado);
+    if (resultadoReal == null) continue; // ainda scheduled/live/postponed sem placar -- fica pendente
+
+    const venceu = resultadoReal === aposta.selection;
+    const retorno = venceu ? Number(aposta.stake) * Number(aposta.odd) : 0;
+    const lucro = venceu ? Number(aposta.stake) * (Number(aposta.odd) - 1) : -Number(aposta.stake);
+    banca += retorno;
+    await supabase.from('paper_trading_apostas').update({ status: venceu ? 'ganhou' : 'perdeu', resultado_liquido: lucro, banca_depois: banca, resolvido_em: agora }).eq('id', aposta.id);
+    resolvidas++;
+  }
+
+  if (resolvidas > 0) {
+    await supabase.from('paper_trading_carteiras').update({ banca_atual: banca, updated_at: new Date().toISOString() }).eq('id', carteira.id);
+  }
+  return { resolvidas, banca_atual: banca };
+}
+
+async function tarefaPaperCarteiraCriar(supabase, authHeader, body) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de criar uma carteira.' };
+
+  const { nome, modelo, mercado, liga_id, usar_calibracao, tipo_stake, stake_fixa, kelly_multiplier, teto_exposicao_pct, ev_minimo, ev_maximo, stake_minima_pct, banca_inicial } = body || {};
+  if (!nome || !modelo) return { status: 400, error: 'nome e modelo são obrigatórios.' };
+  if (liga_id != null && !LIGAS_DOMESTICAS.includes(Number(liga_id))) {
+    return { status: 400, error: `liga_id precisa ser uma das ligas domésticas com odds ao vivo: ${LIGAS_DOMESTICAS.join(', ')} (ou deixe em branco pra todas).` };
+  }
+  const banca = Number(banca_inicial) > 0 ? Number(banca_inicial) : 1000;
+
+  const { data, error } = await supabase.from('paper_trading_carteiras').insert({
+    nome: String(nome).slice(0, 200),
+    modelo,
+    mercado: MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2',
+    liga_id: liga_id != null ? Number(liga_id) : null,
+    usar_calibracao: ['platt', 'isotonic'].includes(usar_calibracao) ? usar_calibracao : 'nenhuma',
+    tipo_stake: tipo_stake === 'fixa' ? 'fixa' : 'kelly',
+    stake_fixa: Number(stake_fixa) > 0 ? Number(stake_fixa) : 10,
+    kelly_multiplier: Number(kelly_multiplier) > 0 ? Number(kelly_multiplier) : 0.25,
+    teto_exposicao_pct: Number(teto_exposicao_pct) > 0 ? Number(teto_exposicao_pct) : 0.15,
+    ev_minimo: Number(ev_minimo) >= 1 ? Number(ev_minimo) : 1.02,
+    ev_maximo: Number(ev_maximo) > 1 ? Number(ev_maximo) : 2.0,
+    stake_minima_pct: Number(stake_minima_pct) >= 0 ? Number(stake_minima_pct) : 0.005,
+    banca_inicial: banca,
+    banca_atual: banca,
+  }).select().single();
+  if (error) return { status: 400, error: error.message };
+  return { status: 200, carteira: data };
+}
+
+async function tarefaPaperCarteiraListar(supabase) {
+  const [carteiras, ligasDomesticas] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('paper_trading_carteiras').select('*').order('created_at', { ascending: false })),
+    supabase.from('leagues').select('id, name').in('id', LIGAS_DOMESTICAS).then((r) => r.data || []),
+  ]);
+  if (carteiras.length === 0) return { status: 200, carteiras: [], ligas_domesticas: ligasDomesticas };
+
+  const ids = carteiras.map((c) => c.id);
+  const apostas = await buscarTudoPaginadoIn(ids, (lote) => supabase.from('paper_trading_apostas').select('carteira_id, status, stake, resultado_liquido').in('carteira_id', lote));
+
+  const resumoPorCarteira = {};
+  apostas.forEach((a) => {
+    const r = (resumoPorCarteira[a.carteira_id] = resumoPorCarteira[a.carteira_id] || { pendentes: 0, ganhou: 0, perdeu: 0, anulada: 0, resultado_liquido_total: 0 });
+    r[a.status] = (r[a.status] || 0) + 1;
+    if (a.status !== 'pendente' && a.resultado_liquido != null) r.resultado_liquido_total += Number(a.resultado_liquido);
+  });
+
+  const comResumo = carteiras.map((c) => {
+    const r = resumoPorCarteira[c.id] || { pendentes: 0, ganhou: 0, perdeu: 0, anulada: 0, resultado_liquido_total: 0 };
+    const bancaInicial = Number(c.banca_inicial);
+    return {
+      ...c,
+      resumo: {
+        n_apostas_pendentes: r.pendentes,
+        n_apostas_resolvidas: r.ganhou + r.perdeu + r.anulada,
+        n_apostas_ganhas: r.ganhou,
+        n_apostas_perdidas: r.perdeu,
+        resultado_liquido_total: r.resultado_liquido_total,
+        roi_total_pct: bancaInicial > 0 ? ((Number(c.banca_atual) - bancaInicial) / bancaInicial) * 100 : null,
+        win_rate_pct: (r.ganhou + r.perdeu) > 0 ? (r.ganhou / (r.ganhou + r.perdeu)) * 100 : null,
+      },
+    };
+  });
+
+  return { status: 200, carteiras: comResumo, ligas_domesticas: ligasDomesticas };
+}
+
+async function tarefaPaperCarteiraDetalhe(supabase, carteiraId) {
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+  const { data: carteira, error } = await supabase.from('paper_trading_carteiras').select('*').eq('id', carteiraId).maybeSingle();
+  if (error) return { status: 400, error: error.message };
+  if (!carteira) return { status: 404, error: 'Carteira não encontrada.' };
+
+  const apostas = await buscarTudoPaginado(() => supabase.from('paper_trading_apostas').select('*').eq('carteira_id', carteiraId).order('data_partida', { ascending: false }));
+  const matchIds = [...new Set(apostas.map((a) => a.match_id))];
+  const matches = matchIds.length > 0
+    ? await buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('matches').select('id, match_date, home:teams!matches_home_team_id_fkey(name), away:teams!matches_away_team_id_fkey(name)').in('id', ids))
+    : [];
+  const matchPorId = Object.fromEntries(matches.map((m) => [m.id, m]));
+
+  const apostasComPartida = apostas.map((a) => ({
+    ...a,
+    partida: matchPorId[a.match_id] ? { home: matchPorId[a.match_id].home?.name, away: matchPorId[a.match_id].away?.name, match_date: matchPorId[a.match_id].match_date } : null,
+  }));
+
+  return { status: 200, carteira, apostas: apostasComPartida };
+}
+
+async function tarefaPaperCarteiraApostar(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+
+  const { data: carteira, error } = await supabase.from('paper_trading_carteiras').select('*').eq('id', carteiraId).maybeSingle();
+  if (error) return { status: 400, error: error.message };
+  if (!carteira) return { status: 404, error: 'Carteira não encontrada.' };
+  if (!carteira.ativa) return { status: 400, error: 'Carteira está pausada -- reative antes de apostar.' };
+
+  const resultado = await apostarCarteira(supabase, carteira);
+  return { status: 200, carteira_id: carteiraId, ...resultado };
+}
+
+async function tarefaPaperCarteiraResolver(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  let query = supabase.from('paper_trading_carteiras').select('*');
+  if (carteiraId) query = query.eq('id', carteiraId);
+  const { data: carteiras, error } = await query;
+  if (error) return { status: 400, error: error.message };
+  if (carteiraId && (!carteiras || carteiras.length === 0)) return { status: 404, error: 'Carteira não encontrada.' };
+
+  const detalhe = [];
+  let totalResolvidas = 0;
+  for (const carteira of (carteiras || [])) {
+    const r = await resolverCarteira(supabase, carteira);
+    totalResolvidas += r.resolvidas;
+    detalhe.push({ carteira_id: carteira.id, ...r });
+  }
+  return { status: 200, total_resolvidas: totalResolvidas, carteiras: detalhe };
+}
+
+async function tarefaPaperCarteiraAlternarAtiva(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+
+  const { data: carteira, error } = await supabase.from('paper_trading_carteiras').select('ativa').eq('id', carteiraId).maybeSingle();
+  if (error) return { status: 400, error: error.message };
+  if (!carteira) return { status: 404, error: 'Carteira não encontrada.' };
+
+  const { data, error: erroUpdate } = await supabase.from('paper_trading_carteiras').update({ ativa: !carteira.ativa, updated_at: new Date().toISOString() }).eq('id', carteiraId).select().single();
+  if (erroUpdate) return { status: 400, error: erroUpdate.message };
+  return { status: 200, carteira: data };
+}
+
+async function tarefaPaperCarteiraExcluir(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+
+  const { error } = await supabase.from('paper_trading_carteiras').delete().eq('id', carteiraId);
+  if (error) return { status: 400, error: error.message };
+  return { status: 200, excluido: true };
+}
+
+// Cron diário (vercel.json) -- roda apostar+resolver em sequência pra todas
+// as carteiras ativas. Sem auth (mesmo padrão de odds-todas/elo-rotativo).
+async function tarefaPaperCarteiraRodarTodas(supabase) {
+  const carteiras = await buscarTudoPaginado(() => supabase.from('paper_trading_carteiras').select('*').eq('ativa', true));
+  const resultado = [];
+  for (const carteira of carteiras) {
+    try {
+      const apostou = await apostarCarteira(supabase, carteira);
+      const carteiraAtualizada = { ...carteira, banca_atual: apostou.banca_atual };
+      const resolveu = await resolverCarteira(supabase, carteiraAtualizada);
+      resultado.push({ carteira_id: carteira.id, nome: carteira.nome, apostas_novas: apostou.apostas_novas, resolvidas: resolveu.resolvidas, banca_atual: resolveu.banca_atual });
+    } catch (e) {
+      resultado.push({ carteira_id: carteira.id, nome: carteira.nome, erro: e.message });
+    }
+  }
+  return { carteiras_processadas: resultado.length, resultado };
+}
+
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -4679,6 +5055,60 @@ export default async function handler(req, res) {
       const resultado = await tarefaSimulacaoCarteira(supabase, req.query);
       if (resultado.error) return res.status(resultado.status).json({ error: { message: resultado.error } });
       return res.status(resultado.status).json(resultado.body);
+    }
+
+    // ------------------------------------------------------------------
+    // Carteira (Paper Trading)
+    // ------------------------------------------------------------------
+
+    if (tarefa === 'paper-carteira-criar') {
+      const resultado = await tarefaPaperCarteiraCriar(supabase, req.headers.authorization, req.body);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-listar') {
+      const resultado = await tarefaPaperCarteiraListar(supabase);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(corpo);
+    }
+
+    if (tarefa === 'paper-carteira-detalhe') {
+      const resultado = await tarefaPaperCarteiraDetalhe(supabase, req.query.carteira_id);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-apostar') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraApostar(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-resolver') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraResolver(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-alternar-ativa') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraAlternarAtiva(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-excluir') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraExcluir(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-rodar-todas') {
+      return res.status(200).json(await tarefaPaperCarteiraRodarTodas(supabase));
     }
 
     // ------------------------------------------------------------------
