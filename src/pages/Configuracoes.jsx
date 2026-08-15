@@ -1,6 +1,14 @@
 // src/pages/Configuracoes.jsx
-// Painel de configurações/manutenção do sistema. Três seções:
-// 1) Importação de odds históricas exportadas manualmente da Footiqo
+// Painel de configurações/manutenção/cadastro do sistema -- consolidado em
+// abas (pedido do usuário, "tal qual um menu de tarefas") em vez de itens
+// espalhados na barra de navegação principal. Abas:
+// 1) Novo Evento / Importar Jogos / Times / Ligas -- eram itens próprios do
+//    grupo "Cadastro" na barra; os componentes em si (EventoNovo.jsx,
+//    ImportarJogos.jsx, Times.jsx, Ligas.jsx) não mudaram, só passaram a
+//    ser renderizados aqui dentro em vez de terem entrada própria no menu.
+//    As rotas /eventos/novo, /importar, /times, /ligas continuam existindo
+//    (usadas por links "voltar" de páginas de detalhe como TimeDetalhe.jsx).
+// 2) Footiqo -- importação de odds históricas exportadas manualmente
 //    (footiqo.com) -- fonte gratuita que cobre Champions League/Copa
 //    Libertadores, que nem football-data.co.uk nem OddsPapi nem API-Football
 //    cobrem com arquivo histórico real (investigado numa sessão anterior, ver
@@ -8,24 +16,35 @@
 //    linhas já parseado vai pro servidor (tarefa=importar-odds-footiqo em
 //    api/model-maintenance.js), que faz o casamento com nossas partidas e
 //    grava em odds_market.
-// 2) Disparo do enriquecimento de estatísticas via FotMob (tarefa=
+// 3) FotMob -- disparo do enriquecimento de estatísticas (tarefa=
 //    partidas-fotmob) pra ligas já vinculadas em liga_fonte_externa --
 //    processa em lotes (limite do Vercel), então o frontend chama em rounds
 //    sucessivos até `restantes` zerar, mesmo padrão de
 //    resetarERecalcularRating em Jogadores.jsx.
-// 3) Backfill de odds históricas via OddsPapi (tarefa=odds-historico) pras
+// 4) OddsPapi -- backfill de odds históricas (tarefa=odds-historico) pras
 //    ligas já mapeadas em liga_oddspapi_tournament -- mesmo padrão de rounds
 //    sucessivos até `restantes_estimado` zerar. /v4/historical-odds é grátis
 //    (confirmado na doc oficial + testado em produção, ver CONTEXTO_PROJETO.md),
 //    então processa TODOS os mercados que a resposta trouxer e TODAS as
 //    temporadas pendentes, não só a mais recente -- o único limite real por
 //    chamada é o timeout de 60s da function (por isso os rounds).
+// 5) Cobertura de Estatísticas / Cobertura de Odds -- dashboards read-only
+//    (pedido do usuário), lendo das views vw_cobertura_estatisticas/
+//    vw_cobertura_odds (migration cria_views_cobertura_estatisticas_odds) --
+//    agregação por liga/temporada roda no Postgres, não no navegador.
 import React, { useEffect, useState } from 'react';
-import { Settings, Upload, Loader2, AlertTriangle, CheckCircle2, Info, Database, TrendingUp } from 'lucide-react';
+import { Settings, Upload, Loader2, AlertTriangle, CheckCircle2, Info, Database, TrendingUp, PlusCircle, Download, Users, Trophy, PieChart, LineChart } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
 import { parseCsv } from '../utils/parseCsv';
+import Tabs from '../components/Tabs';
+import CoberturaOdds from '../components/CoberturaOdds';
+import CoberturaEstatisticas from '../components/CoberturaEstatisticas';
+import EventoNovo from './EventoNovo';
+import ImportarJogos from './ImportarJogos';
+import Times from './Times';
+import Ligas from './Ligas';
 
 const COLUNAS_ESPERADAS = ['matchDate', 'homeTeam', 'awayTeam', 'H', 'D', 'A'];
 const MAX_RODADAS_FOTMOB = 500; // rede de segurança contra loop infinito, mesmo padrão de Jogadores.jsx
@@ -415,6 +434,18 @@ function ImportacaoOddsPapiHistorico() {
   );
 }
 
+const ABAS_CONFIGURACOES = [
+  { id: 'novo-evento', label: 'Novo Evento', icone: PlusCircle, conteudo: <EventoNovo /> },
+  { id: 'importar-jogos', label: 'Importar Jogos', icone: Download, conteudo: <ImportarJogos /> },
+  { id: 'times', label: 'Times', icone: Users, conteudo: <Times /> },
+  { id: 'ligas', label: 'Ligas', icone: Trophy, conteudo: <Ligas /> },
+  { id: 'footiqo', label: 'Footiqo', icone: Upload, conteudo: <ImportacaoFootiqo /> },
+  { id: 'fotmob', label: 'FotMob', icone: Database, conteudo: <ImportacaoFotmob /> },
+  { id: 'oddspapi', label: 'OddsPapi', icone: TrendingUp, conteudo: <ImportacaoOddsPapiHistorico /> },
+  { id: 'cobertura-estatisticas', label: 'Cobertura de Estatísticas', icone: PieChart, conteudo: <CoberturaEstatisticas /> },
+  { id: 'cobertura-odds', label: 'Cobertura de Odds', icone: LineChart, conteudo: <CoberturaOdds /> },
+];
+
 export default function Configuracoes() {
   if (!supabaseAtivo) {
     return (
@@ -426,17 +457,17 @@ export default function Configuracoes() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-6xl mx-auto space-y-4">
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
         <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
           <Settings className="text-emerald-400" size={28} /> Configurações
         </h1>
-        <p className="text-slate-400 mt-1 text-sm">Manutenção e importações administrativas do sistema.</p>
+        <p className="text-slate-400 mt-1 text-sm">Cadastro, manutenção, importações e cobertura de dados do sistema.</p>
       </div>
 
-      <ImportacaoFootiqo />
-      <ImportacaoFotmob />
-      <ImportacaoOddsPapiHistorico />
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 md:p-6">
+        <Tabs tabs={ABAS_CONFIGURACOES} />
+      </div>
     </div>
   );
 }
