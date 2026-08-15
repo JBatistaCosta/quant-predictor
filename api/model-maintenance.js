@@ -1879,14 +1879,25 @@ const BOOKMAKERS_ALVO = ['pinnacle', 'bet365', 'betano'];
 // GRÁTIS (confirmado na doc oficial + testado em produção, ver
 // CONTEXTO_PROJETO.md), então pode ser mais generoso sem custo de cota real
 // (só timeout de function/rate-limit, não quota). Pedido do usuário: além
-// de Pinnacle/bet365/Betano, adicionar William Hill, Betfair Exchange e
-// 1xBet -- as duas primeiras já existem no schema via football-data.co.uk
-// (colunas odds_market.bookmaker = 'william_hill'/'betfair_exchange', com
-// underscore) e 1xBet já aparece em Libertadores via outra fonte antiga
-// ('1xbet', sem underscore, bate direto com o slug da OddsPapi). Unibet e
-// Bwin avaliados e descartados pelo usuário (sem utilidade de aposta/
-// representação de mercado pro caso de uso do projeto).
-const BOOKMAKERS_HISTORICO = ['pinnacle', 'bet365', 'betano', 'williamhill', 'betfair-ex', '1xbet'];
+// de Pinnacle/bet365/Betano, adicionar William Hill e 1xBet -- William Hill
+// já existe no schema via football-data.co.uk (odds_market.bookmaker =
+// 'william_hill', com underscore) e 1xBet já aparece em Libertadores via
+// outra fonte antiga ('1xbet', sem underscore, bate direto com o slug da
+// OddsPapi). Unibet e Bwin avaliados e descartados pelo usuário (sem
+// utilidade de aposta/representação de mercado pro caso de uso do projeto).
+//
+// Betfair Exchange (betfair-ex) foi pedida também, mas NÃO entra aqui --
+// achado real testando em produção: ao contrário dos bookmakers de odds
+// fixas, a exchange não aceita ser combinada com outras casas nem devolve
+// "todos os mercados de uma vez" -- HTTP 400 "Invalid bookmaker/outcome
+// combination... When using 'betfair-ex', you must provide only one
+// bookmaker and exactly one outcomeId" (faz sentido: exchange tem preço
+// back/lay por seleção individual, não um mercado fechado como bookmaker
+// tradicional). Integrar isso exigiria um loop dedicado, uma chamada por
+// outcome (dezenas por partida), incompatível com o desenho atual de "1
+// lote = todos os mercados". Decisão do usuário: deixar de fora por
+// enquanto, sem implementação dedicada nesta sessão.
+const BOOKMAKERS_HISTORICO = ['pinnacle', 'bet365', 'betano', 'williamhill', '1xbet'];
 
 // LIMITE REAL da OddsPapi (achado testando em produção, não documentado
 // antes): /v4/historical-odds aceita no MÁXIMO 3 bookmakers por chamada --
@@ -1901,12 +1912,11 @@ function loteados(array, tamanho) {
 const LOTES_BOOKMAKERS_HISTORICO = loteados(BOOKMAKERS_HISTORICO, 3);
 
 // Slug da OddsPapi -> nome já usado em odds_market.bookmaker nas outras
-// fontes do projeto -- sem isso, William Hill/Betfair Exchange virariam
-// casas "novas" (rótulo diferente) em vez de somar ao dado que já existe
-// vindo do football-data.co.uk, fragmentando a mesma casa em dois nomes.
+// fontes do projeto -- sem isso, William Hill viraria uma casa "nova"
+// (rótulo diferente) em vez de somar ao dado que já existe vindo do
+// football-data.co.uk, fragmentando a mesma casa em dois nomes.
 const NOME_CANONICO_BOOKMAKER = {
   williamhill: 'william_hill',
-  'betfair-ex': 'betfair_exchange',
 };
 function nomeCanonicoBookmaker(slugOddspapi) {
   return NOME_CANONICO_BOOKMAKER[slugOddspapi] || slugOddspapi;
