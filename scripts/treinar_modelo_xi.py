@@ -69,22 +69,38 @@ def _paginar_keyset(query_factory, tamanho_pagina: int = 1000) -> list[dict]:
 
 def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores: list, colunas: str) -> list[dict]:
     """Filtra `coluna_filtro IN valores` em lotes de 1000 (limite prático do
-    `.in_()`) E pagina o resultado de cada lote por keyset (`id`) -- um lote
-    de 1000 match_id pode devolver mais de 1000 linhas (~22 jogadores/
-    partida), então as duas camadas de paginação são necessárias."""
-    pedia_id = "id" in [c.strip() for c in colunas.split(",")]
-    colunas_com_id = colunas if pedia_id else f"id, {colunas}"
+    `.in_()`) E pagina o resultado de cada lote por OFFSET, ordenado pela
+    PRÓPRIA coluna filtrada -- um lote de 1000 match_id pode devolver mais
+    de 1000 linhas (~22 jogadores/partida), então as duas camadas de
+    paginação são necessárias.
+
+    Keyset por `id` (`_paginar_keyset`) foi tentado aqui primeiro e deu
+    timeout: `ORDER BY id` numa tabela de 250k+ linhas filtrada por
+    `match_id IN (...)` faz o planner ignorar o índice de `match_id` --
+    ordenar pela própria coluna do filtro (já indexada, mesmo padrão
+    comprovado em `dados_historicos._carregar_titular_pre_jogo`) evita
+    isso; o lote já é limitado a 1000 valores de filtro, então OFFSET
+    dentro dele fica bem menor que o full-table scan que motivou o keyset
+    em `carregar_dados`."""
     linhas: list[dict] = []
     for i in range(0, len(valores), 1000):
         lote_valores = valores[i : i + 1000]
-        linhas.extend(
-            _paginar_keyset(
-                lambda cursor, lote_valores=lote_valores: supabase.table(tabela).select(colunas_com_id).in_(coluna_filtro, lote_valores)
+        pagina = 0
+        while True:
+            inicio = pagina * 1000
+            resp = (
+                supabase.table(tabela)
+                .select(colunas)
+                .in_(coluna_filtro, lote_valores)
+                .order(coluna_filtro)
+                .range(inicio, inicio + 999)
+                .execute()
             )
-        )
-    if not pedia_id:
-        for linha in linhas:
-            linha.pop("id", None)
+            pagina_dados = resp.data or []
+            linhas.extend(pagina_dados)
+            if len(pagina_dados) < 1000:
+                break
+            pagina += 1
     return linhas
 
 
