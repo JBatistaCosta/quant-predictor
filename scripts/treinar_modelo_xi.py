@@ -101,8 +101,11 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     df_lineup = df_lineup[df_lineup["player_id"].notna()].copy()
 
     match_ids = df_lineup["match_id"].unique().tolist()
-    matches_resp = supabase.table("matches").select("id, match_date, home_team_id, away_team_id").in_("id", match_ids).execute()
-    df_matches = pd.DataFrame(matches_resp.data).rename(columns={"id": "match_id"})
+    # match_ids pode ter dezenas de milhares de valores (190k+ linhas de
+    # lineup) -- um único `.in_("id", match_ids)` sem lotear estoura o
+    # limite de tamanho de URL (httpx.InvalidURL: "query too long").
+    matches_rows = _buscar_por_lotes(supabase, "matches", "id", match_ids, "id, match_date, home_team_id, away_team_id")
+    df_matches = pd.DataFrame(matches_rows).rename(columns={"id": "match_id"})
 
     player_ids = df_lineup["player_id"].unique().tolist()
     players_rows = _buscar_por_lotes(supabase, "players", "id", player_ids, "id, usual_position_id, market_value")
