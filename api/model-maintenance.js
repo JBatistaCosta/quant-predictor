@@ -1866,7 +1866,39 @@ async function tarefaCalibracao(supabase, minimo) {
 
 const ODDSPAPI_BASE = 'https://api.oddspapi.io';
 const SPORT_ID_FUTEBOL = 10;
+
+// BOOKMAKERS_ALVO: usado pelo sync AO VIVO (tarefaOddsSync/tarefaOddsTodas,
+// /v4/odds-by-tournaments) -- esse endpoint É pago, 1 chamada por casa por
+// liga (custo real, documentado onde tarefaOddsSync está definida). Mantido
+// enxuto de propósito -- expandir aqui dobra/triplica o consumo de cota
+// mensal do cron. Se quiser mais casas no sync ao vivo, avaliar cota antes.
 const BOOKMAKERS_ALVO = ['pinnacle', 'bet365', 'betano'];
+
+// BOOKMAKERS_HISTORICO: usado só pelo backfill histórico (tarefaOddsHistorico/
+// tarefaOddsHistoricoDescobrir, /v4/historical-odds) -- esse endpoint é
+// GRÁTIS (confirmado na doc oficial + testado em produção, ver
+// CONTEXTO_PROJETO.md), então pode ser mais generoso sem custo de cota real
+// (só timeout de function/rate-limit, não quota). Pedido do usuário: além
+// de Pinnacle/bet365/Betano, adicionar William Hill, Betfair Exchange e
+// 1xBet -- as duas primeiras já existem no schema via football-data.co.uk
+// (colunas odds_market.bookmaker = 'william_hill'/'betfair_exchange', com
+// underscore) e 1xBet já aparece em Libertadores via outra fonte antiga
+// ('1xbet', sem underscore, bate direto com o slug da OddsPapi). Unibet e
+// Bwin avaliados e descartados pelo usuário (sem utilidade de aposta/
+// representação de mercado pro caso de uso do projeto).
+const BOOKMAKERS_HISTORICO = ['pinnacle', 'bet365', 'betano', 'williamhill', 'betfair-ex', '1xbet'];
+
+// Slug da OddsPapi -> nome já usado em odds_market.bookmaker nas outras
+// fontes do projeto -- sem isso, William Hill/Betfair Exchange virariam
+// casas "novas" (rótulo diferente) em vez de somar ao dado que já existe
+// vindo do football-data.co.uk, fragmentando a mesma casa em dois nomes.
+const NOME_CANONICO_BOOKMAKER = {
+  williamhill: 'william_hill',
+  'betfair-ex': 'betfair_exchange',
+};
+function nomeCanonicoBookmaker(slugOddspapi) {
+  return NOME_CANONICO_BOOKMAKER[slugOddspapi] || slugOddspapi;
+}
 
 async function chamarOddspapi(caminho, params, apiKey) {
   const url = new URL(`${ODDSPAPI_BASE}${caminho}`);
@@ -2045,7 +2077,7 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
     try {
       historico = await chamarOddspapi('/v4/historical-odds', {
         fixtureId: fixtures[i].fixtureId,
-        bookmakers: BOOKMAKERS_ALVO.join(','),
+        bookmakers: BOOKMAKERS_HISTORICO.join(','),
       }, apiKey);
       amostraFixture = fixtures[i];
     } catch (e) {
@@ -2301,13 +2333,14 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
     if (processados > 0) await esperar(5000); // cooldown documentado do endpoint (5000ms)
     processados++;
     try {
-      const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: BOOKMAKERS_ALVO.join(',') }, apiKey);
+      const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: BOOKMAKERS_HISTORICO.join(',') }, apiKey);
       const linhas = [];
       const agora = new Date().toISOString();
 
-      for (const bookmaker of BOOKMAKERS_ALVO) {
-        const bdata = historico.bookmakers?.[bookmaker];
+      for (const bookmakerSlug of BOOKMAKERS_HISTORICO) {
+        const bdata = historico.bookmakers?.[bookmakerSlug];
         if (!bdata) continue;
+        const bookmaker = nomeCanonicoBookmaker(bookmakerSlug); // ex.: 'williamhill' -> 'william_hill', pra somar no mesmo rótulo já usado via football-data.co.uk
 
         for (const [marketId, marketData] of Object.entries(bdata.markets || {})) {
           const info = mercadosPorId.get(marketId);
