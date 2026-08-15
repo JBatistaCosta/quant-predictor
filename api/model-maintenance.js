@@ -2603,21 +2603,30 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
 //      o backfill histórico já fazia. O parser novo usa outcomeId+cache
 //      pra TODOS os mercados, igual ao histórico -- resolve os dois bugs.
 //
-// JANELA ADAPTATIVA ("aumentar a base se tiver poucos jogos no prazo"): as
-// casas só abrem linha alguns dias antes do jogo, então nem sempre há muita
-// coisa pra capturar. Calculada POR liga (consulta local, sem custo de
-// cota); a chamada batched inteira só é pulada se NENHUMA das ligas pedidas
-// tiver jogo suficiente no próprio prazo (ex.: parada pra data FIFA
-// afetando todas de uma vez) — uma liga isolada sem jogo não pesa mais nada
-// no orçamento, já que o custo agora é fixo por chamada, não por liga.
+// JANELA DE CANDIDATOS: mesma pra TODAS as ligas do batch, sem escalonar por
+// liga. Existia antes uma "janela adaptativa" (7/14/21 dias, alargando só
+// se a liga tivesse poucos jogos no prazo mais curto) pensada pra quando o
+// custo era 1 chamada POR LIGA -- fazia sentido evitar gastar uma chamada
+// inteira numa liga com pouco jogo agendado. Depois do batching (várias
+// ligas por chamada, ver tarefaOddsSyncLote), essa lógica parou de fazer
+// sentido: a chamada já é feita pro LOTE inteiro independente da janela, e
+// a única coisa que a janela curta ainda fazia era EXCLUIR jogo de verdade
+// da lista local de candidatos pra casar -- **bug real confirmado em
+// produção** (pedido do usuário, "essa limitação desnecessária já que o
+// chamado é por grupos de ligas"): a Premier League achava >=3 jogos já nos
+// primeiros 7 dias e parava de alargar, mas a chamada `/v4/odds-by-
+// tournaments` não tem filtro de data nenhum -- a OddsPapi devolvia
+// fixtures de semanas à frente, que nunca tinham candidato local pra casar
+// (ficavam presos em "sem correspondência" à toa, mesmo já tendo odds reais
+// abertas). Removida a escalada -- toda liga do batch usa a mesma janela
+// fixa (JANELA_CANDIDATOS_DIAS), sem custo extra nenhum de fazer isso.
 //
 // Guarda com timestamp (captured_at, coluna que já existia) SEM sobrescrever
 // o snapshot anterior — cada sync é um INSERT novo, não upsert — pra dar pra
 // montar a curva de movimento de linha ao longo do tempo, como pedido.
 // ============================================================
 
-const MINIMO_JOGOS_JANELA = 3;
-const JANELAS_DIAS = [7, 14, 21];
+const JANELA_CANDIDATOS_DIAS = 21;
 
 function normalizarTexto2(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
@@ -2662,18 +2671,6 @@ function nomesBatem(a, b) {
   x = ALIASES_ODDSPAPI[x] || x;
   y = ALIASES_ODDSPAPI[y] || y;
   return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
-}
-
-async function acharJanelaComJogos(supabase, ligaId) {
-  for (const dias of JANELAS_DIAS) {
-    const ate = new Date(Date.now() + dias * 86400000).toISOString();
-    const { count } = await supabase.from('matches').select('id', { count: 'exact', head: true })
-      .eq('league_id', ligaId).eq('status', 'scheduled').lte('match_date', ate);
-    if ((count || 0) >= MINIMO_JOGOS_JANELA || dias === JANELAS_DIAS[JANELAS_DIAS.length - 1]) {
-      return { dias, count: count || 0 };
-    }
-  }
-  return { dias: JANELAS_DIAS[JANELAS_DIAS.length - 1], count: 0 };
 }
 
 // Extrai TODAS as seleções de TODOS os mercados presentes num fixture do
@@ -2721,24 +2718,18 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
   const mapaPorTorneio = Object.fromEntries(mapas.map((m) => [String(m.tournament_id), m]));
   const ligasResolvidas = mapas.map((m) => m.league_id);
 
-  // Janela adaptativa POR liga (consulta local, sem custo de cota) -- a
-  // chamada batched inteira só é pulada se NENHUMA liga pedida tiver jogo
-  // suficiente no próprio prazo; ligas individuais "vazias" simplesmente
-  // não geram candidato, sem pesar no orçamento (custo agora é fixo por
-  // chamada, não por liga).
-  const janelasPorLiga = {};
-  let maiorJanelaDias = 0;
-  for (const ligaId of ligasResolvidas) {
-    const j = await acharJanelaComJogos(supabase, ligaId);
-    janelasPorLiga[ligaId] = j;
-    maiorJanelaDias = Math.max(maiorJanelaDias, j.dias);
-  }
-  if (!Object.values(janelasPorLiga).some((j) => j.count > 0)) {
+  // Guarda simples (consulta local, sem custo de cota): só pula a chamada
+  // batched inteira se NENHUMA liga pedida tiver jogo agendado dentro da
+  // janela fixa (ex.: parada pra data FIFA afetando todo o lote de uma vez).
+  const janelaAteIso = new Date(Date.now() + JANELA_CANDIDATOS_DIAS * 86400000).toISOString();
+  const { count: totalAgendados } = await supabase.from('matches').select('id', { count: 'exact', head: true })
+    .in('league_id', ligasResolvidas).eq('status', 'scheduled').lte('match_date', janelaAteIso);
+  if (!totalAgendados) {
     return {
       ligas_pedidas: ligasResolvidas,
       ligas_sem_torneio: ligasSemTorneio.length ? ligasSemTorneio : undefined,
       pulado: true,
-      motivo: `Nenhuma das ligas pedidas tem jogo agendado nos próximos ${maiorJanelaDias} dias — sync pulado pra não gastar cota à toa.`,
+      motivo: `Nenhuma das ligas pedidas tem jogo agendado nos próximos ${JANELA_CANDIDATOS_DIAS} dias — sync pulado pra não gastar cota à toa.`,
     };
   }
 
@@ -2746,14 +2737,12 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
   const mercadosPorId = new Map((mercadosCacheRaw?.valor || []).filter((m) => !m.playerProp).map((m) => [String(m.marketId), m]));
   if (mercadosPorId.size === 0) return { error: 'Cache `markets` vazia/inválida — rode tarefa=odds-descobrir de novo.' };
 
-  const janelaMaximaAteMs = Date.now() + maiorJanelaDias * 86400000;
+  // MESMA janela pra todas as ligas do batch (ver comentário no topo da
+  // seção) -- nenhum filtro extra por liga depois desta query.
   const { data: candidatosRaw } = await supabase.from('matches')
     .select('id, league_id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
-    .in('league_id', ligasResolvidas).eq('status', 'scheduled').lte('match_date', new Date(janelaMaximaAteMs).toISOString());
-  // Restringe cada liga à sua PRÓPRIA janela adaptativa (a query acima usa
-  // a maior janela como teto só pra não fazer N queries -- filtra nesta
-  // segunda etapa pra não incluir jogo fora da janela de uma liga específica).
-  const candidatos = (candidatosRaw || []).filter((m) => new Date(m.match_date).getTime() <= Date.now() + (janelasPorLiga[m.league_id]?.dias || 0) * 86400000);
+    .in('league_id', ligasResolvidas).eq('status', 'scheduled').lte('match_date', janelaAteIso);
+  const candidatos = candidatosRaw || [];
 
   // LIMITE REAL da OddsPapi (achado testando em produção, não documentado
   // antes -- diferente do que o comentário anterior desta função presumia):
@@ -2766,8 +2755,9 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
   const lotesTorneios = loteados(mapas.map((m) => m.tournament_id), 5);
 
   const resultado = {
-    ligas_pedidas: mapas.map((m) => ({ league_id: m.league_id, torneio: m.tournament_name, janela_dias: janelasPorLiga[m.league_id]?.dias })),
+    ligas_pedidas: mapas.map((m) => ({ league_id: m.league_id, torneio: m.tournament_name })),
     ligas_sem_torneio: ligasSemTorneio.length ? ligasSemTorneio : undefined,
+    janela_dias: JANELA_CANDIDATOS_DIAS,
     jogos_candidatos: candidatos.length,
     lotes_de_torneios: lotesTorneios.length,
     por_bookmaker: [],
