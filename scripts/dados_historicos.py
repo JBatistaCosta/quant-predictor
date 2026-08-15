@@ -2752,7 +2752,7 @@ def montar_dataset_ml_empilhado(
     todas_as_ligas: bool = False,
     league_ids_manual: list[int] | None = None,
     seasons: list[str] | None = None,
-    match_id_extra: int | None = None,
+    match_ids_extra: list[int] | None = None,
 ) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
     temporadas de CADA uma das 6 ligas do Model Benchmarking (5 de elite
@@ -2779,18 +2779,22 @@ def montar_dataset_ml_empilhado(
     faz sentido truncar "últimas N temporadas" depois de já ter pedido
     temporadas específicas).
 
-    `match_id_extra`: acrescenta UMA partida específica ao dataset (de
-    QUALQUER status -- inclusive ainda não disputada) depois do corte de
-    temporadas, pra ela nunca ser excluída por "últimas N temporadas" nem
-    pelo filtro `status='finished'` de `carregar_partidas_finalizadas`.
-    Passa pelo MESMO pipeline de features (elo/forma/xG/etc., todas
+    `match_ids_extra`: acrescenta partidas específicas ao dataset (de
+    QUALQUER status -- inclusive ainda não disputadas) depois do corte de
+    temporadas, pra elas nunca serem excluídas por "últimas N temporadas"
+    nem pelo filtro `status='finished'` de `carregar_partidas_finalizadas`.
+    Passam pelo MESMO pipeline de features (elo/forma/xG/etc., todas
     calculadas a partir de dados anteriores à data da partida, então
     funcionam igual pra jogo futuro) que as demais linhas -- usado pelo
     Treino Customizado quando o usuário pede a estimativa de um modelo
-    pra uma partida específica (`scripts/estimar_partida_custom.py`).
-    home_goals/away_goals ficam NaN pra ela se ainda não foi disputada;
-    quem chama essa função é responsável por separar essa linha ANTES de
-    qualquer dropna no alvo (senão ela é descartada como as demais linhas
+    pra uma partida específica (`scripts/estimar_partida_custom.py`, 1
+    partida por chamada) e pela previsão em lote de partidas futuras
+    (`scripts/prever_partidas_futuras_custom.py`, N partidas na MESMA
+    chamada -- monta o dataset "Feature Stacked" pesado (minutos) uma vez
+    só e aproveita pra todas, em vez de repetir por partida).
+    home_goals/away_goals ficam NaN pra elas se ainda não foram disputadas;
+    quem chama essa função é responsável por separar essas linhas ANTES de
+    qualquer dropna no alvo (senão são descartadas como as demais linhas
     sem resultado).
 
     Features (todas calculadas SEM olhar o resultado do próprio jogo):
@@ -2824,7 +2828,7 @@ def montar_dataset_ml_empilhado(
     nome_da_liga = {v: k for k, v in ligas.items()}
 
     partidas = carregar_partidas_finalizadas(supabase, liga_ids_resolvidos, temporadas=seasons)
-    if partidas.empty and match_id_extra is None:
+    if partidas.empty and not match_ids_extra:
         return partidas
 
     if partidas.empty:
@@ -2847,25 +2851,28 @@ def montar_dataset_ml_empilhado(
     else:
         partidas = partidas.sort_values("match_date").reset_index(drop=True)
 
-    if match_id_extra is not None and not (partidas["id"] == match_id_extra).any():
+    ids_faltantes = [mid for mid in (match_ids_extra or []) if not (partidas["id"] == mid).any()]
+    if ids_faltantes:
         resposta_extra = (
             supabase.table("matches")
             .select("id, league_id, season, match_date, home_team_id, away_team_id, home_goals, away_goals, match_stage, is_neutral, leagues(name)")
-            .eq("id", match_id_extra)
-            .maybe_single()
+            .in_("id", ids_faltantes)
             .execute()
         )
-        linha_extra = resposta_extra.data
-        if linha_extra:
-            liga_nome_extra = (linha_extra.get("leagues") or {}).get("name")
-            if linha_extra["league_id"] not in nome_da_liga and liga_nome_extra:
-                nome_da_liga[linha_extra["league_id"]] = liga_nome_extra
-            linha_extra = {k: v for k, v in linha_extra.items() if k != "leagues"}
-            partidas = pd.concat([partidas, pd.DataFrame([linha_extra])], ignore_index=True)
+        linhas_extra = resposta_extra.data or []
+        ids_encontrados = {linha["id"] for linha in linhas_extra}
+        for mid in ids_faltantes:
+            if mid not in ids_encontrados:
+                logger.error("match_ids_extra=%s não encontrado em `matches`.", mid)
+        if linhas_extra:
+            for linha in linhas_extra:
+                liga_nome_extra = (linha.get("leagues") or {}).get("name")
+                if linha["league_id"] not in nome_da_liga and liga_nome_extra:
+                    nome_da_liga[linha["league_id"]] = liga_nome_extra
+            linhas_extra = [{k: v for k, v in linha.items() if k != "leagues"} for linha in linhas_extra]
+            partidas = pd.concat([partidas, pd.DataFrame(linhas_extra)], ignore_index=True)
             partidas["match_date"] = pd.to_datetime(partidas["match_date"], utc=True)
             partidas = partidas.sort_values("match_date").reset_index(drop=True)
-        else:
-            logger.error("match_id_extra=%s não encontrado em `matches`.", match_id_extra)
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
