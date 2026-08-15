@@ -1879,13 +1879,13 @@ const SPORT_ID_FUTEBOL = 10;
 
 // BOOKMAKERS_ALVO: usado pelo sync AO VIVO (tarefaOddsSyncLote/tarefaOddsSync/
 // tarefaOddsTodas, /v4/odds-by-tournaments) -- esse endpoint É pago, 1
-// chamada por casa POR CHAMADA BATCHED (ou seja, custo fixo = tamanho desta
-// lista, independente de quantas ligas entram no batch de tournamentIds —
-// confirmado testando em produção, ver comentário completo onde
-// tarefaOddsSyncLote está definida). Mantido enxuto de propósito -- cada
-// casa a mais aqui É um múltiplo real no consumo de cota mensal do cron
-// (3 casas = 3 chamadas por rodada, sempre, não importa quantas ligas).
-// Se quiser mais casas no sync ao vivo, avaliar cota antes.
+// chamada por casa POR LOTE de até 5 torneios (`tournamentIds` aceita
+// vários por chamada, mas tem teto real de 5 -- HTTP 400 acima disso,
+// confirmado testando em produção; ver comentário completo onde
+// tarefaOddsSyncLote está definida). Cada casa a mais aqui multiplica o
+// número de lotes necessários -- mantido enxuto de propósito. Se quiser
+// mais casas no sync ao vivo, avaliar cota antes (com 16 ligas resolvidas
+// hoje = 4 lotes, cada casa a mais soma +4 chamadas por rodada do cron).
 const BOOKMAKERS_ALVO = ['pinnacle', 'bet365', 'betano'];
 
 // BOOKMAKERS_HISTORICO: usado só pelo backfill histórico (tarefaOddsHistorico/
@@ -2573,12 +2573,15 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
 //      chamada e confirmando fixtures de AMBOS na resposta, campo
 //      `tournamentId` por fixture identifica de qual veio) — diferente de
 //      `bookmaker` (singular), que já tinha sido confirmado como 1-valor-só.
-//      Ou seja: o custo NÃO escala com o número de ligas, só com o número
-//      de casas de apostas (BOOKMAKERS_ALVO). Por isso esta tarefa foi
-//      generalizada de "1 liga por chamada" pra "TODAS as ligas com
-//      liga_oddspapi_tournament resolvido, numa chamada batched por casa" —
-//      custo fixo de 3 chamadas por rodada do cron (1 por bookmaker),
-//      LIGA NENHUMA a mais custa nada além disso.
+//      MAS com um teto real (também só descoberto testando, não documentado
+//      antes): HTTP 400 "Too many tournament IDs specified... maximum of 5"
+//      acima de 5 IDs por chamada. Por isso esta tarefa foi generalizada de
+//      "1 liga por chamada" pra "TODAS as ligas com liga_oddspapi_tournament
+//      resolvido, em lotes de até 5 torneios por chamada" (`loteados`, ver
+//      tarefaOddsSyncLote) — custo escala em DEGRAUS de 5 ligas, não mais
+//      1:1 por liga: 16 ligas resolvidas hoje = 4 lotes × 3 bookmakers = 12
+//      chamadas por rodada do cron (contra 48 se fosse 1 chamada por liga, e
+//      contra as 18 de antes desta mudança pra cobrir só as 6 domésticas).
 //   2. `verbosity=3` já devolve TODOS os mercados do fixture numa chamada só
 //      (confirmado: 99 mercados distintos numa amostra de 2 ligas -- Asian/
 //      European Handicap, escanteios, cartões, placar exato, 1º tempo,
@@ -2752,65 +2755,97 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
   // segunda etapa pra não incluir jogo fora da janela de uma liga específica).
   const candidatos = (candidatosRaw || []).filter((m) => new Date(m.match_date).getTime() <= Date.now() + (janelasPorLiga[m.league_id]?.dias || 0) * 86400000);
 
-  const tournamentIds = mapas.map((m) => m.tournament_id).join(',');
+  // LIMITE REAL da OddsPapi (achado testando em produção, não documentado
+  // antes -- diferente do que o comentário anterior desta função presumia):
+  // /v4/odds-by-tournaments aceita no MÁXIMO 5 tournamentIds por chamada --
+  // HTTP 400 "Too many tournament IDs specified... maximum of 5" acima
+  // disso. Com mais de 5 ligas resolvidas, cada bookmaker agora precisa de
+  // vários lotes (ainda MUITO mais barato que 1 chamada por liga: 16 ligas
+  // = 4 lotes de até 5 = 12 chamadas/rodada pras 3 casas, vs. 48 se fosse 1
+  // chamada por liga, vs. as 18 de antes desta mudança pra só 6 ligas).
+  const lotesTorneios = loteados(mapas.map((m) => m.tournament_id), 5);
+
   const resultado = {
     ligas_pedidas: mapas.map((m) => ({ league_id: m.league_id, torneio: m.tournament_name, janela_dias: janelasPorLiga[m.league_id]?.dias })),
     ligas_sem_torneio: ligasSemTorneio.length ? ligasSemTorneio : undefined,
     jogos_candidatos: candidatos.length,
+    lotes_de_torneios: lotesTorneios.length,
     por_bookmaker: [],
     linhas_inseridas: 0,
   };
 
   let primeiraChamada = true;
   for (const bookmaker of BOOKMAKERS_ALVO) {
-    // Rate limit real da OddsPapi (achado em produção): 429 se as chamadas em
-    // /v4/odds-by-tournaments vierem muito rápido uma atrás da outra — a doc
-    // pública menciona "500ms de cooldown", mas na prática levou 2 das 3
-    // chamadas sequenciais a 429. 800ms de intervalo entre elas resolveu.
-    if (!primeiraChamada) await new Promise((r) => setTimeout(r, 800));
-    primeiraChamada = false;
-
-    let fixtures;
-    try {
-      fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds, bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
-    } catch (e) {
-      resultado.por_bookmaker.push({ bookmaker, erro: e.message });
-      continue;
-    }
-    if (!Array.isArray(fixtures)) { resultado.por_bookmaker.push({ bookmaker, erro: 'resposta inesperada' }); continue; }
-
-    let casados = 0, semCasar = 0, mercadosExtraidos = 0;
+    let casados = 0, semCasar = 0, mercadosExtraidos = 0, fixturesRecebidos = 0;
     const linhas = [];
+    const errosLotes = [];
     const agora = new Date().toISOString();
 
-    for (const fx of fixtures) {
-      const dataFixture = fx.startTime ? new Date(fx.startTime) : null;
-      const ligaDoFixture = mapaPorTorneio[String(fx.tournamentId)]?.league_id;
-      const partida = candidatos.find((m) => {
-        if (ligaDoFixture != null && m.league_id !== ligaDoFixture) return false;
-        if (!dataFixture || !m.match_date) return false;
-        const diffHoras = Math.abs(new Date(m.match_date) - dataFixture) / 3600000;
-        if (diffHoras > 36) return false; // tolerância de fuso/horário de exibição
-        return (nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name));
-      });
-      if (!partida) { semCasar++; continue; }
-      casados++;
+    for (const loteIds of lotesTorneios) {
+      // Rate limit real da OddsPapi (achado em produção): 429 se as chamadas
+      // em /v4/odds-by-tournaments vierem muito rápido uma atrás da outra —
+      // a doc pública menciona "500ms de cooldown", mas na prática levou
+      // chamadas sequenciais a 429 mesmo com 800ms (visto quando um lote
+      // anterior falhou rápido por erro de validação, sem gastar o tempo
+      // normal de processamento). Além do cooldown fixo, retenta 1x em cima
+      // de um 429 (a própria API devolve `retryMs` -- usa isso, com piso de
+      // 1s, em vez de adivinhar um valor).
+      if (!primeiraChamada) await new Promise((r) => setTimeout(r, 800));
+      primeiraChamada = false;
 
-      const marketsFixture = fx.bookmakerOdds?.[bookmaker]?.markets;
-      if (!marketsFixture) continue;
+      let fixtures;
+      try {
+        fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: loteIds.join(','), bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+      } catch (e) {
+        const matchRetry = /HTTP 429/.test(e.message) ? e.message.match(/"retryMs":(\d+)/) : null;
+        if (matchRetry) {
+          await new Promise((r) => setTimeout(r, Math.max(1000, Number(matchRetry[1]))));
+          try {
+            fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: loteIds.join(','), bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+          } catch (e2) {
+            errosLotes.push({ lote: loteIds, erro: e2.message });
+            continue;
+          }
+        } else {
+          errosLotes.push({ lote: loteIds, erro: e.message });
+          continue;
+        }
+      }
+      if (!Array.isArray(fixtures)) { errosLotes.push({ lote: loteIds, erro: 'resposta inesperada' }); continue; }
+      fixturesRecebidos += fixtures.length;
 
-      const extraidas = extrairLinhasOddsGenericas(marketsFixture, mercadosPorId);
-      mercadosExtraidos += extraidas.length;
-      extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora }));
+      for (const fx of fixtures) {
+        const dataFixture = fx.startTime ? new Date(fx.startTime) : null;
+        const ligaDoFixture = mapaPorTorneio[String(fx.tournamentId)]?.league_id;
+        const partida = candidatos.find((m) => {
+          if (ligaDoFixture != null && m.league_id !== ligaDoFixture) return false;
+          if (!dataFixture || !m.match_date) return false;
+          const diffHoras = Math.abs(new Date(m.match_date) - dataFixture) / 3600000;
+          if (diffHoras > 36) return false; // tolerância de fuso/horário de exibição
+          return (nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name));
+        });
+        if (!partida) { semCasar++; continue; }
+        casados++;
+
+        const marketsFixture = fx.bookmakerOdds?.[bookmaker]?.markets;
+        if (!marketsFixture) continue;
+
+        const extraidas = extrairLinhasOddsGenericas(marketsFixture, mercadosPorId);
+        mercadosExtraidos += extraidas.length;
+        extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora }));
+      }
     }
 
     if (linhas.length > 0) {
       const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
-      if (erroInsert) { resultado.por_bookmaker.push({ bookmaker, erro: erroInsert.message }); continue; }
+      if (erroInsert) { resultado.por_bookmaker.push({ bookmaker, erro: erroInsert.message, erros_lotes: errosLotes.length ? errosLotes : undefined }); continue; }
     }
 
     resultado.linhas_inseridas += linhas.length;
-    resultado.por_bookmaker.push({ bookmaker, fixtures_recebidos: fixtures.length, jogos_casados: casados, sem_correspondencia: semCasar, linhas_extraidas: mercadosExtraidos, linhas_inseridas: linhas.length });
+    resultado.por_bookmaker.push({
+      bookmaker, fixtures_recebidos: fixturesRecebidos, jogos_casados: casados, sem_correspondencia: semCasar,
+      linhas_extraidas: mercadosExtraidos, linhas_inseridas: linhas.length, erros_lotes: errosLotes.length ? errosLotes : undefined,
+    });
   }
 
   return resultado;
