@@ -5,7 +5,7 @@
 // (dividido por query param em vez de arquivo próprio -- api/*.js já está no
 // teto de 12 serverless functions do plano Hobby).
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, AlertTriangle, Loader2, Target, History, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, AlertTriangle, Loader2, Target, History, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 
@@ -22,6 +22,32 @@ function mediaPonderada(grupos, campo, peso) {
   const somaPeso = grupos.reduce((s, g) => s + g[peso], 0);
   if (somaPeso === 0) return null;
   return grupos.reduce((s, g) => s + g[campo] * g[peso], 0) / somaPeso;
+}
+
+// `colunas`: [{ header, get: (linha) => valor }] -- CSV genérico reaproveitado
+// pelas duas seções da página (backtest e ao vivo), cada uma com seu próprio
+// conjunto de colunas.
+function exportarCSV(linhas, colunas, nomeArquivo) {
+  const csvEscape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const cabecalho = colunas.map((c) => csvEscape(c.header)).join(',');
+  const corpo = linhas.map((l) => colunas.map((c) => csvEscape(c.get(l))).join(','));
+  const csv = [cabecalho, ...corpo].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nomeArquivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function BotaoExportarCSV({ onClick, disabled }) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 hover:text-white transition-colors shrink-0">
+      <Download size={12} /> Exportar CSV
+    </button>
+  );
 }
 
 function CardResumo({ label, valor, sublabel, cor = 'text-slate-200' }) {
@@ -125,13 +151,47 @@ function BacktestWalkforward({ ligasPorId }) {
     (!filtroTemporada || l.season === filtroTemporada)
   ), [linhas, filtroLiga, filtroTemporada]);
 
+  // Resumo agregado dos filtros aplicados -- é aqui que o histórico de
+  // verdade vive (milhares de partidas via walk-forward), diferente do
+  // resumo "ao vivo" mais abaixo (só cresce conforme partidas previstas
+  // vão sendo disputadas, ainda com poucas amostras).
+  const resumo = useMemo(() => {
+    if (linhasFiltradas.length === 0) return null;
+    return {
+      n_partidas: linhasFiltradas.reduce((s, l) => s + l.n_partidas, 0),
+      precisao_media_top11: mediaPonderada(linhasFiltradas, 'precisao_media_top11', 'n_partidas'),
+      taxa_xi_exato: mediaPonderada(linhasFiltradas, 'taxa_xi_exato', 'n_partidas'),
+      brier: mediaPonderada(linhasFiltradas, 'brier', 'n_previsoes'),
+      log_loss: mediaPonderada(linhasFiltradas, 'log_loss', 'n_previsoes'),
+    };
+  }, [linhasFiltradas]);
+
+  const exportar = () => exportarCSV(
+    linhasFiltradas,
+    [
+      { header: 'Temporada', get: (l) => l.season },
+      { header: 'Liga', get: (l) => ligasPorId[l.league_id] || `Liga #${l.league_id}` },
+      { header: 'Versão do modelo', get: (l) => l.model_version },
+      { header: 'Partidas avaliadas', get: (l) => l.n_partidas },
+      { header: 'Previsões avaliadas', get: (l) => l.n_previsoes },
+      { header: 'Precisão top-11 (%)', get: (l) => l.precisao_media_top11 != null ? (l.precisao_media_top11 * 100).toFixed(2) : '' },
+      { header: 'XI exato (%)', get: (l) => l.taxa_xi_exato != null ? (l.taxa_xi_exato * 100).toFixed(2) : '' },
+      { header: 'Brier Score', get: (l) => l.brier != null ? l.brier.toFixed(4) : '' },
+      { header: 'Log-loss', get: (l) => l.log_loss != null ? l.log_loss.toFixed(4) : '' },
+    ],
+    `backtest_xi_walkforward_${new Date().toISOString().slice(0, 10)}.csv`
+  );
+
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
-      <h2 className="text-sm font-bold text-slate-200 mb-1 flex items-center gap-2">
-        <History className="text-emerald-400" size={16} /> Backtest histórico (walk-forward)
-      </h2>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+          <History className="text-emerald-400" size={16} /> Backtest histórico (walk-forward)
+        </h2>
+        {linhasFiltradas.length > 0 && <BotaoExportarCSV onClick={exportar} />}
+      </div>
       <p className="text-[11px] text-slate-500 mb-3">
-        "Fingindo não saber" de verdade: pra cada temporada, o modelo foi retreinado do zero só com dado ESTRITAMENTE anterior a ela e avaliado nela -- diferente das métricas acima (modelo único de produção), aqui não tem risco de vazamento nem pras temporadas mais antigas. Rodado sob demanda (<code className="text-slate-400">scripts/backtest_xi_walkforward.py</code>), não atualiza sozinho.
+        "Fingindo não saber" de verdade: pra cada temporada, o modelo foi retreinado do zero só com dado ESTRITAMENTE anterior a ela e avaliado nela -- diferente das métricas abaixo (modelo único de produção), aqui não tem risco de vazamento nem pras temporadas mais antigas. Rodado sob demanda (<code className="text-slate-400">scripts/backtest_xi_walkforward.py</code>), não atualiza sozinho.
       </p>
 
       {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">{erro}</div>}
@@ -152,6 +212,22 @@ function BacktestWalkforward({ ligasPorId }) {
               {ligas.map((l) => <option key={l} value={l}>{ligasPorId[l] || `Liga #${l}`}</option>)}
             </select>
           </div>
+
+          {resumo && (
+            <div className="bg-slate-900 border border-slate-700/50 rounded-xl p-4 mb-4">
+              <span className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1.5 mb-2">
+                <Target size={12} /> Resumo (filtros aplicados) -- {linhasFiltradas.length} grupo{linhasFiltradas.length === 1 ? '' : 's'} liga/temporada
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <CardResumo label="Partidas avaliadas" valor={resumo.n_partidas} />
+                <CardResumo label="Precisão top-11" valor={fmtPct(resumo.precisao_media_top11)} sublabel="acertos/11, média" cor="text-sky-300" />
+                <CardResumo label="XI exato" valor={fmtPct(resumo.taxa_xi_exato)} sublabel="11 de 11 corretos" cor="text-sky-300" />
+                <CardResumo label="Brier Score" valor={fmtNum(resumo.brier)} sublabel="menor é melhor" />
+                <CardResumo label="Log-loss" valor={fmtNum(resumo.log_loss)} sublabel="menor é melhor" />
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -233,6 +309,22 @@ export default function XiModeloStats() {
     };
   }, [gruposFiltrados]);
 
+  const exportarAoVivo = () => exportarCSV(
+    gruposFiltrados,
+    [
+      { header: 'Liga', get: (g) => ligasPorId[g.league_id] || `Liga #${g.league_id}` },
+      { header: 'Temporada', get: (g) => g.season },
+      { header: 'Versão do modelo', get: (g) => g.model_version },
+      { header: 'Partidas avaliadas', get: (g) => g.n_partidas },
+      { header: 'Previsões avaliadas', get: (g) => g.n_previsoes },
+      { header: 'Precisão top-11 (%)', get: (g) => g.precisao_media_top11 != null ? (g.precisao_media_top11 * 100).toFixed(2) : '' },
+      { header: 'XI exato (%)', get: (g) => g.taxa_xi_exato != null ? (g.taxa_xi_exato * 100).toFixed(2) : '' },
+      { header: 'Brier Score', get: (g) => g.brier != null ? g.brier.toFixed(4) : '' },
+      { header: 'Log-loss', get: (g) => g.log_loss != null ? g.log_loss.toFixed(4) : '' },
+    ],
+    `xi_modelo_stats_ao_vivo_${new Date().toISOString().slice(0, 10)}.csv`
+  );
+
   if (!supabaseAtivo) {
     return (
       <div className="max-w-5xl mx-auto bg-slate-800 border border-red-500/30 rounded-2xl p-6 text-center">
@@ -284,9 +376,12 @@ export default function XiModeloStats() {
 
           {resumoGeral && (
             <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
-              <h2 className="text-sm font-bold text-slate-200 mb-3 flex items-center gap-2">
-                <Target className="text-emerald-400" size={16} /> Resumo (filtros aplicados)
-              </h2>
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                  <Target className="text-emerald-400" size={16} /> Resumo (filtros aplicados) -- {gruposFiltrados.length} grupo{gruposFiltrados.length === 1 ? '' : 's'} liga/temporada
+                </h2>
+                <BotaoExportarCSV onClick={exportarAoVivo} />
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <CardResumo label="Partidas avaliadas" valor={resumoGeral.n_partidas} />
                 <CardResumo label="Precisão top-11" valor={fmtPct(resumoGeral.precisao_media_top11)} sublabel="acertos/11, média" cor="text-sky-300" />
