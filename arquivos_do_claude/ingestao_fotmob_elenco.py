@@ -145,6 +145,14 @@ def main():
             r = requests.get(f"{BASE}/teams", params={"id": c["source_id"]}, headers=HEADERS, timeout=20)
             r.raise_for_status()
             payload = r.json()
+            if not isinstance(payload, dict):
+                # Achado rodando em produção (663 times processados de uma
+                # vez pela 1a vez, via cron): a API às vezes devolve HTTP 200
+                # com corpo JSON `null` pra um fotmob_id específico (inválido/
+                # obsoleto), em vez de erro HTTP -- sem essa checagem,
+                # payload.get(...) em parse_elenco/parse_transferencias
+                # explode com AttributeError e derruba o job inteiro.
+                raise ValueError(f"payload inesperado ({type(payload).__name__}, esperava dict)")
         except Exception as e:
             print(f"  falha team_id={c['team_id']} fotmob={c['source_id']}: {e}")
             falhas += 1

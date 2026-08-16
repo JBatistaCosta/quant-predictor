@@ -44,49 +44,114 @@ TARGET = "is_starter"
 FRACAO_TESTE = 0.2
 
 
-def _paginar(query_factory, tamanho_pagina: int = 1000) -> list[dict]:
-    """PostgREST corta em 1000 linhas sem `.range()` -- mesma disciplina de
-    paginação usada em todo o resto do repo (ver dados_historicos.py)."""
+def _paginar_keyset(query_factory, tamanho_pagina: int = 1000) -> list[dict]:
+    """Pagina por CURSOR na chave primária `id` (indexada), não por OFFSET.
+
+    Achado rodando em produção: match_lineup_fotmob já tem 190k+ linhas, e
+    OFFSET grande dá `statement timeout` no Postgres (cada página reescaneia
+    do início) -- mesma classe de bug já documentada em dados_historicos.py
+    pra match_player_stats_fotmob (>250k linhas). `query_factory(cursor)`
+    deve devolver a query já com `.select(...)` incluindo `id`, ordenada por
+    `id` e filtrada por `.gt('id', cursor)` -- só o `.limit()` é aplicado
+    aqui."""
     linhas: list[dict] = []
-    pagina = 0
+    cursor = 0
     while True:
-        inicio = pagina * tamanho_pagina
-        fim = inicio + tamanho_pagina - 1
-        resp = query_factory(inicio, fim).execute()
-        lote = resp.data or []
+        lote = query_factory(cursor).gt("id", cursor).order("id").limit(tamanho_pagina).execute().data or []
+        if not lote:
+            break
         linhas.extend(lote)
+        cursor = lote[-1]["id"]
         if len(lote) < tamanho_pagina:
             break
-        pagina += 1
+    return linhas
+
+
+def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores: list, colunas: str) -> list[dict]:
+    """Filtra `coluna_filtro IN valores` em lotes de 1000 (limite prático do
+    `.in_()`) E pagina o resultado de cada lote por OFFSET, ordenado pela
+    PRÓPRIA coluna filtrada -- um lote de 1000 match_id pode devolver mais
+    de 1000 linhas (~22 jogadores/partida), então as duas camadas de
+    paginação são necessárias.
+
+    Keyset por `id` (`_paginar_keyset`) foi tentado aqui primeiro e deu
+    timeout: `ORDER BY id` numa tabela de 250k+ linhas filtrada por
+    `match_id IN (...)` faz o planner ignorar o índice de `match_id` --
+    ordenar pela própria coluna do filtro (já indexada, mesmo padrão
+    comprovado em `dados_historicos._carregar_titular_pre_jogo`) evita
+    isso; o lote já é limitado a 1000 valores de filtro, então OFFSET
+    dentro dele fica bem menor que o full-table scan que motivou o keyset
+    em `carregar_dados`.
+
+    `coluna_filtro` sozinha não é única quando não é a PK (ex.: match_id em
+    match_player_stats_fotmob, várias linhas por partida) -- OFFSET com
+    ORDER BY empatado pode pular ou repetir linha entre páginas (mesmo bug
+    achado em produção em rodar_xi_previsto.py, upsert duplicado). Desempate
+    por `id` (chave primária de toda tabela usada aqui)."""
+    linhas: list[dict] = []
+    for i in range(0, len(valores), 1000):
+        lote_valores = valores[i : i + 1000]
+        pagina = 0
+        while True:
+            inicio = pagina * 1000
+            resp = (
+                supabase.table(tabela)
+                .select(colunas)
+                .in_(coluna_filtro, lote_valores)
+                .order(coluna_filtro)
+                .order("id")
+                .range(inicio, inicio + 999)
+                .execute()
+            )
+            pagina_dados = resp.data or []
+            linhas.extend(pagina_dados)
+            if len(pagina_dados) < 1000:
+                break
+            pagina += 1
     return linhas
 
 
 def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Buscando dados de lineup no Supabase...")
-    lineup_rows = _paginar(
-        lambda i, f: supabase.table("match_lineup_fotmob")
-        .select("match_id, team_id, player_id, is_starter, is_home, position_id, rating")
-        .order("match_id")
-        .range(i, f)
+    # NÃO selecionar match_lineup_fotmob.position_id: é a posição no gráfico
+    # de FORMAÇÃO TÁTICA, só existe pra quem está no XI -- achado testando
+    # métricas em produção: 99,99% dos titulares têm position_id preenchido
+    # contra só 30,7% dos reservas, então vira um proxy quase perfeito do
+    # PRÓPRIO ALVO (accuracy/AUC saíam ~1.0, vazamento clássico) e nem
+    # existiria pra uma partida futura (rodar_xi_previsto.py nunca teve
+    # acesso a isso). posicao_num usa só players.usual_position_id (mesma
+    # fonte usada ao vivo).
+    lineup_rows = _paginar_keyset(
+        lambda cursor: supabase.table("match_lineup_fotmob").select("id, match_id, team_id, player_id, is_starter")
     )
+    for linha in lineup_rows:
+        linha.pop("id", None)
     if not lineup_rows:
         return pd.DataFrame()
     df_lineup = pd.DataFrame(lineup_rows)
     df_lineup = df_lineup[df_lineup["player_id"].notna()].copy()
 
     match_ids = df_lineup["match_id"].unique().tolist()
-    matches_resp = supabase.table("matches").select("id, match_date, home_team_id, away_team_id").in_("id", match_ids).execute()
-    df_matches = pd.DataFrame(matches_resp.data).rename(columns={"id": "match_id"})
+    # match_ids pode ter dezenas de milhares de valores (190k+ linhas de
+    # lineup) -- um único `.in_("id", match_ids)` sem lotear estoura o
+    # limite de tamanho de URL (httpx.InvalidURL: "query too long").
+    matches_rows = _buscar_por_lotes(supabase, "matches", "id", match_ids, "id, match_date, home_team_id, away_team_id")
+    df_matches = pd.DataFrame(matches_rows).rename(columns={"id": "match_id"})
 
     player_ids = df_lineup["player_id"].unique().tolist()
-    players_rows = []
-    for i in range(0, len(player_ids), 1000):
-        lote = player_ids[i : i + 1000]
-        resp = supabase.table("players").select("id, usual_position_id, market_value").in_("id", lote).execute()
-        players_rows.extend(resp.data or [])
+    players_rows = _buscar_por_lotes(supabase, "players", "id", player_ids, "id, usual_position_id, market_value")
     df_players = pd.DataFrame(players_rows).rename(columns={"id": "player_id"})
 
-    df = df_lineup.merge(df_matches, on="match_id", how="left").merge(df_players, on="player_id", how="left")
+    # rating por jogador/partida não vive em match_lineup_fotmob (só tem
+    # team_rating, agregado do time inteiro) -- é match_player_stats_fotmob.rating.
+    stats_rows = _buscar_por_lotes(supabase, "match_player_stats_fotmob", "match_id", match_ids, "match_id, player_id, rating")
+    df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["match_id", "player_id", "rating"])
+
+    df = (
+        df_lineup.merge(df_matches, on="match_id", how="left")
+        .merge(df_players, on="player_id", how="left")
+        .merge(df_stats, on=["match_id", "player_id"], how="left")
+    )
     return df
 
 
@@ -102,7 +167,7 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hierarquia_elenco"] = np.where(df["jogos_acumulados"] > 0, df["titular_acumulado"] / df["jogos_acumulados"], 0.5)
     df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
     df["media_rating_5j"] = df.groupby("player_id")["rating"].shift(1).rolling(5, min_periods=1).mean().fillna(6.0)
-    df["posicao_num"] = df["position_id"].fillna(df["usual_position_id"]).fillna(0).astype(int)
+    df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
     df["valor_mercado_eur"] = df["market_value"].fillna(100000)
     df["is_lesionado"] = 0  # sem histórico de lesão (só snapshot atual, ver player_availability_fotmob) -- treino não tem esse sinal, é 0 constante de propósito; ao vivo (rodar_xi_previsto.py) usa o snapshot real.
     return df.dropna(subset=["match_date", "player_id", "team_id"])
