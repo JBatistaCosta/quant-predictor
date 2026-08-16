@@ -200,7 +200,7 @@ def jogadores_suspensos(
         eventos.extend(
             _buscar_paginado_por_lote(
                 lambda l: supabase.table("match_events")
-                .select("match_id, player_id, event_type")
+                .select("id, match_id, player_id, event_type")
                 .in_("player_id", l)
                 .in_("event_type", list(dh.TIPOS_EVENTO_CARTAO_AMARELO))
                 .eq("source", "fotmob"),
