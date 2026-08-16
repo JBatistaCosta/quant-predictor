@@ -61,12 +61,20 @@ def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1
     o OFFSET voltou a dar timeout mais adiante (~14k linhas). Os 3 chamadores
     desta função em `montar_features_elenco_atual` reduziram o lote pra 100
     player_id -- resultado por lote fica bem menor, tira a necessidade de
-    OFFSET profundo."""
+    OFFSET profundo.
+
+    `.order("player_id")` sozinho NÃO é determinístico (várias linhas
+    empatam no mesmo player_id) -- OFFSET com ORDER BY empatado pode
+    devolver a MESMA linha em páginas diferentes (achado no mesmo bug que
+    quebrou a query de elenco em `montar_features_elenco_atual`, "ON
+    CONFLICT DO UPDATE command cannot affect row a second time" no upsert
+    de xi_previsto). Desempate por `id` (chave primária, única nas 3
+    tabelas)."""
     linhas: list[dict] = []
     pagina = 0
     while True:
         inicio = pagina * tamanho_pagina
-        resp = query_factory(lote).order("player_id").range(inicio, inicio + tamanho_pagina - 1).execute()
+        resp = query_factory(lote).order("player_id").order("id").range(inicio, inicio + tamanho_pagina - 1).execute()
         pagina_dados = resp.data or []
         linhas.extend(pagina_dados)
         if len(pagina_dados) < tamanho_pagina:
@@ -114,7 +122,12 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
     # dias x ~40 jogadores/elenco, o total passa de 9000 linhas fácil, e a
     # maioria dos times sobrava com só 0-1 jogador no resultado truncado
     # (ex.: time_id=220 tem 43 jogadores reais, só 1 aparecia). Pagina por
-    # OFFSET ordenado por `last_team_id` (a própria coluna filtrada).
+    # OFFSET ordenado por `last_team_id` -- mas SÓ por `last_team_id` não é
+    # determinístico (dezenas de jogadores empatam no mesmo time), o que
+    # fez OFFSET devolver o MESMO jogador em páginas diferentes (achado no
+    # próximo bug: upsert em xi_previsto quebrou com "ON CONFLICT DO UPDATE
+    # command cannot affect row a second time", chave duplicada dentro do
+    # mesmo lote). Desempate por `id` (chave primária, única) resolve.
     jogadores = []
     pagina = 0
     while True:
@@ -124,6 +137,7 @@ def montar_features_elenco_atual(supabase: Client, team_ids: list[int]) -> pd.Da
             .select("id, last_team_id, usual_position_id, market_value")
             .in_("last_team_id", team_ids)
             .order("last_team_id")
+            .order("id")
             .range(inicio, inicio + 999)
             .execute()
             .data

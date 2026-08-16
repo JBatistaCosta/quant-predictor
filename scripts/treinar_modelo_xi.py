@@ -81,7 +81,13 @@ def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores
     comprovado em `dados_historicos._carregar_titular_pre_jogo`) evita
     isso; o lote já é limitado a 1000 valores de filtro, então OFFSET
     dentro dele fica bem menor que o full-table scan que motivou o keyset
-    em `carregar_dados`."""
+    em `carregar_dados`.
+
+    `coluna_filtro` sozinha não é única quando não é a PK (ex.: match_id em
+    match_player_stats_fotmob, várias linhas por partida) -- OFFSET com
+    ORDER BY empatado pode pular ou repetir linha entre páginas (mesmo bug
+    achado em produção em rodar_xi_previsto.py, upsert duplicado). Desempate
+    por `id` (chave primária de toda tabela usada aqui)."""
     linhas: list[dict] = []
     for i in range(0, len(valores), 1000):
         lote_valores = valores[i : i + 1000]
@@ -93,6 +99,7 @@ def _buscar_por_lotes(supabase: Client, tabela: str, coluna_filtro: str, valores
                 .select(colunas)
                 .in_(coluna_filtro, lote_valores)
                 .order(coluna_filtro)
+                .order("id")
                 .range(inicio, inicio + 999)
                 .execute()
             )
