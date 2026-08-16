@@ -28,9 +28,18 @@ DRY_RUN = "--dry-run" in sys.argv
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Tabelas satélite com FK match_id → DELETE antes de deletar a partida-mãe.
+# Lista validada contra information_schema em produção nesta sessão (achado
+# investigando duplicatas de partida: 5 tabelas com FK "NO ACTION" pra
+# matches -- carteira_simulada, model_match_estimates,
+# paper_trading_apostas, team_unavailable_fotmob, xi_previsto -- estavam
+# faltando aqui, o que faria o DELETE de matches falhar com violação de FK
+# assim que alguma delas tivesse linha pra o match_id sendo removido. As
+# outras tabelas de FK (CASCADE) não precisam estar aqui pra não quebrar o
+# DELETE, mas seguem listadas por completude/clareza.
 _TABELAS_SATELITE = [
     "match_context_fotmob",
     "match_stats_fotmob",
+    "match_stats",
     "match_lineup_fotmob",
     "match_player_stats_fotmob",
     "match_shots_fotmob",
@@ -40,12 +49,18 @@ _TABELAS_SATELITE = [
     "match_stats_escanteios",
     "match_features_contexto",
     "model_stat_estimates",
+    "model_match_estimates",
     "model_predictions",
+    "custom_model_ondemand_predictions",
     "predicoes",
     "odds_market",
     "market_odds",
     "player_rating_history",
     "team_elo_history",
+    "carteira_simulada",
+    "paper_trading_apostas",
+    "team_unavailable_fotmob",
+    "xi_previsto",
 ]
 
 _LOTE_SATELITE = 50
