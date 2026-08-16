@@ -65,39 +65,34 @@ def _dividir_em_lotes(itens: list, tamanho: int = 1000):
 
 
 def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1000) -> list[dict]:
-    """PostgREST corta em 1000 linhas sem `.range()` -- um jogador pode ter
+    """PostgREST corta em 1000 linhas sem paginação -- um jogador pode ter
     dezenas/centenas de linhas de histórico (market_value_history,
     match_player_stats_fotmob, match_lineup_fotmob), então um lote de até
     1000 player_id facilmente devolve mais de 1000 linhas.
 
-    Achado rodando em produção: sem `.order()` explícito, OFFSET numa
-    tabela grande (match_player_stats_fotmob, 250k+ linhas) deu `statement
-    timeout` já na página 17 -- mesma classe de bug já corrigida em
-    treinar_modelo_xi.py. Ordenar pela PRÓPRIA coluna filtrada (`player_id`,
-    presente nas 3 tabelas que usam esta função) deixa o planner usar o
-    índice certo, mas ainda não bastou sozinho: com lote de 1000 player_id
-    o OFFSET voltou a dar timeout mais adiante (~14k linhas). Os 3 chamadores
-    desta função em `montar_features_elenco_atual` reduziram o lote pra 100
-    player_id -- resultado por lote fica bem menor, tira a necessidade de
-    OFFSET profundo.
+    Achado rodando em produção: OFFSET (`.range()`) deu `statement timeout`
+    repetidas vezes nessas tabelas grandes -- primeiro sem `.order()`
+    (página 17), depois ordenando por `player_id` com lote de 1000 (~14k
+    linhas), e por fim mesmo com lote reduzido a 100 player_id: em
+    `match_player_stats_fotmob` (filtro `minutes_played > 0`) o OFFSET da
+    2ª página (offset=1000) ainda estourou o timeout -- o custo do OFFSET
+    escala com a profundidade da página, não com o tamanho da página, e
+    piora quando o filtro extra não corresponde 1:1 ao índice do ORDER BY.
 
-    `.order("player_id")` sozinho NÃO é determinístico (várias linhas
-    empatam no mesmo player_id) -- OFFSET com ORDER BY empatado pode
-    devolver a MESMA linha em páginas diferentes (achado no mesmo bug que
-    quebrou a query de elenco em `montar_features_elenco_atual`, "ON
-    CONFLICT DO UPDATE command cannot affect row a second time" no upsert
-    de xi_previsto). Desempate por `id` (chave primária, única nas 3
-    tabelas)."""
+    Fix definitivo: paginação por keyset (cursor), não por OFFSET. Ordena só
+    por `id` (chave primária, monotônica e indexada em todas as tabelas que
+    usam esta função) e busca a próxima página com `id > cursor` em vez de
+    pular N linhas -- custo constante por página, independente de quão
+    fundo já paginamos. `query_factory` deve incluir `id` no `.select()`."""
     linhas: list[dict] = []
-    pagina = 0
+    cursor_id = 0
     while True:
-        inicio = pagina * tamanho_pagina
-        resp = query_factory(lote).order("player_id").order("id").range(inicio, inicio + tamanho_pagina - 1).execute()
+        resp = query_factory(lote).gt("id", cursor_id).order("id").limit(tamanho_pagina).execute()
         pagina_dados = resp.data or []
         linhas.extend(pagina_dados)
         if len(pagina_dados) < tamanho_pagina:
             break
-        pagina += 1
+        cursor_id = pagina_dados[-1]["id"]
     return linhas
 
 
@@ -355,7 +350,7 @@ def montar_features_elenco_atual(
     for lote in _dividir_em_lotes(player_ids, 100):
         valores_rows.extend(
             _buscar_paginado_por_lote(
-                lambda l: supabase.table("player_market_value_history").select("player_id, value_date, value_eur").in_("player_id", l), lote
+                lambda l: supabase.table("player_market_value_history").select("id, player_id, value_date, value_eur").in_("player_id", l), lote
             )
         )
     valor_mais_recente: dict[int, float] = {}
@@ -372,7 +367,7 @@ def montar_features_elenco_atual(
     for lote in _dividir_em_lotes(player_ids, 100):
         stats_rows.extend(
             _buscar_paginado_por_lote(
-                lambda l: supabase.table("match_player_stats_fotmob").select("player_id, match_id, minutes_played").in_("player_id", l).gt("minutes_played", 0),
+                lambda l: supabase.table("match_player_stats_fotmob").select("id, player_id, match_id, minutes_played").in_("player_id", l).gt("minutes_played", 0),
                 lote,
             )
         )
@@ -405,7 +400,7 @@ def montar_features_elenco_atual(
     lineup_rows = []
     for lote in _dividir_em_lotes(player_ids, 100):
         lineup_rows.extend(
-            _buscar_paginado_por_lote(lambda l: supabase.table("match_lineup_fotmob").select("player_id, is_starter").in_("player_id", l), lote)
+            _buscar_paginado_por_lote(lambda l: supabase.table("match_lineup_fotmob").select("id, player_id, is_starter").in_("player_id", l), lote)
         )
     df_lineup = pd.DataFrame(lineup_rows) if lineup_rows else pd.DataFrame(columns=["player_id", "is_starter"])
     hierarquia_por_jogador = df_lineup.groupby("player_id")["is_starter"].mean().to_dict() if not df_lineup.empty else {}
