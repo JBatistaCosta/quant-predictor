@@ -18,6 +18,7 @@ const TimeDetalhe = lazy(() => import('./pages/TimeDetalhe'));
 const Ligas = lazy(() => import('./pages/Ligas'));
 const LigaDetalhe = lazy(() => import('./pages/LigaDetalhe'));
 const ModelosStats = lazy(() => import('./pages/ModelosStats'));
+const XiModeloStats = lazy(() => import('./pages/XiModeloStats'));
 const AnaliseHistorica = lazy(() => import('./pages/AnaliseHistorica'));
 const AnaliseEstatisticaJogo = lazy(() => import('./pages/AnaliseEstatisticaJogo'));
 const RatingClubes = lazy(() => import('./pages/RatingClubes'));
@@ -76,6 +77,9 @@ export default function App() {
             } />
             <Route path="/modelos" element={
               <ProtectedRoute><Layout><ModelosStats /></Layout></ProtectedRoute>
+            } />
+            <Route path="/modelos-xi" element={
+              <ProtectedRoute><Layout><XiModeloStats /></Layout></ProtectedRoute>
             } />
             <Route path="/historico/:matchId" element={
               <ProtectedRoute><Layout><AnaliseHistorica /></Layout></ProtectedRoute>
