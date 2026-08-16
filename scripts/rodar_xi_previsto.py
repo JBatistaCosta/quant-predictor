@@ -241,20 +241,27 @@ def selecionar_titulares_por_posicao(elenco_time: pd.DataFrame) -> set:
     time = 1 formação") de escalar, por exemplo, 6 zagueiros e 1 meio-
     campista. Usa `usual_position_id` CRU (não a feature `posicao_num`, que
     tem fillna(0) e colidiria posição desconhecida com goleiro)."""
-    elenco_time = elenco_time.sort_values("prob_titular", ascending=False)
-    prob_por_jogador = elenco_time.set_index("player_id")["prob_titular"]
+    elenco_time = elenco_time.drop_duplicates(subset="player_id").sort_values("prob_titular", ascending=False)
+    prob_por_jogador = dict(zip(elenco_time["player_id"], elenco_time["prob_titular"]))
+
+    def _extend_sem_duplicar(destino: list, novos) -> None:
+        vistos = set(destino)
+        for pid in novos:
+            if pid not in vistos:
+                destino.append(pid)
+                vistos.add(pid)
 
     selecionados: list = []
     sobras: list = []
     for posicao, (minimo, maximo) in FORMACAO_MIN_MAX.items():
         candidatos = elenco_time[elenco_time["usual_position_id"] == posicao]["player_id"].tolist()
-        selecionados.extend(candidatos[:minimo])
-        sobras.extend(candidatos[minimo:maximo])
+        _extend_sem_duplicar(selecionados, candidatos[:minimo])
+        sobras.extend(pid for pid in candidatos[minimo:maximo] if pid not in selecionados)
 
     faltam = TOP_N_TITULARES - len(selecionados)
     if faltam > 0 and sobras:
-        sobras_ordenadas = sorted(sobras, key=lambda pid: prob_por_jogador.get(pid, 0), reverse=True)
-        selecionados.extend(sobras_ordenadas[:faltam])
+        sobras_ordenadas = sorted(dict.fromkeys(sobras), key=lambda pid: prob_por_jogador.get(pid, 0), reverse=True)
+        _extend_sem_duplicar(selecionados, sobras_ordenadas[:faltam])
         faltam = TOP_N_TITULARES - len(selecionados)
 
     if faltam > 0:
@@ -264,7 +271,16 @@ def selecionar_titulares_por_posicao(elenco_time: pd.DataFrame) -> set:
         # probabilidade -- mesmo espírito de fallback best-effort já usado
         # em `rodar()` pra elenco pequeno demais.
         restantes = elenco_time[~elenco_time["player_id"].isin(selecionados)]
-        selecionados.extend(restantes.head(faltam)["player_id"].tolist())
+        _extend_sem_duplicar(selecionados, restantes.head(faltam)["player_id"].tolist())
+
+    # Rede de segurança: independente da causa, nunca devolver mais que
+    # TOP_N_TITULARES (achado em produção -- 2 de 228 grupos saíram com 12
+    # titulares previstos; a causa exata não foi isolada com certeza, mas
+    # truncar pelos de maior probabilidade garante a saída correta de
+    # qualquer forma).
+    if len(selecionados) > TOP_N_TITULARES:
+        logger.warning(f"selecionar_titulares_por_posicao devolveu {len(selecionados)} > {TOP_N_TITULARES}, truncando por probabilidade.")
+        selecionados = sorted(selecionados, key=lambda pid: prob_por_jogador.get(pid, 0), reverse=True)[:TOP_N_TITULARES]
 
     return set(selecionados)
 
