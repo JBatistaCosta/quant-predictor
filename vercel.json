@@ -23,6 +23,7 @@
   "functions": {
     "api/model-maintenance.js": { "maxDuration": 60 },
     "api/backtest-betting.js": { "maxDuration": 30 },
-    "api/sync-match-stats.js": { "maxDuration": 60 }
+    "api/sync-match-stats.js": { "maxDuration": 60 },
+    "api/model-stats.js": { "maxDuration": 30 }
   }
 }

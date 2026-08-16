@@ -174,10 +174,35 @@ function normalizarOddsBenchmarking(rows) {
 // de teste no treino. brier/log_loss usam prob_titular (contínua) contra
 // is_starter (0/1) de CADA jogador do elenco avaliado, não só o top-11 --
 // mede o quão bem calibrada é a probabilidade, não só o ranking.
+
+// `xi_previsto` cresce todo dia (previsão nova sobrescreve/soma a cada
+// rodada de scripts/rodar_xi_previsto.py) -- `buscarTudoPaginado` genérico
+// pagina por OFFSET sem ORDER BY, que já deu `statement timeout` em
+// produção aqui (achado idêntico ao das tabelas grandes em
+// rodar_xi_previsto.py: custo do OFFSET cresce com a profundidade da
+// página). Keyset por `id` (chave primária, monotônica) resolve com custo
+// constante por página, igual ao fix aplicado lá.
+async function buscarXiPrevistoCompleto(supabase) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let cursor = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('xi_previsto')
+      .select('id, match_id, team_id, player_id, prob_titular, is_titular_previsto, model_version')
+      .gt('id', cursor)
+      .order('id')
+      .limit(TAMANHO_PAGINA);
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    cursor = data[data.length - 1].id;
+  }
+  return resultado;
+}
+
 async function calcularStatsXi(supabase) {
-  const previsoes = await buscarTudoPaginado(() =>
-    supabase.from('xi_previsto').select('match_id, team_id, player_id, prob_titular, is_titular_previsto, model_version')
-  );
+  const previsoes = await buscarXiPrevistoCompleto(supabase);
   if (previsoes.length === 0) return [];
 
   const matchIds = [...new Set(previsoes.map((p) => p.match_id))];
