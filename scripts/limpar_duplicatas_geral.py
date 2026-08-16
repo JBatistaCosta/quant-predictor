@@ -68,13 +68,24 @@ _LOTE_MATCHES = 5
 _tabelas_inexistentes = set()
 
 def buscar_partidas_liga(liga_id: int) -> list[dict]:
-    """Busca todas as partidas de uma liga com paginação."""
+    """Busca todas as partidas de uma liga com paginação.
+
+    Achado rodando o dry-run em produção nesta sessão: sem `.order()`, OFFSET
+    devolve linha REPETIDA (mesmo `id`) entre páginas diferentes pra ligas
+    com mais de 1000 partidas (ordem de retorno do Postgres não é garantida
+    sem ORDER BY explícito) -- reproduzido pra Serie A: de 3040 partidas em 4
+    páginas, 1000 vieram duplicadas na memória. Isso inflava
+    `jogos_agrupados` com "duplicatas" falsas (mesmo id nos dois lados,
+    canceladas na hora de decidir o que remover) e, pior, podia mascarar
+    duplicatas REAIS perdidas pela mesma instabilidade. `.order("id")`
+    (chave primária) resolve com determinismo total."""
     todas, pagina, tam = [], 0, 1000
     while True:
         lote = (
             supabase.table("matches")
             .select("id, external_id, match_date, home_team_id, away_team_id, home_goals, away_goals, status, round, stage, season")
             .eq("league_id", liga_id)
+            .order("id")
             .range(pagina * tam, (pagina + 1) * tam - 1)
             .execute()
             .data or []
