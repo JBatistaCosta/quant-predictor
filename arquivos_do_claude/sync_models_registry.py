@@ -175,6 +175,24 @@ def main() -> None:
             "metrics_test": {"fonte": "scripts/treinar_regressor_xgot.py", "nota": "RMSE impresso no console ao rodar — ver model_match_estimates pra previsão x realidade partida a partida"},
         })
 
+    # catboost_xg_regressor_v2 / catboost_xgot_regressor_v2 — mesmo espírito
+    # dos v1 acima, feature set com força do XI titular (FEATURES_XG_XI_V2).
+    for nome_v2, market_v2, fonte_v2 in (
+        ("catboost_xg_regressor_v2", "gols_esperados", "scripts/treinar_regressor_xg.py"),
+        ("catboost_xgot_regressor_v2", "xgot_esperado", "scripts/treinar_regressor_xgot.py"),
+    ):
+        if any(r["name"] == nome_v2 for r in linhas_registro):
+            continue
+        linhas_registro.append({
+            "name": nome_v2,
+            "market": market_v2,
+            "algorithm": "CatBoost (regressão)",
+            "status": "testing",
+            "features_used": FEATURES_POR_MODELO.get(nome_v2),
+            "hyperparameters": hiperparametros_do_nome(nome_v2),
+            "metrics_test": {"fonte": fonte_v2, "nota": "v1 + força do XI titular (titular_rating/titular_valor_mercado) — RMSE impresso no console ao rodar — ver model_match_estimates pra previsão x realidade partida a partida"},
+        })
+
     for i in range(0, len(linhas_registro), 200):
         supabase.table("models_registry").upsert(
             linhas_registro[i:i + 200], on_conflict="name,market",
