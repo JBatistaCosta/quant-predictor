@@ -49,6 +49,17 @@ FEATURES = ["dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "p
 DIAS_JANELA_DEFAULT = 7
 TOP_N_TITULARES = 11
 
+# Validado via EXPLAIN ANALYZE em produção: um lote de 100 player_id em
+# match_player_stats_fotmob pode facilmente ultrapassar a marca de 1000
+# linhas (jogadores veteranos com dezenas/centenas de partidas), forçando
+# `_buscar_paginado_por_lote` a paginar -- e o custo de cada página extra
+# cresce com o total já visto (a condição de cursor vira Filter aplicado
+# sobre o resultado inteiro do `player_id = ANY(...)`, não um corte no
+# índice), então um lote grande com muitas páginas fica caro/instável
+# (~17s observado com lote=100 em produção). Lote de 25 mantém a maioria
+# dos lotes numa única página mesmo pra grupos de jogadores veteranos.
+TAMANHO_LOTE_TABELA_GRANDE = 25
+
 # Decodificação de players.usual_position_id validada nesta sessão (o repo
 # documentava só "enum interno do FotMob, sem legenda confiável" -- validado
 # aqui por correlação com match_player_stats_fotmob.is_goalkeeper (98,7% de
@@ -356,7 +367,7 @@ def montar_features_elenco_atual(
     df_ratings = pd.DataFrame(ratings_rows) if ratings_rows else pd.DataFrame(columns=["player_id", "rating"])
 
     valores_rows = []
-    for lote in _dividir_em_lotes(player_ids, 100):
+    for lote in _dividir_em_lotes(player_ids, TAMANHO_LOTE_TABELA_GRANDE):
         valores_rows.extend(
             _buscar_paginado_por_lote(
                 lambda l: supabase.table("player_market_value_history").select("id, player_id, value_date, value_eur").in_("player_id", l), lote
@@ -373,7 +384,7 @@ def montar_features_elenco_atual(
             valor_mais_recente[v["player_id"]] = float(v["value_eur"])
 
     stats_rows = []
-    for lote in _dividir_em_lotes(player_ids, 100):
+    for lote in _dividir_em_lotes(player_ids, TAMANHO_LOTE_TABELA_GRANDE):
         stats_rows.extend(
             _buscar_paginado_por_lote(
                 lambda l: supabase.table("match_player_stats_fotmob").select("id, player_id, match_id, minutes_played").in_("player_id", l).gt("minutes_played", 0),
@@ -407,7 +418,7 @@ def montar_features_elenco_atual(
                 return df
 
     lineup_rows = []
-    for lote in _dividir_em_lotes(player_ids, 100):
+    for lote in _dividir_em_lotes(player_ids, TAMANHO_LOTE_TABELA_GRANDE):
         lineup_rows.extend(
             _buscar_paginado_por_lote(lambda l: supabase.table("match_lineup_fotmob").select("id, player_id, is_starter").in_("player_id", l), lote)
         )
