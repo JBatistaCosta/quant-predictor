@@ -1,0 +1,114 @@
+name: Backfill de Odds Históricas (OddsPapi)
+
+# Roda o mesmo loop que vinha sendo feito manualmente num sandbox à parte
+# (script fora do repo) -- migrado pra cá porque o runner do GitHub Actions
+# fica de pé até o job terminar (sem o ciclo de vida efêmero de um sandbox
+# de sessão, que reiniciava o processo sozinho a cada tanto). tarefa=odds-
+# historico (api/model-maintenance.js) não exige autenticação -- não precisa
+# de nenhum secret aqui, só curl.
+#
+# Cada chamada processa MAX_FIXTURES_HISTORICO_POR_CHAMADA (4) partidas de
+# UMA liga por vez, com cooldown de 5s por chamada à OddsPapi embutido no
+# backend -- ~50s por rodada. Idempotente via match_source_ids
+# (source=oddspapi_historico_completo): pode ser interrompido a qualquer
+# momento (timeout do job, nova execução agendada) e retoma sozinho, sem
+# duplicar nem perder dado.
+#
+# Detecção de liga travada: se restantes_estimado não mudar por
+# MAX_RODADAS_SEM_PROGRESSO rodadas seguidas (comum sob rate-limit
+# sustentado da OddsPapi), pula pra próxima liga -- a travada é retomada na
+# PRÓXIMA execução agendada (dá tempo da API "esfriar").
+#
+# Não roda tudo numa chamada só de propósito: 14 ligas, ~20 mil partidas
+# faltando no momento em que este workflow foi criado -- muito além do
+# timeout de qualquer execução única. O cron (a cada 6h) garante que o
+# backfill continua avançando sozinho até esgotar todas as ligas, sem
+# precisar de ninguém disparando manualmente ou monitorando um processo em
+# background.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      ligas:
+        description: "league_ids a processar, separados por espaço (vazio = todas as 14 mapeadas)"
+        required: false
+        type: string
+
+jobs:
+  backfill-odds-historico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Rodar backfill de odds históricas
+        run: |
+          set -uo pipefail
+          MAX_RODADAS_SEM_PROGRESSO=8
+          MAX_RODADAS_POR_LIGA=600
+          LIGAS_PADRAO="4 7 10 13 16 1 23 46 28 19 47 27 34 57"
+          LIGAS="${{ inputs.ligas }}"
+          if [ -z "$LIGAS" ]; then LIGAS="$LIGAS_PADRAO"; fi
+
+          echo "=== INICIO $(date -u +%FT%TZ) -- ligas: $LIGAS ==="
+
+          for LIGA in $LIGAS; do
+            RODADA=0
+            FALHAS_SEGUIDAS=0
+            SEM_PROGRESSO=0
+            REST_ANTERIOR=""
+
+            while [ $RODADA -lt $MAX_RODADAS_POR_LIGA ]; do
+              RODADA=$((RODADA+1))
+              RESP=$(curl -sS "https://quant-predictor.vercel.app/api/model-maintenance?tarefa=odds-historico&liga_id=$LIGA" --max-time 90 2>&1)
+              PARSED=$(echo "$RESP" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          falhas=len(d.get('falhas') or [])
+          if 'error' in d: print(f\"ERROR|0|0|0|0|0|{d['error']}\")
+          elif 'mensagem' in d: print('DONE|0|0|0|0|0')
+          else: print(f\"OK|{d.get('processados_agora',0)}|{d.get('restantes_estimado',0)}|{d.get('sucesso',0)}|{falhas}|{d.get('sem_historico_na_fonte',0)}\")
+          " 2>/dev/null) || PARSED="PARSE_ERROR|0|0|0|0|0"
+              STATUS=$(echo "$PARSED" | cut -d'|' -f1)
+              PROC=$(echo "$PARSED" | cut -d'|' -f2)
+              REST=$(echo "$PARSED" | cut -d'|' -f3)
+              SUCESSO=$(echo "$PARSED" | cut -d'|' -f4)
+              FALHAS=$(echo "$PARSED" | cut -d'|' -f5)
+              SEMHIST=$(echo "$PARSED" | cut -d'|' -f6)
+              echo "$(date -u +%FT%TZ) liga=$LIGA rodada=$RODADA status=$STATUS proc=$PROC sucesso=$SUCESSO falhas=$FALHAS sem_historico=$SEMHIST restantes=$REST"
+
+              if [ "$STATUS" = "DONE" ]; then
+                echo "--- liga_id=$LIGA CONCLUIDA $(date -u +%FT%TZ) ---"
+                break
+              fi
+              if [ "$STATUS" = "ERROR" ] || [ "$STATUS" = "PARSE_ERROR" ]; then
+                FALHAS_SEGUIDAS=$((FALHAS_SEGUIDAS+1))
+                echo "$(date -u +%FT%TZ) liga=$LIGA AVISO erro (${FALHAS_SEGUIDAS}x seguidas): $RESP"
+                if [ $FALHAS_SEGUIDAS -ge 5 ]; then
+                  echo "--- liga_id=$LIGA PULADA (5 erros seguidos) $(date -u +%FT%TZ) ---"
+                  break
+                fi
+                sleep 5
+                continue
+              fi
+              FALHAS_SEGUIDAS=0
+              if [ "$PROC" = "0" ]; then
+                echo "--- liga_id=$LIGA CONCLUIDA (processados=0) $(date -u +%FT%TZ) ---"
+                break
+              fi
+
+              if [ "$REST" = "$REST_ANTERIOR" ]; then
+                SEM_PROGRESSO=$((SEM_PROGRESSO+1))
+              else
+                SEM_PROGRESSO=0
+              fi
+              REST_ANTERIOR="$REST"
+              if [ $SEM_PROGRESSO -ge $MAX_RODADAS_SEM_PROGRESSO ]; then
+                echo "--- liga_id=$LIGA SEM PROGRESSO por $SEM_PROGRESSO rodadas (restantes travado em $REST), pulando -- retoma na próxima execução $(date -u +%FT%TZ) ---"
+                break
+              fi
+            done
+          done
+
+          echo "=== FIM DA EXECUCAO $(date -u +%FT%TZ) ==="
