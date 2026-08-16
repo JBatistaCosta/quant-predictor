@@ -5,7 +5,7 @@
 // (dividido por query param em vez de arquivo próprio -- api/*.js já está no
 // teto de 12 serverless functions do plano Hobby).
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, AlertTriangle, Loader2, Target } from 'lucide-react';
+import { Users, AlertTriangle, Loader2, Target, History, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 
@@ -56,6 +56,125 @@ function Calibracao({ quintis }) {
       <p className="text-[10px] text-slate-600 mt-1">
         Barra cinza = probabilidade prevista média da faixa. Traço = frequência real de titularidade (verde = próximo do previsto, vermelho = desvio maior que 8pp).
       </p>
+    </div>
+  );
+}
+
+// Backtest walk-forward (scripts/backtest_xi_walkforward.py): por temporada,
+// o modelo foi RETREINADO do zero só com dado anterior a ela e avaliado nela
+// (nunca vista) -- diferente do restante desta página (modelo ÚNICO de
+// produção contra partidas já jogadas), aqui não tem risco de vazamento nem
+// pra temporadas antigas. Lê direto do Supabase (tabela pública) em vez de
+// passar pelo /api/model-stats -- não precisa da mesma junção cara com
+// match_lineup_fotmob, o script já grava a métrica pronta.
+function LinhaBacktest({ linha, ligasPorId, aberta, onToggle }) {
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-slate-700/30" onClick={onToggle}>
+        <td className="p-2 text-slate-300 font-semibold">{linha.season}</td>
+        <td className="p-2 text-slate-300">{ligasPorId[linha.league_id] || `Liga #${linha.league_id}`}</td>
+        <td className="p-2 text-right text-slate-400">{linha.n_partidas}</td>
+        <td className="p-2 text-right text-sky-300 font-semibold">{fmtPct(linha.precisao_media_top11)}</td>
+        <td className="p-2 text-right text-sky-300">{fmtPct(linha.taxa_xi_exato)}</td>
+        <td className="p-2 text-right text-slate-300">{fmtNum(linha.brier)}</td>
+        <td className="p-2 text-right text-slate-300">{fmtNum(linha.log_loss)}</td>
+        <td className="p-2 text-center text-slate-500">{aberta ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</td>
+      </tr>
+      {aberta && (
+        <tr>
+          <td colSpan={8} className="p-3 bg-slate-900/50">
+            <Calibracao quintis={linha.calibracao} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function BacktestWalkforward({ ligasPorId }) {
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [linhas, setLinhas] = useState([]);
+  const [filtroLiga, setFiltroLiga] = useState('');
+  const [filtroTemporada, setFiltroTemporada] = useState('');
+  const [abertaIdx, setAbertaIdx] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setCarregando(true);
+      setErro('');
+      try {
+        const { data, error } = await supabase
+          .from('xi_backtest_walkforward')
+          .select('season, league_id, model_version, n_partidas, n_previsoes, precisao_media_top11, taxa_xi_exato, brier, log_loss, calibracao')
+          .order('season', { ascending: false });
+        if (error) throw error;
+        setLinhas(data || []);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  const temporadas = useMemo(() => [...new Set(linhas.map((l) => l.season))].sort().reverse(), [linhas]);
+  const ligas = useMemo(() => [...new Set(linhas.map((l) => l.league_id))].sort((a, b) => a - b), [linhas]);
+  const linhasFiltradas = useMemo(() => linhas.filter((l) =>
+    (!filtroLiga || String(l.league_id) === filtroLiga) &&
+    (!filtroTemporada || l.season === filtroTemporada)
+  ), [linhas, filtroLiga, filtroTemporada]);
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <h2 className="text-sm font-bold text-slate-200 mb-1 flex items-center gap-2">
+        <History className="text-emerald-400" size={16} /> Backtest histórico (walk-forward)
+      </h2>
+      <p className="text-[11px] text-slate-500 mb-3">
+        "Fingindo não saber" de verdade: pra cada temporada, o modelo foi retreinado do zero só com dado ESTRITAMENTE anterior a ela e avaliado nela -- diferente das métricas acima (modelo único de produção), aqui não tem risco de vazamento nem pras temporadas mais antigas. Rodado sob demanda (<code className="text-slate-400">scripts/backtest_xi_walkforward.py</code>), não atualiza sozinho.
+      </p>
+
+      {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">{erro}</div>}
+
+      {carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-6"><Loader2 className="animate-spin" size={16} /> Carregando...</div>
+      ) : linhas.length === 0 ? (
+        <p className="text-xs text-slate-600 py-4">Nenhum backtest rodado ainda -- dispare <code className="text-slate-500">backtest_xi_walkforward.yml</code> manualmente no GitHub Actions.</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <select value={filtroTemporada} onChange={(e) => setFiltroTemporada(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-100">
+              <option value="">Todas as temporadas</option>
+              {temporadas.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={filtroLiga} onChange={(e) => setFiltroLiga(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-100">
+              <option value="">Todas as ligas</option>
+              {ligas.map((l) => <option key={l} value={l}>{ligasPorId[l] || `Liga #${l}`}</option>)}
+            </select>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 uppercase text-[10px]">
+                  <th className="text-left p-2">Temporada</th>
+                  <th className="text-left p-2">Liga</th>
+                  <th className="text-right p-2">Partidas</th>
+                  <th className="text-right p-2">Precisão top-11</th>
+                  <th className="text-right p-2">XI exato</th>
+                  <th className="text-right p-2">Brier</th>
+                  <th className="text-right p-2">Log-loss</th>
+                  <th className="p-2"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50">
+                {linhasFiltradas.map((l, i) => (
+                  <LinhaBacktest key={i} linha={l} ligasPorId={ligasPorId} aberta={abertaIdx === i} onToggle={() => setAbertaIdx(abertaIdx === i ? null : i)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -135,6 +254,8 @@ export default function XiModeloStats() {
       </div>
 
       {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>}
+
+      <BacktestWalkforward ligasPorId={ligasPorId} />
 
       {carregando ? (
         <div className="flex items-center justify-center py-16 text-slate-500 gap-2">
