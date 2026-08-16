@@ -33,7 +33,7 @@
 //    vw_cobertura_odds (migration cria_views_cobertura_estatisticas_odds) --
 //    agregação por liga/temporada roda no Postgres, não no navegador.
 import React, { useEffect, useState } from 'react';
-import { Settings, Upload, Loader2, AlertTriangle, CheckCircle2, Info, Database, TrendingUp, PlusCircle, Download, Users, Trophy, PieChart, LineChart } from 'lucide-react';
+import { Settings, Upload, Loader2, AlertTriangle, CheckCircle2, Info, Database, TrendingUp, PlusCircle, Download, Users, Trophy, PieChart, LineChart, Hash } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
@@ -41,6 +41,7 @@ import { parseCsv } from '../utils/parseCsv';
 import Tabs from '../components/Tabs';
 import CoberturaOdds from '../components/CoberturaOdds';
 import CoberturaEstatisticas from '../components/CoberturaEstatisticas';
+import IdentificadoresOddsPapi from '../components/IdentificadoresOddsPapi';
 import EventoNovo from './EventoNovo';
 import ImportarJogos from './ImportarJogos';
 import Times from './Times';
@@ -461,6 +462,7 @@ const ABAS_CONFIGURACOES = [
   { id: 'footiqo', label: 'Footiqo', icone: Upload, conteudo: <ImportacaoFootiqo /> },
   { id: 'fotmob', label: 'FotMob', icone: Database, conteudo: <ImportacaoFotmob /> },
   { id: 'oddspapi', label: 'OddsPapi', icone: TrendingUp, conteudo: <ImportacaoOddsPapiHistorico /> },
+  { id: 'identificadores', label: 'Identificadores', icone: Hash, conteudo: <IdentificadoresOddsPapi /> },
   { id: 'cobertura-estatisticas', label: 'Cobertura de Estatísticas', icone: PieChart, conteudo: <CoberturaEstatisticas /> },
   { id: 'cobertura-odds', label: 'Cobertura de Odds', icone: LineChart, conteudo: <CoberturaOdds /> },
 ];
