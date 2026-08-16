@@ -9,13 +9,27 @@ verdade, e só rodava se `match_lineup_fotmob` já tivesse linhas pra aquela
 partida -- ou seja, só depois que a escalação oficial real já tivesse saído,
 o que anula o propósito de prever com antecedência.
 
-Elenco atual e engenharia de features seguem o MESMO padrão já usado por
-`dados_historicos.obter_squad_rating_atual` (elenco = `players.last_team_id`,
-exclui `player_availability_fotmob.injured=true` ANTES de pontuar -- os
-modelos treinados nunca viram `is_lesionado=1` variar no treino, então
-excluir na entrada é mais correto do que confiar na feature pra "aprender"
-uma penalidade que ela nunca teve como aprender). Suspensos por acúmulo de
-cartão amarelo (`jogadores_suspensos`, reaproveitando `dados_historicos.
+Elenco atual: `player_availability_fotmob` (snapshot ressincronizado
+periodicamente por `ingestao_fotmob_elenco.py` direto da página de elenco
+do time no FotMob -- `elenco_desfalques_sync.yml`), NÃO
+`players.last_team_id` (usado numa versão anterior deste script -- bug real
+reportado pelo usuário testando em produção: `last_team_id` só é
+atualizado quando o jogador aparece na escalação de uma partida JÁ
+INGERIDA, então um jogador emprestado/vendido cujo último jogo processado
+ainda foi pelo time antigo continua "no elenco" antigo indefinidamente, e
+reservas que não jogam há tempo desaparecem do pool -- resultado visto em
+produção: jogador fora do elenco real sendo escalado, e o pool de goleiros
+válidos ficando tão raso que um goleiro reserva de baixíssima probabilidade
+era forçado pra suprir o mínimo de 1 goleiro da formação.
+`player_availability_fotmob.role` (texto: Keeper/Defender/Midfielder/
+Attacker, 100% de cobertura) também substitui `players.usual_position_id`
+como fonte de posição, pelo mesmo motivo -- ver `MAPA_ROLE_PARA_POSICAO`.
+Exclui `injured=true` ANTES de pontuar (já vem na mesma linha da tabela de
+elenco, não precisa de consulta separada) -- os modelos treinados nunca
+viram `is_lesionado=1` variar no treino, então excluir na entrada é mais
+correto do que confiar na feature pra "aprender" uma penalidade que ela
+nunca teve como aprender. Suspensos por acúmulo de cartão amarelo
+(`jogadores_suspensos`, reaproveitando `dados_historicos.
 CARTAO_LIMIAR_POR_LIGA`) são excluídos pelo mesmo motivo.
 
 A seleção do XI (`selecionar_titulares_por_posicao`) respeita uma formação
@@ -60,13 +74,11 @@ TOP_N_TITULARES = 11
 # dos lotes numa única página mesmo pra grupos de jogadores veteranos.
 TAMANHO_LOTE_TABELA_GRANDE = 25
 
-# Decodificação de players.usual_position_id validada nesta sessão (o repo
-# documentava só "enum interno do FotMob, sem legenda confiável" -- validado
-# aqui por correlação com match_player_stats_fotmob.is_goalkeeper (98,7% de
-# confirmação pro valor 0) e por gradiente monotônico de gols/assistências/
-# interceptações/toques na área rival entre 1/2/3, batendo com o padrão
-# esperado de DEF<MEI<ATA em ataque e o inverso em interceptação):
-# 0=goleiro, 1=defensor, 2=meio-campo, 3=atacante.
+# player_availability_fotmob.role -> mesmo esquema numérico 0/1/2/3 já usado
+# em todo o resto do pipeline (FORMACAO_MIN_MAX, xi_previsto.posicao_bucket,
+# POSICAO_LABEL no frontend) -- só os 4 valores abaixo existem em produção
+# (confirmado por `GROUP BY role`, 100% das linhas com role preenchido).
+MAPA_ROLE_PARA_POSICAO = {"Keeper": 0, "Defender": 1, "Midfielder": 2, "Attacker": 3}
 FORMACAO_MIN_MAX = {0: (1, 1), 1: (3, 5), 2: (3, 5), 3: (1, 3)}
 
 
@@ -306,60 +318,74 @@ def montar_features_elenco_atual(
     league_id_por_time: dict[int, int] | None = None,
     nome_liga_por_league_id: dict[int, str] | None = None,
 ) -> pd.DataFrame:
-    """Elenco atual (players.last_team_id) de cada time em `team_ids`, com as
-    mesmas 6 features de `treinar_modelo_xi.engenharia_features`, calculadas
-    com dado de HOJE em vez de ponto-no-tempo histórico -- não existe
-    'escalação futura confirmada', só o melhor proxy disponível agora."""
+    """Elenco atual (`player_availability_fotmob`) de cada time em `team_ids`,
+    com as mesmas 6 features de `treinar_modelo_xi.engenharia_features`,
+    calculadas com dado de HOJE em vez de ponto-no-tempo histórico -- não
+    existe 'escalação futura confirmada', só o melhor proxy disponível
+    agora."""
     if not team_ids:
         return pd.DataFrame()
 
-    # Achado em produção: sem paginação, essa consulta cortava em 1000
-    # linhas silenciosamente (PostgREST) -- com ~228 times numa janela de 7
-    # dias x ~40 jogadores/elenco, o total passa de 9000 linhas fácil, e a
-    # maioria dos times sobrava com só 0-1 jogador no resultado truncado
-    # (ex.: time_id=220 tem 43 jogadores reais, só 1 aparecia). Pagina por
-    # OFFSET ordenado por `last_team_id` -- mas SÓ por `last_team_id` não é
-    # determinístico (dezenas de jogadores empatam no mesmo time), o que
-    # fez OFFSET devolver o MESMO jogador em páginas diferentes (achado no
-    # próximo bug: upsert em xi_previsto quebrou com "ON CONFLICT DO UPDATE
-    # command cannot affect row a second time", chave duplicada dentro do
-    # mesmo lote). Desempate por `id` (chave primária, única) resolve.
-    jogadores = []
-    pagina = 0
-    while True:
-        inicio = pagina * 1000
-        lote = (
-            supabase.table("players")
-            .select("id, last_team_id, usual_position_id, market_value")
-            .in_("last_team_id", team_ids)
-            .order("last_team_id")
-            .order("id")
-            .range(inicio, inicio + 999)
-            .execute()
-            .data
-            or []
-        )
-        jogadores.extend(lote)
-        if len(lote) < 1000:
-            break
-        pagina += 1
-    if not jogadores:
+    # `player_availability_fotmob` é o snapshot do elenco REAL (ver docstring
+    # do módulo pro porquê de não usar mais players.last_team_id) --
+    # paginado do mesmo jeito (achado real de produção nesta sessão:
+    # `.in_("team_id", team_ids)` sozinho corta em 1000 linhas silenciosamente
+    # pra janelas com muitos times, mesmo padrão já documentado alhures neste
+    # arquivo). `player_id` pode vir NULL (crosswalk fotmob_player_id ->
+    # players.id ainda não resolvido pra ~31% dos nomes do elenco, geralmente
+    # jogadores obscuros que nunca apareceram numa partida já ingerida) --
+    # descartado abaixo, já que `xi_previsto.player_id` é FK NOT NULL.
+    elenco_rows = []
+    for lote_times in _dividir_em_lotes(team_ids, 200):
+        pagina = 0
+        while True:
+            inicio = pagina * 1000
+            lote = (
+                supabase.table("player_availability_fotmob")
+                .select("id, team_id, player_id, role, injured")
+                .in_("team_id", lote_times)
+                .order("team_id")
+                .order("id")
+                .range(inicio, inicio + 999)
+                .execute()
+                .data
+                or []
+            )
+            elenco_rows.extend(lote)
+            if len(lote) < 1000:
+                break
+            pagina += 1
+    if not elenco_rows:
         return pd.DataFrame()
-    df = pd.DataFrame(jogadores).rename(columns={"id": "player_id", "last_team_id": "team_id"})
-    player_ids = df["player_id"].tolist()
 
-    # Exclui lesionado ANTES de pontuar (mesmo padrão de obter_squad_rating_atual) --
-    # o modelo nunca viu is_lesionado variar no treino, não dá pra confiar
-    # nele pra aprender penalidade de lesão sozinho.
-    lesionados: set = set()
-    for lote in _dividir_em_lotes(player_ids):
-        linhas = supabase.table("player_availability_fotmob").select("player_id").in_("player_id", lote).eq("injured", True).execute().data or []
-        lesionados.update(l["player_id"] for l in linhas)
-    df = df[~df["player_id"].isin(lesionados)].copy()
+    df = pd.DataFrame(elenco_rows)
+    # Exclui lesionado ANTES de pontuar (mesmo padrão de
+    # obter_squad_rating_atual) -- o modelo nunca viu is_lesionado variar no
+    # treino, não dá pra confiar nele pra aprender penalidade de lesão
+    # sozinho. E descarta player_id não resolvido (ver comentário acima).
+    df = df[(df["injured"] != True) & df["player_id"].notna()].copy()  # noqa: E712
     if df.empty:
         return df
+    df["player_id"] = df["player_id"].astype(int)
+    # Um jogador pode ter mais de 1 linha de snapshot pro mesmo time (achado
+    # em produção -- rodadas de sync sobrepostas antes do delete-then-upsert
+    # de ingestao_fotmob_elenco.py terminar); mantém 1 por (team_id,player_id).
+    df = df.drop_duplicates(subset=["team_id", "player_id"])
+    # usual_position_id (nome mantido pra não mexer no resto da função/
+    # selecionar_titulares_por_posicao, que já espera essa coluna) agora vem
+    # do texto `role`, não mais de players.usual_position_id.
+    df["usual_position_id"] = df["role"].map(MAPA_ROLE_PARA_POSICAO)
 
     player_ids = df["player_id"].tolist()
+
+    # market_value (fallback de valor de mercado quando não há linha em
+    # player_market_value_history) -- só campo que a consulta antiga pegava
+    # "de graça" no mesmo select de `players`; aqui precisa de uma consulta
+    # à parte porque o elenco agora vem de player_availability_fotmob.
+    valor_cadastro: dict[int, float] = {}
+    for lote in _dividir_em_lotes(player_ids):
+        linhas_valor = supabase.table("players").select("id, market_value").in_("id", lote).execute().data or []
+        valor_cadastro.update({l["id"]: l["market_value"] for l in linhas_valor if l.get("market_value") is not None})
 
     ratings_rows = []
     for lote in _dividir_em_lotes(player_ids):
@@ -428,7 +454,7 @@ def montar_features_elenco_atual(
     agora = dt.datetime.now(dt.timezone.utc)
     df = df.merge(df_ratings, on="player_id", how="left")
     df["media_rating_5j"] = df["rating"].fillna(6.0)
-    df["valor_mercado_eur"] = df["player_id"].map(valor_mais_recente).fillna(df["market_value"]).fillna(100000)
+    df["valor_mercado_eur"] = df["player_id"].map(valor_mais_recente).fillna(df["player_id"].map(valor_cadastro)).fillna(100000)
     df["hierarquia_elenco"] = df["player_id"].map(hierarquia_por_jogador).fillna(0.5)
     df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
     df["is_lesionado"] = 0
@@ -469,7 +495,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
     league_id_por_time, nome_liga_por_league_id = mapear_ligas(supabase, fixtures)
     df_features = montar_features_elenco_atual(supabase, team_ids, league_id_por_time, nome_liga_por_league_id)
     if df_features.empty:
-        logger.warning("Sem elenco atual (players.last_team_id) para os times das fixtures -- nada a prever.")
+        logger.warning("Sem elenco atual (player_availability_fotmob) para os times das fixtures -- nada a prever.")
         return 0
 
     df_features = df_features.dropna(subset=FEATURES)
@@ -491,6 +517,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
                         "player_id": int(jogador["player_id"]),
                         "prob_titular": float(jogador["prob_titular"]),
                         "is_titular_previsto": jogador["player_id"] in titulares_previstos,
+                        "posicao_bucket": int(jogador["usual_position_id"]) if pd.notna(jogador["usual_position_id"]) else None,
                         "model_version": "xi_titular_ensemble",
                         # Explícito -- `default now()` só se aplica a INSERT novo;
                         # sem isso aqui, upsert em cima de linha já existente

@@ -2,8 +2,8 @@ name: Predição do XI Titular Provável (fixtures futuras)
 
 # Roda scripts/rodar_xi_previsto.py -- pra cada partida `scheduled` nos
 # próximos 7 dias, calcula probabilidade de titular por jogador do elenco
-# atual (players.last_team_id, excluindo lesionado via
-# player_availability_fotmob) usando o ensemble de modelos treinado por
+# atual (player_availability_fotmob, snapshot real do elenco + posição,
+# excluindo lesionado) usando o ensemble de modelos treinado por
 # treinar_modelo_xi.yml, e grava em xi_previsto.
 #
 # Roda depois do sync de desfalques (elenco_desfalques_sync.yml, 05:00 UTC)
