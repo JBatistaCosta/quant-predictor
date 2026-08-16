@@ -229,7 +229,7 @@ async function calcularStatsXi(supabase) {
     if (!(chaveReal in realPorChave)) continue;
     const chaveGrupo = `${p.match_id}__${p.team_id}`;
     if (!porGrupoTime[chaveGrupo]) {
-      porGrupoTime[chaveGrupo] = { model_version: p.model_version, league_id: match.league_id, season: match.season, linhas: [] };
+      porGrupoTime[chaveGrupo] = { matchId: p.match_id, model_version: p.model_version, league_id: match.league_id, season: match.season, linhas: [] };
     }
     porGrupoTime[chaveGrupo].linhas.push({
       player_id: p.player_id,
@@ -248,7 +248,7 @@ async function calcularStatsXi(supabase) {
 
     const chave = `${g.model_version}__${g.league_id}__${g.season}`;
     if (!agregados[chave]) {
-      agregados[chave] = { model_version: g.model_version, league_id: g.league_id, season: g.season, precisoes: [], exatos: [], linhas: [] };
+      agregados[chave] = { model_version: g.model_version, league_id: g.league_id, season: g.season, precisoes: [], exatos: [], linhas: [], matchIds: new Set() };
     }
     const reais = new Set(g.linhas.filter((l) => l.real).map((l) => l.player_id));
     const previstos = new Set(g.linhas.filter((l) => l.previsto).map((l) => l.player_id));
@@ -256,6 +256,7 @@ async function calcularStatsXi(supabase) {
     agregados[chave].precisoes.push(acertos / 11);
     agregados[chave].exatos.push(reais.size === previstos.size && [...reais].every((id) => previstos.has(id)) ? 1 : 0);
     agregados[chave].linhas.push(...g.linhas);
+    agregados[chave].matchIds.add(g.matchId);
   });
 
   return Object.values(agregados).map((a) => {
@@ -283,7 +284,12 @@ async function calcularStatsXi(supabase) {
       model_version: a.model_version,
       league_id: a.league_id,
       season: a.season,
-      n_partidas: a.precisoes.length,
+      // partidas DISTINTAS avaliadas -- a.precisoes.length conta pares
+      // (partida, time), que dobraria a contagem (achado testando em
+      // produção: Brasileirão 2018 aparecia com o dobro de "partidas" do
+      // que a temporada real tem -- parte é essa contagem errada, parte é
+      // duplicata real de linha em `matches`, ver nota registrada no repo).
+      n_partidas: a.matchIds.size,
       n_previsoes: n,
       precisao_media_top11: a.precisoes.reduce((s, v) => s + v, 0) / a.precisoes.length,
       taxa_xi_exato: a.exatos.reduce((s, v) => s + v, 0) / a.exatos.length,
