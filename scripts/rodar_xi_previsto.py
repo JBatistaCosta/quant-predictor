@@ -475,6 +475,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
     df_features = df_features.dropna(subset=FEATURES)
     df_features["prob_titular"] = prever_probabilidades(modelos, df_features)
 
+    agora = dt.datetime.now(dt.timezone.utc).isoformat()
     linhas = []
     for _, fixture in fixtures.iterrows():
         for team_id in (fixture["home_team_id"], fixture["away_team_id"]):
@@ -491,12 +492,30 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
                         "prob_titular": float(jogador["prob_titular"]),
                         "is_titular_previsto": jogador["player_id"] in titulares_previstos,
                         "model_version": "xi_titular_ensemble",
+                        # Explícito -- `default now()` só se aplica a INSERT novo;
+                        # sem isso aqui, upsert em cima de linha já existente
+                        # (ON CONFLICT DO UPDATE) mantinha o gerado_em antigo,
+                        # já que a coluna nunca era mencionada no payload.
+                        "gerado_em": agora,
                     }
                 )
 
     if not linhas:
         logger.info("Nenhuma linha gerada.")
         return 0
+
+    # Achado em produção: um jogador titular numa rodada anterior que deixa de
+    # ser selecionado nesta (saiu do elenco, ficou suspenso, restrição
+    # posicional mudou a seleção) nunca tinha seu is_titular_previsto=true
+    # antigo desfeito -- o upsert só ESCREVE linhas presentes em `linhas`
+    # agora, nunca limpa o que ficou de fora. Resultado: grupos (match,team)
+    # acumulavam mais de 11 titulares ao longo de rodadas sucessivas (visto
+    # em produção: grupos com até 18). Zera o flag pra todo mundo nas
+    # partidas desta rodada ANTES do upsert, que então marca true só pros
+    # 11 realmente selecionados agora.
+    match_ids_rodada = [int(m) for m in fixtures["id"].tolist()]
+    for lote in _dividir_em_lotes(match_ids_rodada):
+        supabase.table("xi_previsto").update({"is_titular_previsto": False}).in_("match_id", lote).eq("is_titular_previsto", True).execute()
 
     for lote in _dividir_em_lotes(linhas, 500):
         supabase.table("xi_previsto").upsert(lote, on_conflict="match_id,team_id,player_id").execute()
