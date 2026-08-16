@@ -2384,37 +2384,18 @@ def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
     return agregado
 
 
-def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict[int, dict]]:
-    """Força do XI titular pra fixtures futuras -- BEST-EFFORT: escalação
-    confirmada só costuma sair ~1h antes do apito inicial, então isso fica
-    sem dado (dict vazio) pra quase toda fixture agendada com dias de
-    antecedência -- mesma limitação de fonte já aceita em
-    `obter_arbitro_atual` (não é bug, é o `predict.yml` rodando de dias
-    antes do jogo, mas a escalação só existir perto da hora). Quando JÁ
-    está confirmada (rara), usa `player_ratings.rating` (rating ATUAL,
-    mesmo dado de `obter_squad_rating_atual`) e o valor de mercado mais
-    recente conhecido de cada titular (não precisa de ponto-no-tempo
-    histórico aqui -- "agora" é a única referência que importa pra uma
-    fixture futura). Devolve `{match_id: {team_id: {...}}}` -- o caller
-    (`montar_features_fixtures`) escolhe o lado (casa/fora) por partida."""
-    resultado: dict[int, dict[int, dict]] = {}
-    if not match_ids:
-        return resultado
+def _agregar_forca_xi(supabase: Client, membros: list[dict]) -> dict[tuple[int, int], dict]:
+    """Núcleo de cálculo compartilhado por `obter_titular_atual`: dado um
+    conjunto de linhas `{match_id, team_id, player_id}` (venham de onde
+    vierem -- escalação real ou XI previsto), busca `player_ratings.rating`
+    e o valor de mercado mais recente de cada jogador e agrega por
+    (match_id, team_id). Mesmo cálculo nos dois casos -- só muda a fonte
+    dos 11 jogadores antes de chamar isso."""
+    membros = [m for m in membros if m.get("player_id") is not None]
+    if not membros:
+        return {}
 
-    lineup = (
-        supabase.table("match_lineup_fotmob")
-        .select("match_id, team_id, player_id")
-        .eq("is_starter", True)
-        .in_("match_id", match_ids)
-        .execute()
-        .data
-        or []
-    )
-    lineup = [l for l in lineup if l.get("player_id") is not None]
-    if not lineup:
-        return resultado
-
-    player_ids = list({l["player_id"] for l in lineup})
+    player_ids = list({m["player_id"] for m in membros})
     ratings = (
         supabase.table("player_ratings").select("player_id, rating").in_("player_id", player_ids).execute().data or []
     )
@@ -2437,18 +2418,70 @@ def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dic
             valor_mais_recente[v["player_id"]] = (v["value_date"], float(v["value_eur"]))
 
     por_match_team: dict[tuple[int, int], list[dict]] = {}
-    for l in lineup:
-        por_match_team.setdefault((l["match_id"], l["team_id"]), []).append(l)
+    for m in membros:
+        por_match_team.setdefault((m["match_id"], m["team_id"]), []).append(m)
 
+    saida: dict[tuple[int, int], dict] = {}
     for (match_id, team_id), jogadores in por_match_team.items():
         ratings_xi = [rating_por_jogador[j["player_id"]] for j in jogadores if j["player_id"] in rating_por_jogador]
         valores_xi = [valor_mais_recente[j["player_id"]][1] for j in jogadores if j["player_id"] in valor_mais_recente]
         if not ratings_xi and not valores_xi:
             continue
-        resultado.setdefault(match_id, {})[team_id] = {
+        saida[(match_id, team_id)] = {
             "titular_rating": float(np.mean(ratings_xi)) if ratings_xi else float("nan"),
             "titular_valor_mercado": float(np.sum(valores_xi)) if valores_xi else float("nan"),
         }
+    return saida
+
+
+def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict[int, dict]]:
+    """Força do XI titular pra fixtures futuras -- escalação REAL confirmada
+    quando existir, senão cai pro XI PREVISTO (`xi_previsto`, gerado por
+    scripts/rodar_xi_previsto.py) -- antes disso a feature ficava `NaN` pra
+    quase toda fixture agendada com dias de antecedência (escalação
+    confirmada só costuma sair ~1h antes do apito, mesma limitação de fonte
+    já aceita em `obter_arbitro_atual`), já que o fallback pro modelo
+    previsto não existia. Usa `player_ratings.rating` (rating ATUAL, mesmo
+    dado de `obter_squad_rating_atual`) e o valor de mercado mais recente
+    conhecido de cada titular (não precisa de ponto-no-tempo histórico aqui
+    -- "agora" é a única referência que importa pra uma fixture futura).
+
+    Devolve `{match_id: {team_id: {..., "fonte": "real"|"previsto"}}}` --
+    `fonte` deixa explícito pra quem consome qual confiança tem o dado
+    (escalação oficial vs. previsão do próprio modelo de XI). Assume que a
+    escalação real, quando existe, cobre os DOIS times da partida de uma
+    vez (teamsheet oficial) -- o fallback é decidido por `match_id` inteiro,
+    não por time isolado."""
+    resultado: dict[int, dict[int, dict]] = {}
+    if not match_ids:
+        return resultado
+
+    lineup = (
+        supabase.table("match_lineup_fotmob")
+        .select("match_id, team_id, player_id")
+        .eq("is_starter", True)
+        .in_("match_id", match_ids)
+        .execute()
+        .data
+        or []
+    )
+    for (match_id, team_id), agregado in _agregar_forca_xi(supabase, lineup).items():
+        resultado.setdefault(match_id, {})[team_id] = {**agregado, "fonte": "real"}
+
+    match_ids_pendentes = [m for m in match_ids if m not in resultado]
+    if match_ids_pendentes:
+        previsto = (
+            supabase.table("xi_previsto")
+            .select("match_id, team_id, player_id")
+            .eq("is_titular_previsto", True)
+            .in_("match_id", match_ids_pendentes)
+            .execute()
+            .data
+            or []
+        )
+        for (match_id, team_id), agregado in _agregar_forca_xi(supabase, previsto).items():
+            resultado.setdefault(match_id, {})[team_id] = {**agregado, "fonte": "previsto"}
+
     return resultado
 
 
