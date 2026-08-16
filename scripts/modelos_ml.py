@@ -32,6 +32,7 @@ from dados_historicos import (
     FEATURES,
     FEATURES_V9,
     FEATURES_V10,
+    FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -108,6 +109,10 @@ PARAMS_DEFAULT = {
     # Mesmos defaults de sempre, ainda sem tuning dedicado.
     "catboost_xg_regressor_v1": {"depth": 6, "learning_rate": 0.05},
     "catboost_xgot_regressor_v1": {"depth": 6, "learning_rate": 0.05},
+    # v2 -- mesmos hiperparâmetros do v1, só muda o feature set (força do
+    # XI titular, ver FEATURES_XG_XI_V2 em dados_historicos.py).
+    "catboost_xg_regressor_v2": {"depth": 6, "learning_rate": 0.05},
+    "catboost_xgot_regressor_v2": {"depth": 6, "learning_rate": 0.05},
     # v9 — mesmas features da v8; MLP tunado após primeira rodada mostrar log-loss ~1.07
     # (próximo ao baseline aleatório 1.099). Arquitetura maior + mais paciência no early stopping.
     "catboost_v9": {"depth": 6, "learning_rate": 0.05},
@@ -128,6 +133,10 @@ FEATURES_POR_MODELO = {
     # prevendo um valor contínuo (gols esperados / xGOT) em vez de classe.
     "catboost_xg_regressor_v1": FEATURES,
     "catboost_xgot_regressor_v1": FEATURES,
+    # v2 -- v1 + força do XI titular na data da partida (titular_rating/
+    # titular_valor_mercado home/away + diferenciais), ver FEATURES_XG_XI_V2.
+    "catboost_xg_regressor_v2": FEATURES_XG_XI_V2,
+    "catboost_xgot_regressor_v2": FEATURES_XG_XI_V2,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     "catboost_v9": FEATURES_V9,
     "xgboost_v9": FEATURES_V9,

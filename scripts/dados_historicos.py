@@ -2536,6 +2536,51 @@ FEATURES_NUMERICAS_V3B = FEATURES_NUMERICAS_V5 + [
 ]
 FEATURES_V3B = FEATURES_NUMERICAS_V3B + CAT_FEATURES
 
+# xG/xGOT regressor v2 (força do XI): mesmo ESCOPO pretendido pela v1 (elo +
+# forma de gols + forma de xG + liga) + força do XI TITULAR na data da
+# partida -- `titular_rating_home`/`_away` (rating médio do XI),
+# `titular_valor_mercado_home`/`_away` (soma do valor de mercado do XI) e os
+# diferenciais já calculados em `montar_dataset_ml_empilhado`
+# (`rating_diff_xi`/`valor_diff_xi`). Pedido do usuário: usar a força do XI
+# (previsto quando a escalação real ainda não saiu, real quando já saiu --
+# ver `obter_titular_atual`) como sinal de ataque/defesa esperado pra
+# prever xG/xGOT.
+#
+# NÃO reaproveita a constante `FEATURES`/`FEATURES_NUMERICAS` (v1) de
+# propósito: achado testando esta mudança -- `COLUNAS_FORMA_XG` (usada por
+# `FEATURES_NUMERICAS`) ainda aponta pros nomes ANTIGOS de coluna
+# (`media_xg_5j_home` etc.) de antes de `_forma_por_mando_multi_janelas`
+# substituir o cálculo de forma de xG por janelas múltiplas (5j/10j/20j +
+# decay, nomes `xg_home_5j` etc.) -- essas colunas antigas nunca são
+# geradas por `montar_dataset_ml_empilhado` hoje, então `FEATURES`/
+# `FEATURES_NUMERICAS_V9`/`_V10` (que herdam `COLUNAS_FORMA_XG`/
+# `COLUNAS_FORMA_XGOT`) quebram com KeyError ao selecionar
+# `dataset[features]` -- bug pré-existente, fora do escopo desta mudança
+# (reportado separadamente ao usuário; não corrigido aqui pra não mexer no
+# feature set em produção dos modelos v9/v10 sem uma investigação própria
+# do impacto no lado AO VIVO de `rodar_predicoes.py`, que ainda usa a
+# nomenclatura antiga `media_xg_5j_home` pra montar a feature da PRÓXIMA
+# partida). Esta v2 usa os nomes de coluna que realmente existem no
+# dataset hoje (`xg_home_5j`/`xg_sofrido_home_5j`/`xg_away_5j`/
+# `xg_sofrido_away_5j`), preservando o mesmo escopo pretendido da v1 sem
+# herdar o bug.
+FEATURES_NUMERICAS_XG_XI_V2 = [
+    "elo_home",
+    "elo_away",
+    *COLUNAS_FORMA_GOLS.values(),
+    "xg_home_5j",
+    "xg_sofrido_home_5j",
+    "xg_away_5j",
+    "xg_sofrido_away_5j",
+    "titular_rating_home",
+    "titular_rating_away",
+    "titular_valor_mercado_home",
+    "titular_valor_mercado_away",
+    "rating_diff_xi",
+    "valor_diff_xi",
+]
+FEATURES_XG_XI_V2 = FEATURES_NUMERICAS_XG_XI_V2 + CAT_FEATURES
+
 # v6 (progresso da temporada): tudo da v5 + `progresso_temporada` (0 a 1),
 # pra o modelo distinguir início de temporada (padrões de forma ainda
 # ruidosos, poucos pontos disputados) de reta final (motivação de
