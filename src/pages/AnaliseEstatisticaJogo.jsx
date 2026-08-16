@@ -23,7 +23,7 @@
 //      xG real no banco (Brasileirão e quase tudo fora das 5 europeias).
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History, Calculator, Camera, ScanLine } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History, Calculator, Camera, ScanLine, Users } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { poisson, dixonColesTau, DIXON_COLES_RHO } from '../utils/poisson';
 import { getLambdaFormula } from '../utils/lambdaFormulas';
@@ -357,6 +357,23 @@ async function buscarContextoJogo(matchId) {
   return data || null;
 }
 
+// XI titular previsto (xi_previsto, gerado por scripts/rodar_xi_previsto.py
+// via workflow prever_xi.yml) — só existe pra fixture 'scheduled' dentro da
+// janela de dias à frente rodada pelo cron (hoje 7 dias), então também só
+// faz sentido buscar pra jogo futuro, mesmo espírito de buscarDesfalques.
+// Embute players(name, usual_position_id) pra não precisar de 2a consulta —
+// usual_position_id decodificado nesta sessão (0=goleiro/1=defesa/2=meio/
+// 3=ataque, validado por correlação com match_player_stats_fotmob.
+// is_goalkeeper e padrão de gols/assistências/interceptações/toques na área).
+async function buscarXiPrevisto(matchId) {
+  const { data } = await supabase
+    .from('xi_previsto')
+    .select('team_id, player_id, prob_titular, is_titular_previsto, players(name, usual_position_id)')
+    .eq('match_id', matchId)
+    .order('prob_titular', { ascending: false });
+  return data || [];
+}
+
 // Desfalques atuais dos dois elencos (player_availability_fotmob, snapshot
 // mantido por ingestao_fotmob_elenco.py) — só faz sentido pra jogo FUTURO/
 // próximo: o snapshot é o estado de HOJE, não o da data de um jogo passado.
@@ -503,6 +520,82 @@ function PainelContextoJogo({ contexto }) {
           {contexto.attendance != null && ` · Público ${contexto.attendance.toLocaleString('pt-BR')}`}
         </p>
       )}
+    </div>
+  );
+}
+
+const POSICAO_LABEL = { 0: 'Goleiro', 1: 'Defesa', 2: 'Meio-campo', 3: 'Ataque' };
+const ORDEM_POSICAO = [0, 1, 2, 3];
+
+function ListaJogadoresXi({ jogadores }) {
+  return (
+    <ul className="space-y-0.5">
+      {jogadores.map(j => (
+        <li key={j.player_id} className="text-xs text-slate-300 flex items-center justify-between gap-2">
+          <span>{j.players?.name || `Jogador #${j.player_id}`}</span>
+          <span className="text-[10px] text-slate-500 shrink-0">{Math.round(j.prob_titular * 100)}%</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PainelXiPrevisto({ xiPrevisto, jogo }) {
+  if (!xiPrevisto || xiPrevisto.length === 0) return null;
+
+  const renderTime = (teamId, nome) => {
+    const titulares = xiPrevisto.filter(x => x.team_id === teamId && x.is_titular_previsto);
+    if (titulares.length === 0) {
+      return (
+        <div key={teamId} className="bg-slate-900 rounded-lg p-3">
+          <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">{nome}</span>
+          <p className="text-xs text-slate-600">Sem elenco suficiente pra prever.</p>
+        </div>
+      );
+    }
+    const porPosicao = ORDEM_POSICAO.map(pos => ({
+      pos,
+      jogadores: titulares.filter(t => t.players?.usual_position_id === pos).sort((a, b) => b.prob_titular - a.prob_titular),
+    })).filter(g => g.jogadores.length > 0);
+    const semPosicao = titulares
+      .filter(t => !ORDEM_POSICAO.includes(t.players?.usual_position_id))
+      .sort((a, b) => b.prob_titular - a.prob_titular);
+
+    return (
+      <div key={teamId} className="bg-slate-900 rounded-lg p-3">
+        <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">{nome} ({titulares.length})</span>
+        <div className="space-y-2">
+          {porPosicao.map(({ pos, jogadores }) => (
+            <div key={pos}>
+              <span className="text-[10px] text-slate-600 uppercase">{POSICAO_LABEL[pos]}</span>
+              <ListaJogadoresXi jogadores={jogadores} />
+            </div>
+          ))}
+          {semPosicao.length > 0 && (
+            <div>
+              <span className="text-[10px] text-slate-600 uppercase">Posição não identificada</span>
+              <ListaJogadoresXi jogadores={semPosicao} />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+      <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <Users className="text-emerald-400" size={16} /> XI titular previsto
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {renderTime(jogo.home_team_id, jogo.home?.name)}
+        {renderTime(jogo.away_team_id, jogo.away?.name)}
+      </div>
+      <p className="text-[10px] text-slate-600 mt-2">
+        Previsão de modelo (ensemble LightGBM/XGBoost/CatBoost) sobre o elenco atual, respeitando 1 goleiro / 3-5 defensores
+        / 3-5 meio-campistas / 1-3 atacantes — não é escalação oficial confirmada. Já exclui lesionados e suspensos por
+        cartão conhecidos no momento da predição.
+      </p>
     </div>
   );
 }
@@ -824,6 +917,7 @@ export default function AnaliseEstatisticaJogo() {
   const [estimativaEscanteios, setEstimativaEscanteios] = useState(null);
   const [contextoJogo, setContextoJogo] = useState(null);
   const [desfalques, setDesfalques] = useState([]);
+  const [xiPrevisto, setXiPrevisto] = useState([]);
   const [importancia, setImportancia] = useState(null);
   const [ocrOverride, setOcrOverride] = useState(null); // { mandante: metricas|null, visitante: metricas|null }
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -852,7 +946,7 @@ export default function AnaliseEstatisticaJogo() {
       // seria anacronismo).
       const jogoFuturo = j.status !== 'finished';
 
-      const [tM, tV, comparacao, precisao, mediasMandante, mediasVisitante, escanteios, contexto, desf, imp] = await Promise.all([
+      const [tM, tV, comparacao, precisao, mediasMandante, mediasVisitante, escanteios, contexto, desf, imp, xiPrev] = await Promise.all([
         buscarTendenciasTime(j.home_team_id, referencia, n),
         buscarTendenciasTime(j.away_team_id, referencia, n),
         buscarComparacaoModeloMercado(j.id),
@@ -863,6 +957,7 @@ export default function AnaliseEstatisticaJogo() {
         buscarContextoJogo(j.id),
         jogoFuturo ? buscarDesfalques(j.home_team_id, j.away_team_id) : Promise.resolve([]),
         buscarImportancia(j.league_id, j.season, j.match_date, j.home_team_id, j.away_team_id),
+        jogoFuturo ? buscarXiPrevisto(j.id) : Promise.resolve([]),
       ]);
       setTendenciasMandante(tM);
       setTendenciasVisitante(tV);
@@ -871,6 +966,7 @@ export default function AnaliseEstatisticaJogo() {
       setEstimativaEscanteios(escanteios);
       setContextoJogo(contexto);
       setDesfalques(desf);
+      setXiPrevisto(xiPrev);
       setImportancia(imp);
       setOcrOverride(null);
       setOcrError('');
@@ -995,6 +1091,8 @@ export default function AnaliseEstatisticaJogo() {
       <PainelContextoJogo contexto={contextoJogo} />
 
       <PainelImportanciaDesfalques importancia={importancia} desfalques={desfalques} jogo={jogo} />
+
+      <PainelXiPrevisto xiPrevisto={xiPrevisto} jogo={jogo} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <PainelTendencias nome={jogo.home?.name} crestUrl={jogo.home?.crest_url} tendencias={tendenciasMandante} ladoEsquerda />
