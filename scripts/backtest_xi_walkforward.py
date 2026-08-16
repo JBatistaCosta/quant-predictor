@@ -76,8 +76,8 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
     grupo = df_teste[["match_id", "team_id", "is_starter"]].copy()
     grupo["proba"] = y_proba
 
-    precisoes, exatos = [], []
-    for _, g in grupo.groupby(["match_id", "team_id"]):
+    precisoes, exatos, match_ids_avaliados = [], [], set()
+    for (match_id, _team_id), g in grupo.groupby(["match_id", "team_id"]):
         if len(g) < 11 or g["is_starter"].sum() == 0:
             continue
         top11 = g.sort_values("proba", ascending=False).head(11)
@@ -86,6 +86,7 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
         acertos = len(reais & previstos)
         precisoes.append(acertos / 11)
         exatos.append(1.0 if reais == previstos else 0.0)
+        match_ids_avaliados.add(match_id)
     if not precisoes:
         return None
 
@@ -110,7 +111,14 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
             )
 
     return {
-        "n_partidas": len(precisoes),
+        # partidas DISTINTAS avaliadas -- não confundir com len(precisoes),
+        # que conta pares (partida, time): cada partida real contribui até 2
+        # entradas em precisoes/exatos (uma por time), então usar aquele
+        # número aqui contaria toda partida em dobro (achado testando em
+        # produção -- Brasileirão 2018 aparecia com "1296 partidas" quando o
+        # real é ~380 na temporada, mesmo com a inflação real de partidas
+        # duplicadas na tabela matches -- ver nota no PR).
+        "n_partidas": len(match_ids_avaliados),
         "n_previsoes": int(len(grupo)),
         "precisao_media_top11": float(np.mean(precisoes)),
         "taxa_xi_exato": float(np.mean(exatos)),
