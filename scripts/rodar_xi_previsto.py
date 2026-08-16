@@ -52,6 +52,7 @@ import dados_historicos as dh
 import joblib
 import numpy as np
 import pandas as pd
+from postgrest.exceptions import APIError
 from supabase import Client, create_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -111,14 +112,35 @@ def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1
     `.or_("player_id.gt.X,and(player_id.eq.X,id.gt.Y)")` -- em vez de OFFSET.
     Isso vira um predicado de índice em vez de "pular N linhas", custo
     constante por página independente de profundidade. `query_factory` deve
-    incluir `id` no `.select()`."""
+    incluir `id` no `.select()`.
+
+    Achado em produção nesta sessão (depois de trocar a fonte do elenco de
+    `players.last_team_id` pra `player_availability_fotmob`, ver docstring
+    do módulo): o pool de jogadores candidatos ficou maior (elenco real
+    completo, não só quem apareceu em partida já ingerida) -- alguns lotes
+    de 25 (`TAMANHO_LOTE_TABELA_GRANDE`) incluem jogador veterano com
+    histórico grande o bastante pra um `.in_(player_id, lote)` específico
+    estourar o statement timeout do Postgres mesmo com o índice certo,
+    derrubando o job inteiro no meio (visto 2x rodando `prever_xi.yml`
+    manualmente em produção). Tolerante por lote: se UMA página falhar por
+    timeout, loga e devolve só o que já tinha sido lido daquele lote em vez
+    de propagar -- mesmo espírito de tolerância a dado faltante já usado em
+    todo o resto da função chamadora (rating/valor/hierarquia caem pro
+    default neutro quando não há dado; aqui o "não há dado" é "não deu
+    tempo de buscar", mesmo efeito prático)."""
     linhas: list[dict] = []
     cursor_player_id = 0
     cursor_id = 0
     while True:
         query = query_factory(lote).order("player_id").order("id").limit(tamanho_pagina)
         query = query.or_(f"player_id.gt.{cursor_player_id},and(player_id.eq.{cursor_player_id},id.gt.{cursor_id})")
-        pagina_dados = query.execute().data or []
+        try:
+            pagina_dados = query.execute().data or []
+        except APIError as e:
+            if e.code == "57014":  # statement timeout
+                logger.warning(f"Timeout paginando lote (player_id>{cursor_player_id}) -- seguindo com {len(linhas)} linhas já lidas desse lote.")
+                break
+            raise
         linhas.extend(pagina_dados)
         if len(pagina_dados) < tamanho_pagina:
             break
