@@ -2266,7 +2266,14 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 // de trocar o cooldown entre lotes pra 5s uniforme (era 1s, insuficiente) --
 // com 3 fixtures x 2 lotes = 6 chamadas, 5 intervalos de 5s = 25s + latência
 // real da API, ainda com folga segura.
-const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 3;
+// Subido de novo pra 4 (pedido do usuário, "mais rápido"): medido em
+// produção rodando o backfill completo por horas -- rodada com 3 fixtures
+// leva ~36-39s de verdade (25s de cooldown fixo + ~11-14s de
+// processamento/rede), bem abaixo do teto de 60s. Com 4 fixtures x 2 lotes =
+// 8 chamadas, 7 intervalos de 5s = 35s + processamento ~16s ≈ 51s -- ainda
+// dentro do teto, mas com menos folga (timeout ocasional é só uma rodada
+// desperdiçada, idempotente, tenta de novo sozinho na próxima chamada).
+const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 4;
 
 // BUG REAL corrigido (achado testando em produção antes de rodar o backfill
 // inteiro): a maioria dos pontos de /v4/historical-odds é preço AO VIVO,
