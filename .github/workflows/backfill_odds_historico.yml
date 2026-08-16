@@ -21,14 +21,23 @@ name: Backfill de Odds Históricas (OddsPapi)
 #
 # Não roda tudo numa chamada só de propósito: 14 ligas, ~20 mil partidas
 # faltando no momento em que este workflow foi criado -- muito além do
-# timeout de qualquer execução única. O cron (a cada 6h) garante que o
-# backfill continua avançando sozinho até esgotar todas as ligas, sem
-# precisar de ninguém disparando manualmente ou monitorando um processo em
-# background.
+# timeout de qualquer execução única. O cron garante que o backfill
+# continua avançando sozinho até esgotar todas as ligas, sem precisar de
+# ninguém disparando manualmente ou monitorando um processo em background.
+#
+# `concurrency` + `cancel-in-progress` -- achado real testando manualmente
+# (rodei um workflow_dispatch pra só uma liga enquanto o run agendado
+# ainda tava ativo, e as duas chamadas competiram pela cota da OddsPapi,
+# toda tentativa levou rate-limit): sem isso, um cron de 50min disparando
+# em cima de um run anterior ainda ativo faria a mesma coisa sozinho, sem
+# precisar de nenhuma ação manual. `timeout-minutes` reduzido pra deixar
+# folga confortável abaixo do intervalo do cron, pra cada run terminar
+# sozinho antes do próximo disparo na maioria dos casos (o cancelamento
+# fica como rede de segurança, não o mecanismo principal).
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "*/50 * * * *"
   workflow_dispatch:
     inputs:
       ligas:
@@ -36,10 +45,14 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: backfill-odds-historico
+  cancel-in-progress: true
+
 jobs:
   backfill-odds-historico:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 45
 
     steps:
       - name: Rodar backfill de odds históricas
