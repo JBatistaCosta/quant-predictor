@@ -508,6 +508,15 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
             elenco_time = df_features[df_features["team_id"] == team_id].sort_values("prob_titular", ascending=False)
             if elenco_time.empty:
                 continue
+            # Rede de segurança: achado em produção (upsert falhando com "ON
+            # CONFLICT DO UPDATE command cannot affect row a second time") --
+            # não reproduzido de forma determinística contra o estado atual
+            # de player_availability_fotmob (mesma classe de instabilidade
+            # transitória já documentada alhures neste arquivo), mas o custo
+            # de gravar 1 linha em vez de 2 iguais é zero e elimina a classe
+            # inteira de erro no upsert, então dedupa aqui incondicionalmente
+            # -- mesmo padrão já usado dentro de selecionar_titulares_por_posicao.
+            elenco_time = elenco_time.drop_duplicates(subset="player_id")
             titulares_previstos = selecionar_titulares_por_posicao(elenco_time)
             for _, jogador in elenco_time.iterrows():
                 linhas.append(
