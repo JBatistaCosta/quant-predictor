@@ -70,29 +70,38 @@ def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1
     match_player_stats_fotmob, match_lineup_fotmob), então um lote de até
     1000 player_id facilmente devolve mais de 1000 linhas.
 
-    Achado rodando em produção: OFFSET (`.range()`) deu `statement timeout`
-    repetidas vezes nessas tabelas grandes -- primeiro sem `.order()`
-    (página 17), depois ordenando por `player_id` com lote de 1000 (~14k
-    linhas), e por fim mesmo com lote reduzido a 100 player_id: em
-    `match_player_stats_fotmob` (filtro `minutes_played > 0`) o OFFSET da
-    2ª página (offset=1000) ainda estourou o timeout -- o custo do OFFSET
-    escala com a profundidade da página, não com o tamanho da página, e
-    piora quando o filtro extra não corresponde 1:1 ao índice do ORDER BY.
+    Achado rodando em produção, nessa ordem: (1) sem `.order()`, OFFSET deu
+    timeout na página 17; (2) ordenando só por `player_id` com lote de 1000,
+    timeout mais adiante (~14k linhas); (3) com lote reduzido a 100 e OFFSET
+    ainda ordenado por `player_id, id`, a 2ª página (offset=1000) voltou a
+    dar timeout em `match_player_stats_fotmob` (filtro `minutes_played>0`);
+    (4) trocar pra ORDER BY só `id` piorou -- confirmado via EXPLAIN ANALYZE
+    no Supabase que isso faz o planner IGNORAR o índice de `player_id`
+    (que é exatamente o que casa com o filtro `IN (...)`) e varrer a tabela
+    em ordem de `id`, custando ~quase full-scan pra achar as poucas linhas
+    que batem com os 100 player_id do lote.
 
-    Fix definitivo: paginação por keyset (cursor), não por OFFSET. Ordena só
-    por `id` (chave primária, monotônica e indexada em todas as tabelas que
-    usam esta função) e busca a próxima página com `id > cursor` em vez de
-    pular N linhas -- custo constante por página, independente de quão
-    fundo já paginamos. `query_factory` deve incluir `id` no `.select()`."""
+    Fix definitivo, validado via EXPLAIN ANALYZE em produção (794ms de
+    OFFSET na página 2 vs 5.4ms com o cursor abaixo, mesmos dados): manter
+    ORDER BY `player_id, id` (usa o índice certo) só que paginar por keyset
+    composto -- `(player_id, id) > (cursor_player_id, cursor_id)`, via
+    `.or_("player_id.gt.X,and(player_id.eq.X,id.gt.Y)")` -- em vez de OFFSET.
+    Isso vira um predicado de índice em vez de "pular N linhas", custo
+    constante por página independente de profundidade. `query_factory` deve
+    incluir `id` no `.select()`."""
     linhas: list[dict] = []
+    cursor_player_id = 0
     cursor_id = 0
     while True:
-        resp = query_factory(lote).gt("id", cursor_id).order("id").limit(tamanho_pagina).execute()
-        pagina_dados = resp.data or []
+        query = query_factory(lote).order("player_id").order("id").limit(tamanho_pagina)
+        query = query.or_(f"player_id.gt.{cursor_player_id},and(player_id.eq.{cursor_player_id},id.gt.{cursor_id})")
+        pagina_dados = query.execute().data or []
         linhas.extend(pagina_dados)
         if len(pagina_dados) < tamanho_pagina:
             break
-        cursor_id = pagina_dados[-1]["id"]
+        ultimo = pagina_dados[-1]
+        cursor_player_id = ultimo["player_id"]
+        cursor_id = ultimo["id"]
     return linhas
 
 
