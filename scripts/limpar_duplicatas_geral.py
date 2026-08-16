@@ -17,11 +17,11 @@ from postgrest.exceptions import APIError
 from supabase import create_client
 
 # Configurações de acesso ao Supabase (chave de service_role necessária para escrita/delete)
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get(
-    "SUPABASE_KEY", 
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us"
-)
+# -- SEMPRE via variável de ambiente, nunca hardcoded (achado em produção:
+# uma versão anterior deste arquivo tinha a service_role key de verdade
+# hardcoded como fallback, exposta neste repositório PÚBLICO).
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 DRY_RUN = "--dry-run" in sys.argv
 
