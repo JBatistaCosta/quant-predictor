@@ -2673,11 +2673,65 @@ const ALIASES_ODDSPAPI = {
   'atleticomineiromg': 'clubeatleticomineiro',
   'caparanaensepr': 'clubathleticoparanaense',
 };
+// Segunda camada de casamento, por TOKEN em vez de substring cru na string
+// colapsada -- a checagem acima (ALIASES_ODDSPAPI + substring) continua
+// intacta como primeira tentativa (já validada em produção pros apelidos
+// brasileiros), essa aqui só entra como fallback OR, nunca substitui nada.
+// BUG REAL corrigido (achado auditando Champions League a pedido do
+// usuário, 2026-08-17): 375 das 503 partidas finalizadas da liga nunca
+// batiam por substring -- ou por causa de uma palavra extra no meio do
+// nome nosso ("Club Atlético DE Madrid" vs "Atletico Madrid" -- o "de"
+// quebra o substring mesmo com as mesmas palavras dos dois lados) ou por
+// nome/cidade traduzida ou abreviação sem raiz em comum ("FC Bayern
+// München" vs "Bayern Munich", "AC Sparta Praha" vs "Sparta Prague").
+// tarefaOddsHistorico não tinha como distinguir isso de "liga realmente
+// sem mais dado disponível" -- reportava "Nenhuma partida pendente
+// encontrada" (liga "concluída") com só 25% de fato importado, e o cron
+// seguia pra próxima liga sozinho, mascarando o problema indefinidamente.
+const ALIASES_TOKEN_ODDSPAPI = {
+  munchen: 'munich',        // FC Bayern München / Bayern Munich
+  praha: 'prague',          // AC Sparta Praha, SK Slavia Praha / ...Prague
+  olympiakos: 'olympiacos', // PAE Olympiakos SFP / Olympiacos Piraeus
+  paphos: 'pafos',          // Paphos FC / Pafos FC
+  internazionale: 'inter',  // FC Internazionale Milano / Inter Milano
+};
+// Pares de nome INTEIRO sem nenhum token em comum entre o nosso cadastro e
+// a OddsPapi (sigla vs. nome da cidade, sigla diferente) -- não dá pra
+// resolver por alias de token isolado, o par inteiro precisa ser
+// equivalenciado.
+const ALIASES_NOME_ODDSPAPI = {
+  'sporting clube de portugal': 'sporting cp',
+  'celtic fc': 'celtic glasgow',
+  'galatasaray sk': 'galatasaray istanbul',
+  'juventus fc': 'juventus turin',
+  'athletic club': 'athletic bilbao',
+  'fk shakhtar donetsk': 'fc shakhtar donetsk',
+  'fk kairat': 'fc kairat almaty',
+  'pae olympiakos sfp': 'olympiacos piraeus',
+};
+function normalizarNomeOddsPapiTokens(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+function nomesBatemPorToken(a, b) {
+  let na = normalizarNomeOddsPapiTokens(a), nb = normalizarNomeOddsPapiTokens(b);
+  na = ALIASES_NOME_ODDSPAPI[na] || na;
+  nb = ALIASES_NOME_ODDSPAPI[nb] || nb;
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const tokensA = new Set(na.split(' ').map((t) => ALIASES_TOKEN_ODDSPAPI[t] || t));
+  const tokensB = new Set(nb.split(' ').map((t) => ALIASES_TOKEN_ODDSPAPI[t] || t));
+  return [...tokensA].every((t) => tokensB.has(t)) || [...tokensB].every((t) => tokensA.has(t));
+}
 function nomesBatem(a, b) {
   let x = normalizarTexto2(a), y = normalizarTexto2(b);
   x = ALIASES_ODDSPAPI[x] || x;
   y = ALIASES_ODDSPAPI[y] || y;
-  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+  if (x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x))) return true;
+  return nomesBatemPorToken(a, b);
 }
 
 // Extrai TODAS as seleções de TODOS os mercados presentes num fixture do
