@@ -347,10 +347,22 @@ def avaliar(
     hg = teste.loc[valido, "home_goals"].astype(int).to_numpy()
     ag = teste.loc[valido, "away_goals"].astype(int).to_numpy()
 
+    # Métricas por mercado binário (over/under 2.5, BTTS) reaproveitam a
+    # MESMA matriz de placares e a MESMA função `mercados_de_gols` que grava
+    # as previsões de verdade (`persistir`/`derivar_mercados`) -- fonte
+    # única, sem duplicar a lógica de derivação em dois lugares que podem
+    # divergir. Só esses dois além do 1X2 porque são os únicos com odds
+    # Pinnacle reais em `odds_market` pra comparar/simular carteira (ver
+    # MERCADOS_CARTEIRA_SUPORTADOS em api/model-maintenance.js) -- métrica
+    # de mercado sem odds pra comparar não tem como validar contra o
+    # mercado, só serve de curiosidade.
     log_vero, log_loss_1x2, brier_1x2, acertos = [], [], [], 0
+    log_loss_ou25, brier_ou25, acertos_ou25 = [], [], 0
+    log_loss_btts, brier_btts, acertos_btts = [], [], 0
     for k, pos in enumerate(idx):
         matriz = dist.matriz_placares(float(lam_home[pos]), float(lam_away[pos]), parametros["rho"])
         log_vero.append(dist.log_verossimilhanca_placar(matriz, hg[k], ag[k]))
+        mercados = dist.mercados_de_gols(matriz)
 
         p_home = float(np.tril(matriz, -1).sum())
         p_draw = float(np.trace(matriz))
@@ -362,12 +374,30 @@ def avaliar(
         brier_1x2.append(float(np.sum((probs - alvo) ** 2)))
         acertos += int(np.argmax(probs) == real)
 
+        p_over25 = mercados[("over_under_2.5", "over")]
+        real_over25 = 1 if (hg[k] + ag[k]) > 2.5 else 0
+        log_loss_ou25.append(-np.log(max(p_over25 if real_over25 else 1.0 - p_over25, 1e-15)))
+        brier_ou25.append(float((p_over25 - real_over25) ** 2 + ((1.0 - p_over25) - (1 - real_over25)) ** 2))
+        acertos_ou25 += int((p_over25 >= 0.5) == bool(real_over25))
+
+        p_btts = mercados[("btts", "yes")]
+        real_btts = 1 if (hg[k] > 0 and ag[k] > 0) else 0
+        log_loss_btts.append(-np.log(max(p_btts if real_btts else 1.0 - p_btts, 1e-15)))
+        brier_btts.append(float((p_btts - real_btts) ** 2 + ((1.0 - p_btts) - (1 - real_btts)) ** 2))
+        acertos_btts += int((p_btts >= 0.5) == bool(real_btts))
+
     metricas = {
         "n_teste": int(len(idx)),
         "log_verossimilhanca_placar": float(np.mean(log_vero)),
         "log_loss_1x2": float(np.mean(log_loss_1x2)),
         "brier_1x2": float(np.mean(brier_1x2)),
         "acuracia_1x2": acertos / max(len(idx), 1),
+        "log_loss_over_under_2.5": float(np.mean(log_loss_ou25)),
+        "brier_over_under_2.5": float(np.mean(brier_ou25)),
+        "acuracia_over_under_2.5": acertos_ou25 / max(len(idx), 1),
+        "log_loss_btts": float(np.mean(log_loss_btts)),
+        "brier_btts": float(np.mean(brier_btts)),
+        "acuracia_btts": acertos_btts / max(len(idx), 1),
         "rho": parametros["rho"],
     }
 
