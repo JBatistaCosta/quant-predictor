@@ -83,31 +83,112 @@ function modelosParaResumoWF(metrics) {
 // Sub-componentes de tab
 // ──────────────────────────────────────────────────────────────
 
+// O modelo misto (hibrido_parametrico) grava métricas de
+// scripts/treinar_modelo_hibrido.py (avaliar + baselines) -- log-verossimilhança
+// do placar, log-loss/brier/acurácia do 1X2, baselines de climatologia e
+// Poisson sem covariáveis, e opcionalmente escanteios. Nomes de chave
+// diferentes dos classificadores (accuracy/log_loss/brier_score), então caem
+// em branco (fmtPct/fmt4 de undefined) se renderizados pelo card padrão --
+// detecta pela presença de log_verossimilhanca_placar, exclusiva desse modelo.
+function ehMetricasParametrico(mStats) {
+  return mStats.log_verossimilhanca_placar != null;
+}
+
+function MetricaLL({ label, valor, destaque = false }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className={`text-sm ${destaque ? 'text-emerald-400' : 'text-slate-400'}`}>{label}</span>
+      <span className={`font-mono ${destaque ? 'text-emerald-400 font-semibold' : 'text-white'}`}>{fmt4(valor)}</span>
+    </div>
+  );
+}
+
+function CardMetricasParametrico({ modelName, mStats }) {
+  const temCorners = mStats.log_verossimilhanca_corners != null;
+  return (
+    <div className="sm:col-span-3 bg-slate-800 rounded-lg p-4 border border-slate-700">
+      <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-slate-700 pb-2" style={{ color: corAlgo(modelName) }}>
+        {modelName}
+      </h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div>
+          <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">
+            Log-verossimilhança do placar (maior = melhor)
+          </p>
+          <div className="space-y-1.5">
+            <MetricaLL label="Modelo misto" valor={mStats.log_verossimilhanca_placar} destaque />
+            <MetricaLL label="Climatologia (baseline)" valor={mStats.climatologia_log_verossimilhanca} />
+            <MetricaLL label="Poisson sem covariáveis (baseline)" valor={mStats.poisson_sem_covariaveis_log_verossimilhanca} />
+          </div>
+          <p className="text-[10px] text-slate-600 mt-2">
+            Mede a distribuição conjunta inteira (todos os mercados coerentes por construção), não um mercado isolado.
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">1X2 (mesma escala dos classificadores)</p>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-400 flex items-center gap-1"><Target size={14} /> Acurácia</span>
+              <span className="font-mono text-white">{fmtPct(mStats.acuracia_1x2)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-400 flex items-center gap-1"><Activity size={14} /> Log Loss</span>
+              <span className="font-mono text-white">{fmt4(mStats.log_loss_1x2)}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-slate-400 flex items-center gap-1"><TrendingUp size={14} /> Brier Score</span>
+              <span className="font-mono text-white">{fmt4(mStats.brier_1x2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {temCorners && (
+        <div className="mt-4 pt-4 border-t border-slate-700/50">
+          <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">
+            Escanteios ({mStats.n_teste_corners ?? '—'} partidas com dado real)
+          </p>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <MetricaLL label="Log-verossimilhança (total)" valor={mStats.log_verossimilhanca_corners} />
+            <MetricaLL label="Log-loss over/under 9,5" valor={mStats.log_loss_corners_ou95} />
+          </div>
+        </div>
+      )}
+      <p className="text-[10px] text-slate-600 mt-3 pt-3 border-t border-slate-700/50">
+        n teste: {mStats.n_teste ?? '—'} · ρ (Dixon-Coles): {fmt4(mStats.rho)} · mercados gravados: {mStats.n_mercados_gravados ?? '—'}
+      </p>
+    </div>
+  );
+}
+
 function TabResumoSimples({ metrics }) {
   const models = metrics.models || {};
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      {Object.entries(models).map(([modelName, mStats]) => (
-        <div key={modelName} className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-slate-700 pb-2" style={{ color: corAlgo(modelName) }}>
-            {modelName}
-          </h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-400 flex items-center gap-1"><Target size={14} /> Acurácia</span>
-              <span className="font-mono text-white">{fmtPct(mStats.accuracy)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-400 flex items-center gap-1"><Activity size={14} /> Log Loss</span>
-              <span className="font-mono text-white">{fmt4(mStats.log_loss)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-400 flex items-center gap-1"><TrendingUp size={14} /> Brier Score</span>
-              <span className="font-mono text-white">{fmt4(mStats.brier_score ?? mStats.brier_score_medio)}</span>
+      {Object.entries(models).map(([modelName, mStats]) =>
+        ehMetricasParametrico(mStats) ? (
+          <CardMetricasParametrico key={modelName} modelName={modelName} mStats={mStats} />
+        ) : (
+          <div key={modelName} className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-slate-700 pb-2" style={{ color: corAlgo(modelName) }}>
+              {modelName}
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400 flex items-center gap-1"><Target size={14} /> Acurácia</span>
+                <span className="font-mono text-white">{fmtPct(mStats.accuracy)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400 flex items-center gap-1"><Activity size={14} /> Log Loss</span>
+                <span className="font-mono text-white">{fmt4(mStats.log_loss)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-400 flex items-center gap-1"><TrendingUp size={14} /> Brier Score</span>
+                <span className="font-mono text-white">{fmt4(mStats.brier_score ?? mStats.brier_score_medio)}</span>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        )
+      )}
     </div>
   );
 }
