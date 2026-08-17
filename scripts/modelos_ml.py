@@ -32,6 +32,7 @@ from dados_historicos import (
     FEATURES,
     FEATURES_V9,
     FEATURES_V10,
+    FEATURES_V11,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
@@ -135,6 +136,21 @@ PARAMS_DEFAULT = {
     "xgboost_v9": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v9": {"num_leaves": 15, "learning_rate": 0.1},
     "mlp_v9": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
+    # v10/v11 -- mesmos hiperparâmetros da v9 (só o feature set muda entre
+    # versões, não o algoritmo) -- v10 estava FALTANDO aqui até agora: como
+    # `rodar_predicoes.py` acessa `PARAMS_DEFAULT[nome_modelo]` direto (sem
+    # `.get()`) dentro de um `try/except` genérico por modelo, o KeyError
+    # era pego e só LOGADO -- catboost_v10/xgboost_v10/lightgbm_v10/mlp_v10
+    # nunca geraram uma predição de verdade em produção, falha silenciosa
+    # todo dia. Corrigido aqui de propósito (achado ao registrar a v11).
+    "catboost_v10": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v10": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v10": {"num_leaves": 15, "learning_rate": 0.1},
+    "mlp_v10": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
+    "catboost_v11": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v11": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v11": {"num_leaves": 15, "learning_rate": 0.1},
+    "mlp_v11": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
 }
 
 # Lista de features por modelo -- v1-v8 (+v3B) removidos (superadas pela
@@ -174,6 +190,15 @@ FEATURES_POR_MODELO = {
     "xgboost_v10": FEATURES_V10,
     "lightgbm_v10": FEATURES_V10,
     "mlp_v10": FEATURES_V10,
+    # v11 — v10 + força do XI titular com abertura (previsto) e fechamento
+    # (real) como features paralelas -- ver comentário de FEATURES_V11 em
+    # dados_historicos.py. NÃO estende a cadeia v9/v10 automaticamente --
+    # versão opcional/selecionável, validada via walkforward_cv_v11.py
+    # antes de entrar no loop diário (rodar_predicoes.py).
+    "catboost_v11": FEATURES_V11,
+    "xgboost_v11": FEATURES_V11,
+    "lightgbm_v11": FEATURES_V11,
+    "mlp_v11": FEATURES_V11,
 }
 
 
@@ -597,6 +622,14 @@ TREINADORES = {
     "xgboost_v10": (treinar_xgboost, prever_xgboost),
     "lightgbm_v10": (treinar_lightgbm, prever_lightgbm),
     "mlp_v10": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
+    # v11 — v10 + força do XI titular (abertura/fechamento). Registrada aqui
+    # significa que roda no loop diário de rodar_predicoes.py junto com
+    # v9/v10 (mesma convenção -- TREINADORES não tem opt-in separado por
+    # versão), validada em paralelo por walkforward_cv_v11.py.
+    "catboost_v11": (treinar_catboost, prever_catboost),
+    "xgboost_v11": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v11": (treinar_lightgbm, prever_lightgbm),
+    "mlp_v11": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
 }
 
 
@@ -717,3 +750,4 @@ def montar_meta_features(
 # Corrige os placeholders mlp depois de definir as funções.
 TREINADORES["mlp_v9"] = (treinar_mlp, prever_mlp)
 TREINADORES["mlp_v10"] = (treinar_mlp, prever_mlp)
+TREINADORES["mlp_v11"] = (treinar_mlp, prever_mlp)
