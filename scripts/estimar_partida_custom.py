@@ -96,6 +96,21 @@ def main():
         artefato = (cfg.get("model_artifacts") or {}).get(algoritmo_escolhido)
 
         if not artefato:
+            # O modelo misto não persiste artefato: ele não é um
+            # classificador com `predict_proba`, é um conjunto de
+            # regressores de parâmetro mais os parâmetros estruturais
+            # (ρ, dispersão, α/β) estimados na fatia de calibração. Suas
+            # previsões já ficam gravadas em `model_predictions` (todos os
+            # mercados) e os parâmetros em `model_match_estimates`, então a
+            # estimativa sob demanda não faz sentido pra ele -- é melhor
+            # dizer isso do que reclamar de artefato faltando, que manda o
+            # usuário retreinar sem necessidade.
+            if algoritmo_escolhido == "hibrido_parametrico":
+                raise ValueError(
+                    "Configurações do Modelo Misto (paramétrico) não usam estimativa sob demanda: o treino já "
+                    "grava todos os mercados em model_predictions e os parâmetros por partida em "
+                    "model_match_estimates. Consulte a partida direto na página de estatísticas dela."
+                )
             raise ValueError(
                 f"O algoritmo/grupo {algoritmo_escolhido!r} dessa configuração ainda não tem um modelo "
                 "treinado e persistido — treine (ou retreine) a configuração no painel Treino Customizado primeiro."
