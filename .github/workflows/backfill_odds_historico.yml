@@ -80,7 +80,7 @@ jobs:
           d=json.load(sys.stdin)
           falhas=len(d.get('falhas') or [])
           if 'error' in d: print(f\"ERROR|0|0|0|0|0|{d['error']}\")
-          elif 'mensagem' in d: print('DONE|0|0|0|0|0')
+          elif 'mensagem' in d: print(f\"DONE|0|{d.get('total_finalizados_local',0)-d.get('ja_importados',0)}|0|0|0\")
           else: print(f\"OK|{d.get('processados_agora',0)}|{d.get('restantes_estimado',0)}|{d.get('sucesso',0)}|{falhas}|{d.get('sem_historico_na_fonte',0)}\")
           " 2>/dev/null) || PARSED="PARSE_ERROR|0|0|0|0|0"
               STATUS=$(echo "$PARSED" | cut -d'|' -f1)
@@ -92,7 +92,11 @@ jobs:
               echo "$(date -u +%FT%TZ) liga=$LIGA rodada=$RODADA status=$STATUS proc=$PROC sucesso=$SUCESSO falhas=$FALHAS sem_historico=$SEMHIST restantes=$REST"
 
               if [ "$STATUS" = "DONE" ]; then
-                echo "--- liga_id=$LIGA CONCLUIDA $(date -u +%FT%TZ) ---"
+                if [ "$REST" != "0" ]; then
+                  echo "--- liga_id=$LIGA SEM MAIS CORRESPONDENCIA (restam $REST partidas sem fixture casado por nome/data -- provavelmente fora da retencao da OddsPapi ou apelido de time faltando) $(date -u +%FT%TZ) ---"
+                else
+                  echo "--- liga_id=$LIGA CONCLUIDA $(date -u +%FT%TZ) ---"
+                fi
                 break
               fi
               if [ "$STATUS" = "ERROR" ] || [ "$STATUS" = "PARSE_ERROR" ]; then
