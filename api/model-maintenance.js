@@ -1087,7 +1087,7 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
 // ============================================================
 // TAREFA: backtest-custom — carteira simulada EV+ para modelos customizados.
 // Usa predições de model_predictions + odds Pinnacle pre_closing de odds_market.
-// Só suporta mercados com odds disponíveis: 1x2 e over_under_2.5.
+// Só suporta mercados com odds disponíveis: 1x2, over_under_2.5 e btts.
 // Aplica Quarter Kelly com teto de 15% por rodada (mesmo regime da carteira
 // principal em tarefaSimulacaoCarteira). Quando há múltiplos modelos (WF mode),
 // faz a média das probabilidades antes de calcular o edge.
@@ -1108,8 +1108,13 @@ async function tarefaBacktestCustom(supabase, configId) {
   const metrics = cfg.metrics || {};
   const modelNames = metrics.model_names?.length ? metrics.model_names : [cfg.name];
 
-  // Mapeamento target → market key em model_predictions e em odds_market
-  const MARKET_PRED_MAP = { '1x2': '1X2', 'over_under_2.5': 'over_under_2.5' };
+  // Mapeamento target → market key em model_predictions e em odds_market --
+  // mesmos 3 mercados de MERCADOS_CARTEIRA_SUPORTADOS (só os que têm odds
+  // Pinnacle reais em odds_market, ver ali) -- 'btts' faltava aqui mas já
+  // era suportado na Simulação de Carteira principal (tarefaModelosDisponiveis
+  // abaixo), inconsistência pega ao investigar pedido de usar o modelo
+  // misto (target=btts) em carteira personalizada por config.
+  const MARKET_PRED_MAP = { '1x2': '1X2', 'over_under_2.5': 'over_under_2.5', btts: 'btts' };
   const marketPred = MARKET_PRED_MAP[cfg.target];
   if (!marketPred) {
     return {
@@ -1162,6 +1167,7 @@ async function tarefaBacktestCustom(supabase, configId) {
   function calcResultado(m) {
     if (m.status !== 'finished' || m.goals_home == null || m.goals_away == null) return null;
     if (marketPred === 'over_under_2.5') return (m.goals_home + m.goals_away) > 2.5 ? 'over' : 'under';
+    if (marketPred === 'btts') return (m.goals_home > 0 && m.goals_away > 0) ? 'yes' : 'no';
     return m.goals_home > m.goals_away ? 'home' : m.goals_home < m.goals_away ? 'away' : 'draw';
   }
 

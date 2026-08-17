@@ -103,6 +103,20 @@ function MetricaLL({ label, valor, destaque = false }) {
   );
 }
 
+// Mercados binários/1X2 com sufixo de chave em `mStats` -- "" pro 1X2 (chaves
+// sem sufixo, herdadas de antes de existir mais de um mercado) e
+// "_<mercado>" pros demais, todos calculados a partir da MESMA matriz de
+// placar em `avaliar()` (scripts/treinar_modelo_hibrido.py) -- só os que têm
+// odds Pinnacle reais em odds_market pra comparar/simular carteira entram
+// aqui (ver MERCADOS_CARTEIRA_SUPORTADOS em api/model-maintenance.js);
+// mercado sem odds pra comparar não tem como validar, só apareceria com
+// acurácia/log-loss soltos sem contexto.
+const MERCADOS_RESUMO = [
+  { label: '1X2', sufixo: '1x2' },
+  { label: 'Over/Under 2,5', sufixo: 'over_under_2.5' },
+  { label: 'Ambas marcam (BTTS)', sufixo: 'btts' },
+];
+
 function CardMetricasParametrico({ modelName, mStats }) {
   const temCorners = mStats.log_verossimilhanca_corners != null;
   return (
@@ -110,38 +124,47 @@ function CardMetricasParametrico({ modelName, mStats }) {
       <h3 className="text-sm font-bold uppercase tracking-wider mb-4 border-b border-slate-700 pb-2" style={{ color: corAlgo(modelName) }}>
         {modelName}
       </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <div>
-          <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">
-            Log-verossimilhança do placar (maior = melhor)
-          </p>
-          <div className="space-y-1.5">
-            <MetricaLL label="Modelo misto" valor={mStats.log_verossimilhanca_placar} destaque />
-            <MetricaLL label="Climatologia (baseline)" valor={mStats.climatologia_log_verossimilhanca} />
-            <MetricaLL label="Poisson sem covariáveis (baseline)" valor={mStats.poisson_sem_covariaveis_log_verossimilhanca} />
-          </div>
-          <p className="text-[10px] text-slate-600 mt-2">
-            Mede a distribuição conjunta inteira (todos os mercados coerentes por construção), não um mercado isolado.
-          </p>
+      <div>
+        <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">
+          Log-verossimilhança do placar (maior = melhor)
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1.5">
+          <MetricaLL label="Modelo misto" valor={mStats.log_verossimilhanca_placar} destaque />
+          <MetricaLL label="Climatologia (baseline)" valor={mStats.climatologia_log_verossimilhanca} />
+          <MetricaLL label="Poisson sem covariáveis (baseline)" valor={mStats.poisson_sem_covariaveis_log_verossimilhanca} />
         </div>
-        <div>
-          <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">1X2 (mesma escala dos classificadores)</p>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-400 flex items-center gap-1"><Target size={14} /> Acurácia</span>
-              <span className="font-mono text-white">{fmtPct(mStats.acuracia_1x2)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-400 flex items-center gap-1"><Activity size={14} /> Log Loss</span>
-              <span className="font-mono text-white">{fmt4(mStats.log_loss_1x2)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-400 flex items-center gap-1"><TrendingUp size={14} /> Brier Score</span>
-              <span className="font-mono text-white">{fmt4(mStats.brier_1x2)}</span>
-            </div>
-          </div>
+        <p className="text-[10px] text-slate-600 mt-2">
+          Mede a distribuição conjunta inteira (todos os mercados coerentes por construção), não um mercado isolado —
+          as métricas por mercado abaixo são uma projeção da mesma matriz, pra comparar direto com classificadores e odds.
+        </p>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-700/50">
+        <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">Por mercado (mesma escala dos classificadores)</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-slate-700">
+                <th className="text-left text-slate-500 py-1.5 pr-4 font-normal text-xs">Mercado</th>
+                <th className="text-center text-slate-500 py-1.5 px-2 font-normal text-xs">Acurácia</th>
+                <th className="text-center text-slate-500 py-1.5 px-2 font-normal text-xs">Log Loss</th>
+                <th className="text-center text-slate-500 py-1.5 px-2 font-normal text-xs">Brier</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MERCADOS_RESUMO.map(({ label, sufixo }) => (
+                <tr key={sufixo} className="border-b border-slate-800">
+                  <td className="py-1.5 pr-4 text-slate-300">{label}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-white">{fmtPct(mStats[`acuracia_${sufixo}`])}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-white">{fmt4(mStats[`log_loss_${sufixo}`])}</td>
+                  <td className="py-1.5 px-2 text-center font-mono text-white">{fmt4(mStats[`brier_${sufixo}`])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+
       {temCorners && (
         <div className="mt-4 pt-4 border-t border-slate-700/50">
           <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">
@@ -155,6 +178,7 @@ function CardMetricasParametrico({ modelName, mStats }) {
       )}
       <p className="text-[10px] text-slate-600 mt-3 pt-3 border-t border-slate-700/50">
         n teste: {mStats.n_teste ?? '—'} · ρ (Dixon-Coles): {fmt4(mStats.rho)} · mercados gravados: {mStats.n_mercados_gravados ?? '—'}
+        {' · '}modelo derivou dezenas de mercados a mais (placar exato, handicap, faixas) — só os com odds reais entram nesta tabela; use a Carteira Simulada pra ver o resultado prático em 1X2/O-U/BTTS.
       </p>
     </div>
   );
