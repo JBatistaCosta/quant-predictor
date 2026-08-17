@@ -1,10 +1,12 @@
 name: Treino do Modelo de XI Titular Previsto
 
-# Roda scripts/treinar_modelo_xi.py -- treina LightGBM/XGBoost/CatBoost pra
-# prever probabilidade de titular por jogador (a partir do histórico real de
-# match_lineup_fotmob), persiste os 3 artefatos no bucket privado
-# custom-model-artifacts (xi_titular/*.joblib) e registra métricas em
-# models_registry (market=xi_titular).
+# Roda scripts/treinar_modelo_xi.py -- treina 5 modelos base (LightGBM/
+# XGBoost/CatBoost/RandomForest/MLP) pra prever probabilidade de titular por
+# jogador (a partir do histórico real de match_lineup_fotmob), empilha um
+# meta-modelo (LogisticRegression) sobre previsões out-of-fold dos 5 pra
+# stacking, persiste os 6 artefatos no bucket privado custom-model-artifacts
+# (xi_titular/*.joblib) e registra métricas em models_registry
+# (market=xi_titular).
 #
 # Só workflow_dispatch (retreino é ação manual nesse repo, mesmo padrão de
 # treinar_modelo_custom.yml) -- rodar de novo quando match_lineup_fotmob
@@ -16,7 +18,10 @@ on:
 jobs:
   treinar-modelo-xi:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 5 modelos base (RF/MLP mais lentos que os gradient boosting) + OOF em
+    # 3 folds do TimeSeriesSplit (refit por fold) + refit final -- ~7x mais
+    # fits que a versão anterior (só 3 modelos, 1 fit cada), daí a folga maior.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout do repositório
