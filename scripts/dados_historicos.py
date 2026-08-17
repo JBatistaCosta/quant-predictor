@@ -2257,52 +2257,25 @@ def obter_arbitro_atual(supabase: Client, match_ids: list[int]) -> dict[int, dic
     return resultado
 
 
-def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
-    """Força do XI TITULAR confirmado de cada partida histórica (v3B,
-    feature `titular_rating_home`/`_away` + `titular_valor_mercado_home`/
-    `_away`) -- ao contrário de `_carregar_squad_rating_pre_jogo` (v2, usa
-    TODO o elenco que jogou, ponderado por minutos, inclusive quem entrou
-    do banco), aqui é estritamente quem começou (`match_lineup_fotmob.
-    is_starter=true`) -- o sinal que estaria disponível pra quem visse a
-    escalação confirmada ANTES do apito inicial, sem misturar impacto de
-    substituição.
-
-    Rating: `player_rating_history.rating_antes` (mesmo ponto-no-tempo real
-    de `_carregar_squad_rating_pre_jogo`) -- média simples do XI (sem peso
-    de minutos: um titular é um titular, não tem "menos titular").
-
-    Valor de mercado NA DATA DO JOGO (não o valor atual/mais recente, que
-    vazaria valorização/desvalorização POSTERIOR à partida): `merge_asof`
-    pareia cada jogador com o snapshot de `player_market_value_history`
-    mais recente com `value_date <= match_date`, agrupado por `player_id`
-    -- mesmo princípio de ponto-no-tempo já usado em todo o resto deste
-    módulo, aplicado a uma série temporal em vez de um valor "antes desta
-    partida" pré-calculado. Soma (não média) do XI -- valor de mercado é
-    aditivo por natureza (patrimônio do elenco em campo), diferente de
-    rating (nota de habilidade por jogador)."""
+def _agregar_forca_xi_historico(supabase: Client, membros: pd.DataFrame, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Núcleo de agregação compartilhado por `_carregar_titular_pre_jogo`
+    ("fechamento" -- XI real de `match_lineup_fotmob`) e
+    `_carregar_titular_abertura_pre_jogo` ("abertura" -- XI previsto de
+    `xi_titular_walkforward`) -- dado um conjunto de candidatos
+    `(match_id, team_id, player_id)`, busca rating/valor de mercado/idade/
+    altura ponto-no-tempo (mesma disciplina do resto do módulo:
+    `rating_antes` de `player_rating_history`, valor de mercado via
+    `merge_asof` com `value_date <= match_date`) e agrega por
+    `(match_id, team_id)`. Só muda QUEM está em `membros` antes de chamar
+    isso -- extraído de `_carregar_titular_pre_jogo` pra não duplicar essa
+    lógica entre os dois casos (real vs. previsto)."""
     vazio = pd.DataFrame(columns=["match_id", "team_id", "titular_rating_antes", "titular_valor_mercado_antes",
                                     "titular_avg_age_antes", "titular_avg_height"])
-    match_ids = partidas["id"].astype(int).tolist()
-    if not match_ids:
+    if membros.empty:
         return vazio
-
-    def factory_lineup(lote, inicio, fim):
-        return (
-            supabase.table("match_lineup_fotmob")
-            .select("match_id, team_id, player_id")
-            .eq("is_starter", True)
-            .in_("match_id", lote)
-            .order("match_id")
-            .range(inicio, fim)
-        )
-
-    lineup = pd.DataFrame(_paginar_por_lotes_de_id(factory_lineup, match_ids))
-    if lineup.empty or "player_id" not in lineup.columns:
-        return vazio
-    lineup = lineup[lineup["player_id"].notna()].copy()
-    if lineup.empty:
-        return vazio
+    lineup = membros[["match_id", "team_id", "player_id"]].copy()
     lineup["player_id"] = lineup["player_id"].astype(int)
+    match_ids = lineup["match_id"].unique().tolist()
 
     def factory_ratings(lote, inicio, fim):
         return (
@@ -2393,6 +2366,85 @@ def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
         .reset_index()
     )
     return agregado
+
+
+def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Força do XI TITULAR confirmado de cada partida histórica ("fechamento"
+    -- v3B, feature `titular_rating_home`/`_away` + `titular_valor_mercado_
+    home`/`_away`) -- ao contrário de `_carregar_squad_rating_pre_jogo` (v2,
+    usa TODO o elenco que jogou, ponderado por minutos, inclusive quem
+    entrou do banco), aqui é estritamente quem começou (`match_lineup_
+    fotmob.is_starter=true`) -- o sinal que estaria disponível pra quem
+    visse a escalação confirmada ANTES do apito inicial, sem misturar
+    impacto de substituição.
+
+    Em contraste com `_carregar_titular_abertura_pre_jogo` ("abertura",
+    XI previsto ANTES da escalação real sair) -- ver `FEATURES_V11`."""
+    vazio = pd.DataFrame(columns=["match_id", "team_id", "titular_rating_antes", "titular_valor_mercado_antes",
+                                    "titular_avg_age_antes", "titular_avg_height"])
+    match_ids = partidas["id"].astype(int).tolist()
+    if not match_ids:
+        return vazio
+
+    def factory_lineup(lote, inicio, fim):
+        return (
+            supabase.table("match_lineup_fotmob")
+            .select("match_id, team_id, player_id")
+            .eq("is_starter", True)
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    lineup = pd.DataFrame(_paginar_por_lotes_de_id(factory_lineup, match_ids))
+    if lineup.empty or "player_id" not in lineup.columns:
+        return vazio
+    lineup = lineup[lineup["player_id"].notna()].copy()
+    if lineup.empty:
+        return vazio
+
+    return _agregar_forca_xi_historico(supabase, lineup, partidas)
+
+
+def _carregar_titular_abertura_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Força do XI PREVISTO ("abertura" -- feature `titular_rating_abertura_
+    home`/`_away` + `titular_valor_mercado_abertura_home`/`_away`) -- sinal
+    disponível ANTES da escalação real sair, tirado de
+    `xi_titular_walkforward` (previsão de `backtest_xi_walkforward.py`,
+    sem vazamento por construção: cada temporada usa um modelo treinado só
+    com dado anterior a ela). Top-11 por `prob_titular` dentro de cada
+    `(match_id, team_id)`, em contraste com `_carregar_titular_pre_jogo`
+    ("fechamento", XI real confirmado).
+
+    Cobertura parcial por natureza -- só partidas processadas por um run de
+    `backtest_xi_walkforward.py` (mesma temporada mínima de treino exigida
+    lá, `MIN_LINHAS_TREINO`); NaN pro resto, mesmo espírito de cobertura
+    parcial já documentado pra `match_lineup_fotmob`."""
+    vazio = pd.DataFrame(columns=["match_id", "team_id", "titular_rating_antes", "titular_valor_mercado_antes",
+                                    "titular_avg_age_antes", "titular_avg_height"])
+    match_ids = partidas["id"].astype(int).tolist()
+    if not match_ids:
+        return vazio
+
+    def factory_previsto(lote, inicio, fim):
+        return (
+            supabase.table("xi_titular_walkforward")
+            .select("match_id, team_id, player_id, prob_titular")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    previsto = pd.DataFrame(_paginar_por_lotes_de_id(factory_previsto, match_ids))
+    if previsto.empty or "player_id" not in previsto.columns:
+        return vazio
+    previsto = previsto[previsto["player_id"].notna()].copy()
+    if previsto.empty:
+        return vazio
+
+    top11 = previsto.sort_values("prob_titular", ascending=False).groupby(["match_id", "team_id"], as_index=False).head(11)
+
+    return _agregar_forca_xi_historico(supabase, top11, partidas)
 
 
 def _agregar_forca_xi(supabase: Client, membros: list[dict]) -> dict[tuple[int, int], dict]:
@@ -2774,6 +2826,36 @@ FEATURES_NUMERICAS_V10 = FEATURES_NUMERICAS_V9 + [
     "venue_capacity_home",
 ]
 FEATURES_V10 = FEATURES_NUMERICAS_V10 + CAT_FEATURES
+
+# v11 — tudo da v10 + força do XI titular com dois sinais temporais
+# separados, "abertura" (previsto, antes da escalação real sair) e
+# "fechamento" (real, escalação confirmada) -- mesmo espírito do padrão
+# abertura/fechamento já usado pras odds (odds_snapshots), aplicado à força
+# do XI. Os dois entram como features PARALELAS em vez de escolher uma
+# fonte só -- CatBoost/XGBoost/LightGBM toleram NaN nativamente, então o
+# modelo aprende a pesar cada sinal pela sua própria disponibilidade:
+#   • abertura: xi_titular_walkforward (backtest_xi_walkforward.py, sem
+#     vazamento -- cada temporada usa um modelo treinado só com o passado)
+#     -- só cobre partidas processadas por um run de backtest, NaN pro resto.
+#   • fechamento: match_lineup_fotmob (XI real confirmado, mesma fonte de
+#     titular_rating_home/away da v3B/v10, aqui com nome espelhado) --
+#     sempre disponível no histórico (a partida já aconteceu), mas em
+#     produção ao vivo só fica não-nulo perto do apito, dependendo da
+#     ingestão pré-jogo capturar a escalação oficial a tempo.
+# NÃO estende a cadeia v9/v10 automaticamente -- registrada como versão
+# separada (catboost_v11 etc, ver modelos_ml.py) e validada via
+# walkforward_cv_v11.py ANTES de entrar no loop diário de rodar_predicoes.py
+# (cobertura esparsa de XI já foi por isso mesmo excluída da cadeia
+# principal antes -- ver comentário da v6 acima).
+FEATURES_NUMERICAS_V11 = FEATURES_NUMERICAS_V10 + [
+    "titular_rating_abertura_home", "titular_rating_abertura_away",
+    "titular_valor_mercado_abertura_home", "titular_valor_mercado_abertura_away",
+    "titular_rating_fechamento_home", "titular_rating_fechamento_away",
+    "titular_valor_mercado_fechamento_home", "titular_valor_mercado_fechamento_away",
+    "rating_diff_xi_abertura", "valor_diff_xi_abertura",
+    "rating_diff_xi_fechamento", "valor_diff_xi_fechamento",
+]
+FEATURES_V11 = FEATURES_NUMERICAS_V11 + CAT_FEATURES
 
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
@@ -3186,6 +3268,35 @@ def montar_dataset_ml_empilhado(
         on=["id", "away_team_id"], how="left"
     )
 
+    # "Abertura" (v11) -- força do XI PREVISTO antes da escalação real sair
+    # (xi_titular_walkforward, ver _carregar_titular_abertura_pre_jogo) --
+    # ao lado de titular_rating_home/away acima ("fechamento", XI real),
+    # espelhado abaixo com nome paralelo titular_rating_fechamento_home/away
+    # pra FEATURES_V11 usar os dois sinais lado a lado.
+    titular_abertura = _carregar_titular_abertura_pre_jogo(supabase, partidas)
+    colunas_titular_abertura = ["titular_rating_antes", "titular_valor_mercado_antes"]
+    if not titular_abertura.empty:
+        titular_abertura_home = titular_abertura.rename(columns={"match_id": "id", "team_id": "home_team_id"}).rename(
+            columns={c: f"{c.replace('_antes', '')}_abertura_home" for c in colunas_titular_abertura}
+        )
+        titular_abertura_away = titular_abertura.rename(columns={"match_id": "id", "team_id": "away_team_id"}).rename(
+            columns={c: f"{c.replace('_antes', '')}_abertura_away" for c in colunas_titular_abertura}
+        )
+    else:
+        titular_abertura_home = pd.DataFrame(columns=["id", "home_team_id", "titular_rating_abertura_home", "titular_valor_mercado_abertura_home"])
+        titular_abertura_away = pd.DataFrame(columns=["id", "away_team_id", "titular_rating_abertura_away", "titular_valor_mercado_abertura_away"])
+    dataset = dataset.merge(
+        titular_abertura_home[["id", "home_team_id", "titular_rating_abertura_home", "titular_valor_mercado_abertura_home"]],
+        on=["id", "home_team_id"], how="left"
+    )
+    dataset = dataset.merge(
+        titular_abertura_away[["id", "away_team_id", "titular_rating_abertura_away", "titular_valor_mercado_abertura_away"]],
+        on=["id", "away_team_id"], how="left"
+    )
+    for _side in ("home", "away"):
+        dataset[f"titular_rating_fechamento_{_side}"] = dataset.get(f"titular_rating_{_side}")
+        dataset[f"titular_valor_mercado_fechamento_{_side}"] = dataset.get(f"titular_valor_mercado_{_side}")
+
     venue_capacity = _carregar_venue_capacity(supabase, dataset["home_team_id"].dropna().astype(int).tolist())
     dataset["venue_capacity_home"] = dataset["home_team_id"].map(venue_capacity)
 
@@ -3224,6 +3335,10 @@ def montar_dataset_ml_empilhado(
         ("titular_valor_mercado_home", "titular_valor_mercado_away", "valor_diff_xi"),
         ("titular_avg_age_home",       "titular_avg_age_away",       "age_diff_xi"),
         ("titular_avg_height_home",    "titular_avg_height_away",    "height_diff_xi"),
+        ("titular_rating_abertura_home",        "titular_rating_abertura_away",        "rating_diff_xi_abertura"),
+        ("titular_valor_mercado_abertura_home", "titular_valor_mercado_abertura_away", "valor_diff_xi_abertura"),
+        ("titular_rating_fechamento_home",        "titular_rating_fechamento_away",        "rating_diff_xi_fechamento"),
+        ("titular_valor_mercado_fechamento_home", "titular_valor_mercado_fechamento_away", "valor_diff_xi_fechamento"),
         ("posicao_away",               "posicao_home",               "posicao_diff"),
         ("pontos_por_jogo_home",       "pontos_por_jogo_away",       "pontos_diff"),
     ]:
@@ -3285,6 +3400,13 @@ def montar_dataset_ml_empilhado(
         "titular_valor_mercado_home", "titular_valor_mercado_away",
         "titular_avg_age_home", "titular_avg_age_away",
         "titular_avg_height_home", "titular_avg_height_away",
+        # XI Titular abertura/fechamento (v11) -- abertura = XI previsto
+        # (xi_titular_walkforward, antes da escalação sair), fechamento =
+        # XI real (match_lineup_fotmob, alias de titular_rating_home/away)
+        "titular_rating_abertura_home", "titular_rating_abertura_away",
+        "titular_valor_mercado_abertura_home", "titular_valor_mercado_abertura_away",
+        "titular_rating_fechamento_home", "titular_rating_fechamento_away",
+        "titular_valor_mercado_fechamento_home", "titular_valor_mercado_fechamento_away",
         # Venue / contexto de temporada
         "venue_capacity_home",
         "progresso_temporada",
@@ -3307,6 +3429,8 @@ def montar_dataset_ml_empilhado(
         "xg_diff_bayesiano", "xgot_diff_bayesiano",
         "squad_rating_diff",
         "rating_diff_xi", "valor_diff_xi", "age_diff_xi", "height_diff_xi",
+        "rating_diff_xi_abertura", "valor_diff_xi_abertura",
+        "rating_diff_xi_fechamento", "valor_diff_xi_fechamento",
         "xg_momentum_home", "xg_momentum_away",
         "posicao_diff", "pontos_diff",
         # Alvos
