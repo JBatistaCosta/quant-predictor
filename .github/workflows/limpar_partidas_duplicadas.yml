@@ -31,7 +31,11 @@ on:
 jobs:
   limpar-partidas-duplicadas:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Achado real: ~15 grupo(s)/min processando com retentativa (~22
+    # tabelas satélite verificadas por partida perdedora) -- 30min não foi
+    # suficiente pra limpar os ~2000 grupos duplicados encontrados na
+    # primeira auditoria (run cancelado no timeout, não por erro).
+    timeout-minutes: 90
 
     steps:
       - name: Checkout do repositório
