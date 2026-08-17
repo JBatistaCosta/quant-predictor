@@ -61,7 +61,6 @@ jobs:
       # gastar as próximas 2h montando dataset e gravando previsão errada.
       - name: Verificar núcleo paramétrico
         run: python scripts/verificar_distribuicoes.py
-        working-directory: scripts
 
       - name: Configurar Node
         uses: actions/setup-node@v4
