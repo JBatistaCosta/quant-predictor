@@ -18,6 +18,7 @@ const TimeDetalhe = lazy(() => import('./pages/TimeDetalhe'));
 const Ligas = lazy(() => import('./pages/Ligas'));
 const LigaDetalhe = lazy(() => import('./pages/LigaDetalhe'));
 const ModelosStats = lazy(() => import('./pages/ModelosStats'));
+const XiModeloStats = lazy(() => import('./pages/XiModeloStats'));
 const AnaliseHistorica = lazy(() => import('./pages/AnaliseHistorica'));
 const AnaliseEstatisticaJogo = lazy(() => import('./pages/AnaliseEstatisticaJogo'));
 const RatingClubes = lazy(() => import('./pages/RatingClubes'));
@@ -25,11 +26,13 @@ const Jogadores = lazy(() => import('./pages/Jogadores'));
 const JogadorDetalhe = lazy(() => import('./pages/JogadorDetalhe'));
 const ModelBenchmarking = lazy(() => import('./pages/ModelBenchmarking'));
 const SimulacaoCarteira = lazy(() => import('./pages/SimulacaoCarteira'));
+const CarteiraPaperTrading = lazy(() => import('./pages/CarteiraPaperTrading'));
 const RodadaPrevisoes = lazy(() => import('./pages/RodadaPrevisoes'));
 const TreinoCustom = lazy(() => import('./pages/TreinoCustom'));
 const ModeloV9 = lazy(() => import('./pages/ModeloV9'));
 const ExploracaoDados = lazy(() => import('./pages/ExploracaoDados'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
+const ModelosAvancados = lazy(() => import('./pages/ModelosAvancados'));
 
 function CarregandoPagina() {
   return (
@@ -75,6 +78,9 @@ export default function App() {
             <Route path="/modelos" element={
               <ProtectedRoute><Layout><ModelosStats /></Layout></ProtectedRoute>
             } />
+            <Route path="/modelos-xi" element={
+              <ProtectedRoute><Layout><XiModeloStats /></Layout></ProtectedRoute>
+            } />
             <Route path="/historico/:matchId" element={
               <ProtectedRoute><Layout><AnaliseHistorica /></Layout></ProtectedRoute>
             } />
@@ -96,6 +102,9 @@ export default function App() {
             <Route path="/simulacao-carteira" element={
               <ProtectedRoute><Layout><SimulacaoCarteira /></Layout></ProtectedRoute>
             } />
+            <Route path="/carteira-paper-trading" element={
+              <ProtectedRoute><Layout><CarteiraPaperTrading /></Layout></ProtectedRoute>
+            } />
             <Route path="/rodada-atual" element={
               <ProtectedRoute><Layout><RodadaPrevisoes /></Layout></ProtectedRoute>
             } />
@@ -110,6 +119,9 @@ export default function App() {
             } />
             <Route path="/configuracoes" element={
               <ProtectedRoute><Layout><Configuracoes /></Layout></ProtectedRoute>
+            } />
+            <Route path="/modelos-avancados" element={
+              <ProtectedRoute><Layout><ModelosAvancados /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />

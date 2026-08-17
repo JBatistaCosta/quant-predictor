@@ -143,12 +143,23 @@
 //                                   "2024") — a versão fotmob converte automaticamente pro formato
 //                                   "2024/2025" só na chamada externa, nunca no que é gravado.
 //                                   Sem lote: 1 chamada externa já traz a temporada inteira.
+//   ?tarefa=paper-carteira-criar (POST, auth) / -listar / -detalhe&carteira_id=X /
+//   -apostar&carteira_id=X (POST, auth) / -resolver[&carteira_id=X] (POST, auth) /
+//   -alternar-ativa&carteira_id=X (POST, auth) / -excluir&carteira_id=X (POST, auth) /
+//   -rodar-todas (cron, sem auth)
+//                               -> Carteira (Paper Trading): apostas simuladas com banca
+//                                   PERSISTENTE sobre partidas AINDA NÃO disputadas (status=
+//                                   scheduled) das ligas domésticas, usando odds ao vivo já
+//                                   sincronizadas (odds_market, snapshot=pre_closing) e predições
+//                                   já existentes pra essas partidas -- ver comentário detalhado
+//                                   na seção "TAREFAS: Carteira (Paper Trading)" abaixo.
 //
 // Documentação detalhada de cada tarefa nos comentários das funções abaixo
 // (mesma lógica que estava nos arquivos originais compute-elo.js/fit-calibration.js).
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
+import { gravarComDedupCruzado } from './_lib/dedupMatches.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -1866,7 +1877,65 @@ async function tarefaCalibracao(supabase, minimo) {
 
 const ODDSPAPI_BASE = 'https://api.oddspapi.io';
 const SPORT_ID_FUTEBOL = 10;
+
+// BOOKMAKERS_ALVO: usado pelo sync AO VIVO (tarefaOddsSyncLote/tarefaOddsSync/
+// tarefaOddsTodas, /v4/odds-by-tournaments) -- esse endpoint É pago, 1
+// chamada por casa POR LOTE de até 5 torneios (`tournamentIds` aceita
+// vários por chamada, mas tem teto real de 5 -- HTTP 400 acima disso,
+// confirmado testando em produção; ver comentário completo onde
+// tarefaOddsSyncLote está definida). Cada casa a mais aqui multiplica o
+// número de lotes necessários -- mantido enxuto de propósito. Se quiser
+// mais casas no sync ao vivo, avaliar cota antes (com 16 ligas resolvidas
+// hoje = 4 lotes, cada casa a mais soma +4 chamadas por rodada do cron).
 const BOOKMAKERS_ALVO = ['pinnacle', 'bet365', 'betano'];
+
+// BOOKMAKERS_HISTORICO: usado só pelo backfill histórico (tarefaOddsHistorico/
+// tarefaOddsHistoricoDescobrir, /v4/historical-odds) -- esse endpoint é
+// GRÁTIS (confirmado na doc oficial + testado em produção, ver
+// CONTEXTO_PROJETO.md), então pode ser mais generoso sem custo de cota real
+// (só timeout de function/rate-limit, não quota). Pedido do usuário: além
+// de Pinnacle/bet365/Betano, adicionar William Hill e 1xBet -- William Hill
+// já existe no schema via football-data.co.uk (odds_market.bookmaker =
+// 'william_hill', com underscore) e 1xBet já aparece em Libertadores via
+// outra fonte antiga ('1xbet', sem underscore, bate direto com o slug da
+// OddsPapi). Unibet e Bwin avaliados e descartados pelo usuário (sem
+// utilidade de aposta/representação de mercado pro caso de uso do projeto).
+//
+// Betfair Exchange (betfair-ex) foi pedida também, mas NÃO entra aqui --
+// achado real testando em produção: ao contrário dos bookmakers de odds
+// fixas, a exchange não aceita ser combinada com outras casas nem devolve
+// "todos os mercados de uma vez" -- HTTP 400 "Invalid bookmaker/outcome
+// combination... When using 'betfair-ex', you must provide only one
+// bookmaker and exactly one outcomeId" (faz sentido: exchange tem preço
+// back/lay por seleção individual, não um mercado fechado como bookmaker
+// tradicional). Integrar isso exigiria um loop dedicado, uma chamada por
+// outcome (dezenas por partida), incompatível com o desenho atual de "1
+// lote = todos os mercados". Decisão do usuário: deixar de fora por
+// enquanto, sem implementação dedicada nesta sessão.
+const BOOKMAKERS_HISTORICO = ['pinnacle', 'bet365', 'betano', 'williamhill', '1xbet'];
+
+// LIMITE REAL da OddsPapi (achado testando em produção, não documentado
+// antes): /v4/historical-odds aceita no MÁXIMO 3 bookmakers por chamada --
+// HTTP 400 "Too many bookmakers specified" acima disso. Com 6 casas em
+// BOOKMAKERS_HISTORICO, cada fixture agora precisa de 2 chamadas (uma por
+// lote de 3) em vez de uma só -- ainda grátis, só mais latência.
+function loteados(array, tamanho) {
+  const lotes = [];
+  for (let i = 0; i < array.length; i += tamanho) lotes.push(array.slice(i, i + tamanho));
+  return lotes;
+}
+const LOTES_BOOKMAKERS_HISTORICO = loteados(BOOKMAKERS_HISTORICO, 3);
+
+// Slug da OddsPapi -> nome já usado em odds_market.bookmaker nas outras
+// fontes do projeto -- sem isso, William Hill viraria uma casa "nova"
+// (rótulo diferente) em vez de somar ao dado que já existe vindo do
+// football-data.co.uk, fragmentando a mesma casa em dois nomes.
+const NOME_CANONICO_BOOKMAKER = {
+  williamhill: 'william_hill',
+};
+function nomeCanonicoBookmaker(slugOddspapi) {
+  return NOME_CANONICO_BOOKMAKER[slugOddspapi] || slugOddspapi;
+}
 
 async function chamarOddspapi(caminho, params, apiKey) {
   const url = new URL(`${ODDSPAPI_BASE}${caminho}`);
@@ -1978,6 +2047,63 @@ async function tarefaOddsDescobrir(supabase, apiKey, forcar) {
 }
 
 // ============================================================
+// TAREFA: odds-sync-diagnostico — NÃO escreve nada, só chamada manual de
+// inspeção (mesmo espírito de af-diagnostico-time/statsapi-diagnostico).
+// Existe pra responder 2 perguntas antes de generalizar tarefaOddsSync:
+//   1. `tournamentIds` (plural) em /v4/odds-by-tournaments aceita MAIS DE
+//      1 torneio numa chamada só? Só o parâmetro `bookmaker` (singular) já
+//      foi confirmado como 1-valor-só (ver comentário em tarefaOddsDescobrir
+//      -- doc pública sugeria lista, não é aceito); `tournamentIds` nunca
+//      foi testado com mais de 1 valor neste projeto. Se aceitar, dá pra
+//      sincronizar VÁRIAS ligas numa chamada só (mesmo custo de 1 liga).
+//   2. Qual o formato real de `bookmakerOdds[bookmaker].markets` pra
+//      mercados ALÉM dos 3 já usados (1X2/O-U 2.5/BTTS)? tarefaOddsSync usa
+//      bookmakerOutcomeId direto (ex.: 'home'/'draw'/'away', '2.5/over') --
+//      precisa confirmar se isso é consistente nos outros marketId antes de
+//      generalizar o parser (regra do projeto: nunca adivinhar formato de
+//      resposta de API paga).
+// CUSTO: 1 chamada real de cota (mesmo endpoint pago de tarefaOddsSync) —
+// só chamar quando for de fato investigar, não colocar em cron.
+// ============================================================
+async function tarefaOddsSyncDiagnostico(supabase, apiKey, { tournamentIds, bookmaker }) {
+  if (!tournamentIds) return { error: 'tarefa=odds-sync-diagnostico precisa de ?tournament_ids=A,B (ids de torneio da OddsPapi, não league_id nosso -- ver liga_oddspapi_tournament).' };
+  const bk = bookmaker || 'pinnacle';
+
+  const resposta = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds, bookmaker: bk, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+  if (!Array.isArray(resposta)) return { erro: 'Resposta inesperada (não é array).', resposta_crua: resposta };
+
+  const idsTestados = String(tournamentIds).split(',').map((s) => s.trim());
+  // Tenta achar sozinho qual campo do fixture identifica o torneio de origem
+  // -- sem isso confirmado, não dá pra saber se os fixtures retornados vêm
+  // de fato dos 2+ torneios pedidos ou só do primeiro.
+  const candidatosChaveTorneio = ['tournamentId', 'tournament_id', 'competitionId', 'leagueId'];
+  const chaveTorneio = candidatosChaveTorneio.find((k) => resposta[0]?.[k] != null);
+  const torneiosDistintos = chaveTorneio ? [...new Set(resposta.map((fx) => String(fx[chaveTorneio])))] : null;
+
+  const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
+  const nomePorMarketId = Object.fromEntries((mercadosCacheRaw?.valor || []).map((m) => [String(m.marketId), m.marketName]));
+
+  const primeiraComMercado = resposta.find((fx) => fx.bookmakerOdds?.[bk]?.markets && Object.keys(fx.bookmakerOdds[bk].markets).length > 0);
+  const marketsFixture = primeiraComMercado?.bookmakerOdds?.[bk]?.markets || {};
+  const marketIds = Object.keys(marketsFixture);
+
+  return {
+    tournament_ids_testados: idsTestados,
+    bookmaker: bk,
+    total_fixtures_retornados: resposta.length,
+    campo_usado_pra_identificar_torneio: chaveTorneio || 'NENHUM campo óbvio -- ver chaves_disponiveis_no_fixture',
+    torneios_distintos_encontrados: torneiosDistintos,
+    batching_parece_funcionar: idsTestados.length > 1 && torneiosDistintos ? torneiosDistintos.length > 1 : null,
+    chaves_disponiveis_no_fixture: resposta[0] ? Object.keys(resposta[0]) : [],
+    total_markets_no_fixture_de_amostra: marketIds.length,
+    market_ids_com_nome: marketIds.map((id) => ({ marketId: id, marketName: nomePorMarketId[id] || '(fora da cache local)' })),
+    // Só os 6 primeiros mercados, em detalhe, pra não devolver um payload
+    // gigante -- o suficiente pra ver o formato de outcomes/bookmakerOutcomeId.
+    amostra_markets_em_detalhe: Object.fromEntries(marketIds.slice(0, 6).map((id) => [id, marketsFixture[id]])),
+  };
+}
+
+// ============================================================
 // TAREFA: odds-historico-descobrir — FASE 1 do backfill de odds de rodadas
 // JÁ ENCERRADAS (pedido do usuário: "importar odds de todas as rodadas
 // anteriores do Brasileirão").
@@ -2031,11 +2157,34 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
     { onConflict: 'chave' }
   );
 
-  const amostraFixture = fixtures[0];
-  const historico = await chamarOddspapi('/v4/historical-odds', {
-    fixtureId: amostraFixture.fixtureId,
-    bookmakers: BOOKMAKERS_ALVO.join(','),
-  }, apiKey);
+  // Tenta a fixture mais RECENTE primeiro (de trás pra frente) -- achado
+  // real: fixtures[0] (a mais antiga da janela) pode não ter histórico
+  // salvo pela OddsPapi (HTTP 404 "No historical odds found"), mesmo
+  // dentro do período coberto por /v4/fixtures. Sem travar a chamada
+  // inteira por causa de UMA amostra sem sorte.
+  let amostraFixture = null, historico = null, erroAmostra = null;
+  const LIMITE_TENTATIVAS_AMOSTRA = 10; // não travar a function inteira numa sequência azarada de 404s
+  let tentativas = 0;
+  for (let i = fixtures.length - 1; i >= 0 && !historico && tentativas < LIMITE_TENTATIVAS_AMOSTRA; i--) {
+    if (!fixtures[i]?.fixtureId) continue;
+    tentativas++;
+    try {
+      // Só o primeiro lote (limite de 3 bookmakers por chamada da OddsPapi)
+      // -- essa função é só amostra/inspeção de formato, não precisa das 6
+      // casas pra isso.
+      historico = await chamarOddspapi('/v4/historical-odds', {
+        fixtureId: fixtures[i].fixtureId,
+        bookmakers: LOTES_BOOKMAKERS_HISTORICO[0].join(','),
+      }, apiKey);
+      amostraFixture = fixtures[i];
+    } catch (e) {
+      erroAmostra = e.message;
+    }
+  }
+
+  if (!historico) {
+    return { liga_id: ligaId, torneio: mapa.tournament_name, total_fixtures_finalizadas: fixtures.length, error: `Nenhuma fixture teve histórico disponível (última tentativa: ${erroAmostra}).` };
+  }
 
   await supabase.from('oddspapi_cache').upsert(
     { chave: `historico_amostra_liga_${ligaId}`, valor: historico, atualizado_em: new Date().toISOString() },
@@ -2061,17 +2210,35 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 //     ... MUITOS pontos, é o histórico de movimento de linha inteiro, não só
 //     o fechamento ] } } } } } } }
 // -- bem mais pesado que /v4/odds-by-tournaments (um fixture sozinho já
-// passou de 3,9MB de JSON na amostra). Por isso: (a) só o preço de
-// createdAt mais recente de cada outcome é aproveitado (snapshot='closing'
-// em odds_market — não vale a pena guardar o histórico de movimento inteiro
-// aqui, isso é objetivo futuro separado, já documentado em CONTEXTO), (b)
-// mercadoId/outcomeId são resolvidos pela cache `markets` (fase 1 do sync
-// AO VIVO, já existia) em vez de hardcoded: 1X2 = marketName "Full Time
-// Result" com handicap=0 (outcomes "1"/"X"/"2"), Over/Under 2.5 = marketName
-// "Over Under Full Time" com handicap=2.5 (outcomes "Over"/"Under"), BTTS =
-// marketName "Both Teams To Score" com handicap=0 (outcomes "Yes"/"No") --
-// confirmado real, marketId 101/1010/104 respectivamente pro Brasileirão,
-// mas resolvido dinamicamente pra não quebrar se mudar de liga/bookmaker.
+// passou de 3,9MB de JSON na amostra). Por isso só o preço de createdAt
+// mais recente de cada outcome é aproveitado (snapshot='closing' em
+// odds_market — não vale a pena guardar o histórico de movimento inteiro
+// aqui, isso é objetivo futuro separado, já documentado em CONTEXTO).
+//
+// MERCADOS: extração GENÉRICA (pedido do usuário: "máximo de mercados
+// possíveis"), não hardcoded pros 3 originais (1X2/O-U2.5/BTTS) -- pra
+// CADA marketId presente na resposta de /v4/historical-odds do bookmaker,
+// resolve marketName/handicap/period via a cache `markets` (fase 1 do sync
+// ao vivo) e monta um rótulo de mercado genérico (slugMercadoHistorico),
+// igual em espírito ao normalizar_mercado() de capturar_odds_oddsportal.py.
+// Markets com playerProp=true (mercados de jogador individual, tipo "First
+// Goal Scorer") são pulados -- o schema de odds_market é por partida, não
+// tem coluna de jogador. Pra não duplicar as linhas dos 3 mercados originais
+// já gravados antes desta mudança (nenhuma constraint UNIQUE em
+// odds_market), o insert é ADITIVO: consulta as combinações
+// (bookmaker,market,selection) já existentes pra aquela partida ANTES de
+// montar as linhas novas, e pula qualquer uma que já exista -- nunca
+// deleta/sobrescreve nada.
+//
+// CUSTO DE COTA: **corrigido, achado real testando em produção (14/08)** --
+// /v4/historical-odds é um endpoint GRÁTIS da OddsPapi (confirmado na doc
+// oficial, oddspapi.io/en/docs/requests-and-quota: "always free, calls
+// never increment your request count"), ao contrário do que a versão
+// anterior deste comentário assumia. Só /v4/fixtures (pra listar as
+// partidas finalizadas, 1 chamada por liga, cacheada) consome cota de
+// verdade. O limite real de MAX_FIXTURES_HISTORICO_POR_CHAMADA não é cota
+// -- é o timeout de 60s da function na Vercel (vercel.json) combinado com
+// o cooldown de 5s documentado da OddsPapi entre chamadas.
 //
 // fixtureId (por partida, diferente do tournamentId usado no sync ao vivo)
 // é descoberto batendo /v4/fixtures (1 chamada só, cacheada) com nossos
@@ -2093,7 +2260,21 @@ async function tarefaOddsHistoricoDescobrir(supabase, apiKey, ligaId) {
 // por chamada, avisado ao usuário antes de rodar (ver skill do projeto,
 // disciplina de cota).
 // ============================================================
-const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 6;
+// Reduzido de 6 pra 4: desde que BOOKMAKERS_HISTORICO passou de 3 pra 6
+// casas, cada fixture agora precisa de 2 chamadas a /v4/historical-odds
+// (ver LOTES_BOOKMAKERS_HISTORICO logo abaixo) -- mantém margem segura
+// contra o timeout de 60s da function. Reduzido de novo pra 3 (de 4) depois
+// de trocar o cooldown entre lotes pra 5s uniforme (era 1s, insuficiente) --
+// com 3 fixtures x 2 lotes = 6 chamadas, 5 intervalos de 5s = 25s + latência
+// real da API, ainda com folga segura.
+// Subido de novo pra 4 (pedido do usuário, "mais rápido"): medido em
+// produção rodando o backfill completo por horas -- rodada com 3 fixtures
+// leva ~36-39s de verdade (25s de cooldown fixo + ~11-14s de
+// processamento/rede), bem abaixo do teto de 60s. Com 4 fixtures x 2 lotes =
+// 8 chamadas, 7 intervalos de 5s = 35s + processamento ~16s ≈ 51s -- ainda
+// dentro do teto, mas com menos folga (timeout ocasional é só uma rodada
+// desperdiçada, idempotente, tenta de novo sozinho na próxima chamada).
+const MAX_FIXTURES_HISTORICO_POR_CHAMADA = 4;
 
 // BUG REAL corrigido (achado testando em produção antes de rodar o backfill
 // inteiro): a maioria dos pontos de /v4/historical-odds é preço AO VIVO,
@@ -2121,38 +2302,70 @@ function extrairPrecoFechamento(outcomeData, kickoffIso) {
   return maisRecente?.price ?? null;
 }
 
-async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite }) {
+// OddsPapi period (sportId=10 -- futebol) só usa 'fulltime'/'p1'/'p2' na
+// prática (achado real inspecionando a cache `markets` inteira) -- p1/p2
+// são os tempos do jogo.
+const SUFIXO_PERIODO_HISTORICO = { p1: '1h', p2: '2h' };
+
+// Os 3 mercados já usados pelo projeto desde antes desta mudança mantêm o
+// rótulo curto de sempre (pra não duplicar linha já gravada por eles);
+// qualquer mercado novo (pedido do usuário: "máximo de mercados possíveis")
+// vira um slug genérico do nome/period/handicap.
+const GERADOR_ROTULO_MERCADO_CONHECIDO = {
+  'Full Time Result': () => '1X2',
+  'Over Under Full Time': (h) => `over_under_${h}`,
+  'Both Teams To Score': () => 'btts',
+};
+
+function slugTextoHistorico(s) {
+  return (s || '').toString().trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+// Mesmo espírito do normalizar_mercado() de capturar_odds_oddsportal.py:
+// nunca hardcodar a lista inteira de mercados, só normalizar o que a API
+// já descreve nos metadados (marketName/handicap/period).
+function slugMercadoHistorico(marketName, handicap, period) {
+  const gerador = GERADOR_ROTULO_MERCADO_CONHECIDO[marketName];
+  if (gerador && (!period || period === 'fulltime')) return gerador(handicap);
+  const base = slugTextoHistorico(marketName);
+  const sufixoPeriodo = SUFIXO_PERIODO_HISTORICO[period] ? `_${SUFIXO_PERIODO_HISTORICO[period]}` : '';
+  const sufixoHandicap = (handicap != null && handicap !== 0) ? `_${handicap}` : '';
+  return `${base}${sufixoPeriodo}${sufixoHandicap}`;
+}
+
+const ROTULOS_SELECAO_CONHECIDOS_HISTORICO = { '1': 'home', x: 'draw', '2': 'away', over: 'over', under: 'under', yes: 'yes', no: 'no', odd: 'odd', even: 'even' };
+function slugSelecaoHistorico(outcomeName) {
+  const norm = (outcomeName || '').toString().trim().toLowerCase();
+  return ROTULOS_SELECAO_CONHECIDOS_HISTORICO[norm] || slugTextoHistorico(outcomeName);
+}
+
+async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite, forcar }) {
   const limiteReal = Math.min(parseInt(limite, 10) || MAX_FIXTURES_HISTORICO_POR_CHAMADA, MAX_FIXTURES_HISTORICO_POR_CHAMADA);
 
   const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
   if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
 
-  // temporada é OBRIGATÓRIA de resolver explicitamente (não dá pra confiar
-  // em ORDER BY season sem esse filtro): matches guarda o mesmo jogo
-  // triplicado por fonte diferente (football-data.org com round preenchido,
-  // + 2 fontes sem round) em VÁRIAS temporadas -- sem filtrar season E
-  // round IS NOT NULL, a consulta abaixo passa fácil de 1000 linhas e o
-  // corte silencioso do PostgREST (mesmo bug já documentado em
-  // model-stats.js/sync-clubelo.js) faz "nenhuma partida pendente" aparecer
-  // mesmo com fixtures de sobra pra casar.
-  let temporadaAlvo = temporada;
-  if (!temporadaAlvo) {
-    const { data: ultimaTemporada } = await supabase.from('matches').select('season')
-      .eq('league_id', ligaId).order('season', { ascending: false }).limit(1);
-    temporadaAlvo = ultimaTemporada?.[0]?.season;
-  }
-  if (!temporadaAlvo) return { error: `Nenhuma temporada encontrada pra liga ${ligaId}.` };
-
   const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
-  const mercados = mercadosCacheRaw?.valor || [];
-  const mercado1x2 = mercados.find((m) => m.marketName === 'Full Time Result' && m.handicap === 0);
-  const mercadoOU25 = mercados.find((m) => m.marketName === 'Over Under Full Time' && m.handicap === 2.5);
-  const mercadoBTTS = mercados.find((m) => m.marketName === 'Both Teams To Score' && m.handicap === 0);
-  if (!mercado1x2 || !mercadoOU25 || !mercadoBTTS) return { error: 'Mercados "Full Time Result" (handicap 0), "Over Under Full Time" (handicap 2.5) ou "Both Teams To Score" (handicap 0) não encontrados na cache markets — rode tarefa=odds-descobrir de novo.' };
+  const mercadosPorId = new Map((mercadosCacheRaw?.valor || []).filter((m) => !m.playerProp).map((m) => [String(m.marketId), m]));
+  if (mercadosPorId.size === 0) return { error: 'Cache `markets` vazia/inválida — rode tarefa=odds-descobrir de novo.' };
 
-  const outcome1x2 = Object.fromEntries(mercado1x2.outcomes.map((o) => [String(o.outcomeId), { '1': 'home', X: 'draw', '2': 'away' }[o.outcomeName]]));
-  const outcomeOU25 = Object.fromEntries(mercadoOU25.outcomes.map((o) => [String(o.outcomeId), o.outcomeName.toLowerCase()]));
-  const outcomeBTTS = Object.fromEntries(mercadoBTTS.outcomes.map((o) => [String(o.outcomeId), o.outcomeName.toLowerCase()]));
+  // `forcar=true` -- BUG REAL corrigido (achado auditando as ligas depois
+  // dos fixes de nomesBatem, 2026-08-17): buscarOuCache busca /v4/fixtures
+  // UMA VEZ SÓ e nunca mais atualiza (sem TTL). O cache original de cada
+  // liga foi feito num único snapshot (11-14/08), com um subconjunto das
+  // fixtures finalizadas -- não a lista inteira. Depois que os fixes de
+  // nomesBatem destravaram o casamento de nome pra praticamente tudo que
+  // já estava cacheado, toda liga bateu "cache esgotada" quase ao mesmo
+  // tempo (restantes real no banco não bate mais com o que sobra pra
+  // comparar) -- não é mais falta de apelido, é a cache ficar pra trás do
+  // banco. `forcar` reconsulta /v4/fixtures (chamada billable, não é a
+  // /v4/historical-odds "grátis") e substitui o cache -- usar com
+  // moderação, cada acionamento gasta 1 chamada de cota por liga.
+  if (forcar === 'true' || forcar === '1') {
+    await supabase.from('oddspapi_cache').delete().eq('chave', `fixtures_finalizadas_liga_${ligaId}`);
+  }
 
   const fixtures = await buscarOuCache(supabase, `fixtures_finalizadas_liga_${ligaId}`, async () => chamarOddspapi('/v4/fixtures', {
     tournamentId: mapa.tournament_id,
@@ -2164,23 +2377,86 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
     return { error: 'Cache de fixtures finalizadas vazia/inválida — rode tarefa=odds-historico-descobrir de novo (ou apague oddspapi_cache pra essa chave se a temporada mudou).' };
   }
 
-  const { data: nossosJogos } = await supabase.from('matches')
-    .select('id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
-    .eq('league_id', ligaId).eq('season', temporadaAlvo).eq('status', 'finished')
-    .not('round', 'is', null);
+  // SEM filtro de season -- pedido do usuário: processar o máximo de
+  // temporadas possível por chamada, não só a mais recente (a fixtures
+  // cache já cobre a janela inteira desde a partida mais antiga finalizada
+  // no nosso banco). Paginado de verdade (buscarTudoPaginado) já que sem o
+  // filtro de season uma liga grande passa fácil de 1000 linhas.
+  //
+  // round IS NOT NULL foi REMOVIDO daqui -- achado real testando as 9 ligas
+  // recém-mapeadas (Libertadores/Sudamericana/Copa do Brasil/Champions/
+  // Club World Cup/Copa América/Eurocopa/Copa do Mundo/Série B): esse
+  // filtro (pensado só pro caso do Brasileirão, com jogo triplicado por
+  // fonte) zerava CINCO delas por completo (Série B, Copa do Brasil, Club
+  // World Cup, Copa América, Intercontinental Cup nunca têm round
+  // preenchido) -- e nenhuma delas tem duplicata de verdade (confirmado
+  // por query: total de linhas bate 1:1 com jogos distintos por
+  // home/away/data/temporada), só a Copa Sudamericana tem (963 linhas,
+  // 849 jogos distintos). Trocado por deduplicação de verdade em memória
+  // (prefere a linha com round quando existe mais de uma pro mesmo jogo,
+  // senão pega a primeira) -- resolve o motivo original do filtro sem
+  // excluir ligas que nunca tiveram round preenchido nessa fonte.
+  // BUG REAL corrigido (achado monitorando o backfill em produção): sem
+  // .order() aqui, o Postgres não garante a mesma ordem de linhas entre
+  // chamadas -- pra ligas com jogo duplicado por chave (home/away/data/
+  // temporada) e round nulo nos dois lados (só a Copa Sudamericana tem
+  // isso), o "representante" escolhido em jogosPorChave podia trocar de
+  // chamada pra chamada. Resultado: o match_id marcado completo numa
+  // rodada não batia com o representante da rodada seguinte, então
+  // `idsCompletos` nunca reconhecia progresso anterior (ficava sempre ~0)
+  // -- a liga reprocessava as mesmas poucas partidas mais recentes pra
+  // sempre, sem nunca avançar (confirmado: match_source_ids tinha só 6
+  // linhas completas pra liga 46 depois de dezenas de rodadas). .order()
+  // também deixa a paginação de buscarTudoPaginado seguro pra ligas
+  // grandes (>1000 finalizadas), que sem ordem explícita não tem garantia
+  // de retornar cada linha exatamente uma vez entre páginas.
+  const todosOsJogos = await buscarTudoPaginado(() => {
+    let q = supabase.from('matches')
+      .select('id, season, round, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
+      .eq('league_id', ligaId).eq('status', 'finished').order('id', { ascending: true });
+    if (temporada) q = q.eq('season', temporada);
+    return q;
+  });
+  const jogosPorChave = new Map();
+  for (const m of todosOsJogos) {
+    const chave = `${m.home?.id}|${m.away?.id}|${new Date(m.match_date).toISOString().slice(0, 10)}|${m.season}`;
+    const existente = jogosPorChave.get(chave);
+    if (!existente || (m.round != null && existente.round == null)) jogosPorChave.set(chave, m);
+  }
+  const nossosJogos = [...jogosPorChave.values()];
 
-  const [{ data: coreProcessados }, { data: bttsProcessados }] = await Promise.all([
-    supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico'),
-    supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico_btts'),
-  ]);
-  const idsCoreProntos = new Set((coreProcessados || []).map((r) => r.match_id));
-  const idsBttsProntos = new Set((bttsProcessados || []).map((r) => r.match_id));
-  const idsCompletos = new Set([...idsCoreProntos].filter((id) => idsBttsProntos.has(id)));
+  // BUG REAL corrigido (achado monitorando o backfill em produção): essa
+  // query buscava o `source='oddspapi_historico_completo' de TODAS as
+  // ligas numa chamada só, sem paginação -- clássico truncamento silencioso
+  // de 1000 linhas do PostgREST (gotcha já documentado no projeto). Com o
+  // backfill rodando, o total global passou de 1000 linhas nesta mesma
+  // sessão, e a liga cujas linhas completas caíssem fora da primeira
+  // "página" ficava com `idsCompletos` sempre vazio -- reprocessando as
+  // mesmas poucas partidas mais recentes pra sempre, sem nunca reconhecer
+  // progresso já feito (confirmado: Copa Sudamericana, 6 partidas
+  // completas no banco, `ja_importados_antes` sempre retornando 0). Trocado
+  // por busca paginada e já filtrada só pelos ids desta liga (mais barato
+  // também -- não precisa mais buscar o total global a cada chamada).
+  const idsNossosJogos = nossosJogos.map((m) => m.id);
+  const completosRows = await buscarTudoPaginadoIn(idsNossosJogos, (lote) =>
+    supabase.from('match_source_ids').select('match_id').eq('source', 'oddspapi_historico_completo').in('match_id', lote)
+  );
+  const idsCompletos = new Set(completosRows.map((r) => r.match_id));
+
+  // Mais RECENTE primeiro -- achado real testando em produção: sem filtro
+  // de season, a ordem crua de /v4/fixtures é cronológica ASCENDENTE (mais
+  // antiga primeiro), e a OddsPapi não tem retenção de histórico até a
+  // partida mais antiga do nosso banco (ex.: Libertadores 2019-2022 dá 404
+  // "No historical odds found" em toda tentativa). Processar do mais novo
+  // pro mais antigo maximiza sucesso por chamada e naturalmente processa o
+  // "máximo de temporadas possível" que a API realmente tiver, em vez de
+  // gastar o limite de fixtures da chamada em partidas fadadas a falhar.
+  const fixturesRecentesPrimeiro = [...fixtures].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
 
   const pendentes = [];
-  for (const fx of fixtures) {
+  for (const fx of fixturesRecentesPrimeiro) {
     if (!fx.startTime || pendentes.length >= limiteReal) continue;
-    const partida = (nossosJogos || []).find((m) => {
+    const partida = nossosJogos.find((m) => {
       if (idsCompletos.has(m.id) || pendentes.some((p) => p.match.id === m.id)) return false;
       const diffHoras = Math.abs(new Date(m.match_date) - new Date(fx.startTime)) / 3600000;
       if (diffHoras > 36) return false;
@@ -2189,88 +2465,119 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
     if (partida) pendentes.push({ fixtureId: fx.fixtureId, startTime: fx.startTime, match: partida });
   }
 
-  const totalFinalizadosLocal = (nossosJogos || []).length;
+  const totalFinalizadosLocal = nossosJogos.length;
   if (pendentes.length === 0) {
-    return { liga_id: ligaId, temporada: temporadaAlvo, torneio: mapa.tournament_name, mensagem: 'Nenhuma partida pendente encontrada.', total_finalizados_local: totalFinalizadosLocal, ja_importados: idsCompletos.size };
+    return { liga_id: ligaId, temporada_filtro: temporada || 'todas', torneio: mapa.tournament_name, mensagem: 'Nenhuma partida pendente encontrada.', total_finalizados_local: totalFinalizadosLocal, ja_importados: idsCompletos.size };
   }
 
+  // Existência prévia (bookmaker,market,selection) por partida -- garante
+  // que reprocessar uma partida que já tinha só os 3 mercados originais
+  // (época anterior a esta mudança) NUNCA duplica essas linhas, só ADICIONA
+  // os mercados novos que ainda não existiam. Nunca deleta/sobrescreve nada.
+  const idsPendentesAgora = pendentes.map((p) => p.match.id);
+  const { data: existentesRows } = await supabase.from('odds_market')
+    .select('match_id,bookmaker,market,selection')
+    .in('match_id', idsPendentesAgora).eq('snapshot', 'closing');
+  const jaExiste = new Set((existentesRows || []).map((r) => `${r.match_id}|${r.bookmaker}|${r.market}|${r.selection}`));
+
   const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  let processados = 0, sucesso = 0;
+  let processados = 0, sucesso = 0, semHistorico = 0, chamadasFeitas = 0;
   const falhas = [];
 
   for (const { fixtureId, startTime, match } of pendentes) {
-    if (processados > 0) await esperar(5000); // cooldown documentado do endpoint (5000ms)
     processados++;
-    const precisaCore = !idsCoreProntos.has(match.id);
-    const precisaBtts = !idsBttsProntos.has(match.id);
-    try {
-      const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: BOOKMAKERS_ALVO.join(',') }, apiKey);
-      const linhas = [];
-      const agora = new Date().toISOString();
+    const linhas = [];
+    const agora = new Date().toISOString();
+    let algumComDado = false;
+    let erroTransitorio = null;
 
-      for (const bookmaker of BOOKMAKERS_ALVO) {
-        const bdata = historico.bookmakers?.[bookmaker];
-        if (!bdata) continue;
+    // 1 chamada por LOTE de até 3 casas (limite real da OddsPapi, ver
+    // LOTES_BOOKMAKERS_HISTORICO) -- "No historical odds found" num lote
+    // específico não é fatal (só significa que aquelas casas não têm essa
+    // partida), guarda só erro de verdade (ex.: rate limit) pra decidir
+    // depois se marca a partida como completa ou deixa pra retentar.
+    //
+    // Cooldown UNIFORME de 5s entre QUALQUER chamada a /v4/historical-odds
+    // (achado real testando em produção: 1s entre lotes da mesma partida
+    // não bastava, a OddsPapi pediu "wait 2.3-2.75 seconds" via 429 --
+    // contador único (chamadasFeitas) em vez de dois cooldowns diferentes
+    // por fixture/por lote, pra não ter zona cinzenta entre os dois).
+    for (let i = 0; i < LOTES_BOOKMAKERS_HISTORICO.length; i++) {
+      if (chamadasFeitas > 0) await esperar(5000);
+      chamadasFeitas++;
+      try {
+        const historico = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: LOTES_BOOKMAKERS_HISTORICO[i].join(',') }, apiKey);
+        for (const bookmakerSlug of LOTES_BOOKMAKERS_HISTORICO[i]) {
+          const bdata = historico.bookmakers?.[bookmakerSlug];
+          if (!bdata) continue;
+          algumComDado = true;
+          const bookmaker = nomeCanonicoBookmaker(bookmakerSlug); // ex.: 'williamhill' -> 'william_hill', pra somar no mesmo rótulo já usado via football-data.co.uk
 
-        if (precisaCore) {
-          const m1x2 = bdata.markets?.[String(mercado1x2.marketId)];
-          for (const [outcomeId, outcomeData] of Object.entries(m1x2?.outcomes || {})) {
-            const selecao = outcome1x2[outcomeId];
-            const preco = extrairPrecoFechamento(outcomeData, startTime);
-            if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: '1X2', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
-          }
+          for (const [marketId, marketData] of Object.entries(bdata.markets || {})) {
+            const info = mercadosPorId.get(marketId);
+            if (!info) continue; // marketId fora da cache -- pula sem travar o resto
+            const market = slugMercadoHistorico(info.marketName, info.handicap, info.period);
 
-          const mou = bdata.markets?.[String(mercadoOU25.marketId)];
-          for (const [outcomeId, outcomeData] of Object.entries(mou?.outcomes || {})) {
-            const selecao = outcomeOU25[outcomeId];
-            const preco = extrairPrecoFechamento(outcomeData, startTime);
-            if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: 'over_under_2.5', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
+            for (const [outcomeId, outcomeData] of Object.entries(marketData?.outcomes || {})) {
+              const outcomeInfo = (info.outcomes || []).find((o) => String(o.outcomeId) === String(outcomeId));
+              if (!outcomeInfo) continue;
+              const selection = slugSelecaoHistorico(outcomeInfo.outcomeName);
+              const preco = extrairPrecoFechamento(outcomeData, startTime);
+              if (preco == null) continue;
+              const chave = `${match.id}|${bookmaker}|${market}|${selection}`;
+              if (jaExiste.has(chave)) continue;
+              jaExiste.add(chave);
+              linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora });
+            }
           }
         }
-
-        if (precisaBtts) {
-          const mbtts = bdata.markets?.[String(mercadoBTTS.marketId)];
-          for (const [outcomeId, outcomeData] of Object.entries(mbtts?.outcomes || {})) {
-            const selecao = outcomeBTTS[outcomeId];
-            const preco = extrairPrecoFechamento(outcomeData, startTime);
-            if (selecao && preco != null) linhas.push({ match_id: match.id, bookmaker, market: 'btts', selection: selecao, odds: preco, snapshot: 'closing', captured_at: agora });
-          }
-        }
+      } catch (erro) {
+        // "No historical odds found" é um resultado ESTÁVEL (registro
+        // histórico não muda com o tempo) -- só afeta as casas desse lote,
+        // não impede os outros lotes/o resto da partida.
+        if (!/No historical odds found/i.test(erro.message)) erroTransitorio = erro.message;
       }
-
-      if (linhas.length > 0) {
-        const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
-        if (erroInsert) { falhas.push({ match_id: match.id, motivo: erroInsert.message }); continue; }
-      }
-
-      if (precisaCore) {
-        await supabase.from('match_source_ids').upsert(
-          { match_id: match.id, source: 'oddspapi_historico', source_id: fixtureId },
-          { onConflict: 'match_id,source' }
-        );
-      }
-      if (precisaBtts) {
-        await supabase.from('match_source_ids').upsert(
-          { match_id: match.id, source: 'oddspapi_historico_btts', source_id: fixtureId },
-          { onConflict: 'match_id,source' }
-        );
-      }
-      sucesso++;
-    } catch (erro) {
-      falhas.push({ match_id: match.id, motivo: erro.message });
     }
+
+    if (linhas.length > 0) {
+      const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
+      if (erroInsert) { falhas.push({ match_id: match.id, motivo: erroInsert.message }); continue; }
+    }
+
+    if (erroTransitorio) {
+      // erro de verdade (ex.: rate limit) em pelo menos um lote -- não
+      // marca como completo, deixa pra retentar (as linhas que já vieram
+      // dos outros lotes já foram gravadas acima, sem duplicar depois).
+      falhas.push({ match_id: match.id, motivo: erroTransitorio });
+      continue;
+    }
+
+    await supabase.from('match_source_ids').upsert(
+      { match_id: match.id, source: 'oddspapi_historico_completo', source_id: fixtureId },
+      { onConflict: 'match_id,source' }
+    );
+    if (algumComDado) sucesso++; else semHistorico++;
   }
 
   return {
     liga_id: ligaId,
-    temporada: temporadaAlvo,
+    temporada_filtro: temporada || 'todas',
     torneio: mapa.tournament_name,
     total_finalizados_local: totalFinalizadosLocal,
     ja_importados_antes: idsCompletos.size,
     processados_agora: processados,
     sucesso,
+    sem_historico_na_fonte: semHistorico || undefined,
     falhas: falhas.length ? falhas : undefined,
-    restantes_estimado: totalFinalizadosLocal - idsCompletos.size - processados,
+    // BUG REAL corrigido: usava `processados` (tudo que ENTROU no lote),
+    // mas quem falhou (erroTransitorio/erroInsert, ver `falhas` acima) não
+    // é marcado como completo em match_source_ids -- continua pendente pra
+    // próxima chamada. Contar `processados` inteiro aqui subestimava o que
+    // faltava sempre que havia falha na rodada (comum com o rate limit da
+    // OddsPapi), fazendo o número parecer "travado" por várias rodadas
+    // mesmo com progresso real acontecendo (só sucesso+sem_historico ficam
+    // de fato completos).
+    restantes_estimado: totalFinalizadosLocal - idsCompletos.size - (sucesso + semHistorico),
   };
 }
 
@@ -2280,27 +2587,70 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
 // Captura o MÁXIMO possível por chamada: /v4/odds-by-tournaments devolve o
 // quadro INTEIRO do torneio (todos os jogos que já têm linha aberta pra
 // aquele bookmaker) numa única chamada — já é o mais eficiente possível, não
-// tem "paginar por jogo". Custo fixo: 1 chamada por bookmaker (3 casas) por
-// liga = 3 chamadas/liga, 18 pra sincronizar as 6 ligas de uma vez. A
-// resposta já traz nome dos times e horário do jogo junto com as odds — não
-// precisa de uma chamada extra em /v4/fixtures.
+// tem "paginar por jogo". A resposta já traz nome dos times e horário do
+// jogo junto com as odds — não precisa de uma chamada extra em /v4/fixtures.
 //
-// JANELA ADAPTATIVA ("aumentar a base se tiver poucos jogos no prazo"): as
-// casas só abrem linha alguns dias antes do jogo, então nem sempre há muita
-// coisa pra capturar. Antes de gastar as 3 chamadas da liga, conta quantos
-// jogos AGENDADOS existem nos próximos 7 dias (consulta local, sem custo de
-// cota); se vier menos que MINIMO_JOGOS_JANELA, alarga pra 14 e depois 21
-// dias antes de decidir se vale a pena chamar a API — evita gastar cota numa
-// liga que não tem praticamente nada agendado no curto prazo (ex.: parada
-// pra data FIFA).
+// CUSTO REAL, confirmado testando em produção (tarefa=odds-sync-diagnostico,
+// 2026-08-15) — MUDOU o desenho desta tarefa por completo:
+//   1. `tournamentIds` (plural) ACEITA vários torneios numa chamada só,
+//      separados por vírgula (achado real, batendo 2 torneios numa
+//      chamada e confirmando fixtures de AMBOS na resposta, campo
+//      `tournamentId` por fixture identifica de qual veio) — diferente de
+//      `bookmaker` (singular), que já tinha sido confirmado como 1-valor-só.
+//      MAS com um teto real (também só descoberto testando, não documentado
+//      antes): HTTP 400 "Too many tournament IDs specified... maximum of 5"
+//      acima de 5 IDs por chamada. Por isso esta tarefa foi generalizada de
+//      "1 liga por chamada" pra "TODAS as ligas com liga_oddspapi_tournament
+//      resolvido, em lotes de até 5 torneios por chamada" (`loteados`, ver
+//      tarefaOddsSyncLote) — custo escala em DEGRAUS de 5 ligas, não mais
+//      1:1 por liga: 16 ligas resolvidas hoje = 4 lotes × 3 bookmakers = 12
+//      chamadas por rodada do cron (contra 48 se fosse 1 chamada por liga, e
+//      contra as 18 de antes desta mudança pra cobrir só as 6 domésticas).
+//   2. `verbosity=3` já devolve TODOS os mercados do fixture numa chamada só
+//      (confirmado: 99 mercados distintos numa amostra de 2 ligas -- Asian/
+//      European Handicap, escanteios, cartões, placar exato, 1º tempo,
+//      etc, mesma faixa já vista no backfill histórico) — generalizado pra
+//      gravar TODOS eles (reaproveitando slugMercadoHistorico/
+//      slugSelecaoHistorico, mesmo rótulo do backfill histórico), não só
+//      os 3 hardcoded de antes. BUG REAL corrigido de passagem: o parser
+//      antigo (`acharMercadoPorNome` + filtro por `bookmakerOutcomeId`)
+//      pegava só o PRIMEIRO marketId chamado "Over Under Full Time" —
+//      só que CADA linha de gols (0.5/1.5/2.5/3.5...) é um marketId
+//      SEPARADO com esse mesmo nome, então na prática o filtro
+//      `id.startsWith('2.5/')` batia só quando a linha 2.5 por acaso era a
+//      primeira presente naquele fixture (ordem numérica ascendente dos
+//      marketId, não garantida) — capturava a 2.5 de forma inconsistente e
+//      NUNCA capturava BTTS de verdade: `bookmakerOutcomeId` do mercado
+//      "Both Teams To Score" NÃO é 'yes'/'no' (é um ID interno da casa,
+//      tipo "1633789709") — só a chave do outcome dentro do mercado
+//      (`outcomeId`, olhando a cache `markets`) é estável, exatamente como
+//      o backfill histórico já fazia. O parser novo usa outcomeId+cache
+//      pra TODOS os mercados, igual ao histórico -- resolve os dois bugs.
+//
+// JANELA DE CANDIDATOS: mesma pra TODAS as ligas do batch, sem escalonar por
+// liga. Existia antes uma "janela adaptativa" (7/14/21 dias, alargando só
+// se a liga tivesse poucos jogos no prazo mais curto) pensada pra quando o
+// custo era 1 chamada POR LIGA -- fazia sentido evitar gastar uma chamada
+// inteira numa liga com pouco jogo agendado. Depois do batching (várias
+// ligas por chamada, ver tarefaOddsSyncLote), essa lógica parou de fazer
+// sentido: a chamada já é feita pro LOTE inteiro independente da janela, e
+// a única coisa que a janela curta ainda fazia era EXCLUIR jogo de verdade
+// da lista local de candidatos pra casar -- **bug real confirmado em
+// produção** (pedido do usuário, "essa limitação desnecessária já que o
+// chamado é por grupos de ligas"): a Premier League achava >=3 jogos já nos
+// primeiros 7 dias e parava de alargar, mas a chamada `/v4/odds-by-
+// tournaments` não tem filtro de data nenhum -- a OddsPapi devolvia
+// fixtures de semanas à frente, que nunca tinham candidato local pra casar
+// (ficavam presos em "sem correspondência" à toa, mesmo já tendo odds reais
+// abertas). Removida a escalada -- toda liga do batch usa a mesma janela
+// fixa (JANELA_CANDIDATOS_DIAS), sem custo extra nenhum de fazer isso.
 //
 // Guarda com timestamp (captured_at, coluna que já existia) SEM sobrescrever
 // o snapshot anterior — cada sync é um INSERT novo, não upsert — pra dar pra
 // montar a curva de movimento de linha ao longo do tempo, como pedido.
 // ============================================================
 
-const MINIMO_JOGOS_JANELA = 3;
-const JANELAS_DIAS = [7, 14, 21];
+const JANELA_CANDIDATOS_DIAS = 21;
 
 function normalizarTexto2(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
@@ -2340,152 +2690,279 @@ const ALIASES_ODDSPAPI = {
   'atleticomineiromg': 'clubeatleticomineiro',
   'caparanaensepr': 'clubathleticoparanaense',
 };
+// Segunda camada de casamento, por TOKEN em vez de substring cru na string
+// colapsada -- a checagem acima (ALIASES_ODDSPAPI + substring) continua
+// intacta como primeira tentativa (já validada em produção pros apelidos
+// brasileiros), essa aqui só entra como fallback OR, nunca substitui nada.
+// BUG REAL corrigido (achado auditando Champions League a pedido do
+// usuário, 2026-08-17): 375 das 503 partidas finalizadas da liga nunca
+// batiam por substring -- ou por causa de uma palavra extra no meio do
+// nome nosso ("Club Atlético DE Madrid" vs "Atletico Madrid" -- o "de"
+// quebra o substring mesmo com as mesmas palavras dos dois lados) ou por
+// nome/cidade traduzida ou abreviação sem raiz em comum ("FC Bayern
+// München" vs "Bayern Munich", "AC Sparta Praha" vs "Sparta Prague").
+// tarefaOddsHistorico não tinha como distinguir isso de "liga realmente
+// sem mais dado disponível" -- reportava "Nenhuma partida pendente
+// encontrada" (liga "concluída") com só 25% de fato importado, e o cron
+// seguia pra próxima liga sozinho, mascarando o problema indefinidamente.
+const ALIASES_TOKEN_ODDSPAPI = {
+  munchen: 'munich',        // FC Bayern München / Bayern Munich
+  praha: 'prague',          // AC Sparta Praha, SK Slavia Praha / ...Prague
+  olympiakos: 'olympiacos', // PAE Olympiakos SFP / Olympiacos Piraeus
+  paphos: 'pafos',          // Paphos FC / Pafos FC
+  internazionale: 'inter',  // FC Internazionale Milano / Inter Milano
+};
+// Pares de nome INTEIRO sem nenhum token em comum entre o nosso cadastro e
+// a OddsPapi (sigla vs. nome da cidade, sigla diferente) -- não dá pra
+// resolver por alias de token isolado, o par inteiro precisa ser
+// equivalenciado.
+const ALIASES_NOME_ODDSPAPI = {
+  'sporting clube de portugal': 'sporting cp',
+  'celtic fc': 'celtic glasgow',
+  'galatasaray sk': 'galatasaray istanbul',
+  'juventus fc': 'juventus turin',
+  'athletic club': 'athletic bilbao',
+  'fk shakhtar donetsk': 'fc shakhtar donetsk',
+  'fk kairat': 'fc kairat almaty',
+  'pae olympiakos sfp': 'olympiacos piraeus',
+  'real betis balompie': 'real betis seville',
+  'real sociedad de futbol': 'real sociedad san sebastian',
+  // Os 14 abaixo vieram de uma auditoria cruzada (2026-08-17, a pedido do
+  // usuário depois do fix de La Liga): comparei, pra cada uma das 14 ligas
+  // mapeadas, os times sem odds importadas contra os nomes já presentes em
+  // `oddspapi_cache.fixtures_finalizadas_liga_X` da MESMA liga -- ou seja,
+  // são pares onde o dado já está cacheado (não é retenção/ausência da
+  // OddsPapi), só nunca casava por nome. Cidade traduzida (Köln/Cologne,
+  // København/Copenhagen), sigla sem raiz comum (AFC Ajax/Ajax Amsterdam,
+  // BSC Young Boys/Young Boys Bern, LAFC/Los Angeles FC), sufixo do
+  // clube preservado só de um lado (SS Lazio/Lazio Rome, AC Pisa
+  // 1909/Pisa SC, Stade Brestois 29/Stade Brest 29 -- essa última também
+  // destrava Ligue 1) e país com nome diferente na Copa do Mundo FIFA
+  // (South Korea/Korea Republic, Turkey/Turkiye, United States/USA).
+  'afc ajax': 'ajax amsterdam',
+  'bsc young boys': 'young boys bern',
+  'fc k benhavn': 'fc copenhagen',
+  'stade brestois 29': 'stade brest 29',
+  'ss lazio': 'lazio rome',
+  'ac pisa 1909': 'pisa sc',
+  '1 fc koln': '1 fc cologne',
+  'south korea': 'korea republic',
+  'turkey': 'turkiye',
+  'united states': 'usa',
+  'lafc': 'los angeles fc',
+  'wydad casablanca': 'wydad ac',
+  'sport lisboa e benfica': 'sl benfica',
+  'fk bod glimt': 'bodoe glimt',
+};
+function normalizarNomeOddsPapiTokens(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+function nomesBatemPorToken(a, b) {
+  let na = normalizarNomeOddsPapiTokens(a), nb = normalizarNomeOddsPapiTokens(b);
+  na = ALIASES_NOME_ODDSPAPI[na] || na;
+  nb = ALIASES_NOME_ODDSPAPI[nb] || nb;
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const tokensA = new Set(na.split(' ').map((t) => ALIASES_TOKEN_ODDSPAPI[t] || t));
+  const tokensB = new Set(nb.split(' ').map((t) => ALIASES_TOKEN_ODDSPAPI[t] || t));
+  return [...tokensA].every((t) => tokensB.has(t)) || [...tokensB].every((t) => tokensA.has(t));
+}
 function nomesBatem(a, b) {
   let x = normalizarTexto2(a), y = normalizarTexto2(b);
   x = ALIASES_ODDSPAPI[x] || x;
   y = ALIASES_ODDSPAPI[y] || y;
-  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+  if (x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x))) return true;
+  return nomesBatemPorToken(a, b);
 }
 
-async function acharJanelaComJogos(supabase, ligaId) {
-  for (const dias of JANELAS_DIAS) {
-    const ate = new Date(Date.now() + dias * 86400000).toISOString();
-    const { count } = await supabase.from('matches').select('id', { count: 'exact', head: true })
-      .eq('league_id', ligaId).eq('status', 'scheduled').lte('match_date', ate);
-    if ((count || 0) >= MINIMO_JOGOS_JANELA || dias === JANELAS_DIAS[JANELAS_DIAS.length - 1]) {
-      return { dias, count: count || 0 };
+// Extrai TODAS as seleções de TODOS os mercados presentes num fixture do
+// sync ao vivo (/v4/odds-by-tournaments, verbosity=3) -- generaliza o que
+// antes só pegava 1X2/O-U 2.5/BTTS hardcoded. A chave de cada outcome
+// dentro de `market.outcomes` É o outcomeId da cache `markets` (confirmado
+// via tarefa=odds-sync-diagnostico em produção, 2026-08-15 -- mesma
+// convenção já usada por tarefaOddsHistorico), NÃO o `bookmakerOutcomeId`
+// aninhado (esse é um ID interno da casa, só é semântico por coincidência
+// pro 1X2/over-under; pro BTTS é um número arbitrário tipo "1633789709").
+// Reaproveita slugMercadoHistorico/slugSelecaoHistorico -- garante o MESMO
+// rótulo de mercado/seleção entre sync ao vivo e backfill histórico.
+function extrairLinhasOddsGenericas(marketsFixture, mercadosPorId) {
+  const linhas = []; // { market, selection, odds }
+  for (const [marketId, marketObj] of Object.entries(marketsFixture || {})) {
+    if (marketObj?.marketActive === false) continue; // mercado inteiro suspenso agora
+    const info = mercadosPorId.get(marketId);
+    if (!info) continue; // marketId fora da cache -- pula sem travar o resto
+
+    const market = slugMercadoHistorico(info.marketName, info.handicap, info.period);
+    for (const [outcomeId, outcomeData] of Object.entries(marketObj.outcomes || {})) {
+      const jogador = outcomeData?.players?.['0'];
+      if (!jogador || jogador.price == null || jogador.price <= 1) continue;
+      if (jogador.active === false) continue; // linha específica suspensa agora
+      const outcomeInfo = (info.outcomes || []).find((o) => String(o.outcomeId) === outcomeId);
+      if (!outcomeInfo) continue;
+      linhas.push({ market, selection: slugSelecaoHistorico(outcomeInfo.outcomeName), odds: Number(jogador.price) });
     }
   }
-  return { dias: JANELAS_DIAS[JANELAS_DIAS.length - 1], count: 0 };
+  return linhas;
 }
 
-function acharMercadoPorNome(marketsFixture, mercadosCache, nomeAlvo) {
-  for (const [marketId, market] of Object.entries(marketsFixture || {})) {
-    const info = mercadosCache[marketId];
-    if (info?.marketName === nomeAlvo) return { marketId, market };
+// Sincroniza odds ao vivo pra uma LISTA de ligas internas numa chamada
+// batched por bookmaker (ver comentário acima -- tournamentIds aceita
+// vários valores separados por vírgula, custo NÃO escala com o número de
+// ligas). ligaIds sem torneio resolvido em liga_oddspapi_tournament são
+// ignoradas silenciosamente (reportadas em `ligas_sem_torneio`).
+async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
+  const { data: mapas } = await supabase.from('liga_oddspapi_tournament').select('league_id, tournament_id, tournament_name').in('league_id', ligaIds);
+  const ligasSemTorneio = ligaIds.filter((id) => !(mapas || []).some((m) => m.league_id === id));
+  if (!mapas || mapas.length === 0) {
+    return { error: `Nenhuma das ligas pedidas (${ligaIds.join(', ')}) tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
   }
-  return null;
-}
+  const mapaPorLiga = Object.fromEntries(mapas.map((m) => [m.league_id, m]));
+  const mapaPorTorneio = Object.fromEntries(mapas.map((m) => [String(m.tournament_id), m]));
+  const ligasResolvidas = mapas.map((m) => m.league_id);
 
-function extrairPrecosSelecoes(market, filtroOutcomeId) {
-  const resultado = {};
-  for (const outcome of Object.values(market.outcomes || {})) {
-    const jogador = outcome.players?.['0'];
-    if (!jogador || jogador.price == null) continue;
-    const id = jogador.bookmakerOutcomeId;
-    if (filtroOutcomeId && !filtroOutcomeId(id)) continue;
-    resultado[id] = Number(jogador.price);
-  }
-  return resultado;
-}
-
-async function tarefaOddsSync(supabase, apiKey, ligaId) {
-  if (!LIGAS_DOMESTICAS.includes(ligaId)) {
-    return { error: `liga_id inválido — precisa ser uma das ligas domésticas: ${LIGAS_DOMESTICAS.join(', ')}.` };
-  }
-
-  const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
-  if (!mapa) return { error: `Liga ${ligaId} ainda não tem torneio da OddsPapi resolvido em liga_oddspapi_tournament — rode tarefa=odds-descobrir e confirme manualmente primeiro.` };
-
-  const janela = await acharJanelaComJogos(supabase, ligaId);
-  if (janela.count === 0) {
-    return { liga_id: ligaId, torneio: mapa.tournament_name, pulado: true, motivo: `Nenhum jogo agendado nos próximos ${janela.dias} dias — sync pulado pra não gastar cota à toa.` };
+  // Guarda simples (consulta local, sem custo de cota): só pula a chamada
+  // batched inteira se NENHUMA liga pedida tiver jogo agendado dentro da
+  // janela fixa (ex.: parada pra data FIFA afetando todo o lote de uma vez).
+  const janelaAteIso = new Date(Date.now() + JANELA_CANDIDATOS_DIAS * 86400000).toISOString();
+  const { count: totalAgendados } = await supabase.from('matches').select('id', { count: 'exact', head: true })
+    .in('league_id', ligasResolvidas).eq('status', 'scheduled').lte('match_date', janelaAteIso);
+  if (!totalAgendados) {
+    return {
+      ligas_pedidas: ligasResolvidas,
+      ligas_sem_torneio: ligasSemTorneio.length ? ligasSemTorneio : undefined,
+      pulado: true,
+      motivo: `Nenhuma das ligas pedidas tem jogo agendado nos próximos ${JANELA_CANDIDATOS_DIAS} dias — sync pulado pra não gastar cota à toa.`,
+    };
   }
 
   const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
-  const mercadosCache = Object.fromEntries((mercadosCacheRaw?.valor || []).map(m => [String(m.marketId), m]));
+  const mercadosPorId = new Map((mercadosCacheRaw?.valor || []).filter((m) => !m.playerProp).map((m) => [String(m.marketId), m]));
+  if (mercadosPorId.size === 0) return { error: 'Cache `markets` vazia/inválida — rode tarefa=odds-descobrir de novo.' };
 
-  const janelaAteMs = Date.now() + janela.dias * 86400000;
-  const { data: candidatos } = await supabase.from('matches').select('id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
-    .eq('league_id', ligaId).eq('status', 'scheduled').lte('match_date', new Date(janelaAteMs).toISOString());
+  // MESMA janela pra todas as ligas do batch (ver comentário no topo da
+  // seção) -- nenhum filtro extra por liga depois desta query.
+  const { data: candidatosRaw } = await supabase.from('matches')
+    .select('id, league_id, match_date, home:teams!matches_home_team_id_fkey(id,name), away:teams!matches_away_team_id_fkey(id,name)')
+    .in('league_id', ligasResolvidas).eq('status', 'scheduled').lte('match_date', janelaAteIso);
+  const candidatos = candidatosRaw || [];
 
-  const resultado = { liga_id: ligaId, torneio: mapa.tournament_name, janela_dias: janela.dias, jogos_candidatos: (candidatos || []).length, por_bookmaker: [], linhas_inseridas: 0 };
+  // LIMITE REAL da OddsPapi (achado testando em produção, não documentado
+  // antes -- diferente do que o comentário anterior desta função presumia):
+  // /v4/odds-by-tournaments aceita no MÁXIMO 5 tournamentIds por chamada --
+  // HTTP 400 "Too many tournament IDs specified... maximum of 5" acima
+  // disso. Com mais de 5 ligas resolvidas, cada bookmaker agora precisa de
+  // vários lotes (ainda MUITO mais barato que 1 chamada por liga: 16 ligas
+  // = 4 lotes de até 5 = 12 chamadas/rodada pras 3 casas, vs. 48 se fosse 1
+  // chamada por liga, vs. as 18 de antes desta mudança pra só 6 ligas).
+  const lotesTorneios = loteados(mapas.map((m) => m.tournament_id), 5);
+
+  const resultado = {
+    ligas_pedidas: mapas.map((m) => ({ league_id: m.league_id, torneio: m.tournament_name })),
+    ligas_sem_torneio: ligasSemTorneio.length ? ligasSemTorneio : undefined,
+    janela_dias: JANELA_CANDIDATOS_DIAS,
+    jogos_candidatos: candidatos.length,
+    lotes_de_torneios: lotesTorneios.length,
+    por_bookmaker: [],
+    linhas_inseridas: 0,
+  };
 
   let primeiraChamada = true;
   for (const bookmaker of BOOKMAKERS_ALVO) {
-    // Rate limit real da OddsPapi (achado em produção): 429 se as chamadas em
-    // /v4/odds-by-tournaments vierem muito rápido uma atrás da outra — a doc
-    // pública menciona "500ms de cooldown", mas na prática levou 2 das 3
-    // chamadas sequenciais a 429. 800ms de intervalo entre elas resolveu.
-    if (!primeiraChamada) await new Promise(r => setTimeout(r, 800));
-    primeiraChamada = false;
-
-    let fixtures;
-    try {
-      fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: mapa.tournament_id, bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
-    } catch (e) {
-      resultado.por_bookmaker.push({ bookmaker, erro: e.message });
-      continue;
-    }
-    if (!Array.isArray(fixtures)) { resultado.por_bookmaker.push({ bookmaker, erro: 'resposta inesperada' }); continue; }
-
-    let casados = 0, semCasar = 0;
+    let casados = 0, semCasar = 0, mercadosExtraidos = 0, fixturesRecebidos = 0;
     const linhas = [];
+    const errosLotes = [];
     const agora = new Date().toISOString();
 
-    for (const fx of fixtures) {
-      const dataFixture = fx.startTime ? new Date(fx.startTime) : null;
-      const partida = (candidatos || []).find(m => {
-        if (!dataFixture || !m.match_date) return false;
-        const diffHoras = Math.abs(new Date(m.match_date) - dataFixture) / 3600000;
-        if (diffHoras > 36) return false; // tolerância de fuso/horário de exibição
-        return (nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name));
-      });
-      if (!partida) { semCasar++; continue; }
-      casados++;
+    for (const loteIds of lotesTorneios) {
+      // Rate limit real da OddsPapi (achado em produção): 429 se as chamadas
+      // em /v4/odds-by-tournaments vierem muito rápido uma atrás da outra —
+      // a doc pública menciona "500ms de cooldown", mas na prática levou
+      // chamadas sequenciais a 429 mesmo com 800ms (visto quando um lote
+      // anterior falhou rápido por erro de validação, sem gastar o tempo
+      // normal de processamento). Além do cooldown fixo, retenta 1x em cima
+      // de um 429 (a própria API devolve `retryMs` -- usa isso, com piso de
+      // 1s, em vez de adivinhar um valor).
+      if (!primeiraChamada) await new Promise((r) => setTimeout(r, 800));
+      primeiraChamada = false;
 
-      const marketsFixture = fx.bookmakerOdds?.[bookmaker]?.markets;
-      if (!marketsFixture) continue;
-
-      const mercado1x2 = acharMercadoPorNome(marketsFixture, mercadosCache, 'Full Time Result');
-      if (mercado1x2) {
-        const precos = extrairPrecosSelecoes(mercado1x2.market, id => ['home', 'draw', 'away'].includes(id));
-        for (const [selecao, odd] of Object.entries(precos)) {
-          linhas.push({ match_id: partida.id, bookmaker, market: '1X2', selection: selecao, odds: odd, snapshot: 'pre_closing', captured_at: agora });
+      let fixtures;
+      try {
+        fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: loteIds.join(','), bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+      } catch (e) {
+        const matchRetry = /HTTP 429/.test(e.message) ? e.message.match(/"retryMs":(\d+)/) : null;
+        if (matchRetry) {
+          await new Promise((r) => setTimeout(r, Math.max(1000, Number(matchRetry[1]))));
+          try {
+            fixtures = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds: loteIds.join(','), bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+          } catch (e2) {
+            errosLotes.push({ lote: loteIds, erro: e2.message });
+            continue;
+          }
+        } else {
+          errosLotes.push({ lote: loteIds, erro: e.message });
+          continue;
         }
       }
+      if (!Array.isArray(fixtures)) { errosLotes.push({ lote: loteIds, erro: 'resposta inesperada' }); continue; }
+      fixturesRecebidos += fixtures.length;
 
-      const mercadoTotals = acharMercadoPorNome(marketsFixture, mercadosCache, 'Over Under Full Time');
-      if (mercadoTotals) {
-        const precos = extrairPrecosSelecoes(mercadoTotals.market, id => id?.startsWith('2.5/'));
-        for (const [id, odd] of Object.entries(precos)) {
-          const selecao = id.endsWith('over') ? 'over' : 'under';
-          linhas.push({ match_id: partida.id, bookmaker, market: 'over_under_2.5', selection: selecao, odds: odd, snapshot: 'pre_closing', captured_at: agora });
-        }
-      }
+      for (const fx of fixtures) {
+        const dataFixture = fx.startTime ? new Date(fx.startTime) : null;
+        const ligaDoFixture = mapaPorTorneio[String(fx.tournamentId)]?.league_id;
+        const partida = candidatos.find((m) => {
+          if (ligaDoFixture != null && m.league_id !== ligaDoFixture) return false;
+          if (!dataFixture || !m.match_date) return false;
+          const diffHoras = Math.abs(new Date(m.match_date) - dataFixture) / 3600000;
+          if (diffHoras > 36) return false; // tolerância de fuso/horário de exibição
+          return (nomesBatem(m.home?.name, fx.participant1Name) && nomesBatem(m.away?.name, fx.participant2Name));
+        });
+        if (!partida) { semCasar++; continue; }
+        casados++;
 
-      const mercadoBTTS = acharMercadoPorNome(marketsFixture, mercadosCache, 'Both Teams To Score');
-      if (mercadoBTTS) {
-        const precos = extrairPrecosSelecoes(mercadoBTTS.market, id => ['yes', 'no'].includes(id));
-        for (const [selecao, odd] of Object.entries(precos)) {
-          linhas.push({ match_id: partida.id, bookmaker, market: 'btts', selection: selecao, odds: odd, snapshot: 'pre_closing', captured_at: agora });
-        }
+        const marketsFixture = fx.bookmakerOdds?.[bookmaker]?.markets;
+        if (!marketsFixture) continue;
+
+        const extraidas = extrairLinhasOddsGenericas(marketsFixture, mercadosPorId);
+        mercadosExtraidos += extraidas.length;
+        extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora }));
       }
     }
 
     if (linhas.length > 0) {
       const { error: erroInsert } = await supabase.from('odds_market').insert(linhas);
-      if (erroInsert) { resultado.por_bookmaker.push({ bookmaker, erro: erroInsert.message }); continue; }
+      if (erroInsert) { resultado.por_bookmaker.push({ bookmaker, erro: erroInsert.message, erros_lotes: errosLotes.length ? errosLotes : undefined }); continue; }
     }
 
     resultado.linhas_inseridas += linhas.length;
-    resultado.por_bookmaker.push({ bookmaker, fixtures_recebidos: fixtures.length, jogos_casados: casados, sem_correspondencia: semCasar, linhas_inseridas: linhas.length });
+    resultado.por_bookmaker.push({
+      bookmaker, fixtures_recebidos: fixturesRecebidos, jogos_casados: casados, sem_correspondencia: semCasar,
+      linhas_extraidas: mercadosExtraidos, linhas_inseridas: linhas.length, erros_lotes: errosLotes.length ? errosLotes : undefined,
+    });
   }
 
   return resultado;
 }
 
-// Roda tarefaOddsSync nas 6 ligas domésticas em sequência — usado pelo cron
-// (vercel.json) e pra sincronizar tudo manualmente numa chamada só. Cada liga
-// já pula sozinha se não tiver jogo suficiente no curto prazo, então o custo
-// real varia (pior caso: 18 chamadas, 3 por liga; normalmente bem menos,
-// já que nem toda liga tem jogo dentro da janela toda vez que o cron roda).
+// Wrapper de 1 liga só -- mantém a assinatura antiga (?tarefa=odds&liga_id=X).
+async function tarefaOddsSync(supabase, apiKey, ligaId) {
+  return tarefaOddsSyncLote(supabase, apiKey, [ligaId]);
+}
+
+// Roda o sync batched pra TODAS as ligas com torneio da OddsPapi resolvido
+// (não só as 6 domésticas mais -- qualquer linha em liga_oddspapi_tournament,
+// fonte de verdade dinâmica, sem precisar mexer em código pra adicionar liga
+// nova) — usado pelo cron (vercel.json). Custo FIXO: 3 chamadas (1 por
+// bookmaker), qualquer que seja o número de ligas incluídas (ver comentário
+// de tarefaOddsSyncLote).
 async function tarefaOddsTodas(supabase, apiKey) {
-  const porLiga = [];
-  for (const ligaId of LIGAS_DOMESTICAS) {
-    porLiga.push(await tarefaOddsSync(supabase, apiKey, ligaId));
-  }
-  return { ligas: porLiga, total_linhas_inseridas: porLiga.reduce((s, r) => s + (r.linhas_inseridas || 0), 0) };
+  const { data: mapas } = await supabase.from('liga_oddspapi_tournament').select('league_id');
+  const ligaIds = (mapas || []).map((m) => m.league_id);
+  if (ligaIds.length === 0) return { error: 'Nenhuma liga com torneio da OddsPapi resolvido em liga_oddspapi_tournament.' };
+  return tarefaOddsSyncLote(supabase, apiKey, ligaIds);
 }
 
 const FOOTBALL_DATA_BASE_URL = 'https://api.football-data.org/v4';
@@ -2567,14 +3044,13 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
     });
   }
 
-  let inseridosOuAtualizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) inseridosOuAtualizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se API-Football/FotMob já tiver
+  // essa mesma partida gravada nessa liga -- ver api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, ligaRow.id, linhas);
 
   return {
-    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: inseridosOuAtualizados,
+    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     times_com_problema: timesCriados.size > 0 ? [...timesCriados] : undefined,
   };
 }
@@ -2686,13 +3162,14 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
     });
   }
 
-  let sincronizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) sincronizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se football-data.org/FotMob já
+  // tiver essa mesma partida gravada nessa liga -- ver api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, fonteRow.league_id, linhas);
 
-  return { api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length, sincronizados };
+  return {
+    api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length,
+    sincronizados: gravados, duplicatas_evitadas: duplicatas_evitadas || undefined,
+  };
 }
 
 // ============================================================
@@ -2871,15 +3348,17 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
     });
   }
 
-  let sincronizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) sincronizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se football-data.org/API-Football
+  // já tiver essa mesma partida gravada nessa liga -- importante aqui em
+  // especial, já que esse tarefa também é reusado pra sincronizar
+  // temporada de liga JÁ existente (não só onboarding de liga nova) -- ver
+  // api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, leagueId, linhas);
 
   return {
     league_id: leagueId, liga_id: ligaCadastroId, liga_criada: ligaCriada,
-    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados,
+    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     ...(avisoCadastroLigas ? { aviso: avisoCadastroLigas } : {}),
   };
 }
@@ -4248,6 +4727,372 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   };
 }
 
+// ============================================================
+// TAREFAS: Carteira (Paper Trading)
+// Diferente de tarefaSimulacaoCarteira (recalculada do zero sobre histórico
+// JÁ RESOLVIDO), aqui a banca é PERSISTENTE e evolui sobre partidas AINDA
+// NÃO disputadas (matches.status='scheduled') das LIGAS_DOMESTICAS (únicas
+// com odds ao vivo sincronizadas via tarefaOddsSync/tarefaOddsTodas em
+// odds_market, snapshot='pre_closing'), nos mesmos 3 mercados já cobertos
+// em treino (MERCADOS_CARTEIRA_SUPORTADOS). Duas tabelas novas
+// (paper_trading_carteiras/paper_trading_apostas, ver migração
+// create_paper_trading): uma carteira guarda modelo+mercado+parâmetros de
+// stake/EV+banca_atual; cada aposta é uma linha presa a ela.
+//
+//   ?tarefa=paper-carteira-criar (POST, auth)         -> cria carteira nova
+//   ?tarefa=paper-carteira-listar                     -> lista todas + resumo (banca/ROI/pendentes)
+//   ?tarefa=paper-carteira-detalhe&carteira_id=X       -> carteira + histórico completo de apostas
+//   ?tarefa=paper-carteira-apostar&carteira_id=X (POST, auth)
+//                               -> varre partidas agendadas com odds+predição do modelo/mercado da
+//                                   carteira ainda não apostadas, aplica filtro de EV, dimensiona
+//                                   stake (Kelly/fixa) contra a banca_atual e debita
+//   ?tarefa=paper-carteira-resolver[&carteira_id=X] (POST, auth)
+//                               -> resolve apostas pendentes cuja partida já tem resultado
+//                                   (finished/cancelled), credita a banca_atual. Sem carteira_id,
+//                                   resolve todas.
+//   ?tarefa=paper-carteira-alternar-ativa&carteira_id=X (POST, auth) -> pausa/reativa
+//   ?tarefa=paper-carteira-excluir&carteira_id=X (POST, auth)        -> apaga carteira + apostas
+//   ?tarefa=paper-carteira-rodar-todas -> cron diário (vercel.json): apostar+resolver em
+//                                   sequência pra TODAS as carteiras ativas. Sem checagem de auth
+//                                   de propósito (mesmo padrão de odds-todas/elo-rotativo -- só o
+//                                   cron chama, nunca o frontend).
+// ============================================================
+
+async function buscarPredicoesCarteira(supabase, matchIds, modelo, mercado) {
+  const [antigasRaw, benchRaw] = await Promise.all([
+    mercado === '1X2'
+      ? buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).in('market', ['1X2', '1x2']).in('match_id', ids))
+      : buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('model_predictions').select('match_id, selection, probability').eq('model_name', modelo).eq('market', mercado).in('match_id', ids)),
+    mercado === '1X2'
+      ? buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('model_name', modelo).eq('mercado', '1X2').in('match_id', ids))
+      : buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('predicoes').select('match_id, model_name, prob_under, prob_over').eq('model_name', modelo).eq('mercado', mercado).in('match_id', ids)),
+  ]);
+  const bench = mercado === '1X2' ? normalizarPredicoesBenchmarking(benchRaw) : normalizarPredicoesBenchmarkingOverUnder(benchRaw);
+  return [...antigasRaw, ...bench];
+}
+
+// Melhor (maior) odd por (match_id, selection) entre as casas capturadas --
+// mesmo critério já usado em rodar_predicoes.py (calcular_melhor_odd_por_
+// partida): é a odd que de fato dá mais valor pro apostador.
+function melhorOddPorChave(linhasOdds) {
+  const mapa = {};
+  linhasOdds.forEach((r) => {
+    const chave = `${r.match_id}__${r.selection}`;
+    const odd = Number(r.odds);
+    const atual = mapa[chave];
+    if (!atual || odd > atual.odd) mapa[chave] = { odd, bookmaker: r.bookmaker };
+  });
+  return mapa;
+}
+
+// Núcleo de "apostar" -- sem checagem de auth (chamado tanto pela tarefa
+// clicável no frontend quanto pelo cron rodar-todas). Varre partidas
+// agendadas, aplica EV, dimensiona stake e credita/debita banca_atual.
+async function apostarCarteira(supabase, carteira) {
+  const ligasAlvo = carteira.liga_id ? [carteira.liga_id] : LIGAS_DOMESTICAS;
+  const matchesAgendadas = await buscarTudoPaginado(() =>
+    supabase.from('matches').select('id, league_id, match_date, status').eq('status', 'scheduled').in('league_id', ligasAlvo));
+  if (matchesAgendadas.length === 0) {
+    return { apostas_novas: 0, motivo: 'Nenhuma partida agendada nas ligas configuradas.', banca_atual: Number(carteira.banca_atual) };
+  }
+  const matchIds = matchesAgendadas.map((m) => m.id);
+  const matchPorId = Object.fromEntries(matchesAgendadas.map((m) => [m.id, m]));
+
+  const [predicoesRaw, oddsRaw, calibracoesRaw, jaApostado] = await Promise.all([
+    buscarPredicoesCarteira(supabase, matchIds, carteira.modelo, carteira.mercado),
+    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('odds_market').select('match_id, selection, odds, bookmaker').eq('market', carteira.mercado).eq('snapshot', 'pre_closing').in('match_id', ids)),
+    carteira.usar_calibracao === 'nenhuma'
+      ? Promise.resolve([])
+      : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', carteira.modelo).eq('market', carteira.mercado)),
+    buscarTudoPaginado(() => supabase.from('paper_trading_apostas').select('match_id, selection').eq('carteira_id', carteira.id)),
+  ]);
+
+  if (predicoesRaw.length === 0) return { apostas_novas: 0, motivo: `Sem predição de "${carteira.modelo}" pra nenhuma partida agendada.`, banca_atual: Number(carteira.banca_atual) };
+
+  const oddsPorChave = melhorOddPorChave(oddsRaw.filter((r) => matchPorId[r.match_id]));
+  const calibPorSelecao = {};
+  calibracoesRaw.forEach((c) => {
+    if (c.method !== carteira.usar_calibracao) return;
+    calibPorSelecao[c.selection] = c.method === 'platt'
+      ? { tipo: 'platt', a: Number(c.platt_coef), b: Number(c.platt_intercept) }
+      : { tipo: 'isotonic', x: c.isotonic_x, y: c.isotonic_y };
+  });
+  const jaApostadoSet = new Set(jaApostado.map((a) => `${a.match_id}__${a.selection}`));
+
+  const evMinimo = Number(carteira.ev_minimo);
+  const evMaximo = Number(carteira.ev_maximo);
+  const candidatos = [];
+  for (const p of predicoesRaw) {
+    const match = matchPorId[p.match_id];
+    if (!match) continue;
+    const chave = `${p.match_id}__${p.selection}`;
+    if (jaApostadoSet.has(chave)) continue;
+    const melhor = oddsPorChave[chave];
+    if (!melhor) continue;
+
+    let pModelo = Number(p.probability);
+    if (carteira.usar_calibracao !== 'nenhuma') {
+      const calib = calibPorSelecao[p.selection];
+      if (!calib) continue;
+      pModelo = calib.tipo === 'platt' ? aplicarPlattPredicao(pModelo, calib.a, calib.b) : aplicarIsotonicPredicao(pModelo, calib.x, calib.y);
+      if (pModelo == null) continue;
+    }
+    const ev = pModelo * melhor.odd;
+    if (ev < evMinimo || ev > evMaximo) continue;
+
+    candidatos.push({ match_id: p.match_id, selection: p.selection, odd: melhor.odd, bookmaker: melhor.bookmaker, p_modelo: pModelo, ev, data_partida: match.match_date });
+  }
+
+  if (candidatos.length === 0) return { apostas_novas: 0, motivo: 'Nenhum candidato passou o filtro de EV (ou já foi apostado antes).', banca_atual: Number(carteira.banca_atual) };
+
+  const bancaBase = Number(carteira.banca_atual);
+  const brutas = candidatos.map((c) => {
+    let stakeBruta;
+    if (carteira.tipo_stake === 'fixa') {
+      stakeBruta = Number(carteira.stake_fixa);
+    } else {
+      const b = c.odd - 1;
+      const f = b > 0 ? (c.p_modelo * b - (1 - c.p_modelo)) / b : 0;
+      stakeBruta = Math.max(0, f) * Number(carteira.kelly_multiplier) * bancaBase;
+    }
+    return { ...c, stake_bruta: stakeBruta };
+  });
+  const piso = Number(carteira.stake_minima_pct) * bancaBase;
+  const validas = brutas.filter((b) => b.stake_bruta >= piso);
+  if (validas.length === 0) return { apostas_novas: 0, motivo: 'Candidatos ficaram abaixo do piso de stake mínima.', banca_atual: bancaBase };
+
+  const somaStakes = validas.reduce((s, v) => s + v.stake_bruta, 0);
+  const teto = Number(carteira.teto_exposicao_pct) * bancaBase;
+  // Nunca alavanca: além do teto de exposição, o lote nunca pode comprometer
+  // mais do que a própria banca_atual disponível.
+  const fatorEscala = somaStakes > 0 ? Math.min(1, teto / somaStakes, bancaBase / somaStakes) : 1;
+
+  const apostasParaInserir = [];
+  let banca = bancaBase;
+  for (const v of validas) {
+    const stake = v.stake_bruta * fatorEscala;
+    if (stake <= 0 || stake > banca) continue;
+    apostasParaInserir.push({
+      carteira_id: carteira.id, match_id: v.match_id, selection: v.selection, bookmaker: v.bookmaker,
+      odd: v.odd, p_modelo: v.p_modelo, ev: v.ev, stake, status: 'pendente', banca_antes: banca, data_partida: v.data_partida,
+    });
+    banca -= stake;
+  }
+  if (apostasParaInserir.length === 0) return { apostas_novas: 0, motivo: 'Nenhuma aposta sobrou depois do dimensionamento de stake.', banca_atual: banca };
+
+  const { error: erroInsert } = await supabase.from('paper_trading_apostas').insert(apostasParaInserir);
+  if (erroInsert) throw erroInsert;
+  await supabase.from('paper_trading_carteiras').update({ banca_atual: banca, updated_at: new Date().toISOString() }).eq('id', carteira.id);
+
+  return { apostas_novas: apostasParaInserir.length, banca_atual: banca };
+}
+
+// Núcleo de "resolver" -- idem, sem checagem de auth própria. anulada =
+// stake devolvido sem lucro/prejuízo (partida cancelada).
+async function resolverCarteira(supabase, carteira) {
+  const pendentes = await buscarTudoPaginado(() => supabase.from('paper_trading_apostas').select('*').eq('carteira_id', carteira.id).eq('status', 'pendente'));
+  if (pendentes.length === 0) return { resolvidas: 0, banca_atual: Number(carteira.banca_atual) };
+
+  const matchIds = [...new Set(pendentes.map((p) => p.match_id))];
+  const matches = await buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('matches').select('id, status, home_goals, away_goals').in('id', ids));
+  const matchPorId = Object.fromEntries(matches.map((m) => [m.id, m]));
+
+  let banca = Number(carteira.banca_atual);
+  let resolvidas = 0;
+  const agora = new Date().toISOString();
+  for (const aposta of pendentes) {
+    const match = matchPorId[aposta.match_id];
+    if (!match) continue;
+
+    if (match.status === 'cancelled') {
+      banca += Number(aposta.stake);
+      await supabase.from('paper_trading_apostas').update({ status: 'anulada', resultado_liquido: 0, banca_depois: banca, resolvido_em: agora }).eq('id', aposta.id);
+      resolvidas++;
+      continue;
+    }
+
+    const resultadoReal = calcularResultadoMercadoSimulacao(match, carteira.mercado);
+    if (resultadoReal == null) continue; // ainda scheduled/live/postponed sem placar -- fica pendente
+
+    const venceu = resultadoReal === aposta.selection;
+    const retorno = venceu ? Number(aposta.stake) * Number(aposta.odd) : 0;
+    const lucro = venceu ? Number(aposta.stake) * (Number(aposta.odd) - 1) : -Number(aposta.stake);
+    banca += retorno;
+    await supabase.from('paper_trading_apostas').update({ status: venceu ? 'ganhou' : 'perdeu', resultado_liquido: lucro, banca_depois: banca, resolvido_em: agora }).eq('id', aposta.id);
+    resolvidas++;
+  }
+
+  if (resolvidas > 0) {
+    await supabase.from('paper_trading_carteiras').update({ banca_atual: banca, updated_at: new Date().toISOString() }).eq('id', carteira.id);
+  }
+  return { resolvidas, banca_atual: banca };
+}
+
+async function tarefaPaperCarteiraCriar(supabase, authHeader, body) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de criar uma carteira.' };
+
+  const { nome, modelo, mercado, liga_id, usar_calibracao, tipo_stake, stake_fixa, kelly_multiplier, teto_exposicao_pct, ev_minimo, ev_maximo, stake_minima_pct, banca_inicial } = body || {};
+  if (!nome || !modelo) return { status: 400, error: 'nome e modelo são obrigatórios.' };
+  if (liga_id != null && !LIGAS_DOMESTICAS.includes(Number(liga_id))) {
+    return { status: 400, error: `liga_id precisa ser uma das ligas domésticas com odds ao vivo: ${LIGAS_DOMESTICAS.join(', ')} (ou deixe em branco pra todas).` };
+  }
+  const banca = Number(banca_inicial) > 0 ? Number(banca_inicial) : 1000;
+
+  const { data, error } = await supabase.from('paper_trading_carteiras').insert({
+    nome: String(nome).slice(0, 200),
+    modelo,
+    mercado: MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2',
+    liga_id: liga_id != null ? Number(liga_id) : null,
+    usar_calibracao: ['platt', 'isotonic'].includes(usar_calibracao) ? usar_calibracao : 'nenhuma',
+    tipo_stake: tipo_stake === 'fixa' ? 'fixa' : 'kelly',
+    stake_fixa: Number(stake_fixa) > 0 ? Number(stake_fixa) : 10,
+    kelly_multiplier: Number(kelly_multiplier) > 0 ? Number(kelly_multiplier) : 0.25,
+    teto_exposicao_pct: Number(teto_exposicao_pct) > 0 ? Number(teto_exposicao_pct) : 0.15,
+    ev_minimo: Number(ev_minimo) >= 1 ? Number(ev_minimo) : 1.02,
+    ev_maximo: Number(ev_maximo) > 1 ? Number(ev_maximo) : 2.0,
+    stake_minima_pct: Number(stake_minima_pct) >= 0 ? Number(stake_minima_pct) : 0.005,
+    banca_inicial: banca,
+    banca_atual: banca,
+  }).select().single();
+  if (error) return { status: 400, error: error.message };
+  return { status: 200, carteira: data };
+}
+
+async function tarefaPaperCarteiraListar(supabase) {
+  const [carteiras, ligasDomesticas] = await Promise.all([
+    buscarTudoPaginado(() => supabase.from('paper_trading_carteiras').select('*').order('created_at', { ascending: false })),
+    supabase.from('leagues').select('id, name').in('id', LIGAS_DOMESTICAS).then((r) => r.data || []),
+  ]);
+  if (carteiras.length === 0) return { status: 200, carteiras: [], ligas_domesticas: ligasDomesticas };
+
+  const ids = carteiras.map((c) => c.id);
+  const apostas = await buscarTudoPaginadoIn(ids, (lote) => supabase.from('paper_trading_apostas').select('carteira_id, status, stake, resultado_liquido').in('carteira_id', lote));
+
+  const resumoPorCarteira = {};
+  apostas.forEach((a) => {
+    const r = (resumoPorCarteira[a.carteira_id] = resumoPorCarteira[a.carteira_id] || { pendentes: 0, ganhou: 0, perdeu: 0, anulada: 0, resultado_liquido_total: 0 });
+    r[a.status] = (r[a.status] || 0) + 1;
+    if (a.status !== 'pendente' && a.resultado_liquido != null) r.resultado_liquido_total += Number(a.resultado_liquido);
+  });
+
+  const comResumo = carteiras.map((c) => {
+    const r = resumoPorCarteira[c.id] || { pendentes: 0, ganhou: 0, perdeu: 0, anulada: 0, resultado_liquido_total: 0 };
+    const bancaInicial = Number(c.banca_inicial);
+    return {
+      ...c,
+      resumo: {
+        n_apostas_pendentes: r.pendentes,
+        n_apostas_resolvidas: r.ganhou + r.perdeu + r.anulada,
+        n_apostas_ganhas: r.ganhou,
+        n_apostas_perdidas: r.perdeu,
+        resultado_liquido_total: r.resultado_liquido_total,
+        roi_total_pct: bancaInicial > 0 ? ((Number(c.banca_atual) - bancaInicial) / bancaInicial) * 100 : null,
+        win_rate_pct: (r.ganhou + r.perdeu) > 0 ? (r.ganhou / (r.ganhou + r.perdeu)) * 100 : null,
+      },
+    };
+  });
+
+  return { status: 200, carteiras: comResumo, ligas_domesticas: ligasDomesticas };
+}
+
+async function tarefaPaperCarteiraDetalhe(supabase, carteiraId) {
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+  const { data: carteira, error } = await supabase.from('paper_trading_carteiras').select('*').eq('id', carteiraId).maybeSingle();
+  if (error) return { status: 400, error: error.message };
+  if (!carteira) return { status: 404, error: 'Carteira não encontrada.' };
+
+  const apostas = await buscarTudoPaginado(() => supabase.from('paper_trading_apostas').select('*').eq('carteira_id', carteiraId).order('data_partida', { ascending: false }));
+  const matchIds = [...new Set(apostas.map((a) => a.match_id))];
+  const matches = matchIds.length > 0
+    ? await buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('matches').select('id, match_date, home:teams!matches_home_team_id_fkey(name), away:teams!matches_away_team_id_fkey(name)').in('id', ids))
+    : [];
+  const matchPorId = Object.fromEntries(matches.map((m) => [m.id, m]));
+
+  const apostasComPartida = apostas.map((a) => ({
+    ...a,
+    partida: matchPorId[a.match_id] ? { home: matchPorId[a.match_id].home?.name, away: matchPorId[a.match_id].away?.name, match_date: matchPorId[a.match_id].match_date } : null,
+  }));
+
+  return { status: 200, carteira, apostas: apostasComPartida };
+}
+
+async function tarefaPaperCarteiraApostar(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+
+  const { data: carteira, error } = await supabase.from('paper_trading_carteiras').select('*').eq('id', carteiraId).maybeSingle();
+  if (error) return { status: 400, error: error.message };
+  if (!carteira) return { status: 404, error: 'Carteira não encontrada.' };
+  if (!carteira.ativa) return { status: 400, error: 'Carteira está pausada -- reative antes de apostar.' };
+
+  const resultado = await apostarCarteira(supabase, carteira);
+  return { status: 200, carteira_id: carteiraId, ...resultado };
+}
+
+async function tarefaPaperCarteiraResolver(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  let query = supabase.from('paper_trading_carteiras').select('*');
+  if (carteiraId) query = query.eq('id', carteiraId);
+  const { data: carteiras, error } = await query;
+  if (error) return { status: 400, error: error.message };
+  if (carteiraId && (!carteiras || carteiras.length === 0)) return { status: 404, error: 'Carteira não encontrada.' };
+
+  const detalhe = [];
+  let totalResolvidas = 0;
+  for (const carteira of (carteiras || [])) {
+    const r = await resolverCarteira(supabase, carteira);
+    totalResolvidas += r.resolvidas;
+    detalhe.push({ carteira_id: carteira.id, ...r });
+  }
+  return { status: 200, total_resolvidas: totalResolvidas, carteiras: detalhe };
+}
+
+async function tarefaPaperCarteiraAlternarAtiva(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+
+  const { data: carteira, error } = await supabase.from('paper_trading_carteiras').select('ativa').eq('id', carteiraId).maybeSingle();
+  if (error) return { status: 400, error: error.message };
+  if (!carteira) return { status: 404, error: 'Carteira não encontrada.' };
+
+  const { data, error: erroUpdate } = await supabase.from('paper_trading_carteiras').update({ ativa: !carteira.ativa, updated_at: new Date().toISOString() }).eq('id', carteiraId).select().single();
+  if (erroUpdate) return { status: 400, error: erroUpdate.message };
+  return { status: 200, carteira: data };
+}
+
+async function tarefaPaperCarteiraExcluir(supabase, authHeader, carteiraId) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+  if (!carteiraId) return { status: 400, error: 'carteira_id é obrigatório.' };
+
+  const { error } = await supabase.from('paper_trading_carteiras').delete().eq('id', carteiraId);
+  if (error) return { status: 400, error: error.message };
+  return { status: 200, excluido: true };
+}
+
+// Cron diário (vercel.json) -- roda apostar+resolver em sequência pra todas
+// as carteiras ativas. Sem auth (mesmo padrão de odds-todas/elo-rotativo).
+async function tarefaPaperCarteiraRodarTodas(supabase) {
+  const carteiras = await buscarTudoPaginado(() => supabase.from('paper_trading_carteiras').select('*').eq('ativa', true));
+  const resultado = [];
+  for (const carteira of carteiras) {
+    try {
+      const apostou = await apostarCarteira(supabase, carteira);
+      const carteiraAtualizada = { ...carteira, banca_atual: apostou.banca_atual };
+      const resolveu = await resolverCarteira(supabase, carteiraAtualizada);
+      resultado.push({ carteira_id: carteira.id, nome: carteira.nome, apostas_novas: apostou.apostas_novas, resolvidas: resolveu.resolvidas, banca_atual: resolveu.banca_atual });
+    } catch (e) {
+      resultado.push({ carteira_id: carteira.id, nome: carteira.nome, erro: e.message });
+    }
+  }
+  return { carteiras_processadas: resultado.length, resultado };
+}
+
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL, serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -4302,6 +5147,14 @@ export default async function handler(req, res) {
       return res.status(200).json(await tarefaOddsDescobrir(supabase, apiKey, forcar === 'true'));
     }
 
+    if (tarefa === 'odds-sync-diagnostico') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      const resultado = await tarefaOddsSyncDiagnostico(supabase, apiKey, { tournamentIds: req.query.tournament_ids, bookmaker: req.query.bookmaker });
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
     if (tarefa === 'odds') {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
@@ -4330,9 +5183,15 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico precisa de ?liga_id=X.' } });
-      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite });
+      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite, forcar });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'refresh-cobertura-odds') {
+      const { error: erroRefresh } = await supabase.rpc('refresh_vw_cobertura_odds');
+      if (erroRefresh) return res.status(400).json({ error: { message: erroRefresh.message } });
+      return res.status(200).json({ mensagem: 'vw_cobertura_odds / vw_cobertura_odds_bookmaker atualizadas.' });
     }
 
     if (tarefa === 'elo') {
@@ -4461,6 +5320,60 @@ export default async function handler(req, res) {
       const resultado = await tarefaSimulacaoCarteira(supabase, req.query);
       if (resultado.error) return res.status(resultado.status).json({ error: { message: resultado.error } });
       return res.status(resultado.status).json(resultado.body);
+    }
+
+    // ------------------------------------------------------------------
+    // Carteira (Paper Trading)
+    // ------------------------------------------------------------------
+
+    if (tarefa === 'paper-carteira-criar') {
+      const resultado = await tarefaPaperCarteiraCriar(supabase, req.headers.authorization, req.body);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-listar') {
+      const resultado = await tarefaPaperCarteiraListar(supabase);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(corpo);
+    }
+
+    if (tarefa === 'paper-carteira-detalhe') {
+      const resultado = await tarefaPaperCarteiraDetalhe(supabase, req.query.carteira_id);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-apostar') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraApostar(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-resolver') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraResolver(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-alternar-ativa') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraAlternarAtiva(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-excluir') {
+      const carteiraId = (req.body || {}).carteira_id || req.query.carteira_id;
+      const resultado = await tarefaPaperCarteiraExcluir(supabase, req.headers.authorization, carteiraId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'paper-carteira-rodar-todas') {
+      return res.status(200).json(await tarefaPaperCarteiraRodarTodas(supabase));
     }
 
     // ------------------------------------------------------------------

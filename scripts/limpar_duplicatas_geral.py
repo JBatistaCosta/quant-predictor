@@ -17,20 +17,29 @@ from postgrest.exceptions import APIError
 from supabase import create_client
 
 # Configurações de acesso ao Supabase (chave de service_role necessária para escrita/delete)
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get(
-    "SUPABASE_KEY", 
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us"
-)
+# -- SEMPRE via variável de ambiente, nunca hardcoded (achado em produção:
+# uma versão anterior deste arquivo tinha a service_role key de verdade
+# hardcoded como fallback, exposta neste repositório PÚBLICO).
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 DRY_RUN = "--dry-run" in sys.argv
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Tabelas satélite com FK match_id → DELETE antes de deletar a partida-mãe.
+# Lista validada contra information_schema em produção nesta sessão (achado
+# investigando duplicatas de partida: 5 tabelas com FK "NO ACTION" pra
+# matches -- carteira_simulada, model_match_estimates,
+# paper_trading_apostas, team_unavailable_fotmob, xi_previsto -- estavam
+# faltando aqui, o que faria o DELETE de matches falhar com violação de FK
+# assim que alguma delas tivesse linha pra o match_id sendo removido. As
+# outras tabelas de FK (CASCADE) não precisam estar aqui pra não quebrar o
+# DELETE, mas seguem listadas por completude/clareza.
 _TABELAS_SATELITE = [
     "match_context_fotmob",
     "match_stats_fotmob",
+    "match_stats",
     "match_lineup_fotmob",
     "match_player_stats_fotmob",
     "match_shots_fotmob",
@@ -40,12 +49,18 @@ _TABELAS_SATELITE = [
     "match_stats_escanteios",
     "match_features_contexto",
     "model_stat_estimates",
+    "model_match_estimates",
     "model_predictions",
+    "custom_model_ondemand_predictions",
     "predicoes",
     "odds_market",
     "market_odds",
     "player_rating_history",
     "team_elo_history",
+    "carteira_simulada",
+    "paper_trading_apostas",
+    "team_unavailable_fotmob",
+    "xi_previsto",
 ]
 
 _LOTE_SATELITE = 50
@@ -53,13 +68,24 @@ _LOTE_MATCHES = 5
 _tabelas_inexistentes = set()
 
 def buscar_partidas_liga(liga_id: int) -> list[dict]:
-    """Busca todas as partidas de uma liga com paginação."""
+    """Busca todas as partidas de uma liga com paginação.
+
+    Achado rodando o dry-run em produção nesta sessão: sem `.order()`, OFFSET
+    devolve linha REPETIDA (mesmo `id`) entre páginas diferentes pra ligas
+    com mais de 1000 partidas (ordem de retorno do Postgres não é garantida
+    sem ORDER BY explícito) -- reproduzido pra Serie A: de 3040 partidas em 4
+    páginas, 1000 vieram duplicadas na memória. Isso inflava
+    `jogos_agrupados` com "duplicatas" falsas (mesmo id nos dois lados,
+    canceladas na hora de decidir o que remover) e, pior, podia mascarar
+    duplicatas REAIS perdidas pela mesma instabilidade. `.order("id")`
+    (chave primária) resolve com determinismo total."""
     todas, pagina, tam = [], 0, 1000
     while True:
         lote = (
             supabase.table("matches")
             .select("id, external_id, match_date, home_team_id, away_team_id, home_goals, away_goals, status, round, stage, season")
             .eq("league_id", liga_id)
+            .order("id")
             .range(pagina * tam, (pagina + 1) * tam - 1)
             .execute()
             .data or []

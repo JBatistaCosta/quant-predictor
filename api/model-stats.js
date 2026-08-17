@@ -160,11 +160,164 @@ function normalizarOddsBenchmarking(rows) {
   return linhas;
 }
 
+// --- XI titular previsto (scripts/rodar_xi_previsto.py) ---------------------
+// Acurácia do pipeline de XI contra a escalação REAL (match_lineup_fotmob),
+// por liga/temporada/versão de modelo. Fonte de dado totalmente separada do
+// resto deste arquivo (não é resultado de partida nem odds) -- dividido por
+// query param em vez de arquivo próprio porque api/*.js já está no teto de
+// 12 serverless functions do plano Hobby (ver skill workflow-quant-predictor).
+//
+// Mesma definição de precisao_media_top11/taxa_xi_exato já usada em
+// scripts/treinar_modelo_xi._metricas_top11 (acertos/11 por (match,time);
+// "exato" = o SET de 11 previstos bate com o SET de 11 reais) -- só que aqui
+// contra a escalação real de PARTIDAS JÁ JOGADAS em produção, não um split
+// de teste no treino. brier/log_loss usam prob_titular (contínua) contra
+// is_starter (0/1) de CADA jogador do elenco avaliado, não só o top-11 --
+// mede o quão bem calibrada é a probabilidade, não só o ranking.
+
+// `xi_previsto` cresce todo dia (previsão nova sobrescreve/soma a cada
+// rodada de scripts/rodar_xi_previsto.py) -- `buscarTudoPaginado` genérico
+// pagina por OFFSET sem ORDER BY, que já deu `statement timeout` em
+// produção aqui (achado idêntico ao das tabelas grandes em
+// rodar_xi_previsto.py: custo do OFFSET cresce com a profundidade da
+// página). Keyset por `id` (chave primária, monotônica) resolve com custo
+// constante por página, igual ao fix aplicado lá.
+async function buscarXiPrevistoCompleto(supabase) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let cursor = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('xi_previsto')
+      .select('id, match_id, team_id, player_id, prob_titular, is_titular_previsto, model_version')
+      .gt('id', cursor)
+      .order('id')
+      .limit(TAMANHO_PAGINA);
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    cursor = data[data.length - 1].id;
+  }
+  return resultado;
+}
+
+async function calcularStatsXi(supabase) {
+  const previsoes = await buscarXiPrevistoCompleto(supabase);
+  if (previsoes.length === 0) return [];
+
+  const matchIds = [...new Set(previsoes.map((p) => p.match_id))];
+  const lotes = [];
+  for (let i = 0; i < matchIds.length; i += 1000) lotes.push(matchIds.slice(i, i + 1000));
+
+  const [matchesRows, lineupRows] = await Promise.all([
+    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status').in('id', l)))).then((r) => r.flat()),
+    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('match_lineup_fotmob').select('match_id, team_id, player_id, is_starter').in('match_id', l)))).then((r) => r.flat()),
+  ]);
+
+  const matchPorId = {};
+  matchesRows.forEach((m) => { matchPorId[m.id] = m; });
+  const realPorChave = {};
+  lineupRows.forEach((l) => { realPorChave[`${l.match_id}__${l.team_id}__${l.player_id}`] = !!l.is_starter; });
+
+  // Agrupa por (match_id, team_id) -- só partidas já finalizadas e com
+  // escalação real capturada pra pelo menos os jogadores previstos.
+  const porGrupoTime = {};
+  for (const p of previsoes) {
+    const match = matchPorId[p.match_id];
+    if (!match || match.status !== 'finished' || match.league_id == null) continue;
+    const chaveReal = `${p.match_id}__${p.team_id}__${p.player_id}`;
+    if (!(chaveReal in realPorChave)) continue;
+    const chaveGrupo = `${p.match_id}__${p.team_id}`;
+    if (!porGrupoTime[chaveGrupo]) {
+      porGrupoTime[chaveGrupo] = { matchId: p.match_id, model_version: p.model_version, league_id: match.league_id, season: match.season, linhas: [] };
+    }
+    porGrupoTime[chaveGrupo].linhas.push({
+      player_id: p.player_id,
+      prob: Number(p.prob_titular),
+      previsto: !!p.is_titular_previsto,
+      real: realPorChave[chaveReal],
+    });
+  }
+
+  const agregados = {};
+  Object.values(porGrupoTime).forEach((g) => {
+    // Elenco avaliado incompleto (menos de 11 candidatos com escalação real
+    // conhecida) não dá pra julgar um top-11 de verdade -- mesma guarda de
+    // _metricas_top11 no treino.
+    if (g.linhas.length < 11 || !g.linhas.some((l) => l.real)) return;
+
+    const chave = `${g.model_version}__${g.league_id}__${g.season}`;
+    if (!agregados[chave]) {
+      agregados[chave] = { model_version: g.model_version, league_id: g.league_id, season: g.season, precisoes: [], exatos: [], linhas: [], matchIds: new Set() };
+    }
+    const reais = new Set(g.linhas.filter((l) => l.real).map((l) => l.player_id));
+    const previstos = new Set(g.linhas.filter((l) => l.previsto).map((l) => l.player_id));
+    const acertos = [...reais].filter((id) => previstos.has(id)).length;
+    agregados[chave].precisoes.push(acertos / 11);
+    agregados[chave].exatos.push(reais.size === previstos.size && [...reais].every((id) => previstos.has(id)) ? 1 : 0);
+    agregados[chave].linhas.push(...g.linhas);
+    agregados[chave].matchIds.add(g.matchId);
+  });
+
+  return Object.values(agregados).map((a) => {
+    const { linhas } = a;
+    const n = linhas.length;
+    const brier = linhas.reduce((s, l) => s + brierTermo(l.prob, l.real ? 1 : 0), 0) / n;
+    const logLoss = linhas.reduce((s, l) => s + logLossTermo(l.prob, l.real ? 1 : 0), 0) / n;
+
+    const ordenado = [...linhas].sort((x, y) => x.prob - y.prob);
+    const calibracao = [];
+    const tamanho = Math.floor(ordenado.length / 5);
+    if (tamanho > 0) {
+      for (let i = 0; i < 5; i++) {
+        const fatia = ordenado.slice(i * tamanho, i === 4 ? ordenado.length : (i + 1) * tamanho);
+        if (fatia.length === 0) continue;
+        calibracao.push({
+          previsto_medio: fatia.reduce((s, l) => s + l.prob, 0) / fatia.length,
+          real: fatia.reduce((s, l) => s + (l.real ? 1 : 0), 0) / fatia.length,
+          n: fatia.length,
+        });
+      }
+    }
+
+    return {
+      model_version: a.model_version,
+      league_id: a.league_id,
+      season: a.season,
+      // partidas DISTINTAS avaliadas -- a.precisoes.length conta pares
+      // (partida, time), que dobraria a contagem (achado testando em
+      // produção: Brasileirão 2018 aparecia com o dobro de "partidas" do
+      // que a temporada real tem -- parte é essa contagem errada, parte é
+      // duplicata real de linha em `matches`, ver nota registrada no repo).
+      n_partidas: a.matchIds.size,
+      n_previsoes: n,
+      precisao_media_top11: a.precisoes.reduce((s, v) => s + v, 0) / a.precisoes.length,
+      taxa_xi_exato: a.exatos.reduce((s, v) => s + v, 0) / a.exatos.length,
+      brier,
+      log_loss: logLoss,
+      calibracao,
+    };
+  }).sort((x, y) =>
+    x.model_version.localeCompare(y.model_version) ||
+    x.league_id - y.league_id ||
+    String(x.season).localeCompare(String(y.season))
+  );
+}
+
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
   const supabase = getSupabase();
+
+  if (req.query.formato === 'xi') {
+    try {
+      const grupos_xi = await calcularStatsXi(supabase);
+      return res.status(200).json({ grupos_xi });
+    } catch (erro) {
+      return res.status(500).json({ error: { message: erro.message } });
+    }
+  }
 
   const { modelo, mercado, liga_id } = req.query;
 

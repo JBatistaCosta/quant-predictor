@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, CatBoostRegressor
-from lightgbm import LGBMClassifier, early_stopping
+from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
@@ -32,6 +32,7 @@ from dados_historicos import (
     FEATURES,
     FEATURES_V9,
     FEATURES_V10,
+    FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -108,6 +109,26 @@ PARAMS_DEFAULT = {
     # Mesmos defaults de sempre, ainda sem tuning dedicado.
     "catboost_xg_regressor_v1": {"depth": 6, "learning_rate": 0.05},
     "catboost_xgot_regressor_v1": {"depth": 6, "learning_rate": 0.05},
+    # v2 -- mesmos hiperparâmetros do v1, só muda o feature set (força do
+    # XI titular, ver FEATURES_XG_XI_V2 em dados_historicos.py).
+    "catboost_xg_regressor_v2": {"depth": 6, "learning_rate": 0.05},
+    "catboost_xgot_regressor_v2": {"depth": 6, "learning_rate": 0.05},
+    # Modelo misto/paramétrico -- estimam o λ que alimenta as distribuições
+    # de `distribuicoes.py`, não uma probabilidade de classe. Perda de
+    # Poisson (ver `treinar_catboost_poisson`). Mesmos defaults dos demais
+    # regressores, ainda sem tuning dedicado.
+    #
+    # `hibrido_gols_v1` treina em GOLS REAIS; `hibrido_gols_xg_v1` treina em
+    # xG observado. As duas existem de propósito, pra decidir empiricamente
+    # (log-verossimilhança do placar out-of-sample) em vez de por argumento:
+    # gols têm 100% de cobertura e são o alvo que de fato se quer prever,
+    # mas são ruidosos; xG é menos ruidoso porém cobre 75-88% nas 5
+    # europeias e 40% no Brasileirão (medido no banco), e é ele próprio a
+    # estimativa de um modelo de terceiro.
+    "hibrido_gols_v1": {"depth": 6, "learning_rate": 0.05},
+    "hibrido_gols_xg_v1": {"depth": 6, "learning_rate": 0.05},
+    "hibrido_corners_v1": {"depth": 6, "learning_rate": 0.05},
+    "hibrido_gols_lgbm_v1": {"num_leaves": 15, "learning_rate": 0.05},
     # v9 — mesmas features da v8; MLP tunado após primeira rodada mostrar log-loss ~1.07
     # (próximo ao baseline aleatório 1.099). Arquitetura maior + mais paciência no early stopping.
     "catboost_v9": {"depth": 6, "learning_rate": 0.05},
@@ -128,6 +149,18 @@ FEATURES_POR_MODELO = {
     # prevendo um valor contínuo (gols esperados / xGOT) em vez de classe.
     "catboost_xg_regressor_v1": FEATURES,
     "catboost_xgot_regressor_v1": FEATURES,
+    # v2 -- v1 + força do XI titular na data da partida (titular_rating/
+    # titular_valor_mercado home/away + diferenciais), ver FEATURES_XG_XI_V2.
+    "catboost_xg_regressor_v2": FEATURES_XG_XI_V2,
+    "catboost_xgot_regressor_v2": FEATURES_XG_XI_V2,
+    # Modelo misto -- feature set mais completo disponível (v10), já que o
+    # ponto do híbrido é justamente levar pro λ todo o contexto pré-jogo que
+    # o Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
+    # classificação), em vez de só força de ataque/defesa por time.
+    "hibrido_gols_v1": FEATURES_V10,
+    "hibrido_gols_xg_v1": FEATURES_V10,
+    "hibrido_corners_v1": FEATURES_V10,
+    "hibrido_gols_lgbm_v1": FEATURES_V10,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     "catboost_v9": FEATURES_V9,
     "xgboost_v9": FEATURES_V9,
@@ -290,6 +323,110 @@ def prever_catboost_regressor(modelo, _extra, df: pd.DataFrame, features: list[s
     return modelo.predict(df[features])
 
 
+# ---------------------------------------------------------------------------
+# Regressão de CONTAGEM (perda de Poisson) -- modelo misto/paramétrico
+# ---------------------------------------------------------------------------
+# Diferença central pro `treinar_catboost_regressor` acima, que é RMSE: aqui
+# o alvo é uma CONTAGEM (gols, escanteios) e o que queremos estimar é a TAXA
+# λ que a gerou, não um valor central qualquer.
+#
+# Por que a perda de Poisson, com honestidade sobre o tamanho do ganho:
+#   - RMSE assume ruído gaussiano homocedástico; contagem não é isso (numa
+#     Poisson a variância é igual à média). A perda de Poisson é a
+#     verossimilhança do próprio processo que gera o dado.
+#   - Positividade é garantida por construção: o modelo aprende `log λ` e a
+#     exponencial na saída impede λ ≤ 0. Com RMSE nada garante isso, e um λ
+#     negativo é inadmissível dentro da matriz de placares.
+#   - O ponto MAIS forte é o acoplamento: a mesma verossimilhança que treina
+#     o regressor é a que `distribuicoes.py` usa pra derivar os mercados.
+#     Calibração deixa de ser remendo por mercado e vira propriedade do
+#     ajuste.
+#
+# O que um teste sintético NÃO mostrou (registrado pra não superestimarmos o
+# ganho): com 20k amostras de log λ suave, RMSE recuperou λ praticamente tão
+# bem quanto Poisson (RMSE contra o λ verdadeiro: 0,132 vs 0,134) e não
+# produziu nenhum λ negativo. Ou seja: a vantagem prática na recuperação do
+# λ pode ser pequena. A escolha se sustenta na coerência com a camada de
+# distribuição e na garantia de positividade, não numa promessa de erro
+# menor -- quem decide de fato é a comparação out-of-sample entre as
+# variantes (`treinar_modelo_hibrido.py`).
+#
+# Verificado empiricamente (não suposto): tanto CatBoost `loss_function=
+# "Poisson"` quanto LightGBM `objective="poisson"` devolvem λ JÁ
+# exponenciado em `.predict()` -- não log λ. Aplicar `exp()` por cima
+# destruiria a estimativa (correlação com o λ real cai de 0,99 pra 0,14).
+def treinar_catboost_poisson(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str,
+    features: list[str] = FEATURES,
+):
+    """Regressor de contagem CatBoost com perda de Poisson.
+
+    Devolve λ (já exponenciado), não log λ -- `CatBoostRegressor` com
+    `loss_function="Poisson"` aplica a exponencial na predição.
+    """
+    modelo = CatBoostRegressor(
+        loss_function="Poisson",
+        thread_count=2,
+        iterations=200,
+        cat_features=CAT_FEATURES,
+        random_seed=42,
+        verbose=False,
+        **params,
+    )
+    treino = preparar_liga_para_catboost(train_df)
+    modelo.fit(treino[features], treino[coluna_alvo])
+    return modelo, None, None
+
+
+def prever_catboost_poisson(modelo, _extra, df: pd.DataFrame, features: list[str] = FEATURES):
+    """λ previsto por partida. Piso em 0.01 porque λ = 0 zera a
+    verossimilhança de qualquer placar diferente de 0x0 e envenenaria o
+    log -- não deveria acontecer com perda de Poisson, mas o custo do
+    guarda é nulo."""
+    df = preparar_liga_para_catboost(df)
+    return np.maximum(modelo.predict(df[features]), 0.01)
+
+
+def treinar_lightgbm_poisson(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str,
+    features: list[str] = FEATURES,
+):
+    """Mesma ideia do CatBoost acima, com LightGBM.
+
+    Segunda família pra comparação -- o projeto já trata CatBoost/XGBoost/
+    LightGBM como variantes intercambiáveis no benchmarking, e vale saber se
+    a escolha de biblioteca move a estimativa de λ. Devolve `(modelo,
+    categorias_liga)` porque o LightGBM precisa das categorias vistas no
+    treino pra alinhar a coluna `liga` na predição (mesmo `extra` de
+    `treinar_lightgbm`).
+    """
+    treino = train_df.copy()
+    categorias_liga = pd.Categorical(treino["liga"]).categories
+    treino["liga"] = pd.Categorical(treino["liga"], categories=categorias_liga)
+
+    modelo = LGBMRegressor(
+        objective="poisson",
+        n_estimators=200,
+        subsample=FRACAO_SUBSAMPLE,
+        colsample_bytree=FRACAO_COLSAMPLE,
+        random_state=42,
+        verbose=-1,
+        **params,
+    )
+    modelo.fit(treino[features], treino[coluna_alvo], categorical_feature=CAT_FEATURES)
+    return modelo, categorias_liga
+
+
+def prever_lightgbm_poisson(modelo, categorias_liga, df: pd.DataFrame, features: list[str] = FEATURES):
+    df = df.copy()
+    df["liga"] = alinhar_categoria_liga(df["liga"], categorias_liga)
+    return np.maximum(modelo.predict(df[features]), 0.01)
+
+
 def treinar_xgboost(
     params: dict,
     train_df: pd.DataFrame,
@@ -427,8 +564,27 @@ def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame, features: list[st
 
 # treinar(params, train_df, coluna_alvo=..., features=...) -> (modelo, extra)
 # | prever(modelo, extra, df, features=...) -> (probs, classes)
-# v1-v8 (+v3B) removidos -- superadas pela v9, sem uso em produção.
+# v2-v8 (+v3B) removidos -- superadas pela v9, sem uso em produção.
+#
+# v1 NÃO foi removido (BUG REAL corrigido: chegou a ser removido nessa
+# limpeza, achando que não tinha uso em produção -- errado. `model_
+# artifacts.py` (treinar_e_prever/prever_com_estado, usado por TODO o
+# Treino Customizado: treino simples/walk-forward, "Estimar partida" sob
+# demanda e a previsão em lote de partidas futuras,
+# `prever_partidas_futuras_custom.py`) monta a chave `f"{algoritmo}_v1"`
+# pra QUALQUER config customizada com algoritmo catboost/xgboost/lightgbm
+# -- sem essa entrada, treino E predição desses algoritmos ficam
+# quebrados pra sempre nesse painel, não só predição. Achado real: rodar
+# o job de previsão em lote pela primeira vez gerou `KeyError:
+# 'xgboost_v1'` pra toda config com artefato xgboost/stacking com membro
+# xgboost). Mesmas funções de treino/predição já usadas pela v9/v10 --
+# "v1" aqui não é sobre feature set nenhum, é só o algoritmo puro sem
+# nenhum extra, exatamente o que o Treino Customizado precisa (o usuário
+# escolhe as features na hora, não uma versão fixa).
 TREINADORES = {
+    "catboost_v1": (treinar_catboost, prever_catboost),
+    "xgboost_v1": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v1": (treinar_lightgbm, prever_lightgbm),
     # v9 — mesmas features da v8, 4ª família de algoritmo (MLP) adicionada;
     # stacking sobre as 4 famílias base é treinado separadamente em
     # `walkforward_cv_v9.py` (precisa de OOF predictions, não entra aqui).

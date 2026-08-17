@@ -997,20 +997,16 @@ def _carregar_total_corners_por_partida(supabase: Client, match_ids: list[int]) 
     return total
 
 
-def _carregar_cartoes_pre_jogo(
+def _carregar_cartoes_jogador_pre_jogo(
     supabase: Client, partidas: pd.DataFrame, nome_da_liga: dict[int, str]
 ) -> pd.DataFrame:
-    """Risco de suspensão por acúmulo de cartões amarelos ANTES de cada
-    partida (v4, features `jogadores_pendurados_home`/`_away` +
-    `cartoes_acumulados_home`/`_away`) -- ponto-no-tempo real: só conta
-    cartão de partida ANTERIOR (mesma liga+temporada, ordem cronológica),
-    aplicando a regra de reset/limiar específica da liga
-    (`CARTAO_LIMIAR_POR_LIGA`). Calculado sobre o elenco que REALMENTE jogou
-    cada partida (`match_player_stats_fotmob`, mesmo padrão de
-    `_carregar_squad_rating_pre_jogo`) -- um jogador suspenso simplesmente
-    não aparece na escalação daquela partida, sem precisar de tratamento
-    especial (mesma lógica já validada pro rating de elenco v2)."""
-    colunas_saida = ["match_id", "team_id", "cartoes_acumulados_antes", "jogadores_pendurados_antes"]
+    """Estado de cartão amarelo POR JOGADOR (não agregado por time) antes de
+    cada partida -- mesmo cálculo ponto-no-tempo de `_carregar_cartoes_pre_
+    jogo` (que soma isso por time pras features v4 de time), extraído aqui
+    pra granularidade de jogador reaproveitada pelo treino do modelo de XI
+    titular (`treinar_modelo_xi.py`), que precisa saber QUAL jogador
+    específico está pendurado -- não só a contagem agregada do time."""
+    colunas_saida = ["match_id", "team_id", "player_id", "cartoes_no_ciclo_antes", "n_suspensoes_antes", "limiar_atual", "pendurado"]
     if partidas.empty:
         return pd.DataFrame(columns=colunas_saida)
 
@@ -1080,8 +1076,23 @@ def _carregar_cartoes_pre_jogo(
     )
     escalacoes["pendurado"] = escalacoes["cartoes_no_ciclo_antes"] == (escalacoes["limiar_atual"] - 1)
 
+    return escalacoes[colunas_saida]
+
+
+def _carregar_cartoes_pre_jogo(
+    supabase: Client, partidas: pd.DataFrame, nome_da_liga: dict[int, str]
+) -> pd.DataFrame:
+    """Risco de suspensão por acúmulo de cartões amarelos ANTES de cada
+    partida (v4, features `jogadores_pendurados_home`/`_away` +
+    `cartoes_acumulados_home`/`_away`) -- soma por time o estado por jogador
+    de `_carregar_cartoes_jogador_pre_jogo` (mesmo cálculo ponto-no-tempo,
+    ver docstring lá)."""
+    colunas_saida = ["match_id", "team_id", "cartoes_acumulados_antes", "jogadores_pendurados_antes"]
+    jogador = _carregar_cartoes_jogador_pre_jogo(supabase, partidas, nome_da_liga)
+    if jogador.empty:
+        return pd.DataFrame(columns=colunas_saida)
     agregado = (
-        escalacoes.groupby(["match_id", "team_id"])
+        jogador.groupby(["match_id", "team_id"])
         .agg(cartoes_acumulados_antes=("cartoes_no_ciclo_antes", "sum"), jogadores_pendurados_antes=("pendurado", "sum"))
         .reset_index()
     )
@@ -1854,18 +1865,29 @@ def _calcular_classificacao_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
                 )
             # atualiza DEPOIS de registrar o snapshot -- nunca vaza o
             # resultado do PRÓPRIO jogo que se está tentando prever.
+            # BUG REAL corrigido: partida ainda não disputada (home_goals/
+            # away_goals None -- injetada via match_ids_extra, ver
+            # montar_dataset_ml_empilhado) tem snapshot registrado
+            # normalmente (linha acima), mas NÃO atualiza pontos/saldo/
+            # jogos -- sem resultado, não há o que somar à tabela. Sem essa
+            # guarda, `hg > ag` comparava None > None e quebrava a
+            # montagem do dataset inteiro assim que qualquer partida futura
+            # entrava no mesmo (league_id, season) de partidas já
+            # encerradas (achado real rodando prever_partidas_futuras_
+            # custom.py em produção).
             h, a, hg, ag = row.home_team_id, row.away_team_id, row.home_goals, row.away_goals
-            if hg > ag:
-                pontos[h] = pontos.get(h, 0) + 3
-            elif hg == ag:
-                pontos[h] = pontos.get(h, 0) + 1
-                pontos[a] = pontos.get(a, 0) + 1
-            else:
-                pontos[a] = pontos.get(a, 0) + 3
-            saldo[h] = saldo.get(h, 0) + (hg - ag)
-            saldo[a] = saldo.get(a, 0) + (ag - hg)
-            jogos[h] = jogos.get(h, 0) + 1
-            jogos[a] = jogos.get(a, 0) + 1
+            if hg is not None and ag is not None:
+                if hg > ag:
+                    pontos[h] = pontos.get(h, 0) + 3
+                elif hg == ag:
+                    pontos[h] = pontos.get(h, 0) + 1
+                    pontos[a] = pontos.get(a, 0) + 1
+                else:
+                    pontos[a] = pontos.get(a, 0) + 3
+                saldo[h] = saldo.get(h, 0) + (hg - ag)
+                saldo[a] = saldo.get(a, 0) + (ag - hg)
+                jogos[h] = jogos.get(h, 0) + 1
+                jogos[a] = jogos.get(a, 0) + 1
     return pd.DataFrame(linhas)
 
 
@@ -2056,7 +2078,13 @@ def _calcular_h2h_pre_jogo(partidas: pd.DataFrame) -> pd.DataFrame:
                     "h2h_n_jogos": n,
                 }
             )
-            historico.append((row.home_team_id, row.away_team_id, row.home_goals, row.away_goals))
+            # Mesma guarda de _calcular_classificacao_pre_jogo: partida
+            # ainda não disputada não vira histórico de confronto direto
+            # (home_goals/away_goals None) -- sem isso, um 2º jogo futuro
+            # do mesmo par de times dentro da janela (ex.: ida e volta de
+            # copa) faria resumir_h2h comparar None > None.
+            if row.home_goals is not None and row.away_goals is not None:
+                historico.append((row.home_team_id, row.away_team_id, row.home_goals, row.away_goals))
     return pd.DataFrame(linhas)
 
 
@@ -2367,37 +2395,18 @@ def _carregar_titular_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
     return agregado
 
 
-def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict[int, dict]]:
-    """Força do XI titular pra fixtures futuras -- BEST-EFFORT: escalação
-    confirmada só costuma sair ~1h antes do apito inicial, então isso fica
-    sem dado (dict vazio) pra quase toda fixture agendada com dias de
-    antecedência -- mesma limitação de fonte já aceita em
-    `obter_arbitro_atual` (não é bug, é o `predict.yml` rodando de dias
-    antes do jogo, mas a escalação só existir perto da hora). Quando JÁ
-    está confirmada (rara), usa `player_ratings.rating` (rating ATUAL,
-    mesmo dado de `obter_squad_rating_atual`) e o valor de mercado mais
-    recente conhecido de cada titular (não precisa de ponto-no-tempo
-    histórico aqui -- "agora" é a única referência que importa pra uma
-    fixture futura). Devolve `{match_id: {team_id: {...}}}` -- o caller
-    (`montar_features_fixtures`) escolhe o lado (casa/fora) por partida."""
-    resultado: dict[int, dict[int, dict]] = {}
-    if not match_ids:
-        return resultado
+def _agregar_forca_xi(supabase: Client, membros: list[dict]) -> dict[tuple[int, int], dict]:
+    """Núcleo de cálculo compartilhado por `obter_titular_atual`: dado um
+    conjunto de linhas `{match_id, team_id, player_id}` (venham de onde
+    vierem -- escalação real ou XI previsto), busca `player_ratings.rating`
+    e o valor de mercado mais recente de cada jogador e agrega por
+    (match_id, team_id). Mesmo cálculo nos dois casos -- só muda a fonte
+    dos 11 jogadores antes de chamar isso."""
+    membros = [m for m in membros if m.get("player_id") is not None]
+    if not membros:
+        return {}
 
-    lineup = (
-        supabase.table("match_lineup_fotmob")
-        .select("match_id, team_id, player_id")
-        .eq("is_starter", True)
-        .in_("match_id", match_ids)
-        .execute()
-        .data
-        or []
-    )
-    lineup = [l for l in lineup if l.get("player_id") is not None]
-    if not lineup:
-        return resultado
-
-    player_ids = list({l["player_id"] for l in lineup})
+    player_ids = list({m["player_id"] for m in membros})
     ratings = (
         supabase.table("player_ratings").select("player_id, rating").in_("player_id", player_ids).execute().data or []
     )
@@ -2420,18 +2429,70 @@ def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dic
             valor_mais_recente[v["player_id"]] = (v["value_date"], float(v["value_eur"]))
 
     por_match_team: dict[tuple[int, int], list[dict]] = {}
-    for l in lineup:
-        por_match_team.setdefault((l["match_id"], l["team_id"]), []).append(l)
+    for m in membros:
+        por_match_team.setdefault((m["match_id"], m["team_id"]), []).append(m)
 
+    saida: dict[tuple[int, int], dict] = {}
     for (match_id, team_id), jogadores in por_match_team.items():
         ratings_xi = [rating_por_jogador[j["player_id"]] for j in jogadores if j["player_id"] in rating_por_jogador]
         valores_xi = [valor_mais_recente[j["player_id"]][1] for j in jogadores if j["player_id"] in valor_mais_recente]
         if not ratings_xi and not valores_xi:
             continue
-        resultado.setdefault(match_id, {})[team_id] = {
+        saida[(match_id, team_id)] = {
             "titular_rating": float(np.mean(ratings_xi)) if ratings_xi else float("nan"),
             "titular_valor_mercado": float(np.sum(valores_xi)) if valores_xi else float("nan"),
         }
+    return saida
+
+
+def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict[int, dict]]:
+    """Força do XI titular pra fixtures futuras -- escalação REAL confirmada
+    quando existir, senão cai pro XI PREVISTO (`xi_previsto`, gerado por
+    scripts/rodar_xi_previsto.py) -- antes disso a feature ficava `NaN` pra
+    quase toda fixture agendada com dias de antecedência (escalação
+    confirmada só costuma sair ~1h antes do apito, mesma limitação de fonte
+    já aceita em `obter_arbitro_atual`), já que o fallback pro modelo
+    previsto não existia. Usa `player_ratings.rating` (rating ATUAL, mesmo
+    dado de `obter_squad_rating_atual`) e o valor de mercado mais recente
+    conhecido de cada titular (não precisa de ponto-no-tempo histórico aqui
+    -- "agora" é a única referência que importa pra uma fixture futura).
+
+    Devolve `{match_id: {team_id: {..., "fonte": "real"|"previsto"}}}` --
+    `fonte` deixa explícito pra quem consome qual confiança tem o dado
+    (escalação oficial vs. previsão do próprio modelo de XI). Assume que a
+    escalação real, quando existe, cobre os DOIS times da partida de uma
+    vez (teamsheet oficial) -- o fallback é decidido por `match_id` inteiro,
+    não por time isolado."""
+    resultado: dict[int, dict[int, dict]] = {}
+    if not match_ids:
+        return resultado
+
+    lineup = (
+        supabase.table("match_lineup_fotmob")
+        .select("match_id, team_id, player_id")
+        .eq("is_starter", True)
+        .in_("match_id", match_ids)
+        .execute()
+        .data
+        or []
+    )
+    for (match_id, team_id), agregado in _agregar_forca_xi(supabase, lineup).items():
+        resultado.setdefault(match_id, {})[team_id] = {**agregado, "fonte": "real"}
+
+    match_ids_pendentes = [m for m in match_ids if m not in resultado]
+    if match_ids_pendentes:
+        previsto = (
+            supabase.table("xi_previsto")
+            .select("match_id, team_id, player_id")
+            .eq("is_titular_previsto", True)
+            .in_("match_id", match_ids_pendentes)
+            .execute()
+            .data
+            or []
+        )
+        for (match_id, team_id), agregado in _agregar_forca_xi(supabase, previsto).items():
+            resultado.setdefault(match_id, {})[team_id] = {**agregado, "fonte": "previsto"}
+
     return resultado
 
 
@@ -2485,6 +2546,51 @@ FEATURES_NUMERICAS_V3B = FEATURES_NUMERICAS_V5 + [
     "titular_valor_mercado_away",
 ]
 FEATURES_V3B = FEATURES_NUMERICAS_V3B + CAT_FEATURES
+
+# xG/xGOT regressor v2 (força do XI): mesmo ESCOPO pretendido pela v1 (elo +
+# forma de gols + forma de xG + liga) + força do XI TITULAR na data da
+# partida -- `titular_rating_home`/`_away` (rating médio do XI),
+# `titular_valor_mercado_home`/`_away` (soma do valor de mercado do XI) e os
+# diferenciais já calculados em `montar_dataset_ml_empilhado`
+# (`rating_diff_xi`/`valor_diff_xi`). Pedido do usuário: usar a força do XI
+# (previsto quando a escalação real ainda não saiu, real quando já saiu --
+# ver `obter_titular_atual`) como sinal de ataque/defesa esperado pra
+# prever xG/xGOT.
+#
+# NÃO reaproveita a constante `FEATURES`/`FEATURES_NUMERICAS` (v1) de
+# propósito: achado testando esta mudança -- `COLUNAS_FORMA_XG` (usada por
+# `FEATURES_NUMERICAS`) ainda aponta pros nomes ANTIGOS de coluna
+# (`media_xg_5j_home` etc.) de antes de `_forma_por_mando_multi_janelas`
+# substituir o cálculo de forma de xG por janelas múltiplas (5j/10j/20j +
+# decay, nomes `xg_home_5j` etc.) -- essas colunas antigas nunca são
+# geradas por `montar_dataset_ml_empilhado` hoje, então `FEATURES`/
+# `FEATURES_NUMERICAS_V9`/`_V10` (que herdam `COLUNAS_FORMA_XG`/
+# `COLUNAS_FORMA_XGOT`) quebram com KeyError ao selecionar
+# `dataset[features]` -- bug pré-existente, fora do escopo desta mudança
+# (reportado separadamente ao usuário; não corrigido aqui pra não mexer no
+# feature set em produção dos modelos v9/v10 sem uma investigação própria
+# do impacto no lado AO VIVO de `rodar_predicoes.py`, que ainda usa a
+# nomenclatura antiga `media_xg_5j_home` pra montar a feature da PRÓXIMA
+# partida). Esta v2 usa os nomes de coluna que realmente existem no
+# dataset hoje (`xg_home_5j`/`xg_sofrido_home_5j`/`xg_away_5j`/
+# `xg_sofrido_away_5j`), preservando o mesmo escopo pretendido da v1 sem
+# herdar o bug.
+FEATURES_NUMERICAS_XG_XI_V2 = [
+    "elo_home",
+    "elo_away",
+    *COLUNAS_FORMA_GOLS.values(),
+    "xg_home_5j",
+    "xg_sofrido_home_5j",
+    "xg_away_5j",
+    "xg_sofrido_away_5j",
+    "titular_rating_home",
+    "titular_rating_away",
+    "titular_valor_mercado_home",
+    "titular_valor_mercado_away",
+    "rating_diff_xi",
+    "valor_diff_xi",
+]
+FEATURES_XG_XI_V2 = FEATURES_NUMERICAS_XG_XI_V2 + CAT_FEATURES
 
 # v6 (progresso da temporada): tudo da v5 + `progresso_temporada` (0 a 1),
 # pra o modelo distinguir início de temporada (padrões de forma ainda
@@ -2752,7 +2858,7 @@ def montar_dataset_ml_empilhado(
     todas_as_ligas: bool = False,
     league_ids_manual: list[int] | None = None,
     seasons: list[str] | None = None,
-    match_id_extra: int | None = None,
+    match_ids_extra: list[int] | None = None,
 ) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
     temporadas de CADA uma das 6 ligas do Model Benchmarking (5 de elite
@@ -2779,18 +2885,22 @@ def montar_dataset_ml_empilhado(
     faz sentido truncar "últimas N temporadas" depois de já ter pedido
     temporadas específicas).
 
-    `match_id_extra`: acrescenta UMA partida específica ao dataset (de
-    QUALQUER status -- inclusive ainda não disputada) depois do corte de
-    temporadas, pra ela nunca ser excluída por "últimas N temporadas" nem
-    pelo filtro `status='finished'` de `carregar_partidas_finalizadas`.
-    Passa pelo MESMO pipeline de features (elo/forma/xG/etc., todas
+    `match_ids_extra`: acrescenta partidas específicas ao dataset (de
+    QUALQUER status -- inclusive ainda não disputadas) depois do corte de
+    temporadas, pra elas nunca serem excluídas por "últimas N temporadas"
+    nem pelo filtro `status='finished'` de `carregar_partidas_finalizadas`.
+    Passam pelo MESMO pipeline de features (elo/forma/xG/etc., todas
     calculadas a partir de dados anteriores à data da partida, então
     funcionam igual pra jogo futuro) que as demais linhas -- usado pelo
     Treino Customizado quando o usuário pede a estimativa de um modelo
-    pra uma partida específica (`scripts/estimar_partida_custom.py`).
-    home_goals/away_goals ficam NaN pra ela se ainda não foi disputada;
-    quem chama essa função é responsável por separar essa linha ANTES de
-    qualquer dropna no alvo (senão ela é descartada como as demais linhas
+    pra uma partida específica (`scripts/estimar_partida_custom.py`, 1
+    partida por chamada) e pela previsão em lote de partidas futuras
+    (`scripts/prever_partidas_futuras_custom.py`, N partidas na MESMA
+    chamada -- monta o dataset "Feature Stacked" pesado (minutos) uma vez
+    só e aproveita pra todas, em vez de repetir por partida).
+    home_goals/away_goals ficam NaN pra elas se ainda não foram disputadas;
+    quem chama essa função é responsável por separar essas linhas ANTES de
+    qualquer dropna no alvo (senão são descartadas como as demais linhas
     sem resultado).
 
     Features (todas calculadas SEM olhar o resultado do próprio jogo):
@@ -2824,7 +2934,7 @@ def montar_dataset_ml_empilhado(
     nome_da_liga = {v: k for k, v in ligas.items()}
 
     partidas = carregar_partidas_finalizadas(supabase, liga_ids_resolvidos, temporadas=seasons)
-    if partidas.empty and match_id_extra is None:
+    if partidas.empty and not match_ids_extra:
         return partidas
 
     if partidas.empty:
@@ -2847,25 +2957,28 @@ def montar_dataset_ml_empilhado(
     else:
         partidas = partidas.sort_values("match_date").reset_index(drop=True)
 
-    if match_id_extra is not None and not (partidas["id"] == match_id_extra).any():
+    ids_faltantes = [mid for mid in (match_ids_extra or []) if not (partidas["id"] == mid).any()]
+    if ids_faltantes:
         resposta_extra = (
             supabase.table("matches")
             .select("id, league_id, season, match_date, home_team_id, away_team_id, home_goals, away_goals, match_stage, is_neutral, leagues(name)")
-            .eq("id", match_id_extra)
-            .maybe_single()
+            .in_("id", ids_faltantes)
             .execute()
         )
-        linha_extra = resposta_extra.data
-        if linha_extra:
-            liga_nome_extra = (linha_extra.get("leagues") or {}).get("name")
-            if linha_extra["league_id"] not in nome_da_liga and liga_nome_extra:
-                nome_da_liga[linha_extra["league_id"]] = liga_nome_extra
-            linha_extra = {k: v for k, v in linha_extra.items() if k != "leagues"}
-            partidas = pd.concat([partidas, pd.DataFrame([linha_extra])], ignore_index=True)
+        linhas_extra = resposta_extra.data or []
+        ids_encontrados = {linha["id"] for linha in linhas_extra}
+        for mid in ids_faltantes:
+            if mid not in ids_encontrados:
+                logger.error("match_ids_extra=%s não encontrado em `matches`.", mid)
+        if linhas_extra:
+            for linha in linhas_extra:
+                liga_nome_extra = (linha.get("leagues") or {}).get("name")
+                if linha["league_id"] not in nome_da_liga and liga_nome_extra:
+                    nome_da_liga[linha["league_id"]] = liga_nome_extra
+            linhas_extra = [{k: v for k, v in linha.items() if k != "leagues"} for linha in linhas_extra]
+            partidas = pd.concat([partidas, pd.DataFrame(linhas_extra)], ignore_index=True)
             partidas["match_date"] = pd.to_datetime(partidas["match_date"], utc=True)
             partidas = partidas.sort_values("match_date").reset_index(drop=True)
-        else:
-            logger.error("match_id_extra=%s não encontrado em `matches`.", match_id_extra)
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
@@ -2907,7 +3020,20 @@ def montar_dataset_ml_empilhado(
     for col in ("match_stage", "is_neutral"):
         if col in partidas.columns:
             base_cols.append(col)
+    # Escanteios POR TIME da própria partida -- alvo do split Beta-Binomial
+    # do modelo paramétrico de escanteios (ver `treinar_modelo_hibrido.py`).
+    # Renomeados pra `total_corners_home`/`_away` pra ficarem ao lado de
+    # `total_corners` (o total já carregado por
+    # `_carregar_total_corners_por_partida`) e pra não se confundirem com
+    # `corners_home`/`corners_away`, que são a matéria-prima FBref da FORMA
+    # pré-jogo (`forma_escanteios`), de cobertura bem menor.
+    escanteios_por_time = {
+        "escanteios_fm_home": "total_corners_home",
+        "escanteios_fm_away": "total_corners_away",
+    }
+    base_cols.extend(col for col in escanteios_por_time if col in partidas.columns)
     dataset = partidas[base_cols].copy()
+    dataset = dataset.rename(columns=escanteios_por_time)
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
     if "match_stage" in dataset.columns:
         dataset["match_stage_ord"] = dataset["match_stage"].map(MATCH_STAGE_ORDER).fillna(0).astype(int)
@@ -3177,6 +3303,17 @@ def montar_dataset_ml_empilhado(
         "resultado", "resultado_over25", "resultado_btts", "resultado_faixa_gols", "resultado_corners_ou95", "resultado_faixa_corners",
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
+        # Contagens observadas da própria partida -- alvo dos modelos
+        # paramétricos (`treinar_modelo_hibrido.py`, que estima o λ de uma
+        # Poisson/Binomial Negativa em vez de uma probabilidade de classe).
+        # Mesma natureza de `xg_home`/`xg_away` acima: é RESULTADO, nunca
+        # feature -- nenhuma lista FEATURES_* referencia essas colunas, e
+        # incluí-las vazaria o placar. `total_corners_home`/`_away` vêm do
+        # FotMob (`escanteios_fm_*`, 96-100% de cobertura nas 6 ligas do
+        # benchmark) e NÃO de `corners_home`/`corners_away` do FBref, que
+        # cobre ~57% na Europa e 4% no Brasileirão.
+        "home_goals", "away_goals",
+        "total_corners", "total_corners_home", "total_corners_away",
     ]
     dataset = dataset[[c for c in _COLUNAS_DESEJADAS if c in dataset.columns]]
 

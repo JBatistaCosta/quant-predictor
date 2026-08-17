@@ -1,0 +1,66 @@
+name: Limpeza de Partidas Duplicadas
+
+# Roda scripts/limpar_partidas_duplicadas.py -- só disparo manual, nunca em
+# cron (é uma ferramenta de manutenção pontual, não um job recorrente).
+#
+# Achado real auditando o banco (2026-08): 3 fontes de calendário
+# independentes (football-data.org, API-Football, FotMob -- ver
+# api/_lib/dedupMatches.js) faziam upsert só dentro do próprio namespace de
+# external_id, criando uma linha CADA UMA pro MESMO jogo real quando a
+# mesma liga acaba coberta por mais de uma fonte. A correção em
+# api/sync-matches.js/api/model-maintenance.js evita NOVAS duplicatas; esse
+# workflow limpa o que já ficou duplicado.
+#
+# `confirmar=false` (padrão) roda em --dry-run, só relatório, não altera
+# nada -- seguro disparar pra conferir o tamanho do problema antes de
+# aplicar de verdade.
+
+on:
+  workflow_dispatch:
+    inputs:
+      liga_id:
+        description: "Restringe a uma liga (league_id). Deixe vazio para rodar em TODAS as ligas."
+        required: false
+        type: string
+      confirmar:
+        description: "Aplicar as remoções de verdade (sem isso, roda em dry-run só-leitura)."
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  limpar-partidas-duplicadas:
+    runs-on: ubuntu-latest
+    # Achado real: ~15 grupo(s)/min processando com retentativa (~22
+    # tabelas satélite verificadas por partida perdedora) -- 30min não foi
+    # suficiente pra limpar os ~2000 grupos duplicados encontrados na
+    # primeira auditoria (run cancelado no timeout, não por erro).
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar limpeza de duplicatas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=()
+          if [ -n "${{ inputs.liga_id }}" ]; then ARGS+=(--liga-id "${{ inputs.liga_id }}"); fi
+          if [ "${{ inputs.confirmar }}" = "true" ]; then
+            ARGS+=(--confirmar --sem-prompt)
+          else
+            ARGS+=(--dry-run)
+          fi
+          python scripts/limpar_partidas_duplicadas.py "${ARGS[@]}"
