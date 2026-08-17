@@ -186,26 +186,35 @@ def processar_grupo(supabase, cluster: list[dict], ids_com_fotmob: set, contador
     return len(perdedoras)
 
 
-def processar_grupo_com_retentativa(supabase, cluster: list[dict], ids_com_fotmob: set, contadores_conflito: dict) -> int:
-    """Reprocessar o MESMO grupo do zero em caso de erro transitório
-    (queda de conexão HTTP/2, achado real em produção -- não timeout de
-    statement, que é um erro real e deve propagar direto) é seguro: todo
-    passo (migrar_satelites, deletar_partidas) é idempotente -- rodar de
-    novo sobre uma linha já migrada/já deletada só resulta em 0 linhas
-    afetadas, sem duplicar nem perder nada."""
+def com_retentativa(fn, *args, tentativas=TENTATIVAS_POR_GRUPO, **kwargs):
+    """Reexecuta `fn(*args, **kwargs)` em caso de erro transitório --
+    achado real em produção: PGRST002 ("Could not query the database for
+    the schema cache") logo no início do script, e httpx.RemoteProtocolError
+    (conexão HTTP/2 reciclada pelo servidor) no meio do processamento --
+    ambos se resolvem sozinhos numa nova tentativa alguns segundos depois.
+    Timeout de statement (57014) é um erro real (achado real: 2 índices
+    faltantes) e propaga direto -- não adianta retentar, precisa investigar."""
     ultimo_erro = None
-    for tentativa in range(1, TENTATIVAS_POR_GRUPO + 1):
+    for tentativa in range(1, tentativas + 1):
         try:
-            return processar_grupo(supabase, cluster, ids_com_fotmob, contadores_conflito)
+            return fn(*args, **kwargs)
         except APIError as e:
             if getattr(e, "code", None) == "57014":
-                raise  # timeout real de statement -- não adianta retentar, precisa investigar
+                raise
             ultimo_erro = e
         except Exception as e:  # httpx.RemoteProtocolError e afins -- instabilidade de rede/conexão
             ultimo_erro = e
-        if tentativa < TENTATIVAS_POR_GRUPO:
+        if tentativa < tentativas:
             time.sleep(3 * tentativa)
     raise ultimo_erro
+
+
+def processar_grupo_com_retentativa(supabase, cluster: list[dict], ids_com_fotmob: set, contadores_conflito: dict) -> int:
+    """Reprocessar o MESMO grupo do zero em caso de erro transitório é
+    seguro: todo passo (migrar_satelites, deletar_partidas) é idempotente
+    -- rodar de novo sobre uma linha já migrada/já deletada só resulta em
+    0 linhas afetadas, sem duplicar nem perder nada."""
+    return com_retentativa(processar_grupo, supabase, cluster, ids_com_fotmob, contadores_conflito)
 
 
 def main():
@@ -229,7 +238,7 @@ def main():
     campos = "id, external_id, league_id, season, home_team_id, away_team_id, match_date, home_goals, away_goals, status, round, stage"
     filtros = {"league_id": args.liga_id} if args.liga_id else None
     print("Carregando partidas...")
-    todas = buscar_todas_paginado(supabase, "matches", campos, filtros)
+    todas = com_retentativa(buscar_todas_paginado, supabase, "matches", campos, filtros)
     print(f"{len(todas)} partida(s) carregada(s).\n")
 
     grupos = defaultdict(list)
@@ -245,13 +254,14 @@ def main():
 
     total_excedentes = sum(len(c) - 1 for c in duplicados.values())
     todos_ids_envolvidos = [m["id"] for cluster in duplicados.values() for m in cluster]
-    ids_com_fotmob = buscar_ids_com_fotmob(supabase, todos_ids_envolvidos)
+    ids_com_fotmob = com_retentativa(buscar_ids_com_fotmob, supabase, todos_ids_envolvidos)
 
     por_liga = defaultdict(lambda: {"grupos": 0, "excedentes": 0})
     for (liga_id, *_resto), cluster in duplicados.items():
         por_liga[liga_id]["grupos"] += 1
         por_liga[liga_id]["excedentes"] += len(cluster) - 1
-    ligas_nomes = {l["id"]: l["name"] for l in (supabase.table("leagues").select("id, name").execute().data or [])}
+    resp_ligas = com_retentativa(lambda: supabase.table("leagues").select("id, name").execute())
+    ligas_nomes = {l["id"]: l["name"] for l in (resp_ligas.data or [])}
 
     print(f"{len(duplicados)} grupo(s) de partida duplicada, {total_excedentes} linha(s) excedente(s) no total:\n")
     for liga_id, info in sorted(por_liga.items(), key=lambda x: -x[1]["excedentes"]):
