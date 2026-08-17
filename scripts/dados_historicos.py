@@ -3020,7 +3020,20 @@ def montar_dataset_ml_empilhado(
     for col in ("match_stage", "is_neutral"):
         if col in partidas.columns:
             base_cols.append(col)
+    # Escanteios POR TIME da própria partida -- alvo do split Beta-Binomial
+    # do modelo paramétrico de escanteios (ver `treinar_modelo_hibrido.py`).
+    # Renomeados pra `total_corners_home`/`_away` pra ficarem ao lado de
+    # `total_corners` (o total já carregado por
+    # `_carregar_total_corners_por_partida`) e pra não se confundirem com
+    # `corners_home`/`corners_away`, que são a matéria-prima FBref da FORMA
+    # pré-jogo (`forma_escanteios`), de cobertura bem menor.
+    escanteios_por_time = {
+        "escanteios_fm_home": "total_corners_home",
+        "escanteios_fm_away": "total_corners_away",
+    }
+    base_cols.extend(col for col in escanteios_por_time if col in partidas.columns)
     dataset = partidas[base_cols].copy()
+    dataset = dataset.rename(columns=escanteios_por_time)
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
     if "match_stage" in dataset.columns:
         dataset["match_stage_ord"] = dataset["match_stage"].map(MATCH_STAGE_ORDER).fillna(0).astype(int)
@@ -3290,6 +3303,17 @@ def montar_dataset_ml_empilhado(
         "resultado", "resultado_over25", "resultado_btts", "resultado_faixa_gols", "resultado_corners_ou95", "resultado_faixa_corners",
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
+        # Contagens observadas da própria partida -- alvo dos modelos
+        # paramétricos (`treinar_modelo_hibrido.py`, que estima o λ de uma
+        # Poisson/Binomial Negativa em vez de uma probabilidade de classe).
+        # Mesma natureza de `xg_home`/`xg_away` acima: é RESULTADO, nunca
+        # feature -- nenhuma lista FEATURES_* referencia essas colunas, e
+        # incluí-las vazaria o placar. `total_corners_home`/`_away` vêm do
+        # FotMob (`escanteios_fm_*`, 96-100% de cobertura nas 6 ligas do
+        # benchmark) e NÃO de `corners_home`/`corners_away` do FBref, que
+        # cobre ~57% na Europa e 4% no Brasileirão.
+        "home_goals", "away_goals",
+        "total_corners", "total_corners_home", "total_corners_away",
     ]
     dataset = dataset[[c for c in _COLUNAS_DESEJADAS if c in dataset.columns]]
 
