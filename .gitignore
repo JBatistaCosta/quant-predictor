@@ -36,3 +36,7 @@ previsoes_antigas.csv
 
 # Artefato gerado pelo CatBoost ao treinar localmente (scripts/rodar_predicoes.py)
 catboost_info/
+
+# Ambiente virtual Python criado pra rodar scripts/verificar_distribuicoes.py
+# localmente (as dependências de verdade vêm de scripts/requirements.txt)
+.venv*/

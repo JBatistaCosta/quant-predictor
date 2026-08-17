@@ -193,8 +193,18 @@ export default function AnaliseEvento() {
   const [formulaParams, setFormulaParams] = useState({
     n: 5, k: 6, xi: 0.2, // shrinkage (n, k) e decay (xi)
     xgaAdv1: '', xgAdv1: '', xgaAdv2: '', xgAdv2: '', // normalização dinâmica
+    lambdaHome: '', lambdaAway: '', // modelo misto (λ estimado por ML)
   });
   const setFormulaParam = (id, value) => setFormulaParams(prev => ({ ...prev, [id]: value }));
+
+  // ρ da correção de Dixon-Coles. Começa no valor global calibrado com 314
+  // jogos (DIXON_COLES_RHO), mas passa a ser sobrescrito pelo ρ da PARTIDA
+  // quando o modelo misto tem estimativa — ρ ajustado por MLE condicionado nos
+  // λ daquele confronto é melhor que uma constante global para todo o futebol.
+  const [dixonColesRho, setDixonColesRho] = useState(DIXON_COLES_RHO);
+  // Origem dos parâmetros do modelo misto, só pra exibir na tela (qual partida
+  // e qual modelo forneceram os λ) — null quando não há estimativa.
+  const [modeloMisto, setModeloMisto] = useState(null);
 
   // Histórico jogo-a-jogo (mais recente primeiro) — usado pela fórmula "Time Decay".
   // Preenchido manualmente ou automaticamente (ver useEffect de auto-preenchimento).
@@ -363,7 +373,7 @@ export default function AnaliseEvento() {
     team1Id, team2Id, metrics, eloWeight,
     lambdaFormula, formulaParams, historico1, historico2,
     shotsModel, pConv1, pConv2,
-    cornersModel, cornersDisp, dixonColesEnabled,
+    cornersModel, cornersDisp, dixonColesEnabled, dixonColesRho,
   });
 
   const salvarSimulacao = async () => {
@@ -410,6 +420,9 @@ export default function AnaliseEvento() {
     if (c.cornersModel) setCornersModel(c.cornersModel);
     if (c.cornersDisp != null) setCornersDisp(c.cornersDisp);
     if (c.dixonColesEnabled != null) setDixonColesEnabled(c.dixonColesEnabled);
+    // Simulações salvas antes do modelo misto não têm rho no config — nesse
+    // caso mantém a constante global, que era o comportamento delas.
+    if (c.dixonColesRho != null) setDixonColesRho(c.dixonColesRho);
     setSimMsg(`Simulação "${sim.nome}" carregada — clique em "Processar" pra recalcular.`);
     setTimeout(() => setSimMsg(''), 5000);
   };
@@ -512,6 +525,28 @@ export default function AnaliseEvento() {
             setCornersModel('negbin');
             setCornersDisp(dadosCorners.modelo.disp_r);
             mensagens.push(`Escanteios (Binomial Negativa, modelo) carregados — r=${dadosCorners.modelo.disp_r.toFixed(1)}`);
+          }
+
+          // Modelo misto: λ estimado por ML pra ESTA partida, quando existe.
+          // Preenche os campos da fórmula `ml_params` e sobrescreve ρ e a
+          // dispersão de escanteios pelos valores estimados nesse confronto,
+          // em vez das constantes globais. Não troca a fórmula ativa sozinho
+          // — quem decide é o usuário, no seletor; aqui só deixamos pronto.
+          const misto = dadosCorners?.modelo_misto;
+          if (!cancelado && misto?.params?.lambda_home) {
+            const p = misto.params;
+            setModeloMisto(misto);
+            setFormulaParams(prev => ({
+              ...prev,
+              lambdaHome: String(p.lambda_home),
+              lambdaAway: String(p.lambda_away),
+            }));
+            if (Number.isFinite(Number(p.rho))) setDixonColesRho(Number(p.rho));
+            if (Number(p.corners_disp_r) > 0) setCornersDisp(Number(p.corners_disp_r));
+            mensagens.push(
+              `Modelo misto (${misto.model_name}): λ ${Number(p.lambda_home).toFixed(2)} × ${Number(p.lambda_away).toFixed(2)}` +
+              ` — selecione "λ estimado por ML" na fórmula pra usar`
+            );
           }
         }
       } catch (erroCorners) {
@@ -885,6 +920,7 @@ export default function AnaliseEvento() {
       xi: Number(formulaParams.xi) || 0.2,
       xgaAdv1: toNumber(formulaParams.xgaAdv1), xgAdv1: toNumber(formulaParams.xgAdv1),
       xgaAdv2: toNumber(formulaParams.xgaAdv2), xgAdv2: toNumber(formulaParams.xgAdv2),
+      lambdaHome: toNumber(formulaParams.lambdaHome), lambdaAway: toNumber(formulaParams.lambdaAway),
     };
     const formula = getLambdaFormula(lambdaFormula);
     const resultadoFormula = formula.calc({
@@ -935,9 +971,15 @@ export default function AnaliseEvento() {
         // Correção de Dixon-Coles (1997): ajusta só as 4 células de placar baixo,
         // onde a suposição de independência entre os gols dos dois times falha um
         // pouco na prática (0-0/1-1 acontecem mais, 1-0/0-1 acontecem menos do que
-        // a Poisson pura prevê). rho calibrado com 314 jogos reais — ver calibration/.
+        // a Poisson pura prevê).
+        //
+        // O ρ padrão é a constante global calibrada com 314 jogos (DIXON_COLES_RHO,
+        // ver calibration/), mas quando o modelo misto tem estimativa pra ESTA
+        // partida, `dixonColesRho` já foi sobrescrito pelo ρ ajustado por MLE
+        // condicionado nos λ daquele confronto — melhor que uma constante única
+        // pra todo o futebol.
         if (dixonColesEnabled) {
-          probMatrix *= dixonColesTau(i, j, lambda1, lambda2, DIXON_COLES_RHO);
+          probMatrix *= dixonColesTau(i, j, lambda1, lambda2, dixonColesRho);
         }
 
         exactScores.push({ score: `${i}-${j}`, prob: probMatrix, g1: i, g2: j });
@@ -1683,6 +1725,35 @@ export default function AnaliseEvento() {
                   {LAMBDA_FORMULAS.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                 </select>
                 <p className="text-xs text-slate-500 mt-2">{getLambdaFormula(lambdaFormula).descricao}</p>
+
+                {lambdaFormula === 'ml_params' && (
+                  <div className="mt-3">
+                    {modeloMisto ? (
+                      <p className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-md p-2 mb-3">
+                        λ carregado do modelo <strong>{modeloMisto.model_name}</strong>
+                        {modeloMisto.match_date && ` (partida de ${new Date(modeloMisto.match_date).toLocaleDateString('pt-BR')})`}
+                        {Number.isFinite(Number(modeloMisto.params?.rho)) && ` · ρ da partida = ${Number(modeloMisto.params.rho).toFixed(4)}`}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-md p-2 mb-3">
+                        Sem estimativa do modelo misto pra este confronto — preencha os λ à mão, ou a calculadora cai na fórmula multiplicativa.
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase font-bold">λ do mandante</label>
+                        <input type="number" step="0.01" min="0" placeholder="ex: 1.73" value={formulaParams.lambdaHome} onChange={(e) => setFormulaParam('lambdaHome', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 uppercase font-bold">λ do visitante</label>
+                        <input type="number" step="0.01" min="0" placeholder="ex: 1.02" value={formulaParams.lambdaAway} onChange={(e) => setFormulaParam('lambdaAway', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2">
+                      Estes λ já embutem a vantagem de mando (o modelo treina mandante e visitante separadamente), então a calculadora não aplica gamma de casa por cima.
+                    </p>
+                  </div>
+                )}
 
                 {lambdaFormula === 'shrinkage' && (
                   <div className="grid grid-cols-2 gap-3 mt-3">
