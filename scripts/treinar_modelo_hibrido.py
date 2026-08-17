@@ -302,7 +302,6 @@ def persistir(
                 "match_id": match_id, "model_name": model_name,
                 "market": mercado, "selection": selecao,
                 "probability": round(prob, 6),
-                "fair_odds": round(1.0 / prob, 3) if prob > 1e-6 else None,
             })
 
     n_est = upsert_em_lotes(supabase, "model_match_estimates", estimativas, "match_id,model_name")
