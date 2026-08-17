@@ -81,7 +81,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 BUCKET_ARTEFATOS = "custom-model-artifacts"
-ALGORITMOS = ["lightgbm", "xgboost", "catboost"]
+# Ordem CANÔNICA -- tem que bater exatamente com scripts/treinar_modelo_xi.py.
+# ALGORITMOS[i] é sempre a coluna i do vetor que alimenta o meta-modelo de
+# stacking (LogisticRegression, ver `prever_probabilidades`) -- trocar a
+# ordem aqui sem trocar lá faz o meta-modelo aplicar o peso errado no
+# modelo errado (ele não guarda o "nome" de cada entrada, só a posição).
+ALGORITMOS = ["lightgbm", "xgboost", "catboost", "random_forest", "mlp"]
+NOME_META_MODELO = "stacking_logreg"
 # Mesma lista/ordem de scripts/treinar_modelo_xi.py -- elo_diff/squad_rating_diff
 # são POR PARTIDA (não dá pra pré-computar em montar_features_elenco_atual,
 # que é por time/elenco só -- ver rodar()), as outras são por jogador/elenco
@@ -233,6 +239,20 @@ def carregar_modelos(supabase: Client) -> dict:
         except Exception as e:
             logger.warning(f"Sem artefato para {nome} ({path}): {e}")
     return modelos
+
+
+def carregar_meta_modelo(supabase: Client):
+    """Meta-modelo do stacking (LogisticRegression treinada sobre previsões
+    OOF dos 5 modelos base, ver `treinar_modelo_xi._gerar_previsoes_oof`) --
+    artefato separado dos 5 de `carregar_modelos` (entrada diferente:
+    probabilidades dos modelos base, não as features brutas)."""
+    path = f"xi_titular/{NOME_META_MODELO}.joblib"
+    try:
+        conteudo = supabase.storage.from_(BUCKET_ARTEFATOS).download(path)
+        return joblib.load(io.BytesIO(conteudo))
+    except Exception as e:
+        logger.warning(f"Sem artefato do meta-modelo de stacking ({path}): {e}")
+        return None
 
 
 def jogadores_suspensos_e_pendurados(
@@ -634,11 +654,22 @@ def montar_features_elenco_atual(
     return df[["player_id", "team_id", "usual_position_id", "posicao_detalhe", *FEATURES_BASE]]
 
 
-def prever_probabilidades(modelos: dict, df_features: pd.DataFrame) -> np.ndarray:
-    """Média das probabilidades dos algoritmos com artefato disponível
-    (ensemble simples -- mais robusto que depender de um único algoritmo)."""
-    probas = [modelo.predict_proba(df_features[FEATURES])[:, 1] for modelo in modelos.values()]
-    return np.mean(probas, axis=0)
+def prever_probabilidades(modelos: dict, meta_modelo, df_features: pd.DataFrame) -> np.ndarray:
+    """Stacking (pedido do usuário): a previsão de cada modelo base vira uma
+    coluna, na ordem CANÔNICA de `ALGORITMOS`, e o meta-modelo (Logistic
+    Regression treinada sobre previsões OOF, ver `treinar_modelo_xi.
+    _gerar_previsoes_oof`) combina os 5 aprendendo um peso por modelo --
+    substitui a média simples anterior. Se o meta-modelo não estiver
+    disponível (treino antigo, artefato ainda não gerado) ou faltar algum
+    dos 5 modelos base, cai pra média simples dos disponíveis -- nunca
+    quebra o pipeline por falta do artefato mais novo."""
+    nomes_disponiveis = [n for n in ALGORITMOS if n in modelos]
+    probas_por_modelo = {n: modelos[n].predict_proba(df_features[FEATURES])[:, 1] for n in nomes_disponiveis}
+    if meta_modelo is not None and nomes_disponiveis == ALGORITMOS:
+        meta_X = np.column_stack([probas_por_modelo[n] for n in ALGORITMOS])
+        return meta_modelo.predict_proba(meta_X)[:, 1]
+    logger.warning("Meta-modelo de stacking indisponível ou faltando modelo base -- usando média simples como fallback.")
+    return np.mean(list(probas_por_modelo.values()), axis=0)
 
 
 def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
@@ -651,6 +682,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
     if not modelos:
         logger.error("Nenhum artefato de modelo encontrado em xi_titular/*.joblib -- rode treinar_modelo_xi.py primeiro.")
         return 0
+    meta_modelo = carregar_meta_modelo(supabase)
 
     team_ids = sorted(set(fixtures["home_team_id"]).union(fixtures["away_team_id"]))
     league_id_por_time, nome_liga_por_league_id = mapear_ligas(supabase, fixtures)
@@ -691,7 +723,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
             elenco_time = elenco_time.drop_duplicates(subset="player_id")
             elenco_time["elo_diff"] = elo_por_time.get(team_id, np.nan) - elo_por_time.get(oponente_id, np.nan)
             elenco_time["squad_rating_diff"] = squad_rating_por_time.get(team_id, np.nan) - squad_rating_por_time.get(oponente_id, np.nan)
-            elenco_time["prob_titular"] = prever_probabilidades(modelos, elenco_time)
+            elenco_time["prob_titular"] = prever_probabilidades(modelos, meta_modelo, elenco_time)
             elenco_time = elenco_time.sort_values("prob_titular", ascending=False)
             titulares_previstos = selecionar_titulares_por_posicao(elenco_time)
             for _, jogador in elenco_time.iterrows():
@@ -703,7 +735,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
                         "prob_titular": float(jogador["prob_titular"]),
                         "is_titular_previsto": jogador["player_id"] in titulares_previstos,
                         "posicao_bucket": int(jogador["usual_position_id"]) if pd.notna(jogador["usual_position_id"]) else None,
-                        "model_version": "xi_titular_ensemble",
+                        "model_version": "xi_titular_stacking",
                         # Explícito -- `default now()` só se aplica a INSERT novo;
                         # sem isso aqui, upsert em cima de linha já existente
                         # (ON CONFLICT DO UPDATE) mantinha o gerado_em antigo,
