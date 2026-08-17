@@ -32,6 +32,15 @@ nunca teve como aprender. Suspensos por acúmulo de cartão amarelo
 (`jogadores_suspensos`, reaproveitando `dados_historicos.
 CARTAO_LIMIAR_POR_LIGA`) são excluídos pelo mesmo motivo.
 
+Filtro rígido de elenco ativo (`jogadores_transferidos_para_fora`, pedido
+do usuário): além do snapshot de elenco, cruza com `team_transfers_fotmob`
+(mesma fonte/mesma rodada de sync) e remove quem já tem transferência de
+SAÍDA mais recente que qualquer evento de entrada -- fecha a janela entre
+o snapshot (resincronizado periodicamente) e uma transferência recente.
+Achado real testando este filtro em produção: um jogador do Flamengo
+seguia listado no snapshot de elenco meses depois de um evento `'out'`
+registrado.
+
 A seleção do XI (`selecionar_titulares_por_posicao`) respeita uma formação
 tática plausível (1 GK, 3-5 DEF, 3-5 MEI, 1-3 ATA) em vez de só pegar os 11
 de maior probabilidade sem noção de posição -- o modelo prevê cada jogador
@@ -283,6 +292,57 @@ def jogadores_suspensos(
     return suspensos
 
 
+def jogadores_transferidos_para_fora(supabase: Client, team_ids: list[int]) -> set[tuple[int, int]]:
+    """Filtro rígido de elenco ativo: `(team_id, player_id)` cujo evento MAIS
+    RECENTE em `team_transfers_fotmob` (mesma fonte/mesma rodada de sync que
+    `player_availability_fotmob`, `ingestao_fotmob_elenco.py`) é `'out'` --
+    pedido do usuário pra restringir o espaço amostral exclusivamente a
+    quem tem vínculo ativo com o time na data do jogo, sem depender só do
+    snapshot de elenco (que é resincronizado periodicamente e pode ficar
+    temporariamente desatualizado em relação a uma transferência/empréstimo
+    recente -- achado real confirmado em produção testando este filtro:
+    "Lorran" segue listado no snapshot de elenco do Flamengo mesmo com um
+    evento `'out'` registrado desde 2025-09-01).
+
+    Não usa jogos anteriores (`match_lineup_fotmob`) como confirmação
+    adicional aqui de propósito -- um jogador recém-contratado que ainda
+    não estreou pelo time novo teria 0 jogos e seria excluído por engano;
+    o histórico de partidas já entra como SINAL (não filtro rígido) via
+    `hierarquia_elenco`/`dias_desde_ultimo_jogo` mais abaixo."""
+    if not team_ids:
+        return set()
+    linhas: list[dict] = []
+    for lote_times in _dividir_em_lotes(team_ids, 200):
+        pagina = 0
+        while True:
+            inicio = pagina * 1000
+            lote = (
+                supabase.table("team_transfers_fotmob")
+                .select("team_id, player_id, direction, transfer_date")
+                .in_("team_id", lote_times)
+                .not_.is_("player_id", "null")
+                .order("team_id")
+                .order("player_id")
+                .order("transfer_date", desc=True)
+                .range(inicio, inicio + 999)
+                .execute()
+                .data
+                or []
+            )
+            linhas.extend(lote)
+            if len(lote) < 1000:
+                break
+            pagina += 1
+    if not linhas:
+        return set()
+    df = pd.DataFrame(linhas)
+    # já vem ordenado (team_id, player_id, transfer_date DESC) da query --
+    # a primeira linha de cada (team_id, player_id) é o evento mais recente.
+    mais_recente = df.drop_duplicates(subset=["team_id", "player_id"], keep="first")
+    saida = mais_recente[mais_recente["direction"] == "out"]
+    return set(zip(saida["team_id"].astype(int), saida["player_id"].astype(int)))
+
+
 def selecionar_titulares_por_posicao(elenco_time: pd.DataFrame) -> set:
     """Seleciona os `TOP_N_TITULARES` respeitando uma formação plausível
     (`FORMACAO_MIN_MAX`) em vez de só top-11 por probabilidade -- sem isso,
@@ -397,6 +457,15 @@ def montar_features_elenco_atual(
     # selecionar_titulares_por_posicao, que já espera essa coluna) agora vem
     # do texto `role`, não mais de players.usual_position_id.
     df["usual_position_id"] = df["role"].map(MAPA_ROLE_PARA_POSICAO)
+
+    # Filtro rígido de elenco ativo (pedido do usuário): remove quem já tem
+    # transferência de SAÍDA mais recente que a entrada no snapshot atual
+    # de elenco -- ver docstring de `jogadores_transferidos_para_fora`.
+    transferidos = jogadores_transferidos_para_fora(supabase, team_ids)
+    if transferidos:
+        df = df[~df.apply(lambda r: (r["team_id"], r["player_id"]) in transferidos, axis=1)].copy()
+        if df.empty:
+            return df
 
     player_ids = df["player_id"].tolist()
 
