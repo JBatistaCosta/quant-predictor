@@ -113,6 +113,26 @@ def _totais(max_gols: int) -> np.ndarray:
     return np.add.outer(gols, gols)
 
 
+def rotulo_linha(linha: float) -> str:
+    """Formata a linha de um mercado com UMA casa decimal, sempre.
+
+    Parece detalhe estético, mas é a chave de `model_predictions.market` --
+    e o gêmeo JS (`src/utils/distribuicoesMercados.js`) precisa gerar
+    exatamente a mesma string, senão o front procura por um mercado que o
+    pipeline gravou com outro nome e simplesmente não acha.
+
+    Foi o primeiro bug real que o teste de paridade pegou: em Python
+    `f"handicap_{-2.0}"` dá `handicap_-2.0`, enquanto em JS
+    `` `handicap_${-2}` `` dá `handicap_-2`. Linhas de meio gol coincidiam
+    por acaso (2.5 vira "2.5" nas duas linguagens), então o problema só
+    aparecia nas linhas INTEIRAS de handicap.
+
+    Com uma casa fixa, `-2` e `-2.0` viram ambos "-2.0", e as linhas .5
+    continuam iguais ao que já está gravado (`over_under_2.5`).
+    """
+    return f"{linha:.1f}"
+
+
 def mercados_de_gols(
     matriz: np.ndarray,
     linhas_over_under: tuple[float, ...] = (0.5, 1.5, 2.5, 3.5, 4.5),
@@ -151,8 +171,8 @@ def mercados_de_gols(
     # --- Over/Under em qualquer linha ------------------------------------
     for linha in linhas_over_under:
         p_over = float(matriz[total > linha].sum())
-        saida[(f"over_under_{linha}", "over")] = p_over
-        saida[(f"over_under_{linha}", "under")] = 1.0 - p_over
+        saida[(f"over_under_{rotulo_linha(linha)}", "over")] = p_over
+        saida[(f"over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over
 
     # --- BTTS -------------------------------------------------------------
     p_btts = float(matriz[1:, 1:].sum())
@@ -174,7 +194,7 @@ def mercados_de_gols(
         margem = diferenca + linha
         p_ganha = float(matriz[margem > 0].sum())
         p_push = float(matriz[margem == 0].sum())
-        rotulo = f"handicap_{linha}"
+        rotulo = f"handicap_{rotulo_linha(linha)}"
         saida[(rotulo, "home")] = p_ganha
         saida[(rotulo, "away")] = 1.0 - p_ganha - p_push
         if p_push > 0:
@@ -200,11 +220,22 @@ def _nb_pmf_vetor(media: float, disp_r: float, max_valor: int = MAX_ESCANTEIOS) 
     Mesma parametrização de `src/utils/distributions.js` e
     `api/_lib/negbin.js` (NB2): variância = média + média²/r, então r -> ∞
     converge pra Poisson. `scipy.stats.nbinom` usa (n, p), daí a conversão.
+
+    RENORMALIZADO no suporte truncado [0, max_valor]. Sem isso, a massa
+    residual acima do teto (~4e-6 numa NB de cauda gorda) some ou sobra
+    dependendo de como cada mercado é calculado -- e aí o total deixa de
+    bater com a marginal da conjunta, que já é normalizada. Num modelo cuja
+    razão de existir é coerência entre mercados, essa inconsistência seria
+    justamente o defeito que ele promete não ter. Foi o teste de paridade
+    Python<->JS que expôs (as duas linguagens tratavam a cauda truncada de
+    formas diferentes).
     """
     if disp_r <= 0 or not np.isfinite(disp_r):
-        return poisson.pmf(np.arange(max_valor + 1), media)
-    p = disp_r / (disp_r + media)
-    return nbinom.pmf(np.arange(max_valor + 1), disp_r, p)
+        pmf = poisson.pmf(np.arange(max_valor + 1), media)
+    else:
+        p = disp_r / (disp_r + media)
+        pmf = nbinom.pmf(np.arange(max_valor + 1), disp_r, p)
+    return pmf / pmf.sum()
 
 
 def _beta_binomial_pmf(n: int, alpha: float, beta: float) -> np.ndarray:
@@ -262,8 +293,8 @@ def mercados_de_escanteios(
     for linha in linhas_totais:
         # P(total > linha) = 1 - P(total <= floor(linha))
         p_over = float(1.0 - acumulado[int(np.floor(linha))])
-        saida[(f"corners_over_under_{linha}", "over")] = p_over
-        saida[(f"corners_over_under_{linha}", "under")] = 1.0 - p_over
+        saida[(f"corners_over_under_{rotulo_linha(linha)}", "over")] = p_over
+        saida[(f"corners_over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over
 
     # Faixas de escanteios (mesmos buckets de `codigo_faixa_corners`)
     for rotulo, minimo, maximo in (("≤8", 0, 8), ("9-10", 9, 10), ("11-12", 11, 12), ("13+", 13, MAX_ESCANTEIOS)):
@@ -275,10 +306,10 @@ def mercados_de_escanteios(
     acumulado_casa, acumulado_fora = np.cumsum(p_casa), np.cumsum(p_fora)
     for linha in linhas_por_time:
         corte = int(np.floor(linha))
-        saida[(f"corners_home_over_under_{linha}", "over")] = float(1.0 - acumulado_casa[corte])
-        saida[(f"corners_home_over_under_{linha}", "under")] = float(acumulado_casa[corte])
-        saida[(f"corners_away_over_under_{linha}", "over")] = float(1.0 - acumulado_fora[corte])
-        saida[(f"corners_away_over_under_{linha}", "under")] = float(acumulado_fora[corte])
+        saida[(f"corners_home_over_under_{rotulo_linha(linha)}", "over")] = float(1.0 - acumulado_casa[corte])
+        saida[(f"corners_home_over_under_{rotulo_linha(linha)}", "under")] = float(acumulado_casa[corte])
+        saida[(f"corners_away_over_under_{rotulo_linha(linha)}", "over")] = float(1.0 - acumulado_fora[corte])
+        saida[(f"corners_away_over_under_{rotulo_linha(linha)}", "under")] = float(acumulado_fora[corte])
 
     # Quem faz mais escanteios (3 saídas -- empate é comum aqui)
     saida[("corners_1X2", "home")] = float(np.tril(conjunta, -1).sum())

@@ -63,6 +63,21 @@ jobs:
         run: python scripts/verificar_distribuicoes.py
         working-directory: scripts
 
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A camada "parâmetros -> mercados" existe em Python (treino em lote) e
+      # em JS (calculadora do app). Se divergirem, a mesma partida mostra
+      # número diferente dependendo de onde o usuário olha. Este teste compara
+      # as duas contra um fixture gerado pelo Python. Já pegou dois bugs
+      # reais: nome de mercado divergente em linhas inteiras de handicap
+      # (handicap_-2.0 vs handicap_-2) e tratamento diferente da cauda
+      # truncada da Binomial Negativa.
+      - name: Verificar paridade Python <-> JS
+        run: node scripts/verificar_paridade_js.mjs
+
       - name: Treinar modelo misto
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

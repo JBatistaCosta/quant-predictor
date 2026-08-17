@@ -10,7 +10,8 @@
     "build:aws": "vite build --mode aws",
     "preview": "vite preview",
     "deploy:firebase": "npm run build:firebase && firebase deploy",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test:paridade": "node scripts/verificar_paridade_js.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
