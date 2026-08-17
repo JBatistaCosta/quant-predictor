@@ -143,6 +143,48 @@ export const LAMBDA_FORMULAS = [
       };
     },
   },
+  // Modelo misto: em vez de calcular o λ com uma fórmula fechada em cima de
+  // xG/xGA médios, usa o λ ESTIMADO POR ML (gradient boosting com perda de
+  // Poisson sobre ~190 features pré-jogo — elo, forma, XI titular, fadiga,
+  // árbitro, classificação), treinado por scripts/treinar_modelo_hibrido.py e
+  // persistido em `model_match_estimates.params`.
+  //
+  // Entra no registro como qualquer outra fórmula (mesma assinatura
+  // `calc(...) -> { trueXG1, trueXG2, aviso? }`), então o resto do pipeline da
+  // calculadora — Poisson, Dixon-Coles, Monte Carlo, Markov — não muda em nada.
+  //
+  // Os λ chegam por `params`: preenchidos automaticamente quando o confronto é
+  // reconhecido no pipeline, ou digitados à mão (útil pra estudar cenários, ou
+  // pra colar os λ de uma partida que o modelo já estimou). Sem λ preenchido,
+  // cai na fórmula multiplicativa com aviso — mesmo padrão de `decay`/`dinamica`.
+  {
+    id: 'ml_params',
+    nome: 'λ estimado por ML (modelo misto)',
+    descricao: 'Usa os gols esperados estimados por machine learning (CatBoost com perda de Poisson) em vez de derivá-los de uma fórmula sobre médias de xG. O ML enxerga contexto que a fórmula fechada ignora — elo, forma recente, força do XI titular, fadiga, árbitro, posição na tabela. Preenchido automaticamente quando o confronto é reconhecido no pipeline; senão, dá pra digitar os λ à mão.',
+    precisaHistorico: false,
+    parametros: [
+      { id: 'lambdaHome', label: 'λ do mandante (gols esperados)', default: '' },
+      { id: 'lambdaAway', label: 'λ do visitante (gols esperados)', default: '' },
+    ],
+    calc: ({ m, params }) => {
+      const lam = Number(params?.lambdaHome);
+      const mu = Number(params?.lambdaAway);
+      const valido = Number.isFinite(lam) && lam > 0 && Number.isFinite(mu) && mu > 0;
+
+      if (!valido) {
+        return {
+          trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, GAMMA_MANDANTE),
+          trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, GAMMA_VISITANTE),
+          aviso: 'Sem λ do modelo misto pra este confronto — usando a fórmula multiplicativa. O λ é preenchido automaticamente quando a partida existe no pipeline (ver model_match_estimates), ou pode ser digitado nos campos acima.',
+        };
+      }
+
+      // Sem gamma de mando aqui, de propósito: o λ do ML já foi treinado
+      // separando mandante de visitante, então a vantagem de casa está embutida.
+      // Multiplicar por GAMMA_MANDANTE de novo contaria o mando duas vezes.
+      return { trueXG1: lam, trueXG2: mu };
+    },
+  },
 ];
 
 export const getLambdaFormula = (id) => LAMBDA_FORMULAS.find(f => f.id === id) || LAMBDA_FORMULAS[0];
