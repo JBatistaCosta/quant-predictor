@@ -29,8 +29,19 @@ elenco, não precisa de consulta separada) -- os modelos treinados nunca
 viram `is_lesionado=1` variar no treino, então excluir na entrada é mais
 correto do que confiar na feature pra "aprender" uma penalidade que ela
 nunca teve como aprender. Suspensos por acúmulo de cartão amarelo
-(`jogadores_suspensos`, reaproveitando `dados_historicos.
-CARTAO_LIMIAR_POR_LIGA`) são excluídos pelo mesmo motivo.
+(`jogadores_suspensos_e_pendurados`, reaproveitando `dados_historicos.
+CARTAO_LIMIAR_POR_LIGA`) são excluídos pelo mesmo motivo -- jogadores só
+PENDURADOS (a 1 cartão da suspensão) não são excluídos, viram a feature
+`esta_pendurado` (ver "Força do oponente" abaixo).
+
+Força do oponente + risco de suspensão (pedido do usuário): "levar em
+consideração o poder do time oponente (geralmente há preservação de
+jogadores muito utilizados e/ou pendurados)". `elo_diff`/`squad_rating_diff`
+(`dados_historicos.obter_elo_atual`/`obter_squad_rating_atual`, força do
+PRÓPRIO time menos a do OPONENTE) são calculadas POR PARTIDA dentro de
+`rodar()` -- não em `montar_features_elenco_atual`, que é só por elenco/
+time, porque o mesmo time pode ter mais de 1 fixture na janela de dias
+contra oponentes diferentes.
 
 Filtro rígido de elenco ativo (`jogadores_transferidos_para_fora`, pedido
 do usuário): além do snapshot de elenco, cruza com `team_transfers_fotmob`
@@ -42,8 +53,10 @@ seguia listado no snapshot de elenco meses depois de um evento `'out'`
 registrado.
 
 A seleção do XI (`selecionar_titulares_por_posicao`) respeita uma formação
-tática plausível (1 GK, 3-5 DEF, 3-5 MEI, 1-3 ATA) em vez de só pegar os 11
-de maior probabilidade sem noção de posição -- o modelo prevê cada jogador
+tática plausível (1 GK, 4-5 DEF -- priorizando 2 zagueiros + 2 laterais
+quando `posicao_detalhe` está disponível, ver `MAPA_DETALHE_DEFESA`, pedido
+do usuário --, 3-5 MEI, 1-3 ATA) em vez de só pegar os 11 de maior
+probabilidade sem noção de posição -- o modelo prevê cada jogador
 isoladamente, então nada impediria escalar 6 zagueiros e 1 meio-campista se
 esses fossem os de maior probabilidade individual.
 
@@ -69,7 +82,15 @@ logger = logging.getLogger(__name__)
 
 BUCKET_ARTEFATOS = "custom-model-artifacts"
 ALGORITMOS = ["lightgbm", "xgboost", "catboost"]
-FEATURES = ["dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "posicao_num", "valor_mercado_eur", "is_lesionado"]
+# Mesma lista/ordem de scripts/treinar_modelo_xi.py -- elo_diff/squad_rating_diff
+# são POR PARTIDA (não dá pra pré-computar em montar_features_elenco_atual,
+# que é por time/elenco só -- ver rodar()), as outras são por jogador/elenco
+# atual, computadas uma vez só.
+FEATURES = [
+    "dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "posicao_num", "valor_mercado_eur", "is_lesionado",
+    "elo_diff", "squad_rating_diff", "esta_pendurado",
+]
+FEATURES_BASE = [f for f in FEATURES if f not in ("elo_diff", "squad_rating_diff")]
 DIAS_JANELA_DEFAULT = 7
 TOP_N_TITULARES = 11
 
@@ -89,7 +110,16 @@ TAMANHO_LOTE_TABELA_GRANDE = 25
 # POSICAO_LABEL no frontend) -- só os 4 valores abaixo existem em produção
 # (confirmado por `GROUP BY role`, 100% das linhas com role preenchido).
 MAPA_ROLE_PARA_POSICAO = {"Keeper": 0, "Defender": 1, "Midfielder": 2, "Attacker": 3}
-FORMACAO_MIN_MAX = {0: (1, 1), 1: (3, 5), 2: (3, 5), 3: (1, 3)}
+# Mínimo de 4 defensores (pedido do usuário) -- FORMACAO_MIN_MAX[1] passa de
+# (3,5) pra (4,5). player_availability_fotmob.posicao_detalhe (positionIdsDesc
+# do FotMob, achado real inspecionando o payload bruto do endpoint de elenco
+# -- CB/LB/RB/LWB/RWB/CDM/CM/etc, não documentado antes) permite refinar
+# ainda mais: pelo menos 2 zagueiros (CB) + 2 laterais (LB/RB/LWB/RWB) dentro
+# desse mínimo, não só "4 defensores quaisquer" -- ver `MAPA_DETALHE_DEFESA`
+# e `selecionar_titulares_por_posicao`.
+FORMACAO_MIN_MAX = {0: (1, 1), 1: (4, 5), 2: (3, 5), 3: (1, 3)}
+MAPA_DETALHE_DEFESA = {"CB": "zag", "LB": "lat", "RB": "lat", "LWB": "lat", "RWB": "lat"}
+MINIMO_ZAG_LAT = 2
 
 
 def _dividir_em_lotes(itens: list, tamanho: int = 1000):
@@ -205,19 +235,23 @@ def carregar_modelos(supabase: Client) -> dict:
     return modelos
 
 
-def jogadores_suspensos(
+def jogadores_suspensos_e_pendurados(
     supabase: Client,
     player_ids: list[int],
     team_por_jogador: dict[int, int],
     league_id_por_time: dict[int, int],
     nome_liga_por_league_id: dict[int, str],
     ultimo_jogo_data: dict[int, str],
-) -> set[int]:
+) -> tuple[set[int], set[int]]:
     """Jogadores cumprindo suspensão por acúmulo de cartão amarelo pra
-    fixture futura -- reaproveita a regra por liga já pesquisada em
-    `dados_historicos.CARTAO_LIMIAR_POR_LIGA` (mesma família de
-    `obter_cartoes_atuais`, mas aqui precisa da IDENTIDADE de cada jogador
-    suspenso, não só a contagem agregada por time).
+    fixture futura (`suspensos`, excluídos do espaço amostral -- ver
+    `montar_features_elenco_atual`) e jogadores a 1 cartão do limiar
+    (`pendurados`, ENTRAM como feature `esta_pendurado` pro modelo aprender
+    o padrão de preservação -- pedido do usuário) -- reaproveita a regra por
+    liga já pesquisada em `dados_historicos.CARTAO_LIMIAR_POR_LIGA` (mesma
+    família de `obter_cartoes_atuais`, mas aqui precisa da IDENTIDADE de
+    cada jogador, não só a contagem agregada por time). Calcula os dois
+    numa passada só (mesmo histórico de cartão já buscado).
 
     Acúmulo de cartão sozinho não diz se a suspensão JÁ FOI cumprida --
     `dados_historicos._estado_apos_cada_cartao` reseta o ciclo no MESMO
@@ -228,7 +262,7 @@ def jogadores_suspensos(
     uma partida DEPOIS do cartão que cruzou o limiar, a suspensão de 1
     partida já foi cumprida."""
     if not player_ids or not league_id_por_time:
-        return set()
+        return set(), set()
 
     temporada_atual_por_liga: dict[int, str] = {}
     for league_id in set(league_id_por_time.values()):
@@ -251,7 +285,7 @@ def jogadores_suspensos(
             )
         )
     if not eventos:
-        return set()
+        return set(), set()
     df_eventos = pd.DataFrame(eventos)
 
     match_ids = df_eventos["match_id"].unique().tolist()
@@ -265,6 +299,7 @@ def jogadores_suspensos(
     df_eventos["match_date"] = df_eventos["match_id"].map(lambda mid: partidas_meta.get(mid, {}).get("match_date"))
 
     suspensos: set[int] = set()
+    pendurados: set[int] = set()
     for player_id, eventos_jogador in df_eventos.groupby("player_id"):
         team_id = team_por_jogador.get(player_id)
         league_id = league_id_por_time.get(team_id)
@@ -283,13 +318,18 @@ def jogadores_suspensos(
         cartoes_antes, n_susp_antes = estados_antes[-1] if estados_antes else (0, 0)
         limiar_atual = dh._limiar_do_ciclo(regra, n_susp_antes)
         if (cartoes_antes + 1) < limiar_atual:
-            continue  # último cartão não cruzou o limiar -- não suspenso
+            # último cartão não cruzou o limiar -- não suspenso; "pendurado"
+            # se esse cartão deixou o jogador a 1 amarelo do limiar (pedido
+            # do usuário: sinal pro modelo aprender preservação de pendurado).
+            if (cartoes_antes + 1) == limiar_atual - 1:
+                pendurados.add(int(player_id))
+            continue
         data_cartao_suspensivo = datas[-1]
         ultimo_jogo = ultimo_jogo_data.get(player_id)
         if ultimo_jogo is not None and ultimo_jogo > data_cartao_suspensivo:
             continue  # já jogou depois do cartão que suspendeu -- cumprida
         suspensos.add(int(player_id))
-    return suspensos
+    return suspensos, pendurados
 
 
 def jogadores_transferidos_para_fora(supabase: Client, team_ids: list[int]) -> set[tuple[int, int]]:
@@ -363,8 +403,28 @@ def selecionar_titulares_por_posicao(elenco_time: pd.DataFrame) -> set:
     selecionados: list = []
     sobras: list = []
     for posicao, (minimo, maximo) in FORMACAO_MIN_MAX.items():
-        candidatos = elenco_time[elenco_time["usual_position_id"] == posicao]["player_id"].tolist()
-        _extend_sem_duplicar(selecionados, candidatos[:minimo])
+        candidatos_pos = elenco_time[elenco_time["usual_position_id"] == posicao]
+        candidatos = candidatos_pos["player_id"].tolist()  # já ordenado por prob desc
+        if posicao == 1 and "posicao_detalhe" in candidatos_pos.columns:
+            # Defesa: prioriza 2 zagueiros (CB) + 2 laterais (LB/RB/LWB/RWB)
+            # antes de completar o mínimo só por probabilidade -- pedido do
+            # usuário ("mínimo de 4 defensores, ou 2 ZAG + 2 LAT"). Se o
+            # elenco disponível não tiver zagueiro/lateral suficiente (dado
+            # faltando ou elenco atípico), completa com o defensor de maior
+            # probabilidade restante -- nunca deixa de bater o mínimo de 4
+            # só por falta da granularidade ideal.
+            lado_por_jogador = dict(zip(candidatos_pos["player_id"], candidatos_pos["posicao_detalhe"].map(MAPA_DETALHE_DEFESA)))
+            zags = [p for p in candidatos if lado_por_jogador.get(p) == "zag"]
+            lats = [p for p in candidatos if lado_por_jogador.get(p) == "lat"]
+            nucleo: list = []
+            _extend_sem_duplicar(nucleo, zags[:MINIMO_ZAG_LAT])
+            _extend_sem_duplicar(nucleo, lats[:MINIMO_ZAG_LAT])
+            if len(nucleo) < minimo:
+                restantes_pos = [p for p in candidatos if p not in nucleo]
+                _extend_sem_duplicar(nucleo, restantes_pos[: minimo - len(nucleo)])
+            _extend_sem_duplicar(selecionados, nucleo[:minimo])
+        else:
+            _extend_sem_duplicar(selecionados, candidatos[:minimo])
         sobras.extend(pid for pid in candidatos[minimo:maximo] if pid not in selecionados)
 
     faltam = TOP_N_TITULARES - len(selecionados)
@@ -401,10 +461,11 @@ def montar_features_elenco_atual(
     nome_liga_por_league_id: dict[int, str] | None = None,
 ) -> pd.DataFrame:
     """Elenco atual (`player_availability_fotmob`) de cada time em `team_ids`,
-    com as mesmas 6 features de `treinar_modelo_xi.engenharia_features`,
-    calculadas com dado de HOJE em vez de ponto-no-tempo histórico -- não
-    existe 'escalação futura confirmada', só o melhor proxy disponível
-    agora."""
+    com as mesmas features de `treinar_modelo_xi.engenharia_features`
+    (`FEATURES_BASE` -- todas exceto `elo_diff`/`squad_rating_diff`, que são
+    por partida e entram depois em `rodar()`), calculadas com dado de HOJE
+    em vez de ponto-no-tempo histórico -- não existe 'escalação futura
+    confirmada', só o melhor proxy disponível agora."""
     if not team_ids:
         return pd.DataFrame()
 
@@ -424,7 +485,7 @@ def montar_features_elenco_atual(
             inicio = pagina * 1000
             lote = (
                 supabase.table("player_availability_fotmob")
-                .select("id, team_id, player_id, role, injured")
+                .select("id, team_id, player_id, role, posicao_detalhe, injured")
                 .in_("team_id", lote_times)
                 .order("team_id")
                 .order("id")
@@ -523,9 +584,10 @@ def montar_features_elenco_atual(
             if atual is None or data_jogo > atual:
                 ultimo_jogo_data[s["player_id"]] = data_jogo
 
+    pendurados: set[int] = set()
     if league_id_por_time and nome_liga_por_league_id:
         team_por_jogador = dict(zip(df["player_id"], df["team_id"]))
-        suspensos = jogadores_suspensos(
+        suspensos, pendurados = jogadores_suspensos_e_pendurados(
             supabase, player_ids, team_por_jogador, league_id_por_time, nome_liga_por_league_id, ultimo_jogo_data
         )
         if suspensos:
@@ -549,6 +611,11 @@ def montar_features_elenco_atual(
     df["hierarquia_elenco"] = df["player_id"].map(hierarquia_por_jogador).fillna(0.5)
     df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
     df["is_lesionado"] = 0
+    # Pedido do usuário: sinal pro modelo aprender que titulares pendurados
+    # (a 1 cartão amarelo da suspensão) tendem a ser poupados, sobretudo
+    # contra oponente fraco -- não é filtro rígido (diferente de suspenso),
+    # o jogador continua no espaço amostral, só ganha essa feature.
+    df["esta_pendurado"] = df["player_id"].isin(pendurados).astype(int)
 
     def _dias_desde(player_id):
         data_str = ultimo_jogo_data.get(player_id)
@@ -561,7 +628,10 @@ def montar_features_elenco_atual(
     # usual_position_id (cru, não a feature posicao_num) segue no retorno
     # pra selecionar_titulares_por_posicao bucketar sem ambiguidade com
     # posição desconhecida (fillna(0) colidiria com goleiro real).
-    return df[["player_id", "team_id", "usual_position_id", *FEATURES]]
+    # elo_diff/squad_rating_diff (força do oponente) NÃO entram aqui -- são
+    # POR PARTIDA, computadas em rodar() dentro do loop de fixture (o mesmo
+    # time pode ter mais de 1 jogo na janela, contra oponentes diferentes).
+    return df[["player_id", "team_id", "usual_position_id", "posicao_detalhe", *FEATURES_BASE]]
 
 
 def prever_probabilidades(modelos: dict, df_features: pd.DataFrame) -> np.ndarray:
@@ -589,14 +659,25 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
         logger.warning("Sem elenco atual (player_availability_fotmob) para os times das fixtures -- nada a prever.")
         return 0
 
-    df_features = df_features.dropna(subset=FEATURES)
-    df_features["prob_titular"] = prever_probabilidades(modelos, df_features)
+    df_features = df_features.dropna(subset=FEATURES_BASE)
+
+    # Força do oponente (pedido do usuário) -- elo_diff/squad_rating_diff são
+    # POR PARTIDA (o mesmo time pode ter mais de 1 fixture na janela contra
+    # oponentes diferentes), então não dá pra computar uma vez só igual as
+    # outras features: busca elo/rating de elenco ATUAL uma vez (barato,
+    # 1 linha por time), e monta o diferencial dentro do loop de fixture
+    # abaixo -- junto disso, `prever_probabilidades` também precisa rodar
+    # por fixture agora (a probabilidade de um jogador titular depende de
+    # contra quem ele joga).
+    elo_por_time = dh.obter_elo_atual(supabase, team_ids)
+    squad_rating_por_time = dh.obter_squad_rating_atual(supabase, team_ids)
 
     agora = dt.datetime.now(dt.timezone.utc).isoformat()
     linhas = []
     for _, fixture in fixtures.iterrows():
-        for team_id in (fixture["home_team_id"], fixture["away_team_id"]):
-            elenco_time = df_features[df_features["team_id"] == team_id].sort_values("prob_titular", ascending=False)
+        home_id, away_id = int(fixture["home_team_id"]), int(fixture["away_team_id"])
+        for team_id, oponente_id in ((home_id, away_id), (away_id, home_id)):
+            elenco_time = df_features[df_features["team_id"] == team_id].copy()
             if elenco_time.empty:
                 continue
             # Rede de segurança: achado em produção (upsert falhando com "ON
@@ -608,6 +689,10 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
             # inteira de erro no upsert, então dedupa aqui incondicionalmente
             # -- mesmo padrão já usado dentro de selecionar_titulares_por_posicao.
             elenco_time = elenco_time.drop_duplicates(subset="player_id")
+            elenco_time["elo_diff"] = elo_por_time.get(team_id, np.nan) - elo_por_time.get(oponente_id, np.nan)
+            elenco_time["squad_rating_diff"] = squad_rating_por_time.get(team_id, np.nan) - squad_rating_por_time.get(oponente_id, np.nan)
+            elenco_time["prob_titular"] = prever_probabilidades(modelos, elenco_time)
+            elenco_time = elenco_time.sort_values("prob_titular", ascending=False)
             titulares_previstos = selecionar_titulares_por_posicao(elenco_time)
             for _, jogador in elenco_time.iterrows():
                 linhas.append(

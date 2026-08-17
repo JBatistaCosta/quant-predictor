@@ -19,6 +19,18 @@ por todos os outros modelos do projeto (v1-v10, dixon_coles etc.) -- não
 Customizado de MERCADO de partida (target='1x2' etc.), não pra um
 classificador por jogador.
 
+Força do oponente + risco de suspensão (pedido do usuário): "levar em
+consideração o poder do time oponente (geralmente há preservação de
+jogadores muito utilizados e/ou pendurados)". 3 features novas, todas
+ponto-no-tempo (mesma disciplina de `dados_historicos._carregar_elo_pre_
+jogo`/`_carregar_squad_rating_pre_jogo`/`_carregar_cartoes_jogador_pre_
+jogo`, reaproveitadas daqui): `elo_diff`/`squad_rating_diff` (força do
+PRÓPRIO time menos a do OPONENTE na data da partida -- vantagem/
+desvantagem esperada) e `esta_pendurado` (o jogador está a 1 cartão
+amarelo da suspensão). A ideia é o modelo aprender o padrão real de
+rotação: titular fixo tende a ser poupado quando o oponente é fraco e/ou
+ele está pendurado, e mantido quando o jogo é difícil.
+
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 treinar_modelo_xi.py
 """
@@ -35,11 +47,16 @@ from sklearn.metrics import accuracy_score, brier_score_loss, f1_score, log_loss
 from supabase import Client, create_client
 from xgboost import XGBClassifier
 
+import dados_historicos as dh
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 BUCKET_ARTEFATOS = "custom-model-artifacts"
-FEATURES = ["dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "posicao_num", "valor_mercado_eur", "is_lesionado"]
+FEATURES = [
+    "dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "posicao_num", "valor_mercado_eur", "is_lesionado",
+    "elo_diff", "squad_rating_diff", "esta_pendurado",
+]
 TARGET = "is_starter"
 FRACAO_TESTE = 0.2
 
@@ -152,6 +169,57 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
         .merge(df_players, on="player_id", how="left")
         .merge(df_stats, on=["match_id", "player_id"], how="left")
     )
+    df["opponent_team_id"] = np.where(df["team_id"] == df["home_team_id"], df["away_team_id"], df["home_team_id"])
+
+    # Força do oponente (elo + rating do elenco), ponto-no-tempo -- reaproveita
+    # as mesmas funções já usadas pro dataset "Feature Stacked" dos modelos de
+    # resultado de partida (dados_historicos.py), aqui juntadas TAMBÉM pro
+    # lado do oponente (`elo_oponente`/`squad_rating_oponente`) pra computar
+    # o diferencial de força na 2ª etapa (`engenharia_features`).
+    league_ids = df_matches["league_id"].dropna().astype(int).unique().tolist()
+    elo = dh._carregar_elo_pre_jogo(supabase, league_ids)
+    if not elo.empty:
+        df = df.merge(elo.rename(columns={"rating_antes": "elo_proprio"}), on=["match_id", "team_id"], how="left")
+        df = df.merge(
+            elo.rename(columns={"team_id": "opponent_team_id", "rating_antes": "elo_oponente"}),
+            on=["match_id", "opponent_team_id"],
+            how="left",
+        )
+    else:
+        df["elo_proprio"] = np.nan
+        df["elo_oponente"] = np.nan
+
+    squad_rating = dh._carregar_squad_rating_pre_jogo(supabase, match_ids)
+    if not squad_rating.empty:
+        df = df.merge(
+            squad_rating.rename(columns={"squad_rating_antes": "squad_rating_proprio"}), on=["match_id", "team_id"], how="left"
+        )
+        df = df.merge(
+            squad_rating.rename(columns={"team_id": "opponent_team_id", "squad_rating_antes": "squad_rating_oponente"}),
+            on=["match_id", "opponent_team_id"],
+            how="left",
+        )
+    else:
+        df["squad_rating_proprio"] = np.nan
+        df["squad_rating_oponente"] = np.nan
+
+    # Risco de suspensão (pendurado) por JOGADOR, ponto-no-tempo -- mesma
+    # regra por liga (dados_historicos.CARTAO_LIMIAR_POR_LIGA) já usada pras
+    # features de TIME (jogadores_pendurados_home/_away), aqui na
+    # granularidade de jogador (ver dh._carregar_cartoes_jogador_pre_jogo).
+    ligas_rows = supabase.table("leagues").select("id, name").execute().data or []
+    nome_da_liga = {l["id"]: l["name"] for l in ligas_rows}
+    partidas_meta = df_matches.rename(columns={"match_id": "id"})[["id", "league_id", "season", "match_date"]].dropna(
+        subset=["league_id", "season", "match_date"]
+    )
+    partidas_meta = partidas_meta.copy()
+    partidas_meta["match_date"] = pd.to_datetime(partidas_meta["match_date"], utc=True)
+    cartoes_jogador = dh._carregar_cartoes_jogador_pre_jogo(supabase, partidas_meta, nome_da_liga)
+    if not cartoes_jogador.empty:
+        df = df.merge(cartoes_jogador[["match_id", "team_id", "player_id", "pendurado"]], on=["match_id", "team_id", "player_id"], how="left")
+    else:
+        df["pendurado"] = False
+
     return df
 
 
@@ -170,6 +238,13 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
     df["valor_mercado_eur"] = df["market_value"].fillna(100000)
     df["is_lesionado"] = 0  # sem histórico de lesão (só snapshot atual, ver player_availability_fotmob) -- treino não tem esse sinal, é 0 constante de propósito; ao vivo (rodar_xi_previsto.py) usa o snapshot real.
+    # Força do oponente -- diferencial (próprio - oponente); NaN quando falta
+    # dado de um dos lados (elo/squad_rating de liga/temporada sem cobertura)
+    # fica como está, os 3 algoritmos de árvore lidam nativamente com NaN
+    # numérico (mesma tolerância de todo o resto do repo).
+    df["elo_diff"] = df["elo_proprio"] - df["elo_oponente"]
+    df["squad_rating_diff"] = df["squad_rating_proprio"] - df["squad_rating_oponente"]
+    df["esta_pendurado"] = df["pendurado"].fillna(False).astype(int)
     return df.dropna(subset=["match_date", "player_id", "team_id"])
 
 
