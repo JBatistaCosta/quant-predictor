@@ -2708,6 +2708,8 @@ const ALIASES_NOME_ODDSPAPI = {
   'fk shakhtar donetsk': 'fc shakhtar donetsk',
   'fk kairat': 'fc kairat almaty',
   'pae olympiakos sfp': 'olympiacos piraeus',
+  'real betis balompie': 'real betis seville',
+  'real sociedad de futbol': 'real sociedad san sebastian',
 };
 function normalizarNomeOddsPapiTokens(s) {
   return (s || '')
