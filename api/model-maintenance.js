@@ -159,6 +159,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
+import { gravarComDedupCruzado } from './_lib/dedupMatches.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -3027,14 +3028,13 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
     });
   }
 
-  let inseridosOuAtualizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) inseridosOuAtualizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se API-Football/FotMob já tiver
+  // essa mesma partida gravada nessa liga -- ver api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, ligaRow.id, linhas);
 
   return {
-    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: inseridosOuAtualizados,
+    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     times_com_problema: timesCriados.size > 0 ? [...timesCriados] : undefined,
   };
 }
@@ -3146,13 +3146,14 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
     });
   }
 
-  let sincronizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) sincronizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se football-data.org/FotMob já
+  // tiver essa mesma partida gravada nessa liga -- ver api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, fonteRow.league_id, linhas);
 
-  return { api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length, sincronizados };
+  return {
+    api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length,
+    sincronizados: gravados, duplicatas_evitadas: duplicatas_evitadas || undefined,
+  };
 }
 
 // ============================================================
@@ -3331,15 +3332,17 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
     });
   }
 
-  let sincronizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) sincronizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se football-data.org/API-Football
+  // já tiver essa mesma partida gravada nessa liga -- importante aqui em
+  // especial, já que esse tarefa também é reusado pra sincronizar
+  // temporada de liga JÁ existente (não só onboarding de liga nova) -- ver
+  // api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, leagueId, linhas);
 
   return {
     league_id: leagueId, liga_id: ligaCadastroId, liga_criada: ligaCriada,
-    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados,
+    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     ...(avisoCadastroLigas ? { aviso: avisoCadastroLigas } : {}),
   };
 }
