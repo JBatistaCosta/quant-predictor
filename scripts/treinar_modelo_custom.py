@@ -535,8 +535,20 @@ def treinar_via_parametrico(
 
     # Sobrescreve o feature set global pelas features que o usuário escolheu
     # no painel -- é o que dá sentido a "Treino Customizado" aqui.
+    #
+    # `features` (vindo de carregar_dataset) é a seleção do usuário, sem
+    # garantia de incluir "liga" -- diferente de FEATURES/FEATURES_V9/V10 em
+    # dados_historicos.py, que sempre embutem CAT_FEATURES por construção
+    # (`FEATURES = FEATURES_NUMERICAS + CAT_FEATURES`). Os treinadores
+    # *_poisson/*_regressor passam `cat_features=CAT_FEATURES` (["liga"])
+    # pro CatBoost e chamam `.fit(treino[features], ...)` -- se "liga" não
+    # estiver em `features`, o CatBoost recebe uma feature categórica que
+    # não existe no DataFrame de treino e quebra com
+    # `ValueError: 'liga' is not in list` (confirmado rodando de verdade
+    # com um subconjunto de features sem "liga" selecionado no painel).
+    features_com_liga = list(dict.fromkeys(features + ml.CAT_FEATURES))
     for chave in ("hibrido_gols_v1", "hibrido_corners_v1"):
-        ml.FEATURES_POR_MODELO[chave] = features
+        ml.FEATURES_POR_MODELO[chave] = features_com_liga
 
     treino, calib, teste = hib.dividir_cronologicamente(dataset)
     logger.info("Split paramétrico 60/20/20: %d treino / %d calibração / %d teste",
