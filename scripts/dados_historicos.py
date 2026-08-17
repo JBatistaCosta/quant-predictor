@@ -2980,6 +2980,16 @@ def montar_dataset_ml_empilhado(
             partidas["match_date"] = pd.to_datetime(partidas["match_date"], utc=True)
             partidas = partidas.sort_values("match_date").reset_index(drop=True)
 
+    # `matches` pode ter fixture duplicada pro mesmo id em produção (achado
+    # documentado em modelo_dixon_coles.py, contornado ali com dedup antes do
+    # upsert). Os `.join(..., on="id")` daqui pra baixo (dentro de
+    # `_forma_por_mando` e os ~10 joins de forma logo abaixo) não têm essa
+    # defesa -- id duplicado em qualquer uma das fatias vira produto
+    # cartesiano local pro id duplicado, e isso composto ao longo de tantos
+    # joins sequenciais estoura em memória (visto de verdade: 268M linhas,
+    # tentando alocar 70GB, treinando o modelo misto na Premier League).
+    partidas = partidas.drop_duplicates(subset="id", keep="first").reset_index(drop=True)
+
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
     partidas = _anexar_bayesiano_por_partida(partidas)
