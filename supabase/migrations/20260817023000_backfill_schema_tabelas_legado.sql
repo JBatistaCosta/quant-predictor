@@ -476,6 +476,13 @@ CREATE TABLE IF NOT EXISTS public.model_config (
   updated_at timestamp with time zone NOT NULL DEFAULT now()
 );
 
+-- `fair_odds` é coluna GERADA (STORED), não um DEFAULT simples -- confirmado
+-- via `pg_attribute.attgenerated = 's'`. Um `DEFAULT` de verdade não pode
+-- referenciar outra coluna da mesma linha (`probability`); só
+-- `GENERATED ALWAYS AS (...) STORED` permite isso. Foi exatamente esse erro
+-- que o `Supabase Preview` pegou na primeira tentativa desta migration
+-- (SQLSTATE 0A000, "cannot use column reference in DEFAULT expression") --
+-- a introspecção original não distinguia `attgenerated` de um DEFAULT comum.
 CREATE TABLE IF NOT EXISTS public.model_predictions (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   match_id bigint NOT NULL,
@@ -484,7 +491,7 @@ CREATE TABLE IF NOT EXISTS public.model_predictions (
   selection text NOT NULL,
   probability numeric(7,5) NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
-  fair_odds numeric DEFAULT round((1.0 / NULLIF(probability, (0)::numeric)), 3)
+  fair_odds numeric GENERATED ALWAYS AS (round((1.0 / NULLIF(probability, (0)::numeric)), 3)) STORED
 );
 
 CREATE TABLE IF NOT EXISTS public.model_stat_estimates (
