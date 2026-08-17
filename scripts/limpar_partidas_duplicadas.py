@@ -52,10 +52,13 @@ ATENÇÃO: o Supabase tem Point-in-Time Recovery, mas prefira sempre rodar
 import argparse
 import os
 import sys
+import time
 from collections import defaultdict
 
 from postgrest.exceptions import APIError
 from supabase import create_client
+
+TENTATIVAS_POR_GRUPO = 3
 
 TAM_PAGINA = 1000
 LOTE_MATCHES = 30
@@ -168,6 +171,43 @@ def deletar_partidas(supabase, ids: list[int]) -> None:
         supabase.table("matches").delete().in_("id", ids[i:i + LOTE_MATCHES]).execute()
 
 
+def processar_grupo(supabase, cluster: list[dict], ids_com_fotmob: set, contadores_conflito: dict) -> int:
+    vencedora = escolher_vencedora(cluster, ids_com_fotmob)
+    perdedoras = [m for m in cluster if m["id"] != vencedora["id"]]
+
+    atualizacao = campos_mesclados(vencedora, cluster)
+    if atualizacao:
+        supabase.table("matches").update(atualizacao).eq("id", vencedora["id"]).execute()
+
+    for perdedora in perdedoras:
+        migrar_satelites(supabase, perdedora["id"], vencedora["id"], contadores_conflito)
+
+    deletar_partidas(supabase, [p["id"] for p in perdedoras])
+    return len(perdedoras)
+
+
+def processar_grupo_com_retentativa(supabase, cluster: list[dict], ids_com_fotmob: set, contadores_conflito: dict) -> int:
+    """Reprocessar o MESMO grupo do zero em caso de erro transitório
+    (queda de conexão HTTP/2, achado real em produção -- não timeout de
+    statement, que é um erro real e deve propagar direto) é seguro: todo
+    passo (migrar_satelites, deletar_partidas) é idempotente -- rodar de
+    novo sobre uma linha já migrada/já deletada só resulta em 0 linhas
+    afetadas, sem duplicar nem perder nada."""
+    ultimo_erro = None
+    for tentativa in range(1, TENTATIVAS_POR_GRUPO + 1):
+        try:
+            return processar_grupo(supabase, cluster, ids_com_fotmob, contadores_conflito)
+        except APIError as e:
+            if getattr(e, "code", None) == "57014":
+                raise  # timeout real de statement -- não adianta retentar, precisa investigar
+            ultimo_erro = e
+        except Exception as e:  # httpx.RemoteProtocolError e afins -- instabilidade de rede/conexão
+            ultimo_erro = e
+        if tentativa < TENTATIVAS_POR_GRUPO:
+            time.sleep(3 * tentativa)
+    raise ultimo_erro
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dry-run", action="store_true", help="Só analisa e mostra o que faria, sem alterar nada (padrão se --confirmar não for passado).")
@@ -229,20 +269,16 @@ def main():
 
     print("\nAplicando...")
     total_deletadas = 0
+    grupos_com_falha = []
     contadores_conflito = defaultdict(int)
     for cluster in duplicados.values():
-        vencedora = escolher_vencedora(cluster, ids_com_fotmob)
-        perdedoras = [m for m in cluster if m["id"] != vencedora["id"]]
-
-        atualizacao = campos_mesclados(vencedora, cluster)
-        if atualizacao:
-            supabase.table("matches").update(atualizacao).eq("id", vencedora["id"]).execute()
-
-        for perdedora in perdedoras:
-            migrar_satelites(supabase, perdedora["id"], vencedora["id"], contadores_conflito)
-
-        deletar_partidas(supabase, [p["id"] for p in perdedoras])
-        total_deletadas += len(perdedoras)
+        try:
+            n = processar_grupo_com_retentativa(supabase, cluster, ids_com_fotmob, contadores_conflito)
+        except Exception as e:
+            grupos_com_falha.append(([m["id"] for m in cluster], str(e)))
+            print(f"\n  Grupo {[m['id'] for m in cluster]} falhou após {TENTATIVAS_POR_GRUPO} tentativa(s) ({e}) -- pulando, rode de novo depois pra retomar (idempotente).")
+            continue
+        total_deletadas += n
         print(f"  {total_deletadas}/{total_excedentes} partida(s) deletada(s)...", end="\r", flush=True)
 
     print(f"\n\nConcluído: {total_deletadas} partida(s) duplicada(s) removida(s).")
@@ -250,6 +286,10 @@ def main():
         print("\nLinhas satélite descartadas por já existir equivalente na vencedora:")
         for tabela, n in sorted(contadores_conflito.items(), key=lambda x: -x[1]):
             print(f"  {tabela}: {n}")
+    if grupos_com_falha:
+        print(f"\n{len(grupos_com_falha)} grupo(s) não processado(s) por erro persistente -- rode o script de novo pra retomar:")
+        for ids, erro in grupos_com_falha:
+            print(f"  {ids}: {erro}")
     print()
 
 
