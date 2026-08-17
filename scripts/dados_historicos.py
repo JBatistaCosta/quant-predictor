@@ -997,20 +997,16 @@ def _carregar_total_corners_por_partida(supabase: Client, match_ids: list[int]) 
     return total
 
 
-def _carregar_cartoes_pre_jogo(
+def _carregar_cartoes_jogador_pre_jogo(
     supabase: Client, partidas: pd.DataFrame, nome_da_liga: dict[int, str]
 ) -> pd.DataFrame:
-    """Risco de suspensão por acúmulo de cartões amarelos ANTES de cada
-    partida (v4, features `jogadores_pendurados_home`/`_away` +
-    `cartoes_acumulados_home`/`_away`) -- ponto-no-tempo real: só conta
-    cartão de partida ANTERIOR (mesma liga+temporada, ordem cronológica),
-    aplicando a regra de reset/limiar específica da liga
-    (`CARTAO_LIMIAR_POR_LIGA`). Calculado sobre o elenco que REALMENTE jogou
-    cada partida (`match_player_stats_fotmob`, mesmo padrão de
-    `_carregar_squad_rating_pre_jogo`) -- um jogador suspenso simplesmente
-    não aparece na escalação daquela partida, sem precisar de tratamento
-    especial (mesma lógica já validada pro rating de elenco v2)."""
-    colunas_saida = ["match_id", "team_id", "cartoes_acumulados_antes", "jogadores_pendurados_antes"]
+    """Estado de cartão amarelo POR JOGADOR (não agregado por time) antes de
+    cada partida -- mesmo cálculo ponto-no-tempo de `_carregar_cartoes_pre_
+    jogo` (que soma isso por time pras features v4 de time), extraído aqui
+    pra granularidade de jogador reaproveitada pelo treino do modelo de XI
+    titular (`treinar_modelo_xi.py`), que precisa saber QUAL jogador
+    específico está pendurado -- não só a contagem agregada do time."""
+    colunas_saida = ["match_id", "team_id", "player_id", "cartoes_no_ciclo_antes", "n_suspensoes_antes", "limiar_atual", "pendurado"]
     if partidas.empty:
         return pd.DataFrame(columns=colunas_saida)
 
@@ -1080,8 +1076,23 @@ def _carregar_cartoes_pre_jogo(
     )
     escalacoes["pendurado"] = escalacoes["cartoes_no_ciclo_antes"] == (escalacoes["limiar_atual"] - 1)
 
+    return escalacoes[colunas_saida]
+
+
+def _carregar_cartoes_pre_jogo(
+    supabase: Client, partidas: pd.DataFrame, nome_da_liga: dict[int, str]
+) -> pd.DataFrame:
+    """Risco de suspensão por acúmulo de cartões amarelos ANTES de cada
+    partida (v4, features `jogadores_pendurados_home`/`_away` +
+    `cartoes_acumulados_home`/`_away`) -- soma por time o estado por jogador
+    de `_carregar_cartoes_jogador_pre_jogo` (mesmo cálculo ponto-no-tempo,
+    ver docstring lá)."""
+    colunas_saida = ["match_id", "team_id", "cartoes_acumulados_antes", "jogadores_pendurados_antes"]
+    jogador = _carregar_cartoes_jogador_pre_jogo(supabase, partidas, nome_da_liga)
+    if jogador.empty:
+        return pd.DataFrame(columns=colunas_saida)
     agregado = (
-        escalacoes.groupby(["match_id", "team_id"])
+        jogador.groupby(["match_id", "team_id"])
         .agg(cartoes_acumulados_antes=("cartoes_no_ciclo_antes", "sum"), jogadores_pendurados_antes=("pendurado", "sum"))
         .reset_index()
     )
