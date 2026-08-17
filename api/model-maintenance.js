@@ -2341,7 +2341,7 @@ function slugSelecaoHistorico(outcomeName) {
   return ROTULOS_SELECAO_CONHECIDOS_HISTORICO[norm] || slugTextoHistorico(outcomeName);
 }
 
-async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite }) {
+async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite, forcar }) {
   const limiteReal = Math.min(parseInt(limite, 10) || MAX_FIXTURES_HISTORICO_POR_CHAMADA, MAX_FIXTURES_HISTORICO_POR_CHAMADA);
 
   const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
@@ -2350,6 +2350,22 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
   const mercadosPorId = new Map((mercadosCacheRaw?.valor || []).filter((m) => !m.playerProp).map((m) => [String(m.marketId), m]));
   if (mercadosPorId.size === 0) return { error: 'Cache `markets` vazia/inválida — rode tarefa=odds-descobrir de novo.' };
+
+  // `forcar=true` -- BUG REAL corrigido (achado auditando as ligas depois
+  // dos fixes de nomesBatem, 2026-08-17): buscarOuCache busca /v4/fixtures
+  // UMA VEZ SÓ e nunca mais atualiza (sem TTL). O cache original de cada
+  // liga foi feito num único snapshot (11-14/08), com um subconjunto das
+  // fixtures finalizadas -- não a lista inteira. Depois que os fixes de
+  // nomesBatem destravaram o casamento de nome pra praticamente tudo que
+  // já estava cacheado, toda liga bateu "cache esgotada" quase ao mesmo
+  // tempo (restantes real no banco não bate mais com o que sobra pra
+  // comparar) -- não é mais falta de apelido, é a cache ficar pra trás do
+  // banco. `forcar` reconsulta /v4/fixtures (chamada billable, não é a
+  // /v4/historical-odds "grátis") e substitui o cache -- usar com
+  // moderação, cada acionamento gasta 1 chamada de cota por liga.
+  if (forcar === 'true' || forcar === '1') {
+    await supabase.from('oddspapi_cache').delete().eq('chave', `fixtures_finalizadas_liga_${ligaId}`);
+  }
 
   const fixtures = await buscarOuCache(supabase, `fixtures_finalizadas_liga_${ligaId}`, async () => chamarOddspapi('/v4/fixtures', {
     tournamentId: mapa.tournament_id,
@@ -5167,7 +5183,7 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico precisa de ?liga_id=X.' } });
-      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite });
+      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite, forcar });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
