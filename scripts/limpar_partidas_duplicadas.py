@@ -186,12 +186,14 @@ def processar_grupo(supabase, cluster: list[dict], ids_com_fotmob: set, contador
     return len(perdedoras)
 
 
-def com_retentativa(fn, *args, tentativas=TENTATIVAS_POR_GRUPO, **kwargs):
+def com_retentativa(fn, *args, tentativas=TENTATIVAS_POR_GRUPO, espera_base=3, **kwargs):
     """Reexecuta `fn(*args, **kwargs)` em caso de erro transitório --
     achado real em produção: PGRST002 ("Could not query the database for
-    the schema cache") logo no início do script, e httpx.RemoteProtocolError
-    (conexão HTTP/2 reciclada pelo servidor) no meio do processamento --
-    ambos se resolvem sozinhos numa nova tentativa alguns segundos depois.
+    the schema cache") logo no início do script -- persistiu além da
+    janela de retentativa original (3 tentativas, ~18s no total), então
+    quem chama pra essas consultas de setup usa mais tentativas/espera
+    maior -- e httpx.RemoteProtocolError (conexão HTTP/2 reciclada pelo
+    servidor) no meio do processamento, que se resolve mais rápido.
     Timeout de statement (57014) é um erro real (achado real: 2 índices
     faltantes) e propaga direto -- não adianta retentar, precisa investigar."""
     ultimo_erro = None
@@ -205,7 +207,7 @@ def com_retentativa(fn, *args, tentativas=TENTATIVAS_POR_GRUPO, **kwargs):
         except Exception as e:  # httpx.RemoteProtocolError e afins -- instabilidade de rede/conexão
             ultimo_erro = e
         if tentativa < tentativas:
-            time.sleep(3 * tentativa)
+            time.sleep(espera_base * tentativa)
     raise ultimo_erro
 
 
@@ -238,7 +240,7 @@ def main():
     campos = "id, external_id, league_id, season, home_team_id, away_team_id, match_date, home_goals, away_goals, status, round, stage"
     filtros = {"league_id": args.liga_id} if args.liga_id else None
     print("Carregando partidas...")
-    todas = com_retentativa(buscar_todas_paginado, supabase, "matches", campos, filtros)
+    todas = com_retentativa(buscar_todas_paginado, supabase, "matches", campos, filtros, tentativas=8, espera_base=5)
     print(f"{len(todas)} partida(s) carregada(s).\n")
 
     grupos = defaultdict(list)
@@ -254,13 +256,13 @@ def main():
 
     total_excedentes = sum(len(c) - 1 for c in duplicados.values())
     todos_ids_envolvidos = [m["id"] for cluster in duplicados.values() for m in cluster]
-    ids_com_fotmob = com_retentativa(buscar_ids_com_fotmob, supabase, todos_ids_envolvidos)
+    ids_com_fotmob = com_retentativa(buscar_ids_com_fotmob, supabase, todos_ids_envolvidos, tentativas=8, espera_base=5)
 
     por_liga = defaultdict(lambda: {"grupos": 0, "excedentes": 0})
     for (liga_id, *_resto), cluster in duplicados.items():
         por_liga[liga_id]["grupos"] += 1
         por_liga[liga_id]["excedentes"] += len(cluster) - 1
-    resp_ligas = com_retentativa(lambda: supabase.table("leagues").select("id, name").execute())
+    resp_ligas = com_retentativa(lambda: supabase.table("leagues").select("id, name").execute(), tentativas=8, espera_base=5)
     ligas_nomes = {l["id"]: l["name"] for l in (resp_ligas.data or [])}
 
     print(f"{len(duplicados)} grupo(s) de partida duplicada, {total_excedentes} linha(s) excedente(s) no total:\n")
