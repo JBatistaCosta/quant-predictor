@@ -472,6 +472,30 @@ def main() -> None:
     if dataset.empty:
         sys.exit("Dataset vazio -- nada pra treinar.")
 
+    # FEATURES_V10 (default de VARIANTES_GOLS/MODELO_CORNERS, ver modelos_ml.py)
+    # referencia nomes de coluna de xG/xGOT do esquema ANTIGO de forma
+    # pré-jogo (`media_xg_5j_home` etc., de COLUNAS_FORMA_XG) -- mas
+    # montar_dataset_ml_empilhado hoje monta essas colunas via
+    # `_forma_por_mando_multi_janelas`, que usa um esquema de nome DIFERENTE
+    # (`xg_home_5j` etc.), sem nunca juntar a versão antiga no dataset. Achado
+    # real: TODO modelo que usa FEATURES_V2..V10 (inclusive os classificadores
+    # v10 estabelecidos) está, sem saber, treinando sem nenhuma feature de xG/
+    # xGOT -- mascarado até agora porque `carregar_dataset`
+    # (treinar_modelo_custom.py) já descarta silenciosamente feature pedida
+    # que não existe no dataset, com só um log de aviso. Esse script standalone
+    # não tinha essa proteção e quebrava com KeyError. Aplica o mesmo filtro
+    # aqui (mínimo pra destravar o treino agora); a correção de fundo -- portar
+    # FEATURES_NUMERICAS pro esquema novo, restaurando xG/xGOT em todos os
+    # modelos -- é maior (muda o que TODO modelo já treinado usa) e fica
+    # registrada em CONTEXTO_PROJETO.md pra decisão separada.
+    colunas_dataset = set(dataset.columns)
+    for chave in ("hibrido_gols_v1", "hibrido_gols_xg_v1", "hibrido_corners_v1", "hibrido_gols_lgbm_v1"):
+        originais = ml.FEATURES_POR_MODELO.get(chave, [])
+        faltando = [f for f in originais if f not in colunas_dataset]
+        if faltando:
+            logger.warning("[%s] features ausentes no dataset (ignoradas): %s", chave, faltando)
+            ml.FEATURES_POR_MODELO[chave] = [f for f in originais if f in colunas_dataset]
+
     treino, calib, teste = dividir_cronologicamente(dataset)
     logger.info("Split cronológico: treino=%d, calibração=%d, teste=%d (%s → %s)",
                 len(treino), len(calib), len(teste),
