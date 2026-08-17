@@ -60,7 +60,7 @@ jobs:
           set -uo pipefail
           MAX_RODADAS_SEM_PROGRESSO=8
           MAX_RODADAS_POR_LIGA=600
-          LIGAS_PADRAO="4 7 10 13 16 1 23 46 28 19 47 27 34 57"
+          LIGAS_PADRAO="357 384 325 7 325 17 8 34 23 373 390"
           LIGAS="${{ inputs.ligas }}"
           if [ -z "$LIGAS" ]; then LIGAS="$LIGAS_PADRAO"; fi
 
