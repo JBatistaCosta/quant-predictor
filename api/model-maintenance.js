@@ -2710,6 +2710,32 @@ const ALIASES_NOME_ODDSPAPI = {
   'pae olympiakos sfp': 'olympiacos piraeus',
   'real betis balompie': 'real betis seville',
   'real sociedad de futbol': 'real sociedad san sebastian',
+  // Os 14 abaixo vieram de uma auditoria cruzada (2026-08-17, a pedido do
+  // usuário depois do fix de La Liga): comparei, pra cada uma das 14 ligas
+  // mapeadas, os times sem odds importadas contra os nomes já presentes em
+  // `oddspapi_cache.fixtures_finalizadas_liga_X` da MESMA liga -- ou seja,
+  // são pares onde o dado já está cacheado (não é retenção/ausência da
+  // OddsPapi), só nunca casava por nome. Cidade traduzida (Köln/Cologne,
+  // København/Copenhagen), sigla sem raiz comum (AFC Ajax/Ajax Amsterdam,
+  // BSC Young Boys/Young Boys Bern, LAFC/Los Angeles FC), sufixo do
+  // clube preservado só de um lado (SS Lazio/Lazio Rome, AC Pisa
+  // 1909/Pisa SC, Stade Brestois 29/Stade Brest 29 -- essa última também
+  // destrava Ligue 1) e país com nome diferente na Copa do Mundo FIFA
+  // (South Korea/Korea Republic, Turkey/Turkiye, United States/USA).
+  'afc ajax': 'ajax amsterdam',
+  'bsc young boys': 'young boys bern',
+  'fc k benhavn': 'fc copenhagen',
+  'stade brestois 29': 'stade brest 29',
+  'ss lazio': 'lazio rome',
+  'ac pisa 1909': 'pisa sc',
+  '1 fc koln': '1 fc cologne',
+  'south korea': 'korea republic',
+  'turkey': 'turkiye',
+  'united states': 'usa',
+  'lafc': 'los angeles fc',
+  'wydad casablanca': 'wydad ac',
+  'sport lisboa e benfica': 'sl benfica',
+  'fk bod glimt': 'bodoe glimt',
 };
 function normalizarNomeOddsPapiTokens(s) {
   return (s || '')
