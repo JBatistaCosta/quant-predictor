@@ -15,6 +15,17 @@ function corPct(pct) {
   return 'bg-slate-600';
 }
 
+const ROTULO_ORIGEM = {
+  oddspapi: 'OddsPapi',
+  football_data_co_uk: 'football-data.co.uk',
+  kaggle_felipe: 'Kaggle (felipe)',
+  kaggle_oddspedia: 'Kaggle (oddspedia)',
+  footiqo: 'Footiqo',
+};
+function rotuloOrigem(origem) {
+  return ROTULO_ORIGEM[origem] || 'legado/origem desconhecida';
+}
+
 function BarraPct({ pct }) {
   const valor = Number(pct) || 0;
   return (
@@ -80,10 +91,12 @@ export default function CoberturaOdds() {
 
   const porLiga = {};
   for (const l of linhas) {
-    if (!porLiga[l.liga]) porLiga[l.liga] = { league_id: l.league_id, temporadas: [], finalizadas: 0, com_odds: 0 };
+    if (!porLiga[l.liga]) porLiga[l.liga] = { league_id: l.league_id, temporadas: [], finalizadas: 0, com_odds: 0, finalizadas_garantidas: 0, com_odds_garantidas: 0 };
     porLiga[l.liga].temporadas.push(l);
     porLiga[l.liga].finalizadas += l.finalizadas || 0;
     porLiga[l.liga].com_odds += l.com_odds || 0;
+    porLiga[l.liga].finalizadas_garantidas += l.finalizadas_garantidas || 0;
+    porLiga[l.liga].com_odds_garantidas += l.com_odds_garantidas || 0;
   }
 
   return (
@@ -107,13 +120,24 @@ export default function CoberturaOdds() {
 
       {Object.entries(porLiga).map(([liga, info]) => {
         const pctTotal = info.finalizadas > 0 ? (100 * info.com_odds) / info.finalizadas : 0;
+        // "Garantida" = partidas a partir de 2026-01-01 -- a OddsPapi documenta
+        // retenção de histórico só a partir dessa data ("All historical odds
+        // data since January 2026 is available"), confirmado em produção
+        // (100% de sucesso real nessa janela vs. 73,5% antes dela). Só mostra
+        // quando há partida antiga o suficiente pra essa distinção importar.
+        const temPartidaAntiga = info.finalizadas > info.finalizadas_garantidas;
+        const pctGarantida = info.finalizadas_garantidas > 0 ? (100 * info.com_odds_garantidas) / info.finalizadas_garantidas : null;
         const aberta = ligaAberta === liga;
+        // Agrupado por (bookmaker, origem) -- não só bookmaker -- porque o
+        // MESMO nome de casa (ex. "pinnacle") pode vir de fontes diferentes
+        // (OddsPapi rica em mercados vs. football-data.co.uk/Kaggle só 1X2).
+        // Ver achado em CONTEXTO_PROJETO.md/migration adiciona_origem_odds_market.
         const casasDaLiga = bookmakers
           .filter((b) => b.league_id === info.league_id)
           .reduce((acc, b) => {
-            const existente = acc.find((x) => x.bookmaker === b.bookmaker);
+            const existente = acc.find((x) => x.bookmaker === b.bookmaker && x.origem === b.origem);
             if (existente) existente.jogos += b.jogos_distintos;
-            else acc.push({ bookmaker: b.bookmaker, jogos: b.jogos_distintos });
+            else acc.push({ bookmaker: b.bookmaker, origem: b.origem, jogos: b.jogos_distintos });
             return acc;
           }, [])
           .sort((a, b) => b.jogos - a.jogos);
@@ -132,13 +156,20 @@ export default function CoberturaOdds() {
               <BarraPct pct={pctTotal} />
             </button>
 
+            {temPartidaAntiga && pctGarantida != null && (
+              <div className="px-4 pb-2 -mt-1 text-[11px] text-slate-500">
+                Cobertura garantida pela fonte (partidas desde jan/2026): <span className="text-slate-300 font-mono">{Math.min(pctGarantida, 100).toFixed(0)}%</span> de {info.finalizadas_garantidas} partida(s) — o resto do histórico depende de dado que a OddsPapi não garante ter.
+              </div>
+            )}
+
             {aberta && (
               <div className="border-t border-slate-700 px-4 py-3 space-y-3">
                 {casasDaLiga.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {casasDaLiga.map((c) => (
-                      <span key={c.bookmaker} className="text-[11px] font-mono bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-slate-300">
+                      <span key={`${c.bookmaker}|${c.origem}`} className="text-[11px] font-mono bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-slate-300">
                         {c.bookmaker} <span className="text-slate-500">({c.jogos})</span>
+                        <span className="text-slate-600"> · {rotuloOrigem(c.origem)}</span>
                       </span>
                     ))}
                   </div>

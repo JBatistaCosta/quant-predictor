@@ -31,13 +31,21 @@ import pandas as pd
 import requests
 from supabase import create_client
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 
 LIGAS = {"PL": "E0", "PD": "SP1", "SA": "I1", "BL1": "D1", "FL1": "F1"}
 
 BOOKMAKERS = [("B365", "bet365"), ("PS", "pinnacle"), ("Avg", "media_mercado")]
+
+# BUG REAL corrigido: este script não tinha NENHUMA checagem de
+# idempotência -- rodar de novo pra pegar temporada em andamento
+# duplicava as linhas já gravadas. Também precisa distinguir de origem
+# de outra fonte (pinnacle/bet365 colidem com a OddsPapi). Escopado por
+# origem=ORIGEM + snapshot='closing' (pra não confundir com o
+# pre_closing do script irmão que usa a mesma origem).
+ORIGEM = "football_data_co_uk"
 
 ALIASES_MANUAIS = {
     "man united": "Manchester United FC", "man city": "Manchester City FC",
@@ -161,6 +169,21 @@ def main():
         if "confira" in metodo:
             print(f"  ATENÇÃO ({metodo}): '{nome_fd}' -> '{nome_por_id[mapa_times[nome_fd]]}'")
 
+    ids_jogos = [j["id"] for j in jogos]
+    ja_tem_odds = set()
+    inicio = 0
+    while True:
+        lote = (supabase.table("odds_market").select("match_id")
+                .eq("origem", ORIGEM).eq("snapshot", "closing")
+                .in_("match_id", ids_jogos)
+                .range(inicio, inicio + 999).execute().data)
+        ja_tem_odds.update(r["match_id"] for r in lote)
+        if len(lote) < 1000:
+            break
+        inicio += 1000
+    if ja_tem_odds:
+        print(f"  {len(ja_tem_odds)} partida(s) já com odds de fechamento desta fonte -- serão puladas.")
+
     registros, sem_match = [], 0
     for _, linha in df.iterrows():
         home_id = mapa_times.get(linha["HomeTeam"])
@@ -175,6 +198,8 @@ def main():
             sem_match += 1
             continue
         match_id = int(cand.iloc[0]["id"])
+        if match_id in ja_tem_odds:
+            continue
 
         for prefixo, nome_casa in BOOKMAKERS:
             for selecao, col in [("home", f"{prefixo}CH"), ("draw", f"{prefixo}CD"), ("away", f"{prefixo}CA")]:
@@ -183,7 +208,8 @@ def main():
                     if v is not None and not pd.isna(v):
                         registros.append({"match_id": match_id, "bookmaker": nome_casa,
                                           "market": "1X2", "selection": selecao,
-                                          "odds": round(float(v), 3), "snapshot": "closing"})
+                                          "odds": round(float(v), 3), "snapshot": "closing",
+                                          "origem": ORIGEM})
             prefixo_ou = "P" if prefixo == "PS" else prefixo
             for selecao, col in [("over", f"{prefixo_ou}C>2.5"), ("under", f"{prefixo_ou}C<2.5")]:
                 if col in df.columns:
@@ -191,7 +217,8 @@ def main():
                     if v is not None and not pd.isna(v):
                         registros.append({"match_id": match_id, "bookmaker": nome_casa,
                                           "market": "over_under_2.5", "selection": selecao,
-                                          "odds": round(float(v), 3), "snapshot": "closing"})
+                                          "odds": round(float(v), 3), "snapshot": "closing",
+                                          "origem": ORIGEM})
 
     for i in range(0, len(registros), 500):
         supabase.table("odds_market").insert(registros[i : i + 500]).execute()

@@ -6,7 +6,10 @@ ingestao_fotmob.py (ver avisos e disciplina de uso lá).
 
 UMA chamada por time alimenta as DUAS tabelas:
   - player_availability_fotmob: snapshot ATUAL por jogador do elenco
-    (squad[].injured + injury.expectedReturn). Upsert por
+    (squad[].injured + injury.expectedReturn + role.fallback/positionIdsDesc
+    -- este último é a posição granular, ex. "CB"/"RB"/"CDM", achado
+    inspecionando o payload bruto deste mesmo endpoint; usado pra distinguir
+    zagueiro de lateral na seleção do XI previsto). Upsert por
     (team_id, fotmob_player_id) — cada rodada substitui o snapshot do time
     (jogadores que saíram do elenco são REMOVIDOS do snapshot antes do
     upsert, pra não sobrar linha órfã de janela de transferência).
@@ -62,12 +65,20 @@ def parse_elenco(payload, team_id, player_id_por_fotmob):
             if pid in ("0", "-1", "None"):
                 continue
             injury = m.get("injury") or {}
+            # positionIdsDesc: posição granular (ex. "CB", "RB", "CDM,CM" --
+            # quando lista mais de uma, a primeira é a mais comum) -- achado
+            # inspecionando o payload bruto deste mesmo endpoint (não estava
+            # documentado, `role.fallback` só dá a categoria ampla GK/DEF/
+            # MID/ATT). Guarda só a primeira pra distinguir zagueiro (CB) de
+            # lateral (LB/RB/LWB/RWB) na seleção do XI previsto.
+            posicoes_desc = (m.get("positionIdsDesc") or "").split(",")
             linhas.append({
                 "team_id": team_id,
                 "fotmob_player_id": pid,
                 "player_id": player_id_por_fotmob.get(pid),
                 "player_name": m.get("name"),
                 "role": (m.get("role") or {}).get("fallback"),
+                "posicao_detalhe": posicoes_desc[0].strip() or None,
                 "injured": bool(m.get("injured")),
                 "injury_id": str(injury.get("id")) if injury.get("id") is not None else None,
                 "expected_return": injury.get("expectedReturn"),

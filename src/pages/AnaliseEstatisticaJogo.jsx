@@ -361,14 +361,20 @@ async function buscarContextoJogo(matchId) {
 // via workflow prever_xi.yml) — só existe pra fixture 'scheduled' dentro da
 // janela de dias à frente rodada pelo cron (hoje 7 dias), então também só
 // faz sentido buscar pra jogo futuro, mesmo espírito de buscarDesfalques.
-// Embute players(name, usual_position_id) pra não precisar de 2a consulta —
-// usual_position_id decodificado nesta sessão (0=goleiro/1=defesa/2=meio/
-// 3=ataque, validado por correlação com match_player_stats_fotmob.
-// is_goalkeeper e padrão de gols/assistências/interceptações/toques na área).
+// Usa xi_previsto.posicao_bucket (0=goleiro/1=defesa/2=meio/3=ataque),
+// gravado junto com a linha no momento da predição — NÃO
+// players.usual_position_id via join. Achado corrigindo um bug real
+// reportado pelo usuário (jogador fora do elenco e goleiro errado sendo
+// escalados): usual_position_id (e o elenco por trás dele,
+// players.last_team_id) é stale/só atualiza quando o jogador aparece numa
+// partida já ingerida — reler via join no momento da EXIBIÇÃO podia
+// inclusive divergir do que foi de fato usado na SELEÇÃO. posicao_bucket
+// fecha esse loop: mesma fonte (player_availability_fotmob.role) usada
+// pra selecionar o XI é a que aparece aqui.
 async function buscarXiPrevisto(matchId) {
   const { data } = await supabase
     .from('xi_previsto')
-    .select('team_id, player_id, prob_titular, is_titular_previsto, players(name, usual_position_id)')
+    .select('team_id, player_id, prob_titular, is_titular_previsto, posicao_bucket, players(name)')
     .eq('match_id', matchId)
     .order('prob_titular', { ascending: false });
   return data || [];
@@ -555,10 +561,10 @@ function PainelXiPrevisto({ xiPrevisto, jogo }) {
     }
     const porPosicao = ORDEM_POSICAO.map(pos => ({
       pos,
-      jogadores: titulares.filter(t => t.players?.usual_position_id === pos).sort((a, b) => b.prob_titular - a.prob_titular),
+      jogadores: titulares.filter(t => t.posicao_bucket === pos).sort((a, b) => b.prob_titular - a.prob_titular),
     })).filter(g => g.jogadores.length > 0);
     const semPosicao = titulares
-      .filter(t => !ORDEM_POSICAO.includes(t.players?.usual_position_id))
+      .filter(t => !ORDEM_POSICAO.includes(t.posicao_bucket))
       .sort((a, b) => b.prob_titular - a.prob_titular);
 
     return (

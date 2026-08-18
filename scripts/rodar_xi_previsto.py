@@ -9,18 +9,54 @@ verdade, e só rodava se `match_lineup_fotmob` já tivesse linhas pra aquela
 partida -- ou seja, só depois que a escalação oficial real já tivesse saído,
 o que anula o propósito de prever com antecedência.
 
-Elenco atual e engenharia de features seguem o MESMO padrão já usado por
-`dados_historicos.obter_squad_rating_atual` (elenco = `players.last_team_id`,
-exclui `player_availability_fotmob.injured=true` ANTES de pontuar -- os
-modelos treinados nunca viram `is_lesionado=1` variar no treino, então
-excluir na entrada é mais correto do que confiar na feature pra "aprender"
-uma penalidade que ela nunca teve como aprender). Suspensos por acúmulo de
-cartão amarelo (`jogadores_suspensos`, reaproveitando `dados_historicos.
-CARTAO_LIMIAR_POR_LIGA`) são excluídos pelo mesmo motivo.
+Elenco atual: `player_availability_fotmob` (snapshot ressincronizado
+periodicamente por `ingestao_fotmob_elenco.py` direto da página de elenco
+do time no FotMob -- `elenco_desfalques_sync.yml`), NÃO
+`players.last_team_id` (usado numa versão anterior deste script -- bug real
+reportado pelo usuário testando em produção: `last_team_id` só é
+atualizado quando o jogador aparece na escalação de uma partida JÁ
+INGERIDA, então um jogador emprestado/vendido cujo último jogo processado
+ainda foi pelo time antigo continua "no elenco" antigo indefinidamente, e
+reservas que não jogam há tempo desaparecem do pool -- resultado visto em
+produção: jogador fora do elenco real sendo escalado, e o pool de goleiros
+válidos ficando tão raso que um goleiro reserva de baixíssima probabilidade
+era forçado pra suprir o mínimo de 1 goleiro da formação.
+`player_availability_fotmob.role` (texto: Keeper/Defender/Midfielder/
+Attacker, 100% de cobertura) também substitui `players.usual_position_id`
+como fonte de posição, pelo mesmo motivo -- ver `MAPA_ROLE_PARA_POSICAO`.
+Exclui `injured=true` ANTES de pontuar (já vem na mesma linha da tabela de
+elenco, não precisa de consulta separada) -- os modelos treinados nunca
+viram `is_lesionado=1` variar no treino, então excluir na entrada é mais
+correto do que confiar na feature pra "aprender" uma penalidade que ela
+nunca teve como aprender. Suspensos por acúmulo de cartão amarelo
+(`jogadores_suspensos_e_pendurados`, reaproveitando `dados_historicos.
+CARTAO_LIMIAR_POR_LIGA`) são excluídos pelo mesmo motivo -- jogadores só
+PENDURADOS (a 1 cartão da suspensão) não são excluídos, viram a feature
+`esta_pendurado` (ver "Força do oponente" abaixo).
+
+Força do oponente + risco de suspensão (pedido do usuário): "levar em
+consideração o poder do time oponente (geralmente há preservação de
+jogadores muito utilizados e/ou pendurados)". `elo_diff`/`squad_rating_diff`
+(`dados_historicos.obter_elo_atual`/`obter_squad_rating_atual`, força do
+PRÓPRIO time menos a do OPONENTE) são calculadas POR PARTIDA dentro de
+`rodar()` -- não em `montar_features_elenco_atual`, que é só por elenco/
+time, porque o mesmo time pode ter mais de 1 fixture na janela de dias
+contra oponentes diferentes.
+
+Filtro rígido de elenco ativo (`jogadores_transferidos_para_fora`, pedido
+do usuário): além do snapshot de elenco, cruza com `team_transfers_fotmob`
+(mesma fonte/mesma rodada de sync) e remove quem já tem transferência de
+SAÍDA mais recente que qualquer evento de entrada -- fecha a janela entre
+o snapshot (resincronizado periodicamente) e uma transferência recente.
+Achado real testando este filtro em produção: um jogador do Flamengo
+seguia listado no snapshot de elenco meses depois de um evento `'out'`
+registrado.
 
 A seleção do XI (`selecionar_titulares_por_posicao`) respeita uma formação
-tática plausível (1 GK, 3-5 DEF, 3-5 MEI, 1-3 ATA) em vez de só pegar os 11
-de maior probabilidade sem noção de posição -- o modelo prevê cada jogador
+tática plausível (1 GK, 4-5 DEF -- priorizando 2 zagueiros + 2 laterais
+quando `posicao_detalhe` está disponível, ver `MAPA_DETALHE_DEFESA`, pedido
+do usuário --, 3-5 MEI, 1-3 ATA) em vez de só pegar os 11 de maior
+probabilidade sem noção de posição -- o modelo prevê cada jogador
 isoladamente, então nada impediria escalar 6 zagueiros e 1 meio-campista se
 esses fossem os de maior probabilidade individual.
 
@@ -38,14 +74,29 @@ import dados_historicos as dh
 import joblib
 import numpy as np
 import pandas as pd
+from postgrest.exceptions import APIError
 from supabase import Client, create_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 BUCKET_ARTEFATOS = "custom-model-artifacts"
-ALGORITMOS = ["lightgbm", "xgboost", "catboost"]
-FEATURES = ["dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "posicao_num", "valor_mercado_eur", "is_lesionado"]
+# Ordem CANÔNICA -- tem que bater exatamente com scripts/treinar_modelo_xi.py.
+# ALGORITMOS[i] é sempre a coluna i do vetor que alimenta o meta-modelo de
+# stacking (LogisticRegression, ver `prever_probabilidades`) -- trocar a
+# ordem aqui sem trocar lá faz o meta-modelo aplicar o peso errado no
+# modelo errado (ele não guarda o "nome" de cada entrada, só a posição).
+ALGORITMOS = ["lightgbm", "xgboost", "catboost", "random_forest", "mlp"]
+NOME_META_MODELO = "stacking_logreg"
+# Mesma lista/ordem de scripts/treinar_modelo_xi.py -- elo_diff/squad_rating_diff
+# são POR PARTIDA (não dá pra pré-computar em montar_features_elenco_atual,
+# que é por time/elenco só -- ver rodar()), as outras são por jogador/elenco
+# atual, computadas uma vez só.
+FEATURES = [
+    "dias_desde_ultimo_jogo", "hierarquia_elenco", "media_rating_5j", "posicao_num", "valor_mercado_eur", "is_lesionado",
+    "elo_diff", "squad_rating_diff", "esta_pendurado",
+]
+FEATURES_BASE = [f for f in FEATURES if f not in ("elo_diff", "squad_rating_diff")]
 DIAS_JANELA_DEFAULT = 7
 TOP_N_TITULARES = 11
 
@@ -60,14 +111,21 @@ TOP_N_TITULARES = 11
 # dos lotes numa única página mesmo pra grupos de jogadores veteranos.
 TAMANHO_LOTE_TABELA_GRANDE = 25
 
-# Decodificação de players.usual_position_id validada nesta sessão (o repo
-# documentava só "enum interno do FotMob, sem legenda confiável" -- validado
-# aqui por correlação com match_player_stats_fotmob.is_goalkeeper (98,7% de
-# confirmação pro valor 0) e por gradiente monotônico de gols/assistências/
-# interceptações/toques na área rival entre 1/2/3, batendo com o padrão
-# esperado de DEF<MEI<ATA em ataque e o inverso em interceptação):
-# 0=goleiro, 1=defensor, 2=meio-campo, 3=atacante.
-FORMACAO_MIN_MAX = {0: (1, 1), 1: (3, 5), 2: (3, 5), 3: (1, 3)}
+# player_availability_fotmob.role -> mesmo esquema numérico 0/1/2/3 já usado
+# em todo o resto do pipeline (FORMACAO_MIN_MAX, xi_previsto.posicao_bucket,
+# POSICAO_LABEL no frontend) -- só os 4 valores abaixo existem em produção
+# (confirmado por `GROUP BY role`, 100% das linhas com role preenchido).
+MAPA_ROLE_PARA_POSICAO = {"Keeper": 0, "Defender": 1, "Midfielder": 2, "Attacker": 3}
+# Mínimo de 4 defensores (pedido do usuário) -- FORMACAO_MIN_MAX[1] passa de
+# (3,5) pra (4,5). player_availability_fotmob.posicao_detalhe (positionIdsDesc
+# do FotMob, achado real inspecionando o payload bruto do endpoint de elenco
+# -- CB/LB/RB/LWB/RWB/CDM/CM/etc, não documentado antes) permite refinar
+# ainda mais: pelo menos 2 zagueiros (CB) + 2 laterais (LB/RB/LWB/RWB) dentro
+# desse mínimo, não só "4 defensores quaisquer" -- ver `MAPA_DETALHE_DEFESA`
+# e `selecionar_titulares_por_posicao`.
+FORMACAO_MIN_MAX = {0: (1, 1), 1: (4, 5), 2: (3, 5), 3: (1, 3)}
+MAPA_DETALHE_DEFESA = {"CB": "zag", "LB": "lat", "RB": "lat", "LWB": "lat", "RWB": "lat"}
+MINIMO_ZAG_LAT = 2
 
 
 def _dividir_em_lotes(itens: list, tamanho: int = 1000):
@@ -99,14 +157,35 @@ def _buscar_paginado_por_lote(query_factory, lote: list, tamanho_pagina: int = 1
     `.or_("player_id.gt.X,and(player_id.eq.X,id.gt.Y)")` -- em vez de OFFSET.
     Isso vira um predicado de índice em vez de "pular N linhas", custo
     constante por página independente de profundidade. `query_factory` deve
-    incluir `id` no `.select()`."""
+    incluir `id` no `.select()`.
+
+    Achado em produção nesta sessão (depois de trocar a fonte do elenco de
+    `players.last_team_id` pra `player_availability_fotmob`, ver docstring
+    do módulo): o pool de jogadores candidatos ficou maior (elenco real
+    completo, não só quem apareceu em partida já ingerida) -- alguns lotes
+    de 25 (`TAMANHO_LOTE_TABELA_GRANDE`) incluem jogador veterano com
+    histórico grande o bastante pra um `.in_(player_id, lote)` específico
+    estourar o statement timeout do Postgres mesmo com o índice certo,
+    derrubando o job inteiro no meio (visto 2x rodando `prever_xi.yml`
+    manualmente em produção). Tolerante por lote: se UMA página falhar por
+    timeout, loga e devolve só o que já tinha sido lido daquele lote em vez
+    de propagar -- mesmo espírito de tolerância a dado faltante já usado em
+    todo o resto da função chamadora (rating/valor/hierarquia caem pro
+    default neutro quando não há dado; aqui o "não há dado" é "não deu
+    tempo de buscar", mesmo efeito prático)."""
     linhas: list[dict] = []
     cursor_player_id = 0
     cursor_id = 0
     while True:
         query = query_factory(lote).order("player_id").order("id").limit(tamanho_pagina)
         query = query.or_(f"player_id.gt.{cursor_player_id},and(player_id.eq.{cursor_player_id},id.gt.{cursor_id})")
-        pagina_dados = query.execute().data or []
+        try:
+            pagina_dados = query.execute().data or []
+        except APIError as e:
+            if e.code == "57014":  # statement timeout
+                logger.warning(f"Timeout paginando lote (player_id>{cursor_player_id}) -- seguindo com {len(linhas)} linhas já lidas desse lote.")
+                break
+            raise
         linhas.extend(pagina_dados)
         if len(pagina_dados) < tamanho_pagina:
             break
@@ -162,19 +241,37 @@ def carregar_modelos(supabase: Client) -> dict:
     return modelos
 
 
-def jogadores_suspensos(
+def carregar_meta_modelo(supabase: Client):
+    """Meta-modelo do stacking (LogisticRegression treinada sobre previsões
+    OOF dos 5 modelos base, ver `treinar_modelo_xi._gerar_previsoes_oof`) --
+    artefato separado dos 5 de `carregar_modelos` (entrada diferente:
+    probabilidades dos modelos base, não as features brutas)."""
+    path = f"xi_titular/{NOME_META_MODELO}.joblib"
+    try:
+        conteudo = supabase.storage.from_(BUCKET_ARTEFATOS).download(path)
+        return joblib.load(io.BytesIO(conteudo))
+    except Exception as e:
+        logger.warning(f"Sem artefato do meta-modelo de stacking ({path}): {e}")
+        return None
+
+
+def jogadores_suspensos_e_pendurados(
     supabase: Client,
     player_ids: list[int],
     team_por_jogador: dict[int, int],
     league_id_por_time: dict[int, int],
     nome_liga_por_league_id: dict[int, str],
     ultimo_jogo_data: dict[int, str],
-) -> set[int]:
+) -> tuple[set[int], set[int]]:
     """Jogadores cumprindo suspensão por acúmulo de cartão amarelo pra
-    fixture futura -- reaproveita a regra por liga já pesquisada em
-    `dados_historicos.CARTAO_LIMIAR_POR_LIGA` (mesma família de
-    `obter_cartoes_atuais`, mas aqui precisa da IDENTIDADE de cada jogador
-    suspenso, não só a contagem agregada por time).
+    fixture futura (`suspensos`, excluídos do espaço amostral -- ver
+    `montar_features_elenco_atual`) e jogadores a 1 cartão do limiar
+    (`pendurados`, ENTRAM como feature `esta_pendurado` pro modelo aprender
+    o padrão de preservação -- pedido do usuário) -- reaproveita a regra por
+    liga já pesquisada em `dados_historicos.CARTAO_LIMIAR_POR_LIGA` (mesma
+    família de `obter_cartoes_atuais`, mas aqui precisa da IDENTIDADE de
+    cada jogador, não só a contagem agregada por time). Calcula os dois
+    numa passada só (mesmo histórico de cartão já buscado).
 
     Acúmulo de cartão sozinho não diz se a suspensão JÁ FOI cumprida --
     `dados_historicos._estado_apos_cada_cartao` reseta o ciclo no MESMO
@@ -185,7 +282,7 @@ def jogadores_suspensos(
     uma partida DEPOIS do cartão que cruzou o limiar, a suspensão de 1
     partida já foi cumprida."""
     if not player_ids or not league_id_por_time:
-        return set()
+        return set(), set()
 
     temporada_atual_por_liga: dict[int, str] = {}
     for league_id in set(league_id_por_time.values()):
@@ -208,7 +305,7 @@ def jogadores_suspensos(
             )
         )
     if not eventos:
-        return set()
+        return set(), set()
     df_eventos = pd.DataFrame(eventos)
 
     match_ids = df_eventos["match_id"].unique().tolist()
@@ -222,6 +319,7 @@ def jogadores_suspensos(
     df_eventos["match_date"] = df_eventos["match_id"].map(lambda mid: partidas_meta.get(mid, {}).get("match_date"))
 
     suspensos: set[int] = set()
+    pendurados: set[int] = set()
     for player_id, eventos_jogador in df_eventos.groupby("player_id"):
         team_id = team_por_jogador.get(player_id)
         league_id = league_id_por_time.get(team_id)
@@ -240,13 +338,69 @@ def jogadores_suspensos(
         cartoes_antes, n_susp_antes = estados_antes[-1] if estados_antes else (0, 0)
         limiar_atual = dh._limiar_do_ciclo(regra, n_susp_antes)
         if (cartoes_antes + 1) < limiar_atual:
-            continue  # último cartão não cruzou o limiar -- não suspenso
+            # último cartão não cruzou o limiar -- não suspenso; "pendurado"
+            # se esse cartão deixou o jogador a 1 amarelo do limiar (pedido
+            # do usuário: sinal pro modelo aprender preservação de pendurado).
+            if (cartoes_antes + 1) == limiar_atual - 1:
+                pendurados.add(int(player_id))
+            continue
         data_cartao_suspensivo = datas[-1]
         ultimo_jogo = ultimo_jogo_data.get(player_id)
         if ultimo_jogo is not None and ultimo_jogo > data_cartao_suspensivo:
             continue  # já jogou depois do cartão que suspendeu -- cumprida
         suspensos.add(int(player_id))
-    return suspensos
+    return suspensos, pendurados
+
+
+def jogadores_transferidos_para_fora(supabase: Client, team_ids: list[int]) -> set[tuple[int, int]]:
+    """Filtro rígido de elenco ativo: `(team_id, player_id)` cujo evento MAIS
+    RECENTE em `team_transfers_fotmob` (mesma fonte/mesma rodada de sync que
+    `player_availability_fotmob`, `ingestao_fotmob_elenco.py`) é `'out'` --
+    pedido do usuário pra restringir o espaço amostral exclusivamente a
+    quem tem vínculo ativo com o time na data do jogo, sem depender só do
+    snapshot de elenco (que é resincronizado periodicamente e pode ficar
+    temporariamente desatualizado em relação a uma transferência/empréstimo
+    recente -- achado real confirmado em produção testando este filtro:
+    "Lorran" segue listado no snapshot de elenco do Flamengo mesmo com um
+    evento `'out'` registrado desde 2025-09-01).
+
+    Não usa jogos anteriores (`match_lineup_fotmob`) como confirmação
+    adicional aqui de propósito -- um jogador recém-contratado que ainda
+    não estreou pelo time novo teria 0 jogos e seria excluído por engano;
+    o histórico de partidas já entra como SINAL (não filtro rígido) via
+    `hierarquia_elenco`/`dias_desde_ultimo_jogo` mais abaixo."""
+    if not team_ids:
+        return set()
+    linhas: list[dict] = []
+    for lote_times in _dividir_em_lotes(team_ids, 200):
+        pagina = 0
+        while True:
+            inicio = pagina * 1000
+            lote = (
+                supabase.table("team_transfers_fotmob")
+                .select("team_id, player_id, direction, transfer_date")
+                .in_("team_id", lote_times)
+                .not_.is_("player_id", "null")
+                .order("team_id")
+                .order("player_id")
+                .order("transfer_date", desc=True)
+                .range(inicio, inicio + 999)
+                .execute()
+                .data
+                or []
+            )
+            linhas.extend(lote)
+            if len(lote) < 1000:
+                break
+            pagina += 1
+    if not linhas:
+        return set()
+    df = pd.DataFrame(linhas)
+    # já vem ordenado (team_id, player_id, transfer_date DESC) da query --
+    # a primeira linha de cada (team_id, player_id) é o evento mais recente.
+    mais_recente = df.drop_duplicates(subset=["team_id", "player_id"], keep="first")
+    saida = mais_recente[mais_recente["direction"] == "out"]
+    return set(zip(saida["team_id"].astype(int), saida["player_id"].astype(int)))
 
 
 def selecionar_titulares_por_posicao(elenco_time: pd.DataFrame) -> set:
@@ -269,8 +423,28 @@ def selecionar_titulares_por_posicao(elenco_time: pd.DataFrame) -> set:
     selecionados: list = []
     sobras: list = []
     for posicao, (minimo, maximo) in FORMACAO_MIN_MAX.items():
-        candidatos = elenco_time[elenco_time["usual_position_id"] == posicao]["player_id"].tolist()
-        _extend_sem_duplicar(selecionados, candidatos[:minimo])
+        candidatos_pos = elenco_time[elenco_time["usual_position_id"] == posicao]
+        candidatos = candidatos_pos["player_id"].tolist()  # já ordenado por prob desc
+        if posicao == 1 and "posicao_detalhe" in candidatos_pos.columns:
+            # Defesa: prioriza 2 zagueiros (CB) + 2 laterais (LB/RB/LWB/RWB)
+            # antes de completar o mínimo só por probabilidade -- pedido do
+            # usuário ("mínimo de 4 defensores, ou 2 ZAG + 2 LAT"). Se o
+            # elenco disponível não tiver zagueiro/lateral suficiente (dado
+            # faltando ou elenco atípico), completa com o defensor de maior
+            # probabilidade restante -- nunca deixa de bater o mínimo de 4
+            # só por falta da granularidade ideal.
+            lado_por_jogador = dict(zip(candidatos_pos["player_id"], candidatos_pos["posicao_detalhe"].map(MAPA_DETALHE_DEFESA)))
+            zags = [p for p in candidatos if lado_por_jogador.get(p) == "zag"]
+            lats = [p for p in candidatos if lado_por_jogador.get(p) == "lat"]
+            nucleo: list = []
+            _extend_sem_duplicar(nucleo, zags[:MINIMO_ZAG_LAT])
+            _extend_sem_duplicar(nucleo, lats[:MINIMO_ZAG_LAT])
+            if len(nucleo) < minimo:
+                restantes_pos = [p for p in candidatos if p not in nucleo]
+                _extend_sem_duplicar(nucleo, restantes_pos[: minimo - len(nucleo)])
+            _extend_sem_duplicar(selecionados, nucleo[:minimo])
+        else:
+            _extend_sem_duplicar(selecionados, candidatos[:minimo])
         sobras.extend(pid for pid in candidatos[minimo:maximo] if pid not in selecionados)
 
     faltam = TOP_N_TITULARES - len(selecionados)
@@ -306,60 +480,84 @@ def montar_features_elenco_atual(
     league_id_por_time: dict[int, int] | None = None,
     nome_liga_por_league_id: dict[int, str] | None = None,
 ) -> pd.DataFrame:
-    """Elenco atual (players.last_team_id) de cada time em `team_ids`, com as
-    mesmas 6 features de `treinar_modelo_xi.engenharia_features`, calculadas
-    com dado de HOJE em vez de ponto-no-tempo histórico -- não existe
-    'escalação futura confirmada', só o melhor proxy disponível agora."""
+    """Elenco atual (`player_availability_fotmob`) de cada time em `team_ids`,
+    com as mesmas features de `treinar_modelo_xi.engenharia_features`
+    (`FEATURES_BASE` -- todas exceto `elo_diff`/`squad_rating_diff`, que são
+    por partida e entram depois em `rodar()`), calculadas com dado de HOJE
+    em vez de ponto-no-tempo histórico -- não existe 'escalação futura
+    confirmada', só o melhor proxy disponível agora."""
     if not team_ids:
         return pd.DataFrame()
 
-    # Achado em produção: sem paginação, essa consulta cortava em 1000
-    # linhas silenciosamente (PostgREST) -- com ~228 times numa janela de 7
-    # dias x ~40 jogadores/elenco, o total passa de 9000 linhas fácil, e a
-    # maioria dos times sobrava com só 0-1 jogador no resultado truncado
-    # (ex.: time_id=220 tem 43 jogadores reais, só 1 aparecia). Pagina por
-    # OFFSET ordenado por `last_team_id` -- mas SÓ por `last_team_id` não é
-    # determinístico (dezenas de jogadores empatam no mesmo time), o que
-    # fez OFFSET devolver o MESMO jogador em páginas diferentes (achado no
-    # próximo bug: upsert em xi_previsto quebrou com "ON CONFLICT DO UPDATE
-    # command cannot affect row a second time", chave duplicada dentro do
-    # mesmo lote). Desempate por `id` (chave primária, única) resolve.
-    jogadores = []
-    pagina = 0
-    while True:
-        inicio = pagina * 1000
-        lote = (
-            supabase.table("players")
-            .select("id, last_team_id, usual_position_id, market_value")
-            .in_("last_team_id", team_ids)
-            .order("last_team_id")
-            .order("id")
-            .range(inicio, inicio + 999)
-            .execute()
-            .data
-            or []
-        )
-        jogadores.extend(lote)
-        if len(lote) < 1000:
-            break
-        pagina += 1
-    if not jogadores:
+    # `player_availability_fotmob` é o snapshot do elenco REAL (ver docstring
+    # do módulo pro porquê de não usar mais players.last_team_id) --
+    # paginado do mesmo jeito (achado real de produção nesta sessão:
+    # `.in_("team_id", team_ids)` sozinho corta em 1000 linhas silenciosamente
+    # pra janelas com muitos times, mesmo padrão já documentado alhures neste
+    # arquivo). `player_id` pode vir NULL (crosswalk fotmob_player_id ->
+    # players.id ainda não resolvido pra ~31% dos nomes do elenco, geralmente
+    # jogadores obscuros que nunca apareceram numa partida já ingerida) --
+    # descartado abaixo, já que `xi_previsto.player_id` é FK NOT NULL.
+    elenco_rows = []
+    for lote_times in _dividir_em_lotes(team_ids, 200):
+        pagina = 0
+        while True:
+            inicio = pagina * 1000
+            lote = (
+                supabase.table("player_availability_fotmob")
+                .select("id, team_id, player_id, role, posicao_detalhe, injured")
+                .in_("team_id", lote_times)
+                .order("team_id")
+                .order("id")
+                .range(inicio, inicio + 999)
+                .execute()
+                .data
+                or []
+            )
+            elenco_rows.extend(lote)
+            if len(lote) < 1000:
+                break
+            pagina += 1
+    if not elenco_rows:
         return pd.DataFrame()
-    df = pd.DataFrame(jogadores).rename(columns={"id": "player_id", "last_team_id": "team_id"})
-    player_ids = df["player_id"].tolist()
 
-    # Exclui lesionado ANTES de pontuar (mesmo padrão de obter_squad_rating_atual) --
-    # o modelo nunca viu is_lesionado variar no treino, não dá pra confiar
-    # nele pra aprender penalidade de lesão sozinho.
-    lesionados: set = set()
-    for lote in _dividir_em_lotes(player_ids):
-        linhas = supabase.table("player_availability_fotmob").select("player_id").in_("player_id", lote).eq("injured", True).execute().data or []
-        lesionados.update(l["player_id"] for l in linhas)
-    df = df[~df["player_id"].isin(lesionados)].copy()
+    df = pd.DataFrame(elenco_rows)
+    # Exclui lesionado ANTES de pontuar (mesmo padrão de
+    # obter_squad_rating_atual) -- o modelo nunca viu is_lesionado variar no
+    # treino, não dá pra confiar nele pra aprender penalidade de lesão
+    # sozinho. E descarta player_id não resolvido (ver comentário acima).
+    df = df[(df["injured"] != True) & df["player_id"].notna()].copy()  # noqa: E712
     if df.empty:
         return df
+    df["player_id"] = df["player_id"].astype(int)
+    # Um jogador pode ter mais de 1 linha de snapshot pro mesmo time (achado
+    # em produção -- rodadas de sync sobrepostas antes do delete-then-upsert
+    # de ingestao_fotmob_elenco.py terminar); mantém 1 por (team_id,player_id).
+    df = df.drop_duplicates(subset=["team_id", "player_id"])
+    # usual_position_id (nome mantido pra não mexer no resto da função/
+    # selecionar_titulares_por_posicao, que já espera essa coluna) agora vem
+    # do texto `role`, não mais de players.usual_position_id.
+    df["usual_position_id"] = df["role"].map(MAPA_ROLE_PARA_POSICAO)
+
+    # Filtro rígido de elenco ativo (pedido do usuário): remove quem já tem
+    # transferência de SAÍDA mais recente que a entrada no snapshot atual
+    # de elenco -- ver docstring de `jogadores_transferidos_para_fora`.
+    transferidos = jogadores_transferidos_para_fora(supabase, team_ids)
+    if transferidos:
+        df = df[~df.apply(lambda r: (r["team_id"], r["player_id"]) in transferidos, axis=1)].copy()
+        if df.empty:
+            return df
 
     player_ids = df["player_id"].tolist()
+
+    # market_value (fallback de valor de mercado quando não há linha em
+    # player_market_value_history) -- só campo que a consulta antiga pegava
+    # "de graça" no mesmo select de `players`; aqui precisa de uma consulta
+    # à parte porque o elenco agora vem de player_availability_fotmob.
+    valor_cadastro: dict[int, float] = {}
+    for lote in _dividir_em_lotes(player_ids):
+        linhas_valor = supabase.table("players").select("id, market_value").in_("id", lote).execute().data or []
+        valor_cadastro.update({l["id"]: l["market_value"] for l in linhas_valor if l.get("market_value") is not None})
 
     ratings_rows = []
     for lote in _dividir_em_lotes(player_ids):
@@ -406,9 +604,10 @@ def montar_features_elenco_atual(
             if atual is None or data_jogo > atual:
                 ultimo_jogo_data[s["player_id"]] = data_jogo
 
+    pendurados: set[int] = set()
     if league_id_por_time and nome_liga_por_league_id:
         team_por_jogador = dict(zip(df["player_id"], df["team_id"]))
-        suspensos = jogadores_suspensos(
+        suspensos, pendurados = jogadores_suspensos_e_pendurados(
             supabase, player_ids, team_por_jogador, league_id_por_time, nome_liga_por_league_id, ultimo_jogo_data
         )
         if suspensos:
@@ -428,10 +627,15 @@ def montar_features_elenco_atual(
     agora = dt.datetime.now(dt.timezone.utc)
     df = df.merge(df_ratings, on="player_id", how="left")
     df["media_rating_5j"] = df["rating"].fillna(6.0)
-    df["valor_mercado_eur"] = df["player_id"].map(valor_mais_recente).fillna(df["market_value"]).fillna(100000)
+    df["valor_mercado_eur"] = df["player_id"].map(valor_mais_recente).fillna(df["player_id"].map(valor_cadastro)).fillna(100000)
     df["hierarquia_elenco"] = df["player_id"].map(hierarquia_por_jogador).fillna(0.5)
     df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
     df["is_lesionado"] = 0
+    # Pedido do usuário: sinal pro modelo aprender que titulares pendurados
+    # (a 1 cartão amarelo da suspensão) tendem a ser poupados, sobretudo
+    # contra oponente fraco -- não é filtro rígido (diferente de suspenso),
+    # o jogador continua no espaço amostral, só ganha essa feature.
+    df["esta_pendurado"] = df["player_id"].isin(pendurados).astype(int)
 
     def _dias_desde(player_id):
         data_str = ultimo_jogo_data.get(player_id)
@@ -444,14 +648,28 @@ def montar_features_elenco_atual(
     # usual_position_id (cru, não a feature posicao_num) segue no retorno
     # pra selecionar_titulares_por_posicao bucketar sem ambiguidade com
     # posição desconhecida (fillna(0) colidiria com goleiro real).
-    return df[["player_id", "team_id", "usual_position_id", *FEATURES]]
+    # elo_diff/squad_rating_diff (força do oponente) NÃO entram aqui -- são
+    # POR PARTIDA, computadas em rodar() dentro do loop de fixture (o mesmo
+    # time pode ter mais de 1 jogo na janela, contra oponentes diferentes).
+    return df[["player_id", "team_id", "usual_position_id", "posicao_detalhe", *FEATURES_BASE]]
 
 
-def prever_probabilidades(modelos: dict, df_features: pd.DataFrame) -> np.ndarray:
-    """Média das probabilidades dos algoritmos com artefato disponível
-    (ensemble simples -- mais robusto que depender de um único algoritmo)."""
-    probas = [modelo.predict_proba(df_features[FEATURES])[:, 1] for modelo in modelos.values()]
-    return np.mean(probas, axis=0)
+def prever_probabilidades(modelos: dict, meta_modelo, df_features: pd.DataFrame) -> np.ndarray:
+    """Stacking (pedido do usuário): a previsão de cada modelo base vira uma
+    coluna, na ordem CANÔNICA de `ALGORITMOS`, e o meta-modelo (Logistic
+    Regression treinada sobre previsões OOF, ver `treinar_modelo_xi.
+    _gerar_previsoes_oof`) combina os 5 aprendendo um peso por modelo --
+    substitui a média simples anterior. Se o meta-modelo não estiver
+    disponível (treino antigo, artefato ainda não gerado) ou faltar algum
+    dos 5 modelos base, cai pra média simples dos disponíveis -- nunca
+    quebra o pipeline por falta do artefato mais novo."""
+    nomes_disponiveis = [n for n in ALGORITMOS if n in modelos]
+    probas_por_modelo = {n: modelos[n].predict_proba(df_features[FEATURES])[:, 1] for n in nomes_disponiveis}
+    if meta_modelo is not None and nomes_disponiveis == ALGORITMOS:
+        meta_X = np.column_stack([probas_por_modelo[n] for n in ALGORITMOS])
+        return meta_modelo.predict_proba(meta_X)[:, 1]
+    logger.warning("Meta-modelo de stacking indisponível ou faltando modelo base -- usando média simples como fallback.")
+    return np.mean(list(probas_por_modelo.values()), axis=0)
 
 
 def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
@@ -464,24 +682,49 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
     if not modelos:
         logger.error("Nenhum artefato de modelo encontrado em xi_titular/*.joblib -- rode treinar_modelo_xi.py primeiro.")
         return 0
+    meta_modelo = carregar_meta_modelo(supabase)
 
     team_ids = sorted(set(fixtures["home_team_id"]).union(fixtures["away_team_id"]))
     league_id_por_time, nome_liga_por_league_id = mapear_ligas(supabase, fixtures)
     df_features = montar_features_elenco_atual(supabase, team_ids, league_id_por_time, nome_liga_por_league_id)
     if df_features.empty:
-        logger.warning("Sem elenco atual (players.last_team_id) para os times das fixtures -- nada a prever.")
+        logger.warning("Sem elenco atual (player_availability_fotmob) para os times das fixtures -- nada a prever.")
         return 0
 
-    df_features = df_features.dropna(subset=FEATURES)
-    df_features["prob_titular"] = prever_probabilidades(modelos, df_features)
+    df_features = df_features.dropna(subset=FEATURES_BASE)
+
+    # Força do oponente (pedido do usuário) -- elo_diff/squad_rating_diff são
+    # POR PARTIDA (o mesmo time pode ter mais de 1 fixture na janela contra
+    # oponentes diferentes), então não dá pra computar uma vez só igual as
+    # outras features: busca elo/rating de elenco ATUAL uma vez (barato,
+    # 1 linha por time), e monta o diferencial dentro do loop de fixture
+    # abaixo -- junto disso, `prever_probabilidades` também precisa rodar
+    # por fixture agora (a probabilidade de um jogador titular depende de
+    # contra quem ele joga).
+    elo_por_time = dh.obter_elo_atual(supabase, team_ids)
+    squad_rating_por_time = dh.obter_squad_rating_atual(supabase, team_ids)
 
     agora = dt.datetime.now(dt.timezone.utc).isoformat()
     linhas = []
     for _, fixture in fixtures.iterrows():
-        for team_id in (fixture["home_team_id"], fixture["away_team_id"]):
-            elenco_time = df_features[df_features["team_id"] == team_id].sort_values("prob_titular", ascending=False)
+        home_id, away_id = int(fixture["home_team_id"]), int(fixture["away_team_id"])
+        for team_id, oponente_id in ((home_id, away_id), (away_id, home_id)):
+            elenco_time = df_features[df_features["team_id"] == team_id].copy()
             if elenco_time.empty:
                 continue
+            # Rede de segurança: achado em produção (upsert falhando com "ON
+            # CONFLICT DO UPDATE command cannot affect row a second time") --
+            # não reproduzido de forma determinística contra o estado atual
+            # de player_availability_fotmob (mesma classe de instabilidade
+            # transitória já documentada alhures neste arquivo), mas o custo
+            # de gravar 1 linha em vez de 2 iguais é zero e elimina a classe
+            # inteira de erro no upsert, então dedupa aqui incondicionalmente
+            # -- mesmo padrão já usado dentro de selecionar_titulares_por_posicao.
+            elenco_time = elenco_time.drop_duplicates(subset="player_id")
+            elenco_time["elo_diff"] = elo_por_time.get(team_id, np.nan) - elo_por_time.get(oponente_id, np.nan)
+            elenco_time["squad_rating_diff"] = squad_rating_por_time.get(team_id, np.nan) - squad_rating_por_time.get(oponente_id, np.nan)
+            elenco_time["prob_titular"] = prever_probabilidades(modelos, meta_modelo, elenco_time)
+            elenco_time = elenco_time.sort_values("prob_titular", ascending=False)
             titulares_previstos = selecionar_titulares_por_posicao(elenco_time)
             for _, jogador in elenco_time.iterrows():
                 linhas.append(
@@ -491,7 +734,8 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
                         "player_id": int(jogador["player_id"]),
                         "prob_titular": float(jogador["prob_titular"]),
                         "is_titular_previsto": jogador["player_id"] in titulares_previstos,
-                        "model_version": "xi_titular_ensemble",
+                        "posicao_bucket": int(jogador["usual_position_id"]) if pd.notna(jogador["usual_position_id"]) else None,
+                        "model_version": "xi_titular_stacking",
                         # Explícito -- `default now()` só se aplica a INSERT novo;
                         # sem isso aqui, upsert em cima de linha já existente
                         # (ON CONFLICT DO UPDATE) mantinha o gerado_em antigo,

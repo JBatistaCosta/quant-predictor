@@ -1,0 +1,87 @@
+name: Treino do Modelo Misto (paramétrico)
+
+# Treina o modelo misto: ML estima os parâmetros de distribuição (λ dos gols
+# por equipe, λ dos escanteios) e scripts/distribuicoes.py deriva TODOS os
+# mercados da mesma distribuição conjunta — 1X2, over/under em várias linhas,
+# BTTS, faixas, handicap asiático, placar exato e escanteios.
+#
+# Diferente dos treinos de classificação (treinar_modelo_custom.yml), aqui
+# uma execução só produz dezenas de mercados coerentes entre si, em vez de um
+# mercado por modelo.
+#
+# Custo de API externa: zero — lê só o que já está no Supabase.
+#
+# Timeout de 180min pelo mesmo motivo de prever_partidas_futuras_custom.yml:
+# o gargalo é montar o dataset "Feature Stacked" (montar_dataset_ml_empilhado
+# faz muitas queries paginadas), não o fit dos regressores, que leva segundos.
+# Rodar com `ligas` preenchido reduz bastante — é o caminho recomendado pro
+# primeiro teste.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ligas:
+        description: "Nomes de liga separados por vírgula (vazio = as 6 do benchmark)"
+        required: false
+        type: string
+      sem_gravar:
+        description: "Só avaliar, sem escrever no Supabase"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Semanal, domingo 03:00 UTC — antes do predict.yml diário (04:00) e
+    # fora da janela dos jobs de ingestão (05:00-08:00). Semanal e não
+    # diário porque o modelo depende de histórico acumulado: retreinar todo
+    # dia muda o resultado por ruído, não por informação nova.
+    - cron: "0 3 * * 0"
+
+jobs:
+  treinar-modelo-hibrido:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      # Identidades matemáticas do núcleo paramétrico (soma 1, coerência
+      # entre mercados, recuperação de parâmetro em dado sintético). Roda em
+      # segundos e não toca no banco — se quebrar aqui, não faz sentido
+      # gastar as próximas 2h montando dataset e gravando previsão errada.
+      - name: Verificar núcleo paramétrico
+        run: python scripts/verificar_distribuicoes.py
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A camada "parâmetros -> mercados" existe em Python (treino em lote) e
+      # em JS (calculadora do app). Se divergirem, a mesma partida mostra
+      # número diferente dependendo de onde o usuário olha. Este teste compara
+      # as duas contra um fixture gerado pelo Python. Já pegou dois bugs
+      # reais: nome de mercado divergente em linhas inteiras de handicap
+      # (handicap_-2.0 vs handicap_-2) e tratamento diferente da cauda
+      # truncada da Binomial Negativa.
+      - name: Verificar paridade Python <-> JS
+        run: node scripts/verificar_paridade_js.mjs
+
+      - name: Treinar modelo misto
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/treinar_modelo_hibrido.py \
+            ${{ inputs.ligas && format('--ligas "{0}"', inputs.ligas) || '' }} \
+            ${{ inputs.sem_gravar && '--sem-gravar' || '' }}

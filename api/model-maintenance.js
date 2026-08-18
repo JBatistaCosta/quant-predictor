@@ -159,6 +159,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
+import { gravarComDedupCruzado } from './_lib/dedupMatches.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -1086,7 +1087,7 @@ async function tarefaRelatorioTeste(supabase, configId, pagina) {
 // ============================================================
 // TAREFA: backtest-custom — carteira simulada EV+ para modelos customizados.
 // Usa predições de model_predictions + odds Pinnacle pre_closing de odds_market.
-// Só suporta mercados com odds disponíveis: 1x2 e over_under_2.5.
+// Só suporta mercados com odds disponíveis: 1x2, over_under_2.5 e btts.
 // Aplica Quarter Kelly com teto de 15% por rodada (mesmo regime da carteira
 // principal em tarefaSimulacaoCarteira). Quando há múltiplos modelos (WF mode),
 // faz a média das probabilidades antes de calcular o edge.
@@ -1107,8 +1108,13 @@ async function tarefaBacktestCustom(supabase, configId) {
   const metrics = cfg.metrics || {};
   const modelNames = metrics.model_names?.length ? metrics.model_names : [cfg.name];
 
-  // Mapeamento target → market key em model_predictions e em odds_market
-  const MARKET_PRED_MAP = { '1x2': '1X2', 'over_under_2.5': 'over_under_2.5' };
+  // Mapeamento target → market key em model_predictions e em odds_market --
+  // mesmos 3 mercados de MERCADOS_CARTEIRA_SUPORTADOS (só os que têm odds
+  // Pinnacle reais em odds_market, ver ali) -- 'btts' faltava aqui mas já
+  // era suportado na Simulação de Carteira principal (tarefaModelosDisponiveis
+  // abaixo), inconsistência pega ao investigar pedido de usar o modelo
+  // misto (target=btts) em carteira personalizada por config.
+  const MARKET_PRED_MAP = { '1x2': '1X2', 'over_under_2.5': 'over_under_2.5', btts: 'btts' };
   const marketPred = MARKET_PRED_MAP[cfg.target];
   if (!marketPred) {
     return {
@@ -1161,6 +1167,7 @@ async function tarefaBacktestCustom(supabase, configId) {
   function calcResultado(m) {
     if (m.status !== 'finished' || m.goals_home == null || m.goals_away == null) return null;
     if (marketPred === 'over_under_2.5') return (m.goals_home + m.goals_away) > 2.5 ? 'over' : 'under';
+    if (marketPred === 'btts') return (m.goals_home > 0 && m.goals_away > 0) ? 'yes' : 'no';
     return m.goals_home > m.goals_away ? 'home' : m.goals_home < m.goals_away ? 'away' : 'draw';
   }
 
@@ -2340,7 +2347,7 @@ function slugSelecaoHistorico(outcomeName) {
   return ROTULOS_SELECAO_CONHECIDOS_HISTORICO[norm] || slugTextoHistorico(outcomeName);
 }
 
-async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite }) {
+async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite, forcar }) {
   const limiteReal = Math.min(parseInt(limite, 10) || MAX_FIXTURES_HISTORICO_POR_CHAMADA, MAX_FIXTURES_HISTORICO_POR_CHAMADA);
 
   const { data: mapa } = await supabase.from('liga_oddspapi_tournament').select('tournament_id, tournament_name').eq('league_id', ligaId).maybeSingle();
@@ -2349,6 +2356,22 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
   const { data: mercadosCacheRaw } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
   const mercadosPorId = new Map((mercadosCacheRaw?.valor || []).filter((m) => !m.playerProp).map((m) => [String(m.marketId), m]));
   if (mercadosPorId.size === 0) return { error: 'Cache `markets` vazia/inválida — rode tarefa=odds-descobrir de novo.' };
+
+  // `forcar=true` -- BUG REAL corrigido (achado auditando as ligas depois
+  // dos fixes de nomesBatem, 2026-08-17): buscarOuCache busca /v4/fixtures
+  // UMA VEZ SÓ e nunca mais atualiza (sem TTL). O cache original de cada
+  // liga foi feito num único snapshot (11-14/08), com um subconjunto das
+  // fixtures finalizadas -- não a lista inteira. Depois que os fixes de
+  // nomesBatem destravaram o casamento de nome pra praticamente tudo que
+  // já estava cacheado, toda liga bateu "cache esgotada" quase ao mesmo
+  // tempo (restantes real no banco não bate mais com o que sobra pra
+  // comparar) -- não é mais falta de apelido, é a cache ficar pra trás do
+  // banco. `forcar` reconsulta /v4/fixtures (chamada billable, não é a
+  // /v4/historical-odds "grátis") e substitui o cache -- usar com
+  // moderação, cada acionamento gasta 1 chamada de cota por liga.
+  if (forcar === 'true' || forcar === '1') {
+    await supabase.from('oddspapi_cache').delete().eq('chave', `fixtures_finalizadas_liga_${ligaId}`);
+  }
 
   const fixtures = await buscarOuCache(supabase, `fixtures_finalizadas_liga_${ligaId}`, async () => chamarOddspapi('/v4/fixtures', {
     tournamentId: mapa.tournament_id,
@@ -2510,7 +2533,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
               const chave = `${match.id}|${bookmaker}|${market}|${selection}`;
               if (jaExiste.has(chave)) continue;
               jaExiste.add(chave);
-              linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora });
+              linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora, origem: 'oddspapi' });
             }
           }
         }
@@ -2673,11 +2696,93 @@ const ALIASES_ODDSPAPI = {
   'atleticomineiromg': 'clubeatleticomineiro',
   'caparanaensepr': 'clubathleticoparanaense',
 };
+// Segunda camada de casamento, por TOKEN em vez de substring cru na string
+// colapsada -- a checagem acima (ALIASES_ODDSPAPI + substring) continua
+// intacta como primeira tentativa (já validada em produção pros apelidos
+// brasileiros), essa aqui só entra como fallback OR, nunca substitui nada.
+// BUG REAL corrigido (achado auditando Champions League a pedido do
+// usuário, 2026-08-17): 375 das 503 partidas finalizadas da liga nunca
+// batiam por substring -- ou por causa de uma palavra extra no meio do
+// nome nosso ("Club Atlético DE Madrid" vs "Atletico Madrid" -- o "de"
+// quebra o substring mesmo com as mesmas palavras dos dois lados) ou por
+// nome/cidade traduzida ou abreviação sem raiz em comum ("FC Bayern
+// München" vs "Bayern Munich", "AC Sparta Praha" vs "Sparta Prague").
+// tarefaOddsHistorico não tinha como distinguir isso de "liga realmente
+// sem mais dado disponível" -- reportava "Nenhuma partida pendente
+// encontrada" (liga "concluída") com só 25% de fato importado, e o cron
+// seguia pra próxima liga sozinho, mascarando o problema indefinidamente.
+const ALIASES_TOKEN_ODDSPAPI = {
+  munchen: 'munich',        // FC Bayern München / Bayern Munich
+  praha: 'prague',          // AC Sparta Praha, SK Slavia Praha / ...Prague
+  olympiakos: 'olympiacos', // PAE Olympiakos SFP / Olympiacos Piraeus
+  paphos: 'pafos',          // Paphos FC / Pafos FC
+  internazionale: 'inter',  // FC Internazionale Milano / Inter Milano
+};
+// Pares de nome INTEIRO sem nenhum token em comum entre o nosso cadastro e
+// a OddsPapi (sigla vs. nome da cidade, sigla diferente) -- não dá pra
+// resolver por alias de token isolado, o par inteiro precisa ser
+// equivalenciado.
+const ALIASES_NOME_ODDSPAPI = {
+  'sporting clube de portugal': 'sporting cp',
+  'celtic fc': 'celtic glasgow',
+  'galatasaray sk': 'galatasaray istanbul',
+  'juventus fc': 'juventus turin',
+  'athletic club': 'athletic bilbao',
+  'fk shakhtar donetsk': 'fc shakhtar donetsk',
+  'fk kairat': 'fc kairat almaty',
+  'pae olympiakos sfp': 'olympiacos piraeus',
+  'real betis balompie': 'real betis seville',
+  'real sociedad de futbol': 'real sociedad san sebastian',
+  // Os 14 abaixo vieram de uma auditoria cruzada (2026-08-17, a pedido do
+  // usuário depois do fix de La Liga): comparei, pra cada uma das 14 ligas
+  // mapeadas, os times sem odds importadas contra os nomes já presentes em
+  // `oddspapi_cache.fixtures_finalizadas_liga_X` da MESMA liga -- ou seja,
+  // são pares onde o dado já está cacheado (não é retenção/ausência da
+  // OddsPapi), só nunca casava por nome. Cidade traduzida (Köln/Cologne,
+  // København/Copenhagen), sigla sem raiz comum (AFC Ajax/Ajax Amsterdam,
+  // BSC Young Boys/Young Boys Bern, LAFC/Los Angeles FC), sufixo do
+  // clube preservado só de um lado (SS Lazio/Lazio Rome, AC Pisa
+  // 1909/Pisa SC, Stade Brestois 29/Stade Brest 29 -- essa última também
+  // destrava Ligue 1) e país com nome diferente na Copa do Mundo FIFA
+  // (South Korea/Korea Republic, Turkey/Turkiye, United States/USA).
+  'afc ajax': 'ajax amsterdam',
+  'bsc young boys': 'young boys bern',
+  'fc k benhavn': 'fc copenhagen',
+  'stade brestois 29': 'stade brest 29',
+  'ss lazio': 'lazio rome',
+  'ac pisa 1909': 'pisa sc',
+  '1 fc koln': '1 fc cologne',
+  'south korea': 'korea republic',
+  'turkey': 'turkiye',
+  'united states': 'usa',
+  'lafc': 'los angeles fc',
+  'wydad casablanca': 'wydad ac',
+  'sport lisboa e benfica': 'sl benfica',
+  'fk bod glimt': 'bodoe glimt',
+};
+function normalizarNomeOddsPapiTokens(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+function nomesBatemPorToken(a, b) {
+  let na = normalizarNomeOddsPapiTokens(a), nb = normalizarNomeOddsPapiTokens(b);
+  na = ALIASES_NOME_ODDSPAPI[na] || na;
+  nb = ALIASES_NOME_ODDSPAPI[nb] || nb;
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const tokensA = new Set(na.split(' ').map((t) => ALIASES_TOKEN_ODDSPAPI[t] || t));
+  const tokensB = new Set(nb.split(' ').map((t) => ALIASES_TOKEN_ODDSPAPI[t] || t));
+  return [...tokensA].every((t) => tokensB.has(t)) || [...tokensB].every((t) => tokensA.has(t));
+}
 function nomesBatem(a, b) {
   let x = normalizarTexto2(a), y = normalizarTexto2(b);
   x = ALIASES_ODDSPAPI[x] || x;
   y = ALIASES_ODDSPAPI[y] || y;
-  return x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x));
+  if (x.length > 0 && y.length > 0 && (x.includes(y) || y.includes(x))) return true;
+  return nomesBatemPorToken(a, b);
 }
 
 // Extrai TODAS as seleções de TODOS os mercados presentes num fixture do
@@ -2829,7 +2934,7 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
 
         const extraidas = extrairLinhasOddsGenericas(marketsFixture, mercadosPorId);
         mercadosExtraidos += extraidas.length;
-        extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora }));
+        extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora, origem: 'oddspapi' }));
       }
     }
 
@@ -2945,14 +3050,13 @@ async function tarefaBackfillCompeticao(supabase, apiKey, codigo, temporada) {
     });
   }
 
-  let inseridosOuAtualizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) inseridosOuAtualizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se API-Football/FotMob já tiver
+  // essa mesma partida gravada nessa liga -- ver api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, ligaRow.id, linhas);
 
   return {
-    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: inseridosOuAtualizados,
+    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     times_com_problema: timesCriados.size > 0 ? [...timesCriados] : undefined,
   };
 }
@@ -3064,13 +3168,14 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
     });
   }
 
-  let sincronizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) sincronizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se football-data.org/FotMob já
+  // tiver essa mesma partida gravada nessa liga -- ver api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, fonteRow.league_id, linhas);
 
-  return { api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length, sincronizados };
+  return {
+    api_football_league_id: Number(apiFootballLeagueId), temporada, total_jogos: fixtures.length,
+    sincronizados: gravados, duplicatas_evitadas: duplicatas_evitadas || undefined,
+  };
 }
 
 // ============================================================
@@ -3249,15 +3354,17 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
     });
   }
 
-  let sincronizados = 0;
-  for (const lote of fatiar(linhas, 200)) {
-    const { error } = await supabase.from('matches').upsert(lote, { onConflict: 'external_id' });
-    if (!error) sincronizados += lote.length;
-  }
+  // dedup cruzado: não cria linha nova se football-data.org/API-Football
+  // já tiver essa mesma partida gravada nessa liga -- importante aqui em
+  // especial, já que esse tarefa também é reusado pra sincronizar
+  // temporada de liga JÁ existente (não só onboarding de liga nova) -- ver
+  // api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, leagueId, linhas);
 
   return {
     league_id: leagueId, liga_id: ligaCadastroId, liga_criada: ligaCriada,
-    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados,
+    fotmob_league_id: Number(fmIdStr), temporada, total_jogos: fixtures.length, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     ...(avisoCadastroLigas ? { aviso: avisoCadastroLigas } : {}),
   };
 }
@@ -4023,10 +4130,16 @@ async function tarefaImportarOddsFootiqo(supabase, authHeader, body) {
   const idPorNomeNorm = {};
   (timesRows || []).forEach((t) => { idPorNomeNorm[normalizarNomeTime(t.name)] = t.id; });
 
+  // BUG REAL corrigido: a checagem antiga pulava a partida se ela já
+  // tivesse QUALQUER odd gravada, de QUALQUER origem (OddsPapi, Kaggle,
+  // football-data.co.uk) -- assim que o backfill da OddsPapi cobria uma
+  // partida, o Footiqo nunca mais conseguia gravar a própria linha nela,
+  // mesmo rodando pela primeira vez. Escopado por origem='footiqo' -- só
+  // pula o que o PRÓPRIO Footiqo já gravou antes.
   const idsJogos = jogos.map((j) => j.id);
   const jaTemOdds = new Set();
   for (let inicio = 0; ; inicio += 1000) {
-    const { data: lote } = await supabase.from('odds_market').select('match_id').in('match_id', idsJogos).range(inicio, inicio + 999);
+    const { data: lote } = await supabase.from('odds_market').select('match_id').eq('origem', 'footiqo').in('match_id', idsJogos).range(inicio, inicio + 999);
     (lote || []).forEach((r) => jaTemOdds.add(r.match_id));
     if (!lote || lote.length < 1000) break;
   }
@@ -4066,18 +4179,18 @@ async function tarefaImportarOddsFootiqo(supabase, authHeader, body) {
     let teveOdds = false;
     for (const [selecao, col] of [['home', 'H'], ['draw', 'D'], ['away', 'A']]) {
       const odd = paraFloatFootiqo(linha[col]);
-      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: '1X2', selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: '1X2', selection: selecao, odds: odd, snapshot: 'closing', origem: 'footiqo' }); teveOdds = true; }
     }
     for (const [colOver, colUnder, faixa] of LINHAS_OU_FOOTIQO) {
       const mercado = `over_under_${faixa}`;
       for (const [selecao, col] of [['over', colOver], ['under', colUnder]]) {
         const odd = paraFloatFootiqo(linha[col]);
-        if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: mercado, selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+        if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: mercado, selection: selecao, odds: odd, snapshot: 'closing', origem: 'footiqo' }); teveOdds = true; }
       }
     }
     for (const [selecao, col] of [['yes', 'BTTSY'], ['no', 'BTTSN']]) {
       const odd = paraFloatFootiqo(linha[col]);
-      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: 'btts', selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: 'btts', selection: selecao, odds: odd, snapshot: 'closing', origem: 'footiqo' }); teveOdds = true; }
     }
     if (!teveOdds) semOdds++;
   }
@@ -5082,7 +5195,7 @@ export default async function handler(req, res) {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico precisa de ?liga_id=X.' } });
-      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite });
+      const resultado = await tarefaOddsHistorico(supabase, apiKey, { ligaId: Number(liga_id), temporada, limite, forcar });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }

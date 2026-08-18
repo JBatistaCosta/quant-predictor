@@ -21,6 +21,14 @@ de grandeza, não um múltiplo grande disso.
 Resultado grava em xi_backtest_walkforward (upsert por temporada+liga),
 consumido por src/pages/XiModeloStats.jsx.
 
+Além da métrica agregada, também persiste a previsão BRUTA por jogador em
+xi_titular_walkforward -- essa é a única previsão de titularidade
+disponível pra partidas HISTÓRICAS sem vazamento (rodar_xi_previsto.py só
+gera xi_previsto pra fixtures futuras, nunca reprocessa o passado), então
+vira a fonte de "abertura" (força do XI antes da escalação real sair) pras
+features titular_rating_abertura/titular_valor_mercado_abertura em
+dados_historicos.py -- ver comentário da migration.
+
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 backtest_xi_walkforward.py
 """
@@ -35,6 +43,7 @@ from sklearn.metrics import brier_score_loss, log_loss
 from supabase import Client, create_client
 from xgboost import XGBClassifier
 
+import dados_historicos as dh
 from treinar_modelo_xi import FEATURES, TARGET, carregar_dados, engenharia_features
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -76,8 +85,8 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
     grupo = df_teste[["match_id", "team_id", "is_starter"]].copy()
     grupo["proba"] = y_proba
 
-    precisoes, exatos = [], []
-    for _, g in grupo.groupby(["match_id", "team_id"]):
+    precisoes, exatos, match_ids_avaliados = [], [], set()
+    for (match_id, _team_id), g in grupo.groupby(["match_id", "team_id"]):
         if len(g) < 11 or g["is_starter"].sum() == 0:
             continue
         top11 = g.sort_values("proba", ascending=False).head(11)
@@ -86,6 +95,7 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
         acertos = len(reais & previstos)
         precisoes.append(acertos / 11)
         exatos.append(1.0 if reais == previstos else 0.0)
+        match_ids_avaliados.add(match_id)
     if not precisoes:
         return None
 
@@ -110,7 +120,14 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
             )
 
     return {
-        "n_partidas": len(precisoes),
+        # partidas DISTINTAS avaliadas -- não confundir com len(precisoes),
+        # que conta pares (partida, time): cada partida real contribui até 2
+        # entradas em precisoes/exatos (uma por time), então usar aquele
+        # número aqui contaria toda partida em dobro (achado testando em
+        # produção -- Brasileirão 2018 aparecia com "1296 partidas" quando o
+        # real é ~380 na temporada, mesmo com a inflação real de partidas
+        # duplicadas na tabela matches -- ver nota no PR).
+        "n_partidas": len(match_ids_avaliados),
         "n_previsoes": int(len(grupo)),
         "precisao_media_top11": float(np.mean(precisoes)),
         "taxa_xi_exato": float(np.mean(exatos)),
@@ -118,6 +135,33 @@ def _metricas_grupo(df_teste: pd.DataFrame, y_proba: np.ndarray) -> dict | None:
         "log_loss": ll,
         "calibracao": calibracao,
     }
+
+
+def _persistir_previsao_por_jogador(supabase: Client, teste_temporada: pd.DataFrame, y_proba: np.ndarray, temporada, model_version: str) -> int:
+    """Grava a previsão bruta (1 linha por jogador×partida) em
+    xi_titular_walkforward -- fonte de "abertura" pras features de força do
+    XI (ver dados_historicos.py). Separado de _metricas_grupo, que só
+    calcula agregado e nunca persiste a previsão em si."""
+    linhas = [
+        {
+            "match_id": int(match_id),
+            "team_id": int(team_id),
+            "player_id": int(player_id),
+            "prob_titular": float(proba),
+            "season": str(temporada),
+            "league_id": int(league_id),
+            "model_version": model_version,
+        }
+        for match_id, team_id, player_id, league_id, proba in zip(
+            teste_temporada["match_id"], teste_temporada["team_id"], teste_temporada["player_id"],
+            teste_temporada["league_id"], y_proba, strict=True,
+        )
+    ]
+    total = 0
+    for lote in dh._dividir_em_lotes(linhas, 500):
+        supabase.table("xi_titular_walkforward").upsert(lote, on_conflict="match_id,team_id,player_id").execute()
+        total += len(lote)
+    return total
 
 
 def rodar(supabase: Client) -> int:
@@ -148,6 +192,9 @@ def rodar(supabase: Client) -> int:
 
         logger.info(f"Temporada {temporada}: treinando com {len(treino)} linhas, avaliando {len(teste_temporada)} linhas...")
         y_proba = _treinar_ensemble_e_prever(treino, teste_temporada)
+
+        n_previsoes = _persistir_previsao_por_jogador(supabase, teste_temporada, y_proba, temporada, MODEL_VERSION)
+        logger.info(f"Temporada {temporada}: {n_previsoes} previsões por jogador gravadas em xi_titular_walkforward.")
 
         linhas_upsert = []
         for league_id, g in teste_temporada.groupby("league_id"):

@@ -21,14 +21,23 @@ name: Backfill de Odds Históricas (OddsPapi)
 #
 # Não roda tudo numa chamada só de propósito: 14 ligas, ~20 mil partidas
 # faltando no momento em que este workflow foi criado -- muito além do
-# timeout de qualquer execução única. O cron (a cada 6h) garante que o
-# backfill continua avançando sozinho até esgotar todas as ligas, sem
-# precisar de ninguém disparando manualmente ou monitorando um processo em
-# background.
+# timeout de qualquer execução única. O cron garante que o backfill
+# continua avançando sozinho até esgotar todas as ligas, sem precisar de
+# ninguém disparando manualmente ou monitorando um processo em background.
+#
+# `concurrency` + `cancel-in-progress` -- achado real testando manualmente
+# (rodei um workflow_dispatch pra só uma liga enquanto o run agendado
+# ainda tava ativo, e as duas chamadas competiram pela cota da OddsPapi,
+# toda tentativa levou rate-limit): sem isso, um cron de 50min disparando
+# em cima de um run anterior ainda ativo faria a mesma coisa sozinho, sem
+# precisar de nenhuma ação manual. `timeout-minutes` reduzido pra deixar
+# folga confortável abaixo do intervalo do cron, pra cada run terminar
+# sozinho antes do próximo disparo na maioria dos casos (o cancelamento
+# fica como rede de segurança, não o mecanismo principal).
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "*/50 * * * *"
   workflow_dispatch:
     inputs:
       ligas:
@@ -36,10 +45,14 @@ on:
         required: false
         type: string
 
+concurrency:
+  group: backfill-odds-historico
+  cancel-in-progress: true
+
 jobs:
   backfill-odds-historico:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 45
 
     steps:
       - name: Rodar backfill de odds históricas
@@ -67,7 +80,7 @@ jobs:
           d=json.load(sys.stdin)
           falhas=len(d.get('falhas') or [])
           if 'error' in d: print(f\"ERROR|0|0|0|0|0|{d['error']}\")
-          elif 'mensagem' in d: print('DONE|0|0|0|0|0')
+          elif 'mensagem' in d: print(f\"DONE|0|{d.get('total_finalizados_local',0)-d.get('ja_importados',0)}|0|0|0\")
           else: print(f\"OK|{d.get('processados_agora',0)}|{d.get('restantes_estimado',0)}|{d.get('sucesso',0)}|{falhas}|{d.get('sem_historico_na_fonte',0)}\")
           " 2>/dev/null) || PARSED="PARSE_ERROR|0|0|0|0|0"
               STATUS=$(echo "$PARSED" | cut -d'|' -f1)
@@ -79,7 +92,11 @@ jobs:
               echo "$(date -u +%FT%TZ) liga=$LIGA rodada=$RODADA status=$STATUS proc=$PROC sucesso=$SUCESSO falhas=$FALHAS sem_historico=$SEMHIST restantes=$REST"
 
               if [ "$STATUS" = "DONE" ]; then
-                echo "--- liga_id=$LIGA CONCLUIDA $(date -u +%FT%TZ) ---"
+                if [ "$REST" != "0" ]; then
+                  echo "--- liga_id=$LIGA SEM MAIS CORRESPONDENCIA (restam $REST partidas sem fixture casado por nome/data -- provavelmente fora da retencao da OddsPapi ou apelido de time faltando) $(date -u +%FT%TZ) ---"
+                else
+                  echo "--- liga_id=$LIGA CONCLUIDA $(date -u +%FT%TZ) ---"
+                fi
                 break
               fi
               if [ "$STATUS" = "ERROR" ] || [ "$STATUS" = "PARSE_ERROR" ]; then

@@ -60,6 +60,14 @@ BOOKMAKERS = [
     ("AvgC", "media_mercado"),
 ]
 
+# BUG REAL corrigido: o delete antes do insert apagava por bookmaker
+# (pinnacle/bet365/...) sem checar origem -- "pinnacle"/"bet365" são os
+# MESMOS nomes usados pelo backfill da OddsPapi, então rodar este script
+# de novo apagaria as odds ricas da OddsPapi (dezenas de mercados) pra
+# regravar só 1X2 do football-data.co.uk por cima. Escopado por
+# origem=ORIGEM -- só apaga/reprocessa o que o PRÓPRIO script já gravou.
+ORIGEM = "football_data_co_uk"
+
 _TOKENS_IGNORADOS = {
     "fc", "cf", "afc", "fbpa", "fbc", "sc", "ac", "ssc", "as", "rc", "cd",
     "ud", "rcd", "ec", "ca", "cr", "se", "club", "clube",
@@ -177,6 +185,7 @@ def main():
                         registros.append({
                             "match_id": match_id, "bookmaker": nome_casa, "market": "1X2",
                             "selection": selecao, "odds": round(float(v), 3), "snapshot": "closing",
+                            "origem": ORIGEM,
                         })
                         teve_odds = True
         if not teve_odds:
@@ -184,7 +193,7 @@ def main():
 
     match_ids = sorted({r["match_id"] for r in registros})
     for i in range(0, len(match_ids), 200):
-        supabase.table("odds_market").delete().in_("bookmaker", [b for _, b in BOOKMAKERS]).in_("match_id", match_ids[i:i + 200]).execute()
+        supabase.table("odds_market").delete().eq("origem", ORIGEM).in_("match_id", match_ids[i:i + 200]).execute()
 
     for i in range(0, len(registros), 500):
         supabase.table("odds_market").insert(registros[i:i + 500]).execute()
