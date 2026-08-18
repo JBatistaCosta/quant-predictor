@@ -10,7 +10,7 @@
 // mandante/visitante (a ordem já deixa isso claro: mandante à esquerda).
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, AlertTriangle, Shield, Loader2, ArrowRight } from 'lucide-react';
+import { Calendar, AlertTriangle, Shield, Loader2, ArrowRight, FlaskConical } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import TimelineDatas from '../components/TimelineDatas';
 
@@ -29,21 +29,30 @@ function LinhaJogo({ jogo }) {
   const jogado = jogo.status === 'finished';
   const horario = jogo.match_date ? new Date(jogo.match_date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
   return (
-    <Link to={`/historico/${jogo.id}`} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-700/20 transition-colors">
-      <span className="text-slate-500 text-xs w-12 shrink-0">{jogado ? STATUS_ROTULO.finished : horario}</span>
-      <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
-        <span className="truncate text-slate-200">{jogo.home?.name || '?'}</span>
-        {jogo.home?.crest_url ? <img src={jogo.home.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-      </div>
-      <span className={`font-mono font-bold w-14 text-center shrink-0 ${corPlacar(jogo.home_goals, jogo.away_goals)}`}>
-        {jogado ? `${jogo.home_goals}-${jogo.away_goals}` : 'vs'}
-      </span>
-      <div className="flex-1 flex items-center gap-2 min-w-0">
-        {jogo.away?.crest_url ? <img src={jogo.away.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-        <span className="truncate text-slate-200">{jogo.away?.name || '?'}</span>
-      </div>
-      <ArrowRight size={14} className="text-slate-600 shrink-0" />
-    </Link>
+    <div className="flex items-center hover:bg-slate-700/20 transition-colors">
+      <Link to={`/historico/${jogo.id}`} className="flex-1 flex items-center gap-3 px-4 py-2.5 text-sm min-w-0">
+        <span className="text-slate-500 text-xs w-12 shrink-0">{jogado ? STATUS_ROTULO.finished : horario}</span>
+        <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
+          <span className="truncate text-slate-200">{jogo.home?.name || '?'}</span>
+          {jogo.home?.crest_url ? <img src={jogo.home.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+        </div>
+        <span className={`font-mono font-bold w-14 text-center shrink-0 ${corPlacar(jogo.home_goals, jogo.away_goals)}`}>
+          {jogado ? `${jogo.home_goals}-${jogo.away_goals}` : 'vs'}
+        </span>
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          {jogo.away?.crest_url ? <img src={jogo.away.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+          <span className="truncate text-slate-200">{jogo.away?.name || '?'}</span>
+        </div>
+        <ArrowRight size={14} className="text-slate-600 shrink-0" />
+      </Link>
+      <Link
+        to={`/analise-avancada/${jogo.id}`}
+        title="Análise avançada (modelo misto)"
+        className="shrink-0 p-2 mr-3 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
+      >
+        <FlaskConical size={16} />
+      </Link>
+    </div>
   );
 }
 

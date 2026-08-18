@@ -13,6 +13,7 @@ const EventosLista = lazy(() => import('./pages/EventosLista'));
 const EventoNovo = lazy(() => import('./pages/EventoNovo'));
 const ImportarJogos = lazy(() => import('./pages/ImportarJogos'));
 const AnaliseEvento = lazy(() => import('./pages/AnaliseEvento'));
+const AnaliseAvancadaEvento = lazy(() => import('./pages/AnaliseAvancadaEvento'));
 const Times = lazy(() => import('./pages/Times'));
 const TimeDetalhe = lazy(() => import('./pages/TimeDetalhe'));
 const Ligas = lazy(() => import('./pages/Ligas'));
@@ -62,6 +63,9 @@ export default function App() {
             } />
             <Route path="/analise" element={
               <ProtectedRoute><Layout><AnaliseEvento /></Layout></ProtectedRoute>
+            } />
+            <Route path="/analise-avancada/:matchId" element={
+              <ProtectedRoute><Layout><AnaliseAvancadaEvento /></Layout></ProtectedRoute>
             } />
             <Route path="/times" element={
               <ProtectedRoute><Layout><Times /></Layout></ProtectedRoute>
