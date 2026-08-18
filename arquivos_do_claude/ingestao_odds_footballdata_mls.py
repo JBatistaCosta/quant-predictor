@@ -42,6 +42,11 @@ BOOKMAKERS = [
     ("AvgC", "media_mercado"),
 ]
 
+# BUG REAL corrigido: mesma classe dos outros scripts football-data.co.uk
+# -- "pinnacle"/"bet365" colidem com o backfill da OddsPapi. Idempotência
+# e delete escopados por origem=ORIGEM.
+ORIGEM = "football_data_co_uk"
+
 _TOKENS_IGNORADOS = {
     "fc", "cf", "afc", "sc",
 }
@@ -150,6 +155,7 @@ def main():
     inicio = 0
     while True:
         lote = (supabase.table("odds_market").select("match_id")
+                .eq("origem", ORIGEM)
                 .in_("match_id", ids_jogos)
                 .range(inicio, inicio + 999).execute().data)
         ja_tem_odds.update(r["match_id"] for r in lote)
@@ -190,6 +196,7 @@ def main():
                             registros.append({
                                 "match_id": match_id, "bookmaker": nome_casa, "market": "1X2",
                                 "selection": selecao, "odds": round(odd, 3), "snapshot": "closing",
+                                "origem": ORIGEM,
                             })
                             teve_odds = True
         if not teve_odds:

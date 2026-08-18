@@ -21,6 +21,15 @@ from supabase import create_client
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+# BUG REAL corrigido: o delete antes do insert apagava TODAS as odds da
+# partida (in_("match_id", lote), sem filtro de bookmaker/origem) --
+# rodar este script de novo destruiria os 90+ mercados que o backfill da
+# OddsPapi importa pra cada partida do Brasileirão, porque "pinnacle" é o
+# MESMO nome de bookmaker usado pelas duas fontes. Escopado por
+# origem=ORIGEM agora -- só apaga/reprocessa o que o PRÓPRIO script já
+# gravou antes, nunca o de outra fonte.
+ORIGEM = "kaggle_felipe"
+
 env_path = os.path.join(os.path.dirname(__file__), "..", "functions", ".env")
 if os.path.exists(env_path):
     with open(env_path, "r", encoding="utf-8") as f:
@@ -133,9 +142,9 @@ def main():
                 if pd.notna(row.get("PSCH")) and pd.notna(row.get("PSCD")) and pd.notna(row.get("PSCA")):
                     try:
                         linhas_odds_temp.extend([
-                            {"match_id": m_id, "bookmaker": "pinnacle", "market": "1X2", "selection": "home", "odds": float(row["PSCH"]), "snapshot": "closing", "captured_at": agora_iso},
-                            {"match_id": m_id, "bookmaker": "pinnacle", "market": "1X2", "selection": "draw", "odds": float(row["PSCD"]), "snapshot": "closing", "captured_at": agora_iso},
-                            {"match_id": m_id, "bookmaker": "pinnacle", "market": "1X2", "selection": "away", "odds": float(row["PSCA"]), "snapshot": "closing", "captured_at": agora_iso},
+                            {"match_id": m_id, "bookmaker": "pinnacle", "market": "1X2", "selection": "home", "odds": float(row["PSCH"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
+                            {"match_id": m_id, "bookmaker": "pinnacle", "market": "1X2", "selection": "draw", "odds": float(row["PSCD"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
+                            {"match_id": m_id, "bookmaker": "pinnacle", "market": "1X2", "selection": "away", "odds": float(row["PSCA"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
                         ])
                     except ValueError: pass
 
@@ -143,9 +152,9 @@ def main():
                 if pd.notna(row.get("AvgCH")) and pd.notna(row.get("AvgCD")) and pd.notna(row.get("AvgCA")):
                     try:
                         linhas_odds_temp.extend([
-                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "1X2", "selection": "home", "odds": float(row["AvgCH"]), "snapshot": "closing", "captured_at": agora_iso},
-                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "1X2", "selection": "draw", "odds": float(row["AvgCD"]), "snapshot": "closing", "captured_at": agora_iso},
-                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "1X2", "selection": "away", "odds": float(row["AvgCA"]), "snapshot": "closing", "captured_at": agora_iso},
+                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "1X2", "selection": "home", "odds": float(row["AvgCH"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
+                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "1X2", "selection": "draw", "odds": float(row["AvgCD"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
+                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "1X2", "selection": "away", "odds": float(row["AvgCA"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
                         ])
                     except ValueError: pass
 
@@ -153,8 +162,8 @@ def main():
                 if pd.notna(row.get("AvgOver2.5")) and pd.notna(row.get("AvgUnder2.5")):
                     try:
                         linhas_odds_temp.extend([
-                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "over_under_2.5", "selection": "over", "odds": float(row["AvgOver2.5"]), "snapshot": "closing", "captured_at": agora_iso},
-                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "over_under_2.5", "selection": "under", "odds": float(row["AvgUnder2.5"]), "snapshot": "closing", "captured_at": agora_iso},
+                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "over_under_2.5", "selection": "over", "odds": float(row["AvgOver2.5"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
+                            {"match_id": m_id, "bookmaker": "media_mercado", "market": "over_under_2.5", "selection": "under", "odds": float(row["AvgUnder2.5"]), "snapshot": "closing", "captured_at": agora_iso, "origem": ORIGEM},
                         ])
                     except ValueError: pass
 
@@ -163,11 +172,13 @@ def main():
         print(f"  -> Jogos casados: {casados_temp}/{len(matches)} | Odds geradas: {len(linhas_odds_temp)}")
 
         if not args.dry_run and linhas_odds_temp:
-            # Apagar odds antigas dessas partidas antes de re-inserir para evitar duplicatas
+            # Apagar SÓ as odds antigas do PRÓPRIO script (origem=ORIGEM)
+            # dessas partidas antes de re-inserir -- nunca odds de outra
+            # origem (ver comentário em ORIGEM acima).
             m_ids_temp = list({r["match_id"] for r in linhas_odds_temp})
             for i in range(0, len(m_ids_temp), 200):
                 lote = m_ids_temp[i:i+200]
-                supabase.table("odds_market").delete().in_("match_id", lote).execute()
+                supabase.table("odds_market").delete().eq("origem", ORIGEM).in_("match_id", lote).execute()
 
             # Gravar lote a lote
             for i in range(0, len(linhas_odds_temp), 500):

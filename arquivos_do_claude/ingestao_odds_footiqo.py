@@ -190,6 +190,7 @@ def main():
     inicio = 0
     while True:
         lote = (supabase.table("odds_market").select("match_id")
+                .eq("origem", "footiqo")
                 .in_("match_id", ids_jogos)
                 .range(inicio, inicio + 999).execute().data)
         ja_tem_odds.update(r["match_id"] for r in lote)
@@ -221,7 +222,7 @@ def main():
             odd = para_float(linha.get(col))
             if odd is not None:
                 registros.append({"match_id": match_id, "bookmaker": "1xbet", "market": "1X2",
-                                  "selection": selecao, "odds": odd, "snapshot": "closing"})
+                                  "selection": selecao, "odds": odd, "snapshot": "closing", "origem": "footiqo"})
                 teve_odds = True
 
         for col_over, col_under, linha_gols in LINHAS_OU:
@@ -230,14 +231,14 @@ def main():
                 odd = para_float(linha.get(col))
                 if odd is not None:
                     registros.append({"match_id": match_id, "bookmaker": "1xbet", "market": mercado,
-                                      "selection": selecao, "odds": odd, "snapshot": "closing"})
+                                      "selection": selecao, "odds": odd, "snapshot": "closing", "origem": "footiqo"})
                     teve_odds = True
 
         for selecao, col in (("yes", "BTTSY"), ("no", "BTTSN")):
             odd = para_float(linha.get(col))
             if odd is not None:
                 registros.append({"match_id": match_id, "bookmaker": "1xbet", "market": "btts",
-                                  "selection": selecao, "odds": odd, "snapshot": "closing"})
+                                  "selection": selecao, "odds": odd, "snapshot": "closing", "origem": "footiqo"})
                 teve_odds = True
 
         if not teve_odds:

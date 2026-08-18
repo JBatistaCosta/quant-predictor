@@ -57,6 +57,13 @@ BOOKMAKERS = [
     ("Avg", "media_mercado"),
 ]
 
+# BUG REAL corrigido: a checagem de idempotência (ja_tem_odds) e o insert
+# não distinguiam origem -- "pinnacle"/"bet365" são os MESMOS nomes
+# usados pelo backfill da OddsPapi. Sem isso, uma partida já coberta pela
+# OddsPapi nunca recebia a própria linha deste script (achava que "já
+# tinha odds"). Escopado por origem=ORIGEM.
+ORIGEM = "football_data_co_uk"
+
 # football-data.co.uk usa nomes de time em inglês/estilo próprio — mais
 # uma convenção diferente de todas as anteriores. Aliases conhecidos de
 # antemão (baseado em padrões típicos dessa fonte); avisos novos vão
@@ -179,6 +186,7 @@ def main():
     inicio = 0
     while True:
         lote = (supabase.table("odds_market").select("match_id")
+                .eq("origem", ORIGEM)
                 .in_("match_id", ids_jogos)
                 .range(inicio, inicio + 999).execute().data)
         ja_tem_odds.update(r["match_id"] for r in lote)
@@ -186,7 +194,7 @@ def main():
             break
         inicio += 1000
     if ja_tem_odds:
-        print(f"  {len(ja_tem_odds)} partida(s) já com odds gravadas -- serão puladas.")
+        print(f"  {len(ja_tem_odds)} partida(s) já com odds desta fonte gravadas -- serão puladas.")
 
     nossos = pd.DataFrame(jogos)
     nossos["data"] = pd.to_datetime(nossos["match_date"], utc=True).dt.date
@@ -249,7 +257,7 @@ def main():
                     if v is not None and not pd.isna(v):
                         registros.append({"match_id": match_id, "bookmaker": nome_casa,
                                           "market": "1X2", "selection": selecao,
-                                          "odds": round(float(v), 3)})
+                                          "odds": round(float(v), 3), "origem": ORIGEM})
                         teve_odds = True
 
             # Pinnacle usa prefixo "PS" pro 1X2 mas só "P" (sem o S) pro
@@ -262,7 +270,7 @@ def main():
                     if v is not None and not pd.isna(v):
                         registros.append({"match_id": match_id, "bookmaker": nome_casa,
                                           "market": "over_under_2.5", "selection": selecao,
-                                          "odds": round(float(v), 3)})
+                                          "odds": round(float(v), 3), "origem": ORIGEM})
                         teve_odds = True
         if not teve_odds:
             sem_odds += 1

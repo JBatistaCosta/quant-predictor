@@ -2533,7 +2533,7 @@ async function tarefaOddsHistorico(supabase, apiKey, { ligaId, temporada, limite
               const chave = `${match.id}|${bookmaker}|${market}|${selection}`;
               if (jaExiste.has(chave)) continue;
               jaExiste.add(chave);
-              linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora });
+              linhas.push({ match_id: match.id, bookmaker, market, selection, odds: preco, snapshot: 'closing', captured_at: agora, origem: 'oddspapi' });
             }
           }
         }
@@ -2934,7 +2934,7 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
 
         const extraidas = extrairLinhasOddsGenericas(marketsFixture, mercadosPorId);
         mercadosExtraidos += extraidas.length;
-        extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora }));
+        extraidas.forEach((l) => linhas.push({ match_id: partida.id, bookmaker, market: l.market, selection: l.selection, odds: l.odds, snapshot: 'pre_closing', captured_at: agora, origem: 'oddspapi' }));
       }
     }
 
@@ -4130,10 +4130,16 @@ async function tarefaImportarOddsFootiqo(supabase, authHeader, body) {
   const idPorNomeNorm = {};
   (timesRows || []).forEach((t) => { idPorNomeNorm[normalizarNomeTime(t.name)] = t.id; });
 
+  // BUG REAL corrigido: a checagem antiga pulava a partida se ela já
+  // tivesse QUALQUER odd gravada, de QUALQUER origem (OddsPapi, Kaggle,
+  // football-data.co.uk) -- assim que o backfill da OddsPapi cobria uma
+  // partida, o Footiqo nunca mais conseguia gravar a própria linha nela,
+  // mesmo rodando pela primeira vez. Escopado por origem='footiqo' -- só
+  // pula o que o PRÓPRIO Footiqo já gravou antes.
   const idsJogos = jogos.map((j) => j.id);
   const jaTemOdds = new Set();
   for (let inicio = 0; ; inicio += 1000) {
-    const { data: lote } = await supabase.from('odds_market').select('match_id').in('match_id', idsJogos).range(inicio, inicio + 999);
+    const { data: lote } = await supabase.from('odds_market').select('match_id').eq('origem', 'footiqo').in('match_id', idsJogos).range(inicio, inicio + 999);
     (lote || []).forEach((r) => jaTemOdds.add(r.match_id));
     if (!lote || lote.length < 1000) break;
   }
@@ -4173,18 +4179,18 @@ async function tarefaImportarOddsFootiqo(supabase, authHeader, body) {
     let teveOdds = false;
     for (const [selecao, col] of [['home', 'H'], ['draw', 'D'], ['away', 'A']]) {
       const odd = paraFloatFootiqo(linha[col]);
-      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: '1X2', selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: '1X2', selection: selecao, odds: odd, snapshot: 'closing', origem: 'footiqo' }); teveOdds = true; }
     }
     for (const [colOver, colUnder, faixa] of LINHAS_OU_FOOTIQO) {
       const mercado = `over_under_${faixa}`;
       for (const [selecao, col] of [['over', colOver], ['under', colUnder]]) {
         const odd = paraFloatFootiqo(linha[col]);
-        if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: mercado, selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+        if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: mercado, selection: selecao, odds: odd, snapshot: 'closing', origem: 'footiqo' }); teveOdds = true; }
       }
     }
     for (const [selecao, col] of [['yes', 'BTTSY'], ['no', 'BTTSN']]) {
       const odd = paraFloatFootiqo(linha[col]);
-      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: 'btts', selection: selecao, odds: odd, snapshot: 'closing' }); teveOdds = true; }
+      if (odd !== null) { registros.push({ match_id: melhor.id, bookmaker: '1xbet', market: 'btts', selection: selecao, odds: odd, snapshot: 'closing', origem: 'footiqo' }); teveOdds = true; }
     }
     if (!teveOdds) semOdds++;
   }
