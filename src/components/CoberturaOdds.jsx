@@ -80,10 +80,12 @@ export default function CoberturaOdds() {
 
   const porLiga = {};
   for (const l of linhas) {
-    if (!porLiga[l.liga]) porLiga[l.liga] = { league_id: l.league_id, temporadas: [], finalizadas: 0, com_odds: 0 };
+    if (!porLiga[l.liga]) porLiga[l.liga] = { league_id: l.league_id, temporadas: [], finalizadas: 0, com_odds: 0, finalizadas_garantidas: 0, com_odds_garantidas: 0 };
     porLiga[l.liga].temporadas.push(l);
     porLiga[l.liga].finalizadas += l.finalizadas || 0;
     porLiga[l.liga].com_odds += l.com_odds || 0;
+    porLiga[l.liga].finalizadas_garantidas += l.finalizadas_garantidas || 0;
+    porLiga[l.liga].com_odds_garantidas += l.com_odds_garantidas || 0;
   }
 
   return (
@@ -107,6 +109,13 @@ export default function CoberturaOdds() {
 
       {Object.entries(porLiga).map(([liga, info]) => {
         const pctTotal = info.finalizadas > 0 ? (100 * info.com_odds) / info.finalizadas : 0;
+        // "Garantida" = partidas a partir de 2026-01-01 -- a OddsPapi documenta
+        // retenção de histórico só a partir dessa data ("All historical odds
+        // data since January 2026 is available"), confirmado em produção
+        // (100% de sucesso real nessa janela vs. 73,5% antes dela). Só mostra
+        // quando há partida antiga o suficiente pra essa distinção importar.
+        const temPartidaAntiga = info.finalizadas > info.finalizadas_garantidas;
+        const pctGarantida = info.finalizadas_garantidas > 0 ? (100 * info.com_odds_garantidas) / info.finalizadas_garantidas : null;
         const aberta = ligaAberta === liga;
         const casasDaLiga = bookmakers
           .filter((b) => b.league_id === info.league_id)
@@ -131,6 +140,12 @@ export default function CoberturaOdds() {
               </div>
               <BarraPct pct={pctTotal} />
             </button>
+
+            {temPartidaAntiga && pctGarantida != null && (
+              <div className="px-4 pb-2 -mt-1 text-[11px] text-slate-500">
+                Cobertura garantida pela fonte (partidas desde jan/2026): <span className="text-slate-300 font-mono">{Math.min(pctGarantida, 100).toFixed(0)}%</span> de {info.finalizadas_garantidas} partida(s) — o resto do histórico depende de dado que a OddsPapi não garante ter.
+              </div>
+            )}
 
             {aberta && (
               <div className="border-t border-slate-700 px-4 py-3 space-y-3">
