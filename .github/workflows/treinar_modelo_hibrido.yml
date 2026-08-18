@@ -24,6 +24,10 @@ on:
         description: "Nomes de liga separados por vírgula (vazio = as 6 do benchmark)"
         required: false
         type: string
+      ligas_extra:
+        description: "Ligas SEM treino/avaliação (baixa cobertura) -- só recebem inferência com os parâmetros ajustados em 'ligas'"
+        required: false
+        type: string
       sem_gravar:
         description: "Só avaliar, sem escrever no Supabase"
         required: false
@@ -84,4 +88,5 @@ jobs:
         run: |
           python scripts/treinar_modelo_hibrido.py \
             ${{ inputs.ligas && format('--ligas "{0}"', inputs.ligas) || '' }} \
+            ${{ inputs.ligas_extra && format('--ligas-extra "{0}"', inputs.ligas_extra) || '' }} \
             ${{ inputs.sem_gravar && '--sem-gravar' || '' }}
