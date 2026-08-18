@@ -168,6 +168,7 @@ export default function CoberturaOdds() {
   }
 
   const contagensOrigemPorLiga = {};
+  const contagensOrigemPorTemporada = {};
   for (const o of porOrigem) {
     if (!contagensOrigemPorLiga[o.league_id]) {
       contagensOrigemPorLiga[o.league_id] = { com_oddspapi: 0, com_football_data_co_uk: 0, com_kaggle_felipe: 0, com_kaggle_oddspedia: 0, com_footiqo: 0, com_legado_sem_origem: 0 };
@@ -179,6 +180,17 @@ export default function CoberturaOdds() {
     acc.com_kaggle_oddspedia += o.com_kaggle_oddspedia || 0;
     acc.com_footiqo += o.com_footiqo || 0;
     acc.com_legado_sem_origem += o.com_legado_sem_origem || 0;
+    // Mesma contagem, mas por (liga, temporada) -- pra tabela expandida
+    // (por temporada) mostrar a barra quebrada por fonte também, não só
+    // o resumo da liga inteira.
+    contagensOrigemPorTemporada[`${o.league_id}|${o.season}`] = {
+      com_oddspapi: o.com_oddspapi || 0,
+      com_football_data_co_uk: o.com_football_data_co_uk || 0,
+      com_kaggle_felipe: o.com_kaggle_felipe || 0,
+      com_kaggle_oddspedia: o.com_kaggle_oddspedia || 0,
+      com_footiqo: o.com_footiqo || 0,
+      com_legado_sem_origem: o.com_legado_sem_origem || 0,
+    };
   }
 
   return (
@@ -275,7 +287,9 @@ export default function CoberturaOdds() {
                         <td className="py-1.5 text-slate-300 font-mono">{t.season}</td>
                         <td className="py-1.5 text-right text-slate-400">{t.finalizadas}</td>
                         <td className="py-1.5 text-right text-slate-400">{t.com_odds}</td>
-                        <td className="py-1.5 pl-4"><BarraPct pct={t.pct_cobertura} /></td>
+                        <td className="py-1.5 pl-4">
+                          <BarraPorFonte finalizadas={t.finalizadas} contagens={contagensOrigemPorTemporada[`${info.league_id}|${t.season}`] || {}} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
