@@ -35,11 +35,20 @@ argumento -- pedido explícito do usuário):
   - `hibrido_gols_v1`      -- perda de Poisson sobre GOLS REAIS;
   - `hibrido_gols_xg_v1`   -- perda de Poisson sobre xG observado (FotMob).
 
+Ligas "extra" (`--ligas-extra`): competições sem cobertura de dado
+suficiente pra entrar no fit dos regressores nem nas métricas (ex.: sem
+nenhum xG real, como Copa Sudamericana/Copa do Brasil/FIFA Intercontinental
+Cup, medido em ago/2026) -- o modelo ajustado em `--ligas` é aplicado
+nelas (só `.predict`, nunca `.fit`) reaproveitando os MESMOS ρ/dispersão/
+α,β da calibração, e as estimativas/mercados delas são persistidos junto,
+sem entrar em `avaliar()`/`baselines()`/`models_registry`.
+
 Uso:
     set SUPABASE_URL=...
     set SUPABASE_KEY=sua_service_role_key
     python treinar_modelo_hibrido.py
     python treinar_modelo_hibrido.py --ligas "Premier League"   # teste rápido
+    python treinar_modelo_hibrido.py --ligas "Premier League" --ligas-extra "Copa do Brasil,Copa Sudamericana"
 """
 
 from __future__ import annotations
@@ -453,6 +462,12 @@ def baselines(treino: pd.DataFrame, teste: pd.DataFrame) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Treina o modelo misto (parâmetros por ML + distribuição).")
     parser.add_argument("--ligas", default="", help="Nomes de liga separados por vírgula (padrão: as 6 do benchmark).")
+    parser.add_argument(
+        "--ligas-extra", default="",
+        help="Ligas SEM treino nem avaliação (baixa cobertura de dado, ex.: sem xG real) -- "
+             "aplica o modelo já ajustado nas ligas de --ligas e grava as estimativas/mercados "
+             "delas também, sem entrar no fit dos regressores nem nas métricas reportadas.",
+    )
     parser.add_argument("--sem-gravar", action="store_true", help="Avalia sem escrever no Supabase.")
     args = parser.parse_args()
 
@@ -467,10 +482,30 @@ def main() -> None:
             sys.exit(f"Nenhuma liga encontrada com os nomes {nomes}.")
         logger.info("Escopo restrito a %d liga(s): %s", len(league_ids), nomes)
 
+    league_ids_extra = None
+    if args.ligas_extra:
+        nomes_extra = [n.strip() for n in args.ligas_extra.split(",") if n.strip()]
+        resposta_extra = supabase.table("leagues").select("id, name").in_("name", nomes_extra).execute()
+        league_ids_extra = [linha["id"] for linha in (resposta_extra.data or [])]
+        if not league_ids_extra:
+            sys.exit(f"Nenhuma liga 'extra' encontrada com os nomes {nomes_extra}.")
+        logger.info("Ligas 'extra' (inferência sem treino/avaliação): %d liga(s): %s", len(league_ids_extra), nomes_extra)
+
     logger.info("Montando dataset (pode levar alguns minutos)...")
     dataset = dh.montar_dataset_ml_empilhado(supabase, league_ids_manual=league_ids)
     if dataset.empty:
         sys.exit("Dataset vazio -- nada pra treinar.")
+
+    # Ligas "extra": aplicam o modelo (só .predict, nunca .fit) mas nunca
+    # entram em treino/calibração/avaliação -- exatamente a mesma função
+    # `montar_dataset_ml_empilhado`, sem split nenhum, porque toda a linha
+    # dela é inferência. Vazio quando --ligas-extra não é passado.
+    dataset_extra = pd.DataFrame()
+    if league_ids_extra:
+        logger.info("Montando dataset das ligas 'extra'...")
+        dataset_extra = dh.montar_dataset_ml_empilhado(supabase, league_ids_manual=league_ids_extra)
+        if dataset_extra.empty:
+            logger.warning("Dataset das ligas 'extra' veio vazio -- seguindo só com as ligas de treino.")
 
     # FEATURES_V10 (default de VARIANTES_GOLS/MODELO_CORNERS, ver modelos_ml.py)
     # referencia nomes de coluna de xG/xGOT do esquema ANTIGO de forma
@@ -501,8 +536,18 @@ def main() -> None:
                 len(treino), len(calib), len(teste),
                 teste["match_date"].min(), teste["match_date"].max())
 
-    lam_corners = treinar_lambda_corners(treino, [calib, teste])
-    lam_corners_calib, lam_corners_teste = (lam_corners if lam_corners else (None, None))
+    # Ligas "extra" entram só como mais um item pra APLICAR o regressor já
+    # ajustado (`treinar_lambda_corners`/`treinar_lambdas_gols` fazem
+    # .fit em `treino` e .predict em cada item de `aplicar_em` -- nenhuma
+    # das duas funções precisa mudar de assinatura pra isso).
+    tem_extra = not dataset_extra.empty
+    aplicar_em_corners = [calib, teste] + ([dataset_extra] if tem_extra else [])
+    lam_corners_todos = treinar_lambda_corners(treino, aplicar_em_corners)
+    if lam_corners_todos:
+        lam_corners_calib, lam_corners_teste, *resto_corners = lam_corners_todos
+        lam_corners_extra = resto_corners[0] if resto_corners else None
+    else:
+        lam_corners_calib = lam_corners_teste = lam_corners_extra = None
 
     referencias = baselines(treino, teste)
     logger.info("Baselines (log-verossimilhança do placar, maior=melhor): climatologia=%.4f, Poisson sem covariáveis=%.4f",
@@ -512,11 +557,19 @@ def main() -> None:
     resumo = {}
     for model_name, alvos in VARIANTES_GOLS.items():
         logger.info("\n=== %s ===", model_name)
-        lambdas = treinar_lambdas_gols(model_name, alvos, treino, [calib, teste])
+        aplicar_em_gols = [calib, teste] + ([dataset_extra] if tem_extra else [])
+        lambdas = treinar_lambdas_gols(model_name, alvos, treino, aplicar_em_gols)
         if lambdas is None:
             continue
-        (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste) = lambdas
+        if tem_extra:
+            (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste), (lam_h_extra, lam_a_extra) = lambdas
+        else:
+            (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste) = lambdas
+            lam_h_extra = lam_a_extra = None
 
+        # ρ, dispersão e α/β SÓ vêm da calibração das ligas de treino --
+        # nunca recalculados pras ligas extra. É exatamente essa reutilização
+        # que faz a inferência nelas ser "sem treinar".
         parametros = ajustar_parametros_estruturais(calib, lam_h_calib, lam_a_calib, lam_corners_calib)
         metricas = avaliar(teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
         metricas.update(referencias)
@@ -529,6 +582,14 @@ def main() -> None:
         if not args.sem_gravar:
             persistir(supabase, model_name, teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
             registrar_no_models_registry(supabase, model_name, metricas)
+
+            if tem_extra and lam_h_extra is not None:
+                persistir(supabase, model_name, dataset_extra, lam_h_extra, lam_a_extra, lam_corners_extra, parametros)
+                logger.info("[%s] +%d partidas 'extra' (ligas %s) persistidas com os parâmetros ajustados nas ligas de treino.",
+                            model_name, len(dataset_extra), args.ligas_extra)
+        elif tem_extra and lam_h_extra is not None:
+            logger.info("[%s] (--sem-gravar) +%d partidas 'extra' (ligas %s) seriam persistidas.",
+                        model_name, len(dataset_extra), args.ligas_extra)
 
     print("\n" + "=" * 78)
     print("RESUMO -- log-verossimilhança média do placar observado (maior = melhor)")
