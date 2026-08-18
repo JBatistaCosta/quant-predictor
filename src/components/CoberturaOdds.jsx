@@ -44,14 +44,21 @@ function BarraPct({ pct }) {
 // Ordem = prioridade usada em vw_cobertura_odds_origem (cada partida cai
 // em UM segmento só, o de maior prioridade que ela tem -- por isso a
 // barra empilhada soma certinho, sem sobreposição).
+// Cores escolhidas pra ficarem bem distintas entre si (evita os dois
+// tons de Kaggle parecerem a mesma cor de longe, achado real testando a
+// v1 desse componente).
 const SEGMENTOS_ORIGEM = [
   { chave: 'com_oddspapi', origem: 'oddspapi', cor: 'bg-emerald-500' },
   { chave: 'com_football_data_co_uk', origem: 'football_data_co_uk', cor: 'bg-sky-500' },
-  { chave: 'com_kaggle_felipe', origem: 'kaggle_felipe', cor: 'bg-amber-500' },
-  { chave: 'com_kaggle_oddspedia', origem: 'kaggle_oddspedia', cor: 'bg-amber-600' },
-  { chave: 'com_footiqo', origem: 'footiqo', cor: 'bg-purple-500' },
+  { chave: 'com_kaggle_felipe', origem: 'kaggle_felipe', cor: 'bg-orange-500' },
+  { chave: 'com_kaggle_oddspedia', origem: 'kaggle_oddspedia', cor: 'bg-yellow-400' },
+  { chave: 'com_footiqo', origem: 'footiqo', cor: 'bg-fuchsia-500' },
   { chave: 'com_legado_sem_origem', origem: null, cor: 'bg-slate-500' },
 ];
+
+// Largura mínima em px pra um segmento não-zero nunca sumir visualmente
+// (uma fonte com 1-2% do total virava um traço de <1px, imperceptível).
+const LARGURA_MINIMA_SEGMENTO_PX = 3;
 
 function BarraPorFonte({ finalizadas, contagens }) {
   const segmentosComDado = SEGMENTOS_ORIGEM
@@ -62,13 +69,13 @@ function BarraPorFonte({ finalizadas, contagens }) {
   }
   const pctTotal = segmentosComDado.reduce((acc, s) => acc + s.jogos, 0) / finalizadas * 100;
   return (
-    <div className="flex items-center gap-2 min-w-[110px]">
-      <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden flex">
-        {segmentosComDado.map((s) => (
+    <div className="flex items-center gap-2 min-w-[130px]">
+      <div className="flex-1 h-2.5 bg-slate-700 rounded-full overflow-hidden flex">
+        {segmentosComDado.map((s, i) => (
           <div
             key={s.chave}
-            className={s.cor}
-            style={{ width: `${Math.min(100, (100 * s.jogos) / finalizadas)}%` }}
+            className={`${s.cor} ${i > 0 ? 'border-l border-slate-900/60' : ''}`}
+            style={{ width: `${Math.min(100, (100 * s.jogos) / finalizadas)}%`, minWidth: `${LARGURA_MINIMA_SEGMENTO_PX}px` }}
             title={`${rotuloOrigem(s.origem)}: ${s.jogos} partida(s)`}
           />
         ))}
