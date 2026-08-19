@@ -60,7 +60,12 @@ jobs:
           set -uo pipefail
           MAX_RODADAS_SEM_PROGRESSO=8
           MAX_RODADAS_POR_LIGA=600
-          LIGAS_PADRAO="4 7 10 13 16 1 23 46 28 19 47 27 34 57"
+          # Brasileirão Série A (1) empurrado pro fim: já tem ~100% de
+          # cobertura legada via Kaggle (felipe), então tem prioridade menor
+          # que as 8 ligas sem NENHUMA fonte de fallback (Libertadores até
+          # Intercontinental) e as 5 europeias que já tinham odds domésticas
+          # de football-data.co.uk mesmo antes da OddsPapi.
+          LIGAS_PADRAO="4 7 10 13 16 23 46 28 19 47 27 34 57 1"
           LIGAS="${{ inputs.ligas }}"
           if [ -z "$LIGAS" ]; then LIGAS="$LIGAS_PADRAO"; fi
 
