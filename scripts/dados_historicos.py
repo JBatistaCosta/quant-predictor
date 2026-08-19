@@ -3030,6 +3030,7 @@ def montar_dataset_ml_empilhado(
     nome_da_liga = {v: k for k, v in ligas.items()}
 
     partidas = carregar_partidas_finalizadas(supabase, liga_ids_resolvidos, temporadas=seasons)
+    logger.info("[DIAGNOSTICO] pos carregar_partidas_finalizadas: %d linhas (ids únicos=%d)", len(partidas), partidas["id"].nunique() if not partidas.empty else 0)
     if partidas.empty and not match_ids_extra:
         return partidas
 
@@ -3052,6 +3053,8 @@ def montar_dataset_ml_empilhado(
         )
     else:
         partidas = partidas.sort_values("match_date").reset_index(drop=True)
+
+    logger.info("[DIAGNOSTICO] pos corte de temporadas: %d linhas (ids únicos=%d)", len(partidas), partidas["id"].nunique() if not partidas.empty else 0)
 
     ids_faltantes = [mid for mid in (match_ids_extra or []) if not (partidas["id"] == mid).any()]
     if ids_faltantes:
@@ -3085,6 +3088,7 @@ def montar_dataset_ml_empilhado(
     # joins sequenciais estoura em memória (visto de verdade: 268M linhas,
     # tentando alocar 70GB, treinando o modelo misto na Premier League).
     partidas = partidas.drop_duplicates(subset="id", keep="first").reset_index(drop=True)
+    logger.info("[DIAGNOSTICO] pos dedup: %d linhas", len(partidas))
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
