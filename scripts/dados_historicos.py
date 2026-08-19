@@ -186,7 +186,20 @@ def carregar_partidas_finalizadas(
     supabase: Client, league_ids: list[int], temporadas: list[str] | None = None
 ) -> pd.DataFrame:
     """Carrega partidas com placar definido (`status='finished'`) das ligas
-    informadas, paginando de verdade."""
+    informadas, paginando de verdade.
+
+    `.order("match_date")` sozinho NÃO é único -- várias partidas podem ter
+    o mesmo horário exato (kickoff simultâneo, comum em copas com rodada
+    inteira no mesmo dia/hora). Paginação por `.range()` (OFFSET/LIMIT) só
+    é determinística quando o `ORDER BY` desempata de forma única; sem
+    isso, partidas empatadas na fronteira entre duas páginas podem cair
+    silenciosamente fora das duas (a ordem relativa entre elas não é
+    garantida estável entre as duas consultas separadas que buscam cada
+    página). Confirmado em produção: Copa Sudamericana/Copa do
+    Brasil/FIFA Intercontinental Cup perdiam 25-65% das partidas
+    finalizadas por esse mecanismo. `id` (chave primária, sempre única)
+    como segundo critério de ordenação torna a ordenação total e a
+    paginação estável."""
 
     def factory(inicio, fim):
         query = (
@@ -195,6 +208,7 @@ def carregar_partidas_finalizadas(
             .in_("league_id", league_ids)
             .eq("status", "finished")
             .order("match_date")
+            .order("id")
             .range(inicio, fim)
         )
         if temporadas:
