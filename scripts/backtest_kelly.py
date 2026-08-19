@@ -144,6 +144,10 @@ MERCADOS = {
             "faixa_7mais": dados_historicos.RESULTADO_FAIXA_7MAIS,
         },
     },
+    "btts": {
+        "coluna_alvo": "resultado_btts",
+        "codigo_por_selecao": {"no": dados_historicos.RESULTADO_BTTS_NO, "yes": dados_historicos.RESULTADO_BTTS_YES},
+    },
 }
 
 # dixon_coles_v1 é um modelo Poisson de GOLS -- prevê faixa de gols pelo
