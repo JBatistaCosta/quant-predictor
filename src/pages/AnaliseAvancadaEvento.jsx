@@ -21,13 +21,17 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import {
-  matrizPlacares, mercadosDeGols, mercadosDeEscanteios, lerParametrosPartida, rotuloLinha,
+  matrizPlacares, mercadosDeGols, mercadosDeEscanteios, distribuicaoConjuntaEscanteios, lerParametrosPartida, rotuloLinha,
 } from '../utils/distribuicoesMercados';
 
 const LINHAS_OU_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5];
 const LINHAS_HANDICAP = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5];
 const LINHAS_OU_CORNERS = [7.5, 8.5, 9.5, 10.5, 11.5];
 const N_PLACARES_EXATOS = 12;
+// Tetos só da GRADE visual (matriz de mercados usa o teto padrão, mais alto,
+// pra não perder precisão nas caudas -- ver GradeMatriz mais abaixo).
+const MAX_GOLS_GRADE = 7;
+const MAX_CORNERS_GRADE = 14;
 
 function Escudo({ url, tamanho = 20 }) {
   return url
@@ -55,6 +59,50 @@ function Secao({ titulo, icone: Icone, children }) {
       </h3>
       {children}
     </div>
+  );
+}
+
+// Grade de calor da matriz conjunta (placar ou escanteios casa×fora) --
+// mesma matriz que já alimenta os mercados acima (1X2/placar exato ou
+// corners_1X2/faixas), só que mostrada célula a célula em vez de agregada.
+function GradeMatriz({ titulo, matriz, rotuloCasa, rotuloFora }) {
+  if (!matriz?.length) return null;
+  const n = matriz.length;
+  const max = Math.max(...matriz.flat());
+  return (
+    <Secao titulo={titulo} icone={Target}>
+      <div className="overflow-x-auto">
+        <table className="text-[11px] font-mono border-separate" style={{ borderSpacing: 2 }}>
+          <thead>
+            <tr>
+              <th className="p-1 text-slate-600 text-left align-bottom">
+                <div className="leading-tight">{rotuloCasa}<br />↓ / {rotuloFora} →</div>
+              </th>
+              {Array.from({ length: n }, (_, j) => (
+                <th key={j} className="p-1 text-slate-500 font-normal">{j}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matriz.map((linha, i) => (
+              <tr key={i}>
+                <td className="p-1 text-slate-500 text-right">{i}</td>
+                {linha.map((p, j) => (
+                  <td
+                    key={j}
+                    className="p-1 text-center rounded text-slate-200"
+                    style={{ background: max > 0 ? `rgba(16,185,129,${(p / max) * 0.7})` : undefined }}
+                    title={`${rotuloCasa}=${i}, ${rotuloFora}=${j}: ${(p * 100).toFixed(2)}%`}
+                  >
+                    {(p * 100).toFixed(1)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Secao>
   );
 }
 
@@ -132,6 +180,28 @@ export default function AnaliseAvancadaEvento() {
       parametros.cornersLambdaTotal, parametros.cornersDispR,
       parametros.cornersAlpha || 1, parametros.cornersBeta || 1,
       { linhasTotais: LINHAS_OU_CORNERS }
+    );
+  }, [parametros]);
+
+  // Mesma matriz que já alimenta 1X2/placar exato acima, só que truncada
+  // pra uma grade menor (0-7) que cabe na tela célula a célula.
+  const gradePlacar = useMemo(() => {
+    if (!parametros) return null;
+    return matrizPlacares(parametros.lambdaHome, parametros.lambdaAway, parametros.rho, MAX_GOLS_GRADE);
+  }, [parametros]);
+
+  // Mesma decomposição (NB do total × Beta-Binomial do split) de
+  // `mercadosCorners` acima, só que devolvendo a matriz casa×fora inteira
+  // em vez de agregada em over/under -- truncada em 0-14 pela SOMA
+  // (casa+fora <= 14), não por lado independente, então o canto superior
+  // direito da grade fica zerado (não é bug: escanteios totais raramente
+  // passam de ~15-16 na prática).
+  const gradeCorners = useMemo(() => {
+    if (!parametros?.cornersLambdaTotal || !parametros?.cornersDispR) return null;
+    return distribuicaoConjuntaEscanteios(
+      parametros.cornersLambdaTotal, parametros.cornersDispR,
+      parametros.cornersAlpha || 1, parametros.cornersBeta || 1,
+      MAX_CORNERS_GRADE
     );
   }, [parametros]);
 
@@ -333,6 +403,13 @@ export default function AnaliseAvancadaEvento() {
                   ))}
                 </div>
               </Secao>
+
+              <GradeMatriz
+                titulo={`Matriz de placar (${jogo.home?.name || 'casa'} × ${jogo.away?.name || 'fora'}, 0-${MAX_GOLS_GRADE})`}
+                matriz={gradePlacar}
+                rotuloCasa={jogo.home?.name?.slice(0, 12) || 'Casa'}
+                rotuloFora={jogo.away?.name?.slice(0, 12) || 'Fora'}
+              />
             </>
           )}
 
@@ -377,6 +454,13 @@ export default function AnaliseAvancadaEvento() {
                   ))}
                 </Secao>
               </div>
+
+              <GradeMatriz
+                titulo={`Matriz de escanteios (${jogo.home?.name || 'casa'} × ${jogo.away?.name || 'fora'}, 0-${MAX_CORNERS_GRADE})`}
+                matriz={gradeCorners}
+                rotuloCasa={jogo.home?.name?.slice(0, 12) || 'Casa'}
+                rotuloFora={jogo.away?.name?.slice(0, 12) || 'Fora'}
+              />
             </>
           )}
         </>

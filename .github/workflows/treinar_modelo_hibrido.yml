@@ -21,11 +21,11 @@ on:
   workflow_dispatch:
     inputs:
       ligas:
-        description: "Nomes de liga separados por vírgula (vazio = as 6 do benchmark)"
+        description: "Override manual, nomes separados por vírgula (vazio = usa leagues.modelo_misto_escopo='treino')"
         required: false
         type: string
       ligas_extra:
-        description: "Ligas SEM treino/avaliação (baixa cobertura) -- só recebem inferência com os parâmetros ajustados em 'ligas'"
+        description: "Override manual -- ligas SEM treino/avaliação, só inferência (vazio = usa leagues.modelo_misto_escopo='extra')"
         required: false
         type: string
       sem_gravar:
