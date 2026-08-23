@@ -1,0 +1,87 @@
+name: API-Football - Ingestão de previsões (predictions)
+
+# Roda scripts/ingestao_predictions_api_football.py -- popula
+# api_football_predictions_cache com a previsão (endpoint /predictions) de
+# cada fixture de uma liga/temporada (ou data específica) na API-Football
+# v3, consumida pela linha "API-Football" da tela Rodada Atual
+# (src/pages/RodadaPrevisoes.jsx). Idempotente: fixtures já cacheadas são
+# puladas, então rodar de novo é seguro e barato em cota.
+#
+# Só workflow_dispatch -- API-Football tem cota diária apertada no plano
+# grátis (ex.: 100 req/dia), então disparo manual por rodada em vez de cron
+# evita gastar cota em dias sem necessidade de atualização.
+
+on:
+  workflow_dispatch:
+    inputs:
+      league:
+        description: "id da liga na API-Football (71 = Brasileirão Série A)"
+        required: false
+        type: string
+        default: "71"
+      season:
+        description: "Temporada (ex.: 2026)"
+        required: false
+        type: string
+      date:
+        description: "Data das fixtures no formato YYYY-MM-DD (alternativa a league+season)"
+        required: false
+        type: string
+      status:
+        description: "Filtro de status de fixture na API-Football (ex.: NS para 'não iniciados')"
+        required: false
+        type: string
+      limite:
+        description: "Máximo de fixtures a processar nesta execução"
+        required: false
+        type: string
+        default: "50"
+      daily_safety_buffer:
+        description: "Interrompe o loop quando o saldo diário da API-Football chegar a este valor"
+        required: false
+        type: string
+        default: "3"
+      forcar:
+        description: "Rebusca fixtures já cacheadas"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Não grava no Supabase, só mostra o que faria"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  ingestao-predictions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar ingestão de previsões (API-Football)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          ARGS="--limite ${{ inputs.limite }} --daily-safety-buffer ${{ inputs.daily_safety_buffer }}"
+          if [ -n "${{ inputs.league }}" ]; then ARGS="$ARGS --league ${{ inputs.league }}"; fi
+          if [ -n "${{ inputs.season }}" ]; then ARGS="$ARGS --season ${{ inputs.season }}"; fi
+          if [ -n "${{ inputs.date }}" ]; then ARGS="$ARGS --date ${{ inputs.date }}"; fi
+          if [ -n "${{ inputs.status }}" ]; then ARGS="$ARGS --status ${{ inputs.status }}"; fi
+          if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          python scripts/ingestao_predictions_api_football.py $ARGS
