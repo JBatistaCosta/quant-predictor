@@ -192,14 +192,13 @@ def carregar_partidas_finalizadas(
     o mesmo horário exato (kickoff simultâneo, comum em copas com rodada
     inteira no mesmo dia/hora). Paginação por `.range()` (OFFSET/LIMIT) só
     é determinística quando o `ORDER BY` desempata de forma única; sem
-    isso, partidas empatadas na fronteira entre duas páginas podem cair
-    silenciosamente fora das duas (a ordem relativa entre elas não é
-    garantida estável entre as duas consultas separadas que buscam cada
-    página). Confirmado em produção: Copa Sudamericana/Copa do
-    Brasil/FIFA Intercontinental Cup perdiam 25-65% das partidas
-    finalizadas por esse mecanismo. `id` (chave primária, sempre única)
-    como segundo critério de ordenação torna a ordenação total e a
-    paginação estável."""
+    isso, partidas empatadas na fronteira entre duas páginas podem, em
+    teoria, cair fora das duas. `id` (chave primária, sempre única) como
+    segundo critério de ordenação garante ordenação total e paginação
+    estável -- correção de correção, aplicada por precaução (não é a causa
+    da perda de partidas de Copa Sudamericana/Copa do Brasil/FIFA
+    Intercontinental Cup, que tinha outra origem: ver `exigir_forma_minima`
+    em `montar_dataset_ml_empilhado`, mais abaixo neste arquivo)."""
 
     def factory(inicio, fim):
         query = (
@@ -2955,6 +2954,7 @@ def montar_dataset_ml_empilhado(
     league_ids_manual: list[int] | None = None,
     seasons: list[str] | None = None,
     match_ids_extra: list[int] | None = None,
+    exigir_forma_minima: bool = True,
 ) -> pd.DataFrame:
     """Dataset "Feature Stacked": empilha as últimas `anos_por_liga`
     temporadas de CADA uma das 6 ligas do Model Benchmarking (5 de elite
@@ -3010,6 +3010,19 @@ def montar_dataset_ml_empilhado(
     direto no banco) -- mas não é bloqueante, os modelos de árvore lidam
     com NaN numérico nativamente, e só os modelos v2 de fato usam a coluna
     de squad rating.
+
+    `exigir_forma_minima=True` (default) descarta linhas sem forma de GOLS
+    (`media_gols_marcados_5j_home`/`_away` NaN -- time estreando DENTRO do
+    escopo de liga desta chamada, sem jogo anterior pra calcular média).
+    Correto pra TREINO (não faz sentido treinar o regressor numa linha sem
+    sinal de forma). `exigir_forma_minima=False` mantém essas linhas --
+    necessário quando `league_ids_manual` é um recorte ESTREITO onde times
+    de fora (participação esporádica numa copa/torneio continental, ex.
+    Copa Sudamericana/Copa do Brasil) aparecem como "sem histórico" só
+    porque o histórico real deles está em OUTRA competição fora do escopo
+    desta chamada, não porque falta dado de verdade -- caso do
+    `--ligas-extra` de `treinar_modelo_hibrido.py` (`.predict()` só, nunca
+    `.fit()`, então não precisa de forma "completa" pra gerar estimativa).
     """
     if league_ids_manual:
         resposta = supabase.table("leagues").select("id, name").in_("id", league_ids_manual).execute()
@@ -3030,7 +3043,6 @@ def montar_dataset_ml_empilhado(
     nome_da_liga = {v: k for k, v in ligas.items()}
 
     partidas = carregar_partidas_finalizadas(supabase, liga_ids_resolvidos, temporadas=seasons)
-    logger.info("[DIAGNOSTICO] pos carregar_partidas_finalizadas: %d linhas (ids únicos=%d)", len(partidas), partidas["id"].nunique() if not partidas.empty else 0)
     if partidas.empty and not match_ids_extra:
         return partidas
 
@@ -3053,8 +3065,6 @@ def montar_dataset_ml_empilhado(
         )
     else:
         partidas = partidas.sort_values("match_date").reset_index(drop=True)
-
-    logger.info("[DIAGNOSTICO] pos corte de temporadas: %d linhas (ids únicos=%d)", len(partidas), partidas["id"].nunique() if not partidas.empty else 0)
 
     ids_faltantes = [mid for mid in (match_ids_extra or []) if not (partidas["id"] == mid).any()]
     if ids_faltantes:
@@ -3088,7 +3098,6 @@ def montar_dataset_ml_empilhado(
     # joins sequenciais estoura em memória (visto de verdade: 268M linhas,
     # tentando alocar 70GB, treinando o modelo misto na Premier League).
     partidas = partidas.drop_duplicates(subset="id", keep="first").reset_index(drop=True)
-    logger.info("[DIAGNOSTICO] pos dedup: %d linhas", len(partidas))
 
     partidas = _anexar_xg_por_partida(supabase, partidas)
     partidas = _anexar_xgot_por_partida(supabase, partidas)
@@ -3473,8 +3482,14 @@ def montar_dataset_ml_empilhado(
     # `_anexar_xg_por_partida`) fica como está: CatBoost/XGBoost/LightGBM
     # lidam nativamente com NaN numérico. Só removemos as linhas sem forma
     # de GOLS (estreia do time NESSE dataset, sem nenhum jogo anterior pra
-    # calcular média) -- essas, sim, não têm informação nenhuma pro modelo.
-    return dataset.dropna(subset=["media_gols_marcados_5j_home", "media_gols_marcados_5j_away"]).reset_index(drop=True)
+    # calcular média) -- essas, sim, não têm informação nenhuma pro modelo
+    # DE TREINO. `exigir_forma_minima=False` pula esse corte -- necessário
+    # quando o escopo de liga é estreito demais pra refletir o histórico
+    # real do time (ver docstring), caso de `--ligas-extra` em
+    # `treinar_modelo_hibrido.py`, que só faz inferência (nunca fit).
+    if exigir_forma_minima:
+        dataset = dataset.dropna(subset=["media_gols_marcados_5j_home", "media_gols_marcados_5j_away"])
+    return dataset.reset_index(drop=True)
 
 
 # =============================================================================
