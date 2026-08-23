@@ -1,11 +1,16 @@
 // src/components/Layout.jsx
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Zap, Calendar, PlusCircle, Users, Trophy, Calculator, LogOut, Menu, X, Download, StickyNote, Trash2, Copy, ChevronLeft, ChevronRight, BarChart3, TrendingUp, UserRound } from 'lucide-react';
+import { Zap, Calendar, Calculator, LogOut, Menu, X, StickyNote, Trash2, Copy, ChevronLeft, ChevronRight, BarChart3, TrendingUp, UserRound, CalendarRange, Database, Settings, Users } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { useAuth } from '../AuthContext';
 
-// Duas "visões": CONSUMO (só olhar o que já existe) e CADASTRO (criar/editar dados).
+// Duas "visões": CONSUMO (só olhar o que já existe) e CONFIGURAÇÕES (tarefas
+// administrativas/cadastro). Cadastro (Novo Evento/Importar Jogos/Times/
+// Ligas) e os 4 itens de modelo avançado (Model Benchmarking/Simulação de
+// Carteira/Treino Customizado/Modelo v9) foram consolidados em abas dentro
+// de páginas únicas (Configurações e Modelos Avançados, respectivamente) --
+// pedido do usuário, "remodelar a barra... tal qual um menu de tarefas".
 const GRUPOS_MENU = [
   {
     grupo: 'Consumo',
@@ -13,17 +18,18 @@ const GRUPOS_MENU = [
       { to: '/eventos', label: 'Eventos', icone: Calendar },
       { to: '/analise', label: 'Análise de Evento', icone: Calculator },
       { to: '/modelos', label: 'Estatísticas dos Modelos', icone: BarChart3 },
+      { to: '/modelos-xi', label: 'Estatísticas do XI Previsto', icone: Users },
+      { to: '/modelos-avancados', label: 'Modelos Avançados', icone: Zap },
       { to: '/ratings', label: 'Rating dos Clubes', icone: TrendingUp },
       { to: '/jogadores', label: 'Jogadores', icone: UserRound },
+      { to: '/rodada-atual', label: 'Rodada Atual (Brasileirão)', icone: CalendarRange },
+      { to: '/explorar-dados', label: 'Explorar Dados', icone: Database },
     ],
   },
   {
-    grupo: 'Cadastro',
+    grupo: 'Configurações',
     itens: [
-      { to: '/eventos/novo', label: 'Novo Evento', icone: PlusCircle },
-      { to: '/importar', label: 'Importar Jogos', icone: Download },
-      { to: '/times', label: 'Times', icone: Users },
-      { to: '/ligas', label: 'Ligas', icone: Trophy },
+      { to: '/configuracoes', label: 'Configurações', icone: Settings },
     ],
   },
 ];

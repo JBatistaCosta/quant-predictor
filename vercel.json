@@ -1,4 +1,7 @@
 {
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
   "crons": [
     {
       "path": "/api/sync-matches",
@@ -11,11 +14,16 @@
     {
       "path": "/api/model-maintenance?tarefa=elo-rotativo",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/model-maintenance?tarefa=paper-carteira-rodar-todas",
+      "schedule": "0 9 * * *"
     }
   ],
   "functions": {
     "api/model-maintenance.js": { "maxDuration": 60 },
     "api/backtest-betting.js": { "maxDuration": 30 },
-    "api/sync-match-stats.js": { "maxDuration": 60 }
+    "api/sync-match-stats.js": { "maxDuration": 60 },
+    "api/model-stats.js": { "maxDuration": 30 }
   }
 }

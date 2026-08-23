@@ -1,0 +1,12 @@
+-- =============================================================================
+-- Migration: remove player_source_ids (abordagem Transfermarkt abandonada)
+-- =============================================================================
+-- Criada pra crosswalk jogador<->Transfermarkt (matching por nome+clube+idade),
+-- mas essa abordagem foi abandonada: o IP do GitHub Actions apanhava bloqueio
+-- da defesa anti-scraping do Transfermarkt em produção. Pivô pro FotMob, que
+-- já tem valor de mercado histórico embutido no próprio payload do jogador e
+-- usa `players.fotmob_player_id` (já existente, já 100% populado no escopo)
+-- -- sem necessidade de crosswalk nenhum. Tabela nunca chegou a ter linha
+-- gravada (confirmado por consulta direta antes deste drop).
+-- =============================================================================
+drop table if exists public.player_source_ids;

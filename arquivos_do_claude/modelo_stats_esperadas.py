@@ -28,8 +28,8 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.stats import poisson
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 TEMPORADAS_TREINO_POR_LIGA = {
     "BSA": ["2023", "2024"],
@@ -142,6 +142,10 @@ def carregar_dados(supabase, liga_ext_id):
     if not stats:
         return pd.DataFrame()
     dfs = pd.DataFrame(stats)
+    # match_stats pode ter linha duplicada pro mesmo (match_id, team_id) --
+    # sem isso o merge many-to-one abaixo multiplica linhas e desalinha o
+    # `.to_numpy()` direto (ValueError de tamanho).
+    dfs = dfs.drop_duplicates(subset=["match_id", "team_id"], keep="last")
 
     # largo: uma linha por jogo com val_home / val_away para cada stat
     df = dfj.copy()
@@ -207,6 +211,12 @@ def rodar_liga(supabase, liga_ext_id):
                         "selection": sel,
                         "probability": round(float(p), 5),
                     })
+
+    # Dedup por chave de conflito antes de gravar -- ver mesmo comentário em
+    # modelo_dixon_coles.py (fixture duplicada pro mesmo match_id quebra o
+    # upsert inteiro).
+    estimativas = list({(e["match_id"], e["model_name"], e["stat"]): e for e in estimativas}.values())
+    previsoes = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
 
     for i in range(0, len(estimativas), 500):
         supabase.table("model_stat_estimates").upsert(

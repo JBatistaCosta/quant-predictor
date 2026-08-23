@@ -22,3 +22,21 @@ npm-debug.log*
 arquivos_do_claude/campeonatos_disponiveis.json
 __pycache__/
 *.pyc
+
+# Arquivos temporários, scratch e downloads de dados
+scratch/
+.firebase/
+supabase/.temp/
+arquivos_do_claude/kaggle_download/
+arquivos_do_claude/kaggle_downloads/
+kraggle/
+firebaseconfig.json
+predicoes_modelos_ml.csv
+previsoes_antigas.csv
+
+# Artefato gerado pelo CatBoost ao treinar localmente (scripts/rodar_predicoes.py)
+catboost_info/
+
+# Ambiente virtual Python criado pra rodar scripts/verificar_distribuicoes.py
+# localmente (as dependências de verdade vêm de scripts/requirements.txt)
+.venv*/

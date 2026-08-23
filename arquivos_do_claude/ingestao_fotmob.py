@@ -42,6 +42,14 @@ INSTRUÇÕES DE CROSSWALK (pra expandir a outras ligas):
 Idempotente: já-sincronizados ficam registrados em match_source_ids
 (source='fotmob'), pulados em reruns a menos que --forcar seja passado.
 
+Também popula `match_context_fotmob` (estádio com lat/long, árbitro, público e
+clima observado — temperatura/vento/umidade/precipitação/cobertura de nuvens)
+a partir do MESMO matchDetails já buscado acima, sem chamada de API extra.
+Achado por inspeção direta do JSON: Stadium existe pra quase toda partida
+(até 2023), mas weather só vem preenchido pra temporada atual/mais recente de
+cada competição — partidas antigas ficam com as colunas weather_* NULL, não é
+bug.
+
 Também popula/atualiza a tabela `players` (dimensão de jogador — nome, foto,
 idade, país, valor de mercado) a partir do bloco `lineup` de cada partida
 processada. É um SNAPSHOT (upsert por fotmob_player_id), não histórico —
@@ -50,6 +58,14 @@ campo, não uma série temporal. photo_url é construído deterministicamente
 (padrão confirmado: images.fotmob.com/image_resources/playerimages/{id}.png,
 não precisa buscar). Bandeira de país não tem URL própria confirmada no CDN
 do FotMob (testado, 403) — só country_code (ISO) fica disponível.
+
+Também popula `match_lineup_fotmob` -- ao contrário de `players.raw_lineup`
+(snapshot, sobrescrito a cada partida), essa tabela guarda um HISTÓRICO por
+partida de quem começou titular vs. reserva (content.lineup.{home,away}Team.
+{starters,subs}), base pra features de "XI titular" (v3B do Model
+Benchmarking). Só aplica a partidas processadas DAQUI PRA FRENTE (ou
+reprocessadas com --forcar) -- partidas já sincronizadas antes desta mudança
+não têm linha aqui.
 """
 
 import argparse
@@ -61,8 +77,8 @@ import time
 import requests
 from supabase import create_client
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
+SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
 
 BASE = "https://www.fotmob.com/api/data"
 HEADERS = {
@@ -110,6 +126,46 @@ def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
     if not item:
         return None
     return item["stat"].get("value")
+
+
+def parse_contexto_jogo(d: dict, match_id: int, fotmob_match_id):
+    """Estádio (nome/cidade/país/lat/long) e clima observado (temperatura/vento/
+    umidade/precipitação/etc), extraídos de content.matchFacts.infoBox.Stadium e
+    content.weather — MESMO payload de matchDetails já buscado pra stats/jogadores,
+    zero chamada de API extra. Achado por inspeção direta do JSON real (mesma
+    disciplina de sempre neste script): Stadium existe pra praticamente toda
+    partida (até as de 2023), mas weather só vem preenchido pra temporada
+    atual/mais recente de cada competição — partidas antigas retornam
+    content.weather ausente (None), não é bug, é limitação real da fonte."""
+    content = d.get("content") or {}
+    info_box = ((content.get("matchFacts") or {}).get("infoBox")) or {}
+    stadium = info_box.get("Stadium") or {}
+    weather = content.get("weather") or {}
+    referee = (info_box.get("Referee") or {}).get("text")
+    attendance = info_box.get("Attendance")
+
+    return {
+        "match_id": match_id,
+        "fotmob_match_id": str(fotmob_match_id),
+        "stadium_name": stadium.get("name"),
+        "stadium_city": stadium.get("city"),
+        "stadium_country": stadium.get("country"),
+        "stadium_lat": stadium.get("lat"),
+        "stadium_long": stadium.get("long"),
+        "attendance": attendance if isinstance(attendance, int) else None,
+        "referee": referee,
+        "weather_temperature_c": weather.get("temperature"),
+        "weather_wind_speed": weather.get("windSpeed"),
+        "weather_wind_direction": weather.get("windDirectionCardinal"),
+        "weather_humidity": weather.get("relativeHumidity"),
+        "weather_precipitation": weather.get("precipitation"),
+        "weather_snow": weather.get("snow"),
+        "weather_cloud_cover": weather.get("cloudCover"),
+        "weather_description": weather.get("description"),
+        "weather_api_used": weather.get("apiUsed"),
+        "weather_last_updated": weather.get("lastUpdated"),
+        "stats_raw": {"stadium": stadium or None, "weather": weather or None, "referee": referee, "attendance": attendance},
+    }
 
 
 def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id: int):
@@ -169,6 +225,161 @@ def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id:
     return team_rows, content
 
 
+def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fotmob_to_internal: dict) -> dict:
+    """Extrai TODAS as tabelas derivadas de um payload `matchDetails` já
+    carregado (`d`) -- time (`match_stats_fotmob`), contexto (`match_
+    context_fotmob`), dimensão de jogador (`players`), escalação (`match_
+    lineup_fotmob`), desempenho por jogador (`match_player_stats_fotmob`)
+    e chute a chute (`match_shots_fotmob`). Extraído do corpo de `main()`
+    pra ser reaproveitado tanto aqui (payload buscado ao vivo da API)
+    quanto por `ingestao_fotmob_dumps_locais.py` (payload já baixado em
+    `.json.gz` num repositório separado) -- MESMA lógica de parse pros
+    dois casos, sem duplicar e arriscar divergir com o tempo.
+
+    `fotmob_to_internal` é o crosswalk id-do-FotMob -> team_id interno
+    relevante PRA ESSA PARTIDA -- o chamador decide como montar (globalmente
+    via `team_source_ids`, como faz `main()` abaixo, ou só com os 2 times
+    da própria partida via `general.homeTeam`/`general.awayTeam`, como faz
+    o script de dumps locais -- mais simples quando o match_id já é
+    conhecido de antemão)."""
+    import datetime as dt
+
+    content = d.get("content") or {}
+    home_team_id = fotmob_to_internal.get(str(d["general"]["homeTeam"]["id"]))
+    away_team_id = fotmob_to_internal.get(str(d["general"]["awayTeam"]["id"]))
+    team_rows, _ = parse_match_details(d, match_id, home_team_id, away_team_id)
+
+    contexto_row = parse_contexto_jogo(d, match_id, fotmob_match_id)
+
+    player_dim_rows = []
+    lineup_rows = []
+    lineup = content.get("lineup") or {}
+    for side in ("homeTeam", "awayTeam"):
+        team = lineup.get(side) or {}
+        team_id = fotmob_to_internal.get(str(team.get("id")))
+        for grupo, is_starter in (("starters", True), ("subs", False)):
+            for p in team.get(grupo) or []:
+                pid = str(p.get("id"))
+                if pid in ("0", "-1"):
+                    continue
+                player_dim_rows.append({
+                    "fotmob_player_id": pid,
+                    "name": p.get("name"),
+                    "first_name": p.get("firstName") or None,
+                    "last_name": p.get("lastName") or None,
+                    "shirt_number": p.get("shirtNumber"),
+                    "country_name": p.get("countryName"),
+                    "country_code": p.get("countryCode"),
+                    "age": p.get("age"),
+                    "market_value": p.get("marketValue"),
+                    "usual_position_id": p.get("usualPlayingPositionId"),
+                    "photo_url": f"https://images.fotmob.com/image_resources/playerimages/{pid}.png",
+                    "last_team_id": team_id,
+                    "last_seen_match_id": match_id,
+                    "raw_lineup": p,
+                    "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                })
+                if team_id is not None:
+                    vl = p.get("verticalLayout") or {}
+                    lineup_rows.append({
+                        "match_id": match_id,
+                        "team_id": team_id,
+                        "fotmob_player_id": pid,
+                        "is_starter": is_starter,
+                        "shirt_number": p.get("shirtNumber"),
+                        "position_id": p.get("positionId"),
+                        "field_pos_x": vl.get("x"),
+                        "field_pos_y": vl.get("y"),
+                        "is_captain": p.get("isCaptain") or False,
+                        "raw": p,
+                        "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    })
+
+    player_rows = []
+    for pid, pdata in (content.get("playerStats") or {}).items():
+        team_id = fotmob_to_internal.get(str(pdata.get("teamId")))
+        if team_id is None:
+            continue
+        fotmob_player_id = str(pdata.get("id"))
+        stats_by_group = {g["key"]: g["stats"] for g in pdata.get("stats", [])}
+        top_g = stats_by_group.get("top_stats", {})
+        attack_g = stats_by_group.get("attack", {})
+        row = {
+            "match_id": match_id,
+            "team_id": team_id,
+            "fotmob_player_id": fotmob_player_id,
+            "player_name": pdata.get("name"),
+            "is_goalkeeper": pdata.get("isGoalkeeper", False),
+            "rating": extrair_stat_jogador(top_g, "FotMob rating"),
+            "minutes_played": extrair_stat_jogador(top_g, "Minutes played"),
+            "goals": extrair_stat_jogador(top_g, "Goals"),
+            "assists": extrair_stat_jogador(top_g, "Assists"),
+            "xg": extrair_stat_jogador(top_g, "Expected goals (xG)"),
+            "xa": extrair_stat_jogador(top_g, "Expected assists (xA)"),
+            "xgot": extrair_stat_jogador(top_g, "Expected goals on target (xGOT)"),
+            "total_shots": extrair_stat_jogador(top_g, "Total shots"),
+            "chances_created": extrair_stat_jogador(top_g, "Chances created"),
+            "accurate_passes": (top_g.get("Accurate passes") or {}).get("stat", {}).get("value"),
+            "touches": (attack_g.get("Touches") or {}).get("stat", {}).get("value"),
+            "tackles": (stats_by_group.get("defense", {}).get("Tackles won") or {}).get("stat", {}).get("value"),
+            "interceptions": (stats_by_group.get("defense", {}).get("Interceptions") or {}).get("stat", {}).get("value"),
+            "ground_duels_won": (stats_by_group.get("duels", {}).get("Ground duels won") or {}).get("stat", {}).get("value"),
+            "aerials_won": (stats_by_group.get("duels", {}).get("Aerial duels won") or {}).get("stat", {}).get("value"),
+            "touches_opp_box": (attack_g.get("Touches in opposition box") or {}).get("stat", {}).get("value"),
+            "stats_raw": pdata.get("stats"),
+        }
+        
+        # Clean up formats like "3/4 (75%)" for duels/tackles
+        for k in ["tackles", "interceptions", "ground_duels_won", "aerials_won", "touches_opp_box"]:
+            v = row[k]
+            if isinstance(v, str):
+                v = v.split()[0]
+                if '/' in v:
+                    v = v.split('/')[0]
+                try:
+                    row[k] = int(v)
+                except ValueError:
+                    row[k] = None
+                    
+        player_rows.append(row)
+
+    shot_rows = []
+    for s in (content.get("shotmap") or {}).get("shots") or []:
+        team_id = fotmob_to_internal.get(str(s.get("teamId")))
+        if team_id is None:
+            continue
+        fotmob_player_id = str(s.get("playerId")) if s.get("playerId") else None
+        shot_rows.append({
+            "fotmob_shot_id": s["id"],
+            "match_id": match_id,
+            "team_id": team_id,
+            "fotmob_player_id": fotmob_player_id,
+            "player_name": s.get("playerName") or s.get("fullName"),
+            "minute": s.get("min"),
+            "minute_added": s.get("minAdded"),
+            "x": s.get("x"),
+            "y": s.get("y"),
+            "xg": s.get("expectedGoals"),
+            "xgot": s.get("expectedGoalsOnTarget"),
+            "shot_type": s.get("shotType"),
+            "situation": s.get("situation"),
+            "event_type": s.get("eventType"),
+            "is_on_target": s.get("isOnTarget"),
+            "is_blocked": s.get("isBlocked"),
+            "is_own_goal": s.get("isOwnGoal"),
+            "period": s.get("period"),
+        })
+
+    return {
+        "team_rows": team_rows,
+        "contexto_row": contexto_row,
+        "player_dim_rows": player_dim_rows,
+        "lineup_rows": lineup_rows,
+        "player_rows": player_rows,
+        "shot_rows": shot_rows,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--liga-id", type=int, required=True, help="league_id interno (ex: 1 = Brasileirão)")
@@ -202,21 +413,60 @@ def main():
     print(f"Jogos finalizados no FotMob: {len(finished)}")
 
     if not args.forcar:
-        ja_sync = supabase.table("match_source_ids").select("source_id").eq("source", "fotmob").execute()
-        ja_sync_ids = {row["source_id"] for row in ja_sync.data}
+        # Mesma paginação explícita do fetch de matches acima — essa tabela já
+        # passa de 3.000 linhas; sem .range(), o corte silencioso de 1000 faria
+        # jogos já sincronizados parecerem pendentes (re-sync inútil, idempotente
+        # mas desperdiçando horas de pacing). `.order("source_id")` é
+        # OBRIGATÓRIO junto com `.range()` -- sem ordenação explícita, o
+        # PostgREST não garante travessia estável entre páginas numa tabela
+        # deste tamanho (bug real encontrado em `ingestao_fotmob_dumps_
+        # locais.py`: sem `.order()`, algumas linhas já sincronizadas
+        # ficavam de fora da paginação silenciosamente, fazendo partidas já
+        # prontas parecerem pendentes pra sempre).
+        ja_sync_ids = set()
+        _pagina_sync = 0
+        while True:
+            _chunk_sync = (
+                supabase.table("match_source_ids")
+                .select("source_id")
+                .eq("source", "fotmob")
+                .order("source_id")
+                .range(_pagina_sync * 1000, _pagina_sync * 1000 + 999)
+                .execute()
+                .data
+            )
+            ja_sync_ids.update(row["source_id"] for row in _chunk_sync)
+            if len(_chunk_sync) < 1000:
+                break
+            _pagina_sync += 1
         finished = [fx for fx in finished if str(fx["id"]) not in ja_sync_ids]
         print(f"Ainda não sincronizados: {len(finished)}")
 
     if args.limite:
         finished = finished[: args.limite]
 
-    matches_internos = (
-        supabase.table("matches")
-        .select("id, home_team_id, away_team_id, match_date")
-        .eq("league_id", args.liga_id)
-        .execute()
-        .data
-    )
+    # Paginação explícita — .execute() sem .range() corta em 1000 linhas EM
+    # SILÊNCIO (bug clássico já documentado várias vezes no projeto): ligas
+    # com 8 temporadas têm ~3.000 partidas, e o corte fazia o índice de
+    # casamento só enxergar as 1.000 mais antigas — temporadas mais novas
+    # caíam 100% em "sem par em matches". `.order("id")` pelo mesmo motivo
+    # do bloco acima.
+    matches_internos = []
+    _pagina = 0
+    while True:
+        _chunk = (
+            supabase.table("matches")
+            .select("id, home_team_id, away_team_id, match_date")
+            .eq("league_id", args.liga_id)
+            .order("id")
+            .range(_pagina * 1000, _pagina * 1000 + 999)
+            .execute()
+            .data
+        )
+        matches_internos.extend(_chunk)
+        if len(_chunk) < 1000:
+            break
+        _pagina += 1
     idx = {}
     for m in matches_internos:
         idx.setdefault((m["home_team_id"], m["away_team_id"]), []).append(m)
@@ -263,121 +513,59 @@ def main():
             continue
 
         try:
-            team_rows, content = parse_match_details(d, match_id, home_team_id, away_team_id)
+            extraido = processar_matchdetails_completo(d, match_id, fx["id"], fotmob_to_internal)
         except Exception as e:
             print(f"  falha de parse em matchId={fx['id']}: {e}")
             n_falha += 1
             time.sleep(PACING_SEGUNDOS)
             continue
 
-        if team_rows:
-            supabase.table("match_stats_fotmob").upsert(team_rows, on_conflict="match_id,team_id").execute()
+        if extraido["team_rows"]:
+            supabase.table("match_stats_fotmob").upsert(extraido["team_rows"], on_conflict="match_id,team_id").execute()
+
+        supabase.table("match_context_fotmob").upsert(extraido["contexto_row"], on_conflict="match_id").execute()
 
         # Dimensão de jogador (players) processada ANTES das tabelas de stats
         # pra já ter o mapa fotmob_player_id -> players.id (nosso id interno)
         # disponível na hora de montar player_rows/shot_rows (FK player_id).
-        player_dim_rows = []
-        lineup = content.get("lineup") or {}
-        for side in ("homeTeam", "awayTeam"):
-            team = lineup.get(side) or {}
-            team_id = fotmob_to_internal.get(str(team.get("id")))
-            for grupo in ("starters", "subs"):
-                for p in team.get(grupo) or []:
-                    pid = str(p.get("id"))
-                    if pid in ("0", "-1"):
-                        # placeholders do FotMob pra jogador sem perfil
-                        # vinculado (visto em jovens/estreantes) — NÃO são
-                        # identificador único, várias pessoas diferentes
-                        # compartilham "0"/"-1". Upsertar aqui misturaria
-                        # pessoas distintas num só registro. Fica de fora de
-                        # `players`; as linhas de estatística continuam
-                        # normais, só sem FK (player_id fica NULL).
-                        continue
-                    player_dim_rows.append({
-                        "fotmob_player_id": pid,
-                        "name": p.get("name"),
-                        "first_name": p.get("firstName") or None,
-                        "last_name": p.get("lastName") or None,
-                        "shirt_number": p.get("shirtNumber"),
-                        "country_name": p.get("countryName"),
-                        "country_code": p.get("countryCode"),
-                        "age": p.get("age"),
-                        "market_value": p.get("marketValue"),
-                        "usual_position_id": p.get("usualPlayingPositionId"),
-                        "photo_url": f"https://images.fotmob.com/image_resources/playerimages/{pid}.png",
-                        "last_team_id": team_id,
-                        "last_seen_match_id": match_id,
-                        "raw_lineup": p,
-                        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                    })
-
+        player_dim_rows = extraido["player_dim_rows"]
+        lineup_rows = extraido["lineup_rows"]
         fotmob_to_player_id = {}
         if player_dim_rows:
+            # Mesma deduplicação (e mesmo motivo) já documentada abaixo pra
+            # player_rows: content.lineup pode repetir o mesmo fotmob_player_id
+            # (visto em partidas antigas, ex. 2019-2022) -- sem isso, o upsert
+            # falha com "ON CONFLICT DO UPDATE command cannot affect row a
+            # second time" e derruba o backfill da temporada inteira no meio.
+            player_dim_rows = list({row["fotmob_player_id"]: row for row in player_dim_rows}.values())
             resp = supabase.table("players").upsert(player_dim_rows, on_conflict="fotmob_player_id").execute()
             for row in resp.data:
                 fotmob_to_player_id[row["fotmob_player_id"]] = row["id"]
 
-        player_rows = []
-        for pid, pdata in (content.get("playerStats") or {}).items():
-            team_id = fotmob_to_internal.get(str(pdata.get("teamId")))
-            if team_id is None:
-                continue
-            fotmob_player_id = str(pdata.get("id"))
-            stats_by_group = {g["key"]: g["stats"] for g in pdata.get("stats", [])}
-            top_g = stats_by_group.get("top_stats", {})
-            attack_g = stats_by_group.get("attack", {})
-            row = {
-                "match_id": match_id,
-                "team_id": team_id,
-                "fotmob_player_id": fotmob_player_id,
-                "player_id": fotmob_to_player_id.get(fotmob_player_id),
-                "player_name": pdata.get("name"),
-                "is_goalkeeper": pdata.get("isGoalkeeper", False),
-                "rating": extrair_stat_jogador(top_g, "FotMob rating"),
-                "minutes_played": extrair_stat_jogador(top_g, "Minutes played"),
-                "goals": extrair_stat_jogador(top_g, "Goals"),
-                "assists": extrair_stat_jogador(top_g, "Assists"),
-                "xg": extrair_stat_jogador(top_g, "Expected goals (xG)"),
-                "xa": extrair_stat_jogador(top_g, "Expected assists (xA)"),
-                "xgot": extrair_stat_jogador(top_g, "Expected goals on target (xGOT)"),
-                "total_shots": extrair_stat_jogador(top_g, "Total shots"),
-                "chances_created": extrair_stat_jogador(top_g, "Chances created"),
-                "accurate_passes": (top_g.get("Accurate passes") or {}).get("stat", {}).get("value"),
-                "touches": (attack_g.get("Touches") or {}).get("stat", {}).get("value"),
-                "stats_raw": pdata.get("stats"),
-            }
-            player_rows.append(row)
-        if player_rows:
-            supabase.table("match_player_stats_fotmob").upsert(player_rows, on_conflict="match_id,fotmob_player_id").execute()
+        if lineup_rows:
+            for row in lineup_rows:
+                row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"])
+            lineup_rows = list({(r["match_id"], r["team_id"], r["fotmob_player_id"]): r for r in lineup_rows}.values())
+            supabase.table("match_lineup_fotmob").upsert(lineup_rows, on_conflict="match_id,team_id,fotmob_player_id").execute()
 
-        shot_rows = []
-        for s in (content.get("shotmap") or {}).get("shots") or []:
-            team_id = fotmob_to_internal.get(str(s.get("teamId")))
-            if team_id is None:
-                continue
-            fotmob_player_id = str(s.get("playerId")) if s.get("playerId") else None
-            shot_rows.append({
-                "fotmob_shot_id": s["id"],
-                "match_id": match_id,
-                "team_id": team_id,
-                "fotmob_player_id": fotmob_player_id,
-                "player_id": fotmob_to_player_id.get(fotmob_player_id) if fotmob_player_id else None,
-                "player_name": s.get("playerName") or s.get("fullName"),
-                "minute": s.get("min"),
-                "minute_added": s.get("minAdded"),
-                "x": s.get("x"),
-                "y": s.get("y"),
-                "xg": s.get("expectedGoals"),
-                "xgot": s.get("expectedGoalsOnTarget"),
-                "shot_type": s.get("shotType"),
-                "situation": s.get("situation"),
-                "event_type": s.get("eventType"),
-                "is_on_target": s.get("isOnTarget"),
-                "is_blocked": s.get("isBlocked"),
-                "is_own_goal": s.get("isOwnGoal"),
-                "period": s.get("period"),
-            })
+        player_rows = extraido["player_rows"]
+        if player_rows:
+            # Deduplicação por fotmob_player_id: a chave do dict content.playerStats
+            # nem sempre bate com pdata["id"] (mesmo padrão de placeholder "0"/"-1"
+            # já documentado em `players` — aqui sem filtro, pode colidir duas
+            # chaves diferentes no mesmo id re-derivado) — sem isso, o upsert
+            # falhava com "ON CONFLICT DO UPDATE command cannot affect row a
+            # second time" e derrubava o backfill da temporada inteira no meio.
+            vistos = {}
+            for row in player_rows:
+                row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"])
+                vistos[row["fotmob_player_id"]] = row
+            supabase.table("match_player_stats_fotmob").upsert(list(vistos.values()), on_conflict="match_id,fotmob_player_id").execute()
+
+        shot_rows = extraido["shot_rows"]
         if shot_rows:
+            for row in shot_rows:
+                row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"]) if row["fotmob_player_id"] else None
             supabase.table("match_shots_fotmob").upsert(shot_rows, on_conflict="fotmob_shot_id").execute()
 
         supabase.table("match_source_ids").upsert(

@@ -35,8 +35,8 @@ from scipy.stats import poisson
 # ---------------------------------------------------------------
 # Configuração
 # ---------------------------------------------------------------
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 # Brasileirão não tem 2022 disponível (limite do plano gratuito da fonte);
 # as 5 europeias ganharam 2022 depois de testarmos que ajuda a maioria
@@ -134,6 +134,16 @@ def ajustar_dixon_coles(df: pd.DataFrame):
 
 def matriz_placares(modelo, mandante, visitante):
     """Matriz (MAX_GOLS+1 x MAX_GOLS+1) com P(placar mandante x visitante)."""
+    matriz, _, _ = matriz_placares_com_lambda(modelo, mandante, visitante)
+    return matriz
+
+
+def matriz_placares_com_lambda(modelo, mandante, visitante):
+    """Mesma coisa que `matriz_placares`, só que também devolve (lam, mu) —
+    os gols esperados (xG do MODELO, não confundir com xG real de fonte
+    externa) por equipe, usados como etapa intermediária antes da matriz de
+    placares. Função própria (em vez de mudar a assinatura de
+    `matriz_placares`) pra não quebrar quem só quer a matriz."""
     lam = np.exp(
         modelo["ataque"][mandante] + modelo["defesa"][visitante] + modelo["mando"]
     )
@@ -148,7 +158,7 @@ def matriz_placares(modelo, mandante, visitante):
         for y in (0, 1):
             matriz[x, y] *= tau(x, y, lam, mu, modelo["rho"])
 
-    return matriz / matriz.sum()  # renormaliza após a correção
+    return matriz / matriz.sum(), float(lam), float(mu)  # renormaliza após a correção
 
 
 def mercados(matriz):
@@ -231,9 +241,9 @@ def rodar_liga(supabase, liga_ext_id):
         print(f"  {pulados} jogos de teste pulados (times promovidos, sem histórico no treino)")
 
     # Previsões + log loss do 1X2
-    previsoes, log_loss_soma = [], 0.0
+    previsoes, estimativas_xg, log_loss_soma = [], [], 0.0
     for _, jogo in previsiveis.iterrows():
-        m = matriz_placares(modelo, jogo["home"], jogo["away"])
+        m, lam, mu = matriz_placares_com_lambda(modelo, jogo["home"], jogo["away"])
         probs = mercados(m)
 
         resultado = "draw" if jogo["hg"] == jogo["ag"] else ("home" if jogo["hg"] > jogo["ag"] else "away")
@@ -247,6 +257,10 @@ def rodar_liga(supabase, liga_ext_id):
                 "selection": selecao,
                 "probability": round(float(p), 5),
             })
+        estimativas_xg.append({
+            "match_id": int(jogo["id"]), "model_name": MODEL_NAME,
+            "xg_home_previsto": round(lam, 3), "xg_away_previsto": round(mu, 3),
+        })
 
     n = len(previsiveis)
     log_loss = log_loss_soma / n if n else float("nan")
@@ -260,13 +274,26 @@ def rodar_liga(supabase, liga_ext_id):
     print(f"  log loss 1X2 (teste {TEMPORADA_TESTE}): modelo {log_loss:.4f} vs baseline {baseline:.4f} "
           f"{'-> modelo MELHOR' if log_loss < baseline else '-> modelo pior que baseline'}")
 
-    # Grava previsões (upsert: rodar de novo não duplica)
-    for i in range(0, len(previsoes), 500):
+    # Grava previsões (upsert: rodar de novo não duplica). Dedup por chave de
+    # conflito antes de gravar -- `matches` pode ter fixture duplicada pro
+    # mesmo match_id (visto em produção), o que faz o Postgres rejeitar o
+    # upsert inteiro ("cannot affect row a second time" -- ele não aceita
+    # duas linhas com a MESMA chave dentro do mesmo INSERT/UPSERT).
+    previsoes_dedup = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
+    for i in range(0, len(previsoes_dedup), 500):
         supabase.table("model_predictions").upsert(
-            previsoes[i : i + 500],
+            previsoes_dedup[i : i + 500],
             on_conflict="match_id,model_name,market,selection",
         ).execute()
-    print(f"  {len(previsoes)} previsões gravadas em model_predictions")
+    print(f"  {len(previsoes_dedup)} previsões gravadas em model_predictions")
+
+    estimativas_xg_dedup = list({(e["match_id"], e["model_name"]): e for e in estimativas_xg}.values())
+    for i in range(0, len(estimativas_xg_dedup), 500):
+        supabase.table("model_match_estimates").upsert(
+            estimativas_xg_dedup[i : i + 500],
+            on_conflict="match_id,model_name",
+        ).execute()
+    print(f"  {len(estimativas_xg_dedup)} estimativas de xG gravadas em model_match_estimates")
 
     return {"liga": liga_ext_id, "log_loss": log_loss, "baseline": baseline, "jogos": n}
 

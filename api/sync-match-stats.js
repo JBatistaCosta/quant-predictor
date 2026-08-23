@@ -30,6 +30,7 @@
 //   (liga_id = id em public.leagues; sem limite, processa até 40 por vez)
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
@@ -46,16 +47,45 @@ async function chamarAPI(caminho, apiKey) {
   return dados.response;
 }
 
+// Apelidos confirmados manualmente pra nomes curtos que a API-Football usa e
+// que NÃO batem por token-subset com o nome completo do nosso banco (ex:
+// "QPR" não compartilha nenhuma palavra com "Queens Park Rangers FC"; "West
+// Brom" ≠ "West Bromwich Albion FC" — "brom" não é "bromwich"). Achado
+// investigando por que o Championship tinha taxa de casamento bem mais baixa
+// que as outras competições (?diagnostico=nomes, ver CONTEXTO_PROJETO.md) —
+// todo o resto dos clubes já casa via primeira-palavra em comum, só esses
+// dois usam abreviação sem raiz comum. Mesmo espírito do ALIASES_MANUAIS em
+// ingestao_stats_fbref.py: supervisionado, nunca heurística automática.
+const ALIASES_MANUAIS = {
+  'qpr': 'queens park rangers',
+  'west brom': 'west bromwich albion',
+  'sheffield utd': 'sheffield united',
+  // Clube renomeou de "Clube Atlético Paranaense" pra "Club Athletico
+  // Paranaense" (grafia com "h") — API-Football ainda usa a grafia antiga
+  // sem "h" em algumas competições, e "Athletico-PR" em outras.
+  'atletico paranaense': 'club athletico paranaense',
+  'athletico pr': 'club athletico paranaense',
+  // Achados investigando taxa de casamento da Copa Libertadores
+  // (?diagnostico=nomes por temporada, ver CONTEXTO_PROJETO.md).
+  'atletico mg': 'ca mineiro',
+  'estudiantes l p': 'estudiantes de la plata',
+  'liverpool montevideo': 'liverpool fc', // só existe 1 "Liverpool FC" nas partidas da Libertadores no banco (id 545, Uruguai) — sem ambiguidade com o Liverpool inglês nesse contexto
+  'aguilas doradas': 'rionegro aguilas',
+  'defensor sporting': 'defensor sc',
+  'talleres cordoba': 'ca talleres',
+};
+
 // Normaliza preservando espaços (vira tokens) em vez de colapsar tudo numa
 // string única — colapsar tudo foi o que causou colisão por substring em
 // api/model-maintenance.js (ver CONTEXTO_PROJETO.md, ex: "ABC" batendo com
 // "Atalanta BC"). Mesmo padrão usado lá e em ingestao_stats_fbref.py.
 function normalizar(s) {
-  return (s || '')
+  const base = (s || '')
     .toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+  return ALIASES_MANUAIS[base] || base;
 }
 
 function nomesBatem(nomeA, nomeB) {
@@ -118,6 +148,7 @@ async function buscarEstatisticasDoTime(fixtureId, teamIdApiFootball, apiKey) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) return res.status(500).json({ error: { message: 'API_FOOTBALL_KEY não configurada.' } });
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -165,6 +196,22 @@ export default async function handler(req, res) {
     if (!ligaIdApiFootball) return res.status(404).json({ error: { message: `Liga "${ligaRow.name}" não encontrada na API-Football.` } });
 
     const fixturesApiFootball = await chamarAPI(`/fixtures?league=${ligaIdApiFootball}&season=${temporada}`, apiKey);
+
+    // Modo diagnóstico (?diagnostico=nomes): dumpa os nomes de time que a
+    // API-Football usa nessa liga/temporada, pra comparar manualmente contra
+    // os nossos e achar divergências de grafia sem gastar cota tentando casar
+    // partida por partida. Não grava nada.
+    if (req.query.diagnostico === 'nomes') {
+      const nomesApi = new Set();
+      (fixturesApiFootball || []).forEach(f => { nomesApi.add(f.teams.home.name); nomesApi.add(f.teams.away.name); });
+      const nomesNossos = new Set();
+      (jogosSemStats || []).forEach(j => { nomesNossos.add(j.home?.name); nomesNossos.add(j.away?.name); });
+      return res.status(200).json({
+        liga_api_football_id: ligaIdApiFootball,
+        nomes_api_football: [...nomesApi].sort(),
+        nomes_nosso_banco: [...nomesNossos].sort(),
+      });
+    }
 
     let processados = 0, comStats = 0;
     const semCasamento = [];

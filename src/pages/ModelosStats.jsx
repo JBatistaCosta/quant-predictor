@@ -4,8 +4,10 @@
 // calibração — agrupado por modelo + mercado + liga. Dados vêm todos de uma
 // vez de /api/model-stats (poucas dezenas de grupos, filtro é só client-side).
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle } from 'lucide-react';
+import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
+import CurvaPnlEv from '../components/CurvaPnlEv';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -49,6 +51,7 @@ function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }
 
 function Calibracao({ quintis }) {
   if (!quintis || quintis.length === 0) return <p className="text-xs text-slate-600">Sem dado suficiente.</p>;
+  const temMercado = quintis.some(q => q.mercado_medio != null);
   return (
     <div className="space-y-1">
       {quintis.map((q, i) => {
@@ -59,12 +62,19 @@ function Calibracao({ quintis }) {
             <div className="flex-1 bg-slate-800 rounded h-3 relative overflow-hidden">
               <div className="absolute inset-y-0 bg-slate-600" style={{ width: `${q.previsto_medio * 100}%` }} />
               <div className={`absolute inset-y-0 ${Math.abs(diff) > 0.08 ? 'bg-red-500/70' : 'bg-emerald-500/70'}`} style={{ width: '2px', left: `${q.real * 100}%` }} />
+              {q.mercado_medio != null && (
+                <div className="absolute inset-y-0 bg-sky-400/80" style={{ width: '2px', left: `${q.mercado_medio * 100}%` }} />
+              )}
             </div>
-            <span className="text-slate-400 w-32 shrink-0 text-right">prev {(q.previsto_medio * 100).toFixed(0)}% · real {(q.real * 100).toFixed(0)}% (n={q.n})</span>
+            <span className="text-slate-400 w-48 shrink-0 text-right">
+              prev {(q.previsto_medio * 100).toFixed(0)}% · real {(q.real * 100).toFixed(0)}%{q.mercado_medio != null ? ` · mkt ${(q.mercado_medio * 100).toFixed(0)}%` : ''} (n={q.n})
+            </span>
           </div>
         );
       })}
-      <p className="text-[10px] text-slate-600 mt-1">Barra cinza = previsto médio. Traço = frequência real (verde se perto, vermelho se longe &gt;8pp).</p>
+      <p className="text-[10px] text-slate-600 mt-1">
+        Barra cinza = previsto médio. Traço verde/vermelho = frequência real{temMercado ? '. Traço azul = probabilidade implícita do mercado' : ''}.
+      </p>
     </div>
   );
 }
@@ -106,6 +116,189 @@ function AjusteCalibracao({ g }) {
   );
 }
 
+// Seleções canônicas por mercado, na ordem de exibição
+const SELECOES_POR_MERCADO = {
+  '1X2': ['home', 'draw', 'away'],
+  'over_under_2.5': ['over', 'under'],
+  'corners_over_under_9.5': ['over', 'under'],
+  'faixa_gols': ['0-1', '2-3', '4-6', '7+'],
+  'faixa_corners': ['≤8', '9-10', '11-12', '13+'],
+};
+
+function exportarCSV(partidas, filtroModelo, filtroMercado, ligasPorId) {
+  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['home', 'draw', 'away'];
+  const headers = [
+    'ID', 'Data-hora', 'Liga', 'Mandante', 'Visitante',
+    'Gols mandante', 'Gols visitante',
+    'Esc. mandante', 'Esc. visitante',
+    ...sels.map(s => `Prob. ${SELECAO_ROTULO[s] || s} (%)`),
+    ...sels.map(s => `Odd ${SELECAO_ROTULO[s] || s}`),
+    'EV estimado (%)', 'Resultado real', 'Acertou',
+    'xG mandante (prev)', 'xG mandante (real)',
+    'xG visitante (prev)', 'xG visitante (real)',
+    'xGOT mandante (prev)', 'xGOT mandante (real)',
+    'xGOT visitante (prev)', 'xGOT visitante (real)',
+  ];
+  const csvEscape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const linhas = partidas.map(p => {
+    const dt = p.match_date ? new Date(p.match_date).toLocaleString('pt-BR') : '';
+    return [
+      p.match_id, dt, ligasPorId[p.league_id] || p.league_id,
+      p.mandante, p.visitante,
+      p.home_goals ?? '', p.away_goals ?? '',
+      p.corners_home ?? '', p.corners_away ?? '',
+      ...sels.map(s => p.todas_probs?.[s] != null ? (p.todas_probs[s] * 100).toFixed(2) : ''),
+      ...sels.map(s => p.todas_odds?.[s] != null ? p.todas_odds[s].toFixed(2) : ''),
+      p.ev_estimado != null ? (p.ev_estimado * 100).toFixed(2) : '',
+      p.resultado_real ?? '',
+      p.acertou == null ? '' : p.acertou ? 'sim' : 'não',
+      p.xg_home_previsto ?? '', p.xg_home_real ?? '',
+      p.xg_away_previsto ?? '', p.xg_away_real ?? '',
+      p.xgot_home_previsto ?? '', p.xgot_home_real ?? '',
+      p.xgot_away_previsto ?? '', p.xgot_away_real ?? '',
+    ].map(csvEscape).join(',');
+  });
+  const csv = [headers.map(csvEscape).join(','), ...linhas].join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `relatorio_${filtroModelo}_${filtroMercado.replace(/[^a-z0-9]/gi, '_')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState('');
+  const [partidas, setPartidas] = useState(null);
+
+  useEffect(() => {
+    if (!filtroModelo || !filtroMercado) { setPartidas(null); return; }
+    (async () => {
+      setCarregando(true); setErro('');
+      try {
+        const resp = await fetch(apiUrl(`/api/model-stats?modelo=${encodeURIComponent(filtroModelo)}&mercado=${encodeURIComponent(filtroMercado)}&formato=partidas`));
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar relatório.');
+        setPartidas(dados.partidas || []);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, [filtroModelo, filtroMercado]);
+
+  if (!filtroModelo || !filtroMercado) {
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4 text-center text-sm text-slate-500">
+        Escolha um modelo E um mercado específicos acima pra ver o relatório partida a partida.
+      </div>
+    );
+  }
+
+  const temXg = partidas?.some(p => p.xg_home_previsto != null || p.xg_away_previsto != null);
+  const temXgot = partidas?.some(p => p.xgot_home_previsto != null || p.xgot_away_previsto != null);
+  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['home', 'draw', 'away'];
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <div className="flex items-start justify-between mb-1 gap-2">
+        <h2 className="text-sm font-bold text-slate-200">Relatório partida a partida</h2>
+        {partidas && partidas.length > 0 && (
+          <button
+            onClick={() => exportarCSV(partidas, filtroModelo, filtroMercado, ligasPorId)}
+            className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors shrink-0"
+          >
+            <Download size={12} /> Exportar CSV
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        {filtroModelo} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção favorecida.
+        {(temXg || temXgot) && ' xG/xGOT só em modelos que calculam esses valores (Dixon-Coles, regressores dedicados).'}
+      </p>
+
+      {carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-6"><Loader2 className="animate-spin" size={16} /> Carregando...</div>
+      ) : erro ? (
+        <p className="text-xs text-red-400">{erro}</p>
+      ) : !partidas || partidas.length === 0 ? (
+        <p className="text-xs text-slate-600">Sem partidas finalizadas com previsão pra esse modelo/mercado ainda.</p>
+      ) : (
+        <div className="overflow-x-auto max-h-[40rem] overflow-y-auto">
+          <table className="text-xs whitespace-nowrap">
+            <thead className="sticky top-0 bg-slate-800 z-10">
+              <tr className="text-slate-500 uppercase text-[10px]">
+                <th className="text-left p-1.5">ID</th>
+                <th className="text-left p-1.5">Data-hora</th>
+                <th className="text-left p-1.5">Mandante</th>
+                <th className="text-left p-1.5">Visitante</th>
+                <th className="text-center p-1.5">Gols</th>
+                <th className="text-center p-1.5">Esc. M</th>
+                <th className="text-center p-1.5">Esc. V</th>
+                {sels.map(s => (
+                  <th key={`prob-${s}`} className="text-right p-1.5">P.{SELECAO_ROTULO[s] || s}</th>
+                ))}
+                {sels.map(s => (
+                  <th key={`odd-${s}`} className="text-right p-1.5">@{SELECAO_ROTULO[s] || s}</th>
+                ))}
+                <th className="text-right p-1.5">EV</th>
+                <th className="text-center p-1.5">✓</th>
+                {temXg && <th className="text-right p-1.5">xG M (p/r)</th>}
+                {temXg && <th className="text-right p-1.5">xG V (p/r)</th>}
+                {temXgot && <th className="text-right p-1.5">xGOT M (p/r)</th>}
+                {temXgot && <th className="text-right p-1.5">xGOT V (p/r)</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {partidas.map(p => {
+                const isFav = s => p.selecao_prevista === s;
+                return (
+                  <tr key={p.match_id} className={p.acertou ? 'bg-emerald-500/5' : ''}>
+                    <td className="p-1.5 text-slate-600">{p.match_id}</td>
+                    <td className="p-1.5 text-slate-500">
+                      {p.match_date ? new Date(p.match_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </td>
+                    <td className="p-1.5 text-slate-300 max-w-[12rem] truncate">{p.mandante}</td>
+                    <td className="p-1.5 text-slate-300 max-w-[12rem] truncate">{p.visitante}</td>
+                    <td className="p-1.5 text-center text-slate-300 font-mono">
+                      {p.home_goals != null && p.away_goals != null ? `${p.home_goals}×${p.away_goals}` : '—'}
+                    </td>
+                    <td className="p-1.5 text-center text-slate-400">{p.corners_home ?? '—'}</td>
+                    <td className="p-1.5 text-center text-slate-400">{p.corners_away ?? '—'}</td>
+                    {sels.map(s => (
+                      <td key={`prob-${s}`} className={`p-1.5 text-right ${isFav(s) ? 'text-sky-300 font-semibold' : 'text-slate-400'}`}>
+                        {p.todas_probs?.[s] != null ? `${(p.todas_probs[s] * 100).toFixed(1)}%` : '—'}
+                      </td>
+                    ))}
+                    {sels.map(s => (
+                      <td key={`odd-${s}`} className={`p-1.5 text-right ${isFav(s) ? 'text-slate-300' : 'text-slate-500'}`}>
+                        {p.todas_odds?.[s] != null ? p.todas_odds[s].toFixed(2) : '—'}
+                      </td>
+                    ))}
+                    <td className={`p-1.5 text-right font-bold ${p.ev_estimado == null ? 'text-slate-600' : p.ev_estimado > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {p.ev_estimado != null ? `${p.ev_estimado > 0 ? '+' : ''}${(p.ev_estimado * 100).toFixed(1)}%` : '—'}
+                    </td>
+                    <td className="p-1.5 text-center">
+                      {p.acertou == null ? <span className="text-slate-600">—</span> : p.acertou ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-red-400">✗</span>}
+                    </td>
+                    {temXg && <td className="p-1.5 text-right text-slate-500">{p.xg_home_previsto != null ? p.xg_home_previsto.toFixed(2) : '—'} / {p.xg_home_real != null ? p.xg_home_real.toFixed(2) : '—'}</td>}
+                    {temXg && <td className="p-1.5 text-right text-slate-500">{p.xg_away_previsto != null ? p.xg_away_previsto.toFixed(2) : '—'} / {p.xg_away_real != null ? p.xg_away_real.toFixed(2) : '—'}</td>}
+                    {temXgot && <td className="p-1.5 text-right text-slate-500">{p.xgot_home_previsto != null ? p.xgot_home_previsto.toFixed(2) : '—'} / {p.xgot_home_real != null ? p.xgot_home_real.toFixed(2) : '—'}</td>}
+                    {temXgot && <td className="p-1.5 text-right text-slate-500">{p.xgot_away_previsto != null ? p.xgot_away_previsto.toFixed(2) : '—'} / {p.xgot_away_real != null ? p.xgot_away_real.toFixed(2) : '—'}</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -114,6 +307,7 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   const [staking, setStaking] = useState('flat');
   const [fracaoKelly, setFracaoKelly] = useState(0.25);
   const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
+  const [grupoCurvaIdx, setGrupoCurvaIdx] = useState(0);
 
   const rodar = async () => {
     setCarregando(true);
@@ -124,10 +318,11 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
       if (filtroModelo) params.set('modelo', filtroModelo);
       if (filtroMercado) params.set('mercado', filtroMercado);
       if (filtroLiga) params.set('liga_id', filtroLiga);
-      const resp = await fetch(`/api/backtest-betting?${params}`);
+      const resp = await fetch(apiUrl(`/api/backtest-betting?${params}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao rodar backtest.');
       setResultado(dados);
+      setGrupoCurvaIdx(0);
     } catch (e) {
       setErro(e.message);
     } finally {
@@ -243,9 +438,202 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
               </table>
             </div>
             <p className="text-[10px] text-slate-600 mt-2">Linhas destacadas em verde = IC 95% do ROI inteiramente acima de zero (EV+ estatisticamente sustentado nesse histórico, não só edge médio positivo).</p>
+
+            <div className="mt-5 pt-4 border-t border-slate-700/50">
+              <h3 className="text-sm font-bold text-slate-200 mb-2">Curva de Retorno (PnL) x Valor Esperado (EV)</h3>
+              <p className="text-[11px] text-slate-500 mb-3">
+                Acumulado cronológico, aposta a aposta — cada grupo (modelo/mercado/seleção/liga) tem sua própria curva, então dá pra ver especializações por campeonato escolhendo abaixo.
+              </p>
+              <select
+                value={grupoCurvaIdx}
+                onChange={(e) => setGrupoCurvaIdx(Number(e.target.value))}
+                className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-100 mb-3 max-w-full"
+              >
+                {resultado.grupos.map((g, i) => (
+                  <option key={i} value={i}>
+                    {g.model_name} — {MERCADO_ROTULO[g.market] || g.market} — {SELECAO_ROTULO[g.selection] || g.selection} — {ligasPorId[g.league_id] || `#${g.league_id}`} ({g.n_apostas} apostas)
+                  </option>
+                ))}
+              </select>
+              <CurvaPnlEv serieTemporal={resultado.grupos[grupoCurvaIdx]?.serie_temporal} />
+            </div>
           </>
         )
       )}
+    </div>
+  );
+}
+
+// Configuração editável do modelo de rating de jogador (player_elo_v1):
+// cada parâmetro tem um peso E uma chave de ativar/desativar — pedido do
+// usuário pra poder testar combinações e comparar qual configuração rende
+// o melhor modelo. Leitura/gravação via api/model-maintenance
+// (?tarefa=config-get / config-set) porque a tabela model_config só aceita
+// escrita via service role (a UI não escreve direto no banco).
+// IMPORTANTE: mudança de config só vale pra partidas processadas DEPOIS
+// dela — reprocessar o histórico inteiro com os pesos novos exige o reset.
+const PARAMETROS_PLAYER_ELO = [
+  { chaveAtivo: 'ativo_gols', chavePeso: 'peso_gols', rotulo: 'Gols', descricao: '+peso por gol (até 3)' },
+  { chaveAtivo: 'ativo_assistencias', chavePeso: 'peso_assistencias', rotulo: 'Assistências', descricao: '+peso por assistência (até 3)' },
+  { chaveAtivo: 'ativo_finalizacao', chavePeso: 'peso_finalizacao', rotulo: 'Finalização (gols − xG)', descricao: '±peso pela diferença entre gols e xG' },
+  { chaveAtivo: 'ativo_criacao', chavePeso: 'peso_criacao', rotulo: 'Criação (xA + chances)', descricao: '+peso por xA e chances criadas' },
+];
+
+function ConfigPlayerElo() {
+  const [config, setConfig] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [processando, setProcessando] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [erro, setErro] = useState('');
+  const [aberto, setAberto] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=config-get&model_name=player_elo_v1'));
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao carregar config.');
+        setConfig(dados.config);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  const setCampo = (chave, valor) => setConfig(prev => ({ ...prev, [chave]: valor }));
+
+  const salvar = async () => {
+    setSalvando(true); setMsg(''); setErro('');
+    try {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=config-set&model_name=player_elo_v1'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao salvar.');
+      setConfig(dados.config);
+      setMsg('Configuração salva. Ela vale pra partidas processadas daqui pra frente — pra reprocessar o histórico inteiro com os pesos novos, use "Resetar e reprocessar".');
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const resetarEReprocessar = async () => {
+    if (!window.confirm('Isso apaga TODOS os ratings de jogador e o histórico, e reprocessa do zero com a configuração atual (pode levar dezenas de lotes, alguns minutos). Continuar?')) return;
+    setProcessando(true); setMsg(''); setErro('');
+    try {
+      const respReset = await fetch(apiUrl('/api/model-maintenance?tarefa=player-elo-reset'));
+      if (!respReset.ok) throw new Error('Falha no reset.');
+      let restantes = null;
+      let rodada = 0;
+      // SEM cap arbitrário de rodadas — um limite fixo (usado antes, 40)
+      // já causou reset incompleto em produção quando o volume de partidas
+      // cresceu (backfill europeu) além do que o cap suportava, e ainda
+      // por cima reportava "concluído" mesmo parando pela metade. O loop
+      // real termina quando a API diz que não há mais nada pendente;
+      // 500 rodadas (~100k partidas) é só uma rede de segurança contra
+      // loop infinito em caso de erro real na API, nunca deveria ser
+      // atingido em uso normal.
+      for (rodada = 1; rodada <= 500; rodada++) {
+        const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=player-elo&limite=200'));
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao processar lote.');
+        restantes = dados.partidas_restantes;
+        setMsg(`Reprocessando... rodada ${rodada}, ${restantes ?? '?'} partidas restantes.`);
+        if (!restantes) break;
+      }
+      if (restantes) {
+        setErro(`Parou depois de ${rodada} rodadas com ${restantes} partidas ainda restantes (limite de segurança atingido) — clique em "Resetar e reprocessar" de novo pra continuar, ou reporte se isso persistir.`);
+      } else {
+        setMsg(`Reprocessamento concluído com a configuração atual (${rodada} rodadas).`);
+      }
+    } catch (e) {
+      setErro(`${e.message} — o reprocesso pode ser retomado sem perder progresso chamando ?tarefa=player-elo de novo.`);
+    } finally {
+      setProcessando(false);
+    }
+  };
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <button onClick={() => setAberto(a => !a)} className="w-full flex items-center justify-between text-left">
+        <h2 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+          <Settings2 className="text-emerald-400" size={16} /> Configuração — Rating de jogador (player_elo_v1)
+        </h2>
+        <span className="text-xs text-slate-500">{aberto ? 'fechar' : 'abrir'}</span>
+      </button>
+
+      {aberto && (carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-sm py-4"><Loader2 className="animate-spin" size={14} /> Carregando...</div>
+      ) : config && (
+        <div className="mt-4 space-y-4">
+          <p className="text-[11px] text-slate-500">
+            Âncora: nota da partida do FotMob (holística). Cada parâmetro abaixo pode ser desligado ou ter o peso ajustado — a config vale pra partidas processadas dali em diante; reprocessar o histórico inteiro exige o reset. Pesos default são um chute inicial não calibrado (mesmo status do decaimento XI do Dixon-Coles).
+          </p>
+
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={!!config.usar_nota_fotmob} onChange={e => setCampo('usar_nota_fotmob', e.target.checked)} />
+            Usar nota do FotMob como âncora (desligado = só os bônus abaixo movem o rating)
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {PARAMETROS_PLAYER_ELO.map(p => (
+              <div key={p.chavePeso} className={`bg-slate-900 rounded-lg p-3 ${config[p.chaveAtivo] ? '' : 'opacity-50'}`}>
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                  <input type="checkbox" checked={!!config[p.chaveAtivo]} onChange={e => setCampo(p.chaveAtivo, e.target.checked)} />
+                  {p.rotulo}
+                </label>
+                <p className="text-[10px] text-slate-500 mt-0.5 mb-1.5">{p.descricao}</p>
+                <input
+                  type="number" step="0.05" min="0" max="2"
+                  value={config[p.chavePeso] ?? ''}
+                  disabled={!config[p.chaveAtivo]}
+                  onChange={e => setCampo(p.chavePeso, parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 disabled:opacity-50"
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">K (velocidade)</label>
+              <input type="number" step="1" min="1" max="100" value={config.k ?? ''} onChange={e => setCampo('k', parseFloat(e.target.value) || 20)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">Nota neutra</label>
+              <input type="number" step="0.1" min="5" max="8" value={config.nota_neutra ?? ''} onChange={e => setCampo('nota_neutra', parseFloat(e.target.value) || 6.8)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">Minutos mínimos</label>
+              <input type="number" step="5" min="0" max="90" value={config.minutos_minimos ?? ''} onChange={e => setCampo('minutos_minimos', parseInt(e.target.value, 10) || 0)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+            </div>
+          </div>
+
+          {msg && <p className="text-xs text-emerald-400">{msg}</p>}
+          {erro && <p className="text-xs text-red-400 flex items-center gap-1"><AlertTriangle size={12} /> {erro}</p>}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={salvar} disabled={salvando || processando}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-3 py-2 rounded-lg text-xs">
+              {salvando ? <Loader2 className="animate-spin" size={13} /> : <Save size={13} />} Salvar configuração
+            </button>
+            <button onClick={resetarEReprocessar} disabled={salvando || processando}
+              className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-200 font-bold px-3 py-2 rounded-lg text-xs">
+              {processando ? <Loader2 className="animate-spin" size={13} /> : <RotateCcw size={13} />} Resetar e reprocessar histórico
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -290,7 +678,7 @@ export default function ModelosStats() {
       setErro('');
       try {
         const [respStats, ligasResp] = await Promise.all([
-          fetch('/api/model-stats'),
+          fetch(apiUrl('/api/model-stats')),
           supabaseAtivo ? supabase.from('leagues').select('id, name') : Promise.resolve({ data: [] }),
         ]);
         const dataStats = await respStats.json();
@@ -354,6 +742,8 @@ export default function ModelosStats() {
 
       {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>}
 
+      <ConfigPlayerElo />
+
       {!carregando && grupos.length > 0 && (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap gap-3">
           <select value={filtroModelo} onChange={(e) => setFiltroModelo(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
@@ -369,6 +759,10 @@ export default function ModelosStats() {
             {ligas.map(l => <option key={l} value={l}>{ligasPorId[l] || `Liga #${l}`}</option>)}
           </select>
         </div>
+      )}
+
+      {!carregando && grupos.length > 0 && (
+        <RelatorioPartidas filtroModelo={filtroModelo} filtroMercado={filtroMercado} ligasPorId={ligasPorId} />
       )}
 
       {!carregando && grupos.length > 0 && (

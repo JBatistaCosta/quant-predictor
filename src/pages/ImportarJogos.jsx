@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { Download, Loader2, AlertTriangle, Check, Info, RefreshCw } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import SeletorEquipe from '../components/SeletorEquipe';
+import { apiUrl } from '../utils/apiUrl';
 
 export default function ImportarJogos() {
   const [modo, setModo] = useState('time'); // 'time' | 'liga'
@@ -37,7 +38,7 @@ export default function ImportarJogos() {
         ? `/api/fixtures?time=${encodeURIComponent(equipe.nome_popular)}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`
         : `/api/fixtures?liga=${encodeURIComponent(nomeLiga)}&temporada=${temporada}&dias_passado=${diasPassado}&dias_futuro=${diasFuturo}`;
 
-      const resp = await fetch(url);
+      const resp = await fetch(apiUrl(url));
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error?.message || 'Erro desconhecido.');
       setFonteInfo({ fonte: data.fonte_usada, aviso: data.aviso });

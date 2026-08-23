@@ -4,12 +4,28 @@
 // nova ao FotMob. NÃO inclui heatmap/traits de percentil (isso vive num
 // endpoint por-JOGADOR separado do FotMob, ainda não importado — decisão
 // consciente de escopo, ver CONTEXTO_PROJETO.md).
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar, Zap, TrendingUp, Trophy, Briefcase, RefreshCw, Ruler, Footprints, FileClock } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 
 const OPCOES_N = [10, 20, 40];
+
+function calcularIdade(dateStr) {
+  if (!dateStr) return null;
+  const hoje = new Date();
+  const nasc = new Date(dateStr);
+  let idade = hoje.getFullYear() - nasc.getFullYear();
+  if (hoje.getMonth() < nasc.getMonth() || (hoje.getMonth() === nasc.getMonth() && hoje.getDate() < nasc.getDate())) idade--;
+  return idade;
+}
+
+function formatarDataNasc(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split('-');
+  return `${d}/${m}/${y}`;
+}
 
 function formatarValorMercado(v) {
   if (v == null) return '—';
@@ -65,13 +81,121 @@ function GraficoForma({ partidas }) {
   );
 }
 
+// --- Linha do tempo de valor de mercado ---
+// Série única (sem legenda — o título já nomeia), linha fina de 2px com
+// ponta arredondada, marcadores nos extremos e no ponto sob o cursor,
+// crosshair+tooltip no hover (spec de interação da skill de dataviz).
+// Eixo X por DATA real (não por índice), pra respeitar o espaçamento
+// real entre os pontos (a fonte não é uniforme: ~2 pontos/ano).
+function GraficoValorMercado({ pontos }) {
+  const svgRef = useRef(null);
+  const [hover, setHover] = useState(null); // { x, y, ponto }
+  const W = 640, H = 160, PAD_L = 44, PAD_R = 12, PAD_T = 14, PAD_B = 22;
+
+  const ordenados = useMemo(
+    () => [...pontos].filter(p => p.value_eur != null).sort((a, b) => new Date(a.value_date) - new Date(b.value_date)),
+    [pontos]
+  );
+
+  if (ordenados.length < 2) {
+    return <p className="text-xs text-slate-600">Histórico insuficiente pra desenhar a linha do tempo.</p>;
+  }
+
+  const datas = ordenados.map(p => new Date(p.value_date).getTime());
+  const valores = ordenados.map(p => Number(p.value_eur));
+  const minData = Math.min(...datas), maxData = Math.max(...datas);
+  const minValor = 0, maxValor = Math.max(...valores) * 1.08;
+
+  const escalaX = t => PAD_L + ((t - minData) / (maxData - minData || 1)) * (W - PAD_L - PAD_R);
+  const escalaY = v => H - PAD_B - ((v - minValor) / (maxValor - minValor || 1)) * (H - PAD_T - PAD_B);
+
+  const pathD = ordenados.map((p, i) => `${i === 0 ? 'M' : 'L'} ${escalaX(new Date(p.value_date).getTime()).toFixed(1)} ${escalaY(Number(p.value_eur)).toFixed(1)}`).join(' ');
+
+  const linhasGrade = 3;
+  const gradeValores = Array.from({ length: linhasGrade + 1 }, (_, i) => (maxValor / linhasGrade) * i);
+
+  const moverMouse = (e) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const xRelativo = ((e.clientX - rect.left) / rect.width) * W;
+    // Ponto mais próximo por posição X (não por índice — respeita o espaçamento real)
+    let melhor = ordenados[0], menorDist = Infinity;
+    for (const p of ordenados) {
+      const dist = Math.abs(escalaX(new Date(p.value_date).getTime()) - xRelativo);
+      if (dist < menorDist) { menorDist = dist; melhor = p; }
+    }
+    setHover({ x: escalaX(new Date(melhor.value_date).getTime()), y: escalaY(Number(melhor.value_eur)), ponto: melhor });
+  };
+
+  const primeiro = ordenados[0], ultimo = ordenados[ordenados.length - 1];
+
+  return (
+    <div>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-auto cursor-crosshair"
+        onMouseMove={moverMouse}
+        onMouseLeave={() => setHover(null)}
+      >
+        {gradeValores.map((v, i) => (
+          <g key={i}>
+            <line x1={PAD_L} x2={W - PAD_R} y1={escalaY(v)} y2={escalaY(v)} stroke="#334155" strokeWidth="1" opacity="0.5" />
+            <text x={PAD_L - 6} y={escalaY(v) + 3} textAnchor="end" fontSize="9" fill="#64748b">{formatarValorMercado(v)}</text>
+          </g>
+        ))}
+
+        <path d={pathD} fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Marcadores nos extremos (rótulo direto seletivo, não em todo ponto) */}
+        <circle cx={escalaX(new Date(primeiro.value_date).getTime())} cy={escalaY(Number(primeiro.value_eur))} r="3" fill="#34d399" />
+        <circle cx={escalaX(new Date(ultimo.value_date).getTime())} cy={escalaY(Number(ultimo.value_eur))} r="3" fill="#34d399" />
+
+        {hover && (
+          <g>
+            <line x1={hover.x} x2={hover.x} y1={PAD_T} y2={H - PAD_B} stroke="#64748b" strokeWidth="1" strokeDasharray="3,3" />
+            <circle cx={hover.x} cy={hover.y} r="4" fill="#34d399" stroke="#0f172a" strokeWidth="1.5" />
+          </g>
+        )}
+      </svg>
+      {hover ? (
+        <div className="text-center text-xs mt-1">
+          <span className="text-slate-500">{new Date(hover.ponto.value_date).toLocaleDateString('pt-BR')}</span>
+          {' · '}
+          <span className="font-bold text-emerald-400">{formatarValorMercado(Number(hover.ponto.value_eur))}</span>
+          {hover.ponto.team_name && <span className="text-slate-600"> · {hover.ponto.team_name}</span>}
+        </div>
+      ) : (
+        <div className="flex items-center justify-between text-[10px] text-slate-600 mt-1">
+          <span>{new Date(primeiro.value_date).toLocaleDateString('pt-BR')} · {formatarValorMercado(Number(primeiro.value_eur))}</span>
+          <span>{new Date(ultimo.value_date).toLocaleDateString('pt-BR')} · {formatarValorMercado(Number(ultimo.value_eur))}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function JogadorDetalhe() {
   const { id } = useParams();
   const [jogador, setJogador] = useState(null);
+  const [ratingElo, setRatingElo] = useState(null);
   const [partidas, setPartidas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [n, setN] = useState(20);
+
+  // Perfil avançado (FotMob playerData: valor de mercado histórico, carreira,
+  // títulos, altura/pé/contrato/traits) — sincronizado SOB DEMANDA (botão),
+  // não carregado automaticamente: é 1 chamada externa por jogador, cara
+  // demais pra disparar sozinha toda vez que a página abre.
+  const [valorMercadoHist, setValorMercadoHist] = useState([]);
+  const [carreiraHist, setCarreiraHist] = useState([]);
+  const [titulos, setTitulos] = useState([]);
+  const [detalhesAvancados, setDetalhesAvancados] = useState(null);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [erroSinc, setErroSinc] = useState('');
+  const [msgSinc, setMsgSinc] = useState('');
 
   useEffect(() => {
     if (!supabaseAtivo) { setCarregando(false); return; }
@@ -81,12 +205,33 @@ export default function JogadorDetalhe() {
 
       const { data: j, error: erroJogador } = await supabase
         .from('players')
-        .select('id, name, photo_url, age, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))')
+        .select('id, name, photo_url, age, birth_date, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))')
         .eq('id', id)
         .single();
 
       if (erroJogador || !j) { setErro('Jogador não encontrado.'); setCarregando(false); return; }
       setJogador(j);
+
+      // Rating Elo-like próprio (player_ratings, ver api/model-maintenance.js
+      // ?tarefa=player-elo) — ainda não calibrado de verdade (chute inicial
+      // razoável, mesmo status do XI do Dixon-Coles), null até a tarefa rodar
+      // pra esse jogador (partidas recentes o suficiente pra entrar no lote).
+      const { data: elo } = await supabase.from('player_ratings').select('rating, n_partidas').eq('player_id', id).maybeSingle();
+      setRatingElo(elo || null);
+
+      // Perfil avançado — busca o que já estiver salvo (de uma sincronização
+      // anterior); se nunca foi sincronizado, as listas ficam vazias e o
+      // botão "Sincronizar" aparece.
+      const [{ data: mv }, { data: carreira }, { data: trof }, { data: det }] = await Promise.all([
+        supabase.from('player_market_value_history').select('value_date, value_eur, team_name').eq('player_id', id).order('value_date'),
+        supabase.from('player_career_history_fotmob').select('team_name, start_date, end_date, active, transfer_type, appearances, goals, assists').eq('player_id', id).order('start_date', { ascending: false }),
+        supabase.from('player_trophies_fotmob').select('team_name, league_name, season, result').eq('player_id', id),
+        supabase.from('player_details_fotmob').select('*').eq('player_id', id).maybeSingle(),
+      ]);
+      setValorMercadoHist(mv || []);
+      setCarreiraHist(carreira || []);
+      setTitulos(trof || []);
+      setDetalhesAvancados(det || null);
 
       const { data: hist, error: erroHist } = await supabase
         .from('match_player_stats_fotmob')
@@ -151,6 +296,32 @@ export default function JogadorDetalhe() {
     };
   }, [partidas]);
 
+  const sincronizarPerfilAvancado = async () => {
+    setSincronizando(true); setErroSinc(''); setMsgSinc('');
+    try {
+      const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=jogador-perfil&player_id=${id}`));
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao sincronizar.');
+      const [{ data: mv }, { data: carreira }, { data: trof }, { data: det }, { data: jogadorAtualizado }] = await Promise.all([
+        supabase.from('player_market_value_history').select('value_date, value_eur, team_name').eq('player_id', id).order('value_date'),
+        supabase.from('player_career_history_fotmob').select('team_name, start_date, end_date, active, transfer_type, appearances, goals, assists').eq('player_id', id).order('start_date', { ascending: false }),
+        supabase.from('player_trophies_fotmob').select('team_name, league_name, season, result').eq('player_id', id),
+        supabase.from('player_details_fotmob').select('*').eq('player_id', id).maybeSingle(),
+        supabase.from('players').select('id, name, photo_url, age, birth_date, country_name, country_code, market_value, last_team:teams!players_last_team_id_fkey(id,name,crest_url,equipes!equipes_pipeline_team_id_fkey(id))').eq('id', id).single(),
+      ]);
+      setValorMercadoHist(mv || []);
+      setCarreiraHist(carreira || []);
+      setTitulos(trof || []);
+      setDetalhesAvancados(det || null);
+      if (jogadorAtualizado) setJogador(jogadorAtualizado);
+      setMsgSinc(`Sincronizado: ${dados.pontos_valor_mercado} pontos de valor, ${dados.clubes_carreira} clubes na carreira, ${dados.titulos} títulos${dados.birth_date ? ` · nascimento ${formatarDataNasc(dados.birth_date)}` : ''}.`);
+    } catch (e) {
+      setErroSinc(e.message);
+    } finally {
+      setSincronizando(false);
+    }
+  };
+
   if (!supabaseAtivo) {
     return (
       <div className="max-w-4xl mx-auto bg-slate-800 border border-red-500/30 rounded-2xl p-6 text-center">
@@ -205,13 +376,123 @@ export default function JogadorDetalhe() {
               )
             )}
             {jogador.country_name && <span>{jogador.country_name}</span>}
-            {jogador.age != null && <span>{jogador.age} anos</span>}
+            {(jogador.birth_date || jogador.age != null) && (
+              <span>
+                {jogador.birth_date
+                  ? `${formatarDataNasc(jogador.birth_date)} · ${calcularIdade(jogador.birth_date)} anos`
+                  : `${jogador.age} anos`}
+              </span>
+            )}
           </div>
         </div>
         <div className="bg-slate-900 rounded-xl px-4 py-2 text-center shrink-0">
           <div className="text-[10px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Landmark size={11} /> Valor de mercado</div>
           <div className="text-sm font-bold text-emerald-400">{formatarValorMercado(jogador.market_value)}</div>
         </div>
+        {ratingElo && (
+          <div className="bg-slate-900 rounded-xl px-4 py-2 text-center shrink-0" title="Rating Elo-like próprio, pesos ainda não calibrados (ver /modelos)">
+            <div className="text-[10px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Zap size={11} /> Rating</div>
+            <div className="text-sm font-bold text-amber-400">{Math.round(ratingElo.rating)}</div>
+            <div className="text-[9px] text-slate-600">{ratingElo.n_partidas} jogos</div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+            <TrendingUp className="text-emerald-400" size={16} /> Perfil avançado
+          </h2>
+          <button
+            onClick={sincronizarPerfilAvancado}
+            disabled={sincronizando}
+            className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            title="Busca valor de mercado histórico, carreira, títulos e atributos direto do FotMob (1 chamada externa, ~1-2s)"
+          >
+            {sincronizando ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {sincronizando ? 'Sincronizando...' : 'Sincronizar'}
+          </button>
+        </div>
+
+        {erroSinc && <p className="text-xs text-red-400 mb-2 flex items-center gap-1"><AlertTriangle size={12} /> {erroSinc}</p>}
+        {msgSinc && <p className="text-xs text-emerald-400 mb-2">{msgSinc}</p>}
+
+        {!detalhesAvancados && valorMercadoHist.length === 0 ? (
+          <p className="text-xs text-slate-600">Ainda não sincronizado — clique em "Sincronizar" pra buscar valor de mercado histórico, carreira, títulos e atributos direto do FotMob.</p>
+        ) : (
+          <div className="space-y-4">
+            {detalhesAvancados && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="bg-slate-900 rounded-lg p-2.5 text-center">
+                  <div className="text-[9px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Ruler size={10} /> Altura</div>
+                  <div className="text-xs font-bold text-slate-200">{detalhesAvancados.height_cm ? `${detalhesAvancados.height_cm}cm` : '—'}</div>
+                </div>
+                <div className="bg-slate-900 rounded-lg p-2.5 text-center">
+                  <div className="text-[9px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Footprints size={10} /> Pé</div>
+                  <div className="text-xs font-bold text-slate-200 capitalize">{detalhesAvancados.preferred_foot || '—'}</div>
+                </div>
+                <div className="bg-slate-900 rounded-lg p-2.5 text-center">
+                  <div className="text-[9px] text-slate-500 uppercase">Posição</div>
+                  <div className="text-xs font-bold text-slate-200">{detalhesAvancados.primary_position || '—'}</div>
+                </div>
+                <div className="bg-slate-900 rounded-lg p-2.5 text-center">
+                  <div className="text-[9px] text-slate-500 uppercase flex items-center gap-1 justify-center"><FileClock size={10} /> Contrato até</div>
+                  <div className="text-xs font-bold text-slate-200">{detalhesAvancados.contract_end || '—'}</div>
+                </div>
+              </div>
+            )}
+
+            {valorMercadoHist.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5">Valor de mercado (histórico — estimativa de terceiro via FotMob, não é preço real de transferência)</span>
+                <GraficoValorMercado pontos={valorMercadoHist} />
+              </div>
+            )}
+
+            {titulos.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5 flex items-center gap-1"><Trophy size={11} /> Títulos ({titulos.length})</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {titulos.map((t, i) => (
+                    <span key={i} className={`text-[10px] px-2 py-1 rounded-full ${t.result === 'won' ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-700/50 text-slate-500'}`}>
+                      {t.league_name} {t.season} · {t.team_name}{t.result !== 'won' ? ' (vice)' : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {carreiraHist.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1.5 flex items-center gap-1"><Briefcase size={11} /> Carreira</span>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="text-slate-500 text-[9px] uppercase">
+                        <th className="py-1 pr-2">Clube</th>
+                        <th className="py-1 pr-2">Período</th>
+                        <th className="py-1 pr-2 text-right">Jogos</th>
+                        <th className="py-1 pr-2 text-right">Gols</th>
+                        <th className="py-1 text-right">Assist.</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700/50">
+                      {carreiraHist.map((c, i) => (
+                        <tr key={i}>
+                          <td className="py-1.5 pr-2 text-slate-300">{c.team_name}{c.active && <span className="text-emerald-400 ml-1">●</span>}</td>
+                          <td className="py-1.5 pr-2 text-slate-500">{c.start_date} → {c.end_date || 'atual'}</td>
+                          <td className="py-1.5 pr-2 text-right text-slate-400 font-mono">{c.appearances ?? '—'}</td>
+                          <td className="py-1.5 pr-2 text-right text-slate-400 font-mono">{c.goals ?? '—'}</td>
+                          <td className="py-1.5 text-right text-slate-400 font-mono">{c.assists ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">

@@ -24,6 +24,7 @@
 //   /api/model-stats?modelo=dixon_coles_v1&mercado=1X2&liga_id=4
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -85,7 +86,10 @@ function devigar(oddsPorSelecao) {
 }
 
 function chaveMercado(m) {
-  return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
+  // v9 gravou '1x2' (minúscula) — normaliza antes do switch
+  if (m === '1X2' || m === '1x2') return '1X2';
+  if (m === 'over_under_2.5') return 'over_under_2_5';
+  return 'corners_over_under_9_5';
 }
 
 // O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
@@ -109,20 +113,239 @@ async function buscarTudoPaginado(criarQuery) {
   return resultado;
 }
 
+// Normaliza as saídas do pipeline "Model Benchmarking" (`predicoes`/
+// `market_odds`, ver scripts/rodar_predicoes.py) pro MESMO formato usado
+// pelo pipeline mais antigo (`model_predictions`/`odds_market`, uma linha
+// por seleção) -- assim o resto deste arquivo (agrupamento, log-loss,
+// Brier, acurácia, calibração em quintis) funciona idêntico pros dois
+// pipelines sem duplicar lógica de cálculo, só a normalização de formato.
+// `predicoes` só cobre 1X2 (não tem Over/Under 2.5 salvo por partida, só
+// o agregado do backtest em model_benchmarking_backtest) -- variantes
+// calibradas (`_calibrado_platt`/`_calibrado_isotonic`) já entram como
+// `model_name` PRÓPRIO (a probabilidade na linha já É a calibrada), por
+// isso não passam pelo mesmo cruzamento com `model_calibration` que os
+// modelos do pipeline antigo passam mais abaixo.
+function normalizarPredicoesBenchmarking(rows) {
+  const linhas = [];
+  for (const r of rows) {
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
+    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+  }
+  return linhas;
+}
+
+// `market_odds` é uma linha por (match_id, bookmaker) -- consensus de
+// mercado equivalente ao `bookmaker='media_mercado'` do pipeline antigo é
+// a MÉDIA das odds de todas as casas capturadas por partida (mesmo
+// espírito, dado diferente: lá é uma linha só pré-calculada, aqui calcula
+// na hora a partir de várias linhas por bookmaker).
+function normalizarOddsBenchmarking(rows) {
+  const somaPorMatch = {};
+  for (const r of rows) {
+    const acc = somaPorMatch[r.match_id] || { home: 0, draw: 0, draw_n: 0, away: 0, n: 0 };
+    acc.home += Number(r.odd_home);
+    acc.away += Number(r.odd_away);
+    acc.n += 1;
+    if (r.odd_draw != null) { acc.draw += Number(r.odd_draw); acc.draw_n += 1; }
+    somaPorMatch[r.match_id] = acc;
+  }
+  const linhas = [];
+  for (const [matchId, acc] of Object.entries(somaPorMatch)) {
+    if (acc.n === 0) continue;
+    linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'home', odds: acc.home / acc.n });
+    linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'away', odds: acc.away / acc.n });
+    if (acc.draw_n > 0) linhas.push({ match_id: Number(matchId), market: '1X2', selection: 'draw', odds: acc.draw / acc.draw_n });
+  }
+  return linhas;
+}
+
+// --- XI titular previsto (scripts/rodar_xi_previsto.py) ---------------------
+// Acurácia do pipeline de XI contra a escalação REAL (match_lineup_fotmob),
+// por liga/temporada/versão de modelo. Fonte de dado totalmente separada do
+// resto deste arquivo (não é resultado de partida nem odds) -- dividido por
+// query param em vez de arquivo próprio porque api/*.js já está no teto de
+// 12 serverless functions do plano Hobby (ver skill workflow-quant-predictor).
+//
+// Mesma definição de precisao_media_top11/taxa_xi_exato já usada em
+// scripts/treinar_modelo_xi._metricas_top11 (acertos/11 por (match,time);
+// "exato" = o SET de 11 previstos bate com o SET de 11 reais) -- só que aqui
+// contra a escalação real de PARTIDAS JÁ JOGADAS em produção, não um split
+// de teste no treino. brier/log_loss usam prob_titular (contínua) contra
+// is_starter (0/1) de CADA jogador do elenco avaliado, não só o top-11 --
+// mede o quão bem calibrada é a probabilidade, não só o ranking.
+
+// `xi_previsto` cresce todo dia (previsão nova sobrescreve/soma a cada
+// rodada de scripts/rodar_xi_previsto.py) -- `buscarTudoPaginado` genérico
+// pagina por OFFSET sem ORDER BY, que já deu `statement timeout` em
+// produção aqui (achado idêntico ao das tabelas grandes em
+// rodar_xi_previsto.py: custo do OFFSET cresce com a profundidade da
+// página). Keyset por `id` (chave primária, monotônica) resolve com custo
+// constante por página, igual ao fix aplicado lá.
+async function buscarXiPrevistoCompleto(supabase) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let cursor = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('xi_previsto')
+      .select('id, match_id, team_id, player_id, prob_titular, is_titular_previsto, model_version')
+      .gt('id', cursor)
+      .order('id')
+      .limit(TAMANHO_PAGINA);
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    cursor = data[data.length - 1].id;
+  }
+  return resultado;
+}
+
+async function calcularStatsXi(supabase) {
+  const previsoes = await buscarXiPrevistoCompleto(supabase);
+  if (previsoes.length === 0) return [];
+
+  const matchIds = [...new Set(previsoes.map((p) => p.match_id))];
+  const lotes = [];
+  for (let i = 0; i < matchIds.length; i += 1000) lotes.push(matchIds.slice(i, i + 1000));
+
+  const [matchesRows, lineupRows] = await Promise.all([
+    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status').in('id', l)))).then((r) => r.flat()),
+    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('match_lineup_fotmob').select('match_id, team_id, player_id, is_starter').in('match_id', l)))).then((r) => r.flat()),
+  ]);
+
+  const matchPorId = {};
+  matchesRows.forEach((m) => { matchPorId[m.id] = m; });
+  const realPorChave = {};
+  lineupRows.forEach((l) => { realPorChave[`${l.match_id}__${l.team_id}__${l.player_id}`] = !!l.is_starter; });
+
+  // Agrupa por (match_id, team_id) -- só partidas já finalizadas e com
+  // escalação real capturada pra pelo menos os jogadores previstos.
+  const porGrupoTime = {};
+  for (const p of previsoes) {
+    const match = matchPorId[p.match_id];
+    if (!match || match.status !== 'finished' || match.league_id == null) continue;
+    const chaveReal = `${p.match_id}__${p.team_id}__${p.player_id}`;
+    if (!(chaveReal in realPorChave)) continue;
+    const chaveGrupo = `${p.match_id}__${p.team_id}`;
+    if (!porGrupoTime[chaveGrupo]) {
+      porGrupoTime[chaveGrupo] = { matchId: p.match_id, model_version: p.model_version, league_id: match.league_id, season: match.season, linhas: [] };
+    }
+    porGrupoTime[chaveGrupo].linhas.push({
+      player_id: p.player_id,
+      prob: Number(p.prob_titular),
+      previsto: !!p.is_titular_previsto,
+      real: realPorChave[chaveReal],
+    });
+  }
+
+  const agregados = {};
+  Object.values(porGrupoTime).forEach((g) => {
+    // Elenco avaliado incompleto (menos de 11 candidatos com escalação real
+    // conhecida) não dá pra julgar um top-11 de verdade -- mesma guarda de
+    // _metricas_top11 no treino.
+    if (g.linhas.length < 11 || !g.linhas.some((l) => l.real)) return;
+
+    const chave = `${g.model_version}__${g.league_id}__${g.season}`;
+    if (!agregados[chave]) {
+      agregados[chave] = { model_version: g.model_version, league_id: g.league_id, season: g.season, precisoes: [], exatos: [], linhas: [], matchIds: new Set() };
+    }
+    const reais = new Set(g.linhas.filter((l) => l.real).map((l) => l.player_id));
+    const previstos = new Set(g.linhas.filter((l) => l.previsto).map((l) => l.player_id));
+    const acertos = [...reais].filter((id) => previstos.has(id)).length;
+    agregados[chave].precisoes.push(acertos / 11);
+    agregados[chave].exatos.push(reais.size === previstos.size && [...reais].every((id) => previstos.has(id)) ? 1 : 0);
+    agregados[chave].linhas.push(...g.linhas);
+    agregados[chave].matchIds.add(g.matchId);
+  });
+
+  return Object.values(agregados).map((a) => {
+    const { linhas } = a;
+    const n = linhas.length;
+    const brier = linhas.reduce((s, l) => s + brierTermo(l.prob, l.real ? 1 : 0), 0) / n;
+    const logLoss = linhas.reduce((s, l) => s + logLossTermo(l.prob, l.real ? 1 : 0), 0) / n;
+
+    const ordenado = [...linhas].sort((x, y) => x.prob - y.prob);
+    const calibracao = [];
+    const tamanho = Math.floor(ordenado.length / 5);
+    if (tamanho > 0) {
+      for (let i = 0; i < 5; i++) {
+        const fatia = ordenado.slice(i * tamanho, i === 4 ? ordenado.length : (i + 1) * tamanho);
+        if (fatia.length === 0) continue;
+        calibracao.push({
+          previsto_medio: fatia.reduce((s, l) => s + l.prob, 0) / fatia.length,
+          real: fatia.reduce((s, l) => s + (l.real ? 1 : 0), 0) / fatia.length,
+          n: fatia.length,
+        });
+      }
+    }
+
+    return {
+      model_version: a.model_version,
+      league_id: a.league_id,
+      season: a.season,
+      // partidas DISTINTAS avaliadas -- a.precisoes.length conta pares
+      // (partida, time), que dobraria a contagem (achado testando em
+      // produção: Brasileirão 2018 aparecia com o dobro de "partidas" do
+      // que a temporada real tem -- parte é essa contagem errada, parte é
+      // duplicata real de linha em `matches`, ver nota registrada no repo).
+      n_partidas: a.matchIds.size,
+      n_previsoes: n,
+      precisao_media_top11: a.precisoes.reduce((s, v) => s + v, 0) / a.precisoes.length,
+      taxa_xi_exato: a.exatos.reduce((s, v) => s + v, 0) / a.exatos.length,
+      brier,
+      log_loss: logLoss,
+      calibracao,
+    };
+  }).sort((x, y) =>
+    x.model_version.localeCompare(y.model_version) ||
+    x.league_id - y.league_id ||
+    String(x.season).localeCompare(String(y.season))
+  );
+}
+
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
   const supabase = getSupabase();
 
+  if (req.query.formato === 'xi') {
+    try {
+      const grupos_xi = await calcularStatsXi(supabase);
+      return res.status(200).json({ grupos_xi });
+    } catch (erro) {
+      return res.status(500).json({ error: { message: erro.message } });
+    }
+  }
+
   const { modelo, mercado, liga_id } = req.query;
 
   try {
-    const predicoes = await buscarTudoPaginado(() => {
-      let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
-      if (modelo) q = q.eq('model_name', modelo);
-      if (mercado) q = q.eq('market', mercado);
-      return q;
-    });
+    const [predicoesAntigas, predicoesBenchmarkingRaw] = await Promise.all([
+      buscarTudoPaginado(() => {
+        let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+        if (modelo) q = q.eq('model_name', modelo);
+        // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
+        if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
+        return q;
+      }),
+      // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
+      // já filtra tudo fora, sem precisar de query condicional separada.
+      mercado && mercado !== '1X2'
+        ? Promise.resolve([])
+        : buscarTudoPaginado(() => {
+            let q = supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('mercado', '1X2');
+            if (modelo) q = q.eq('model_name', modelo);
+            return q;
+          }),
+    ]);
+    // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
+    // pra garantir consistência em chaveMercado, chaveOdds e chaveGrupo.
+    const predicoes = [
+      ...predicoesAntigas.map(p => ({ ...p, market: p.market === '1x2' ? '1X2' : p.market })),
+      ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw),
+    ];
     if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [] });
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
@@ -130,12 +353,14 @@ export default async function handler(req, res) {
     // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
     // round-trips do que quebrar em lotes de match_id.
-    const [todasMatches, oddsRowsBrutas, corneragensBrutas, calibracoes] = await Promise.all([
-      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals')),
+    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
+      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
-      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
+      buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
+      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, corners').not('corners', 'is', null)),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
+    const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
 
     // calibração salva por model_name+market+selection -> { platt: {a,b}, isotonic: {x,y} }
     const calibPorChave = {};
@@ -153,12 +378,23 @@ export default async function handler(req, res) {
     const oddsRows = oddsRowsBrutas.filter(r => matchIdsValidos.has(r.match_id));
 
     const corners = {};
+    const cornersDetalhado = {}; // { [match_id]: { home, away } } — usado no relatório partida a partida
     {
       const somaPorJogo = {};
       const contPorJogo = {};
+      const homePorMatch = {};
+      matchesValidos.forEach(m => { homePorMatch[m.id] = m.home_team_id; });
       corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
         somaPorJogo[r.match_id] = (somaPorJogo[r.match_id] || 0) + Number(r.corners);
         contPorJogo[r.match_id] = (contPorJogo[r.match_id] || 0) + 1;
+        if (homePorMatch[r.match_id] != null) {
+          if (!cornersDetalhado[r.match_id]) cornersDetalhado[r.match_id] = {};
+          if (Number(r.team_id) === Number(homePorMatch[r.match_id])) {
+            cornersDetalhado[r.match_id].home = Number(r.corners);
+          } else {
+            cornersDetalhado[r.match_id].away = Number(r.corners);
+          }
+        }
       });
       Object.keys(somaPorJogo).forEach(id => { if (contPorJogo[id] === 2) corners[id] = somaPorJogo[id]; });
     }
@@ -176,6 +412,101 @@ export default async function handler(req, res) {
     Object.entries(oddsPorMatchMercado).forEach(([chave, oddsSel]) => {
       probMercado[chave] = devigar(oddsSel);
     });
+
+    // Relatório partida a partida: exige modelo+mercado (senão a lista fica
+    // grande e sem sentido de leitura) -- reaproveita TODO o pipeline acima
+    // (predições, resultado real, odds, corners), só não agrega em métricas.
+    // EV usa a odd REAL (não devigada -- devig é só pra comparar probabilidade,
+    // EV precisa do payout de verdade) contra a probabilidade do próprio
+    // modelo, sempre na seleção que o modelo mais favorece naquela partida
+    // (mesmo "argmax" já usado no cálculo de acurácia agregada acima).
+    // xG previsto/real só entra quando existe em model_match_estimates
+    // (só modelos baseados em gols esperados -- Dixon-Coles/Poisson --
+    // gravam isso; ver CONTEXTO_PROJETO.md sobre por que classificação pura
+    // não ganha um "xG implícito" back-derivado).
+    if (req.query.formato === 'partidas') {
+      if (!modelo || !mercado) {
+        return res.status(400).json({ error: { message: 'formato=partidas exige modelo e mercado.' } });
+      }
+      const previsoesDoModelo = predicoes.filter(p => matchIdsValidos.has(p.match_id));
+      const porMatch = {};
+      previsoesDoModelo.forEach(p => {
+        if (!porMatch[p.match_id]) porMatch[p.match_id] = [];
+        porMatch[p.match_id].push(p);
+      });
+
+      const matchIdsRelatorio = Object.keys(porMatch).map(Number);
+      const [timesRows, estimativasRows, xgRows, xgotRows] = await Promise.all([
+        buscarTudoPaginado(() => supabase.from('teams').select('id, name')),
+        buscarTudoPaginado(() => supabase.from('model_match_estimates').select('match_id, model_name, xg_home_previsto, xg_away_previsto, xgot_home_previsto, xgot_away_previsto').eq('model_name', modelo).in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+        buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, xg').in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+        // xGOT só existe em match_stats_fotmob (não em match_stats) -- ver
+        // dados_historicos._anexar_xgot_por_partida sobre essa fonte.
+        buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, team_id, xgot').in('match_id', matchIdsRelatorio.length ? matchIdsRelatorio : [0])),
+      ]);
+      const nomePorTime = {};
+      timesRows.forEach(t => { nomePorTime[t.id] = t.name; });
+      const estimativaPorMatch = {};
+      estimativasRows.forEach(e => { estimativaPorMatch[e.match_id] = e; });
+      const xgRealPorMatchTime = {};
+      xgRows.forEach(r => {
+        if (!xgRealPorMatchTime[r.match_id]) xgRealPorMatchTime[r.match_id] = {};
+        xgRealPorMatchTime[r.match_id][r.team_id] = r.xg != null ? Number(r.xg) : null;
+      });
+      const xgotRealPorMatchTime = {};
+      xgotRows.forEach(r => {
+        if (!xgotRealPorMatchTime[r.match_id]) xgotRealPorMatchTime[r.match_id] = {};
+        xgotRealPorMatchTime[r.match_id][r.team_id] = r.xgot != null ? Number(r.xgot) : null;
+      });
+
+      const partidas = matchIdsRelatorio.map(matchId => {
+        const match = matchesValidos.find(m => m.id === matchId);
+        const selecoes = porMatch[matchId];
+        const mercadoChave = chaveMercado(mercado);
+        const resultado = resultadosReais[matchId];
+        const chaveOdds = `${matchId}__${mercado}`;
+        const oddsSel = oddsPorMatchMercado[chaveOdds] || {};
+
+        const previstaMaior = selecoes.reduce((a, b) => (Number(b.probability) > Number(a.probability) ? b : a));
+        const oddsUsada = oddsSel[previstaMaior.selection] ?? null;
+        const evEstimado = oddsUsada != null ? Number(previstaMaior.probability) * oddsUsada - 1 : null;
+        const resultadoReal = resultado ? resultado[mercadoChave] : null;
+        const estimativa = estimativaPorMatch[matchId];
+        const xgReal = xgRealPorMatchTime[matchId] || {};
+        const xgotReal = xgotRealPorMatchTime[matchId] || {};
+
+        return {
+          match_id: matchId,
+          match_date: match?.match_date ?? null,
+          mandante: nomePorTime[match?.home_team_id] || `Time #${match?.home_team_id}`,
+          visitante: nomePorTime[match?.away_team_id] || `Time #${match?.away_team_id}`,
+          league_id: match?.league_id ?? null,
+          home_goals: match?.home_goals ?? null,
+          away_goals: match?.away_goals ?? null,
+          corners_home: cornersDetalhado[matchId]?.home ?? null,
+          corners_away: cornersDetalhado[matchId]?.away ?? null,
+          todas_probs: Object.fromEntries(selecoes.map(s => [s.selection, Number(s.probability)])),
+          todas_odds: Object.keys(oddsSel).length > 0 ? { ...oddsSel } : null,
+          selecao_prevista: previstaMaior.selection,
+          probabilidade_modelo: Number(previstaMaior.probability),
+          odds_usada: oddsUsada,
+          ev_estimado: evEstimado,
+          resultado_real: resultadoReal,
+          acertou: resultadoReal != null ? resultadoReal === previstaMaior.selection : null,
+          xg_home_previsto: estimativa?.xg_home_previsto != null ? Number(estimativa.xg_home_previsto) : null,
+          xg_away_previsto: estimativa?.xg_away_previsto != null ? Number(estimativa.xg_away_previsto) : null,
+          xg_home_real: match ? (xgReal[match.home_team_id] ?? null) : null,
+          xg_away_real: match ? (xgReal[match.away_team_id] ?? null) : null,
+          xgot_home_previsto: estimativa?.xgot_home_previsto != null ? Number(estimativa.xgot_home_previsto) : null,
+          xgot_away_previsto: estimativa?.xgot_away_previsto != null ? Number(estimativa.xgot_away_previsto) : null,
+          xgot_home_real: match ? (xgotReal[match.home_team_id] ?? null) : null,
+          xgot_away_real: match ? (xgotReal[match.away_team_id] ?? null) : null,
+        };
+      }).filter(p => p.resultado_real != null) // só partidas já finalizadas, mesmo filtro do resto do endpoint
+        .sort((a, b) => (a.match_date || '').localeCompare(b.match_date || ''));
+
+      return res.status(200).json({ partidas });
+    }
 
     // Agrupa previsões por model_name+market+league_id
     const grupos = {};
@@ -295,10 +626,12 @@ export default async function handler(req, res) {
           for (let i = 0; i < 5; i++) {
             const fatia = ordenado.slice(i * tamanho, i === 4 ? ordenado.length : (i + 1) * tamanho);
             if (fatia.length === 0) continue;
+            const fatiaComMkt = fatia.filter(l => l.p_mercado != null);
             quintis.push({
               previsto_medio: fatia.reduce((s, l) => s + l.p_modelo, 0) / fatia.length,
               real: fatia.reduce((s, l) => s + l.y, 0) / fatia.length,
               n: fatia.length,
+              mercado_medio: fatiaComMkt.length > 0 ? fatiaComMkt.reduce((s, l) => s + l.p_mercado, 0) / fatiaComMkt.length : null,
             });
           }
         }

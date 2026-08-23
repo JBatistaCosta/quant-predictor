@@ -1,0 +1,2301 @@
+temporada,temporada_dropdown,semana,time_casa,time_fora,gols_casa,gols_fora,odd_casa,odd_empate,odd_fora,vencedor,odd_vencedora
+15/16,15/16,1,Spartak Moscovo,Ufa,2,2,1.4,4.2,8.5,Empate,4.2
+15/16,15/16,1,CSKA Moscovo,Rubin Kazan,1,0,1.55,4.0,5.75,CSKA Moscovo,1.55
+15/16,15/16,1,Rostov,Akhmat Grozny,1,1,2.38,3.2,3.1,Empate,3.2
+15/16,15/16,1,Zenit,Dinamo Moscovo,2,1,1.62,3.8,5.5,Zenit,1.62
+15/16,15/16,1,FC Mordovia Saransk,Lokomotiv Moscovo,0,1,3.75,3.3,2.0,Lokomotiv Moscovo,2.0
+15/16,15/16,1,Anzhi Makhachkala,Krylia Sovetov,0,1,1.85,3.2,4.75,Krylia Sovetov,4.75
+15/16,15/16,2,Amkar Perm,Krasnodar,0,1,4.0,3.4,1.91,Krasnodar,1.91
+15/16,15/16,2,Kuban Krasnodar,Ural,0,2,1.7,3.6,5.0,Ural,5.0
+15/16,15/16,2,Krylia Sovetov,CSKA Moscovo,0,2,7.0,3.75,1.53,CSKA Moscovo,1.53
+15/16,15/16,2,Ufa,Rostov,1,2,3.0,3.0,2.5,Rostov,2.5
+15/16,15/16,2,Dinamo Moscovo,FC Mordovia Saransk,2,2,1.33,5.0,9.0,Empate,5.0
+15/16,15/16,2,Akhmat Grozny,Kuban Krasnodar,1,1,1.95,3.2,4.2,Empate,3.2
+15/16,15/16,2,Ural,Zenit,1,4,5.5,4.0,1.57,Zenit,1.57
+15/16,15/16,2,Rubin Kazan,Amkar Perm,0,2,1.67,3.5,5.5,Amkar Perm,5.5
+15/16,15/16,2,Krasnodar,Spartak Moscovo,0,1,1.91,3.6,3.75,Spartak Moscovo,3.75
+15/16,15/16,3,Anzhi Makhachkala,Lokomotiv Moscovo,1,3,2.88,3.0,2.6,Lokomotiv Moscovo,2.6
+15/16,15/16,3,Kuban Krasnodar,Ufa,1,1,1.91,3.1,4.5,Empate,3.1
+15/16,15/16,3,Amkar Perm,Krylia Sovetov,1,0,2.05,3.1,4.0,Amkar Perm,2.05
+15/16,15/16,3,Zenit,Akhmat Grozny,3,0,1.33,4.75,9.0,Zenit,1.33
+15/16,15/16,3,CSKA Moscovo,Anzhi Makhachkala,1,0,1.36,4.33,9.5,CSKA Moscovo,1.36
+15/16,15/16,3,Lokomotiv Moscovo,Dinamo Moscovo,1,1,2.25,3.25,3.2,Empate,3.25
+15/16,15/16,3,FC Mordovia Saransk,Ural,1,1,2.75,3.1,2.63,Empate,3.1
+15/16,15/16,3,Rostov,Krasnodar,0,0,3.3,3.2,2.25,Empate,3.2
+15/16,15/16,4,Spartak Moscovo,Rubin Kazan,1,0,1.73,3.5,5.0,Spartak Moscovo,1.73
+15/16,15/16,4,Akhmat Grozny,FC Mordovia Saransk,0,0,1.55,3.75,6.5,Empate,3.75
+15/16,15/16,4,Ural,Lokomotiv Moscovo,1,3,3.2,3.0,2.45,Lokomotiv Moscovo,2.45
+15/16,15/16,4,Anzhi Makhachkala,Dinamo Moscovo,2,3,3.1,3.4,2.25,Dinamo Moscovo,2.25
+15/16,15/16,4,CSKA Moscovo,Amkar Perm,2,0,1.3,4.5,12.0,CSKA Moscovo,1.3
+15/16,15/16,4,Ufa,Zenit,0,1,8.0,4.5,1.4,Zenit,1.4
+15/16,15/16,4,Krylia Sovetov,Spartak Moscovo,0,2,4.5,3.3,1.85,Spartak Moscovo,1.85
+15/16,15/16,5,Rubin Kazan,Rostov,0,3,2.05,3.3,3.6,Rostov,3.6
+15/16,15/16,5,Krasnodar,Kuban Krasnodar,1,1,1.91,3.3,4.2,Empate,3.3
+15/16,15/16,5,Amkar Perm,Anzhi Makhachkala,1,1,2.25,3.2,3.25,Empate,3.2
+15/16,15/16,5,Spartak Moscovo,CSKA Moscovo,1,2,3.25,3.3,2.2,CSKA Moscovo,2.2
+15/16,15/16,5,Zenit,Krasnodar,0,2,1.57,3.8,6.0,Krasnodar,6.0
+15/16,15/16,5,Kuban Krasnodar,Rubin Kazan,0,1,2.05,3.4,3.6,Rubin Kazan,3.6
+15/16,15/16,5,Lokomotiv Moscovo,Akhmat Grozny,0,0,1.67,3.75,5.0,Empate,3.75
+15/16,15/16,5,Dinamo Moscovo,Ural,1,0,1.8,3.5,4.5,Dinamo Moscovo,1.8
+15/16,15/16,5,Rostov,Krylia Sovetov,1,1,1.73,3.5,5.0,Empate,3.5
+15/16,15/16,6,FC Mordovia Saransk,Ufa,0,1,3.2,3.0,2.38,Ufa,2.38
+15/16,15/16,6,Akhmat Grozny,Dinamo Moscovo,1,1,2.5,3.3,2.75,Empate,3.3
+15/16,15/16,6,Amkar Perm,Spartak Moscovo,1,3,3.5,3.4,2.05,Spartak Moscovo,2.05
+15/16,15/16,6,CSKA Moscovo,Rostov,2,1,1.44,4.33,7.0,CSKA Moscovo,1.44
+15/16,15/16,6,Anzhi Makhachkala,Ural,1,1,2.05,3.5,3.4,Empate,3.5
+15/16,15/16,6,Ufa,Lokomotiv Moscovo,0,3,3.3,3.5,2.1,Lokomotiv Moscovo,2.1
+15/16,15/16,6,Krasnodar,FC Mordovia Saransk,0,0,1.4,4.33,8.5,Empate,4.33
+15/16,15/16,7,Krylia Sovetov,Kuban Krasnodar,3,0,2.75,3.3,2.5,Krylia Sovetov,2.75
+15/16,15/16,7,Rubin Kazan,Zenit,1,3,4.75,3.3,1.83,Zenit,1.83
+15/16,15/16,9,Ufa,Ural,0,1,2.63,3.1,2.75,Ural,2.75
+15/16,15/16,9,Krylia Sovetov,FC Mordovia Saransk,1,0,2.0,3.3,3.8,Krylia Sovetov,2.0
+15/16,15/16,9,Rostov,Anzhi Makhachkala,1,0,1.83,3.5,4.33,Rostov,1.83
+15/16,15/16,9,Akhmat Grozny,Ufa,4,1,1.62,3.6,6.0,Akhmat Grozny,1.62
+15/16,15/16,9,Kuban Krasnodar,Spartak Moscovo,3,0,3.5,3.4,2.05,Kuban Krasnodar,3.5
+15/16,15/16,9,FC Mordovia Saransk,CSKA Moscovo,4,6,9.5,4.0,1.4,CSKA Moscovo,1.4
+15/16,15/16,9,Zenit,Amkar Perm,1,1,1.2,6.0,15.0,,
+15/16,15/16,9,Lokomotiv Moscovo,Krylia Sovetov,2,0,1.55,4.0,6.0,Lokomotiv Moscovo,1.55
+15/16,15/16,10,Ural,Krasnodar,3,1,3.6,3.25,2.1,,
+15/16,15/16,10,Dinamo Moscovo,Rubin Kazan,0,0,1.91,3.5,4.0,Empate,3.5
+15/16,15/16,10,CSKA Moscovo,Lokomotiv Moscovo,1,1,1.8,3.4,4.75,Empate,3.4
+15/16,15/16,10,Anzhi Makhachkala,Ufa,1,1,1.85,3.3,4.5,Empate,3.3
+15/16,15/16,10,Spartak Moscovo,Zenit,2,2,3.2,3.3,2.25,Empate,3.3
+15/16,15/16,10,Krylia Sovetov,Dinamo Moscovo,0,0,3.0,3.2,2.38,Empate,3.2
+15/16,15/16,10,Krasnodar,Akhmat Grozny,1,1,1.83,3.25,4.75,Empate,3.25
+15/16,15/16,10,Rubin Kazan,Ural,1,2,1.91,3.3,4.2,Ural,4.2
+15/16,15/16,11,Amkar Perm,FC Mordovia Saransk,2,1,2.15,3.2,3.5,Amkar Perm,2.15
+15/16,15/16,11,Rostov,Kuban Krasnodar,2,1,2.2,3.2,3.4,Rostov,2.2
+15/16,15/16,11,Ural,Krylia Sovetov,1,1,2.1,3.0,4.0,Empate,3.0
+15/16,15/16,11,FC Mordovia Saransk,Spartak Moscovo,0,1,4.33,3.4,1.85,Spartak Moscovo,1.85
+15/16,15/16,11,Zenit,Rostov,3,0,1.4,4.5,8.0,Zenit,1.4
+15/16,15/16,11,Kuban Krasnodar,Anzhi Makhachkala,1,1,2.0,3.1,4.2,Empate,3.1
+15/16,15/16,11,Dinamo Moscovo,CSKA Moscovo,0,2,4.0,3.5,1.91,CSKA Moscovo,1.91
+15/16,15/16,11,Akhmat Grozny,Rubin Kazan,2,1,1.91,3.1,4.5,Akhmat Grozny,1.91
+15/16,15/16,11,Ufa,Krasnodar,1,1,4.33,3.5,1.83,Empate,3.5
+15/16,15/16,11,Lokomotiv Moscovo,Amkar Perm,3,0,1.44,4.2,7.5,Lokomotiv Moscovo,1.44
+15/16,15/16,12,CSKA Moscovo,Ural,3,2,1.5,4.0,7.0,CSKA Moscovo,1.5
+15/16,15/16,12,Amkar Perm,Dinamo Moscovo,1,1,2.88,3.3,2.4,Empate,3.3
+15/16,15/16,12,Kuban Krasnodar,Zenit,2,2,4.5,3.5,1.8,Empate,3.5
+15/16,15/16,12,Rubin Kazan,Ufa,3,1,1.67,3.75,5.0,Rubin Kazan,1.67
+15/16,15/16,12,Spartak Moscovo,Lokomotiv Moscovo,1,2,2.4,3.3,2.9,Lokomotiv Moscovo,2.9
+15/16,15/16,12,Krylia Sovetov,Akhmat Grozny,0,2,2.75,3.3,2.5,Akhmat Grozny,2.5
+15/16,15/16,12,Anzhi Makhachkala,Krasnodar,2,2,3.0,3.25,2.38,Empate,3.25
+15/16,15/16,13,Rostov,FC Mordovia Saransk,3,2,1.57,3.75,6.0,Rostov,1.57
+15/16,15/16,13,Ufa,Krylia Sovetov,1,0,3.1,3.1,2.4,Ufa,3.1
+15/16,15/16,13,Ural,Amkar Perm,3,1,2.05,3.3,3.6,Ural,2.05
+15/16,15/16,13,FC Mordovia Saransk,Kuban Krasnodar,1,1,3.1,3.2,2.3,Empate,3.2
+15/16,15/16,13,Zenit,Anzhi Makhachkala,5,1,1.36,4.75,8.5,Zenit,1.36
+15/16,15/16,13,Dinamo Moscovo,Spartak Moscovo,2,3,2.88,3.3,2.4,Spartak Moscovo,2.4
+15/16,15/16,13,Krasnodar,Rubin Kazan,2,1,1.75,3.5,4.75,Krasnodar,1.75
+15/16,15/16,13,Akhmat Grozny,CSKA Moscovo,0,0,3.4,3.4,2.1,Empate,3.4
+15/16,15/16,14,Lokomotiv Moscovo,Rostov,0,2,1.65,3.6,5.5,Rostov,5.5
+15/16,15/16,14,CSKA Moscovo,Ufa,2,0,1.25,5.5,12.0,CSKA Moscovo,1.25
+15/16,15/16,14,Zenit,FC Mordovia Saransk,0,0,1.2,6.5,13.0,Empate,6.5
+15/16,15/16,14,Krylia Sovetov,Krasnodar,0,4,3.3,3.2,2.25,Krasnodar,2.25
+15/16,15/16,14,Anzhi Makhachkala,Rubin Kazan,1,2,2.3,3.2,3.1,Rubin Kazan,3.1
+15/16,15/16,14,Kuban Krasnodar,Lokomotiv Moscovo,6,2,3.5,3.3,2.1,Kuban Krasnodar,3.5
+15/16,15/16,14,Spartak Moscovo,Ural,0,1,1.62,3.6,6.0,Ural,6.0
+15/16,15/16,15,Amkar Perm,Akhmat Grozny,1,0,3.2,3.1,2.3,Amkar Perm,3.2
+15/16,15/16,15,Rostov,Dinamo Moscovo,1,0,2.25,3.25,3.2,Rostov,2.25
+15/16,15/16,15,FC Mordovia Saransk,Anzhi Makhachkala,4,0,2.5,3.2,2.88,FC Mordovia Saransk,2.5
+15/16,15/16,15,Ural,Rostov,1,2,2.5,3.2,2.8,Rostov,2.8
+15/16,15/16,15,Ufa,Amkar Perm,2,1,2.55,3.2,2.8,Ufa,2.55
+15/16,15/16,15,Dinamo Moscovo,Kuban Krasnodar,2,1,1.91,3.3,4.2,Dinamo Moscovo,1.91
+15/16,15/16,15,Akhmat Grozny,Spartak Moscovo,2,1,2.3,3.2,3.2,Akhmat Grozny,2.3
+15/16,15/16,15,Rubin Kazan,Krylia Sovetov,2,0,2.0,3.2,4.0,Rubin Kazan,2.0
+15/16,15/16,15,Krasnodar,CSKA Moscovo,2,1,2.8,3.25,2.5,Krasnodar,2.8
+15/16,15/16,15,Lokomotiv Moscovo,Zenit,2,0,3.6,3.4,2.0,Lokomotiv Moscovo,3.6
+15/16,15/16,16,Amkar Perm,Rubin Kazan,1,2,2.9,3.1,2.5,Rubin Kazan,2.5
+15/16,15/16,16,CSKA Moscovo,Krylia Sovetov,0,2,1.4,4.33,8.5,Krylia Sovetov,8.5
+15/16,15/16,16,Zenit,Ural,3,0,1.44,4.2,7.5,Zenit,1.44
+15/16,15/16,16,Lokomotiv Moscovo,Anzhi Makhachkala,0,2,1.55,3.75,6.5,Anzhi Makhachkala,6.5
+15/16,15/16,16,FC Mordovia Saransk,Dinamo Moscovo,1,1,3.1,3.25,2.3,Empate,3.25
+15/16,15/16,16,Kuban Krasnodar,Akhmat Grozny,2,2,2.38,3.2,3.0,Empate,3.2
+15/16,15/16,16,Spartak Moscovo,Krasnodar,3,2,2.6,3.2,2.7,Spartak Moscovo,2.6
+15/16,15/16,17,Rostov,Ufa,1,1,1.53,3.7,7.0,Empate,3.7
+15/16,15/16,17,Ural,FC Mordovia Saransk,3,1,1.85,3.4,4.33,Ural,1.85
+15/16,15/16,17,Ufa,Kuban Krasnodar,2,2,2.8,3.25,2.5,Empate,3.25
+15/16,15/16,17,Krylia Sovetov,Amkar Perm,0,0,1.91,3.4,4.0,Empate,3.4
+15/16,15/16,17,Akhmat Grozny,Zenit,4,1,3.4,3.5,2.05,Akhmat Grozny,3.4
+15/16,15/16,17,Anzhi Makhachkala,CSKA Moscovo,1,1,3.8,3.5,1.95,Empate,3.5
+15/16,15/16,18,Dinamo Moscovo,Lokomotiv Moscovo,2,2,2.75,3.1,2.63,Empate,3.1
+15/16,15/16,18,Krasnodar,Rostov,2,1,1.83,3.4,4.5,Krasnodar,1.83
+15/16,15/16,18,Rubin Kazan,Spartak Moscovo,2,2,2.63,3.3,2.6,Empate,3.3
+15/16,15/16,18,Amkar Perm,CSKA Moscovo,2,0,5.0,3.5,1.73,Amkar Perm,5.0
+15/16,15/16,18,FC Mordovia Saransk,Akhmat Grozny,0,0,3.4,3.2,2.2,Empate,3.2
+15/16,15/16,18,Zenit,Ufa,1,1,1.25,5.25,13.0,Empate,5.25
+15/16,15/16,18,Dinamo Moscovo,Anzhi Makhachkala,1,2,2.2,3.25,3.3,Anzhi Makhachkala,3.3
+15/16,15/16,18,Kuban Krasnodar,Krasnodar,2,3,3.8,3.5,1.95,Krasnodar,1.95
+15/16,15/16,18,Lokomotiv Moscovo,Ural,2,2,1.75,3.5,4.75,Empate,3.5
+15/16,15/16,18,Rostov,Rubin Kazan,1,0,2.15,3.3,3.4,Rostov,2.15
+15/16,15/16,18,Spartak Moscovo,Krylia Sovetov,1,0,1.5,4.1,6.5,Spartak Moscovo,1.5
+15/16,15/16,19,Krylia Sovetov,Rostov,0,1,3.4,3.0,2.3,Rostov,2.3
+15/16,15/16,19,Rubin Kazan,Kuban Krasnodar,1,0,1.85,3.3,4.5,Rubin Kazan,1.85
+15/16,15/16,19,Krasnodar,Zenit,0,0,3.0,3.3,2.35,Empate,3.3
+15/16,15/16,19,Ufa,FC Mordovia Saransk,1,1,2.5,3.1,2.9,Empate,3.1
+15/16,15/16,19,Akhmat Grozny,Lokomotiv Moscovo,2,1,2.38,3.1,3.1,Akhmat Grozny,2.38
+15/16,15/16,19,CSKA Moscovo,Spartak Moscovo,1,0,1.75,3.6,4.5,CSKA Moscovo,1.75
+15/16,15/16,20,Ural,Dinamo Moscovo,1,1,2.4,3.0,3.2,Empate,3.0
+15/16,15/16,20,Anzhi Makhachkala,Amkar Perm,0,1,2.1,3.2,3.6,Amkar Perm,3.6
+15/16,15/16,20,Kuban Krasnodar,Krylia Sovetov,2,0,2.3,3.0,3.4,Kuban Krasnodar,2.3
+15/16,15/16,20,Ural,Anzhi Makhachkala,4,2,2.0,3.2,4.0,Ural,2.0
+15/16,15/16,20,Spartak Moscovo,Amkar Perm,2,1,1.73,3.4,5.25,Spartak Moscovo,1.73
+15/16,15/16,20,Rostov,CSKA Moscovo,2,0,3.5,3.0,2.25,Rostov,3.5
+15/16,15/16,20,FC Mordovia Saransk,Krasnodar,0,1,4.0,3.3,1.95,Krasnodar,1.95
+15/16,15/16,20,Lokomotiv Moscovo,Ufa,2,0,1.62,3.3,7.0,Lokomotiv Moscovo,1.62
+15/16,15/16,20,Zenit,Rubin Kazan,4,2,1.5,4.0,7.0,Zenit,1.5
+15/16,15/16,21,Dinamo Moscovo,Akhmat Grozny,0,1,2.45,3.0,3.1,Akhmat Grozny,3.1
+15/16,15/16,21,Amkar Perm,Rostov,0,0,3.0,3.0,2.5,Empate,3.0
+15/16,15/16,21,Anzhi Makhachkala,Spartak Moscovo,0,4,3.5,3.25,2.1,Spartak Moscovo,2.1
+15/16,15/16,21,Ufa,Dinamo Moscovo,0,1,3.2,2.9,2.45,Dinamo Moscovo,2.45
+15/16,15/16,21,Akhmat Grozny,Ural,1,1,1.3,4.2,12.0,Empate,4.2
+15/16,15/16,21,CSKA Moscovo,Kuban Krasnodar,2,0,1.4,4.33,8.5,CSKA Moscovo,1.4
+15/16,15/16,21,Krylia Sovetov,Zenit,0,2,8.0,4.0,1.45,Zenit,1.45
+15/16,15/16,21,Rubin Kazan,FC Mordovia Saransk,1,1,1.7,3.5,5.25,Empate,3.5
+15/16,15/16,21,Krasnodar,Lokomotiv Moscovo,1,2,2.15,3.1,3.6,Lokomotiv Moscovo,3.6
+15/16,15/16,22,Ural,Ufa,1,0,2.0,3.1,4.2,Ural,2.0
+15/16,15/16,22,Akhmat Grozny,Anzhi Makhachkala,3,2,1.6,3.6,6.0,Akhmat Grozny,1.6
+15/16,15/16,22,Kuban Krasnodar,Amkar Perm,1,1,2.63,3.0,2.88,Empate,3.0
+15/16,15/16,22,Rostov,Spartak Moscovo,2,0,2.63,3.1,2.75,Rostov,2.63
+15/16,15/16,22,Lokomotiv Moscovo,Rubin Kazan,1,0,1.85,3.2,4.75,Lokomotiv Moscovo,1.85
+15/16,15/16,22,Zenit,CSKA Moscovo,2,0,2.0,3.2,4.0,Zenit,2.0
+15/16,15/16,23,FC Mordovia Saransk,Krylia Sovetov,1,2,2.3,3.0,3.4,Krylia Sovetov,3.4
+15/16,15/16,23,Dinamo Moscovo,Krasnodar,1,4,3.1,3.1,2.4,Krasnodar,2.4
+15/16,15/16,23,Anzhi Makhachkala,Rostov,0,0,3.6,3.1,2.15,Empate,3.1
+15/16,15/16,23,CSKA Moscovo,FC Mordovia Saransk,7,1,1.33,4.75,9.5,CSKA Moscovo,1.33
+15/16,15/16,23,Amkar Perm,Zenit,0,2,5.25,3.6,1.67,Zenit,1.67
+15/16,15/16,23,Rubin Kazan,Dinamo Moscovo,4,1,2.0,3.3,3.8,Rubin Kazan,2.0
+15/16,15/16,23,Ufa,Akhmat Grozny,1,0,3.75,3.1,2.1,Ufa,3.75
+15/16,15/16,23,Krasnodar,Ural,6,0,1.44,4.2,7.5,Krasnodar,1.44
+15/16,15/16,23,Spartak Moscovo,Kuban Krasnodar,2,2,1.44,4.2,7.5,Empate,4.2
+15/16,15/16,24,Krylia Sovetov,Lokomotiv Moscovo,0,0,3.25,3.0,2.38,Empate,3.0
+15/16,15/16,24,FC Mordovia Saransk,Amkar Perm,1,1,2.8,3.1,2.6,Empate,3.1
+15/16,15/16,24,Akhmat Grozny,Krasnodar,0,1,3.0,3.2,2.4,Krasnodar,2.4
+15/16,15/16,24,Lokomotiv Moscovo,CSKA Moscovo,1,1,3.0,3.25,2.38,Empate,3.25
+15/16,15/16,24,Zenit,Spartak Moscovo,5,2,1.5,4.33,6.0,Zenit,1.5
+15/16,15/16,24,Ufa,Anzhi Makhachkala,2,0,2.1,3.2,3.6,Ufa,2.1
+15/16,15/16,24,Dinamo Moscovo,Krylia Sovetov,0,1,2.0,3.2,4.0,Krylia Sovetov,4.0
+15/16,15/16,24,Kuban Krasnodar,Rostov,0,1,3.75,3.1,2.1,Rostov,2.1
+15/16,15/16,25,Ural,Rubin Kazan,0,1,3.25,3.1,2.3,Rubin Kazan,2.3
+15/16,15/16,25,Krylia Sovetov,Ural,1,1,2.0,3.2,4.0,Empate,3.2
+15/16,15/16,25,Spartak Moscovo,FC Mordovia Saransk,2,2,1.44,4.33,7.0,Empate,4.33
+15/16,15/16,25,Rubin Kazan,Akhmat Grozny,0,1,2.63,3.1,2.75,Akhmat Grozny,2.75
+15/16,15/16,25,Amkar Perm,Lokomotiv Moscovo,0,1,3.5,3.0,2.25,Lokomotiv Moscovo,2.25
+15/16,15/16,25,Krasnodar,Ufa,4,0,1.33,4.75,9.5,Krasnodar,1.33
+15/16,15/16,25,CSKA Moscovo,Dinamo Moscovo,1,0,1.44,4.2,7.5,CSKA Moscovo,1.44
+15/16,15/16,25,Anzhi Makhachkala,Kuban Krasnodar,1,0,2.38,3.2,3.0,Anzhi Makhachkala,2.38
+15/16,15/16,25,Rostov,Zenit,3,0,3.25,3.3,2.2,Rostov,3.25
+15/16,15/16,26,Ural,CSKA Moscovo,0,3,7.0,4.0,1.5,CSKA Moscovo,1.5
+15/16,15/16,26,Zenit,Kuban Krasnodar,4,1,1.18,6.5,15.0,Zenit,1.18
+15/16,15/16,26,Dinamo Moscovo,Amkar Perm,0,0,1.91,3.25,4.33,Empate,3.25
+15/16,15/16,26,Lokomotiv Moscovo,Spartak Moscovo,0,2,2.0,3.4,3.75,Spartak Moscovo,3.75
+15/16,15/16,26,Ufa,Rubin Kazan,1,1,3.1,3.2,2.38,Empate,3.2
+15/16,15/16,26,FC Mordovia Saransk,Rostov,2,1,6.0,3.6,1.5,FC Mordovia Saransk,6.0
+15/16,15/16,26,Akhmat Grozny,Krylia Sovetov,0,1,1.7,3.5,5.25,Krylia Sovetov,5.25
+15/16,15/16,26,Krasnodar,Anzhi Makhachkala,3,0,1.29,5.5,9.5,Krasnodar,1.29
+15/16,15/16,27,Krylia Sovetov,Ufa,1,0,1.85,3.3,4.5,Krylia Sovetov,1.85
+15/16,15/16,27,Rostov,Lokomotiv Moscovo,2,1,2.0,3.2,4.0,Rostov,2.0
+15/16,15/16,27,CSKA Moscovo,Akhmat Grozny,1,0,1.4,4.33,8.5,CSKA Moscovo,1.4
+15/16,15/16,27,Anzhi Makhachkala,Zenit,0,1,9.0,5.0,1.33,Zenit,1.33
+15/16,15/16,27,Kuban Krasnodar,FC Mordovia Saransk,1,2,2.1,3.2,3.6,FC Mordovia Saransk,3.6
+15/16,15/16,27,Rubin Kazan,Krasnodar,1,1,4.5,3.5,1.8,Empate,3.5
+15/16,15/16,27,Amkar Perm,Ural,1,1,1.62,3.6,6.0,Empate,3.6
+15/16,15/16,27,Spartak Moscovo,Dinamo Moscovo,3,0,1.65,3.8,5.0,Spartak Moscovo,1.65
+15/16,15/16,28,Ufa,CSKA Moscovo,1,3,9.5,4.75,1.36,CSKA Moscovo,1.36
+15/16,15/16,28,Rubin Kazan,Anzhi Makhachkala,1,2,2.2,3.2,3.4,Anzhi Makhachkala,3.4
+15/16,15/16,28,FC Mordovia Saransk,Zenit,0,3,7.5,4.5,1.4,Zenit,1.4
+15/16,15/16,28,Krasnodar,Krylia Sovetov,3,0,1.3,5.0,11.0,Krasnodar,1.3
+15/16,15/16,28,Lokomotiv Moscovo,Kuban Krasnodar,0,1,1.45,4.0,8.0,Kuban Krasnodar,8.0
+15/16,15/16,28,Ural,Spartak Moscovo,0,1,5.0,4.0,1.62,Spartak Moscovo,1.62
+15/16,15/16,28,Akhmat Grozny,Amkar Perm,2,0,2.15,3.1,3.6,Akhmat Grozny,2.15
+15/16,15/16,28,Dinamo Moscovo,Rostov,1,3,4.0,3.1,2.05,Rostov,2.05
+15/16,15/16,28,Krylia Sovetov,Rubin Kazan,1,1,2.7,3.1,2.7,Empate,3.1
+15/16,15/16,28,Anzhi Makhachkala,FC Mordovia Saransk,3,0,2.2,3.5,3.1,Anzhi Makhachkala,2.2
+15/16,15/16,28,Zenit,Lokomotiv Moscovo,1,1,1.29,5.0,11.0,Empate,5.0
+15/16,15/16,29,Amkar Perm,Ufa,1,0,1.85,3.2,4.75,Amkar Perm,1.85
+15/16,15/16,29,CSKA Moscovo,Krasnodar,2,0,1.62,3.75,5.5,CSKA Moscovo,1.62
+15/16,15/16,29,Kuban Krasnodar,Dinamo Moscovo,1,0,2.5,3.2,2.88,Kuban Krasnodar,2.5
+15/16,15/16,29,Rostov,Ural,1,0,1.2,6.0,15.0,Rostov,1.2
+15/16,15/16,29,Spartak Moscovo,Akhmat Grozny,3,0,1.57,3.75,6.0,Spartak Moscovo,1.57
+15/16,15/16,29,Akhmat Grozny,Rostov,0,2,5.5,3.75,1.62,Rostov,1.62
+15/16,15/16,29,Dinamo Moscovo,Zenit,0,3,2.63,3.4,2.55,Zenit,2.55
+15/16,15/16,29,Krasnodar,Amkar Perm,1,0,1.29,5.0,11.0,Krasnodar,1.29
+15/16,15/16,29,Krylia Sovetov,Anzhi Makhachkala,0,0,5.0,3.5,1.73,Empate,3.5
+15/16,15/16,29,Lokomotiv Moscovo,FC Mordovia Saransk,3,0,2.25,3.4,3.1,Lokomotiv Moscovo,2.25
+15/16,15/16,29,Rubin Kazan,CSKA Moscovo,0,1,9.5,5.5,1.29,CSKA Moscovo,1.29
+15/16,15/16,29,Ufa,Spartak Moscovo,3,1,2.5,3.5,2.63,Ufa,2.5
+15/16,15/16,29,Ural,Kuban Krasnodar,2,0,6.5,4.0,1.5,Ural,6.5
+15/16,15/16,30,FC Volgar,Anzhi Makhachkala,0,1,3.0,3.0,2.5,Anzhi Makhachkala,2.5
+15/16,15/16,30,Kuban Krasnodar,Tom Tomsk,1,0,2.38,3.1,3.1,Kuban Krasnodar,2.38
+15/16,15/16,30,Tom Tomsk,Kuban Krasnodar,2,0,2.0,3.1,4.0,Tom Tomsk,2.0
+15/16,15/16,30,Anzhi Makhachkala,FC Volgar,2,0,1.4,4.33,7.5,Anzhi Makhachkala,1.4
+16/17,16/17,1,Krasnodar,Tom Tomsk,3,0,1.33,5.0,9.0,Krasnodar,1.33
+16/17,16/17,1,Rubin Kazan,Amkar Perm,0,0,1.75,3.4,5.0,Empate,3.4
+16/17,16/17,1,Ufa,Zenit,0,0,9.0,4.2,1.4,Empate,4.2
+16/17,16/17,1,Arsenal Tula,Rubin Kazan,1,0,3.6,3.1,2.15,Arsenal Tula,3.6
+16/17,16/17,1,CSKA Moscovo,FC Gazovik Orenburg,1,0,1.62,3.8,5.5,,
+16/17,16/17,1,Amkar Perm,Anzhi Makhachkala,2,0,2.0,3.0,4.33,Amkar Perm,2.0
+16/17,16/17,1,Lokomotiv Moscovo,Tom Tomsk,2,2,1.44,4.0,8.0,Empate,4.0
+16/17,16/17,1,Rostov,Ural,0,0,1.7,3.25,5.75,Empate,3.25
+16/17,16/17,2,Krasnodar,Akhmat Grozny,4,0,1.57,3.6,6.5,Krasnodar,1.57
+16/17,16/17,2,Spartak Moscovo,Krylia Sovetov,1,0,1.44,4.2,7.5,Spartak Moscovo,1.44
+16/17,16/17,2,Zenit,Rostov,3,2,1.44,4.0,8.0,Zenit,1.44
+16/17,16/17,2,Ural,CSKA Moscovo,0,1,4.2,3.25,1.91,CSKA Moscovo,1.91
+16/17,16/17,2,Krylia Sovetov,Krasnodar,1,1,5.75,3.6,1.6,Empate,3.6
+16/17,16/17,2,Rubin Kazan,Spartak Moscovo,1,1,2.8,3.3,2.45,Empate,3.3
+16/17,16/17,2,Tom Tomsk,Ufa,1,0,2.2,3.1,3.5,Tom Tomsk,2.2
+16/17,16/17,2,Anzhi Makhachkala,Arsenal Tula,1,0,2.25,3.1,3.4,Anzhi Makhachkala,2.25
+16/17,16/17,2,Akhmat Grozny,Lokomotiv Moscovo,1,1,2.45,3.1,3.0,Empate,3.1
+16/17,16/17,3,FC Gazovik Orenburg,Amkar Perm,0,0,2.65,2.8,3.0,Empate,2.8
+16/17,16/17,3,Rubin Kazan,Anzhi Makhachkala,1,2,1.6,3.5,6.5,Anzhi Makhachkala,6.5
+16/17,16/17,3,Ufa,Akhmat Grozny,1,3,3.0,3.0,2.5,Akhmat Grozny,2.5
+16/17,16/17,3,Zenit,CSKA Moscovo,1,1,2.05,3.4,3.5,Empate,3.4
+16/17,16/17,3,Rostov,Tom Tomsk,3,0,2.1,3.0,4.0,Rostov,2.1
+16/17,16/17,3,Amkar Perm,Ural,1,0,2.0,3.2,4.0,Amkar Perm,2.0
+16/17,16/17,3,Spartak Moscovo,Krasnodar,2,0,2.55,3.2,2.8,Spartak Moscovo,2.55
+16/17,16/17,3,Lokomotiv Moscovo,Krylia Sovetov,0,0,1.53,3.75,7.0,Empate,3.75
+16/17,16/17,4,Arsenal Tula,FC Gazovik Orenburg,0,0,2.5,3.0,3.0,Empate,3.0
+16/17,16/17,4,Krylia Sovetov,Ufa,0,1,2.1,3.0,4.0,Ufa,4.0
+16/17,16/17,4,FC Gazovik Orenburg,Rubin Kazan,1,1,2.75,3.0,2.75,Empate,3.0
+16/17,16/17,4,Tom Tomsk,CSKA Moscovo,0,1,5.5,3.5,1.67,CSKA Moscovo,1.67
+16/17,16/17,4,Zenit,Amkar Perm,3,0,1.36,4.33,10.0,Zenit,1.36
+16/17,16/17,4,Ural,Arsenal Tula,1,1,2.0,3.1,4.2,Empate,3.1
+16/17,16/17,4,Akhmat Grozny,Rostov,2,1,2.25,3.1,3.4,Akhmat Grozny,2.25
+16/17,16/17,4,Krasnodar,Lokomotiv Moscovo,1,2,1.91,3.1,4.33,Lokomotiv Moscovo,4.33
+16/17,16/17,4,Anzhi Makhachkala,Spartak Moscovo,0,2,4.75,3.4,1.8,Spartak Moscovo,1.8
+16/17,16/17,5,Rostov,Krylia Sovetov,2,1,1.75,3.4,5.0,Rostov,1.75
+16/17,16/17,5,Amkar Perm,Tom Tomsk,1,0,1.91,3.2,4.33,Amkar Perm,1.91
+16/17,16/17,5,CSKA Moscovo,Akhmat Grozny,3,0,1.5,4.0,7.0,CSKA Moscovo,1.5
+16/17,16/17,5,Ufa,Krasnodar,0,0,4.75,3.4,1.8,Empate,3.4
+16/17,16/17,5,Spartak Moscovo,Lokomotiv Moscovo,1,0,2.2,3.25,3.3,Spartak Moscovo,2.2
+16/17,16/17,5,Arsenal Tula,Zenit,0,5,7.0,4.2,1.45,Zenit,1.45
+16/17,16/17,6,Rubin Kazan,Ural,3,1,1.67,3.5,5.5,Rubin Kazan,1.67
+16/17,16/17,6,FC Gazovik Orenburg,Spartak Moscovo,1,3,4.75,3.5,1.75,Spartak Moscovo,1.75
+16/17,16/17,6,Tom Tomsk,Arsenal Tula,1,0,2.0,3.2,4.0,Tom Tomsk,2.0
+16/17,16/17,6,Ural,Anzhi Makhachkala,0,1,2.1,3.1,3.75,Anzhi Makhachkala,3.75
+16/17,16/17,6,Akhmat Grozny,Amkar Perm,1,3,2.0,3.0,4.33,Amkar Perm,4.33
+16/17,16/17,6,Lokomotiv Moscovo,Ufa,0,1,1.44,3.8,9.0,Ufa,9.0
+16/17,16/17,6,Krylia Sovetov,CSKA Moscovo,1,2,5.75,3.75,1.62,CSKA Moscovo,1.62
+16/17,16/17,6,Krasnodar,Rostov,2,1,1.75,3.7,4.5,Krasnodar,1.75
+16/17,16/17,7,Zenit,Rubin Kazan,4,1,1.4,4.5,8.0,Zenit,1.4
+16/17,16/17,7,CSKA Moscovo,Krasnodar,1,1,1.8,3.5,4.5,Empate,3.5
+16/17,16/17,7,Rostov,Lokomotiv Moscovo,1,0,2.55,3.0,2.9,Rostov,2.55
+16/17,16/17,7,FC Gazovik Orenburg,Ural,0,1,2.05,3.0,4.2,Ural,4.2
+16/17,16/17,7,Arsenal Tula,Akhmat Grozny,0,0,3.1,3.0,2.45,Empate,3.0
+16/17,16/17,7,Spartak Moscovo,Ufa,0,1,1.33,5.0,9.0,Ufa,9.0
+16/17,16/17,7,Anzhi Makhachkala,Zenit,2,2,7.0,4.33,1.44,Empate,4.33
+16/17,16/17,8,Amkar Perm,Krylia Sovetov,0,0,1.91,3.2,4.33,Empate,3.2
+16/17,16/17,8,Rubin Kazan,Tom Tomsk,2,1,1.6,3.6,6.0,Rubin Kazan,1.6
+16/17,16/17,8,Tom Tomsk,Ural,1,1,2.25,3.0,3.5,Empate,3.0
+16/17,16/17,8,Krylia Sovetov,Anzhi Makhachkala,2,1,2.15,3.1,3.6,Krylia Sovetov,2.15
+16/17,16/17,8,Lokomotiv Moscovo,Arsenal Tula,1,1,1.45,4.2,7.5,Empate,4.2
+16/17,16/17,8,Akhmat Grozny,FC Gazovik Orenburg,2,1,1.91,3.1,4.5,Akhmat Grozny,1.91
+16/17,16/17,8,Ufa,Amkar Perm,1,1,2.88,2.88,2.7,Empate,2.88
+16/17,16/17,8,Zenit,Spartak Moscovo,4,2,1.6,4.33,4.75,Zenit,1.6
+16/17,16/17,8,Krasnodar,Rubin Kazan,1,0,1.85,3.4,4.33,Krasnodar,1.85
+16/17,16/17,8,Rostov,CSKA Moscovo,2,0,3.1,3.1,2.4,Rostov,3.1
+16/17,16/17,9,CSKA Moscovo,Ufa,1,0,1.44,4.0,8.5,CSKA Moscovo,1.44
+16/17,16/17,9,Amkar Perm,Lokomotiv Moscovo,0,0,3.1,2.9,2.5,Empate,2.9
+16/17,16/17,9,Rubin Kazan,Krylia Sovetov,3,0,1.7,3.4,5.0,Rubin Kazan,1.7
+16/17,16/17,9,Spartak Moscovo,Rostov,1,0,1.8,3.5,4.5,Spartak Moscovo,1.8
+16/17,16/17,9,Ural,Zenit,0,2,7.5,4.2,1.45,Zenit,1.45
+16/17,16/17,9,FC Gazovik Orenburg,Tom Tomsk,3,1,2.1,3.0,4.0,FC Gazovik Orenburg,2.1
+16/17,16/17,9,Arsenal Tula,Krasnodar,0,0,4.2,3.5,1.83,Empate,3.5
+16/17,16/17,10,Anzhi Makhachkala,Akhmat Grozny,0,0,3.0,3.0,2.5,Empate,3.0
+16/17,16/17,10,Krylia Sovetov,Arsenal Tula,1,1,2.05,3.1,4.0,Empate,3.1
+16/17,16/17,10,Tom Tomsk,Anzhi Makhachkala,0,3,2.45,3.1,3.0,Anzhi Makhachkala,3.0
+16/17,16/17,10,Ufa,Rostov,0,0,2.8,2.9,2.75,Empate,2.9
+16/17,16/17,10,Ural,Spartak Moscovo,0,1,4.2,3.2,1.95,Spartak Moscovo,1.95
+16/17,16/17,10,Akhmat Grozny,Rubin Kazan,3,1,2.5,3.1,2.9,Akhmat Grozny,2.5
+16/17,16/17,10,Lokomotiv Moscovo,CSKA Moscovo,1,0,2.88,3.0,2.6,Lokomotiv Moscovo,2.88
+16/17,16/17,10,Krasnodar,Amkar Perm,1,0,1.67,3.4,5.75,Krasnodar,1.67
+16/17,16/17,11,Zenit,FC Gazovik Orenburg,1,0,1.2,6.0,15.0,Zenit,1.2
+16/17,16/17,11,Amkar Perm,Rostov,1,0,2.05,3.0,4.1,Amkar Perm,2.05
+16/17,16/17,11,Spartak Moscovo,CSKA Moscovo,3,1,2.25,3.2,3.3,Spartak Moscovo,2.25
+16/17,16/17,11,Ural,Akhmat Grozny,1,4,4.33,3.1,1.95,Akhmat Grozny,1.95
+16/17,16/17,11,Arsenal Tula,Ufa,0,2,2.5,2.8,3.25,Ufa,3.25
+16/17,16/17,11,Zenit,Tom Tomsk,1,0,1.17,6.5,17.0,Zenit,1.17
+16/17,16/17,11,Anzhi Makhachkala,Krasnodar,0,0,3.25,3.25,2.2,Empate,3.25
+16/17,16/17,12,FC Gazovik Orenburg,Krylia Sovetov,1,0,2.25,3.0,3.5,FC Gazovik Orenburg,2.25
+16/17,16/17,12,Rubin Kazan,Lokomotiv Moscovo,2,0,2.63,3.0,2.88,Rubin Kazan,2.63
+16/17,16/17,12,Tom Tomsk,Spartak Moscovo,0,1,4.5,3.5,1.8,Spartak Moscovo,1.8
+16/17,16/17,12,Ufa,Rubin Kazan,2,3,3.0,2.88,2.63,Rubin Kazan,2.63
+16/17,16/17,12,Krylia Sovetov,Ural,2,2,2.25,2.8,3.75,Empate,2.8
+16/17,16/17,12,Lokomotiv Moscovo,Anzhi Makhachkala,4,0,1.62,3.6,6.0,Lokomotiv Moscovo,1.62
+16/17,16/17,12,Akhmat Grozny,Zenit,2,1,5.0,3.5,1.73,Akhmat Grozny,5.0
+16/17,16/17,12,Rostov,Arsenal Tula,4,1,1.55,3.75,6.5,Rostov,1.55
+16/17,16/17,12,CSKA Moscovo,Amkar Perm,2,2,1.57,3.5,7.0,Empate,3.5
+16/17,16/17,12,Krasnodar,FC Gazovik Orenburg,3,3,1.55,3.8,6.5,Empate,3.8
+16/17,16/17,13,Arsenal Tula,CSKA Moscovo,0,1,6.0,3.6,1.62,CSKA Moscovo,1.62
+16/17,16/17,13,Rubin Kazan,Rostov,0,0,2.05,3.1,4.0,Empate,3.1
+16/17,16/17,13,FC Gazovik Orenburg,Lokomotiv Moscovo,1,1,3.0,2.88,2.63,Empate,2.88
+16/17,16/17,13,Anzhi Makhachkala,Ufa,0,1,2.05,3.1,4.0,Ufa,4.0
+16/17,16/17,13,Krasnodar,Ural,3,0,1.4,4.2,9.0,Krasnodar,1.4
+16/17,16/17,13,Spartak Moscovo,Amkar Perm,1,0,1.53,3.75,7.0,Spartak Moscovo,1.53
+16/17,16/17,13,Zenit,Krylia Sovetov,3,1,1.3,5.5,9.0,Zenit,1.3
+16/17,16/17,14,Akhmat Grozny,Tom Tomsk,0,0,1.33,4.5,11.0,Empate,4.5
+16/17,16/17,14,Ufa,FC Gazovik Orenburg,1,0,2.38,2.8,3.5,Ufa,2.38
+16/17,16/17,14,Amkar Perm,Arsenal Tula,1,0,1.73,3.2,6.0,Amkar Perm,1.73
+16/17,16/17,14,CSKA Moscovo,Rubin Kazan,0,0,1.7,3.3,5.75,Empate,3.3
+16/17,16/17,14,Lokomotiv Moscovo,Ural,1,1,1.5,3.75,7.5,Empate,3.75
+16/17,16/17,14,Akhmat Grozny,Spartak Moscovo,0,1,3.0,3.1,2.5,Spartak Moscovo,2.5
+16/17,16/17,14,Krylia Sovetov,Tom Tomsk,3,0,1.67,3.4,5.75,Krylia Sovetov,1.67
+16/17,16/17,14,Rostov,Anzhi Makhachkala,2,0,1.8,3.25,5.0,Rostov,1.8
+16/17,16/17,14,Krasnodar,Zenit,2,1,2.8,3.25,2.5,Krasnodar,2.8
+16/17,16/17,15,Ural,Rostov,1,0,1.73,3.3,5.5,Ural,1.73
+16/17,16/17,15,Rubin Kazan,Arsenal Tula,1,0,1.53,3.75,7.0,Rubin Kazan,1.53
+16/17,16/17,15,CSKA Moscovo,FC Gazovik Orenburg,2,0,1.57,3.5,7.0,CSKA Moscovo,1.57
+16/17,16/17,15,Zenit,Ufa,2,0,1.33,4.75,9.5,Zenit,1.33
+16/17,16/17,15,Akhmat Grozny,Krasnodar,2,1,3.4,3.0,2.3,Akhmat Grozny,3.4
+16/17,16/17,15,Krylia Sovetov,Spartak Moscovo,4,0,4.0,3.4,1.91,Krylia Sovetov,4.0
+16/17,16/17,15,Tom Tomsk,Lokomotiv Moscovo,1,6,10.0,4.75,1.33,Lokomotiv Moscovo,1.33
+16/17,16/17,15,Anzhi Makhachkala,Amkar Perm,3,1,2.63,2.8,3.0,Anzhi Makhachkala,2.63
+16/17,16/17,15,CSKA Moscovo,Ural,4,0,1.44,4.0,8.0,CSKA Moscovo,1.44
+16/17,16/17,15,Rostov,Zenit,0,0,3.1,3.1,2.38,Empate,3.1
+16/17,16/17,15,Lokomotiv Moscovo,Akhmat Grozny,2,0,2.0,3.1,4.2,Lokomotiv Moscovo,2.0
+16/17,16/17,16,Ufa,Tom Tomsk,1,0,1.57,3.5,7.0,Ufa,1.57
+16/17,16/17,16,Amkar Perm,FC Gazovik Orenburg,3,0,2.05,2.9,4.33,Amkar Perm,2.05
+16/17,16/17,16,Krasnodar,Krylia Sovetov,1,1,1.57,3.8,6.0,Empate,3.8
+16/17,16/17,16,Arsenal Tula,Anzhi Makhachkala,1,0,2.63,2.88,3.0,Arsenal Tula,2.63
+16/17,16/17,16,Spartak Moscovo,Rubin Kazan,2,1,1.57,3.75,6.0,Spartak Moscovo,1.57
+16/17,16/17,17,Tom Tomsk,Rostov,0,6,21.0,8.5,1.11,Rostov,1.11
+16/17,16/17,17,FC Gazovik Orenburg,Arsenal Tula,3,0,1.95,3.0,4.5,FC Gazovik Orenburg,1.95
+16/17,16/17,17,CSKA Moscovo,Zenit,0,0,2.75,3.2,2.6,Empate,3.2
+16/17,16/17,17,Ural,Amkar Perm,1,0,2.6,2.9,3.0,Ural,2.6
+16/17,16/17,17,Krylia Sovetov,Lokomotiv Moscovo,0,3,4.2,3.1,2.0,Lokomotiv Moscovo,2.0
+16/17,16/17,17,Krasnodar,Spartak Moscovo,2,2,2.15,3.25,3.4,Empate,3.25
+16/17,16/17,17,Akhmat Grozny,Ufa,0,1,1.75,3.2,5.5,Ufa,5.5
+16/17,16/17,18,Anzhi Makhachkala,Rubin Kazan,0,1,3.5,3.0,2.25,Rubin Kazan,2.25
+16/17,16/17,18,Arsenal Tula,Ural,2,0,2.2,3.0,3.6,Arsenal Tula,2.2
+16/17,16/17,18,Ufa,Krylia Sovetov,1,0,2.2,3.0,3.6,Ufa,2.2
+16/17,16/17,18,CSKA Moscovo,Tom Tomsk,4,0,1.02,21.0,26.0,CSKA Moscovo,1.02
+16/17,16/17,18,Rubin Kazan,FC Gazovik Orenburg,0,0,2.0,3.1,4.5,Empate,3.1
+16/17,16/17,18,Amkar Perm,Zenit,1,0,4.5,3.3,1.85,Amkar Perm,4.5
+16/17,16/17,18,Spartak Moscovo,Anzhi Makhachkala,1,0,1.36,4.5,9.5,Spartak Moscovo,1.36
+16/17,16/17,18,Rostov,Akhmat Grozny,0,0,2.45,3.0,3.1,Empate,3.0
+16/17,16/17,19,Lokomotiv Moscovo,Krasnodar,1,2,1.95,3.2,4.2,Krasnodar,4.2
+16/17,16/17,19,Anzhi Makhachkala,FC Gazovik Orenburg,1,0,2.5,2.8,3.25,Anzhi Makhachkala,2.5
+16/17,16/17,19,Tom Tomsk,Amkar Perm,1,0,17.0,6.0,1.17,Tom Tomsk,17.0
+16/17,16/17,19,Ural,Rubin Kazan,1,0,3.1,3.1,2.45,Ural,3.1
+16/17,16/17,19,Lokomotiv Moscovo,Spartak Moscovo,1,1,2.55,3.1,2.9,Empate,3.1
+16/17,16/17,19,Krylia Sovetov,Rostov,0,0,3.0,2.9,2.6,Empate,2.9
+16/17,16/17,19,Akhmat Grozny,CSKA Moscovo,0,1,3.2,3.0,2.38,CSKA Moscovo,2.38
+16/17,16/17,19,Krasnodar,Ufa,0,0,1.62,3.6,6.0,Empate,3.6
+16/17,16/17,19,Zenit,Arsenal Tula,2,0,1.22,5.75,13.0,Zenit,1.22
+16/17,16/17,20,Anzhi Makhachkala,Ural,2,3,2.0,3.0,4.33,Ural,4.33
+16/17,16/17,20,Ufa,Lokomotiv Moscovo,0,1,3.5,2.88,2.3,Lokomotiv Moscovo,2.3
+16/17,16/17,20,Arsenal Tula,Tom Tomsk,3,0,1.25,5.25,13.0,Arsenal Tula,1.25
+16/17,16/17,20,Amkar Perm,Akhmat Grozny,1,1,2.45,2.88,3.25,Empate,2.88
+16/17,16/17,20,Rubin Kazan,Zenit,0,2,4.33,3.5,1.83,Zenit,1.83
+16/17,16/17,20,CSKA Moscovo,Krylia Sovetov,2,1,1.33,4.5,11.0,CSKA Moscovo,1.33
+16/17,16/17,21,Rostov,Krasnodar,0,0,2.38,3.0,3.25,Empate,3.0
+16/17,16/17,21,Spartak Moscovo,FC Gazovik Orenburg,3,2,1.33,4.5,11.0,Spartak Moscovo,1.33
+16/17,16/17,21,Krylia Sovetov,Amkar Perm,2,2,2.5,2.9,3.1,Empate,2.9
+16/17,16/17,21,Akhmat Grozny,Arsenal Tula,3,1,1.7,3.4,5.5,Akhmat Grozny,1.7
+16/17,16/17,21,Zenit,Anzhi Makhachkala,1,1,1.22,5.75,12.0,Empate,5.75
+16/17,16/17,21,Ufa,Spartak Moscovo,1,3,5.0,3.4,1.75,Spartak Moscovo,1.75
+16/17,16/17,21,Krasnodar,CSKA Moscovo,1,1,2.15,3.1,3.5,Empate,3.1
+16/17,16/17,21,Lokomotiv Moscovo,Rostov,0,0,2.1,3.1,3.8,Empate,3.1
+16/17,16/17,22,Tom Tomsk,Rubin Kazan,2,2,13.0,4.75,1.29,Empate,4.75
+16/17,16/17,22,Ural,FC Gazovik Orenburg,2,0,2.38,2.9,3.4,Ural,2.38
+16/17,16/17,22,Amkar Perm,Ufa,1,1,2.0,2.88,4.5,Empate,2.88
+16/17,16/17,22,CSKA Moscovo,Rostov,0,0,1.75,3.2,5.25,Empate,3.2
+16/17,16/17,22,Anzhi Makhachkala,Krylia Sovetov,1,3,2.1,2.9,4.2,Krylia Sovetov,4.2
+16/17,16/17,22,Rubin Kazan,Krasnodar,0,1,3.2,3.0,2.38,Krasnodar,2.38
+16/17,16/17,22,FC Gazovik Orenburg,Akhmat Grozny,2,1,2.4,2.75,3.5,FC Gazovik Orenburg,2.4
+16/17,16/17,22,Ural,Tom Tomsk,1,0,1.17,6.0,15.0,Ural,1.17
+16/17,16/17,22,Arsenal Tula,Lokomotiv Moscovo,0,3,4.2,3.1,2.0,Lokomotiv Moscovo,2.0
+16/17,16/17,22,Spartak Moscovo,Zenit,2,1,2.2,3.3,3.3,Spartak Moscovo,2.2
+16/17,16/17,23,Ufa,CSKA Moscovo,0,2,5.5,3.4,1.7,CSKA Moscovo,1.7
+16/17,16/17,23,Zenit,Ural,2,0,1.22,6.0,13.0,Zenit,1.22
+16/17,16/17,23,Lokomotiv Moscovo,Amkar Perm,3,3,1.36,4.2,11.0,Empate,4.2
+16/17,16/17,23,Rostov,Spartak Moscovo,3,0,2.7,2.88,2.9,Rostov,2.7
+16/17,16/17,23,Akhmat Grozny,Anzhi Makhachkala,0,1,2.05,3.1,4.0,Anzhi Makhachkala,4.0
+16/17,16/17,23,Tom Tomsk,FC Gazovik Orenburg,1,2,7.5,3.8,1.5,FC Gazovik Orenburg,1.5
+16/17,16/17,23,Krylia Sovetov,Rubin Kazan,0,0,2.7,3.1,2.7,Empate,3.1
+16/17,16/17,23,Krasnodar,Arsenal Tula,2,0,1.36,4.5,9.5,Krasnodar,1.36
+16/17,16/17,24,Rostov,Ufa,1,0,1.5,3.6,8.5,Rostov,1.5
+16/17,16/17,24,Spartak Moscovo,Ural,1,0,1.2,6.0,15.0,Spartak Moscovo,1.2
+16/17,16/17,24,FC Gazovik Orenburg,Zenit,0,1,6.0,3.8,1.57,Zenit,1.57
+16/17,16/17,24,Arsenal Tula,Krylia Sovetov,2,0,2.38,3.0,3.25,Arsenal Tula,2.38
+16/17,16/17,24,CSKA Moscovo,Lokomotiv Moscovo,4,0,1.83,3.4,4.5,CSKA Moscovo,1.83
+16/17,16/17,24,Rubin Kazan,Akhmat Grozny,0,1,2.05,3.3,3.6,Akhmat Grozny,3.6
+16/17,16/17,24,Amkar Perm,Krasnodar,0,2,3.5,3.0,2.25,Krasnodar,2.25
+16/17,16/17,24,Anzhi Makhachkala,Tom Tomsk,3,3,1.17,7.0,17.0,Empate,7.0
+16/17,16/17,24,Lokomotiv Moscovo,Rubin Kazan,0,1,1.91,3.2,4.33,Rubin Kazan,4.33
+16/17,16/17,24,Akhmat Grozny,Ural,5,2,1.33,4.5,11.0,Akhmat Grozny,1.33
+16/17,16/17,24,Ufa,Arsenal Tula,1,0,2.25,3.0,3.5,Ufa,2.25
+16/17,16/17,24,CSKA Moscovo,Spartak Moscovo,1,2,1.95,3.5,3.75,Spartak Moscovo,3.75
+16/17,16/17,24,Rostov,Amkar Perm,1,0,1.53,3.75,7.0,Rostov,1.53
+16/17,16/17,25,Tom Tomsk,Zenit,0,2,21.0,9.0,1.1,Zenit,1.1
+16/17,16/17,25,Krylia Sovetov,FC Gazovik Orenburg,1,1,2.4,2.9,3.25,Empate,2.9
+16/17,16/17,25,Krasnodar,Anzhi Makhachkala,0,0,1.4,4.33,8.5,Empate,4.33
+16/17,16/17,25,Amkar Perm,CSKA Moscovo,0,2,6.0,3.3,1.67,CSKA Moscovo,1.67
+16/17,16/17,25,Arsenal Tula,Rostov,1,0,4.0,3.2,2.0,Arsenal Tula,4.0
+16/17,16/17,25,Spartak Moscovo,Tom Tomsk,1,0,1.04,15.0,34.0,Spartak Moscovo,1.04
+16/17,16/17,25,FC Gazovik Orenburg,Krasnodar,1,0,3.6,3.1,2.15,FC Gazovik Orenburg,3.6
+16/17,16/17,25,Rubin Kazan,Ufa,2,1,1.83,3.2,4.75,Rubin Kazan,1.83
+16/17,16/17,25,Zenit,Akhmat Grozny,0,1,1.36,4.75,8.5,Akhmat Grozny,8.5
+16/17,16/17,26,Ural,Krylia Sovetov,1,3,2.6,2.88,3.0,Krylia Sovetov,3.0
+16/17,16/17,26,Anzhi Makhachkala,Lokomotiv Moscovo,0,0,2.5,3.1,3.0,Empate,3.1
+16/17,16/17,26,CSKA Moscovo,Arsenal Tula,3,0,1.22,5.75,13.0,CSKA Moscovo,1.22
+16/17,16/17,26,Ural,Krasnodar,1,1,4.2,3.1,2.0,Empate,3.1
+16/17,16/17,26,Amkar Perm,Spartak Moscovo,0,1,3.1,3.1,2.4,Spartak Moscovo,2.4
+16/17,16/17,26,Krylia Sovetov,Zenit,1,3,5.0,3.5,1.73,Zenit,1.73
+16/17,16/17,26,Lokomotiv Moscovo,FC Gazovik Orenburg,4,0,2.15,3.2,3.5,Lokomotiv Moscovo,2.15
+16/17,16/17,26,Tom Tomsk,Akhmat Grozny,1,2,7.5,4.0,1.36,Akhmat Grozny,1.36
+16/17,16/17,26,Ufa,Anzhi Makhachkala,2,1,2.5,3.0,3.0,Ufa,2.5
+16/17,16/17,26,Rostov,Rubin Kazan,4,2,1.55,3.6,7.0,Rostov,1.55
+16/17,16/17,27,Tom Tomsk,Krylia Sovetov,0,2,8.0,4.5,1.33,Krylia Sovetov,1.33
+16/17,16/17,27,FC Gazovik Orenburg,Ufa,1,1,1.5,3.75,7.5,Empate,3.75
+16/17,16/17,27,Ural,Lokomotiv Moscovo,1,2,2.9,3.1,2.5,Lokomotiv Moscovo,2.5
+16/17,16/17,27,Anzhi Makhachkala,Rostov,1,2,3.6,3.3,2.05,Rostov,2.05
+16/17,16/17,27,Arsenal Tula,Amkar Perm,0,0,1.44,4.0,8.5,Empate,4.0
+16/17,16/17,27,Rubin Kazan,CSKA Moscovo,0,2,9.0,4.1,1.4,CSKA Moscovo,1.4
+16/17,16/17,27,Spartak Moscovo,Akhmat Grozny,3,0,1.8,3.6,4.33,Spartak Moscovo,1.8
+16/17,16/17,27,Zenit,Krasnodar,1,0,1.55,4.0,5.75,Zenit,1.55
+16/17,16/17,27,Amkar Perm,Rubin Kazan,1,2,2.6,3.1,2.8,Rubin Kazan,2.8
+16/17,16/17,27,Arsenal Tula,Spartak Moscovo,3,0,2.7,3.2,2.6,Arsenal Tula,2.7
+16/17,16/17,27,CSKA Moscovo,Anzhi Makhachkala,4,0,1.17,6.0,11.0,CSKA Moscovo,1.17
+16/17,16/17,27,FC Gazovik Orenburg,Rostov,2,0,3.4,3.1,2.25,FC Gazovik Orenburg,3.4
+16/17,16/17,27,Krylia Sovetov,Akhmat Grozny,1,3,1.85,3.2,4.75,Akhmat Grozny,4.75
+16/17,16/17,27,Lokomotiv Moscovo,Zenit,0,2,3.6,3.2,2.1,Zenit,2.1
+16/17,16/17,27,Tom Tomsk,Krasnodar,1,5,11.0,6.0,1.17,Krasnodar,1.17
+16/17,16/17,27,Ufa,Ural,1,0,2.7,3.2,2.6,Ufa,2.7
+16/17,16/17,28,Energiya Khabarovsk,FC Gazovik Orenburg,0,0,3.6,3.0,2.2,Empate,3.0
+16/17,16/17,28,FC Yenisey Krasnoyarsk,Arsenal Tula,2,1,2.45,3.1,3.0,FC Yenisey Krasnoyarsk,2.45
+16/17,16/17,28,FC Gazovik Orenburg,Energiya Khabarovsk,0,0,1.5,3.75,7.0,,
+16/17,16/17,28,Arsenal Tula,FC Yenisey Krasnoyarsk,1,0,1.7,3.4,5.25,Arsenal Tula,1.7
+17/18,17/18,1,Ural,Rostov,1,1,2.63,2.95,2.7,Empate,2.95
+17/18,17/18,1,Tosno,Ufa,0,1,2.4,2.85,2.95,Ufa,2.95
+17/18,17/18,1,Anzhi Makhachkala,CSKA Moscovo,1,3,6.5,3.6,1.5,CSKA Moscovo,1.5
+17/18,17/18,1,Energiya Khabarovsk,Zenit,0,2,8.0,4.2,1.36,Zenit,1.36
+17/18,17/18,1,Rubin Kazan,Krasnodar,1,2,2.2,3.05,3.15,Krasnodar,3.15
+17/18,17/18,1,Akhmat Grozny,Amkar Perm,1,0,1.8,3.15,4.5,Akhmat Grozny,1.8
+17/18,17/18,2,Dinamo Moscovo,Spartak Moscovo,2,2,3.5,3.3,1.95,Empate,3.3
+17/18,17/18,2,Lokomotiv Moscovo,Arsenal Tula,1,0,1.43,3.8,7.5,Lokomotiv Moscovo,1.43
+17/18,17/18,2,Anzhi Makhachkala,Amkar Perm,1,0,2.05,3.0,3.7,Anzhi Makhachkala,2.05
+17/18,17/18,2,CSKA Moscovo,Lokomotiv Moscovo,1,3,1.5,3.75,6.0,Lokomotiv Moscovo,6.0
+17/18,17/18,2,Zenit,Rubin Kazan,2,1,1.48,3.8,6.5,Zenit,1.48
+17/18,17/18,2,Krasnodar,Tosno,2,0,1.4,4.0,7.0,Krasnodar,1.4
+17/18,17/18,2,Ufa,Spartak Moscovo,0,0,4.0,3.3,1.83,Empate,3.3
+17/18,17/18,2,Dinamo Moscovo,Ural,0,1,1.5,3.75,6.0,Ural,6.0
+17/18,17/18,2,Rostov,Akhmat Grozny,0,1,2.35,2.9,3.1,Akhmat Grozny,3.1
+17/18,17/18,3,Arsenal Tula,Energiya Khabarovsk,1,0,1.65,3.2,5.75,Arsenal Tula,1.65
+17/18,17/18,3,CSKA Moscovo,Energiya Khabarovsk,2,0,1.15,6.0,17.0,CSKA Moscovo,1.15
+17/18,17/18,3,Ural,Ufa,1,1,2.55,2.85,2.88,Empate,2.85
+17/18,17/18,3,Rubin Kazan,Arsenal Tula,2,1,1.6,3.4,5.7,Rubin Kazan,1.6
+17/18,17/18,3,Akhmat Grozny,Dinamo Moscovo,2,0,2.15,2.95,3.4,Akhmat Grozny,2.15
+17/18,17/18,3,Amkar Perm,Rostov,0,1,2.7,2.67,2.88,Rostov,2.88
+17/18,17/18,3,Lokomotiv Moscovo,Anzhi Makhachkala,1,0,1.5,3.6,6.0,Lokomotiv Moscovo,1.5
+17/18,17/18,3,Tosno,Zenit,0,1,15.0,5.5,1.18,Zenit,1.18
+17/18,17/18,4,Spartak Moscovo,Krasnodar,2,0,1.67,3.75,4.5,Spartak Moscovo,1.67
+17/18,17/18,4,Anzhi Makhachkala,Rostov,0,1,3.3,2.8,2.65,Rostov,2.65
+17/18,17/18,4,Ufa,Akhmat Grozny,3,2,2.88,2.82,2.88,Ufa,2.88
+17/18,17/18,4,Dinamo Moscovo,Amkar Perm,3,0,1.75,3.3,5.25,Dinamo Moscovo,1.75
+17/18,17/18,4,Lokomotiv Moscovo,Energiya Khabarovsk,1,0,1.22,5.25,17.0,Lokomotiv Moscovo,1.22
+17/18,17/18,4,Arsenal Tula,Tosno,1,2,2.05,3.1,3.8,Tosno,3.8
+17/18,17/18,4,CSKA Moscovo,Rubin Kazan,1,2,1.5,3.8,7.5,Rubin Kazan,7.5
+17/18,17/18,4,Krasnodar,Ural,1,1,1.44,4.2,9.0,Empate,4.2
+17/18,17/18,4,Zenit,Spartak Moscovo,5,1,2.0,3.5,3.8,Zenit,2.0
+17/18,17/18,5,Energiya Khabarovsk,Anzhi Makhachkala,2,0,2.7,2.88,2.9,Energiya Khabarovsk,2.7
+17/18,17/18,5,Amkar Perm,Ufa,0,0,2.55,2.8,3.3,Empate,2.8
+17/18,17/18,5,Ural,Zenit,1,1,6.5,4.0,1.53,Empate,4.0
+17/18,17/18,5,Spartak Moscovo,Arsenal Tula,2,0,1.3,5.0,11.0,Spartak Moscovo,1.3
+17/18,17/18,5,Rostov,Dinamo Moscovo,1,0,1.91,3.1,5.0,Rostov,1.91
+17/18,17/18,5,Rubin Kazan,Lokomotiv Moscovo,1,1,2.5,2.88,3.2,Empate,2.88
+17/18,17/18,5,Tosno,CSKA Moscovo,1,2,6.0,4.0,1.53,CSKA Moscovo,1.53
+17/18,17/18,5,Akhmat Grozny,Krasnodar,2,3,2.6,3.0,2.9,Krasnodar,2.9
+17/18,17/18,5,Ufa,Rostov,1,4,3.8,2.88,3.4,Rostov,3.4
+17/18,17/18,5,CSKA Moscovo,Spartak Moscovo,2,1,2.2,3.6,4.0,CSKA Moscovo,2.2
+17/18,17/18,5,Anzhi Makhachkala,Dinamo Moscovo,1,3,8.5,3.6,2.7,Dinamo Moscovo,2.7
+17/18,17/18,5,Energiya Khabarovsk,Rubin Kazan,1,1,4.2,3.2,2.55,Empate,3.2
+17/18,17/18,5,Lokomotiv Moscovo,Tosno,0,2,1.75,4.5,9.5,Tosno,9.5
+17/18,17/18,5,Krasnodar,Amkar Perm,1,1,1.44,6.5,29.0,Empate,6.5
+17/18,17/18,5,Zenit,Akhmat Grozny,4,0,1.44,10.5,81.0,Zenit,1.44
+17/18,17/18,6,Arsenal Tula,Ural,2,2,2.3,4.2,12.0,Empate,4.2
+17/18,17/18,6,Tosno,Energiya Khabarovsk,0,0,1.83,3.6,7.5,Empate,3.6
+17/18,17/18,6,Ural,CSKA Moscovo,0,0,5.75,3.5,1.95,Empate,3.5
+17/18,17/18,6,Spartak Moscovo,Lokomotiv Moscovo,3,4,1.75,6.5,17.0,Lokomotiv Moscovo,17.0
+17/18,17/18,6,Rubin Kazan,Anzhi Makhachkala,6,0,1.57,12.0,81.0,Rubin Kazan,1.57
+17/18,17/18,6,Amkar Perm,Zenit,0,1,5.5,3.4,2.5,Zenit,2.5
+17/18,17/18,6,Dinamo Moscovo,Ufa,1,1,4.2,3.3,5.25,Empate,3.3
+17/18,17/18,6,Rostov,Krasnodar,0,0,2.4,3.1,4.5,Empate,3.1
+17/18,17/18,7,Akhmat Grozny,Arsenal Tula,1,2,4.33,3.6,6.5,Arsenal Tula,6.5
+17/18,17/18,7,Anzhi Makhachkala,Ufa,1,0,2.6,3.75,9.0,Anzhi Makhachkala,2.6
+17/18,17/18,7,Arsenal Tula,Amkar Perm,0,1,6.0,3.25,3.3,Amkar Perm,3.3
+17/18,17/18,7,Rubin Kazan,Tosno,1,0,1.6,6.0,29.0,Rubin Kazan,1.6
+17/18,17/18,7,Lokomotiv Moscovo,Ural,2,1,1.8,4.0,8.0,Lokomotiv Moscovo,1.8
+17/18,17/18,7,Energiya Khabarovsk,Spartak Moscovo,0,0,7.5,3.8,1.6,Empate,3.8
+17/18,17/18,7,CSKA Moscovo,Akhmat Grozny,0,1,2.55,4.5,9.0,Akhmat Grozny,9.0
+17/18,17/18,7,Krasnodar,Dinamo Moscovo,2,0,1.62,5.2,17.0,Krasnodar,1.62
+17/18,17/18,7,Zenit,Rostov,0,0,1.85,3.6,6.0,Empate,3.6
+17/18,17/18,8,Amkar Perm,CSKA Moscovo,0,1,5.5,3.5,1.67,CSKA Moscovo,1.67
+17/18,17/18,8,Tosno,Anzhi Makhachkala,2,2,1.95,3.2,4.33,Empate,3.2
+17/18,17/18,8,Rostov,Arsenal Tula,2,2,1.48,3.8,9.0,Empate,3.8
+17/18,17/18,8,Spartak Moscovo,Rubin Kazan,1,0,1.67,3.75,5.0,Spartak Moscovo,1.67
+17/18,17/18,8,Dinamo Moscovo,Zenit,0,0,5.25,3.6,1.7,Empate,3.6
+17/18,17/18,8,Ufa,Krasnodar,0,1,3.8,3.2,2.05,Krasnodar,2.05
+17/18,17/18,8,Akhmat Grozny,Lokomotiv Moscovo,1,1,2.5,3.1,2.9,Empate,3.1
+17/18,17/18,9,Ural,Energiya Khabarovsk,1,1,1.55,3.6,7.0,Empate,3.6
+17/18,17/18,9,Arsenal Tula,Dinamo Moscovo,1,0,2.65,3.0,2.88,Arsenal Tula,2.65
+17/18,17/18,9,CSKA Moscovo,Rostov,2,0,1.65,3.5,6.5,CSKA Moscovo,1.65
+17/18,17/18,9,Anzhi Makhachkala,Krasnodar,1,5,5.75,3.5,1.67,Krasnodar,1.67
+17/18,17/18,9,Energiya Khabarovsk,Akhmat Grozny,2,2,4.5,3.3,1.85,Empate,3.3
+17/18,17/18,9,Tosno,Spartak Moscovo,2,2,4.5,3.5,1.8,Empate,3.5
+17/18,17/18,9,Rubin Kazan,Ural,0,1,1.61,3.75,6.5,Ural,6.5
+17/18,17/18,10,Lokomotiv Moscovo,Amkar Perm,0,1,1.5,3.75,8.0,Amkar Perm,8.0
+17/18,17/18,10,Zenit,Ufa,3,0,1.33,5.4,10.0,Zenit,1.33
+17/18,17/18,10,Dinamo Moscovo,CSKA Moscovo,0,0,5.25,3.5,1.73,Empate,3.5
+17/18,17/18,10,Spartak Moscovo,Anzhi Makhachkala,2,2,1.3,5.85,9.0,Empate,5.85
+17/18,17/18,10,Ural,Tosno,3,1,2.3,3.1,3.3,Ural,2.3
+17/18,17/18,10,Rostov,Lokomotiv Moscovo,0,1,2.3,2.9,3.5,Lokomotiv Moscovo,3.5
+17/18,17/18,10,Ufa,Arsenal Tula,1,0,2.3,3.0,3.5,Ufa,2.3
+17/18,17/18,10,Krasnodar,Zenit,0,2,2.6,3.1,2.9,Zenit,2.9
+17/18,17/18,11,Amkar Perm,Energiya Khabarovsk,3,0,1.57,3.4,7.5,Amkar Perm,1.57
+17/18,17/18,11,Akhmat Grozny,Rubin Kazan,1,0,2.45,3.0,3.1,Akhmat Grozny,2.45
+17/18,17/18,11,Arsenal Tula,Krasnodar,1,0,5.5,3.6,1.65,Arsenal Tula,5.5
+17/18,17/18,11,Energiya Khabarovsk,Rostov,2,1,6.0,3.4,1.67,Energiya Khabarovsk,6.0
+17/18,17/18,11,Tosno,Akhmat Grozny,1,0,2.8,3.0,2.7,Tosno,2.8
+17/18,17/18,11,Rubin Kazan,Amkar Perm,0,1,1.75,3.3,5.5,Amkar Perm,5.5
+17/18,17/18,11,Spartak Moscovo,Ural,2,0,1.48,4.5,7.0,Spartak Moscovo,1.48
+17/18,17/18,11,CSKA Moscovo,Ufa,0,0,1.29,5.0,11.0,Empate,5.0
+17/18,17/18,11,Lokomotiv Moscovo,Dinamo Moscovo,3,0,1.75,3.4,5.0,Lokomotiv Moscovo,1.75
+17/18,17/18,11,Anzhi Makhachkala,Zenit,2,2,8.5,4.3,1.44,Empate,4.3
+17/18,17/18,12,Akhmat Grozny,Spartak Moscovo,1,2,3.1,3.25,2.3,Spartak Moscovo,2.3
+17/18,17/18,12,Dinamo Moscovo,Energiya Khabarovsk,2,0,1.4,4.0,10.0,Dinamo Moscovo,1.4
+17/18,17/18,12,Ural,Anzhi Makhachkala,2,1,2.05,3.25,3.75,Ural,2.05
+17/18,17/18,12,Krasnodar,CSKA Moscovo,0,1,2.15,3.3,3.6,CSKA Moscovo,3.6
+17/18,17/18,12,Ufa,Lokomotiv Moscovo,1,0,3.6,3.0,2.25,Ufa,3.6
+17/18,17/18,12,Rostov,Rubin Kazan,0,1,2.4,2.8,3.4,Rubin Kazan,3.4
+17/18,17/18,12,Zenit,Arsenal Tula,0,1,1.25,5.5,13.0,Arsenal Tula,13.0
+17/18,17/18,13,Amkar Perm,Tosno,0,0,2.3,2.88,3.6,Empate,2.88
+17/18,17/18,13,Energiya Khabarovsk,Ufa,2,2,3.6,2.75,2.4,Empate,2.75
+17/18,17/18,13,Tosno,Rostov,1,1,3.25,2.89,2.5,Empate,2.89
+17/18,17/18,13,Rubin Kazan,Dinamo Moscovo,0,0,1.88,3.39,4.5,Empate,3.39
+17/18,17/18,13,Spartak Moscovo,Amkar Perm,0,0,1.42,4.33,8.5,Empate,4.33
+17/18,17/18,13,Ural,Akhmat Grozny,2,0,3.0,3.1,2.45,Ural,3.0
+17/18,17/18,13,CSKA Moscovo,Zenit,0,0,2.87,3.0,2.62,Empate,3.0
+17/18,17/18,13,Anzhi Makhachkala,Arsenal Tula,3,2,2.45,3.1,3.0,Anzhi Makhachkala,2.45
+17/18,17/18,14,Lokomotiv Moscovo,Krasnodar,2,0,2.5,3.1,3.0,Lokomotiv Moscovo,2.5
+17/18,17/18,14,Arsenal Tula,CSKA Moscovo,1,0,5.25,3.29,1.75,Arsenal Tula,5.25
+17/18,17/18,14,Rostov,Spartak Moscovo,2,2,2.85,3.0,2.7,Empate,3.0
+17/18,17/18,14,Amkar Perm,Ural,1,1,2.25,2.79,3.75,Empate,2.79
+17/18,17/18,14,Dinamo Moscovo,Tosno,0,1,2.14,3.2,3.7,Tosno,3.7
+17/18,17/18,14,Zenit,Lokomotiv Moscovo,0,3,1.7,3.5,5.0,Lokomotiv Moscovo,5.0
+17/18,17/18,14,Krasnodar,Energiya Khabarovsk,4,1,1.17,6.5,19.0,Krasnodar,1.17
+17/18,17/18,15,Ufa,Rubin Kazan,2,1,3.6,3.0,2.38,Ufa,3.6
+17/18,17/18,15,Akhmat Grozny,Anzhi Makhachkala,1,1,1.6,3.5,7.5,Empate,3.5
+17/18,17/18,15,Ural,Dinamo Moscovo,2,2,2.22,3.0,3.75,Empate,3.0
+17/18,17/18,15,Tosno,Krasnodar,1,3,4.0,3.2,2.0,Krasnodar,2.0
+17/18,17/18,15,Akhmat Grozny,Rostov,1,0,2.45,3.0,3.2,Akhmat Grozny,2.45
+17/18,17/18,15,Energiya Khabarovsk,Arsenal Tula,1,2,3.1,2.79,2.63,Arsenal Tula,2.63
+17/18,17/18,15,Amkar Perm,Anzhi Makhachkala,1,2,1.8,3.2,5.0,Anzhi Makhachkala,5.0
+17/18,17/18,15,Lokomotiv Moscovo,CSKA Moscovo,2,2,3.39,3.0,2.4,Empate,3.0
+17/18,17/18,15,Rubin Kazan,Zenit,0,0,3.6,3.0,2.25,Empate,3.0
+17/18,17/18,15,Spartak Moscovo,Ufa,3,1,1.39,4.33,8.0,Spartak Moscovo,1.39
+17/18,17/18,16,Energiya Khabarovsk,CSKA Moscovo,2,4,7.5,3.79,1.5,CSKA Moscovo,1.5
+17/18,17/18,16,Dinamo Moscovo,Akhmat Grozny,1,1,2.55,3.0,3.0,Empate,3.0
+17/18,17/18,16,Krasnodar,Spartak Moscovo,1,4,2.22,3.29,3.29,Spartak Moscovo,3.29
+17/18,17/18,16,Arsenal Tula,Rubin Kazan,0,0,2.9,3.0,2.62,Empate,3.0
+17/18,17/18,16,Ufa,Ural,2,0,2.25,2.79,3.79,Ufa,2.25
+17/18,17/18,16,Anzhi Makhachkala,Lokomotiv Moscovo,0,1,4.5,3.29,1.85,Lokomotiv Moscovo,1.85
+17/18,17/18,16,Rostov,Amkar Perm,0,0,1.8,3.2,5.2,Empate,3.2
+17/18,17/18,16,Zenit,Tosno,5,0,1.34,5.0,11.0,Zenit,1.34
+17/18,17/18,17,Amkar Perm,Dinamo Moscovo,2,1,2.3,2.65,3.5,Amkar Perm,2.3
+17/18,17/18,17,Tosno,Arsenal Tula,3,2,2.2,3.0,3.3,Tosno,2.2
+17/18,17/18,17,Akhmat Grozny,Ufa,2,1,1.85,3.0,4.75,Akhmat Grozny,1.85
+17/18,17/18,17,Ural,Krasnodar,0,1,4.0,3.25,1.88,Krasnodar,1.88
+17/18,17/18,17,Rubin Kazan,CSKA Moscovo,0,1,3.1,2.85,2.33,CSKA Moscovo,2.33
+17/18,17/18,17,Rostov,Anzhi Makhachkala,2,0,1.61,3.3,5.5,Rostov,1.61
+17/18,17/18,18,Energiya Khabarovsk,Lokomotiv Moscovo,1,2,5.35,3.55,1.65,Lokomotiv Moscovo,1.65
+17/18,17/18,18,Spartak Moscovo,Zenit,3,1,2.6,3.2,2.7,Spartak Moscovo,2.6
+17/18,17/18,18,Arsenal Tula,Spartak Moscovo,0,1,3.1,3.05,2.22,Spartak Moscovo,2.22
+17/18,17/18,18,CSKA Moscovo,Tosno,6,0,1.37,4.5,8.05,CSKA Moscovo,1.37
+17/18,17/18,18,Dinamo Moscovo,Rostov,2,0,2.9,2.75,2.55,Dinamo Moscovo,2.9
+17/18,17/18,18,Zenit,Ural,2,1,1.25,5.9,11.0,Zenit,1.25
+17/18,17/18,18,Lokomotiv Moscovo,Rubin Kazan,1,0,1.95,2.85,4.2,Lokomotiv Moscovo,1.95
+17/18,17/18,18,Ufa,Amkar Perm,3,0,2.33,2.6,3.5,Ufa,2.33
+17/18,17/18,18,Krasnodar,Akhmat Grozny,3,2,1.7,3.4,4.5,Krasnodar,1.7
+17/18,17/18,18,Anzhi Makhachkala,Energiya Khabarovsk,4,0,1.53,3.5,6.0,Anzhi Makhachkala,1.53
+17/18,17/18,19,Ural,Arsenal Tula,1,1,2.38,2.88,3.1,Empate,2.88
+17/18,17/18,19,Dinamo Moscovo,Anzhi Makhachkala,2,0,1.88,3.05,4.33,Dinamo Moscovo,1.88
+17/18,17/18,19,Rubin Kazan,Energiya Khabarovsk,3,1,1.3,4.33,11.0,Rubin Kazan,1.3
+17/18,17/18,19,Amkar Perm,Krasnodar,1,3,3.6,3.05,2.08,Krasnodar,2.08
+17/18,17/18,19,Spartak Moscovo,CSKA Moscovo,3,0,2.22,3.1,3.1,Spartak Moscovo,2.22
+17/18,17/18,19,Rostov,Ufa,1,0,1.98,2.95,4.0,Rostov,1.98
+17/18,17/18,20,Akhmat Grozny,Zenit,0,0,4.25,3.25,1.87,Empate,3.25
+17/18,17/18,20,Tosno,Lokomotiv Moscovo,1,3,4.2,3.2,1.94,Lokomotiv Moscovo,1.94
+17/18,17/18,21,Anzhi Makhachkala,Rubin Kazan,1,1,3.6,2.87,2.29,Empate,2.87
+17/18,17/18,21,CSKA Moscovo,Ural,1,0,1.3,4.75,13.0,CSKA Moscovo,1.3
+17/18,17/18,21,Zenit,Amkar Perm,0,0,1.3,4.33,11.0,Empate,4.33
+17/18,17/18,21,Krasnodar,Rostov,3,1,1.95,3.1,4.5,Krasnodar,1.95
+17/18,17/18,21,Energiya Khabarovsk,Tosno,0,1,4.33,3.0,2.0,Tosno,2.0
+17/18,17/18,21,Ufa,Dinamo Moscovo,1,1,2.39,2.87,3.39,Empate,2.87
+17/18,17/18,21,Lokomotiv Moscovo,Spartak Moscovo,0,0,2.75,3.1,2.62,Empate,3.1
+17/18,17/18,21,Arsenal Tula,Akhmat Grozny,1,0,2.45,3.1,3.0,Arsenal Tula,2.45
+17/18,17/18,22,Amkar Perm,Arsenal Tula,0,2,3.0,2.7,2.87,Arsenal Tula,2.87
+17/18,17/18,22,Ufa,Anzhi Makhachkala,3,2,1.9,3.0,5.0,Ufa,1.9
+17/18,17/18,22,Dinamo Moscovo,Krasnodar,0,0,3.5,3.0,2.25,Empate,3.0
+17/18,17/18,22,Tosno,Rubin Kazan,0,1,4.5,3.0,2.0,Rubin Kazan,2.0
+17/18,17/18,22,Rostov,Zenit,0,0,3.1,3.0,2.5,Empate,3.0
+17/18,17/18,22,Akhmat Grozny,CSKA Moscovo,0,3,4.2,3.0,2.04,CSKA Moscovo,2.04
+17/18,17/18,22,Spartak Moscovo,Energiya Khabarovsk,1,0,1.12,7.5,23.0,Spartak Moscovo,1.12
+17/18,17/18,23,Ural,Lokomotiv Moscovo,0,2,4.33,2.87,2.04,Lokomotiv Moscovo,2.04
+17/18,17/18,23,Energiya Khabarovsk,Ural,0,3,3.6,3.0,2.2,Ural,2.2
+17/18,17/18,23,Arsenal Tula,Rostov,2,2,2.75,2.79,2.79,Empate,2.79
+17/18,17/18,23,Krasnodar,Ufa,0,1,1.44,4.0,8.0,Ufa,8.0
+17/18,17/18,23,Anzhi Makhachkala,Tosno,2,0,2.2,3.1,3.5,Anzhi Makhachkala,2.2
+17/18,17/18,23,Rubin Kazan,Spartak Moscovo,1,2,3.0,3.1,2.45,Spartak Moscovo,2.45
+17/18,17/18,24,Akhmat Grozny,Energiya Khabarovsk,0,0,1.22,5.25,19.0,Empate,5.25
+17/18,17/18,24,Amkar Perm,Lokomotiv Moscovo,2,1,7.5,3.5,1.55,Amkar Perm,7.5
+17/18,17/18,24,Dinamo Moscovo,Arsenal Tula,2,1,2.14,3.0,3.79,Dinamo Moscovo,2.14
+17/18,17/18,24,Spartak Moscovo,Tosno,2,1,1.33,4.75,11.0,Spartak Moscovo,1.33
+17/18,17/18,24,Ural,Rubin Kazan,1,1,3.1,2.79,2.6,Empate,2.79
+17/18,17/18,24,Ufa,Zenit,1,2,4.2,3.0,1.9,Zenit,1.9
+17/18,17/18,24,Krasnodar,Anzhi Makhachkala,1,1,1.36,4.0,9.5,Empate,4.0
+17/18,17/18,24,Rostov,CSKA Moscovo,1,2,3.29,3.0,2.37,CSKA Moscovo,2.37
+17/18,17/18,25,Energiya Khabarovsk,Amkar Perm,0,2,3.75,3.2,2.04,Amkar Perm,2.04
+17/18,17/18,25,Rubin Kazan,Akhmat Grozny,3,2,1.95,3.2,4.2,Rubin Kazan,1.95
+17/18,17/18,25,Zenit,Krasnodar,1,2,1.75,3.5,4.75,Krasnodar,4.75
+17/18,17/18,25,Arsenal Tula,Ufa,2,1,2.25,3.1,3.39,Arsenal Tula,2.25
+17/18,17/18,25,Tosno,Ural,2,2,2.25,3.0,3.5,Empate,3.0
+17/18,17/18,25,Lokomotiv Moscovo,Rostov,1,0,1.95,3.0,4.75,Lokomotiv Moscovo,1.95
+17/18,17/18,25,Anzhi Makhachkala,Spartak Moscovo,1,4,5.0,3.6,1.7,Spartak Moscovo,1.7
+17/18,17/18,26,CSKA Moscovo,Dinamo Moscovo,1,2,1.61,3.75,5.75,Dinamo Moscovo,5.75
+17/18,17/18,26,Akhmat Grozny,Tosno,1,0,1.66,3.39,5.75,Akhmat Grozny,1.66
+17/18,17/18,26,Amkar Perm,Rubin Kazan,0,3,3.0,2.75,2.7,Rubin Kazan,2.7
+17/18,17/18,26,Dinamo Moscovo,Lokomotiv Moscovo,0,4,3.79,3.0,2.14,Lokomotiv Moscovo,2.14
+17/18,17/18,26,Zenit,Anzhi Makhachkala,1,0,1.33,4.75,9.5,Zenit,1.33
+17/18,17/18,26,Krasnodar,Arsenal Tula,3,0,1.57,3.75,6.0,Krasnodar,1.57
+17/18,17/18,26,Ural,Spartak Moscovo,2,1,6.0,4.0,1.57,Ural,6.0
+17/18,17/18,26,Ufa,CSKA Moscovo,1,1,5.0,3.25,1.8,Empate,3.25
+17/18,17/18,26,Rostov,Energiya Khabarovsk,2,0,1.19,5.75,17.0,Rostov,1.19
+17/18,17/18,27,Lokomotiv Moscovo,Akhmat Grozny,0,0,1.66,3.5,6.5,Empate,3.5
+17/18,17/18,27,Zenit,Dinamo Moscovo,2,1,1.5,4.0,7.0,Zenit,1.5
+17/18,17/18,27,CSKA Moscovo,Amkar Perm,3,0,1.4,4.33,8.5,CSKA Moscovo,1.4
+17/18,17/18,27,Rubin Kazan,Rostov,1,1,2.1,2.88,4.2,Empate,2.88
+17/18,17/18,27,Anzhi Makhachkala,Ural,0,1,2.1,3.2,3.79,Ural,3.79
+17/18,17/18,27,Energiya Khabarovsk,Dinamo Moscovo,0,1,7.0,3.79,1.55,Dinamo Moscovo,1.55
+17/18,17/18,27,Arsenal Tula,Zenit,3,3,4.75,3.6,1.75,Empate,3.6
+17/18,17/18,27,CSKA Moscovo,Krasnodar,2,1,1.8,3.5,4.75,CSKA Moscovo,1.8
+17/18,17/18,27,Tosno,Amkar Perm,0,2,2.6,3.0,3.0,Amkar Perm,3.0
+17/18,17/18,27,Lokomotiv Moscovo,Ufa,0,0,1.53,3.8,8.0,Empate,3.8
+17/18,17/18,28,Spartak Moscovo,Akhmat Grozny,1,3,1.4,4.5,9.0,Akhmat Grozny,9.0
+17/18,17/18,28,Arsenal Tula,Anzhi Makhachkala,2,1,2.04,3.3,4.4,Arsenal Tula,2.04
+17/18,17/18,28,Amkar Perm,Spartak Moscovo,0,2,5.0,3.6,1.75,Spartak Moscovo,1.75
+17/18,17/18,28,Zenit,CSKA Moscovo,0,0,2.37,3.25,3.3,Empate,3.25
+17/18,17/18,28,Rostov,Tosno,2,0,1.6,3.75,6.0,Rostov,1.6
+17/18,17/18,29,Ufa,Energiya Khabarovsk,1,0,1.29,5.25,13.0,Ufa,1.29
+17/18,17/18,29,Dinamo Moscovo,Rubin Kazan,0,0,3.0,2.8,2.7,Empate,2.8
+17/18,17/18,29,Akhmat Grozny,Ural,0,0,1.67,3.5,5.5,Empate,3.5
+17/18,17/18,29,Krasnodar,Lokomotiv Moscovo,2,0,2.45,3.2,2.9,Krasnodar,2.45
+17/18,17/18,29,Energiya Khabarovsk,Krasnodar,0,1,13.0,5.5,1.25,Krasnodar,1.25
+17/18,17/18,29,Tosno,Dinamo Moscovo,1,2,2.7,3.1,2.7,Dinamo Moscovo,2.7
+17/18,17/18,29,Lokomotiv Moscovo,Zenit,1,0,2.35,3.1,3.29,Lokomotiv Moscovo,2.35
+17/18,17/18,29,Spartak Moscovo,Rostov,2,0,1.64,3.75,6.0,Spartak Moscovo,1.64
+17/18,17/18,29,Ural,Amkar Perm,0,2,2.75,3.0,2.89,Amkar Perm,2.89
+17/18,17/18,29,CSKA Moscovo,Arsenal Tula,6,0,1.36,5.0,9.5,CSKA Moscovo,1.36
+17/18,17/18,30,Anzhi Makhachkala,Akhmat Grozny,0,2,3.29,3.1,2.3,Akhmat Grozny,2.3
+17/18,17/18,30,Rubin Kazan,Ufa,0,0,1.73,3.25,6.0,Empate,3.25
+17/18,17/18,30,Amkar Perm,Akhmat Grozny,0,0,2.0,3.29,3.9,Empate,3.29
+17/18,17/18,30,Arsenal Tula,Lokomotiv Moscovo,2,0,2.05,3.4,3.5,Arsenal Tula,2.05
+17/18,17/18,30,CSKA Moscovo,Anzhi Makhachkala,2,1,1.18,6.5,15.0,CSKA Moscovo,1.18
+17/18,17/18,30,Krasnodar,Rubin Kazan,1,1,1.66,3.8,5.5,Empate,3.8
+17/18,17/18,30,Rostov,Ural,1,0,1.7,3.5,5.5,Rostov,1.7
+17/18,17/18,30,Spartak Moscovo,Dinamo Moscovo,0,1,1.4,4.6,8.0,Dinamo Moscovo,8.0
+17/18,17/18,30,Ufa,Tosno,5,0,1.8,3.4,4.75,Ufa,1.8
+17/18,17/18,30,Zenit,Energiya Khabarovsk,6,0,1.1,9.0,23.0,Zenit,1.1
+17/18,17/18,31,FC Yenisey Krasnoyarsk,Anzhi Makhachkala,3,0,2.1,3.2,3.6,FC Yenisey Krasnoyarsk,2.1
+17/18,17/18,31,Amkar Perm,Tambov,2,0,1.75,3.25,5.5,Amkar Perm,1.75
+17/18,17/18,31,Tambov,Amkar Perm,0,1,3.1,3.0,2.45,Amkar Perm,2.45
+17/18,17/18,31,Anzhi Makhachkala,FC Yenisey Krasnoyarsk,4,3,2.04,3.5,3.4,Anzhi Makhachkala,2.04
+18/19,18/19,1,Ural,Anzhi Makhachkala,0,1,1.55,3.7,7.0,Anzhi Makhachkala,7.0
+18/19,18/19,1,Spartak Moscovo,FC Gazovik Orenburg,1,0,1.44,4.25,7.5,Spartak Moscovo,1.44
+18/19,18/19,1,Rostov,Akhmat Grozny,1,0,2.22,3.0,3.6,Rostov,2.22
+18/19,18/19,1,FC Yenisey Krasnoyarsk,Zenit,0,2,6.5,3.8,1.53,Zenit,1.53
+18/19,18/19,1,Arsenal Tula,Dinamo Moscovo,0,0,2.85,3.0,2.7,Empate,3.0
+18/19,18/19,1,Rubin Kazan,Krasnodar,2,1,2.75,3.0,2.75,Rubin Kazan,2.75
+18/19,18/19,2,Ufa,Lokomotiv Moscovo,0,0,4.15,3.0,2.04,Empate,3.0
+18/19,18/19,2,Krylia Sovetov,CSKA Moscovo,0,0,4.0,3.1,2.04,Empate,3.1
+18/19,18/19,2,Dinamo Moscovo,Rubin Kazan,1,1,2.75,2.87,2.9,Empate,2.87
+18/19,18/19,2,Ural,Krasnodar,1,2,3.5,3.05,2.3,Krasnodar,2.3
+18/19,18/19,2,Zenit,Arsenal Tula,1,0,1.33,5.0,11.0,Zenit,1.33
+18/19,18/19,2,Lokomotiv Moscovo,Spartak Moscovo,0,0,2.7,3.0,2.87,Empate,3.0
+18/19,18/19,2,Krylia Sovetov,FC Gazovik Orenburg,0,3,2.36,3.0,3.5,FC Gazovik Orenburg,3.5
+18/19,18/19,2,CSKA Moscovo,Rostov,0,1,1.87,3.2,5.25,Rostov,5.25
+18/19,18/19,2,Akhmat Grozny,FC Yenisey Krasnoyarsk,1,0,1.73,3.4,5.5,Akhmat Grozny,1.73
+18/19,18/19,3,Ufa,Anzhi Makhachkala,3,0,1.57,3.6,7.5,Ufa,1.57
+18/19,18/19,3,Ural,Dinamo Moscovo,1,1,2.5,2.9,3.2,Empate,2.9
+18/19,18/19,3,FC Yenisey Krasnoyarsk,CSKA Moscovo,1,1,4.85,3.5,1.91,Empate,3.5
+18/19,18/19,3,Spartak Moscovo,Anzhi Makhachkala,1,0,1.2,6.3,14.0,Spartak Moscovo,1.2
+18/19,18/19,3,Rostov,Krylia Sovetov,0,1,1.75,3.4,6.0,Krylia Sovetov,6.0
+18/19,18/19,3,FC Gazovik Orenburg,Lokomotiv Moscovo,1,0,3.6,3.0,2.3,FC Gazovik Orenburg,3.6
+18/19,18/19,3,Arsenal Tula,Akhmat Grozny,3,1,2.63,3.1,2.9,Arsenal Tula,2.63
+18/19,18/19,4,Ufa,Krasnodar,0,1,3.4,3.1,2.34,,
+18/19,18/19,4,Rubin Kazan,Zenit,0,1,3.9,3.0,2.12,Zenit,2.12
+18/19,18/19,4,Anzhi Makhachkala,FC Gazovik Orenburg,1,3,4.75,3.0,2.07,FC Gazovik Orenburg,2.07
+18/19,18/19,4,CSKA Moscovo,Arsenal Tula,3,0,1.63,3.6,6.5,CSKA Moscovo,1.63
+18/19,18/19,4,Krasnodar,Spartak Moscovo,0,1,2.7,3.3,2.63,Spartak Moscovo,2.63
+18/19,18/19,4,Akhmat Grozny,Rubin Kazan,1,1,2.8,2.8,3.0,Empate,2.8
+18/19,18/19,4,Krylia Sovetov,Lokomotiv Moscovo,0,1,4.75,3.05,2.0,Lokomotiv Moscovo,2.0
+18/19,18/19,4,Zenit,Ural,4,1,1.33,4.8,12.0,Zenit,1.33
+18/19,18/19,4,Rostov,FC Yenisey Krasnoyarsk,4,0,1.61,3.5,6.5,Rostov,1.61
+18/19,18/19,5,Dinamo Moscovo,Ufa,3,0,1.73,3.3,7.0,Dinamo Moscovo,1.73
+18/19,18/19,5,Arsenal Tula,Rostov,0,1,3.25,2.88,2.5,Rostov,2.5
+18/19,18/19,5,Ural,Akhmat Grozny,2,1,2.45,3.0,3.1,Ural,2.45
+18/19,18/19,5,Rubin Kazan,CSKA Moscovo,1,1,2.63,2.88,3.1,Empate,2.88
+18/19,18/19,5,Spartak Moscovo,Dinamo Moscovo,2,1,1.8,3.6,5.5,Spartak Moscovo,1.8
+18/19,18/19,5,FC Gazovik Orenburg,Krasnodar,1,1,3.75,3.0,2.25,Empate,3.0
+18/19,18/19,5,Ufa,Zenit,0,2,6.0,3.4,1.7,Zenit,1.7
+18/19,18/19,5,Lokomotiv Moscovo,Anzhi Makhachkala,2,1,1.22,5.5,19.0,Lokomotiv Moscovo,1.22
+18/19,18/19,6,FC Yenisey Krasnoyarsk,Krylia Sovetov,1,0,2.63,3.0,3.0,FC Yenisey Krasnoyarsk,2.63
+18/19,18/19,6,Rostov,Rubin Kazan,1,1,2.4,2.75,3.6,Empate,2.75
+18/19,18/19,6,Krylia Sovetov,Anzhi Makhachkala,1,0,1.66,3.6,5.5,Krylia Sovetov,1.66
+18/19,18/19,6,CSKA Moscovo,Ural,4,0,1.55,4.0,6.1,CSKA Moscovo,1.55
+18/19,18/19,6,Krasnodar,Lokomotiv Moscovo,2,1,2.4,3.0,3.3,Krasnodar,2.4
+18/19,18/19,6,FC Yenisey Krasnoyarsk,Arsenal Tula,0,0,2.4,2.9,3.3,Empate,2.9
+18/19,18/19,6,Dinamo Moscovo,FC Gazovik Orenburg,2,0,2.12,3.1,4.1,Dinamo Moscovo,2.12
+18/19,18/19,6,Zenit,Spartak Moscovo,0,0,2.0,3.5,3.75,Empate,3.5
+18/19,18/19,6,Akhmat Grozny,Ufa,2,1,1.76,3.3,5.5,Akhmat Grozny,1.76
+18/19,18/19,7,Lokomotiv Moscovo,Dinamo Moscovo,1,1,2.0,3.1,4.33,Empate,3.1
+18/19,18/19,7,Rubin Kazan,FC Yenisey Krasnoyarsk,1,0,1.64,3.4,6.0,Rubin Kazan,1.64
+18/19,18/19,7,Ufa,CSKA Moscovo,0,3,4.0,3.1,2.1,CSKA Moscovo,2.1
+18/19,18/19,7,Arsenal Tula,Krylia Sovetov,4,0,2.3,3.0,3.5,Arsenal Tula,2.3
+18/19,18/19,7,FC Gazovik Orenburg,Zenit,1,2,6.0,3.6,1.69,Zenit,1.69
+18/19,18/19,7,Anzhi Makhachkala,Krasnodar,0,4,8.0,4.1,1.45,Krasnodar,1.45
+18/19,18/19,7,Spartak Moscovo,Akhmat Grozny,1,2,1.55,3.9,7.5,Akhmat Grozny,7.5
+18/19,18/19,8,Ural,Rostov,1,1,3.5,2.8,2.45,Empate,2.8
+18/19,18/19,8,FC Yenisey Krasnoyarsk,Ural,1,2,2.23,3.0,3.75,Ural,3.75
+18/19,18/19,8,Dinamo Moscovo,Anzhi Makhachkala,0,1,1.3,5.0,12.0,Anzhi Makhachkala,12.0
+18/19,18/19,8,Arsenal Tula,Rubin Kazan,2,2,2.9,2.88,2.7,Empate,2.88
+18/19,18/19,8,Akhmat Grozny,FC Gazovik Orenburg,1,1,2.04,3.2,4.2,Empate,3.2
+18/19,18/19,8,Rostov,Ufa,0,0,1.72,3.3,6.0,Empate,3.3
+18/19,18/19,8,Zenit,Lokomotiv Moscovo,5,3,1.65,3.75,5.75,Zenit,1.65
+18/19,18/19,8,CSKA Moscovo,Spartak Moscovo,1,1,2.4,3.25,3.0,Empate,3.25
+18/19,18/19,9,Krylia Sovetov,Krasnodar,0,3,4.6,3.3,1.9,Krasnodar,1.9
+18/19,18/19,9,FC Gazovik Orenburg,CSKA Moscovo,0,1,4.0,3.2,2.14,CSKA Moscovo,2.14
+18/19,18/19,9,Ural,Arsenal Tula,2,1,2.2,3.2,3.75,Ural,2.2
+18/19,18/19,9,Ufa,FC Yenisey Krasnoyarsk,2,1,2.1,3.0,4.2,Ufa,2.1
+18/19,18/19,9,Lokomotiv Moscovo,Akhmat Grozny,2,0,1.95,3.25,4.33,Lokomotiv Moscovo,1.95
+18/19,18/19,9,Anzhi Makhachkala,Zenit,2,1,12.0,5.1,1.33,Anzhi Makhachkala,12.0
+18/19,18/19,9,Krasnodar,Dinamo Moscovo,3,0,1.67,3.8,5.25,Krasnodar,1.67
+18/19,18/19,9,Spartak Moscovo,Rostov,0,1,1.85,3.3,4.75,Rostov,4.75
+18/19,18/19,10,Rubin Kazan,Krylia Sovetov,2,1,1.7,3.35,6.5,Rubin Kazan,1.7
+18/19,18/19,10,Arsenal Tula,Ufa,1,1,2.25,3.0,3.6,Empate,3.0
+18/19,18/19,10,Krylia Sovetov,Dinamo Moscovo,1,0,3.4,2.9,2.4,Krylia Sovetov,3.4
+18/19,18/19,10,Rostov,FC Gazovik Orenburg,0,1,1.82,3.25,5.5,FC Gazovik Orenburg,5.5
+18/19,18/19,10,Rubin Kazan,Ural,1,0,1.84,3.25,5.0,Rubin Kazan,1.84
+18/19,18/19,10,FC Yenisey Krasnoyarsk,Spartak Moscovo,2,3,4.2,3.3,1.95,Spartak Moscovo,1.95
+18/19,18/19,10,Akhmat Grozny,Anzhi Makhachkala,0,0,1.47,4.0,9.0,Empate,4.0
+18/19,18/19,10,Zenit,Krasnodar,2,1,1.95,3.3,3.9,Zenit,1.95
+18/19,18/19,10,CSKA Moscovo,Lokomotiv Moscovo,0,1,2.03,3.2,4.0,Lokomotiv Moscovo,4.0
+18/19,18/19,11,Anzhi Makhachkala,CSKA Moscovo,0,2,10.0,4.35,1.4,CSKA Moscovo,1.4
+18/19,18/19,11,Lokomotiv Moscovo,Rostov,2,1,2.2,2.9,4.33,Lokomotiv Moscovo,2.2
+18/19,18/19,11,FC Gazovik Orenburg,FC Yenisey Krasnoyarsk,0,0,2.0,3.1,4.2,Empate,3.1
+18/19,18/19,11,Ural,Krylia Sovetov,1,1,2.2,3.0,3.8,Empate,3.0
+18/19,18/19,11,Ufa,Rubin Kazan,0,0,2.88,2.8,2.9,Empate,2.8
+18/19,18/19,11,Dinamo Moscovo,Zenit,1,0,4.0,3.1,2.2,Dinamo Moscovo,4.0
+18/19,18/19,11,Spartak Moscovo,Arsenal Tula,2,3,1.53,4.0,7.5,Arsenal Tula,7.5
+18/19,18/19,11,Krasnodar,Akhmat Grozny,0,1,1.55,4.05,6.5,Akhmat Grozny,6.5
+18/19,18/19,12,Ural,Ufa,1,1,2.3,3.0,3.6,Empate,3.0
+18/19,18/19,12,Arsenal Tula,FC Gazovik Orenburg,2,2,2.08,3.2,4.0,Empate,3.2
+18/19,18/19,12,Rostov,Anzhi Makhachkala,1,0,1.37,4.5,10.5,Rostov,1.37
+18/19,18/19,12,FC Yenisey Krasnoyarsk,Lokomotiv Moscovo,0,3,4.33,3.0,2.1,Lokomotiv Moscovo,2.1
+18/19,18/19,12,Akhmat Grozny,Dinamo Moscovo,0,0,2.45,3.0,3.3,Empate,3.0
+18/19,18/19,12,CSKA Moscovo,Krasnodar,1,2,2.2,3.3,3.5,Krasnodar,3.5
+18/19,18/19,13,Krylia Sovetov,Zenit,0,1,7.0,3.7,1.57,Zenit,1.57
+18/19,18/19,13,Rubin Kazan,Spartak Moscovo,1,1,2.75,3.0,2.88,Empate,3.0
+18/19,18/19,13,Lokomotiv Moscovo,Arsenal Tula,3,1,1.7,3.4,5.5,Lokomotiv Moscovo,1.7
+18/19,18/19,13,Dinamo Moscovo,CSKA Moscovo,0,0,3.2,2.9,2.45,Empate,2.9
+18/19,18/19,13,Zenit,Akhmat Grozny,1,0,1.5,4.2,7.0,Zenit,1.5
+18/19,18/19,13,Krasnodar,Rostov,2,2,1.83,3.4,5.0,Empate,3.4
+18/19,18/19,13,Spartak Moscovo,Ural,1,2,1.55,4.0,6.5,Ural,6.5
+18/19,18/19,14,FC Gazovik Orenburg,Rubin Kazan,1,0,3.1,2.8,2.63,FC Gazovik Orenburg,3.1
+18/19,18/19,14,Ufa,Krylia Sovetov,1,2,2.2,2.9,3.9,Krylia Sovetov,3.9
+18/19,18/19,14,Anzhi Makhachkala,FC Yenisey Krasnoyarsk,2,1,3.25,3.0,2.37,Anzhi Makhachkala,3.25
+18/19,18/19,14,Arsenal Tula,Anzhi Makhachkala,2,0,1.5,4.0,7.5,Arsenal Tula,1.5
+18/19,18/19,14,Ural,FC Gazovik Orenburg,2,1,2.38,3.1,3.35,Ural,2.38
+18/19,18/19,14,Krylia Sovetov,Akhmat Grozny,1,2,2.5,3.0,3.2,Akhmat Grozny,3.2
+18/19,18/19,14,Rostov,Dinamo Moscovo,0,0,2.0,3.05,4.5,Empate,3.05
+18/19,18/19,14,Ufa,Spartak Moscovo,2,0,3.0,3.1,2.5,Ufa,3.0
+18/19,18/19,14,FC Yenisey Krasnoyarsk,Krasnodar,0,3,10.0,4.75,1.54,,
+18/19,18/19,14,Rubin Kazan,Lokomotiv Moscovo,0,0,2.9,2.9,2.75,Empate,2.9
+18/19,18/19,14,CSKA Moscovo,Zenit,2,0,2.4,3.1,3.1,CSKA Moscovo,2.4
+18/19,18/19,15,Akhmat Grozny,CSKA Moscovo,0,2,3.5,3.0,2.25,CSKA Moscovo,2.25
+18/19,18/19,15,Lokomotiv Moscovo,Ural,1,2,1.57,3.75,7.5,Ural,7.5
+18/19,18/19,15,Dinamo Moscovo,FC Yenisey Krasnoyarsk,1,2,1.73,3.4,5.25,FC Yenisey Krasnoyarsk,5.25
+18/19,18/19,15,FC Gazovik Orenburg,Ufa,1,0,2.4,2.8,3.6,FC Gazovik Orenburg,2.4
+18/19,18/19,15,Anzhi Makhachkala,Rubin Kazan,1,1,5.0,3.3,1.8,Empate,3.3
+18/19,18/19,15,Spartak Moscovo,Krylia Sovetov,3,1,1.54,3.8,7.5,Spartak Moscovo,1.54
+18/19,18/19,15,Krasnodar,Arsenal Tula,3,0,1.44,4.5,8.5,Krasnodar,1.44
+18/19,18/19,15,Zenit,Rostov,2,0,1.73,3.4,5.5,Zenit,1.73
+18/19,18/19,16,Rubin Kazan,Dinamo Moscovo,1,1,2.36,2.8,3.75,Empate,2.8
+18/19,18/19,16,FC Yenisey Krasnoyarsk,Akhmat Grozny,1,1,2.75,2.9,2.88,Empate,2.9
+18/19,18/19,16,Anzhi Makhachkala,Ufa,0,0,4.1,2.9,2.15,Empate,2.9
+18/19,18/19,16,Krasnodar,Ural,2,0,1.44,4.6,7.5,Krasnodar,1.44
+18/19,18/19,16,Rostov,CSKA Moscovo,0,0,2.88,2.87,2.9,Empate,2.87
+18/19,18/19,16,Spartak Moscovo,Lokomotiv Moscovo,2,1,2.5,3.2,2.9,Spartak Moscovo,2.5
+18/19,18/19,17,Arsenal Tula,Zenit,4,2,4.33,3.3,1.96,Arsenal Tula,4.33
+18/19,18/19,17,Krylia Sovetov,Rostov,1,0,3.3,2.8,2.5,Krylia Sovetov,3.3
+18/19,18/19,17,CSKA Moscovo,FC Yenisey Krasnoyarsk,2,1,1.4,4.5,9.5,CSKA Moscovo,1.4
+18/19,18/19,17,Lokomotiv Moscovo,FC Gazovik Orenburg,2,1,1.65,3.6,5.5,Lokomotiv Moscovo,1.65
+18/19,18/19,17,Anzhi Makhachkala,Spartak Moscovo,0,3,6.0,4.0,1.55,Spartak Moscovo,1.55
+18/19,18/19,17,Dinamo Moscovo,Ural,4,0,2.05,3.1,4.1,Dinamo Moscovo,2.05
+18/19,18/19,17,Krasnodar,Ufa,1,1,1.53,4.1,7.5,Empate,4.1
+18/19,18/19,17,Zenit,Rubin Kazan,1,2,1.55,3.7,8.0,Rubin Kazan,8.0
+18/19,18/19,18,Akhmat Grozny,Arsenal Tula,2,0,2.33,3.0,3.5,Akhmat Grozny,2.33
+18/19,18/19,19,FC Gazovik Orenburg,Anzhi Makhachkala,0,1,1.41,4.2,9.0,Anzhi Makhachkala,9.0
+18/19,18/19,19,Ural,Zenit,0,1,4.35,3.5,1.85,Zenit,1.85
+18/19,18/19,19,Arsenal Tula,CSKA Moscovo,2,0,5.5,3.6,1.7,Arsenal Tula,5.5
+18/19,18/19,19,Lokomotiv Moscovo,Krylia Sovetov,2,2,1.65,3.6,6.0,Empate,3.6
+18/19,18/19,19,Rubin Kazan,Akhmat Grozny,1,0,2.4,2.8,3.8,Rubin Kazan,2.4
+18/19,18/19,19,Ufa,Dinamo Moscovo,1,2,2.75,2.87,2.9,Dinamo Moscovo,2.9
+18/19,18/19,19,FC Yenisey Krasnoyarsk,Rostov,1,1,3.75,3.0,2.32,Empate,3.0
+18/19,18/19,19,Spartak Moscovo,Krasnodar,1,1,2.87,3.1,2.8,Empate,3.1
+18/19,18/19,20,Krylia Sovetov,FC Yenisey Krasnoyarsk,4,0,2.1,3.1,4.5,Krylia Sovetov,2.1
+18/19,18/19,20,CSKA Moscovo,Rubin Kazan,3,0,1.75,3.4,5.75,CSKA Moscovo,1.75
+18/19,18/19,20,Rostov,Arsenal Tula,0,0,1.83,3.2,5.5,Empate,3.2
+18/19,18/19,20,Zenit,Ufa,2,1,1.4,4.5,10.0,Zenit,1.4
+18/19,18/19,20,Dinamo Moscovo,Spartak Moscovo,0,1,2.9,3.0,3.0,Spartak Moscovo,3.0
+18/19,18/19,20,Anzhi Makhachkala,Lokomotiv Moscovo,0,2,10.0,4.4,1.4,Lokomotiv Moscovo,1.4
+18/19,18/19,21,Akhmat Grozny,Ural,1,1,2.04,3.1,4.2,Empate,3.1
+18/19,18/19,21,Krasnodar,FC Gazovik Orenburg,2,2,1.51,3.9,7.0,Empate,3.9
+18/19,18/19,21,Anzhi Makhachkala,Krylia Sovetov,0,2,11.0,4.05,1.44,Krylia Sovetov,1.44
+18/19,18/19,21,FC Gazovik Orenburg,Dinamo Moscovo,1,0,2.87,2.8,2.75,FC Gazovik Orenburg,2.87
+18/19,18/19,21,Ural,CSKA Moscovo,0,1,4.75,3.4,1.84,CSKA Moscovo,1.84
+18/19,18/19,21,Rubin Kazan,Rostov,0,2,2.7,2.9,3.0,Rostov,3.0
+18/19,18/19,21,Arsenal Tula,FC Yenisey Krasnoyarsk,2,0,1.81,3.75,5.0,Arsenal Tula,1.81
+18/19,18/19,21,Ufa,Akhmat Grozny,0,1,2.5,2.87,3.2,Akhmat Grozny,3.2
+18/19,18/19,21,Lokomotiv Moscovo,Krasnodar,1,0,2.38,3.2,3.2,Lokomotiv Moscovo,2.38
+18/19,18/19,21,Spartak Moscovo,Zenit,1,1,2.75,3.1,2.75,Empate,3.1
+18/19,18/19,22,Krylia Sovetov,Arsenal Tula,0,1,2.19,3.1,3.8,Arsenal Tula,3.8
+18/19,18/19,22,FC Yenisey Krasnoyarsk,Rubin Kazan,1,1,2.88,3.0,2.8,Empate,3.0
+18/19,18/19,22,Dinamo Moscovo,Lokomotiv Moscovo,0,1,3.2,2.95,2.5,Lokomotiv Moscovo,2.5
+18/19,18/19,22,Akhmat Grozny,Spartak Moscovo,1,3,3.0,2.9,2.63,Spartak Moscovo,2.63
+18/19,18/19,22,Rostov,Ural,2,1,1.75,3.4,5.5,Rostov,1.75
+18/19,18/19,22,Zenit,FC Gazovik Orenburg,3,1,1.44,4.2,9.0,Zenit,1.44
+18/19,18/19,22,CSKA Moscovo,Ufa,2,2,1.36,4.33,11.0,Empate,4.33
+18/19,18/19,22,Krasnodar,Anzhi Makhachkala,5,0,1.12,9.5,35.0,Krasnodar,1.12
+18/19,18/19,23,FC Gazovik Orenburg,Krylia Sovetov,3,1,2.38,2.88,3.5,FC Gazovik Orenburg,2.38
+18/19,18/19,23,Anzhi Makhachkala,Dinamo Moscovo,1,1,11.0,4.75,1.34,Empate,4.75
+18/19,18/19,23,Krasnodar,Krylia Sovetov,1,0,1.4,4.5,8.0,Krasnodar,1.4
+18/19,18/19,23,Spartak Moscovo,CSKA Moscovo,0,2,3.4,3.2,2.3,CSKA Moscovo,2.3
+18/19,18/19,23,Ufa,Rostov,1,0,3.0,2.75,2.8,Ufa,3.0
+18/19,18/19,23,Ural,FC Yenisey Krasnoyarsk,3,2,1.75,3.5,5.25,Ural,1.75
+18/19,18/19,23,Rubin Kazan,Arsenal Tula,0,0,2.63,2.87,3.3,Empate,2.87
+18/19,18/19,23,Lokomotiv Moscovo,Zenit,1,1,2.6,3.1,2.9,Empate,3.1
+18/19,18/19,24,FC Gazovik Orenburg,Akhmat Grozny,1,3,2.45,2.8,3.5,Akhmat Grozny,3.5
+18/19,18/19,24,Krylia Sovetov,Rubin Kazan,1,0,2.2,3.0,4.1,Krylia Sovetov,2.2
+18/19,18/19,24,FC Yenisey Krasnoyarsk,Ufa,0,0,3.0,3.0,2.75,Empate,3.0
+18/19,18/19,24,Arsenal Tula,Ural,0,0,2.03,3.4,4.1,Empate,3.4
+18/19,18/19,24,CSKA Moscovo,FC Gazovik Orenburg,2,3,1.4,4.5,9.5,FC Gazovik Orenburg,9.5
+18/19,18/19,24,Akhmat Grozny,Lokomotiv Moscovo,1,3,3.2,2.9,2.5,Lokomotiv Moscovo,2.5
+18/19,18/19,24,Dinamo Moscovo,Krasnodar,1,1,3.1,3.2,2.4,Empate,3.2
+18/19,18/19,24,Zenit,Anzhi Makhachkala,5,0,1.05,15.0,85.0,Zenit,1.05
+18/19,18/19,24,Rostov,Spartak Moscovo,2,1,2.6,2.95,3.1,Rostov,2.6
+18/19,18/19,25,Anzhi Makhachkala,Akhmat Grozny,0,1,7.65,3.8,1.57,Akhmat Grozny,1.57
+18/19,18/19,25,Ufa,Arsenal Tula,1,2,2.5,2.8,3.3,Arsenal Tula,3.3
+18/19,18/19,25,FC Gazovik Orenburg,Rostov,3,0,2.9,3.0,2.8,FC Gazovik Orenburg,2.9
+18/19,18/19,25,Dinamo Moscovo,Krylia Sovetov,1,0,1.76,3.3,5.75,Dinamo Moscovo,1.76
+18/19,18/19,25,Lokomotiv Moscovo,CSKA Moscovo,1,1,2.7,3.0,2.87,Empate,3.0
+18/19,18/19,25,Krasnodar,Zenit,2,3,2.38,3.2,3.25,Zenit,3.25
+18/19,18/19,25,Ural,Rubin Kazan,2,1,2.6,2.9,3.2,Ural,2.6
+18/19,18/19,25,Spartak Moscovo,FC Yenisey Krasnoyarsk,2,0,1.3,5.25,11.0,Spartak Moscovo,1.3
+18/19,18/19,26,Akhmat Grozny,Krasnodar,1,1,4.0,3.3,2.09,Empate,3.3
+18/19,18/19,26,Rostov,Lokomotiv Moscovo,1,2,3.3,2.8,2.45,Lokomotiv Moscovo,2.45
+18/19,18/19,26,CSKA Moscovo,Anzhi Makhachkala,2,0,1.07,13.0,31.0,CSKA Moscovo,1.07
+18/19,18/19,26,Rubin Kazan,Ufa,1,1,2.35,2.87,3.9,Empate,2.87
+18/19,18/19,26,Zenit,Dinamo Moscovo,2,0,1.57,4.0,6.5,Zenit,1.57
+18/19,18/19,26,FC Yenisey Krasnoyarsk,FC Gazovik Orenburg,2,1,3.75,3.05,2.2,FC Yenisey Krasnoyarsk,3.75
+18/19,18/19,26,Krylia Sovetov,Ural,0,1,2.23,2.9,3.75,Ural,3.75
+18/19,18/19,26,Arsenal Tula,Spartak Moscovo,3,0,2.88,3.2,2.6,Arsenal Tula,2.88
+18/19,18/19,26,Anzhi Makhachkala,Rostov,1,1,9.0,4.5,1.4,Empate,4.5
+18/19,18/19,26,Dinamo Moscovo,Akhmat Grozny,0,0,1.85,3.3,5.25,Empate,3.3
+18/19,18/19,26,Ufa,Ural,4,1,2.6,3.3,2.75,Ufa,2.6
+18/19,18/19,26,Lokomotiv Moscovo,FC Yenisey Krasnoyarsk,2,1,1.28,6.0,14.0,Lokomotiv Moscovo,1.28
+18/19,18/19,26,Zenit,Krylia Sovetov,4,2,1.33,5.0,11.0,Zenit,1.33
+18/19,18/19,26,Krasnodar,CSKA Moscovo,2,0,2.6,3.15,2.88,Krasnodar,2.6
+18/19,18/19,27,FC Gazovik Orenburg,Arsenal Tula,1,1,2.7,3.0,2.8,Empate,3.0
+18/19,18/19,27,Spartak Moscovo,Rubin Kazan,1,1,1.73,3.5,5.5,Empate,3.5
+18/19,18/19,27,FC Yenisey Krasnoyarsk,Anzhi Makhachkala,3,1,1.57,4.0,6.0,FC Yenisey Krasnoyarsk,1.57
+18/19,18/19,27,Rubin Kazan,FC Gazovik Orenburg,2,0,2.15,3.0,4.0,Rubin Kazan,2.15
+18/19,18/19,27,Ural,Spartak Moscovo,0,1,3.0,3.1,2.45,Spartak Moscovo,2.45
+18/19,18/19,27,Akhmat Grozny,Zenit,1,1,4.2,3.25,2.0,Empate,3.25
+18/19,18/19,27,Arsenal Tula,Lokomotiv Moscovo,2,0,4.0,3.25,2.14,Arsenal Tula,4.0
+18/19,18/19,27,Krylia Sovetov,Ufa,1,1,2.63,3.0,3.0,Empate,3.0
+18/19,18/19,27,CSKA Moscovo,Dinamo Moscovo,2,2,1.76,3.45,5.0,Empate,3.45
+18/19,18/19,27,Rostov,Krasnodar,1,1,3.4,3.4,2.23,Empate,3.4
+18/19,18/19,28,FC Gazovik Orenburg,Ural,2,2,2.5,2.88,3.6,Empate,2.88
+18/19,18/19,28,Dinamo Moscovo,Rostov,0,0,1.86,3.2,5.0,Empate,3.2
+18/19,18/19,28,Anzhi Makhachkala,Arsenal Tula,0,1,10.0,4.35,1.4,Arsenal Tula,1.4
+18/19,18/19,28,Lokomotiv Moscovo,Rubin Kazan,4,0,1.55,3.6,7.5,Lokomotiv Moscovo,1.55
+18/19,18/19,28,FC Yenisey Krasnoyarsk,Krasnodar,0,4,10.0,4.5,1.41,Krasnodar,1.41
+18/19,18/19,28,Akhmat Grozny,Krylia Sovetov,2,1,2.3,3.1,3.55,Akhmat Grozny,2.3
+18/19,18/19,28,Spartak Moscovo,Ufa,1,0,1.87,3.5,4.75,Spartak Moscovo,1.87
+18/19,18/19,28,Zenit,CSKA Moscovo,3,1,2.15,3.3,3.5,Zenit,2.15
+18/19,18/19,29,Ufa,FC Gazovik Orenburg,0,2,1.75,3.75,5.75,FC Gazovik Orenburg,5.75
+18/19,18/19,29,CSKA Moscovo,Akhmat Grozny,1,0,1.4,4.65,8.0,CSKA Moscovo,1.4
+18/19,18/19,29,Krylia Sovetov,Spartak Moscovo,1,2,3.4,3.1,2.26,Spartak Moscovo,2.26
+18/19,18/19,29,Ural,Lokomotiv Moscovo,2,2,10.0,4.2,1.49,Empate,4.2
+18/19,18/19,29,FC Yenisey Krasnoyarsk,Dinamo Moscovo,2,2,5.5,3.5,1.72,Empate,3.5
+18/19,18/19,29,Arsenal Tula,Krasnodar,0,3,4.0,3.4,2.0,Krasnodar,2.0
+18/19,18/19,29,Rostov,Zenit,1,0,2.63,3.25,2.75,Rostov,2.63
+18/19,18/19,30,Rubin Kazan,Anzhi Makhachkala,0,0,1.25,6.65,14.0,Empate,6.65
+18/19,18/19,30,Akhmat Grozny,Rostov,1,0,2.3,3.1,3.5,Akhmat Grozny,2.3
+18/19,18/19,30,Anzhi Makhachkala,Ural,0,2,5.5,3.8,1.69,Ural,1.69
+18/19,18/19,30,CSKA Moscovo,Krylia Sovetov,6,0,1.24,5.5,15.0,CSKA Moscovo,1.24
+18/19,18/19,30,Dinamo Moscovo,Arsenal Tula,3,3,1.8,3.6,5.0,Empate,3.6
+18/19,18/19,30,FC Gazovik Orenburg,Spartak Moscovo,2,0,3.6,3.55,2.07,FC Gazovik Orenburg,3.6
+18/19,18/19,30,Krasnodar,Rubin Kazan,1,0,1.29,5.5,12.0,Krasnodar,1.29
+18/19,18/19,30,Lokomotiv Moscovo,Ufa,1,0,1.28,5.6,15.0,Lokomotiv Moscovo,1.28
+18/19,18/19,30,Zenit,FC Yenisey Krasnoyarsk,4,1,1.16,8.5,18.0,Zenit,1.16
+18/19,18/19,31,Ufa,Tom Tomsk,2,0,1.41,3.9,10.0,Ufa,1.41
+18/19,18/19,31,FK Nizhny Novgorod,Krylia Sovetov,1,3,3.3,2.87,2.4,Krylia Sovetov,2.4
+18/19,18/19,31,Tom Tomsk,Ufa,1,0,3.6,2.85,2.39,Tom Tomsk,3.6
+18/19,18/19,31,Krylia Sovetov,FK Nizhny Novgorod,0,1,1.6,3.8,7.0,FK Nizhny Novgorod,7.0
+19/20,19/20,1,Arsenal Tula,Dinamo Moscovo,1,1,3.4,3.0,2.37,Empate,3.0
+19/20,19/20,1,Ural,Ufa,3,2,2.12,3.2,3.9,Ural,2.12
+19/20,19/20,1,Spartak Moscovo,Sochi,1,0,1.41,4.55,7.5,Spartak Moscovo,1.41
+19/20,19/20,1,Rostov,FC Gazovik Orenburg,2,1,2.1,3.1,4.0,Rostov,2.1
+19/20,19/20,1,Krylia Sovetov,CSKA Moscovo,2,0,4.75,3.5,1.82,Krylia Sovetov,4.75
+19/20,19/20,1,Zenit,Tambov,2,1,1.17,7.5,17.0,Zenit,1.17
+19/20,19/20,1,Akhmat Grozny,Krasnodar,1,0,3.4,3.25,2.21,Akhmat Grozny,3.4
+19/20,19/20,2,Lokomotiv Moscovo,Rubin Kazan,1,1,1.56,3.8,7.5,Empate,3.8
+19/20,19/20,2,Ufa,Krasnodar,2,3,4.5,3.3,1.87,Krasnodar,1.87
+19/20,19/20,2,Krylia Sovetov,Arsenal Tula,2,3,2.38,3.0,3.4,Arsenal Tula,3.4
+19/20,19/20,2,CSKA Moscovo,FC Gazovik Orenburg,2,1,1.4,4.3,9.0,CSKA Moscovo,1.4
+19/20,19/20,2,Rostov,Spartak Moscovo,2,2,2.45,3.0,3.2,Empate,3.0
+19/20,19/20,2,Ural,Akhmat Grozny,3,0,2.75,3.0,2.75,Ural,2.75
+19/20,19/20,2,Lokomotiv Moscovo,Tambov,2,1,1.3,4.75,12.0,Lokomotiv Moscovo,1.3
+19/20,19/20,2,Dinamo Moscovo,Rubin Kazan,0,1,1.75,3.3,6.0,Rubin Kazan,6.0
+19/20,19/20,2,Sochi,Zenit,0,2,5.0,3.75,1.67,Zenit,1.67
+19/20,19/20,3,Dinamo Moscovo,Ural,2,0,1.67,3.75,5.25,Dinamo Moscovo,1.67
+19/20,19/20,3,Ufa,Krylia Sovetov,2,1,2.3,3.1,3.3,Ufa,2.3
+19/20,19/20,3,Tambov,Spartak Moscovo,2,0,4.6,3.5,1.8,Tambov,4.6
+19/20,19/20,3,Krasnodar,Sochi,3,0,1.33,5.0,9.0,Krasnodar,1.33
+19/20,19/20,3,FC Gazovik Orenburg,Zenit,0,2,5.5,3.8,1.65,Zenit,1.65
+19/20,19/20,3,Arsenal Tula,Rostov,2,3,2.9,3.0,2.6,Rostov,2.6
+19/20,19/20,3,CSKA Moscovo,Lokomotiv Moscovo,1,0,2.15,3.3,3.5,CSKA Moscovo,2.15
+19/20,19/20,4,Rubin Kazan,Akhmat Grozny,1,0,2.8,2.87,2.8,Rubin Kazan,2.8
+19/20,19/20,4,Ural,Rostov,2,2,2.88,3.2,2.5,Empate,3.2
+19/20,19/20,4,Krylia Sovetov,Lokomotiv Moscovo,1,2,4.2,3.4,1.91,Lokomotiv Moscovo,1.91
+19/20,19/20,4,Spartak Moscovo,Dinamo Moscovo,0,0,2.87,3.1,2.55,Empate,3.1
+19/20,19/20,4,Zenit,Krasnodar,1,1,1.7,4.0,4.6,Empate,4.0
+19/20,19/20,4,Tambov,Arsenal Tula,0,1,2.7,3.1,2.8,Arsenal Tula,2.8
+19/20,19/20,4,Rubin Kazan,CSKA Moscovo,0,1,4.0,3.2,2.0,CSKA Moscovo,2.0
+19/20,19/20,4,Sochi,Ufa,0,0,2.4,3.2,3.2,Empate,3.2
+19/20,19/20,5,Akhmat Grozny,FC Gazovik Orenburg,2,1,1.83,3.5,4.5,Akhmat Grozny,1.83
+19/20,19/20,5,FC Gazovik Orenburg,Tambov,2,2,1.91,3.3,4.33,Empate,3.3
+19/20,19/20,5,Dinamo Moscovo,Zenit,0,2,3.6,3.2,2.2,Zenit,2.2
+19/20,19/20,5,Krasnodar,Rubin Kazan,1,0,1.53,3.8,6.5,Krasnodar,1.53
+19/20,19/20,5,Arsenal Tula,Ufa,1,0,2.2,3.2,3.75,Arsenal Tula,2.2
+19/20,19/20,5,Lokomotiv Moscovo,Ural,4,0,1.4,4.6,9.0,Lokomotiv Moscovo,1.4
+19/20,19/20,5,CSKA Moscovo,Sochi,0,0,1.36,4.5,9.0,Empate,4.5
+19/20,19/20,5,Akhmat Grozny,Spartak Moscovo,1,3,2.3,3.2,3.1,Spartak Moscovo,3.1
+19/20,19/20,6,Rostov,Krylia Sovetov,1,0,1.55,3.8,6.5,Rostov,1.55
+19/20,19/20,6,FC Gazovik Orenburg,Sochi,1,1,2.25,3.1,3.5,Empate,3.1
+19/20,19/20,6,Ural,Krylia Sovetov,1,3,2.38,3.1,3.2,Krylia Sovetov,3.2
+19/20,19/20,6,Tambov,Krasnodar,0,2,4.75,3.5,1.75,Krasnodar,1.75
+19/20,19/20,6,Zenit,Akhmat Grozny,0,0,1.3,5.0,10.5,Empate,5.0
+19/20,19/20,6,Rubin Kazan,Arsenal Tula,1,0,2.3,3.0,3.5,Rubin Kazan,2.3
+19/20,19/20,6,Ufa,Rostov,2,0,2.88,3.0,2.7,Ufa,2.88
+19/20,19/20,6,Dinamo Moscovo,Lokomotiv Moscovo,1,2,3.25,3.0,2.37,Lokomotiv Moscovo,2.37
+19/20,19/20,7,Spartak Moscovo,CSKA Moscovo,2,1,2.75,3.1,2.63,Spartak Moscovo,2.75
+19/20,19/20,7,Tambov,Dinamo Moscovo,0,2,4.0,3.1,2.05,Dinamo Moscovo,2.05
+19/20,19/20,7,Ufa,Zenit,1,0,5.75,3.5,1.67,Ufa,5.75
+19/20,19/20,7,Krasnodar,Lokomotiv Moscovo,1,1,2.75,3.25,2.75,Empate,3.25
+19/20,19/20,7,CSKA Moscovo,Akhmat Grozny,3,0,1.55,3.75,7.5,CSKA Moscovo,1.55
+19/20,19/20,7,Krylia Sovetov,Spartak Moscovo,1,2,2.9,3.1,2.63,Spartak Moscovo,2.63
+19/20,19/20,7,Rostov,Rubin Kazan,2,1,1.85,3.2,4.75,Rostov,1.85
+19/20,19/20,7,Arsenal Tula,FC Gazovik Orenburg,2,1,2.05,3.2,3.9,Arsenal Tula,2.05
+19/20,19/20,8,Ural,Sochi,3,1,2.4,3.1,3.1,Ural,2.4
+19/20,19/20,8,Krylia Sovetov,Dinamo Moscovo,0,0,3.7,3.1,2.15,Empate,3.1
+19/20,19/20,8,Ufa,FC Gazovik Orenburg,1,2,2.45,2.9,3.4,FC Gazovik Orenburg,3.4
+19/20,19/20,8,Rubin Kazan,Sochi,0,3,2.1,3.1,4.0,Sochi,4.0
+19/20,19/20,8,Lokomotiv Moscovo,Rostov,1,2,1.72,3.5,5.25,Rostov,5.25
+19/20,19/20,8,Akhmat Grozny,Tambov,1,1,1.95,3.2,4.33,Empate,3.2
+19/20,19/20,8,Ural,Krasnodar,2,4,3.6,3.6,2.0,Krasnodar,2.0
+19/20,19/20,8,Arsenal Tula,CSKA Moscovo,1,2,4.5,3.5,1.83,CSKA Moscovo,1.83
+19/20,19/20,8,Spartak Moscovo,Zenit,0,1,3.6,3.4,2.1,Zenit,2.1
+19/20,19/20,9,Zenit,Arsenal Tula,3,1,1.28,5.25,12.0,Zenit,1.28
+19/20,19/20,9,Spartak Moscovo,Ural,1,2,1.47,4.0,8.5,Ural,8.5
+19/20,19/20,9,Sochi,Lokomotiv Moscovo,0,1,4.33,3.4,1.85,Lokomotiv Moscovo,1.85
+19/20,19/20,9,FC Gazovik Orenburg,Rubin Kazan,2,1,2.05,3.2,3.9,FC Gazovik Orenburg,2.05
+19/20,19/20,9,Tambov,CSKA Moscovo,0,2,8.0,4.2,1.4,CSKA Moscovo,1.4
+19/20,19/20,9,Krasnodar,Krylia Sovetov,4,2,1.44,4.33,7.5,Krasnodar,1.44
+19/20,19/20,10,Dinamo Moscovo,Ufa,0,0,1.62,3.6,6.0,Empate,3.6
+19/20,19/20,10,Rostov,Akhmat Grozny,2,1,1.65,3.6,5.5,Rostov,1.65
+19/20,19/20,10,Ufa,Spartak Moscovo,1,0,3.4,3.0,2.37,Ufa,3.4
+19/20,19/20,10,Akhmat Grozny,Krylia Sovetov,1,1,2.02,3.25,4.0,Empate,3.25
+19/20,19/20,10,Tambov,Rostov,2,1,5.25,3.6,1.7,Tambov,5.25
+19/20,19/20,10,Zenit,Rubin Kazan,5,0,1.26,5.5,15.0,Zenit,1.26
+19/20,19/20,10,FC Gazovik Orenburg,Lokomotiv Moscovo,2,3,3.25,3.1,2.33,Lokomotiv Moscovo,2.33
+19/20,19/20,10,Dinamo Moscovo,Sochi,2,3,1.62,3.75,6.0,Sochi,6.0
+19/20,19/20,10,Arsenal Tula,Ural,1,1,2.04,3.4,3.75,Empate,3.4
+19/20,19/20,10,CSKA Moscovo,Krasnodar,3,2,2.05,3.4,3.75,CSKA Moscovo,2.05
+19/20,19/20,11,Krylia Sovetov,Tambov,2,0,1.87,3.5,4.33,Krylia Sovetov,1.87
+19/20,19/20,11,Rostov,Dinamo Moscovo,3,0,2.15,3.4,3.5,Rostov,2.15
+19/20,19/20,11,Lokomotiv Moscovo,Zenit,1,0,2.9,3.25,2.5,Lokomotiv Moscovo,2.9
+19/20,19/20,11,Ural,CSKA Moscovo,0,3,5.0,3.9,1.67,CSKA Moscovo,1.67
+19/20,19/20,11,Rubin Kazan,Ufa,0,0,2.7,2.87,3.0,Empate,2.87
+19/20,19/20,11,Spartak Moscovo,FC Gazovik Orenburg,1,2,1.8,3.7,4.75,FC Gazovik Orenburg,4.75
+19/20,19/20,11,Krasnodar,Arsenal Tula,2,0,1.46,4.5,6.5,Krasnodar,1.46
+19/20,19/20,12,Sochi,Akhmat Grozny,2,0,2.21,3.2,3.6,Sochi,2.21
+19/20,19/20,12,Ufa,Akhmat Grozny,0,1,2.27,3.0,3.6,Akhmat Grozny,3.6
+19/20,19/20,12,FC Gazovik Orenburg,Dinamo Moscovo,2,0,3.0,3.1,2.5,FC Gazovik Orenburg,3.0
+19/20,19/20,12,Rubin Kazan,Tambov,2,1,2.04,3.2,4.0,Rubin Kazan,2.04
+19/20,19/20,12,Sochi,Krylia Sovetov,0,2,2.12,3.3,3.6,Krylia Sovetov,3.6
+19/20,19/20,12,Ural,Zenit,1,3,6.5,4.5,1.48,Zenit,1.48
+19/20,19/20,12,Lokomotiv Moscovo,Arsenal Tula,2,1,1.59,3.8,6.5,Lokomotiv Moscovo,1.59
+19/20,19/20,12,CSKA Moscovo,Rostov,1,3,1.7,3.8,5.0,Rostov,5.0
+19/20,19/20,12,Krasnodar,Spartak Moscovo,2,1,1.77,3.75,4.5,Krasnodar,1.77
+19/20,19/20,13,Akhmat Grozny,Lokomotiv Moscovo,0,2,2.65,3.2,2.75,Lokomotiv Moscovo,2.75
+19/20,19/20,13,Tambov,Ural,1,2,2.75,3.2,2.7,Ural,2.7
+19/20,19/20,13,Spartak Moscovo,Rubin Kazan,0,0,1.61,4.0,5.75,Empate,4.0
+19/20,19/20,13,Zenit,Rostov,6,1,1.57,4.35,7.5,Zenit,1.57
+19/20,19/20,13,FC Gazovik Orenburg,Krylia Sovetov,0,1,2.3,3.4,3.25,Krylia Sovetov,3.25
+19/20,19/20,13,Ufa,CSKA Moscovo,1,1,5.25,3.5,1.76,Empate,3.5
+19/20,19/20,13,Arsenal Tula,Sochi,1,1,2.12,3.3,3.8,Empate,3.3
+19/20,19/20,13,Dinamo Moscovo,Krasnodar,1,1,2.62,3.3,2.7,Empate,3.3
+19/20,19/20,14,Rubin Kazan,Ural,0,0,2.17,3.45,3.75,Empate,3.45
+19/20,19/20,14,Tambov,Ufa,3,0,2.65,3.0,2.95,Tambov,2.65
+19/20,19/20,14,Akhmat Grozny,Arsenal Tula,1,1,2.3,3.2,3.25,Empate,3.2
+19/20,19/20,14,Rostov,Sochi,2,0,1.61,3.85,6.5,Rostov,1.61
+19/20,19/20,14,Krylia Sovetov,Zenit,0,2,5.0,3.6,1.73,Zenit,1.73
+19/20,19/20,14,CSKA Moscovo,Dinamo Moscovo,0,1,1.88,3.6,4.5,Dinamo Moscovo,4.5
+19/20,19/20,14,Lokomotiv Moscovo,Spartak Moscovo,0,3,1.95,3.4,4.0,Spartak Moscovo,4.0
+19/20,19/20,14,Krasnodar,FC Gazovik Orenburg,1,1,1.57,4.1,5.75,Empate,4.1
+19/20,19/20,15,Dinamo Moscovo,Akhmat Grozny,1,1,1.73,3.55,5.75,Empate,3.55
+19/20,19/20,15,Ufa,Lokomotiv Moscovo,1,1,3.85,3.2,2.12,Empate,3.2
+19/20,19/20,15,Sochi,Tambov,1,2,2.0,3.4,4.2,Tambov,4.2
+19/20,19/20,15,Zenit,CSKA Moscovo,1,1,1.61,3.9,5.6,Empate,3.9
+19/20,19/20,15,Krasnodar,Rostov,2,2,1.85,3.7,4.33,Empate,3.7
+19/20,19/20,16,Ural,FC Gazovik Orenburg,1,2,2.75,3.3,2.63,FC Gazovik Orenburg,2.63
+19/20,19/20,16,Krylia Sovetov,Rubin Kazan,0,0,2.25,3.15,3.4,Empate,3.15
+19/20,19/20,16,Spartak Moscovo,Arsenal Tula,0,1,1.72,3.6,5.2,Arsenal Tula,5.2
+19/20,19/20,16,Akhmat Grozny,Ural,0,0,1.96,3.5,4.5,Empate,3.5
+19/20,19/20,16,Rubin Kazan,Dinamo Moscovo,0,1,3.25,3.0,2.5,Dinamo Moscovo,2.5
+19/20,19/20,16,Rostov,Tambov,1,2,1.67,3.75,5.75,Tambov,5.75
+19/20,19/20,16,Spartak Moscovo,Krylia Sovetov,2,0,1.65,3.7,5.75,Spartak Moscovo,1.65
+19/20,19/20,16,FC Gazovik Orenburg,Ufa,0,0,2.15,3.2,3.9,Empate,3.2
+19/20,19/20,16,Arsenal Tula,Zenit,0,1,6.5,4.0,1.55,Zenit,1.55
+19/20,19/20,16,Sochi,CSKA Moscovo,2,3,4.5,3.55,1.85,CSKA Moscovo,1.85
+19/20,19/20,16,Lokomotiv Moscovo,Krasnodar,1,1,2.5,3.35,2.9,Empate,3.35
+19/20,19/20,17,Tambov,Lokomotiv Moscovo,2,3,4.33,3.2,2.02,Lokomotiv Moscovo,2.02
+19/20,19/20,17,FC Gazovik Orenburg,Akhmat Grozny,1,2,2.12,3.2,3.8,Akhmat Grozny,3.8
+19/20,19/20,17,Rubin Kazan,Zenit,1,2,8.0,4.25,1.47,Zenit,1.47
+19/20,19/20,17,Dinamo Moscovo,Rostov,2,1,2.4,3.15,3.6,Dinamo Moscovo,2.4
+19/20,19/20,17,Ufa,Sochi,1,1,2.25,3.0,4.0,Empate,3.0
+19/20,19/20,17,Ural,Spartak Moscovo,0,0,3.6,3.4,2.1,Empate,3.4
+19/20,19/20,17,Arsenal Tula,Krasnodar,1,2,3.4,3.35,2.22,Krasnodar,2.22
+19/20,19/20,17,CSKA Moscovo,Krylia Sovetov,1,0,1.47,4.4,8.5,CSKA Moscovo,1.47
+19/20,19/20,18,Krylia Sovetov,Ufa,0,1,2.7,2.87,3.1,Ufa,3.1
+19/20,19/20,18,Rostov,Ural,0,0,1.6,4.1,6.0,Empate,4.1
+19/20,19/20,18,Akhmat Grozny,Rubin Kazan,1,1,2.0,3.1,4.33,Empate,3.1
+19/20,19/20,18,Lokomotiv Moscovo,Dinamo Moscovo,1,2,2.5,3.1,3.6,Dinamo Moscovo,3.6
+19/20,19/20,18,Zenit,Spartak Moscovo,1,0,1.5,4.4,7.5,Zenit,1.5
+19/20,19/20,19,CSKA Moscovo,Arsenal Tula,0,1,1.55,4.0,7.0,Arsenal Tula,7.0
+19/20,19/20,19,Krasnodar,Tambov,0,0,1.4,4.9,8.5,Empate,4.9
+19/20,19/20,19,Arsenal Tula,Lokomotiv Moscovo,4,0,3.35,3.3,2.3,Arsenal Tula,3.35
+19/20,19/20,19,Zenit,Dinamo Moscovo,3,0,1.53,4.2,6.5,Zenit,1.53
+19/20,19/20,19,Tambov,FC Gazovik Orenburg,3,0,2.87,3.1,2.7,Tambov,2.87
+19/20,19/20,19,Krasnodar,CSKA Moscovo,1,1,2.38,3.25,3.2,Empate,3.25
+19/20,19/20,19,Akhmat Grozny,Ufa,0,1,2.3,3.1,3.85,Ufa,3.85
+19/20,19/20,19,Krylia Sovetov,Ural,2,3,2.1,3.3,3.75,Ural,3.75
+19/20,19/20,19,Sochi,Rubin Kazan,1,1,2.4,3.0,3.4,Empate,3.0
+19/20,19/20,19,Spartak Moscovo,Rostov,1,4,2.25,3.3,3.5,Rostov,3.5
+19/20,19/20,21,Krylia Sovetov,FC Gazovik Orenburg,1,1,2.87,3.1,2.75,Empate,3.1
+19/20,19/20,21,CSKA Moscovo,Ural,1,1,1.35,4.9,13.0,Empate,4.9
+19/20,19/20,21,Dinamo Moscovo,Spartak Moscovo,0,2,2.7,3.0,2.95,Spartak Moscovo,2.95
+19/20,19/20,21,Akhmat Grozny,Rostov,1,1,2.9,3.2,2.75,Empate,3.2
+19/20,19/20,21,Zenit,Lokomotiv Moscovo,0,0,1.57,3.9,7.5,Empate,3.9
+19/20,19/20,21,Tambov,Rubin Kazan,0,0,3.4,3.0,2.35,Empate,3.0
+19/20,19/20,21,Krasnodar,Ufa,2,0,1.78,3.3,5.5,Krasnodar,1.78
+19/20,19/20,21,Sochi,Arsenal Tula,1,2,2.45,3.15,3.3,Arsenal Tula,3.3
+19/20,19/20,22,FC Gazovik Orenburg,Arsenal Tula,2,0,2.27,3.2,3.3,FC Gazovik Orenburg,2.27
+19/20,19/20,22,Dinamo Moscovo,Tambov,1,0,1.67,3.85,6.0,Dinamo Moscovo,1.67
+19/20,19/20,22,Rubin Kazan,Krylia Sovetov,0,1,2.12,3.15,4.2,Krylia Sovetov,4.2
+19/20,19/20,22,Sochi,Ural,2,0,2.15,3.25,3.6,Sochi,2.15
+19/20,19/20,22,Lokomotiv Moscovo,Akhmat Grozny,1,0,1.66,3.5,6.5,Lokomotiv Moscovo,1.66
+19/20,19/20,23,Rostov,CSKA Moscovo,3,2,2.9,3.05,2.63,Rostov,2.9
+19/20,19/20,23,Spartak Moscovo,Krasnodar,0,1,2.22,3.3,3.3,Krasnodar,3.3
+19/20,19/20,23,Zenit,Ufa,0,0,1.31,5.2,12.0,Empate,5.2
+19/20,19/20,23,Sochi,FC Gazovik Orenburg,5,1,2.3,3.3,3.4,Sochi,2.3
+19/20,19/20,23,Akhmat Grozny,Dinamo Moscovo,2,3,3.2,3.0,2.5,Dinamo Moscovo,2.5
+19/20,19/20,23,FC Gazovik Orenburg,Spartak Moscovo,1,3,2.9,3.25,2.62,Spartak Moscovo,2.62
+19/20,19/20,23,Zenit,Ural,7,1,1.2,7.5,17.0,Zenit,1.2
+19/20,19/20,23,Arsenal Tula,Rubin Kazan,0,1,2.27,3.0,3.5,Rubin Kazan,3.5
+19/20,19/20,23,Sochi,Krasnodar,2,0,3.4,3.4,2.27,Sochi,3.4
+19/20,19/20,23,CSKA Moscovo,Ufa,0,0,1.6,3.75,6.5,Empate,3.75
+19/20,19/20,23,Rostov,Lokomotiv Moscovo,1,3,2.42,3.25,3.05,Lokomotiv Moscovo,3.05
+19/20,19/20,24,Tambov,Krylia Sovetov,3,0,2.7,3.0,2.92,Tambov,2.7
+19/20,19/20,32,Krylia Sovetov,Akhmat Grozny,2,4,2.8,2.9,3.0,Akhmat Grozny,3.0
+19/20,19/20,32,Sochi,Rostov,10,1,1.51,20.0,29.0,Sochi,1.51
+19/20,19/20,32,Ural,Rubin Kazan,1,2,2.82,3.25,2.75,Rubin Kazan,2.75
+19/20,19/20,32,Arsenal Tula,Spartak Moscovo,2,3,3.5,3.2,2.25,Spartak Moscovo,2.25
+19/20,19/20,32,CSKA Moscovo,Zenit,0,4,3.75,3.25,2.17,Zenit,2.17
+19/20,19/20,32,Ufa,Tambov,2,1,4.45,3.45,3.65,Ufa,4.45
+19/20,19/20,32,Lokomotiv Moscovo,FC Gazovik Orenburg,1,0,1.54,3.9,7.1,Lokomotiv Moscovo,1.54
+19/20,19/20,33,Akhmat Grozny,Sochi,1,1,2.95,3.3,2.5,Empate,3.3
+19/20,19/20,33,Zenit,Krylia Sovetov,2,1,1.14,9.0,24.0,Zenit,1.14
+19/20,19/20,33,FC Gazovik Orenburg,Krasnodar,0,3,7.0,4.33,1.8,,
+19/20,19/20,33,Spartak Moscovo,Ufa,0,0,2.0,3.2,4.2,Empate,3.2
+19/20,19/20,33,Rubin Kazan,Lokomotiv Moscovo,0,2,3.95,3.2,2.13,Lokomotiv Moscovo,2.13
+19/20,19/20,33,Dinamo Moscovo,CSKA Moscovo,0,0,3.95,3.15,2.17,Empate,3.15
+19/20,19/20,33,Rostov,Arsenal Tula,2,1,2.15,3.45,4.45,Rostov,2.15
+19/20,19/20,33,Ural,Tambov,2,1,2.42,3.25,3.7,Ural,2.42
+19/20,19/20,34,Lokomotiv Moscovo,Krylia Sovetov,1,1,1.5,4.6,7.0,Empate,4.6
+19/20,19/20,34,CSKA Moscovo,Spartak Moscovo,2,0,2.3,3.3,3.3,CSKA Moscovo,2.3
+19/20,19/20,34,Ufa,Rubin Kazan,0,0,2.65,2.82,3.25,Empate,2.82
+19/20,19/20,34,Arsenal Tula,Akhmat Grozny,1,3,2.55,3.2,3.0,Akhmat Grozny,3.0
+19/20,19/20,34,Tambov,Zenit,1,2,11.0,6.25,1.3,Zenit,1.3
+19/20,19/20,34,Rostov,Krasnodar,1,1,3.3,3.5,2.32,Empate,3.5
+19/20,19/20,34,Sochi,Dinamo Moscovo,1,1,2.45,3.15,3.15,Empate,3.15
+19/20,19/20,34,Dinamo Moscovo,Arsenal Tula,0,1,2.12,3.3,3.75,Arsenal Tula,3.75
+19/20,19/20,34,Krylia Sovetov,Rostov,0,0,2.65,3.25,2.7,Empate,3.25
+19/20,19/20,34,Spartak Moscovo,Tambov,2,3,1.67,3.9,5.5,Tambov,5.5
+19/20,19/20,34,Akhmat Grozny,CSKA Moscovo,0,4,3.3,3.25,2.27,CSKA Moscovo,2.27
+19/20,19/20,34,Lokomotiv Moscovo,Sochi,0,0,1.97,3.5,3.7,Empate,3.5
+19/20,19/20,34,Ufa,Ural,1,1,2.6,2.9,3.2,Empate,2.9
+19/20,19/20,34,Rubin Kazan,FC Gazovik Orenburg,1,0,1.06,11.0,31.0,Rubin Kazan,1.06
+19/20,19/20,34,Krasnodar,Zenit,2,4,3.5,3.5,2.07,Zenit,2.07
+19/20,19/20,35,Tambov,Akhmat Grozny,1,2,3.0,3.1,2.45,Akhmat Grozny,2.45
+19/20,19/20,35,Arsenal Tula,Krylia Sovetov,2,4,2.2,3.25,3.4,Krylia Sovetov,3.4
+19/20,19/20,35,FC Gazovik Orenburg,CSKA Moscovo,0,4,6.85,4.65,1.44,CSKA Moscovo,1.44
+19/20,19/20,35,Zenit,Sochi,2,1,1.7,4.25,4.6,Zenit,1.7
+19/20,19/20,35,Rostov,Ufa,1,2,2.03,3.3,4.33,Ufa,4.33
+19/20,19/20,35,Spartak Moscovo,Lokomotiv Moscovo,1,1,2.62,3.2,2.7,Empate,3.2
+19/20,19/20,35,Ural,Dinamo Moscovo,2,1,3.35,3.2,2.27,Ural,3.35
+19/20,19/20,35,Rubin Kazan,Krasnodar,1,0,3.8,3.3,2.21,Rubin Kazan,3.8
+19/20,19/20,35,Arsenal Tula,Tambov,2,1,2.32,3.15,3.25,Arsenal Tula,2.32
+19/20,19/20,35,Akhmat Grozny,Zenit,1,1,3.0,3.4,2.3,Empate,3.4
+19/20,19/20,35,Sochi,Spartak Moscovo,1,0,2.9,3.3,2.38,Sochi,2.9
+19/20,19/20,35,Lokomotiv Moscovo,Ufa,1,1,1.54,3.75,7.5,Empate,3.75
+19/20,19/20,35,CSKA Moscovo,Rubin Kazan,1,1,1.4,4.65,9.5,Empate,4.65
+19/20,19/20,35,Dinamo Moscovo,Krylia Sovetov,2,0,2.13,3.1,3.75,Dinamo Moscovo,2.13
+19/20,19/20,35,FC Gazovik Orenburg,Rostov,0,0,3.95,3.8,1.87,Empate,3.8
+19/20,19/20,35,Krasnodar,Ural,3,0,1.4,5.0,7.5,Krasnodar,1.4
+19/20,19/20,36,Ural,Arsenal Tula,1,3,2.22,3.25,3.5,Arsenal Tula,3.5
+19/20,19/20,36,Krylia Sovetov,Krasnodar,0,0,5.0,3.8,1.69,Empate,3.8
+19/20,19/20,36,Spartak Moscovo,Akhmat Grozny,3,0,2.08,3.3,3.6,Spartak Moscovo,2.08
+19/20,19/20,36,Zenit,FC Gazovik Orenburg,4,1,1.25,7.0,11.0,Zenit,1.25
+19/20,19/20,36,Rubin Kazan,Rostov,0,0,2.85,3.0,2.7,Empate,3.0
+19/20,19/20,36,Ufa,Dinamo Moscovo,0,1,4.0,3.2,2.17,Dinamo Moscovo,2.17
+19/20,19/20,36,Lokomotiv Moscovo,CSKA Moscovo,2,1,3.0,3.25,2.45,Lokomotiv Moscovo,3.0
+19/20,19/20,36,Krasnodar,Dinamo Moscovo,0,2,1.75,3.9,6.5,Dinamo Moscovo,6.5
+19/20,19/20,37,CSKA Moscovo,Tambov,2,0,1.3,5.85,9.5,CSKA Moscovo,1.3
+19/20,19/20,37,Dinamo Moscovo,FC Gazovik Orenburg,0,1,1.62,3.8,6.0,FC Gazovik Orenburg,6.0
+19/20,19/20,37,Krasnodar,Akhmat Grozny,4,0,1.44,4.65,8.5,Krasnodar,1.44
+19/20,19/20,37,Rostov,Zenit,1,2,2.32,3.6,2.88,Zenit,2.88
+19/20,19/20,37,Rubin Kazan,Spartak Moscovo,1,2,3.0,3.2,2.45,Spartak Moscovo,2.45
+19/20,19/20,37,Ufa,Arsenal Tula,0,0,2.65,3.1,3.0,Empate,3.1
+19/20,19/20,37,Ural,Lokomotiv Moscovo,0,1,3.8,3.65,1.95,Lokomotiv Moscovo,1.95
+20/21,20/21,1,Khimki,CSKA Moscovo,0,2,4.75,3.6,1.8,CSKA Moscovo,1.8
+20/21,20/21,1,Tambov,Rostov,0,1,3.7,3.2,2.1,Rostov,2.1
+20/21,20/21,1,Ufa,Krasnodar,0,3,4.0,3.3,2.05,Krasnodar,2.05
+20/21,20/21,1,Arsenal Tula,Akhmat Grozny,0,0,2.45,3.2,3.05,Empate,3.2
+20/21,20/21,1,Spartak Moscovo,Sochi,2,2,1.63,3.9,5.5,Empate,3.9
+20/21,20/21,2,Ural,Dinamo Moscovo,0,2,3.6,3.3,2.15,Dinamo Moscovo,2.15
+20/21,20/21,2,Rotor Volgograd,Zenit,0,2,9.0,5.4,1.33,Zenit,1.33
+20/21,20/21,2,Rubin Kazan,Lokomotiv Moscovo,0,2,3.2,3.1,2.38,Lokomotiv Moscovo,2.38
+20/21,20/21,2,Arsenal Tula,Ufa,2,3,2.32,2.9,3.5,Ufa,3.5
+20/21,20/21,2,Sochi,Khimki,1,1,1.92,3.4,4.1,Empate,3.4
+20/21,20/21,2,Spartak Moscovo,Akhmat Grozny,2,0,1.7,4.0,5.0,Spartak Moscovo,1.7
+20/21,20/21,2,Dinamo Moscovo,Rotor Volgograd,0,0,1.68,3.4,6.0,Empate,3.4
+20/21,20/21,2,Rubin Kazan,Ural,1,1,1.75,3.6,4.75,Empate,3.6
+20/21,20/21,2,CSKA Moscovo,Tambov,2,1,1.46,4.25,7.5,CSKA Moscovo,1.46
+20/21,20/21,2,Lokomotiv Moscovo,Krasnodar,1,0,3.1,3.25,2.4,Lokomotiv Moscovo,3.1
+20/21,20/21,2,Rostov,Zenit,0,2,4.33,3.6,1.88,Zenit,1.88
+20/21,20/21,3,Sochi,Rubin Kazan,3,2,2.42,3.1,3.2,Sochi,2.42
+20/21,20/21,3,Tambov,Khimki,1,0,2.8,3.1,2.7,Tambov,2.8
+20/21,20/21,3,Krasnodar,Arsenal Tula,2,0,1.43,4.75,7.0,Krasnodar,1.43
+20/21,20/21,3,Ufa,Spartak Moscovo,1,1,4.0,3.2,2.07,Empate,3.2
+20/21,20/21,3,Ural,Lokomotiv Moscovo,1,1,4.75,3.5,1.78,Empate,3.5
+20/21,20/21,3,Akhmat Grozny,Rotor Volgograd,3,1,2.22,3.0,3.7,Akhmat Grozny,2.22
+20/21,20/21,3,Dinamo Moscovo,Rostov,2,0,2.13,3.1,4.2,Dinamo Moscovo,2.13
+20/21,20/21,3,Zenit,CSKA Moscovo,2,1,1.85,3.7,4.75,Zenit,1.85
+20/21,20/21,3,Ural,Krasnodar,1,0,5.5,4.33,1.61,Ural,5.5
+20/21,20/21,3,Khimki,Akhmat Grozny,1,2,2.6,3.05,2.9,Akhmat Grozny,2.9
+20/21,20/21,3,Arsenal Tula,Dinamo Moscovo,2,0,4.75,3.2,1.92,Arsenal Tula,4.75
+20/21,20/21,3,Zenit,Tambov,4,1,1.22,7.85,15.0,Zenit,1.22
+20/21,20/21,3,CSKA Moscovo,Rubin Kazan,1,2,1.72,3.65,5.5,Rubin Kazan,5.5
+20/21,20/21,3,Rotor Volgograd,Sochi,1,2,3.6,3.1,2.27,Sochi,2.27
+20/21,20/21,3,Ufa,Rostov,0,1,3.0,2.9,2.7,Rostov,2.7
+20/21,20/21,3,Spartak Moscovo,Lokomotiv Moscovo,2,1,2.5,3.1,2.95,Spartak Moscovo,2.5
+20/21,20/21,4,Tambov,Sochi,0,1,3.75,3.25,2.05,Sochi,2.05
+20/21,20/21,4,Arsenal Tula,Khimki,1,1,1.85,3.6,4.25,Empate,3.6
+20/21,20/21,4,Lokomotiv Moscovo,Akhmat Grozny,2,3,1.87,3.4,4.33,Akhmat Grozny,4.33
+20/21,20/21,4,Rotor Volgograd,Spartak Moscovo,0,1,6.0,4.0,1.59,Spartak Moscovo,1.59
+20/21,20/21,4,Rubin Kazan,Ufa,3,0,1.91,3.25,4.75,Rubin Kazan,1.91
+20/21,20/21,4,Krasnodar,CSKA Moscovo,1,1,2.2,3.5,3.15,Empate,3.5
+20/21,20/21,4,Rostov,Ural,1,0,1.65,3.75,5.75,Rostov,1.65
+20/21,20/21,4,Dinamo Moscovo,Zenit,1,0,4.6,3.55,1.85,Dinamo Moscovo,4.6
+20/21,20/21,4,Spartak Moscovo,Arsenal Tula,2,1,1.57,4.0,6.0,Spartak Moscovo,1.57
+20/21,20/21,4,Khimki,Rotor Volgograd,1,1,1.93,3.3,4.33,Empate,3.3
+20/21,20/21,4,Ufa,Dinamo Moscovo,1,1,4.33,3.0,2.08,Empate,3.0
+20/21,20/21,4,Lokomotiv Moscovo,Zenit,0,0,4.9,4.0,1.66,Empate,4.0
+20/21,20/21,4,Akhmat Grozny,CSKA Moscovo,0,3,3.8,3.5,1.95,CSKA Moscovo,1.95
+20/21,20/21,4,Rubin Kazan,Tambov,2,2,1.65,3.7,5.75,Empate,3.7
+20/21,20/21,4,Krasnodar,Rostov,1,1,1.87,3.5,4.33,Empate,3.5
+20/21,20/21,4,Sochi,Ural,0,0,1.63,3.75,5.75,Empate,3.75
+20/21,20/21,5,Tambov,Ufa,2,0,3.25,2.9,3.2,Tambov,3.25
+20/21,20/21,5,Ural,Khimki,3,1,2.36,3.2,3.3,Ural,2.36
+20/21,20/21,5,Akhmat Grozny,Sochi,0,1,2.55,3.2,2.95,Sochi,2.95
+20/21,20/21,5,Dinamo Moscovo,Rubin Kazan,0,1,2.09,3.35,4.5,Rubin Kazan,4.5
+20/21,20/21,5,CSKA Moscovo,Spartak Moscovo,3,1,2.42,3.25,3.05,CSKA Moscovo,2.42
+20/21,20/21,6,Zenit,Arsenal Tula,3,1,1.29,6.0,11.0,Zenit,1.29
+20/21,20/21,6,Rostov,Lokomotiv Moscovo,0,0,2.65,3.2,3.2,Empate,3.2
+20/21,20/21,6,Krasnodar,Khimki,7,2,1.37,5.05,9.0,Krasnodar,1.37
+20/21,20/21,6,Ural,Zenit,1,1,8.5,5.5,1.49,Empate,5.5
+20/21,20/21,6,Rostov,Rotor Volgograd,3,0,1.56,5.5,10.0,,
+20/21,20/21,6,Arsenal Tula,Sochi,3,2,2.8,3.2,2.75,Arsenal Tula,2.8
+20/21,20/21,6,Ufa,CSKA Moscovo,0,1,6.0,3.55,1.85,CSKA Moscovo,1.85
+20/21,20/21,6,Rubin Kazan,Spartak Moscovo,0,2,3.55,3.35,2.25,Spartak Moscovo,2.25
+20/21,20/21,6,Lokomotiv Moscovo,Tambov,1,0,1.53,4.2,6.6,Lokomotiv Moscovo,1.53
+20/21,20/21,7,Dinamo Moscovo,Akhmat Grozny,1,0,2.17,3.3,3.85,Dinamo Moscovo,2.17
+20/21,20/21,7,Tambov,Spartak Moscovo,0,2,6.55,4.2,1.51,Spartak Moscovo,1.51
+20/21,20/21,7,Zenit,Ufa,6,0,1.18,7.0,18.0,Zenit,1.18
+20/21,20/21,7,Sochi,Krasnodar,1,1,3.6,3.5,2.1,Empate,3.5
+20/21,20/21,7,Arsenal Tula,Rostov,2,3,3.1,3.0,2.55,Rostov,2.55
+20/21,20/21,7,Akhmat Grozny,Ural,2,0,1.87,3.5,4.75,Akhmat Grozny,1.87
+20/21,20/21,7,CSKA Moscovo,Lokomotiv Moscovo,0,1,2.0,3.6,3.8,Lokomotiv Moscovo,3.8
+20/21,20/21,7,Rotor Volgograd,Rubin Kazan,1,3,7.5,4.2,1.47,Rubin Kazan,1.47
+20/21,20/21,8,Khimki,Dinamo Moscovo,1,0,5.75,3.75,1.66,Khimki,5.75
+20/21,20/21,8,Ufa,Rotor Volgograd,0,0,1.83,3.25,5.25,Empate,3.25
+20/21,20/21,8,Tambov,Arsenal Tula,1,1,3.1,3.1,2.45,Empate,3.1
+20/21,20/21,8,Ural,CSKA Moscovo,0,2,5.5,4.0,1.63,CSKA Moscovo,1.63
+20/21,20/21,8,Spartak Moscovo,Zenit,1,1,3.6,3.5,2.1,Empate,3.5
+20/21,20/21,8,Lokomotiv Moscovo,Khimki,2,1,1.57,4.0,6.0,Lokomotiv Moscovo,1.57
+20/21,20/21,8,Rubin Kazan,Akhmat Grozny,1,1,2.07,3.5,4.33,Empate,3.5
+20/21,20/21,8,Sochi,Rostov,4,2,2.55,3.05,3.1,Sochi,2.55
+20/21,20/21,8,Dinamo Moscovo,Krasnodar,2,0,3.05,3.25,2.55,Dinamo Moscovo,3.05
+20/21,20/21,9,Zenit,Sochi,3,1,1.45,4.8,7.5,Zenit,1.45
+20/21,20/21,9,Krasnodar,Rubin Kazan,3,1,1.95,3.85,4.0,Krasnodar,1.95
+20/21,20/21,9,Lokomotiv Moscovo,Ufa,1,0,1.67,3.6,6.0,Lokomotiv Moscovo,1.67
+20/21,20/21,9,Khimki,Spartak Moscovo,2,3,6.0,4.33,1.75,Spartak Moscovo,1.75
+20/21,20/21,9,Arsenal Tula,Ural,1,0,2.12,3.2,4.0,Arsenal Tula,2.12
+20/21,20/21,9,Rotor Volgograd,Tambov,0,2,3.2,2.9,2.7,Tambov,2.7
+20/21,20/21,9,CSKA Moscovo,Dinamo Moscovo,3,1,2.2,3.35,3.65,CSKA Moscovo,2.2
+20/21,20/21,9,Rostov,Akhmat Grozny,3,0,2.45,3.0,3.3,Rostov,2.45
+20/21,20/21,10,Dinamo Moscovo,Sochi,3,1,2.1,3.25,3.9,Dinamo Moscovo,2.1
+20/21,20/21,10,Zenit,Rubin Kazan,1,2,1.53,4.33,6.5,Rubin Kazan,6.5
+20/21,20/21,10,Krasnodar,Spartak Moscovo,1,3,2.65,3.55,2.55,Spartak Moscovo,2.55
+20/21,20/21,10,Lokomotiv Moscovo,Rotor Volgograd,1,2,1.47,4.2,8.5,Rotor Volgograd,8.5
+20/21,20/21,10,Ural,Tambov,0,0,2.15,3.1,3.8,Empate,3.1
+20/21,20/21,10,Rostov,Khimki,0,2,1.8,3.6,4.5,Khimki,4.5
+20/21,20/21,10,Akhmat Grozny,Ufa,3,1,1.73,3.5,5.5,Akhmat Grozny,1.73
+20/21,20/21,11,CSKA Moscovo,Arsenal Tula,5,1,1.44,4.5,7.5,CSKA Moscovo,1.44
+20/21,20/21,11,Rubin Kazan,Arsenal Tula,3,1,1.65,3.75,5.75,Rubin Kazan,1.65
+20/21,20/21,11,Akhmat Grozny,Krasnodar,2,0,2.65,3.5,3.0,Akhmat Grozny,2.65
+20/21,20/21,11,Spartak Moscovo,Rostov,0,1,1.87,3.45,5.0,Rostov,5.0
+20/21,20/21,11,Sochi,Lokomotiv Moscovo,2,1,2.45,3.1,3.15,Sochi,2.45
+20/21,20/21,11,Ufa,Ural,1,2,2.3,2.92,3.9,Ural,3.9
+20/21,20/21,11,Khimki,Zenit,0,2,5.5,4.33,1.6,Zenit,1.6
+20/21,20/21,11,Rotor Volgograd,CSKA Moscovo,0,1,11.0,5.0,1.37,CSKA Moscovo,1.37
+20/21,20/21,11,Tambov,Dinamo Moscovo,1,2,5.75,3.4,1.78,Dinamo Moscovo,1.78
+20/21,20/21,12,Sochi,Ufa,1,1,1.75,3.4,5.5,Empate,3.4
+20/21,20/21,12,Ural,Spartak Moscovo,2,2,5.0,3.4,1.85,Empate,3.4
+20/21,20/21,12,Arsenal Tula,Rotor Volgograd,1,1,1.87,3.5,4.5,Empate,3.5
+20/21,20/21,12,Tambov,Akhmat Grozny,0,1,4.75,3.6,1.78,Akhmat Grozny,1.78
+20/21,20/21,12,Khimki,Rubin Kazan,2,0,3.6,3.5,2.05,Khimki,3.6
+20/21,20/21,12,CSKA Moscovo,Rostov,2,0,1.53,4.33,7.0,CSKA Moscovo,1.53
+20/21,20/21,12,Dinamo Moscovo,Lokomotiv Moscovo,5,1,2.65,3.2,2.75,Dinamo Moscovo,2.65
+20/21,20/21,12,Zenit,Krasnodar,3,1,1.66,4.33,5.0,Zenit,1.66
+20/21,20/21,13,Krasnodar,Tambov,1,0,1.42,4.75,8.5,Krasnodar,1.42
+20/21,20/21,13,Akhmat Grozny,Zenit,2,2,4.2,3.5,1.95,Empate,3.5
+20/21,20/21,13,Lokomotiv Moscovo,Arsenal Tula,1,0,1.73,3.8,4.75,Lokomotiv Moscovo,1.73
+20/21,20/21,13,Spartak Moscovo,Dinamo Moscovo,1,1,2.25,3.3,3.4,Empate,3.3
+20/21,20/21,13,CSKA Moscovo,Sochi,1,1,1.65,4.2,5.5,Empate,4.2
+20/21,20/21,13,Rotor Volgograd,Ural,0,0,2.87,3.1,2.7,Empate,3.1
+20/21,20/21,13,Rubin Kazan,Rostov,0,2,2.52,3.2,2.95,Rostov,2.95
+20/21,20/21,14,Ufa,Khimki,1,2,2.75,3.0,2.9,Khimki,2.9
+20/21,20/21,14,Arsenal Tula,Zenit,0,0,7.0,4.5,1.5,Empate,4.5
+20/21,20/21,14,Khimki,Krasnodar,1,0,6.0,4.33,1.55,Khimki,6.0
+20/21,20/21,14,Akhmat Grozny,Lokomotiv Moscovo,0,0,1.91,3.5,4.5,Empate,3.5
+20/21,20/21,14,Rostov,Dinamo Moscovo,4,1,3.65,3.1,2.2,Rostov,3.65
+20/21,20/21,14,Ural,Sochi,1,0,3.3,3.1,2.4,Ural,3.3
+20/21,20/21,14,Ufa,Tambov,4,0,1.97,3.1,4.75,Ufa,1.97
+20/21,20/21,14,Rubin Kazan,CSKA Moscovo,1,0,3.85,3.6,2.0,Rubin Kazan,3.85
+20/21,20/21,14,Spartak Moscovo,Rotor Volgograd,2,0,1.38,4.8,9.0,Spartak Moscovo,1.38
+20/21,20/21,15,Lokomotiv Moscovo,Rubin Kazan,3,1,2.1,3.2,4.33,Lokomotiv Moscovo,2.1
+20/21,20/21,15,Spartak Moscovo,Tambov,5,1,1.08,14.0,81.0,Spartak Moscovo,1.08
+20/21,20/21,15,Krasnodar,Rotor Volgograd,5,0,1.34,5.75,11.0,Krasnodar,1.34
+20/21,20/21,15,Zenit,Ural,5,1,1.31,5.5,11.0,Zenit,1.31
+20/21,20/21,15,Rostov,Ufa,0,1,2.1,3.1,4.3,Ufa,4.3
+20/21,20/21,15,Dinamo Moscovo,Arsenal Tula,1,0,1.63,3.9,6.0,Dinamo Moscovo,1.63
+20/21,20/21,15,CSKA Moscovo,Khimki,2,2,1.47,4.5,7.0,Empate,4.5
+20/21,20/21,16,Sochi,Akhmat Grozny,2,0,2.72,3.1,2.8,Sochi,2.72
+20/21,20/21,16,Khimki,Arsenal Tula,1,0,2.45,3.3,2.9,Khimki,2.45
+20/21,20/21,16,Rotor Volgograd,Ufa,1,0,3.3,3.0,2.43,Rotor Volgograd,3.3
+20/21,20/21,16,Sochi,Spartak Moscovo,1,0,2.95,3.2,2.5,Sochi,2.95
+20/21,20/21,16,Zenit,Dinamo Moscovo,3,1,1.66,4.0,5.5,Zenit,1.66
+20/21,20/21,16,Tambov,Rubin Kazan,0,1,23.0,8.0,1.15,Rubin Kazan,1.15
+20/21,20/21,16,Krasnodar,Lokomotiv Moscovo,5,0,1.75,3.85,5.0,Krasnodar,1.75
+20/21,20/21,16,Akhmat Grozny,Rostov,0,1,2.06,3.25,3.9,Rostov,3.9
+20/21,20/21,16,CSKA Moscovo,Ural,2,2,1.38,5.0,9.5,Empate,5.0
+20/21,20/21,17,Rotor Volgograd,Arsenal Tula,1,0,3.0,3.0,2.7,Rotor Volgograd,3.0
+20/21,20/21,17,Sochi,Dinamo Moscovo,2,0,2.65,3.1,2.85,Sochi,2.65
+20/21,20/21,17,Zenit,Spartak Moscovo,3,1,1.78,3.9,4.75,Zenit,1.78
+20/21,20/21,17,Khimki,Lokomotiv Moscovo,3,2,4.0,3.3,2.05,Khimki,4.0
+20/21,20/21,17,Krasnodar,Ufa,1,0,1.46,4.5,8.0,Krasnodar,1.46
+20/21,20/21,17,Akhmat Grozny,Rubin Kazan,0,0,2.3,3.15,3.5,Empate,3.15
+20/21,20/21,17,Rostov,CSKA Moscovo,1,3,3.6,3.3,2.19,CSKA Moscovo,2.19
+20/21,20/21,17,Tambov,Ural,1,1,3.3,3.0,2.45,Empate,3.0
+20/21,20/21,18,Tambov,Rotor Volgograd,1,3,3.6,3.3,2.19,Rotor Volgograd,2.19
+20/21,20/21,18,Khimki,Ufa,2,1,2.25,3.3,3.65,Khimki,2.25
+20/21,20/21,18,Zenit,Rostov,2,2,1.4,5.0,9.0,Empate,5.0
+20/21,20/21,18,Lokomotiv Moscovo,CSKA Moscovo,2,0,3.4,3.4,2.2,Lokomotiv Moscovo,3.4
+20/21,20/21,18,Sochi,Arsenal Tula,4,0,1.73,3.6,5.5,Sochi,1.73
+20/21,20/21,18,Spartak Moscovo,Rubin Kazan,0,2,1.95,3.6,4.2,Rubin Kazan,4.2
+20/21,20/21,18,Akhmat Grozny,Dinamo Moscovo,1,2,2.42,3.25,3.1,Dinamo Moscovo,3.1
+20/21,20/21,18,Krasnodar,Ural,2,2,1.5,4.5,6.8,Empate,4.5
+20/21,20/21,19,CSKA Moscovo,Akhmat Grozny,2,0,1.7,3.75,5.5,CSKA Moscovo,1.7
+20/21,20/21,19,Rotor Volgograd,Khimki,0,0,2.65,3.1,3.0,Empate,3.1
+20/21,20/21,19,Rostov,Sochi,0,0,3.4,3.1,2.37,Empate,3.1
+20/21,20/21,19,Ural,Ufa,0,0,2.55,3.0,3.3,Empate,3.0
+20/21,20/21,19,Dinamo Moscovo,Tambov,2,0,1.07,15.0,90.0,Dinamo Moscovo,1.07
+20/21,20/21,19,Spartak Moscovo,Krasnodar,6,1,2.3,3.5,3.1,Spartak Moscovo,2.3
+20/21,20/21,20,Arsenal Tula,Lokomotiv Moscovo,0,3,3.0,3.1,2.6,Lokomotiv Moscovo,2.6
+20/21,20/21,20,Rubin Kazan,Zenit,2,1,5.25,3.8,1.7,Rubin Kazan,5.25
+20/21,20/21,20,Khimki,Rostov,1,0,2.82,3.0,2.9,Khimki,2.82
+20/21,20/21,20,Ural,Rotor Volgograd,1,0,2.1,3.25,4.0,Ural,2.1
+20/21,20/21,20,Arsenal Tula,CSKA Moscovo,2,1,6.5,4.0,1.6,Arsenal Tula,6.5
+20/21,20/21,20,Zenit,Akhmat Grozny,4,0,1.36,5.25,10.0,Zenit,1.36
+20/21,20/21,20,Dinamo Moscovo,Spartak Moscovo,1,2,2.67,3.3,2.75,Spartak Moscovo,2.75
+20/21,20/21,20,Ufa,Rubin Kazan,0,3,3.5,3.1,2.35,Rubin Kazan,2.35
+20/21,20/21,20,Tambov,Krasnodar,0,4,67.0,11.0,1.11,Krasnodar,1.11
+20/21,20/21,20,Lokomotiv Moscovo,Sochi,3,1,2.25,3.2,3.85,Lokomotiv Moscovo,2.25
+20/21,20/21,21,Rotor Volgograd,Rostov,0,4,3.8,3.0,2.35,Rostov,2.35
+20/21,20/21,21,Akhmat Grozny,Arsenal Tula,2,0,1.95,3.3,4.33,Akhmat Grozny,1.95
+20/21,20/21,21,CSKA Moscovo,Zenit,2,3,3.2,3.3,2.31,Zenit,2.31
+20/21,20/21,21,Ufa,Lokomotiv Moscovo,0,1,3.8,3.0,2.33,Lokomotiv Moscovo,2.33
+20/21,20/21,21,Krasnodar,Dinamo Moscovo,2,3,1.85,4.0,4.2,Dinamo Moscovo,4.2
+20/21,20/21,21,Spartak Moscovo,Ural,5,1,1.33,5.1,11.0,Spartak Moscovo,1.33
+20/21,20/21,21,Rubin Kazan,Khimki,1,3,1.65,3.75,6.0,Khimki,6.0
+20/21,20/21,21,Sochi,Tambov,5,0,1.08,11.5,67.0,Sochi,1.08
+20/21,20/21,22,Rotor Volgograd,Lokomotiv Moscovo,0,2,5.0,3.4,1.83,Lokomotiv Moscovo,1.83
+20/21,20/21,22,Krasnodar,Akhmat Grozny,0,5,1.62,4.2,5.5,Akhmat Grozny,5.5
+20/21,20/21,22,Rubin Kazan,Sochi,1,0,2.46,3.2,3.0,Rubin Kazan,2.46
+20/21,20/21,22,Dinamo Moscovo,Ufa,4,0,1.7,3.6,6.0,Dinamo Moscovo,1.7
+20/21,20/21,22,Ural,Arsenal Tula,2,0,2.7,3.1,2.9,Ural,2.7
+20/21,20/21,22,Tambov,CSKA Moscovo,1,2,56.0,17.0,1.14,CSKA Moscovo,1.14
+20/21,20/21,22,Rostov,Spartak Moscovo,2,3,3.5,3.3,2.2,Spartak Moscovo,2.2
+20/21,20/21,23,Zenit,Khimki,2,0,1.17,8.5,21.0,Zenit,1.17
+20/21,20/21,23,Khimki,Tambov,1,0,1.21,7.25,16.0,Khimki,1.21
+20/21,20/21,23,Ufa,Akhmat Grozny,3,0,3.1,3.0,2.5,Ufa,3.1
+20/21,20/21,23,Rostov,Rubin Kazan,0,1,2.8,3.1,2.7,Rubin Kazan,2.7
+20/21,20/21,23,Arsenal Tula,Krasnodar,1,0,4.33,3.75,1.87,Arsenal Tula,4.33
+20/21,20/21,23,Dinamo Moscovo,Ural,2,2,1.41,4.5,9.0,Empate,4.5
+20/21,20/21,23,Sochi,Zenit,1,2,5.5,4.2,1.6,Zenit,1.6
+20/21,20/21,23,Lokomotiv Moscovo,Spartak Moscovo,2,0,3.55,3.4,2.1,Lokomotiv Moscovo,3.55
+20/21,20/21,24,CSKA Moscovo,Rotor Volgograd,2,0,1.3,6.0,11.0,CSKA Moscovo,1.3
+20/21,20/21,24,Akhmat Grozny,Khimki,3,1,1.95,3.5,4.5,Akhmat Grozny,1.95
+20/21,20/21,24,Lokomotiv Moscovo,Rostov,4,1,1.9,3.5,4.5,Lokomotiv Moscovo,1.9
+20/21,20/21,24,Rotor Volgograd,Dinamo Moscovo,0,3,5.25,3.6,1.8,Dinamo Moscovo,1.8
+20/21,20/21,24,Krasnodar,Zenit,2,2,5.25,4.33,1.66,Empate,4.33
+20/21,20/21,24,Ural,Rubin Kazan,0,1,4.75,3.75,1.78,Rubin Kazan,1.78
+20/21,20/21,24,Arsenal Tula,Tambov,4,0,1.21,8.5,23.0,Arsenal Tula,1.21
+20/21,20/21,24,Sochi,CSKA Moscovo,2,1,2.95,3.3,2.45,Sochi,2.95
+20/21,20/21,24,Spartak Moscovo,Ufa,0,3,1.52,4.2,7.5,Ufa,7.5
+20/21,20/21,25,Ural,Akhmat Grozny,1,1,2.85,3.1,2.75,Empate,3.1
+20/21,20/21,25,Zenit,Rotor Volgograd,6,0,1.1,12.0,36.0,Zenit,1.1
+20/21,20/21,25,Dinamo Moscovo,Khimki,0,1,1.4,4.8,9.0,Khimki,9.0
+20/21,20/21,25,Tambov,Lokomotiv Moscovo,2,5,34.0,10.0,1.16,Lokomotiv Moscovo,1.16
+20/21,20/21,25,Ufa,Sochi,2,3,3.1,3.0,2.55,Sochi,2.55
+20/21,20/21,25,Rostov,Arsenal Tula,1,0,2.3,3.2,3.4,Rostov,2.3
+20/21,20/21,25,Spartak Moscovo,CSKA Moscovo,1,0,2.38,3.5,3.0,Spartak Moscovo,2.38
+20/21,20/21,25,Rubin Kazan,Krasnodar,0,1,2.45,3.6,2.87,Krasnodar,2.87
+20/21,20/21,26,Rotor Volgograd,Akhmat Grozny,1,0,3.4,3.4,2.22,Rotor Volgograd,3.4
+20/21,20/21,26,Rubin Kazan,Dinamo Moscovo,2,0,3.1,3.3,2.38,Rubin Kazan,3.1
+20/21,20/21,26,CSKA Moscovo,Ufa,1,1,1.66,3.8,5.5,Empate,3.8
+20/21,20/21,26,Krasnodar,Sochi,1,3,2.0,3.75,3.75,Sochi,3.75
+20/21,20/21,26,Khimki,Ural,1,0,2.5,3.3,3.0,Khimki,2.5
+20/21,20/21,26,Rostov,Tambov,2,0,1.09,13.0,46.0,Rostov,1.09
+20/21,20/21,26,Zenit,Lokomotiv Moscovo,6,1,1.47,4.9,8.0,Zenit,1.47
+20/21,20/21,27,Arsenal Tula,Spartak Moscovo,1,2,4.75,3.9,1.75,Spartak Moscovo,1.75
+20/21,20/21,27,Akhmat Grozny,Tambov,3,1,1.12,12.0,46.0,Akhmat Grozny,1.12
+20/21,20/21,27,Sochi,Rotor Volgograd,2,1,1.42,4.9,10.0,Sochi,1.42
+20/21,20/21,27,Ufa,Zenit,0,0,3.5,3.8,2.11,Empate,3.8
+20/21,20/21,27,Arsenal Tula,Rubin Kazan,2,4,2.85,3.2,2.75,Rubin Kazan,2.75
+20/21,20/21,27,Lokomotiv Moscovo,Dinamo Moscovo,0,0,2.8,3.3,2.6,Empate,3.3
+20/21,20/21,27,CSKA Moscovo,Krasnodar,3,1,1.83,4.2,3.95,CSKA Moscovo,1.83
+20/21,20/21,28,Ural,Rostov,1,0,3.1,3.1,2.6,Ural,3.1
+20/21,20/21,28,Spartak Moscovo,Khimki,2,1,1.33,5.75,10.0,Spartak Moscovo,1.33
+20/21,20/21,28,Akhmat Grozny,Spartak Moscovo,2,2,3.75,3.6,2.0,Empate,3.6
+20/21,20/21,28,Dinamo Moscovo,CSKA Moscovo,3,2,3.2,3.6,2.2,Dinamo Moscovo,3.2
+20/21,20/21,28,Khimki,Sochi,0,0,4.75,3.85,1.75,Empate,3.85
+20/21,20/21,28,Lokomotiv Moscovo,Ural,1,0,1.44,5.0,8.5,Lokomotiv Moscovo,1.44
+20/21,20/21,28,Rostov,Krasnodar,1,3,2.9,3.5,2.4,Krasnodar,2.4
+20/21,20/21,28,Rubin Kazan,Rotor Volgograd,1,1,1.52,4.25,7.25,Empate,4.25
+20/21,20/21,28,Tambov,Zenit,1,5,36.0,15.0,1.13,Zenit,1.13
+20/21,20/21,28,Ufa,Arsenal Tula,2,1,2.2,3.05,4.33,Ufa,2.2
+21/22,21/22,1,Rostov,Dinamo Moscovo,0,2,3.6,3.2,2.4,Dinamo Moscovo,2.4
+21/22,21/22,1,Khimki,Zenit,1,3,11.0,5.6,1.4,Zenit,1.4
+21/22,21/22,1,Lokomotiv Moscovo,Arsenal Tula,3,1,1.65,3.85,6.0,Lokomotiv Moscovo,1.65
+21/22,21/22,1,Rubin Kazan,Spartak Moscovo,1,0,3.6,3.7,2.3,Rubin Kazan,3.6
+21/22,21/22,1,Ural,Krasnodar,0,3,4.0,3.4,2.15,Krasnodar,2.15
+21/22,21/22,1,Krylia Sovetov,Akhmat Grozny,1,2,2.4,3.4,3.75,Akhmat Grozny,3.75
+21/22,21/22,1,CSKA Moscovo,Ufa,1,0,1.7,3.8,6.0,CSKA Moscovo,1.7
+21/22,21/22,2,FK Nizhny Novgorod,Sochi,1,0,4.33,3.0,2.1,FK Nizhny Novgorod,4.33
+21/22,21/22,2,Arsenal Tula,Rubin Kazan,0,3,3.4,3.3,2.2,Rubin Kazan,2.2
+21/22,21/22,2,Krylia Sovetov,Spartak Moscovo,0,1,4.25,3.6,2.05,Spartak Moscovo,2.05
+21/22,21/22,2,Ufa,Dinamo Moscovo,2,3,3.9,3.2,2.11,Dinamo Moscovo,2.11
+21/22,21/22,2,CSKA Moscovo,Lokomotiv Moscovo,1,2,2.15,3.4,3.5,Lokomotiv Moscovo,3.5
+21/22,21/22,2,Ural,FK Nizhny Novgorod,1,1,2.15,3.2,4.0,Empate,3.2
+21/22,21/22,2,Krasnodar,Khimki,0,1,1.57,4.5,5.5,Khimki,5.5
+21/22,21/22,2,Rostov,Zenit,2,4,8.0,4.4,1.5,Zenit,1.5
+21/22,21/22,3,Akhmat Grozny,Sochi,1,2,2.65,3.2,2.9,Sochi,2.9
+21/22,21/22,3,Ufa,Lokomotiv Moscovo,1,1,3.4,3.3,2.35,Empate,3.3
+21/22,21/22,3,Zenit,Krasnodar,3,2,1.44,5.0,7.5,Zenit,1.44
+21/22,21/22,3,Arsenal Tula,Krylia Sovetov,2,1,2.9,3.25,2.5,Arsenal Tula,2.9
+21/22,21/22,3,Spartak Moscovo,FK Nizhny Novgorod,1,2,1.47,4.6,7.0,FK Nizhny Novgorod,7.0
+21/22,21/22,3,Khimki,Rostov,1,1,2.95,3.25,2.6,Empate,3.25
+21/22,21/22,3,Dinamo Moscovo,CSKA Moscovo,2,1,2.6,3.2,2.85,Dinamo Moscovo,2.6
+21/22,21/22,3,Rubin Kazan,Akhmat Grozny,2,1,2.15,3.4,3.4,Rubin Kazan,2.15
+21/22,21/22,4,Sochi,Ural,2,0,1.87,3.75,6.0,Sochi,1.87
+21/22,21/22,4,FK Nizhny Novgorod,Ufa,1,2,3.3,3.1,2.45,Ufa,2.45
+21/22,21/22,4,Spartak Moscovo,Ural,1,0,1.4,4.75,9.0,Spartak Moscovo,1.4
+21/22,21/22,4,Akhmat Grozny,Dinamo Moscovo,2,1,3.4,3.4,2.35,Akhmat Grozny,3.4
+21/22,21/22,4,Rostov,CSKA Moscovo,1,3,3.6,3.25,2.18,CSKA Moscovo,2.18
+21/22,21/22,4,Lokomotiv Moscovo,Zenit,1,1,4.75,3.8,1.75,Empate,3.8
+21/22,21/22,4,Krasnodar,Arsenal Tula,3,2,1.5,4.75,6.5,Krasnodar,1.5
+21/22,21/22,4,Rubin Kazan,Krylia Sovetov,1,1,2.55,3.3,2.8,Empate,3.3
+21/22,21/22,5,Sochi,Khimki,3,0,1.85,3.5,4.5,Sochi,1.85
+21/22,21/22,5,Arsenal Tula,Spartak Moscovo,1,1,5.75,4.1,1.6,Empate,4.1
+21/22,21/22,5,CSKA Moscovo,Akhmat Grozny,2,0,1.55,4.33,5.8,CSKA Moscovo,1.55
+21/22,21/22,5,Ufa,Zenit,1,1,8.25,5.0,1.37,Empate,5.0
+21/22,21/22,5,Ural,Dinamo Moscovo,0,1,6.0,4.0,1.65,Dinamo Moscovo,1.65
+21/22,21/22,5,Krylia Sovetov,Sochi,1,0,2.6,3.4,2.9,Krylia Sovetov,2.6
+21/22,21/22,5,Lokomotiv Moscovo,Krasnodar,2,1,2.75,3.5,2.6,Lokomotiv Moscovo,2.75
+21/22,21/22,5,FK Nizhny Novgorod,Rostov,1,2,3.5,3.1,2.35,Rostov,2.35
+21/22,21/22,5,Khimki,Rubin Kazan,1,1,2.37,3.3,3.15,Empate,3.3
+21/22,21/22,6,Ufa,Krylia Sovetov,1,2,2.7,3.1,2.87,Krylia Sovetov,2.87
+21/22,21/22,6,Spartak Moscovo,Sochi,1,2,1.95,3.5,4.0,Sochi,4.0
+21/22,21/22,6,Akhmat Grozny,Arsenal Tula,2,1,1.72,3.7,5.2,Akhmat Grozny,1.72
+21/22,21/22,6,Zenit,CSKA Moscovo,1,0,1.5,4.7,6.5,Zenit,1.5
+21/22,21/22,6,Ural,Rostov,1,1,3.5,3.1,2.32,Empate,3.1
+21/22,21/22,6,Khimki,FK Nizhny Novgorod,1,1,2.05,3.3,4.0,Empate,3.3
+21/22,21/22,6,Dinamo Moscovo,Lokomotiv Moscovo,1,1,2.1,3.6,4.0,Empate,3.6
+21/22,21/22,6,Krasnodar,Rubin Kazan,2,0,1.55,4.33,5.8,Krasnodar,1.55
+21/22,21/22,7,Lokomotiv Moscovo,Krylia Sovetov,2,0,2.12,3.4,3.9,Lokomotiv Moscovo,2.12
+21/22,21/22,7,Zenit,Akhmat Grozny,3,1,1.38,5.25,8.5,Zenit,1.38
+21/22,21/22,7,Spartak Moscovo,Khimki,3,1,1.57,4.4,6.6,Spartak Moscovo,1.57
+21/22,21/22,7,Arsenal Tula,CSKA Moscovo,2,2,5.5,3.75,1.7,Empate,3.75
+21/22,21/22,7,Sochi,Ufa,3,1,1.68,3.75,5.5,Sochi,1.68
+21/22,21/22,7,Dinamo Moscovo,FK Nizhny Novgorod,1,2,1.3,5.5,11.0,FK Nizhny Novgorod,11.0
+21/22,21/22,8,Rubin Kazan,Ural,4,0,1.65,3.8,5.75,Rubin Kazan,1.65
+21/22,21/22,8,Rostov,Krasnodar,1,1,3.8,3.5,2.0,Empate,3.5
+21/22,21/22,8,Ufa,Khimki,3,2,2.45,3.3,3.1,Ufa,2.45
+21/22,21/22,8,Krylia Sovetov,Rostov,4,2,2.35,3.2,3.4,Krylia Sovetov,2.35
+21/22,21/22,8,Akhmat Grozny,Krasnodar,0,2,2.7,3.4,2.7,Krasnodar,2.7
+21/22,21/22,8,FK Nizhny Novgorod,Arsenal Tula,2,3,2.45,3.1,3.1,Arsenal Tula,3.1
+21/22,21/22,8,Sochi,Dinamo Moscovo,0,1,2.35,3.4,3.1,Dinamo Moscovo,3.1
+21/22,21/22,9,Ural,Lokomotiv Moscovo,0,0,4.55,3.5,1.85,Empate,3.5
+21/22,21/22,9,Rubin Kazan,Zenit,1,3,4.6,4.0,1.72,Zenit,1.72
+21/22,21/22,9,CSKA Moscovo,Spartak Moscovo,1,0,2.35,3.4,3.05,CSKA Moscovo,2.35
+21/22,21/22,9,Khimki,Lokomotiv Moscovo,0,0,3.4,3.45,2.2,Empate,3.45
+21/22,21/22,9,Zenit,Krylia Sovetov,2,1,1.3,6.2,12.0,Zenit,1.3
+21/22,21/22,9,Spartak Moscovo,Ufa,2,0,1.53,4.33,6.5,Spartak Moscovo,1.53
+21/22,21/22,9,Dinamo Moscovo,Rubin Kazan,2,0,1.75,3.75,5.0,Dinamo Moscovo,1.75
+21/22,21/22,9,Rostov,Akhmat Grozny,1,2,2.65,3.2,2.95,Akhmat Grozny,2.95
+21/22,21/22,9,Krasnodar,Sochi,3,0,2.2,3.4,3.4,Krasnodar,2.2
+21/22,21/22,10,Ural,Arsenal Tula,2,0,2.87,3.1,2.7,Ural,2.87
+21/22,21/22,10,FK Nizhny Novgorod,CSKA Moscovo,0,2,6.0,4.0,1.6,CSKA Moscovo,1.6
+21/22,21/22,10,Rubin Kazan,FK Nizhny Novgorod,0,1,1.9,3.8,5.0,FK Nizhny Novgorod,5.0
+21/22,21/22,10,Dinamo Moscovo,Krylia Sovetov,0,1,1.72,3.9,5.25,Krylia Sovetov,5.25
+21/22,21/22,10,Arsenal Tula,Khimki,0,0,2.9,3.25,2.7,Empate,3.25
+21/22,21/22,10,CSKA Moscovo,Krasnodar,0,0,2.35,3.5,2.9,Empate,3.5
+21/22,21/22,10,Ufa,Ural,0,1,1.98,3.3,4.5,Ural,4.5
+21/22,21/22,10,Zenit,Sochi,1,2,1.38,5.5,8.0,Sochi,8.0
+21/22,21/22,10,Akhmat Grozny,Spartak Moscovo,0,1,3.1,3.3,2.5,Spartak Moscovo,2.5
+21/22,21/22,10,Lokomotiv Moscovo,Rostov,1,2,2.0,3.6,4.2,Rostov,4.2
+21/22,21/22,11,Arsenal Tula,Zenit,2,1,9.5,5.25,1.34,Arsenal Tula,9.5
+21/22,21/22,11,Rubin Kazan,Lokomotiv Moscovo,2,2,2.2,3.4,3.4,Empate,3.4
+21/22,21/22,11,Sochi,Rostov,3,2,1.65,4.0,5.5,Sochi,1.65
+21/22,21/22,11,Spartak Moscovo,Dinamo Moscovo,2,2,2.62,3.25,2.75,Empate,3.25
+21/22,21/22,11,Ural,CSKA Moscovo,0,1,4.75,3.6,1.83,CSKA Moscovo,1.83
+21/22,21/22,11,Khimki,Akhmat Grozny,2,0,2.9,3.1,2.6,Khimki,2.9
+21/22,21/22,11,Krylia Sovetov,FK Nizhny Novgorod,2,0,1.68,3.75,5.25,Krylia Sovetov,1.68
+21/22,21/22,11,Krasnodar,Ufa,1,1,1.38,5.5,8.0,Empate,5.5
+21/22,21/22,12,Dinamo Moscovo,Khimki,4,1,1.55,4.1,7.0,Dinamo Moscovo,1.55
+21/22,21/22,12,FK Nizhny Novgorod,Krasnodar,1,4,6.5,4.5,1.5,Krasnodar,1.5
+21/22,21/22,12,Rostov,Arsenal Tula,4,0,1.85,3.6,4.5,Rostov,1.85
+21/22,21/22,12,CSKA Moscovo,Krylia Sovetov,3,1,1.8,3.9,4.5,CSKA Moscovo,1.8
+21/22,21/22,12,Ufa,Rubin Kazan,1,1,2.75,3.25,2.75,Empate,3.25
+21/22,21/22,12,Akhmat Grozny,Ural,1,0,1.68,3.6,5.75,Akhmat Grozny,1.68
+21/22,21/22,12,Zenit,Spartak Moscovo,7,1,1.55,4.4,6.5,Zenit,1.55
+21/22,21/22,13,Lokomotiv Moscovo,Sochi,2,1,2.9,3.3,2.45,Lokomotiv Moscovo,2.9
+21/22,21/22,13,Zenit,Dinamo Moscovo,4,1,1.53,4.4,6.0,Zenit,1.53
+21/22,21/22,13,Rubin Kazan,CSKA Moscovo,1,0,3.6,3.5,2.15,Rubin Kazan,3.6
+21/22,21/22,13,Spartak Moscovo,Rostov,1,1,1.68,3.8,5.75,Empate,3.8
+21/22,21/22,13,FK Nizhny Novgorod,Lokomotiv Moscovo,1,2,4.5,3.4,1.9,Lokomotiv Moscovo,1.9
+21/22,21/22,13,Krasnodar,Krylia Sovetov,0,1,1.5,4.6,7.0,Krylia Sovetov,7.0
+21/22,21/22,13,Ufa,Akhmat Grozny,1,0,2.8,3.0,2.8,Ufa,2.8
+21/22,21/22,13,Arsenal Tula,Sochi,1,2,5.0,3.8,1.73,Sochi,1.73
+21/22,21/22,13,Khimki,Ural,0,0,1.95,3.4,4.33,Empate,3.4
+21/22,21/22,14,Arsenal Tula,Ufa,0,0,3.2,3.15,2.55,Empate,3.15
+21/22,21/22,14,Dinamo Moscovo,Krasnodar,1,0,2.65,3.4,2.65,Dinamo Moscovo,2.65
+21/22,21/22,14,Krylia Sovetov,Khimki,3,0,1.87,3.6,4.5,Krylia Sovetov,1.87
+21/22,21/22,14,Sochi,CSKA Moscovo,4,1,2.37,3.35,3.1,Sochi,2.37
+21/22,21/22,14,Ural,Zenit,0,0,12.0,5.75,1.29,Empate,5.75
+21/22,21/22,14,Rostov,Rubin Kazan,5,1,2.37,3.3,3.3,Rostov,2.37
+21/22,21/22,14,Akhmat Grozny,FK Nizhny Novgorod,3,1,1.66,3.6,6.0,Akhmat Grozny,1.66
+21/22,21/22,14,Spartak Moscovo,Lokomotiv Moscovo,1,1,2.12,3.5,3.6,Empate,3.5
+21/22,21/22,15,Zenit,FK Nizhny Novgorod,5,1,1.1,10.0,26.0,Zenit,1.1
+21/22,21/22,15,Krylia Sovetov,Ural,1,1,1.72,3.6,5.75,Empate,3.6
+21/22,21/22,15,Lokomotiv Moscovo,Akhmat Grozny,1,2,2.5,3.2,3.0,Akhmat Grozny,3.0
+21/22,21/22,15,Krasnodar,Spartak Moscovo,2,1,1.74,4.0,4.5,Krasnodar,1.74
+21/22,21/22,15,CSKA Moscovo,Khimki,0,0,1.54,4.2,6.5,Empate,4.2
+21/22,21/22,15,Rostov,Ufa,2,2,2.2,3.2,4.0,Empate,3.2
+21/22,21/22,15,Dinamo Moscovo,Arsenal Tula,5,1,1.43,4.75,8.5,Dinamo Moscovo,1.43
+21/22,21/22,15,Sochi,Rubin Kazan,1,2,1.55,4.2,6.5,Rubin Kazan,6.5
+21/22,21/22,16,Ural,Sochi,1,1,4.25,3.25,2.05,Empate,3.25
+21/22,21/22,16,Akhmat Grozny,Rostov,2,0,2.1,3.25,3.8,Akhmat Grozny,2.1
+21/22,21/22,16,Khimki,Krasnodar,3,3,5.5,4.2,1.63,Empate,4.2
+21/22,21/22,16,FK Nizhny Novgorod,Krylia Sovetov,0,0,4.0,3.6,1.95,Empate,3.6
+21/22,21/22,16,Rubin Kazan,Dinamo Moscovo,2,3,3.75,3.75,2.04,Dinamo Moscovo,2.04
+21/22,21/22,16,CSKA Moscovo,Zenit,0,2,4.33,3.8,1.86,Zenit,1.86
+21/22,21/22,17,Ufa,Spartak Moscovo,1,1,2.95,3.15,2.6,Empate,3.15
+21/22,21/22,17,Arsenal Tula,Lokomotiv Moscovo,3,1,3.5,3.4,2.25,Arsenal Tula,3.5
+21/22,21/22,17,Zenit,Rostov,2,2,1.23,7.0,13.0,Empate,7.0
+21/22,21/22,17,Krylia Sovetov,CSKA Moscovo,0,1,2.95,3.25,2.5,CSKA Moscovo,2.5
+21/22,21/22,17,Spartak Moscovo,Akhmat Grozny,2,1,2.2,3.3,3.5,Spartak Moscovo,2.2
+21/22,21/22,17,Lokomotiv Moscovo,Ural,0,1,1.8,3.4,6.0,Ural,6.0
+21/22,21/22,17,Khimki,Arsenal Tula,1,2,2.02,3.4,4.2,Arsenal Tula,4.2
+21/22,21/22,17,Dinamo Moscovo,Ufa,2,0,1.7,3.5,6.0,Dinamo Moscovo,1.7
+21/22,21/22,17,FK Nizhny Novgorod,Rubin Kazan,2,1,3.25,3.2,2.3,FK Nizhny Novgorod,3.25
+21/22,21/22,17,Sochi,Krasnodar,1,2,2.37,3.6,2.95,Krasnodar,2.95
+21/22,21/22,18,Krylia Sovetov,Rubin Kazan,2,0,1.93,3.5,4.2,Krylia Sovetov,1.93
+21/22,21/22,18,CSKA Moscovo,Arsenal Tula,2,0,1.54,4.0,7.0,CSKA Moscovo,1.54
+21/22,21/22,18,Rostov,Ural,1,4,2.05,3.25,4.2,Ural,4.2
+21/22,21/22,18,Dinamo Moscovo,Zenit,1,1,3.1,3.5,2.29,Empate,3.5
+21/22,21/22,18,Akhmat Grozny,Khimki,4,1,1.68,4.0,5.4,Akhmat Grozny,1.68
+21/22,21/22,18,Krasnodar,FK Nizhny Novgorod,0,0,1.42,5.0,7.5,Empate,5.0
+21/22,21/22,18,Lokomotiv Moscovo,Ufa,2,0,2.25,3.2,3.65,Lokomotiv Moscovo,2.25
+21/22,21/22,19,Sochi,Spartak Moscovo,3,0,2.05,3.55,3.6,Sochi,2.05
+21/22,21/22,20,FK Nizhny Novgorod,Ural,1,0,3.0,2.75,2.8,FK Nizhny Novgorod,3.0
+21/22,21/22,20,Khimki,Dinamo Moscovo,0,3,5.75,4.0,1.66,Dinamo Moscovo,1.66
+21/22,21/22,20,Sochi,Arsenal Tula,2,0,1.65,4.0,6.0,Sochi,1.65
+21/22,21/22,20,Spartak Moscovo,CSKA Moscovo,0,2,2.9,3.1,2.6,CSKA Moscovo,2.6
+21/22,21/22,20,Akhmat Grozny,Ufa,2,1,1.85,3.4,4.7,Akhmat Grozny,1.85
+21/22,21/22,21,Zenit,Rubin Kazan,3,2,1.21,7.5,14.0,Zenit,1.21
+21/22,21/22,21,CSKA Moscovo,FK Nizhny Novgorod,1,0,1.42,4.5,8.5,CSKA Moscovo,1.42
+21/22,21/22,21,Krylia Sovetov,Arsenal Tula,2,2,1.94,3.75,5.0,Empate,3.75
+21/22,21/22,21,Lokomotiv Moscovo,Khimki,3,2,2.0,3.8,5.5,Lokomotiv Moscovo,2.0
+21/22,21/22,21,Dinamo Moscovo,Spartak Moscovo,0,2,2.28,3.5,3.9,Spartak Moscovo,3.9
+21/22,21/22,22,Krasnodar,Ural,2,1,2.65,4.2,6.0,Krasnodar,2.65
+21/22,21/22,22,Rostov,Sochi,0,1,2.95,3.4,2.5,Sochi,2.5
+21/22,21/22,22,Zenit,Ufa,2,0,1.23,7.5,23.0,Zenit,1.23
+21/22,21/22,22,Akhmat Grozny,Rubin Kazan,1,2,1.88,3.65,4.3,Rubin Kazan,4.3
+21/22,21/22,22,Arsenal Tula,Dinamo Moscovo,1,4,5.2,3.7,1.71,Dinamo Moscovo,1.71
+21/22,21/22,22,Lokomotiv Moscovo,CSKA Moscovo,1,2,3.75,3.55,2.25,CSKA Moscovo,2.25
+21/22,21/22,22,Ural,Akhmat Grozny,0,0,3.15,3.35,2.55,Empate,3.35
+21/22,21/22,22,Khimki,Sochi,0,0,4.75,3.75,1.74,Empate,3.75
+21/22,21/22,22,Krylia Sovetov,Zenit,1,1,4.5,3.9,1.72,Empate,3.9
+21/22,21/22,22,Spartak Moscovo,Krasnodar,1,2,2.57,4.0,5.2,Krasnodar,5.2
+21/22,21/22,23,Rubin Kazan,Rostov,1,2,2.38,3.1,3.9,Rostov,3.9
+21/22,21/22,23,Ural,Khimki,0,1,1.97,3.1,4.4,Khimki,4.4
+21/22,21/22,23,Akhmat Grozny,Lokomotiv Moscovo,2,3,2.01,3.35,3.85,Lokomotiv Moscovo,3.85
+21/22,21/22,23,Zenit,Arsenal Tula,3,0,1.23,6.2,11.0,Zenit,1.23
+21/22,21/22,23,CSKA Moscovo,Rubin Kazan,6,1,1.4,4.7,7.6,CSKA Moscovo,1.4
+21/22,21/22,23,Ufa,Krasnodar,1,1,2.6,3.0,2.95,Empate,3.0
+21/22,21/22,23,Sochi,Krylia Sovetov,2,3,2.13,3.25,3.55,Krylia Sovetov,3.55
+21/22,21/22,23,Dinamo Moscovo,Rostov,1,1,1.54,4.1,6.0,Empate,4.1
+21/22,21/22,24,Rubin Kazan,Khimki,2,3,2.75,3.15,2.65,Khimki,2.65
+21/22,21/22,24,Arsenal Tula,Akhmat Grozny,0,0,3.65,3.3,2.08,Empate,3.3
+21/22,21/22,24,Krylia Sovetov,Ufa,1,2,2.04,3.1,4.0,Ufa,4.0
+21/22,21/22,24,Lokomotiv Moscovo,Spartak Moscovo,1,0,3.6,3.55,2.0,Lokomotiv Moscovo,3.6
+21/22,21/22,24,Krasnodar,Dinamo Moscovo,0,1,3.55,3.5,2.02,Dinamo Moscovo,2.02
+21/22,21/22,24,CSKA Moscovo,Ural,2,2,1.57,3.85,6.0,Empate,3.85
+21/22,21/22,24,Sochi,Zenit,0,0,4.2,3.75,1.79,Empate,3.75
+21/22,21/22,25,Rostov,Krylia Sovetov,1,0,2.55,3.05,2.95,Rostov,2.55
+21/22,21/22,25,Khimki,CSKA Moscovo,4,2,5.6,4.1,1.56,Khimki,5.6
+21/22,21/22,25,Rubin Kazan,Krasnodar,0,1,2.0,3.6,3.55,Krasnodar,3.55
+21/22,21/22,25,Akhmat Grozny,Zenit,0,2,4.2,3.85,1.78,Zenit,1.78
+21/22,21/22,25,Ural,Krylia Sovetov,0,1,2.85,2.9,2.75,Krylia Sovetov,2.75
+21/22,21/22,25,Ufa,Sochi,1,2,2.75,3.05,2.75,Sochi,2.75
+21/22,21/22,25,Spartak Moscovo,Arsenal Tula,3,0,1.39,4.6,8.0,Spartak Moscovo,1.39
+21/22,21/22,25,Rostov,Lokomotiv Moscovo,4,1,2.55,3.1,2.9,Rostov,2.55
+21/22,21/22,26,Dinamo Moscovo,Akhmat Grozny,2,0,1.66,3.85,5.0,Dinamo Moscovo,1.66
+21/22,21/22,26,Ufa,CSKA Moscovo,1,1,3.7,3.25,2.06,Empate,3.25
+21/22,21/22,26,Zenit,Ural,3,1,1.24,6.2,11.0,Zenit,1.24
+21/22,21/22,26,Spartak Moscovo,Rubin Kazan,1,1,1.51,4.1,6.4,Empate,4.1
+21/22,21/22,26,Arsenal Tula,Rostov,1,2,3.75,3.35,2.03,Rostov,2.03
+21/22,21/22,26,Krylia Sovetov,Krasnodar,2,0,1.65,3.85,5.2,Krylia Sovetov,1.65
+21/22,21/22,26,Sochi,Lokomotiv Moscovo,2,2,1.7,3.8,4.8,Empate,3.8
+21/22,21/22,27,Ural,Ufa,2,1,2.95,2.75,2.8,Ural,2.95
+21/22,21/22,27,Sochi,Akhmat Grozny,3,2,1.93,3.5,3.9,Sochi,1.93
+21/22,21/22,27,Khimki,Krylia Sovetov,4,1,3.55,3.35,2.08,Khimki,3.55
+21/22,21/22,27,Rubin Kazan,Arsenal Tula,1,0,1.79,3.75,4.2,Rubin Kazan,1.79
+21/22,21/22,27,Rostov,Spartak Moscovo,3,2,3.25,3.2,2.28,Rostov,3.25
+21/22,21/22,27,CSKA Moscovo,Dinamo Moscovo,1,0,2.8,3.4,2.43,CSKA Moscovo,2.8
+21/22,21/22,28,Krasnodar,Zenit,1,3,8.6,5.4,1.32,Zenit,1.32
+21/22,21/22,28,Dinamo Moscovo,Ural,2,3,1.42,4.3,8.2,Ural,8.2
+21/22,21/22,28,Rubin Kazan,Sochi,0,6,3.85,3.45,1.96,Sochi,1.96
+21/22,21/22,28,Krasnodar,Rostov,2,1,2.55,3.3,2.75,Krasnodar,2.55
+21/22,21/22,28,Zenit,Lokomotiv Moscovo,3,1,1.19,7.0,13.0,Zenit,1.19
+21/22,21/22,28,Spartak Moscovo,Krylia Sovetov,2,1,1.72,3.85,4.6,Spartak Moscovo,1.72
+21/22,21/22,28,Khimki,Ufa,1,1,2.65,3.15,2.7,Empate,3.15
+21/22,21/22,28,Akhmat Grozny,CSKA Moscovo,2,0,2.75,3.4,2.5,Akhmat Grozny,2.75
+21/22,21/22,29,Krasnodar,Lokomotiv Moscovo,1,0,2.6,3.35,2.65,Krasnodar,2.6
+21/22,21/22,29,Krylia Sovetov,Dinamo Moscovo,5,2,3.3,3.4,2.16,Krylia Sovetov,3.3
+21/22,21/22,29,Ural,Spartak Moscovo,1,3,3.5,3.35,2.11,Spartak Moscovo,2.11
+21/22,21/22,29,Zenit,Khimki,1,0,1.21,6.6,12.0,Zenit,1.21
+21/22,21/22,29,CSKA Moscovo,Sochi,0,1,1.95,3.55,3.75,Sochi,3.75
+21/22,21/22,29,Ufa,Rostov,0,0,2.95,3.1,2.5,Empate,3.1
+21/22,21/22,29,Arsenal Tula,Krasnodar,1,1,2.9,3.4,2.36,Empate,3.4
+21/22,21/22,29,Lokomotiv Moscovo,Rubin Kazan,1,0,1.76,3.65,4.6,Lokomotiv Moscovo,1.76
+21/22,21/22,30,Ufa,Arsenal Tula,2,1,1.62,3.95,5.2,Ufa,1.62
+21/22,21/22,30,Lokomotiv Moscovo,Dinamo Moscovo,3,3,3.7,3.85,1.88,Empate,3.85
+21/22,21/22,30,Rostov,Khimki,2,1,2.22,3.4,3.15,Rostov,2.22
+21/22,21/22,30,Akhmat Grozny,Krylia Sovetov,1,0,2.25,3.55,2.95,Akhmat Grozny,2.25
+21/22,21/22,30,Ural,Rubin Kazan,3,0,1.83,3.55,4.3,Ural,1.83
+21/22,21/22,30,Spartak Moscovo,Zenit,1,1,4.1,4.2,1.73,Empate,4.2
+21/22,21/22,30,Krasnodar,CSKA Moscovo,1,0,3.15,3.65,2.14,Krasnodar,3.15
+21/22,21/22,31,Arsenal Tula,Ural,1,2,8.4,4.8,1.36,Ural,1.36
+21/22,21/22,31,CSKA Moscovo,Rostov,4,0,1.55,4.3,5.6,CSKA Moscovo,1.55
+21/22,21/22,31,Dinamo Moscovo,Sochi,1,5,2.32,3.45,2.95,Sochi,2.95
+21/22,21/22,31,Khimki,Spartak Moscovo,2,1,2.85,3.65,2.29,Khimki,2.85
+21/22,21/22,31,Krasnodar,Akhmat Grozny,1,1,2.85,3.85,2.22,Empate,3.85
+21/22,21/22,31,Krylia Sovetov,Lokomotiv Moscovo,0,1,1.85,3.95,3.75,Lokomotiv Moscovo,3.75
+21/22,21/22,31,Rubin Kazan,Ufa,1,2,3.15,3.5,2.2,Ufa,2.2
+21/22,21/22,32,Energiya Khabarovsk,Khimki,1,0,2.8,2.85,2.7,Energiya Khabarovsk,2.8
+21/22,21/22,32,FC Gazovik Orenburg,Ufa,2,2,3.45,3.1,2.16,Empate,3.1
+21/22,21/22,32,Khimki,Energiya Khabarovsk,3,0,1.69,3.4,5.2,Khimki,1.69
+21/22,21/22,32,Ufa,FC Gazovik Orenburg,1,2,2.08,3.1,3.6,FC Gazovik Orenburg,3.6
+22/23,22/23,1,Khimki,Zenit,1,1,9.6,5.6,1.29,Empate,5.6
+22/23,22/23,1,CSKA Moscovo,Ural,2,0,1.83,3.35,4.6,CSKA Moscovo,1.83
+22/23,22/23,1,FC Gazovik Orenburg,Krylia Sovetov,2,4,2.8,3.2,2.55,Krylia Sovetov,2.55
+22/23,22/23,1,Akhmat Grozny,Spartak Moscovo,1,1,2.5,3.15,2.9,Empate,3.15
+22/23,22/23,1,FC Torpedo Moscovo,Sochi,1,3,3.7,3.5,1.99,Sochi,1.99
+22/23,22/23,1,Dinamo Moscovo,Rostov,1,1,1.99,3.4,3.8,Empate,3.4
+22/23,22/23,1,Krasnodar,Fakel Voronezh,2,2,1.67,3.8,5.0,Empate,3.8
+22/23,22/23,2,Zenit,Krylia Sovetov,3,0,1.43,4.9,6.4,Zenit,1.43
+22/23,22/23,2,CSKA Moscovo,Sochi,3,0,2.15,3.45,3.3,CSKA Moscovo,2.15
+22/23,22/23,2,FC Gazovik Orenburg,Ural,3,0,2.31,3.2,3.2,FC Gazovik Orenburg,2.31
+22/23,22/23,2,Krasnodar,Spartak Moscovo,1,4,3.25,3.45,2.16,Spartak Moscovo,2.16
+22/23,22/23,2,Dinamo Moscovo,FC Torpedo Moscovo,4,0,1.53,4.3,5.8,Dinamo Moscovo,1.53
+22/23,22/23,2,Akhmat Grozny,Fakel Voronezh,2,1,1.79,3.75,4.3,Akhmat Grozny,1.79
+22/23,22/23,2,Lokomotiv Moscovo,Rostov,2,2,2.65,3.25,2.65,Empate,3.25
+22/23,22/23,3,Ural,Krasnodar,1,3,2.6,3.1,2.65,Krasnodar,2.65
+22/23,22/23,3,Fakel Voronezh,Dinamo Moscovo,3,3,3.1,3.3,2.21,Empate,3.3
+22/23,22/23,3,Zenit,Lokomotiv Moscovo,5,0,1.24,5.8,9.8,Zenit,1.24
+22/23,22/23,3,Sochi,Akhmat Grozny,2,1,2.01,3.4,3.45,Sochi,2.01
+22/23,22/23,3,Krylia Sovetov,FC Torpedo Moscovo,1,1,1.6,4.0,5.0,Empate,4.0
+22/23,22/23,3,Spartak Moscovo,FC Gazovik Orenburg,4,1,1.37,4.8,7.0,Spartak Moscovo,1.37
+22/23,22/23,3,Rostov,Khimki,1,0,1.7,3.7,4.5,Rostov,1.7
+22/23,22/23,4,Ural,Spartak Moscovo,0,2,4.8,3.8,1.65,Spartak Moscovo,1.65
+22/23,22/23,4,CSKA Moscovo,Fakel Voronezh,4,1,1.6,4.0,4.9,CSKA Moscovo,1.6
+22/23,22/23,4,Akhmat Grozny,Zenit,0,0,5.8,4.4,1.48,Empate,4.4
+22/23,22/23,4,Krasnodar,Lokomotiv Moscovo,3,0,2.48,3.4,2.6,Krasnodar,2.48
+22/23,22/23,4,FC Torpedo Moscovo,Khimki,1,3,3.1,3.2,2.26,Khimki,2.26
+22/23,22/23,4,Krylia Sovetov,Dinamo Moscovo,0,2,2.19,3.35,3.1,Dinamo Moscovo,3.1
+22/23,22/23,4,Rostov,FC Gazovik Orenburg,2,1,1.59,3.95,5.2,Rostov,1.59
+22/23,22/23,5,Fakel Voronezh,Ural,0,0,1.97,3.45,3.55,Empate,3.45
+22/23,22/23,5,Lokomotiv Moscovo,Krylia Sovetov,1,1,2.7,3.35,2.42,Empate,3.35
+22/23,22/23,5,Zenit,CSKA Moscovo,2,1,1.5,4.3,5.6,Zenit,1.5
+22/23,22/23,5,Dinamo Moscovo,Krasnodar,0,0,1.66,3.9,4.6,Empate,3.9
+22/23,22/23,5,Khimki,Akhmat Grozny,1,3,2.85,3.05,2.5,Akhmat Grozny,2.5
+22/23,22/23,5,FC Gazovik Orenburg,FC Torpedo Moscovo,1,0,2.18,3.3,3.15,FC Gazovik Orenburg,2.18
+22/23,22/23,5,Spartak Moscovo,Sochi,3,0,1.97,3.6,3.4,Spartak Moscovo,1.97
+22/23,22/23,6,Krylia Sovetov,Fakel Voronezh,1,1,1.74,3.75,4.2,Empate,3.75
+22/23,22/23,6,Khimki,Lokomotiv Moscovo,0,3,2.5,3.3,2.65,Lokomotiv Moscovo,2.65
+22/23,22/23,6,Dinamo Moscovo,Spartak Moscovo,1,0,3.2,3.5,2.08,Dinamo Moscovo,3.2
+22/23,22/23,6,Rostov,Sochi,2,2,2.4,3.4,2.7,Empate,3.4
+22/23,22/23,6,CSKA Moscovo,Akhmat Grozny,4,2,1.74,3.7,4.3,CSKA Moscovo,1.74
+22/23,22/23,6,Zenit,FC Torpedo Moscovo,2,0,1.14,7.4,16.0,Zenit,1.14
+22/23,22/23,6,Krasnodar,FC Gazovik Orenburg,2,0,1.92,3.45,3.75,Krasnodar,1.92
+22/23,22/23,7,Sochi,Khimki,4,1,1.49,4.4,5.6,Sochi,1.49
+22/23,22/23,7,Fakel Voronezh,Spartak Moscovo,1,4,4.6,3.9,1.66,Spartak Moscovo,1.66
+22/23,22/23,7,Akhmat Grozny,Krylia Sovetov,1,2,2.19,3.35,3.05,Krylia Sovetov,3.05
+22/23,22/23,7,Ural,Zenit,0,4,12.0,5.8,1.21,Zenit,1.21
+22/23,22/23,7,Lokomotiv Moscovo,FC Gazovik Orenburg,5,1,1.76,3.8,4.1,Lokomotiv Moscovo,1.76
+22/23,22/23,7,FC Torpedo Moscovo,Krasnodar,1,4,3.3,3.3,2.1,Krasnodar,2.1
+22/23,22/23,7,Rostov,CSKA Moscovo,0,0,2.85,3.4,2.29,Empate,3.4
+22/23,22/23,8,FC Gazovik Orenburg,Khimki,3,1,2.16,3.35,3.15,FC Gazovik Orenburg,2.16
+22/23,22/23,8,Krasnodar,Sochi,2,1,2.8,3.45,2.31,Krasnodar,2.8
+22/23,22/23,8,Dinamo Moscovo,Ural,2,1,1.57,3.95,5.4,Dinamo Moscovo,1.57
+22/23,22/23,8,Krylia Sovetov,CSKA Moscovo,0,1,2.85,3.4,2.3,CSKA Moscovo,2.3
+22/23,22/23,8,Lokomotiv Moscovo,Akhmat Grozny,1,2,2.29,3.3,2.95,Akhmat Grozny,2.95
+22/23,22/23,8,Spartak Moscovo,Zenit,1,2,3.3,3.65,1.99,Zenit,1.99
+22/23,22/23,9,FC Torpedo Moscovo,Rostov,0,1,3.6,3.4,1.97,Rostov,1.97
+22/23,22/23,9,Sochi,Dinamo Moscovo,2,1,1.86,3.75,3.65,Sochi,1.86
+22/23,22/23,9,Khimki,Krylia Sovetov,0,0,3.95,3.7,1.8,Empate,3.7
+22/23,22/23,9,CSKA Moscovo,Krasnodar,4,1,1.47,4.4,5.8,CSKA Moscovo,1.47
+22/23,22/23,9,Ural,FC Torpedo Moscovo,2,0,1.86,3.45,3.95,Ural,1.86
+22/23,22/23,9,Fakel Voronezh,Lokomotiv Moscovo,2,0,2.95,3.4,2.24,Fakel Voronezh,2.95
+22/23,22/23,9,Zenit,FC Gazovik Orenburg,8,0,1.12,8.0,16.0,Zenit,1.12
+22/23,22/23,9,Rostov,Spartak Moscovo,4,2,2.6,3.45,2.49,Rostov,2.6
+22/23,22/23,10,Ural,Akhmat Grozny,1,2,2.5,3.15,2.75,Akhmat Grozny,2.75
+22/23,22/23,10,FC Torpedo Moscovo,CSKA Moscovo,1,0,12.0,6.0,1.21,FC Torpedo Moscovo,12.0
+22/23,22/23,10,Rostov,Krylia Sovetov,2,1,1.99,3.4,3.55,Rostov,1.99
+22/23,22/23,10,Dinamo Moscovo,Zenit,0,2,5.2,4.1,1.56,Zenit,1.56
+22/23,22/23,10,Krasnodar,Khimki,3,1,1.69,3.9,4.4,Krasnodar,1.69
+22/23,22/23,10,Sochi,Fakel Voronezh,1,1,1.49,4.4,5.6,Empate,4.4
+22/23,22/23,10,Spartak Moscovo,Lokomotiv Moscovo,1,0,1.61,4.2,4.6,Spartak Moscovo,1.61
+22/23,22/23,11,FC Gazovik Orenburg,Sochi,4,1,2.8,3.5,2.31,FC Gazovik Orenburg,2.8
+22/23,22/23,11,Khimki,CSKA Moscovo,1,2,6.4,4.6,1.42,CSKA Moscovo,1.42
+22/23,22/23,11,Lokomotiv Moscovo,Ural,2,4,1.77,3.75,4.1,Ural,4.1
+22/23,22/23,11,Fakel Voronezh,FC Torpedo Moscovo,2,2,1.88,3.3,4.1,Empate,3.3
+22/23,22/23,11,Zenit,Rostov,3,1,1.23,6.0,10.0,Zenit,1.23
+22/23,22/23,11,Akhmat Grozny,Dinamo Moscovo,2,1,2.47,3.35,2.65,Akhmat Grozny,2.47
+22/23,22/23,12,Krylia Sovetov,Krasnodar,0,0,1.83,3.55,3.95,Empate,3.55
+22/23,22/23,12,Ural,Khimki,2,1,1.63,3.9,4.8,Ural,1.63
+22/23,22/23,12,Fakel Voronezh,Zenit,1,1,7.2,4.8,1.37,Empate,4.8
+22/23,22/23,12,CSKA Moscovo,Dinamo Moscovo,1,1,1.97,3.45,3.55,Empate,3.45
+22/23,22/23,12,Sochi,Lokomotiv Moscovo,4,0,2.01,3.65,3.25,Sochi,2.01
+22/23,22/23,12,Spartak Moscovo,Krylia Sovetov,5,2,1.74,3.75,4.2,Spartak Moscovo,1.74
+22/23,22/23,12,FC Gazovik Orenburg,Akhmat Grozny,2,1,2.36,3.5,2.7,FC Gazovik Orenburg,2.36
+22/23,22/23,12,Rostov,Krasnodar,3,2,2.1,3.3,3.1,Rostov,2.1
+22/23,22/23,13,Rostov,Ural,1,2,1.93,3.5,3.65,Ural,3.65
+22/23,22/23,13,FC Torpedo Moscovo,Lokomotiv Moscovo,0,1,4.2,3.65,1.77,Lokomotiv Moscovo,1.77
+22/23,22/23,13,Khimki,Fakel Voronezh,0,0,2.85,3.3,2.37,Empate,3.3
+22/23,22/23,13,Krasnodar,Akhmat Grozny,2,3,2.26,3.4,2.9,Akhmat Grozny,2.9
+22/23,22/23,13,Dinamo Moscovo,FC Gazovik Orenburg,3,2,1.9,3.75,3.55,Dinamo Moscovo,1.9
+22/23,22/23,13,Krylia Sovetov,Sochi,2,0,2.33,3.4,2.8,Krylia Sovetov,2.33
+22/23,22/23,13,CSKA Moscovo,Spartak Moscovo,2,2,2.1,3.35,3.25,Empate,3.35
+22/23,22/23,14,Fakel Voronezh,Rostov,1,1,3.05,3.1,2.34,Empate,3.1
+22/23,22/23,14,Lokomotiv Moscovo,Dinamo Moscovo,1,3,2.65,3.4,2.46,Dinamo Moscovo,2.46
+22/23,22/23,14,FC Gazovik Orenburg,CSKA Moscovo,2,2,3.0,3.55,2.14,Empate,3.55
+22/23,22/23,14,Spartak Moscovo,Khimki,5,0,1.31,5.4,7.8,Spartak Moscovo,1.31
+22/23,22/23,14,Akhmat Grozny,FC Torpedo Moscovo,1,0,1.49,4.3,6.0,Akhmat Grozny,1.49
+22/23,22/23,15,Ural,Krylia Sovetov,2,1,2.6,3.25,2.6,Ural,2.6
+22/23,22/23,15,Zenit,Sochi,7,0,1.27,5.6,8.8,Zenit,1.27
+22/23,22/23,15,FC Gazovik Orenburg,Fakel Voronezh,4,1,1.7,3.85,4.4,FC Gazovik Orenburg,1.7
+22/23,22/23,15,Dinamo Moscovo,Khimki,6,1,1.3,5.4,8.0,Dinamo Moscovo,1.3
+22/23,22/23,15,Akhmat Grozny,Rostov,1,2,2.36,3.4,2.75,Rostov,2.75
+22/23,22/23,15,Lokomotiv Moscovo,CSKA Moscovo,0,1,3.55,3.6,1.91,CSKA Moscovo,1.91
+22/23,22/23,15,Sochi,Ural,2,2,1.98,3.6,3.4,Empate,3.6
+22/23,22/23,15,Spartak Moscovo,FC Torpedo Moscovo,1,0,1.25,5.8,9.4,Spartak Moscovo,1.25
+22/23,22/23,15,Krasnodar,Zenit,0,1,6.4,4.5,1.43,Zenit,1.43
+22/23,22/23,16,Khimki,FC Gazovik Orenburg,2,0,4.1,4.0,1.71,Khimki,4.1
+22/23,22/23,16,Sochi,Spartak Moscovo,1,1,3.85,3.8,1.8,Empate,3.8
+22/23,22/23,16,Fakel Voronezh,Krasnodar,3,3,3.0,3.25,2.28,Empate,3.25
+22/23,22/23,16,Zenit,Akhmat Grozny,1,2,1.14,7.6,14.0,Akhmat Grozny,14.0
+22/23,22/23,16,Ural,Lokomotiv Moscovo,2,2,2.03,3.45,3.35,Empate,3.45
+22/23,22/23,16,FC Torpedo Moscovo,Krylia Sovetov,0,2,4.4,3.65,1.74,Krylia Sovetov,1.74
+22/23,22/23,16,Rostov,Dinamo Moscovo,2,1,2.5,3.4,2.55,Rostov,2.5
+22/23,22/23,17,Ural,Fakel Voronezh,2,0,1.92,3.35,3.85,Ural,1.92
+22/23,22/23,17,Krylia Sovetov,Rostov,1,3,2.32,3.25,2.95,Rostov,2.95
+22/23,22/23,17,FC Torpedo Moscovo,Zenit,0,2,15.0,7.0,1.15,Zenit,1.15
+22/23,22/23,17,Lokomotiv Moscovo,Spartak Moscovo,1,2,4.2,3.75,1.75,Spartak Moscovo,1.75
+22/23,22/23,17,FC Gazovik Orenburg,Krasnodar,5,1,1.78,3.9,3.9,FC Gazovik Orenburg,1.78
+22/23,22/23,17,Khimki,Sochi,0,2,4.4,4.0,1.66,Sochi,1.66
+22/23,22/23,17,Dinamo Moscovo,CSKA Moscovo,2,1,2.75,3.2,2.49,Dinamo Moscovo,2.75
+22/23,22/23,18,Fakel Voronezh,Khimki,1,1,1.91,3.4,3.8,Empate,3.4
+22/23,22/23,18,Spartak Moscovo,Ural,2,2,1.68,3.8,4.6,Empate,3.8
+22/23,22/23,18,Akhmat Grozny,FC Gazovik Orenburg,3,1,2.26,3.4,2.95,Akhmat Grozny,2.26
+22/23,22/23,18,Rostov,Lokomotiv Moscovo,1,3,2.36,3.05,3.0,Lokomotiv Moscovo,3.0
+22/23,22/23,18,Dinamo Moscovo,Krylia Sovetov,1,0,1.74,3.8,4.2,Dinamo Moscovo,1.74
+22/23,22/23,18,Krasnodar,FC Torpedo Moscovo,2,2,1.4,4.5,7.0,Empate,4.5
+22/23,22/23,18,Sochi,CSKA Moscovo,2,0,2.6,3.35,2.5,Sochi,2.6
+22/23,22/23,19,Sochi,FC Gazovik Orenburg,0,4,1.68,3.95,4.4,FC Gazovik Orenburg,4.4
+22/23,22/23,19,FC Torpedo Moscovo,Ural,0,1,4.3,3.55,1.78,Ural,1.78
+22/23,22/23,19,Akhmat Grozny,Lokomotiv Moscovo,0,1,2.28,3.3,2.95,Lokomotiv Moscovo,2.95
+22/23,22/23,19,Spartak Moscovo,Fakel Voronezh,3,2,1.36,4.9,7.0,Spartak Moscovo,1.36
+22/23,22/23,19,Krasnodar,Dinamo Moscovo,3,1,2.27,3.35,2.95,Krasnodar,2.27
+22/23,22/23,19,Zenit,Khimki,3,2,1.06,11.0,24.0,Zenit,1.06
+22/23,22/23,19,CSKA Moscovo,Krylia Sovetov,4,0,1.75,3.55,4.4,CSKA Moscovo,1.75
+22/23,22/23,20,FC Gazovik Orenburg,Spartak Moscovo,2,0,3.2,3.7,2.01,FC Gazovik Orenburg,3.2
+22/23,22/23,20,Ural,Dinamo Moscovo,0,1,2.5,3.2,2.75,Dinamo Moscovo,2.75
+22/23,22/23,20,Fakel Voronezh,Sochi,3,0,3.15,3.35,2.14,Fakel Voronezh,3.15
+22/23,22/23,20,Lokomotiv Moscovo,Krasnodar,3,2,2.3,3.3,2.9,Lokomotiv Moscovo,2.3
+22/23,22/23,20,Khimki,Rostov,0,1,3.35,3.3,2.08,Rostov,2.08
+22/23,22/23,20,Krylia Sovetov,Akhmat Grozny,0,1,1.96,3.45,3.6,Akhmat Grozny,3.6
+22/23,22/23,20,CSKA Moscovo,Zenit,1,0,3.25,2.95,2.32,CSKA Moscovo,3.25
+22/23,22/23,21,Dinamo Moscovo,Sochi,0,2,2.0,3.55,3.4,Sochi,3.4
+22/23,22/23,21,Spartak Moscovo,Akhmat Grozny,0,0,1.51,4.4,5.4,Empate,4.4
+22/23,22/23,21,Zenit,Ural,2,0,1.34,4.9,7.8,Zenit,1.34
+22/23,22/23,21,Khimki,Krasnodar,0,6,4.2,3.7,1.76,Krasnodar,1.76
+22/23,22/23,21,Krylia Sovetov,FC Gazovik Orenburg,1,1,1.94,3.6,3.5,Empate,3.6
+22/23,22/23,21,Fakel Voronezh,CSKA Moscovo,0,2,4.0,3.45,1.86,CSKA Moscovo,1.86
+22/23,22/23,21,Rostov,FC Torpedo Moscovo,2,1,1.41,4.4,7.0,Rostov,1.41
+22/23,22/23,22,FC Torpedo Moscovo,Fakel Voronezh,2,0,3.25,3.25,2.16,FC Torpedo Moscovo,3.25
+22/23,22/23,22,Akhmat Grozny,Ural,2,0,2.26,3.25,3.05,Akhmat Grozny,2.26
+22/23,22/23,22,Spartak Moscovo,Dinamo Moscovo,3,3,2.17,3.35,3.1,Empate,3.35
+22/23,22/23,22,Sochi,Krylia Sovetov,1,2,2.35,3.15,2.95,Krylia Sovetov,2.95
+22/23,22/23,22,CSKA Moscovo,Khimki,3,0,1.19,6.4,12.0,CSKA Moscovo,1.19
+22/23,22/23,22,Lokomotiv Moscovo,Zenit,1,2,4.5,3.8,1.69,Zenit,1.69
+22/23,22/23,23,FC Gazovik Orenburg,Rostov,2,2,1.98,3.5,3.45,Empate,3.5
+22/23,22/23,23,Krylia Sovetov,Khimki,0,0,1.32,5.2,8.0,Empate,5.2
+22/23,22/23,23,Sochi,Krasnodar,0,2,2.47,3.3,2.7,Krasnodar,2.7
+22/23,22/23,23,Ural,CSKA Moscovo,1,2,3.25,3.0,2.27,CSKA Moscovo,2.27
+22/23,22/23,23,FC Torpedo Moscovo,Spartak Moscovo,1,2,5.8,4.3,1.49,Spartak Moscovo,1.49
+22/23,22/23,23,FC Gazovik Orenburg,Lokomotiv Moscovo,1,4,2.25,3.7,2.75,Lokomotiv Moscovo,2.75
+22/23,22/23,23,Fakel Voronezh,Akhmat Grozny,1,1,2.39,3.15,2.9,Empate,3.15
+22/23,22/23,23,Rostov,Zenit,0,0,5.6,3.9,1.56,Empate,3.9
+22/23,22/23,24,Khimki,FC Torpedo Moscovo,4,2,2.2,3.35,3.05,Khimki,2.2
+22/23,22/23,24,Fakel Voronezh,FC Gazovik Orenburg,1,3,2.31,3.55,2.75,FC Gazovik Orenburg,2.75
+22/23,22/23,24,Zenit,Dinamo Moscovo,3,1,1.41,4.6,6.4,Zenit,1.41
+22/23,22/23,24,Ural,Rostov,1,3,2.1,3.05,3.3,Rostov,3.3
+22/23,22/23,24,Akhmat Grozny,Sochi,1,0,2.35,3.05,2.85,Akhmat Grozny,2.35
+22/23,22/23,24,CSKA Moscovo,Lokomotiv Moscovo,1,1,1.79,3.4,4.1,Empate,3.4
+22/23,22/23,25,Spartak Moscovo,Krasnodar,4,3,2.16,3.25,3.05,Spartak Moscovo,2.16
+22/23,22/23,25,Dinamo Moscovo,Fakel Voronezh,0,2,1.58,3.85,4.9,Fakel Voronezh,4.9
+22/23,22/23,25,Krylia Sovetov,Zenit,1,5,4.4,3.25,1.78,Zenit,1.78
+22/23,22/23,25,Akhmat Grozny,CSKA Moscovo,1,3,3.25,3.15,2.1,CSKA Moscovo,2.1
+22/23,22/23,25,Krasnodar,Ural,1,1,1.88,3.35,3.7,Empate,3.35
+22/23,22/23,25,Spartak Moscovo,Rostov,1,1,1.71,3.7,4.2,Empate,3.7
+22/23,22/23,25,Sochi,FC Torpedo Moscovo,3,1,1.5,3.95,5.8,Sochi,1.5
+22/23,22/23,25,Lokomotiv Moscovo,Khimki,5,1,1.42,4.6,5.8,Lokomotiv Moscovo,1.42
+22/23,22/23,26,Khimki,Dinamo Moscovo,0,1,4.4,3.7,1.66,Dinamo Moscovo,1.66
+22/23,22/23,26,FC Torpedo Moscovo,Akhmat Grozny,1,5,3.15,3.1,2.17,Akhmat Grozny,2.17
+22/23,22/23,26,Rostov,Fakel Voronezh,0,2,1.76,3.3,4.4,Fakel Voronezh,4.4
+22/23,22/23,26,CSKA Moscovo,FC Gazovik Orenburg,2,1,1.44,4.4,5.6,CSKA Moscovo,1.44
+22/23,22/23,26,Zenit,Spartak Moscovo,3,2,1.44,4.2,6.2,Zenit,1.44
+22/23,22/23,26,Krasnodar,Krylia Sovetov,2,1,2.27,3.05,3.0,Krasnodar,2.27
+22/23,22/23,27,Lokomotiv Moscovo,Sochi,3,0,2.01,3.25,3.4,Lokomotiv Moscovo,2.01
+22/23,22/23,27,Ural,FC Gazovik Orenburg,2,1,1.86,3.4,3.75,Ural,1.86
+22/23,22/23,27,Khimki,Spartak Moscovo,1,1,7.2,5.0,1.33,Empate,5.0
+22/23,22/23,27,Zenit,Krasnodar,2,2,1.29,5.0,8.4,Empate,5.0
+22/23,22/23,27,CSKA Moscovo,FC Torpedo Moscovo,3,0,1.14,7.2,15.0,CSKA Moscovo,1.14
+22/23,22/23,27,Krylia Sovetov,Lokomotiv Moscovo,1,1,2.04,3.3,3.25,Empate,3.3
+22/23,22/23,27,Dinamo Moscovo,Akhmat Grozny,0,3,1.8,3.45,3.95,Akhmat Grozny,3.95
+22/23,22/23,27,Sochi,Rostov,1,0,1.99,3.25,3.5,Sochi,1.99
+22/23,22/23,28,Lokomotiv Moscovo,Fakel Voronezh,1,0,2.33,3.05,2.9,Lokomotiv Moscovo,2.33
+22/23,22/23,28,FC Gazovik Orenburg,Zenit,2,2,3.95,3.7,1.74,Empate,3.7
+22/23,22/23,28,FC Torpedo Moscovo,Dinamo Moscovo,0,3,8.0,5.0,1.3,Dinamo Moscovo,1.3
+22/23,22/23,28,Akhmat Grozny,Khimki,3,0,1.63,3.75,4.6,Akhmat Grozny,1.63
+22/23,22/23,28,Krylia Sovetov,Ural,3,0,2.12,2.95,3.4,Krylia Sovetov,2.12
+22/23,22/23,28,Spartak Moscovo,CSKA Moscovo,2,1,2.7,3.05,2.46,Spartak Moscovo,2.7
+22/23,22/23,28,Krasnodar,Rostov,3,0,1.7,3.6,4.4,Krasnodar,1.7
+22/23,22/23,29,Khimki,Ural,0,3,3.75,3.2,1.91,Ural,1.91
+22/23,22/23,29,FC Torpedo Moscovo,FC Gazovik Orenburg,1,3,3.4,3.9,1.83,FC Gazovik Orenburg,1.83
+22/23,22/23,29,Krasnodar,CSKA Moscovo,0,0,4.1,3.6,1.74,Empate,3.6
+22/23,22/23,29,Sochi,Zenit,1,1,2.85,3.0,2.38,Empate,3.0
+22/23,22/23,29,Dinamo Moscovo,Lokomotiv Moscovo,2,4,1.9,3.65,3.35,Lokomotiv Moscovo,3.35
+22/23,22/23,29,Fakel Voronezh,Krylia Sovetov,2,1,2.85,2.8,2.48,Fakel Voronezh,2.85
+22/23,22/23,29,Rostov,Akhmat Grozny,3,2,2.65,3.0,2.55,Rostov,2.65
+22/23,22/23,30,Akhmat Grozny,Krasnodar,2,2,2.7,3.2,2.38,Empate,3.2
+22/23,22/23,30,CSKA Moscovo,Rostov,4,1,1.39,4.3,7.0,CSKA Moscovo,1.39
+22/23,22/23,30,FC Gazovik Orenburg,Dinamo Moscovo,3,0,2.17,3.7,2.75,FC Gazovik Orenburg,2.17
+22/23,22/23,30,Krylia Sovetov,Spartak Moscovo,1,0,2.46,3.15,2.65,Krylia Sovetov,2.46
+22/23,22/23,30,Lokomotiv Moscovo,FC Torpedo Moscovo,3,1,1.18,6.8,11.0,Lokomotiv Moscovo,1.18
+22/23,22/23,30,Ural,Sochi,1,0,1.92,3.3,3.6,Ural,1.92
+22/23,22/23,30,Zenit,Fakel Voronezh,1,0,2.12,2.95,3.4,Zenit,2.12
+22/23,22/23,31,FC Yenisey Krasnoyarsk,Fakel Voronezh,0,1,3.2,3.1,2.14,Fakel Voronezh,2.14
+22/23,22/23,31,Fakel Voronezh,FC Yenisey Krasnoyarsk,2,0,1.47,3.95,6.2,Fakel Voronezh,1.47
+23/24,23/24,1,Dinamo Moscovo,Krasnodar,1,3,2.09,3.45,3.0,Krasnodar,3.0
+23/24,23/24,1,Ural,CSKA Moscovo,2,1,3.5,2.8,2.18,Ural,3.5
+23/24,23/24,1,Lokomotiv Moscovo,Rubin Kazan,2,2,1.78,3.6,3.9,Empate,3.6
+23/24,23/24,1,Akhmat Grozny,Krylia Sovetov,1,2,2.19,3.1,3.1,Krylia Sovetov,3.1
+23/24,23/24,1,Spartak Moscovo,FC Gazovik Orenburg,3,2,1.57,4.1,4.7,Spartak Moscovo,1.57
+23/24,23/24,1,Rostov,Fakel Voronezh,2,1,2.12,2.8,3.65,Rostov,2.12
+23/24,23/24,1,Sochi,Baltika Kaliningrad,2,0,2.12,2.95,3.45,Sochi,2.12
+23/24,23/24,2,Krylia Sovetov,Dinamo Moscovo,3,3,2.44,3.1,2.7,Empate,3.1
+23/24,23/24,2,Rostov,Zenit,1,1,3.5,2.95,2.09,Empate,2.95
+23/24,23/24,2,Rubin Kazan,FC Gazovik Orenburg,1,1,2.1,3.3,3.1,Empate,3.3
+23/24,23/24,2,Fakel Voronezh,Lokomotiv Moscovo,1,4,2.55,3.05,2.65,Lokomotiv Moscovo,2.65
+23/24,23/24,2,Akhmat Grozny,CSKA Moscovo,2,3,3.1,2.9,2.29,CSKA Moscovo,2.29
+23/24,23/24,2,Krasnodar,Sochi,2,0,1.88,3.3,3.8,Krasnodar,1.88
+23/24,23/24,3,Spartak Moscovo,Baltika Kaliningrad,2,1,1.53,3.95,5.2,Spartak Moscovo,1.53
+23/24,23/24,3,Krylia Sovetov,Rostov,5,1,2.19,3.15,3.05,Krylia Sovetov,2.19
+23/24,23/24,3,FC Gazovik Orenburg,Ural,0,2,2.26,3.25,2.85,Ural,2.85
+23/24,23/24,3,Rubin Kazan,Spartak Moscovo,1,4,3.25,3.3,2.06,Spartak Moscovo,2.06
+23/24,23/24,3,CSKA Moscovo,Lokomotiv Moscovo,4,1,1.76,3.75,3.8,CSKA Moscovo,1.76
+23/24,23/24,3,Baltika Kaliningrad,Fakel Voronezh,2,1,1.99,3.0,3.75,Baltika Kaliningrad,1.99
+23/24,23/24,3,Zenit,Dinamo Moscovo,2,3,1.85,3.45,3.75,Dinamo Moscovo,3.75
+23/24,23/24,3,Sochi,Akhmat Grozny,1,2,2.18,3.15,3.1,Akhmat Grozny,3.1
+23/24,23/24,4,Ural,Spartak Moscovo,3,2,3.1,2.95,2.27,Ural,3.1
+23/24,23/24,4,Lokomotiv Moscovo,Krylia Sovetov,1,1,1.73,3.7,4.0,Empate,3.7
+23/24,23/24,4,FC Gazovik Orenburg,Krasnodar,0,2,3.3,3.35,2.0,Krasnodar,2.0
+23/24,23/24,4,Rostov,Rubin Kazan,3,0,1.92,3.15,3.85,Rostov,1.92
+23/24,23/24,4,Dinamo Moscovo,Baltika Kaliningrad,2,0,2.08,3.25,3.2,Dinamo Moscovo,2.08
+23/24,23/24,4,Zenit,Fakel Voronezh,2,0,1.38,4.2,7.4,Zenit,1.38
+23/24,23/24,4,CSKA Moscovo,Sochi,3,1,1.75,3.5,4.2,CSKA Moscovo,1.75
+23/24,23/24,5,Rubin Kazan,Krylia Sovetov,2,1,2.7,3.05,2.48,Rubin Kazan,2.7
+23/24,23/24,5,Dinamo Moscovo,CSKA Moscovo,2,1,2.65,3.3,2.38,Dinamo Moscovo,2.65
+23/24,23/24,5,Baltika Kaliningrad,Ural,0,1,2.46,2.85,2.85,Ural,2.85
+23/24,23/24,5,Krasnodar,Lokomotiv Moscovo,1,1,1.84,3.45,3.8,Empate,3.45
+23/24,23/24,5,Sochi,Rostov,4,0,2.27,2.95,3.05,Sochi,2.27
+23/24,23/24,5,Spartak Moscovo,Zenit,1,3,2.65,3.15,2.43,Zenit,2.43
+23/24,23/24,5,Akhmat Grozny,FC Gazovik Orenburg,4,0,1.91,3.35,3.6,Akhmat Grozny,1.91
+23/24,23/24,6,FC Gazovik Orenburg,CSKA Moscovo,1,1,3.3,3.4,1.99,Empate,3.4
+23/24,23/24,6,Fakel Voronezh,Krasnodar,0,0,3.1,2.95,2.26,Empate,2.95
+23/24,23/24,6,Zenit,Ural,4,0,1.53,3.7,5.8,Zenit,1.53
+23/24,23/24,6,Rubin Kazan,Dinamo Moscovo,2,2,3.15,3.45,2.05,Empate,3.45
+23/24,23/24,6,Spartak Moscovo,Akhmat Grozny,0,0,1.72,3.7,4.0,Empate,3.7
+23/24,23/24,6,Krylia Sovetov,Baltika Kaliningrad,2,1,2.29,3.05,3.0,Krylia Sovetov,2.29
+23/24,23/24,6,Sochi,Lokomotiv Moscovo,0,1,2.27,3.35,2.75,Lokomotiv Moscovo,2.75
+23/24,23/24,7,Ural,Akhmat Grozny,0,1,2.3,2.95,3.0,Akhmat Grozny,3.0
+23/24,23/24,7,Krylia Sovetov,Fakel Voronezh,3,0,1.83,3.1,4.3,Krylia Sovetov,1.83
+23/24,23/24,7,Krasnodar,Spartak Moscovo,2,0,2.2,3.35,2.85,Krasnodar,2.2
+23/24,23/24,7,FC Gazovik Orenburg,Sochi,3,0,2.38,3.2,2.7,FC Gazovik Orenburg,2.38
+23/24,23/24,7,Lokomotiv Moscovo,Baltika Kaliningrad,3,2,2.11,3.35,3.05,Lokomotiv Moscovo,2.11
+23/24,23/24,7,CSKA Moscovo,Zenit,1,1,2.6,2.95,2.6,Empate,2.95
+23/24,23/24,7,Rostov,Dinamo Moscovo,1,2,2.8,3.3,2.27,Dinamo Moscovo,2.27
+23/24,23/24,8,CSKA Moscovo,Krylia Sovetov,2,2,1.75,3.45,4.2,Empate,3.45
+23/24,23/24,8,Akhmat Grozny,Krasnodar,1,1,2.7,3.0,2.49,Empate,3.0
+23/24,23/24,8,Baltika Kaliningrad,Rostov,2,2,2.07,3.0,3.5,Empate,3.0
+23/24,23/24,8,Ural,Fakel Voronezh,0,0,1.95,2.95,3.95,Empate,2.95
+23/24,23/24,8,Rubin Kazan,Zenit,0,3,4.2,3.4,1.77,Zenit,1.77
+23/24,23/24,8,Lokomotiv Moscovo,FC Gazovik Orenburg,0,2,1.73,3.85,3.9,FC Gazovik Orenburg,3.9
+23/24,23/24,9,Krylia Sovetov,Sochi,2,1,1.92,3.25,3.7,Krylia Sovetov,1.92
+23/24,23/24,9,Baltika Kaliningrad,Akhmat Grozny,1,0,2.37,3.0,2.85,Baltika Kaliningrad,2.37
+23/24,23/24,9,Spartak Moscovo,Dinamo Moscovo,1,0,2.27,3.55,2.65,Spartak Moscovo,2.27
+23/24,23/24,9,Zenit,Lokomotiv Moscovo,1,2,1.46,4.1,5.8,Lokomotiv Moscovo,5.8
+23/24,23/24,9,Krasnodar,Ural,2,0,1.65,3.5,4.9,Krasnodar,1.65
+23/24,23/24,9,Rostov,CSKA Moscovo,3,3,2.65,3.1,2.46,Empate,3.1
+23/24,23/24,10,Fakel Voronezh,Rubin Kazan,0,1,2.7,2.75,2.7,Rubin Kazan,2.7
+23/24,23/24,10,Rostov,Ural,2,2,2.2,3.0,3.2,Empate,3.0
+23/24,23/24,10,FC Gazovik Orenburg,Zenit,3,1,4.1,3.65,1.73,FC Gazovik Orenburg,4.1
+23/24,23/24,10,Rubin Kazan,Krasnodar,0,2,2.85,3.05,2.37,Krasnodar,2.37
+23/24,23/24,10,CSKA Moscovo,Baltika Kaliningrad,1,0,1.76,3.4,4.3,CSKA Moscovo,1.76
+23/24,23/24,10,Fakel Voronezh,Sochi,2,0,2.55,2.9,2.75,Fakel Voronezh,2.55
+23/24,23/24,10,Krylia Sovetov,Spartak Moscovo,4,0,2.7,3.25,2.36,Krylia Sovetov,2.7
+23/24,23/24,10,Akhmat Grozny,Dinamo Moscovo,1,1,2.9,3.5,2.13,Empate,3.5
+23/24,23/24,11,Ural,Lokomotiv Moscovo,2,2,2.47,3.1,2.7,Empate,3.1
+23/24,23/24,11,Sochi,Zenit,0,2,5.6,3.8,1.53,Zenit,1.53
+23/24,23/24,11,Baltika Kaliningrad,FC Gazovik Orenburg,1,0,2.16,3.2,3.05,Baltika Kaliningrad,2.16
+23/24,23/24,11,Krasnodar,Rostov,3,2,1.73,3.4,4.4,Krasnodar,1.73
+23/24,23/24,11,Dinamo Moscovo,Fakel Voronezh,0,0,1.48,3.95,6.2,Empate,3.95
+23/24,23/24,11,Akhmat Grozny,Rubin Kazan,0,1,2.12,3.15,3.2,Rubin Kazan,3.2
+23/24,23/24,11,Spartak Moscovo,CSKA Moscovo,2,2,2.34,3.25,2.7,Empate,3.25
+23/24,23/24,12,FC Gazovik Orenburg,Fakel Voronezh,1,2,1.78,3.35,4.2,Fakel Voronezh,4.2
+23/24,23/24,12,Rubin Kazan,CSKA Moscovo,0,0,3.05,3.05,2.26,Empate,3.05
+23/24,23/24,12,Lokomotiv Moscovo,Dinamo Moscovo,0,0,2.2,3.45,2.8,Empate,3.45
+23/24,23/24,12,Baltika Kaliningrad,Krasnodar,2,2,3.3,2.95,2.18,Empate,2.95
+23/24,23/24,12,Ural,Sochi,1,4,2.25,2.85,3.2,Sochi,3.2
+23/24,23/24,12,Zenit,Krylia Sovetov,3,1,1.4,4.2,7.0,Zenit,1.4
+23/24,23/24,12,Rostov,Akhmat Grozny,3,0,2.16,3.15,3.1,Rostov,2.16
+23/24,23/24,13,Rubin Kazan,Baltika Kaliningrad,1,0,2.18,2.9,3.35,Rubin Kazan,2.18
+23/24,23/24,13,Fakel Voronezh,Spartak Moscovo,2,0,3.5,3.2,2.0,Fakel Voronezh,3.5
+23/24,23/24,13,Krylia Sovetov,FC Gazovik Orenburg,1,1,2.13,3.3,3.05,Empate,3.3
+23/24,23/24,13,Rostov,Lokomotiv Moscovo,1,0,2.4,3.3,2.6,Rostov,2.4
+23/24,23/24,13,Zenit,Akhmat Grozny,2,1,1.36,4.6,7.2,Zenit,1.36
+23/24,23/24,13,Dinamo Moscovo,Ural,2,1,1.69,3.55,4.5,Dinamo Moscovo,1.69
+23/24,23/24,13,CSKA Moscovo,Krasnodar,1,0,2.27,3.1,2.95,CSKA Moscovo,2.27
+23/24,23/24,14,Akhmat Grozny,Fakel Voronezh,1,2,2.0,3.2,3.45,Fakel Voronezh,3.45
+23/24,23/24,14,Baltika Kaliningrad,Zenit,0,2,4.5,3.3,1.74,Zenit,1.74
+23/24,23/24,14,Krasnodar,Krylia Sovetov,2,1,1.72,3.55,4.3,Krasnodar,1.72
+23/24,23/24,14,Lokomotiv Moscovo,Spartak Moscovo,1,1,2.45,3.35,2.55,Empate,3.35
+23/24,23/24,15,FC Gazovik Orenburg,Rostov,1,1,2.2,3.35,2.9,Empate,3.35
+23/24,23/24,15,Ural,Rubin Kazan,0,1,2.18,2.95,3.25,Rubin Kazan,3.25
+23/24,23/24,15,Sochi,Dinamo Moscovo,3,3,3.0,3.15,2.22,Empate,3.15
+23/24,23/24,15,Fakel Voronezh,CSKA Moscovo,1,1,3.0,3.3,2.24,Empate,3.3
+23/24,23/24,15,Krylia Sovetov,Ural,3,1,1.92,3.5,3.7,Krylia Sovetov,1.92
+23/24,23/24,15,Lokomotiv Moscovo,Akhmat Grozny,2,1,1.71,3.95,4.1,Lokomotiv Moscovo,1.71
+23/24,23/24,15,Zenit,Krasnodar,1,1,1.63,3.9,4.7,Empate,3.9
+23/24,23/24,15,Dinamo Moscovo,FC Gazovik Orenburg,2,0,1.65,4.4,4.0,Dinamo Moscovo,1.65
+23/24,23/24,15,Sochi,Rubin Kazan,0,2,2.14,3.3,3.25,Rubin Kazan,3.25
+23/24,23/24,15,Spartak Moscovo,Rostov,2,1,1.88,3.8,3.5,Spartak Moscovo,1.88
+23/24,23/24,16,Krylia Sovetov,Lokomotiv Moscovo,3,3,2.35,3.6,2.65,Empate,3.6
+23/24,23/24,16,Zenit,Sochi,3,0,1.28,5.2,9.4,Zenit,1.28
+23/24,23/24,16,CSKA Moscovo,Dinamo Moscovo,2,3,2.11,3.7,2.95,Dinamo Moscovo,2.95
+23/24,23/24,16,Baltika Kaliningrad,Spartak Moscovo,0,2,2.85,3.3,2.33,Spartak Moscovo,2.33
+23/24,23/24,16,FC Gazovik Orenburg,Akhmat Grozny,1,1,2.09,3.8,3.0,Empate,3.8
+23/24,23/24,16,Ural,Krasnodar,3,1,3.35,3.35,2.08,Ural,3.35
+23/24,23/24,16,Rubin Kazan,Fakel Voronezh,1,0,2.19,3.15,3.3,Rubin Kazan,2.19
+23/24,23/24,17,Fakel Voronezh,Baltika Kaliningrad,0,0,2.17,3.0,3.5,Empate,3.0
+23/24,23/24,17,Sochi,Krylia Sovetov,0,2,2.85,3.4,2.31,Krylia Sovetov,2.31
+23/24,23/24,17,CSKA Moscovo,Rostov,2,0,1.79,3.75,3.95,CSKA Moscovo,1.79
+23/24,23/24,17,Krasnodar,FC Gazovik Orenburg,2,1,1.55,4.2,5.2,Krasnodar,1.55
+23/24,23/24,17,Lokomotiv Moscovo,Zenit,3,1,3.45,3.5,1.98,Lokomotiv Moscovo,3.45
+23/24,23/24,17,Akhmat Grozny,Spartak Moscovo,2,1,2.8,3.3,2.28,Akhmat Grozny,2.8
+23/24,23/24,18,Dinamo Moscovo,Rubin Kazan,1,0,1.81,3.75,3.85,Dinamo Moscovo,1.81
+23/24,23/24,18,Lokomotiv Moscovo,Ural,2,0,1.81,3.6,4.0,Lokomotiv Moscovo,1.81
+23/24,23/24,18,Spartak Moscovo,Krylia Sovetov,3,0,1.8,3.85,3.75,Spartak Moscovo,1.8
+23/24,23/24,18,Akhmat Grozny,Rostov,0,0,2.28,3.5,2.8,Empate,3.5
+23/24,23/24,18,Fakel Voronezh,Dinamo Moscovo,1,1,3.2,3.4,2.09,Empate,3.4
+23/24,23/24,18,Sochi,FC Gazovik Orenburg,1,1,2.04,3.65,3.2,Empate,3.65
+23/24,23/24,18,Baltika Kaliningrad,Rubin Kazan,0,1,2.5,3.05,2.85,Rubin Kazan,2.85
+23/24,23/24,18,Krasnodar,CSKA Moscovo,1,0,2.2,3.45,3.0,Krasnodar,2.2
+23/24,23/24,19,Rostov,Krylia Sovetov,2,0,2.01,3.5,3.35,Rostov,2.01
+23/24,23/24,19,CSKA Moscovo,FC Gazovik Orenburg,1,1,1.5,4.4,5.4,Empate,4.4
+23/24,23/24,19,Krasnodar,Rubin Kazan,1,1,1.74,3.6,4.4,Empate,3.6
+23/24,23/24,19,Akhmat Grozny,Ural,1,0,2.12,3.25,3.3,Akhmat Grozny,2.12
+23/24,23/24,19,Zenit,Spartak Moscovo,0,0,1.63,3.95,4.7,Empate,3.95
+23/24,23/24,19,Dinamo Moscovo,Lokomotiv Moscovo,2,1,2.21,3.75,2.8,Dinamo Moscovo,2.21
+23/24,23/24,19,Baltika Kaliningrad,Sochi,0,0,2.55,3.1,2.75,Empate,3.1
+23/24,23/24,20,Krylia Sovetov,CSKA Moscovo,0,2,3.0,3.4,2.21,CSKA Moscovo,2.21
+23/24,23/24,20,Rostov,Krasnodar,2,1,2.7,3.25,2.5,Rostov,2.7
+23/24,23/24,20,Ural,Zenit,1,4,5.4,3.75,1.58,Zenit,1.58
+23/24,23/24,20,Dinamo Moscovo,Akhmat Grozny,2,0,1.87,3.8,3.55,Dinamo Moscovo,1.87
+23/24,23/24,20,FC Gazovik Orenburg,Baltika Kaliningrad,1,0,2.0,3.2,3.5,FC Gazovik Orenburg,2.0
+23/24,23/24,20,Lokomotiv Moscovo,Sochi,2,2,1.69,3.9,4.3,Empate,3.9
+23/24,23/24,20,Spartak Moscovo,Fakel Voronezh,0,2,1.64,3.8,4.9,Fakel Voronezh,4.9
+23/24,23/24,21,Dinamo Moscovo,Rostov,1,4,1.99,3.75,3.25,Rostov,3.25
+23/24,23/24,21,Krylia Sovetov,Zenit,1,1,4.5,3.7,1.71,Empate,3.7
+23/24,23/24,21,Sochi,CSKA Moscovo,2,2,3.3,3.15,2.16,Empate,3.15
+23/24,23/24,21,Spartak Moscovo,Ural,0,0,1.5,4.1,6.0,Empate,4.1
+23/24,23/24,21,Fakel Voronezh,FC Gazovik Orenburg,0,0,2.33,3.0,3.15,Empate,3.0
+23/24,23/24,21,Rubin Kazan,Akhmat Grozny,2,1,2.47,3.0,2.95,Rubin Kazan,2.47
+23/24,23/24,21,Lokomotiv Moscovo,Krasnodar,1,1,2.55,3.25,2.6,Empate,3.25
+23/24,23/24,22,Ural,Krylia Sovetov,1,2,2.65,2.95,2.6,Krylia Sovetov,2.6
+23/24,23/24,22,Rostov,Sochi,2,2,1.93,3.5,3.65,Empate,3.5
+23/24,23/24,22,CSKA Moscovo,Fakel Voronezh,4,1,1.7,3.4,4.75,CSKA Moscovo,1.7
+23/24,23/24,22,Akhmat Grozny,Lokomotiv Moscovo,0,2,2.44,3.2,2.8,Lokomotiv Moscovo,2.8
+23/24,23/24,22,Zenit,Baltika Kaliningrad,1,0,1.32,4.7,9.2,Zenit,1.32
+23/24,23/24,22,Dinamo Moscovo,Spartak Moscovo,1,2,2.38,3.55,2.65,Spartak Moscovo,2.65
+23/24,23/24,23,FC Gazovik Orenburg,Rubin Kazan,3,0,2.26,3.1,3.15,FC Gazovik Orenburg,2.26
+23/24,23/24,23,Sochi,Spartak Moscovo,1,0,2.75,3.4,2.39,Sochi,2.75
+23/24,23/24,23,Akhmat Grozny,Baltika Kaliningrad,1,7,2.16,3.1,3.4,Baltika Kaliningrad,3.4
+23/24,23/24,23,Krasnodar,Zenit,1,2,3.05,3.25,2.26,Zenit,2.26
+23/24,23/24,23,Lokomotiv Moscovo,CSKA Moscovo,3,3,2.32,3.4,2.8,Empate,3.4
+23/24,23/24,23,Ural,Dinamo Moscovo,2,1,3.45,3.4,2.01,Ural,3.45
+23/24,23/24,23,Fakel Voronezh,Rostov,0,1,2.85,3.0,2.55,Rostov,2.55
+23/24,23/24,23,Krylia Sovetov,Rubin Kazan,2,0,2.18,3.15,3.25,Krylia Sovetov,2.18
+23/24,23/24,24,Krasnodar,Fakel Voronezh,2,0,1.68,3.55,5.0,Krasnodar,1.68
+23/24,23/24,24,Rubin Kazan,Lokomotiv Moscovo,1,1,3.15,3.25,2.21,Empate,3.25
+23/24,23/24,24,Baltika Kaliningrad,Krylia Sovetov,2,1,2.2,3.25,3.15,Baltika Kaliningrad,2.2
+23/24,23/24,24,CSKA Moscovo,Akhmat Grozny,1,2,1.49,4.3,5.8,Akhmat Grozny,5.8
+23/24,23/24,24,Zenit,FC Gazovik Orenburg,1,0,1.39,4.6,7.0,Zenit,1.39
+23/24,23/24,24,Sochi,Ural,2,2,2.19,3.15,3.25,Empate,3.15
+23/24,23/24,24,Rostov,Spartak Moscovo,1,5,2.29,3.3,2.95,Spartak Moscovo,2.95
+23/24,23/24,25,FC Gazovik Orenburg,Dinamo Moscovo,1,2,2.55,3.6,2.43,Dinamo Moscovo,2.43
+23/24,23/24,25,Krasnodar,Baltika Kaliningrad,3,2,1.71,3.65,4.6,Krasnodar,1.71
+23/24,23/24,25,Zenit,Rubin Kazan,0,2,1.35,4.3,8.5,Rubin Kazan,8.5
+23/24,23/24,25,Ural,Rostov,0,1,2.55,3.15,2.7,Rostov,2.7
+23/24,23/24,25,Fakel Voronezh,Krylia Sovetov,0,1,2.5,3.05,2.85,Krylia Sovetov,2.85
+23/24,23/24,25,Akhmat Grozny,Sochi,1,0,2.18,3.35,3.1,Akhmat Grozny,2.18
+23/24,23/24,25,CSKA Moscovo,Spartak Moscovo,0,0,2.44,3.4,2.65,Empate,3.4
+23/24,23/24,25,Spartak Moscovo,Lokomotiv Moscovo,3,2,2.6,3.45,2.46,Spartak Moscovo,2.6
+23/24,23/24,25,Dinamo Moscovo,Zenit,1,0,3.4,3.55,1.9,Dinamo Moscovo,3.4
+23/24,23/24,25,Baltika Kaliningrad,CSKA Moscovo,3,1,3.2,3.2,2.2,Baltika Kaliningrad,3.2
+23/24,23/24,26,Krylia Sovetov,Krasnodar,0,0,3.1,3.55,2.12,Empate,3.55
+23/24,23/24,26,Rubin Kazan,Ural,1,1,2.17,3.15,3.3,Empate,3.15
+23/24,23/24,26,Sochi,Fakel Voronezh,0,0,1.94,3.3,3.8,Empate,3.3
+23/24,23/24,26,Rostov,FC Gazovik Orenburg,2,1,2.14,3.4,3.15,Rostov,2.14
+23/24,23/24,26,FC Gazovik Orenburg,Krylia Sovetov,2,1,2.18,3.65,2.85,FC Gazovik Orenburg,2.18
+23/24,23/24,26,Krasnodar,Akhmat Grozny,0,1,1.63,4.1,4.5,Akhmat Grozny,4.5
+23/24,23/24,26,Dinamo Moscovo,Sochi,3,2,1.65,3.95,4.3,Dinamo Moscovo,1.65
+23/24,23/24,27,Ural,Baltika Kaliningrad,2,1,2.36,2.95,3.15,Ural,2.36
+23/24,23/24,27,Fakel Voronezh,Zenit,1,1,5.8,3.75,1.56,Empate,3.75
+23/24,23/24,27,CSKA Moscovo,Rubin Kazan,2,2,1.69,3.65,4.7,Empate,3.65
+23/24,23/24,27,Lokomotiv Moscovo,Rostov,1,0,2.09,3.5,3.2,Lokomotiv Moscovo,2.09
+23/24,23/24,27,Krylia Sovetov,Akhmat Grozny,0,2,2.36,3.4,2.75,Akhmat Grozny,2.75
+23/24,23/24,27,Rubin Kazan,Rostov,3,1,2.43,3.25,2.8,Rubin Kazan,2.43
+23/24,23/24,27,Spartak Moscovo,Krasnodar,1,0,2.25,3.45,2.9,Spartak Moscovo,2.25
+23/24,23/24,27,Zenit,CSKA Moscovo,0,1,1.6,3.8,5.4,CSKA Moscovo,5.4
+23/24,23/24,27,Baltika Kaliningrad,Dinamo Moscovo,2,3,3.05,3.6,2.1,Dinamo Moscovo,2.1
+23/24,23/24,27,FC Gazovik Orenburg,Lokomotiv Moscovo,0,2,2.34,3.65,2.65,Lokomotiv Moscovo,2.65
+23/24,23/24,27,Fakel Voronezh,Ural,0,0,2.7,2.8,2.7,Empate,2.8
+23/24,23/24,28,Dinamo Moscovo,Krylia Sovetov,4,1,1.45,4.55,5.25,Dinamo Moscovo,1.45
+23/24,23/24,28,Lokomotiv Moscovo,Fakel Voronezh,2,0,1.77,3.6,4.3,Lokomotiv Moscovo,1.77
+23/24,23/24,28,Sochi,Krasnodar,2,3,3.45,3.9,1.87,Krasnodar,1.87
+23/24,23/24,28,Ural,FC Gazovik Orenburg,3,3,2.02,3.25,3.6,Empate,3.25
+23/24,23/24,28,Spartak Moscovo,Rubin Kazan,3,1,1.7,3.6,4.35,Spartak Moscovo,1.7
+23/24,23/24,28,Rostov,Baltika Kaliningrad,2,1,2.27,3.3,3.0,Rostov,2.27
+23/24,23/24,28,Akhmat Grozny,Zenit,1,5,6.0,4.2,1.49,Zenit,1.49
+23/24,23/24,29,Baltika Kaliningrad,Lokomotiv Moscovo,1,3,2.35,3.7,2.6,Lokomotiv Moscovo,2.6
+23/24,23/24,29,CSKA Moscovo,Ural,2,0,2.07,3.65,3.1,CSKA Moscovo,2.07
+23/24,23/24,29,Fakel Voronezh,Akhmat Grozny,2,0,1.53,3.8,6.4,Fakel Voronezh,1.53
+23/24,23/24,29,FC Gazovik Orenburg,Spartak Moscovo,0,0,2.31,3.75,2.6,Empate,3.75
+23/24,23/24,29,Krasnodar,Dinamo Moscovo,1,0,2.6,3.55,2.41,Krasnodar,2.6
+23/24,23/24,29,Rubin Kazan,Sochi,1,1,2.03,3.8,3.1,Empate,3.8
+23/24,23/24,29,Zenit,Rostov,2,1,1.3,5.2,8.4,Zenit,1.3
+23/24,23/24,30,Ural,Akron Tolyatti,0,2,2.05,3.65,4.33,Akron Tolyatti,4.33
+23/24,23/24,30,FK Nizhny Novgorod,Arsenal Tula,1,2,2.05,3.1,3.4,Arsenal Tula,3.4
+23/24,23/24,30,Akron Tolyatti,Ural,1,2,2.95,3.25,2.32,Ural,2.32
+24/25,24/25,1,Lokomotiv Moscovo,Akron Tolyatti,3,2,1.57,4.1,5.2,Lokomotiv Moscovo,1.57
+24/25,24/25,1,Krylia Sovetov,Zenit,0,4,4.1,3.65,1.78,Zenit,1.78
+24/25,24/25,1,Dinamo Moscovo,Fakel Voronezh,3,1,1.66,3.75,4.8,Dinamo Moscovo,1.66
+24/25,24/25,1,Rostov,CSKA Moscovo,0,0,2.65,3.35,2.5,Empate,3.35
+24/25,24/25,1,FC Gazovik Orenburg,Spartak Moscovo,2,0,3.25,3.65,2.01,FC Gazovik Orenburg,3.25
+24/25,24/25,1,Akhmat Grozny,Krasnodar,1,1,2.37,3.45,2.7,Empate,3.45
+24/25,24/25,1,Khimki,Dynamo Makhachkala,1,1,1.99,3.15,3.8,Empate,3.15
+24/25,24/25,2,Krylia Sovetov,Rostov,1,3,2.9,3.35,2.3,Rostov,2.3
+24/25,24/25,2,Dinamo Moscovo,Lokomotiv Moscovo,3,1,2.03,3.8,3.1,Dinamo Moscovo,2.03
+24/25,24/25,2,Rubin Kazan,Zenit,0,4,4.7,3.75,1.67,Zenit,1.67
+24/25,24/25,2,Fakel Voronezh,Akron Tolyatti,0,2,2.03,3.1,3.8,Akron Tolyatti,3.8
+24/25,24/25,2,Khimki,Spartak Moscovo,1,3,3.1,3.4,2.15,Spartak Moscovo,2.15
+24/25,24/25,2,FC Gazovik Orenburg,Akhmat Grozny,0,0,2.21,3.55,2.9,Empate,3.55
+24/25,24/25,2,Krasnodar,Dynamo Makhachkala,0,0,1.42,4.3,7.0,Empate,4.3
+24/25,24/25,3,Akron Tolyatti,Dinamo Moscovo,0,2,3.85,3.9,1.78,Dinamo Moscovo,1.78
+24/25,24/25,3,Zenit,Rostov,5,0,1.51,4.1,5.8,Zenit,1.51
+24/25,24/25,3,Rubin Kazan,Khimki,2,3,1.75,3.65,4.3,Khimki,4.3
+24/25,24/25,3,CSKA Moscovo,FC Gazovik Orenburg,5,1,1.46,4.5,5.8,CSKA Moscovo,1.46
+24/25,24/25,3,Fakel Voronezh,Krasnodar,0,0,7.2,4.3,1.41,Empate,4.3
+24/25,24/25,3,Akhmat Grozny,Lokomotiv Moscovo,0,5,3.05,3.8,2.04,Lokomotiv Moscovo,2.04
+24/25,24/25,4,Spartak Moscovo,Krylia Sovetov,3,0,1.35,4.8,6.75,Spartak Moscovo,1.35
+24/25,24/25,4,Rostov,Rubin Kazan,1,1,1.93,3.55,3.55,Empate,3.55
+24/25,24/25,4,Lokomotiv Moscovo,Dynamo Makhachkala,2,0,1.49,4.2,6.0,Lokomotiv Moscovo,1.49
+24/25,24/25,4,FC Gazovik Orenburg,Akron Tolyatti,2,2,1.75,3.85,4.1,Empate,3.85
+24/25,24/25,4,Zenit,Dinamo Moscovo,1,0,1.43,4.8,5.8,Zenit,1.43
+24/25,24/25,4,Krasnodar,CSKA Moscovo,2,1,2.55,3.3,2.6,Krasnodar,2.55
+24/25,24/25,4,Krylia Sovetov,Fakel Voronezh,2,0,1.8,3.25,4.25,Krylia Sovetov,1.8
+24/25,24/25,4,Spartak Moscovo,Akhmat Grozny,0,0,1.42,4.6,6.2,Empate,4.6
+24/25,24/25,5,Dinamo Moscovo,Krylia Sovetov,1,0,1.49,4.6,5.2,Dinamo Moscovo,1.49
+24/25,24/25,5,Rostov,FC Gazovik Orenburg,3,2,1.66,4.0,4.5,Rostov,1.66
+24/25,24/25,5,Khimki,Zenit,1,1,7.4,4.8,1.36,Empate,4.8
+24/25,24/25,5,CSKA Moscovo,Lokomotiv Moscovo,0,1,2.13,3.6,3.05,Lokomotiv Moscovo,3.05
+24/25,24/25,6,Akron Tolyatti,Rubin Kazan,1,2,3.0,3.25,2.29,Rubin Kazan,2.29
+24/25,24/25,6,Dynamo Makhachkala,Akhmat Grozny,1,0,2.95,2.85,2.55,Dynamo Makhachkala,2.95
+24/25,24/25,6,Rubin Kazan,Dynamo Makhachkala,2,0,1.9,3.3,4.0,Rubin Kazan,1.9
+24/25,24/25,6,CSKA Moscovo,Akron Tolyatti,4,0,1.33,4.9,7.8,CSKA Moscovo,1.33
+24/25,24/25,6,Fakel Voronezh,FC Gazovik Orenburg,1,0,2.7,3.15,2.5,Fakel Voronezh,2.7
+24/25,24/25,6,Zenit,Spartak Moscovo,0,0,1.83,3.6,3.95,Empate,3.6
+24/25,24/25,6,Akhmat Grozny,Khimki,3,3,2.18,3.4,3.05,Empate,3.4
+24/25,24/25,6,Dinamo Moscovo,Krasnodar,0,1,2.2,3.55,2.8,Krasnodar,2.8
+24/25,24/25,6,Lokomotiv Moscovo,Rostov,3,2,2.05,3.65,3.15,Lokomotiv Moscovo,2.05
+24/25,24/25,7,Khimki,CSKA Moscovo,0,2,4.2,3.65,1.76,CSKA Moscovo,1.76
+24/25,24/25,7,Spartak Moscovo,Rubin Kazan,1,0,1.51,4.3,5.8,Spartak Moscovo,1.51
+24/25,24/25,7,Akhmat Grozny,Akron Tolyatti,0,0,1.85,3.35,3.75,Empate,3.35
+24/25,24/25,7,FC Gazovik Orenburg,Dinamo Moscovo,2,2,3.35,3.95,1.91,Empate,3.95
+24/25,24/25,7,Krylia Sovetov,Dynamo Makhachkala,0,1,1.7,3.45,4.9,Dynamo Makhachkala,4.9
+24/25,24/25,7,Lokomotiv Moscovo,Krasnodar,0,3,2.3,3.5,2.8,Krasnodar,2.8
+24/25,24/25,7,Rostov,Fakel Voronezh,4,1,1.39,4.4,7.6,Rostov,1.39
+24/25,24/25,8,Rubin Kazan,Krylia Sovetov,0,2,2.06,3.4,3.35,Krylia Sovetov,3.35
+24/25,24/25,8,FC Gazovik Orenburg,Lokomotiv Moscovo,2,4,3.15,3.85,1.99,Lokomotiv Moscovo,1.99
+24/25,24/25,8,CSKA Moscovo,Zenit,0,1,2.8,3.2,2.43,Zenit,2.43
+24/25,24/25,8,Krasnodar,Rostov,2,0,2.01,3.3,3.6,Krasnodar,2.01
+24/25,24/25,8,Dinamo Moscovo,Akhmat Grozny,4,2,1.53,4.4,5.2,Dinamo Moscovo,1.53
+24/25,24/25,8,Akron Tolyatti,Khimki,3,0,2.65,3.4,2.45,Akron Tolyatti,2.65
+24/25,24/25,8,Dynamo Makhachkala,Spartak Moscovo,1,1,5.6,3.6,1.62,Empate,3.6
+24/25,24/25,9,Akron Tolyatti,Krasnodar,2,5,4.7,3.8,1.66,Krasnodar,1.66
+24/25,24/25,9,Zenit,Fakel Voronezh,3,1,1.15,6.6,18.0,Zenit,1.15
+24/25,24/25,9,Rubin Kazan,CSKA Moscovo,1,1,3.15,3.25,2.18,Empate,3.25
+24/25,24/25,9,Khimki,FC Gazovik Orenburg,0,0,2.17,3.7,2.85,Empate,3.7
+24/25,24/25,9,Rostov,Dynamo Makhachkala,0,0,1.51,4.0,6.2,Empate,4.0
+24/25,24/25,9,Spartak Moscovo,Dinamo Moscovo,2,2,1.97,3.7,3.3,Empate,3.7
+24/25,24/25,10,Akhmat Grozny,Krylia Sovetov,1,1,2.42,3.4,2.7,Empate,3.4
+24/25,24/25,10,Fakel Voronezh,Rubin Kazan,0,0,3.1,2.85,2.46,Empate,2.85
+24/25,24/25,10,CSKA Moscovo,Akhmat Grozny,3,0,1.49,4.2,6.0,CSKA Moscovo,1.49
+24/25,24/25,10,Lokomotiv Moscovo,Spartak Moscovo,3,1,2.44,3.45,2.65,Lokomotiv Moscovo,2.44
+24/25,24/25,10,Krasnodar,Zenit,2,0,3.05,3.1,2.35,Krasnodar,3.05
+24/25,24/25,10,Rostov,Akron Tolyatti,0,2,1.5,4.3,5.6,Akron Tolyatti,5.6
+24/25,24/25,10,Krylia Sovetov,Khimki,0,0,1.94,3.55,3.6,Empate,3.55
+24/25,24/25,10,Dynamo Makhachkala,Dinamo Moscovo,0,1,3.95,3.55,1.83,Dinamo Moscovo,1.83
+24/25,24/25,11,Zenit,FC Gazovik Orenburg,1,0,1.21,6.2,11.0,Zenit,1.21
+24/25,24/25,11,Rubin Kazan,Akhmat Grozny,2,0,2.23,3.25,3.05,Rubin Kazan,2.23
+24/25,24/25,11,Spartak Moscovo,Rostov,3,0,1.83,3.6,3.95,Spartak Moscovo,1.83
+24/25,24/25,11,Fakel Voronezh,Dynamo Makhachkala,1,1,2.85,2.55,2.8,Empate,2.55
+24/25,24/25,11,Lokomotiv Moscovo,Krylia Sovetov,1,0,1.54,4.2,5.2,Lokomotiv Moscovo,1.54
+24/25,24/25,11,Dinamo Moscovo,CSKA Moscovo,1,2,2.35,3.45,2.75,CSKA Moscovo,2.75
+24/25,24/25,11,Krasnodar,Khimki,4,0,1.36,5.0,7.0,Krasnodar,1.36
+24/25,24/25,12,Akron Tolyatti,Zenit,0,5,7.4,4.9,1.35,Zenit,1.35
+24/25,24/25,12,Akhmat Grozny,Fakel Voronezh,2,3,1.77,3.35,4.7,Fakel Voronezh,4.7
+24/25,24/25,12,Khimki,Lokomotiv Moscovo,2,0,3.8,3.85,1.8,Khimki,3.8
+24/25,24/25,12,Spartak Moscovo,Krasnodar,0,3,2.25,3.05,3.05,Krasnodar,3.05
+24/25,24/25,12,Dynamo Makhachkala,CSKA Moscovo,0,1,4.8,3.35,1.74,CSKA Moscovo,1.74
+24/25,24/25,12,FC Gazovik Orenburg,Krylia Sovetov,2,2,2.43,3.5,2.6,Empate,3.5
+24/25,24/25,12,Rubin Kazan,Dinamo Moscovo,0,4,4.8,3.9,1.64,Dinamo Moscovo,1.64
+24/25,24/25,13,Dynamo Makhachkala,Akron Tolyatti,1,1,2.05,2.95,3.55,Empate,2.95
+24/25,24/25,13,CSKA Moscovo,Fakel Voronezh,0,0,1.28,4.8,11.0,Empate,4.8
+24/25,24/25,13,Rostov,Akhmat Grozny,2,3,1.8,3.6,4.1,Akhmat Grozny,4.1
+24/25,24/25,13,FC Gazovik Orenburg,Rubin Kazan,1,2,2.09,3.4,3.3,Rubin Kazan,3.3
+24/25,24/25,13,Khimki,Dinamo Moscovo,3,4,3.65,3.85,1.83,Dinamo Moscovo,1.83
+24/25,24/25,13,Zenit,Lokomotiv Moscovo,1,1,1.5,4.2,4.85,Empate,4.2
+24/25,24/25,14,Krylia Sovetov,Krasnodar,1,2,4.1,3.6,1.79,Krasnodar,1.79
+24/25,24/25,14,Dinamo Moscovo,Rostov,1,1,1.68,4.1,4.2,Empate,4.1
+24/25,24/25,14,Lokomotiv Moscovo,Rubin Kazan,1,0,1.7,3.75,4.5,Lokomotiv Moscovo,1.7
+24/25,24/25,14,Zenit,Dynamo Makhachkala,2,1,1.22,5.4,13.0,Zenit,1.22
+24/25,24/25,14,CSKA Moscovo,Spartak Moscovo,0,2,2.3,3.15,3.05,Spartak Moscovo,3.05
+24/25,24/25,14,Akron Tolyatti,Krylia Sovetov,2,0,3.45,3.4,2.02,Akron Tolyatti,3.45
+24/25,24/25,14,Fakel Voronezh,Khimki,1,1,2.7,3.0,2.7,Empate,3.0
+24/25,24/25,14,Krasnodar,FC Gazovik Orenburg,4,0,1.35,4.95,7.25,Krasnodar,1.35
+24/25,24/25,15,Lokomotiv Moscovo,Fakel Voronezh,2,1,1.33,4.7,8.6,Lokomotiv Moscovo,1.33
+24/25,24/25,15,Dynamo Makhachkala,FC Gazovik Orenburg,2,1,2.4,3.1,2.9,Dynamo Makhachkala,2.4
+24/25,24/25,15,Rostov,Khimki,3,1,1.81,3.7,3.9,Rostov,1.81
+24/25,24/25,15,Krylia Sovetov,CSKA Moscovo,1,2,3.45,3.2,2.09,CSKA Moscovo,2.09
+24/25,24/25,15,Spartak Moscovo,Akron Tolyatti,4,0,1.37,4.8,7.0,Spartak Moscovo,1.37
+24/25,24/25,15,Akhmat Grozny,Zenit,1,2,6.2,4.2,1.48,Zenit,1.48
+24/25,24/25,15,Rubin Kazan,Krasnodar,1,1,3.95,3.4,1.89,Empate,3.4
+24/25,24/25,16,Rubin Kazan,Akron Tolyatti,3,0,1.87,3.45,3.95,Rubin Kazan,1.87
+24/25,24/25,16,FC Gazovik Orenburg,Zenit,0,1,7.0,4.7,1.38,Zenit,1.38
+24/25,24/25,16,CSKA Moscovo,Rostov,1,2,1.85,3.55,3.9,Rostov,3.9
+24/25,24/25,16,Khimki,Krasnodar,2,2,4.2,3.85,1.72,Empate,3.85
+24/25,24/25,16,Spartak Moscovo,Lokomotiv Moscovo,5,2,2.0,3.45,3.2,Spartak Moscovo,2.0
+24/25,24/25,16,Krylia Sovetov,Akhmat Grozny,2,1,2.34,3.15,2.95,Krylia Sovetov,2.34
+24/25,24/25,16,Fakel Voronezh,Dinamo Moscovo,1,1,3.6,3.4,1.97,Empate,3.4
+24/25,24/25,17,Akron Tolyatti,FC Gazovik Orenburg,1,0,2.1,3.35,3.15,Akron Tolyatti,2.1
+24/25,24/25,17,CSKA Moscovo,Rubin Kazan,2,2,1.84,3.3,4.3,Empate,3.3
+24/25,24/25,17,Lokomotiv Moscovo,Khimki,1,3,1.58,4.3,4.8,Khimki,4.8
+24/25,24/25,17,Zenit,Krylia Sovetov,2,3,1.26,5.4,9.8,Krylia Sovetov,9.8
+24/25,24/25,17,Dynamo Makhachkala,Fakel Voronezh,0,0,2.23,2.75,3.7,Empate,2.75
+24/25,24/25,17,Krasnodar,Spartak Moscovo,0,3,2.23,3.25,3.1,Spartak Moscovo,3.1
+24/25,24/25,18,Akhmat Grozny,Dinamo Moscovo,1,1,2.95,3.7,2.13,Empate,3.7
+24/25,24/25,18,Rostov,Krylia Sovetov,3,1,1.68,3.8,4.6,Rostov,1.68
+24/25,24/25,18,Zenit,Akron Tolyatti,1,2,1.14,7.6,14.0,Akron Tolyatti,14.0
+24/25,24/25,18,Dynamo Makhachkala,Rubin Kazan,2,3,2.75,2.7,2.85,Rubin Kazan,2.85
+24/25,24/25,18,Dinamo Moscovo,Khimki,4,1,1.42,5.0,5.8,Dinamo Moscovo,1.42
+24/25,24/25,18,Fakel Voronezh,CSKA Moscovo,0,1,4.1,2.95,2.02,CSKA Moscovo,2.02
+24/25,24/25,18,Akhmat Grozny,FC Gazovik Orenburg,1,0,1.8,3.55,4.1,Akhmat Grozny,1.8
+24/25,24/25,18,Krasnodar,Lokomotiv Moscovo,0,0,1.84,3.75,3.7,Empate,3.75
+24/25,24/25,19,Dynamo Makhachkala,Lokomotiv Moscovo,1,1,3.2,3.05,2.27,Empate,3.05
+24/25,24/25,19,Zenit,CSKA Moscovo,0,0,1.83,3.4,4.3,Empate,3.4
+24/25,24/25,19,Akhmat Grozny,Rubin Kazan,2,1,2.21,3.1,3.3,Akhmat Grozny,2.21
+24/25,24/25,19,Krasnodar,Krylia Sovetov,1,1,1.43,4.4,6.6,Empate,4.4
+24/25,24/25,19,Khimki,Fakel Voronezh,1,0,2.23,3.05,3.3,Khimki,2.23
+24/25,24/25,19,Spartak Moscovo,FC Gazovik Orenburg,2,0,1.24,6.0,9.2,Spartak Moscovo,1.24
+24/25,24/25,19,Rostov,Dinamo Moscovo,1,1,2.55,3.55,2.48,Empate,3.55
+24/25,24/25,20,Lokomotiv Moscovo,Akhmat Grozny,1,1,1.74,3.9,4.1,Empate,3.9
+24/25,24/25,20,FC Gazovik Orenburg,Rostov,1,2,3.45,3.75,1.93,Rostov,1.93
+24/25,24/25,20,Fakel Voronezh,Zenit,0,2,7.4,4.1,1.43,Zenit,1.43
+24/25,24/25,20,CSKA Moscovo,Khimki,1,0,1.69,3.75,4.6,CSKA Moscovo,1.69
+24/25,24/25,20,Dinamo Moscovo,Dynamo Makhachkala,4,0,1.68,3.7,4.8,Dinamo Moscovo,1.68
+24/25,24/25,20,Krylia Sovetov,Akron Tolyatti,0,2,2.2,3.2,3.25,Akron Tolyatti,3.25
+24/25,24/25,20,Rubin Kazan,Spartak Moscovo,2,1,4.6,3.5,1.75,Rubin Kazan,4.6
+24/25,24/25,21,FC Gazovik Orenburg,Fakel Voronezh,1,0,2.42,3.1,2.9,FC Gazovik Orenburg,2.42
+24/25,24/25,21,Khimki,Akhmat Grozny,1,1,3.1,3.35,2.19,Empate,3.35
+24/25,24/25,21,Dynamo Makhachkala,Krylia Sovetov,4,0,2.33,3.05,3.1,Dynamo Makhachkala,2.33
+24/25,24/25,21,Lokomotiv Moscovo,Dinamo Moscovo,2,1,2.18,3.5,3.0,Lokomotiv Moscovo,2.18
+24/25,24/25,21,Akron Tolyatti,CSKA Moscovo,1,2,3.8,3.35,1.93,CSKA Moscovo,1.93
+24/25,24/25,21,Rostov,Krasnodar,0,1,2.3,3.3,2.9,Krasnodar,2.9
+24/25,24/25,21,Spartak Moscovo,Zenit,2,1,2.6,2.95,2.8,Spartak Moscovo,2.6
+24/25,24/25,22,Krylia Sovetov,Lokomotiv Moscovo,5,1,3.7,3.45,1.94,Krylia Sovetov,3.7
+24/25,24/25,22,Dinamo Moscovo,FC Gazovik Orenburg,5,1,1.41,4.9,6.0,Dinamo Moscovo,1.41
+24/25,24/25,22,CSKA Moscovo,Dynamo Makhachkala,2,0,1.69,3.4,5.4,CSKA Moscovo,1.69
+24/25,24/25,22,Krasnodar,Fakel Voronezh,5,0,1.48,4.0,6.6,Krasnodar,1.48
+24/25,24/25,22,Akhmat Grozny,Spartak Moscovo,0,0,3.75,3.35,1.95,Empate,3.35
+24/25,24/25,22,Zenit,Rubin Kazan,4,0,1.25,5.4,11.0,Zenit,1.25
+24/25,24/25,23,Akron Tolyatti,Rostov,2,3,3.25,3.45,2.08,Rostov,2.08
+24/25,24/25,23,Krylia Sovetov,Rubin Kazan,1,1,2.18,3.15,3.3,Empate,3.15
+24/25,24/25,23,Fakel Voronezh,Akhmat Grozny,0,0,3.8,3.1,2.03,Empate,3.1
+24/25,24/25,23,Lokomotiv Moscovo,Zenit,1,1,4.0,3.65,1.81,Empate,3.65
+24/25,24/25,23,Krasnodar,Akron Tolyatti,1,0,1.35,5.0,7.0,Krasnodar,1.35
+24/25,24/25,23,Dynamo Makhachkala,Khimki,4,1,2.04,3.3,3.5,Dynamo Makhachkala,2.04
+24/25,24/25,23,Rostov,Spartak Moscovo,0,3,2.85,3.4,2.29,Spartak Moscovo,2.29
+24/25,24/25,23,CSKA Moscovo,Dinamo Moscovo,3,1,2.22,3.4,3.0,CSKA Moscovo,2.22
+24/25,24/25,24,Spartak Moscovo,Dynamo Makhachkala,1,2,1.28,5.0,10.0,Dynamo Makhachkala,10.0
+24/25,24/25,24,FC Gazovik Orenburg,CSKA Moscovo,0,2,3.0,3.4,2.22,CSKA Moscovo,2.22
+24/25,24/25,24,Rubin Kazan,Lokomotiv Moscovo,1,0,2.8,3.3,2.38,Rubin Kazan,2.8
+24/25,24/25,24,Akhmat Grozny,Rostov,2,1,2.14,3.35,3.2,Akhmat Grozny,2.14
+24/25,24/25,24,Akron Tolyatti,Fakel Voronezh,1,0,1.89,3.35,4.1,Akron Tolyatti,1.89
+24/25,24/25,24,Zenit,Krasnodar,4,1,1.61,3.95,5.0,Zenit,1.61
+24/25,24/25,24,Khimki,Krylia Sovetov,1,3,3.0,3.05,2.39,Krylia Sovetov,2.39
+24/25,24/25,25,FC Gazovik Orenburg,Dynamo Makhachkala,2,1,2.12,3.45,3.15,FC Gazovik Orenburg,2.12
+24/25,24/25,25,Akron Tolyatti,Spartak Moscovo,2,3,4.6,4.1,1.62,Spartak Moscovo,1.62
+24/25,24/25,25,Krasnodar,Akhmat Grozny,3,1,1.79,3.45,4.4,Krasnodar,1.79
+24/25,24/25,25,Dinamo Moscovo,Rubin Kazan,3,1,1.75,3.7,4.2,Dinamo Moscovo,1.75
+24/25,24/25,25,Fakel Voronezh,Rostov,0,2,3.15,3.3,2.17,Rostov,2.17
+24/25,24/25,25,Zenit,Khimki,1,0,1.11,8.0,17.0,Zenit,1.11
+24/25,24/25,25,CSKA Moscovo,Krylia Sovetov,1,1,1.95,3.4,3.75,Empate,3.4
+24/25,24/25,26,Dynamo Makhachkala,Krasnodar,2,3,4.9,3.45,1.72,Krasnodar,1.72
+24/25,24/25,26,Dinamo Moscovo,Zenit,1,1,4.2,3.75,1.76,Empate,3.75
+24/25,24/25,26,Rostov,Lokomotiv Moscovo,1,1,2.3,3.6,2.75,Empate,3.6
+24/25,24/25,26,Spartak Moscovo,CSKA Moscovo,1,2,1.64,3.7,5.0,CSKA Moscovo,5.0
+24/25,24/25,26,Krylia Sovetov,FC Gazovik Orenburg,2,0,1.81,3.85,3.8,Krylia Sovetov,1.81
+24/25,24/25,26,Khimki,Akron Tolyatti,2,2,2.55,3.2,2.7,Empate,3.2
+24/25,24/25,26,Rubin Kazan,Fakel Voronezh,2,1,2.1,3.05,3.65,Rubin Kazan,2.1
+24/25,24/25,27,Akron Tolyatti,Dynamo Makhachkala,1,0,2.21,3.2,3.2,Akron Tolyatti,2.21
+24/25,24/25,27,Lokomotiv Moscovo,FC Gazovik Orenburg,1,1,1.72,4.1,3.95,Empate,4.1
+24/25,24/25,27,Krasnodar,Rubin Kazan,2,1,1.37,4.7,7.2,Krasnodar,1.37
+24/25,24/25,27,Fakel Voronezh,Spartak Moscovo,0,0,5.25,3.85,1.55,Empate,3.85
+24/25,24/25,27,Akhmat Grozny,CSKA Moscovo,1,1,2.32,3.25,3.0,Empate,3.25
+24/25,24/25,27,Khimki,Rostov,1,1,2.42,3.65,2.55,Empate,3.65
+24/25,24/25,28,Krylia Sovetov,Dinamo Moscovo,1,3,2.45,3.55,2.55,Dinamo Moscovo,2.55
+24/25,24/25,28,FC Gazovik Orenburg,Khimki,1,1,2.0,3.8,3.0,Empate,3.8
+24/25,24/25,28,Dynamo Makhachkala,Zenit,0,1,6.8,3.9,1.49,Zenit,1.49
+24/25,24/25,28,CSKA Moscovo,Krasnodar,1,0,2.65,3.25,2.55,CSKA Moscovo,2.65
+24/25,24/25,28,Akron Tolyatti,Akhmat Grozny,3,2,3.1,3.3,2.2,Akron Tolyatti,3.1
+24/25,24/25,28,Fakel Voronezh,Lokomotiv Moscovo,0,1,2.6,3.2,2.6,Lokomotiv Moscovo,2.6
+24/25,24/25,28,Dinamo Moscovo,Spartak Moscovo,2,0,2.6,3.55,2.41,Dinamo Moscovo,2.6
+24/25,24/25,28,Rubin Kazan,Rostov,1,0,2.31,3.2,3.0,Rubin Kazan,2.31
+24/25,24/25,29,FC Gazovik Orenburg,Krasnodar,1,2,4.5,4.2,1.63,Krasnodar,1.63
+24/25,24/25,29,Khimki,Rubin Kazan,3,2,2.2,3.4,3.0,Khimki,2.2
+24/25,24/25,29,Krylia Sovetov,Spartak Moscovo,0,2,2.6,3.55,2.41,Spartak Moscovo,2.41
+24/25,24/25,29,Akhmat Grozny,Dynamo Makhachkala,1,1,2.05,3.4,3.35,Empate,3.4
+24/25,24/25,29,Dinamo Moscovo,Akron Tolyatti,2,1,1.38,5.4,6.0,Dinamo Moscovo,1.38
+24/25,24/25,29,Rostov,Zenit,0,1,7.8,4.9,1.34,Zenit,1.34
+24/25,24/25,30,Lokomotiv Moscovo,CSKA Moscovo,2,2,2.9,3.15,2.3,Empate,3.15
+24/25,24/25,30,Akron Tolyatti,Lokomotiv Moscovo,1,4,2.46,3.85,2.42,Lokomotiv Moscovo,2.42
+24/25,24/25,30,Dynamo Makhachkala,Rostov,1,1,2.27,3.35,2.95,Empate,3.35
+24/25,24/25,30,Fakel Voronezh,Krylia Sovetov,1,1,2.47,3.15,2.8,Empate,3.15
+24/25,24/25,30,Krasnodar,Dinamo Moscovo,3,0,1.61,4.5,4.4,Krasnodar,1.61
+24/25,24/25,30,Rubin Kazan,FC Gazovik Orenburg,4,2,1.73,4.1,3.9,Rubin Kazan,1.73
+24/25,24/25,30,Spartak Moscovo,Khimki,5,0,1.4,4.9,6.2,Spartak Moscovo,1.4
+24/25,24/25,30,Zenit,Akhmat Grozny,3,0,1.21,6.2,11.0,Zenit,1.21
+24/25,24/25,31,Ural,Akhmat Grozny,2,1,2.55,3.05,2.8,Ural,2.55
+24/25,24/25,31,Akhmat Grozny,Ural,2,0,1.71,3.75,4.5,Akhmat Grozny,1.71

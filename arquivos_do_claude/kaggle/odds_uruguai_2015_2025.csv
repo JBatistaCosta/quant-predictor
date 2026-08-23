@@ -1,0 +1,2343 @@
+temporada,temporada_dropdown,semana,time_casa,time_fora,gols_casa,gols_fora,odd_casa,odd_empate,odd_fora,vencedor,odd_vencedora
+15/16,15/16,1,CA River Plate,CA Fenix,1,2,1.62,3.6,4.5,CA Fenix,4.5
+15/16,15/16,1,Plaza Colónia,Club Atlético Rentistas,1,2,2.55,3.2,2.45,Club Atlético Rentistas,2.45
+15/16,15/16,1,Nacional de Futebol,Villa Teresa,4,1,1.25,5.25,10.0,Nacional de Futebol,1.25
+15/16,15/16,1,CA Cerro,CA Penarol,0,3,4.5,3.6,1.67,CA Penarol,1.67
+15/16,15/16,1,El Tanque Sisley,Racing Clube Montevideo,2,3,2.7,3.1,2.5,Racing Clube Montevideo,2.5
+15/16,15/16,1,Juventud de las Piedras,Danubio,0,2,2.88,3.3,2.25,Danubio,2.25
+15/16,15/16,1,Montevideo Wanderers FC,Liverpool FC,1,1,2.2,3.2,2.88,Empate,3.2
+15/16,15/16,6,Danubio,Instituição Atlética Sud-Americana,1,1,1.8,3.4,3.8,Empate,3.4
+15/16,15/16,6,Liverpool FC,Defensor Sporting,2,1,3.4,3.3,1.95,Liverpool FC,3.4
+15/16,15/16,6,Villa Teresa,El Tanque Sisley,0,1,2.88,3.25,2.2,El Tanque Sisley,2.2
+15/16,15/16,6,CA Penarol,Racing Clube Montevideo,3,1,1.5,3.75,5.5,CA Penarol,1.5
+15/16,15/16,6,Club Atlético Rentistas,CA Fenix,0,0,2.4,3.2,2.6,Empate,3.2
+15/16,15/16,6,Montevideo Wanderers FC,Juventud de las Piedras,0,1,1.67,3.4,4.5,Juventud de las Piedras,4.5
+15/16,15/16,7,Instituição Atlética Sud-Americana,Club Atlético Rentistas,3,3,2.2,3.25,2.88,Empate,3.25
+15/16,15/16,7,Racing Clube Montevideo,Danubio,0,0,2.2,3.25,2.88,Empate,3.25
+15/16,15/16,7,El Tanque Sisley,Nacional de Futebol,1,1,4.2,3.6,1.67,Empate,3.6
+15/16,15/16,7,Defensor Sporting,Villa Teresa,1,1,1.4,4.0,7.0,Empate,4.0
+15/16,15/16,8,Club Atlético Rentistas,Racing Clube Montevideo,0,0,2.4,3.2,2.6,Empate,3.2
+15/16,15/16,8,Danubio,CA Penarol,0,1,2.5,3.2,2.5,CA Penarol,2.5
+15/16,15/16,8,Villa Teresa,CA Fenix,0,2,3.1,3.2,2.1,CA Fenix,2.1
+15/16,15/16,8,Juventud de las Piedras,CA River Plate,2,3,3.0,3.1,2.2,CA River Plate,2.2
+15/16,15/16,8,Liverpool FC,Instituição Atlética Sud-Americana,1,0,1.83,3.3,3.8,Liverpool FC,1.83
+15/16,15/16,8,Montevideo Wanderers FC,El Tanque Sisley,1,0,1.8,3.25,4.0,Montevideo Wanderers FC,1.8
+15/16,15/16,8,Plaza Colónia,CA Cerro,0,1,2.7,3.1,2.4,CA Cerro,2.4
+15/16,15/16,8,Nacional de Futebol,Defensor Sporting,4,0,1.75,3.4,4.0,Nacional de Futebol,1.75
+15/16,15/16,9,Defensor Sporting,Montevideo Wanderers FC,2,3,2.3,3.3,2.8,Montevideo Wanderers FC,2.8
+15/16,15/16,9,Instituição Atlética Sud-Americana,Villa Teresa,3,1,2.0,3.1,3.4,Instituição Atlética Sud-Americana,2.0
+15/16,15/16,9,CA Fenix,Nacional de Futebol,0,2,4.6,3.6,1.62,Nacional de Futebol,1.62
+15/16,15/16,9,El Tanque Sisley,Plaza Colónia,0,1,1.95,3.3,3.4,Plaza Colónia,3.4
+15/16,15/16,9,Racing Clube Montevideo,Liverpool FC,3,1,2.4,3.25,2.7,Racing Clube Montevideo,2.4
+15/16,15/16,9,CA Penarol,Club Atlético Rentistas,1,0,1.44,4.0,6.5,CA Penarol,1.44
+15/16,15/16,10,Plaza Colónia,Defensor Sporting,0,0,2.8,3.3,2.3,Empate,3.3
+15/16,15/16,10,Club Atlético Rentistas,Danubio,0,2,2.8,3.1,2.3,Danubio,2.3
+15/16,15/16,10,Montevideo Wanderers FC,CA Fenix,1,1,2.0,3.25,3.3,Empate,3.25
+15/16,15/16,10,Nacional de Futebol,Instituição Atlética Sud-Americana,1,2,1.33,4.5,7.0,Instituição Atlética Sud-Americana,7.0
+15/16,15/16,10,Juventud de las Piedras,El Tanque Sisley,1,0,2.3,3.2,2.9,Juventud de las Piedras,2.3
+15/16,15/16,10,Villa Teresa,Racing Clube Montevideo,1,2,4.33,3.25,1.8,Racing Clube Montevideo,1.8
+15/16,15/16,10,Liverpool FC,CA Penarol,1,3,3.4,3.5,1.91,CA Penarol,1.91
+15/16,15/16,11,CA Fenix,Plaza Colónia,0,0,1.91,3.1,3.75,Empate,3.1
+15/16,15/16,11,Instituição Atlética Sud-Americana,Montevideo Wanderers FC,1,0,3.0,3.1,2.2,Instituição Atlética Sud-Americana,3.0
+15/16,15/16,11,Racing Clube Montevideo,Nacional de Futebol,2,2,3.9,3.3,1.8,Empate,3.3
+15/16,15/16,11,Defensor Sporting,Juventud de las Piedras,4,1,1.91,3.2,3.6,Defensor Sporting,1.91
+15/16,15/16,11,CA River Plate,Club Atlético Rentistas,2,3,1.53,3.75,5.0,Club Atlético Rentistas,5.0
+15/16,15/16,11,El Tanque Sisley,CA Cerro,2,3,2.88,3.1,2.25,CA Cerro,2.25
+15/16,15/16,11,CA Penarol,Villa Teresa,4,1,1.17,6.0,11.0,CA Penarol,1.17
+15/16,15/16,12,Plaza Colónia,Instituição Atlética Sud-Americana,1,1,2.4,3.2,2.6,Empate,3.2
+15/16,15/16,12,El Tanque Sisley,CA River Plate,2,1,3.8,3.25,1.91,El Tanque Sisley,3.8
+15/16,15/16,12,CA Cerro,Defensor Sporting,2,3,3.1,3.5,2.05,Defensor Sporting,2.05
+15/16,15/16,12,Montevideo Wanderers FC,Racing Clube Montevideo,2,2,2.2,3.2,3.0,Empate,3.2
+15/16,15/16,12,Villa Teresa,Danubio,0,1,5.25,3.75,1.57,Danubio,1.57
+15/16,15/16,12,Juventud de las Piedras,CA Fenix,0,1,2.6,3.4,2.4,CA Fenix,2.4
+15/16,15/16,12,Liverpool FC,Club Atlético Rentistas,0,3,2.15,3.1,3.2,Club Atlético Rentistas,3.2
+15/16,15/16,12,Nacional de Futebol,CA Penarol,1,1,2.5,3.2,2.6,Empate,3.2
+15/16,15/16,13,Defensor Sporting,El Tanque Sisley,2,2,1.5,4.0,5.75,Empate,4.0
+15/16,15/16,13,CA River Plate,Liverpool FC,2,2,1.91,3.4,3.4,Empate,3.4
+15/16,15/16,13,Club Atlético Rentistas,Villa Teresa,1,0,1.67,3.75,4.33,Club Atlético Rentistas,1.67
+15/16,15/16,13,Danubio,Nacional de Futebol,2,0,2.9,3.5,2.15,Danubio,2.9
+15/16,15/16,13,Instituição Atlética Sud-Americana,Juventud de las Piedras,1,1,1.95,3.6,3.25,Empate,3.6
+15/16,15/16,13,Racing Clube Montevideo,Plaza Colónia,2,2,1.73,3.5,4.0,Empate,3.5
+15/16,15/16,13,CA Penarol,Montevideo Wanderers FC,1,1,1.62,4.0,5.0,Empate,4.0
+15/16,15/16,14,Defensor Sporting,CA River Plate,1,2,2.15,3.2,3.2,CA River Plate,3.2
+15/16,15/16,14,El Tanque Sisley,CA Fenix,1,0,2.4,3.4,2.6,El Tanque Sisley,2.4
+15/16,15/16,14,CA Cerro,Instituição Atlética Sud-Americana,2,0,2.0,3.3,3.4,CA Cerro,2.0
+15/16,15/16,14,Plaza Colónia,CA Penarol,1,1,9.0,4.2,1.33,Empate,4.2
+15/16,15/16,14,Montevideo Wanderers FC,Danubio,0,0,2.25,3.2,3.0,Empate,3.2
+15/16,15/16,14,Juventud de las Piedras,Racing Clube Montevideo,3,2,3.0,3.3,2.2,Juventud de las Piedras,3.0
+15/16,15/16,14,Villa Teresa,Liverpool FC,0,1,3.75,3.3,1.91,Liverpool FC,1.91
+15/16,15/16,14,Nacional de Futebol,Club Atlético Rentistas,3,2,1.44,4.33,6.0,Nacional de Futebol,1.44
+15/16,15/16,15,CA Fenix,Defensor Sporting,3,0,3.0,3.5,2.1,CA Fenix,3.0
+15/16,15/16,15,CA River Plate,Villa Teresa,4,0,1.44,4.0,6.5,CA River Plate,1.44
+15/16,15/16,15,Club Atlético Rentistas,Montevideo Wanderers FC,1,2,2.45,3.4,2.55,Montevideo Wanderers FC,2.55
+15/16,15/16,15,Danubio,Plaza Colónia,2,2,1.6,3.6,5.25,Empate,3.6
+15/16,15/16,15,Instituição Atlética Sud-Americana,El Tanque Sisley,1,1,2.1,3.25,3.2,Empate,3.25
+15/16,15/16,15,Racing Clube Montevideo,CA Cerro,0,2,2.38,3.25,2.75,CA Cerro,2.75
+15/16,15/16,15,CA Penarol,Juventud de las Piedras,1,0,1.25,5.25,10.0,CA Penarol,1.25
+15/16,15/16,15,Liverpool FC,Nacional de Futebol,2,3,4.2,3.75,1.7,Nacional de Futebol,1.7
+15/16,15/16,16,CA Fenix,CA River Plate,1,1,1.8,3.6,3.8,Empate,3.6
+15/16,15/16,16,Club Atlético Rentistas,Plaza Colónia,1,3,2.05,3.2,3.2,Plaza Colónia,3.2
+15/16,15/16,16,Liverpool FC,Montevideo Wanderers FC,1,4,2.7,3.3,2.38,Montevideo Wanderers FC,2.38
+15/16,15/16,16,Instituição Atlética Sud-Americana,Defensor Sporting,2,0,2.7,3.1,2.5,Instituição Atlética Sud-Americana,2.7
+15/16,15/16,16,Villa Teresa,Nacional de Futebol,0,3,10.0,5.0,1.22,Nacional de Futebol,1.22
+15/16,15/16,16,CA Penarol,CA Cerro,2,1,1.44,4.0,6.5,CA Penarol,1.44
+15/16,15/16,16,Danubio,Juventud de las Piedras,2,1,1.75,3.5,4.2,Danubio,1.75
+15/16,15/16,16,Racing Clube Montevideo,El Tanque Sisley,2,0,2.15,3.5,2.88,Racing Clube Montevideo,2.15
+15/16,15/16,17,CA Fenix,Instituição Atlética Sud-Americana,2,0,2.15,3.1,3.3,CA Fenix,2.15
+15/16,15/16,17,CA River Plate,Nacional de Futebol,0,3,5.5,4.2,1.44,Nacional de Futebol,1.44
+15/16,15/16,17,Montevideo Wanderers FC,Villa Teresa,2,3,1.4,4.5,6.5,Villa Teresa,6.5
+15/16,15/16,17,El Tanque Sisley,CA Penarol,0,2,5.5,3.8,1.53,CA Penarol,1.53
+15/16,15/16,17,Plaza Colónia,Liverpool FC,1,0,2.5,3.3,2.55,Plaza Colónia,2.5
+15/16,15/16,17,CA Cerro,Danubio,1,0,2.6,3.4,2.38,CA Cerro,2.6
+15/16,15/16,17,Club Atlético Rentistas,Juventud de las Piedras,2,1,2.15,3.3,3.1,Club Atlético Rentistas,2.15
+15/16,15/16,17,Defensor Sporting,Racing Clube Montevideo,1,3,1.8,3.4,4.0,Racing Clube Montevideo,4.0
+15/16,15/16,18,Club Atlético Rentistas,CA Cerro,0,0,2.3,3.3,2.8,Empate,3.3
+15/16,15/16,18,Racing Clube Montevideo,CA Fenix,2,2,2.1,3.3,3.2,Empate,3.3
+15/16,15/16,18,Instituição Atlética Sud-Americana,CA River Plate,2,1,2.88,3.1,2.38,Instituição Atlética Sud-Americana,2.88
+15/16,15/16,18,Nacional de Futebol,Montevideo Wanderers FC,2,1,1.62,3.6,5.0,Nacional de Futebol,1.62
+15/16,15/16,18,Danubio,El Tanque Sisley,3,3,1.67,3.4,5.0,Empate,3.4
+15/16,15/16,18,Liverpool FC,Juventud de las Piedras,1,3,2.1,3.25,3.2,Juventud de las Piedras,3.2
+15/16,15/16,18,Villa Teresa,Plaza Colónia,1,1,3.0,3.1,2.3,Empate,3.1
+15/16,15/16,18,CA Penarol,Defensor Sporting,5,1,1.73,3.75,4.5,CA Penarol,1.73
+15/16,15/16,19,CA River Plate,Montevideo Wanderers FC,1,1,2.88,3.1,2.38,Empate,3.1
+15/16,15/16,19,Instituição Atlética Sud-Americana,Racing Clube Montevideo,2,2,2.25,3.3,2.88,Empate,3.3
+15/16,15/16,19,Juventud de las Piedras,Villa Teresa,0,1,1.85,3.25,4.0,Villa Teresa,4.0
+15/16,15/16,19,CA Fenix,CA Penarol,2,0,4.75,3.8,1.62,CA Fenix,4.75
+15/16,15/16,19,CA Cerro,Liverpool FC,1,0,2.2,3.2,3.0,CA Cerro,2.2
+15/16,15/16,19,Defensor Sporting,Danubio,3,2,2.15,3.2,3.2,Defensor Sporting,2.15
+15/16,15/16,19,El Tanque Sisley,Club Atlético Rentistas,2,1,2.2,3.25,3.0,El Tanque Sisley,2.2
+15/16,15/16,19,Plaza Colónia,Nacional de Futebol,2,0,3.75,3.5,1.85,Plaza Colónia,3.75
+15/16,15/16,20,Liverpool FC,El Tanque Sisley,0,1,2.2,3.25,3.0,El Tanque Sisley,3.0
+15/16,15/16,20,Villa Teresa,CA Cerro,0,1,3.75,3.3,1.91,CA Cerro,1.91
+15/16,15/16,20,CA Penarol,Instituição Atlética Sud-Americana,1,1,1.5,3.8,6.0,Empate,3.8
+15/16,15/16,20,Danubio,CA Fenix,0,2,2.0,3.4,3.75,CA Fenix,3.75
+15/16,15/16,20,Club Atlético Rentistas,Defensor Sporting,0,1,2.7,3.25,2.45,Defensor Sporting,2.45
+15/16,15/16,20,Montevideo Wanderers FC,Plaza Colónia,0,1,2.0,3.5,3.2,Plaza Colónia,3.2
+15/16,15/16,20,Racing Clube Montevideo,CA River Plate,0,1,1.8,3.3,4.75,CA River Plate,4.75
+15/16,15/16,20,Nacional de Futebol,Juventud de las Piedras,1,1,1.33,4.33,9.0,Empate,4.33
+15/16,15/16,21,El Tanque Sisley,Villa Teresa,0,1,2.05,3.2,3.4,Villa Teresa,3.4
+15/16,15/16,21,CA Fenix,Club Atlético Rentistas,1,1,1.95,3.4,3.5,Empate,3.4
+15/16,15/16,21,Instituição Atlética Sud-Americana,Danubio,2,1,2.63,3.4,2.38,Instituição Atlética Sud-Americana,2.63
+15/16,15/16,21,Racing Clube Montevideo,CA Penarol,0,1,3.75,3.5,1.85,CA Penarol,1.85
+15/16,15/16,21,CA River Plate,Plaza Colónia,0,1,2.0,3.1,3.5,Plaza Colónia,3.5
+15/16,15/16,21,CA Cerro,Nacional de Futebol,1,0,4.33,3.4,1.75,CA Cerro,4.33
+15/16,15/16,21,Juventud de las Piedras,Montevideo Wanderers FC,3,3,2.6,3.3,2.45,Empate,3.3
+15/16,15/16,21,Defensor Sporting,Liverpool FC,1,2,1.85,3.4,3.8,Liverpool FC,3.8
+15/16,15/16,22,Danubio,Racing Clube Montevideo,1,1,2.0,3.25,3.5,Empate,3.25
+15/16,15/16,22,Villa Teresa,Defensor Sporting,2,2,2.88,3.2,2.3,Empate,3.2
+15/16,15/16,22,Plaza Colónia,Juventud de las Piedras,1,2,1.83,3.6,3.75,Juventud de las Piedras,3.75
+15/16,15/16,22,Nacional de Futebol,El Tanque Sisley,3,1,1.57,3.8,5.25,Nacional de Futebol,1.57
+15/16,15/16,22,Montevideo Wanderers FC,CA Cerro,3,1,2.35,3.2,2.8,Montevideo Wanderers FC,2.35
+15/16,15/16,22,Club Atlético Rentistas,Instituição Atlética Sud-Americana,1,0,2.2,3.25,3.0,Club Atlético Rentistas,2.2
+15/16,15/16,22,Liverpool FC,CA Fenix,1,1,2.15,3.25,3.1,Empate,3.25
+15/16,15/16,22,CA Penarol,CA River Plate,0,2,1.6,3.6,5.25,CA River Plate,5.25
+15/16,15/16,23,CA Fenix,Villa Teresa,1,0,2.3,3.3,2.8,CA Fenix,2.3
+15/16,15/16,23,Racing Clube Montevideo,Club Atlético Rentistas,0,3,2.1,3.25,3.2,Club Atlético Rentistas,3.2
+15/16,15/16,23,CA Penarol,Danubio,2,1,2.0,3.4,3.4,CA Penarol,2.0
+15/16,15/16,23,Instituição Atlética Sud-Americana,Liverpool FC,0,3,2.7,3.3,2.38,Liverpool FC,2.38
+15/16,15/16,23,CA Cerro,Plaza Colónia,0,0,2.2,3.4,2.88,Empate,3.4
+15/16,15/16,23,CA River Plate,Juventud de las Piedras,0,0,1.73,3.6,4.2,Empate,3.6
+15/16,15/16,23,El Tanque Sisley,Montevideo Wanderers FC,1,3,3.1,3.4,2.1,Montevideo Wanderers FC,2.1
+15/16,15/16,23,Defensor Sporting,Nacional de Futebol,2,4,3.2,3.25,2.1,Nacional de Futebol,2.1
+15/16,15/16,25,Liverpool FC,Racing Clube Montevideo,3,2,2.5,3.3,2.55,Liverpool FC,2.5
+15/16,15/16,25,Montevideo Wanderers FC,Defensor Sporting,0,0,2.15,3.4,3.0,Empate,3.4
+15/16,15/16,25,Plaza Colónia,El Tanque Sisley,2,1,1.75,3.4,4.33,Plaza Colónia,1.75
+15/16,15/16,25,Nacional de Futebol,CA Fenix,1,0,1.45,4.33,6.0,Nacional de Futebol,1.45
+15/16,15/16,25,Danubio,CA River Plate,0,3,2.1,3.5,3.0,CA River Plate,3.0
+15/16,15/16,25,Juventud de las Piedras,CA Cerro,1,3,2.75,3.1,2.63,CA Cerro,2.63
+15/16,15/16,25,Villa Teresa,Instituição Atlética Sud-Americana,0,1,2.2,3.1,3.5,Instituição Atlética Sud-Americana,3.5
+15/16,15/16,25,Club Atlético Rentistas,CA Penarol,1,3,4.5,3.8,1.73,CA Penarol,1.73
+15/16,15/16,26,Racing Clube Montevideo,Villa Teresa,2,3,1.91,3.4,3.75,Villa Teresa,3.75
+15/16,15/16,26,Danubio,Club Atlético Rentistas,1,2,2.1,3.25,3.0,Club Atlético Rentistas,3.0
+15/16,15/16,26,El Tanque Sisley,Juventud de las Piedras,0,2,3.0,3.1,2.3,Juventud de las Piedras,2.3
+15/16,15/16,26,CA Penarol,Liverpool FC,1,0,1.65,3.6,4.75,CA Penarol,1.65
+15/16,15/16,26,CA Fenix,Montevideo Wanderers FC,2,1,2.63,3.2,2.5,CA Fenix,2.63
+15/16,15/16,26,Defensor Sporting,Plaza Colónia,1,1,2.3,3.0,3.4,Empate,3.0
+15/16,15/16,26,Instituição Atlética Sud-Americana,Nacional de Futebol,1,1,5.25,3.75,1.57,Empate,3.75
+15/16,15/16,27,Montevideo Wanderers FC,Instituição Atlética Sud-Americana,0,2,2.1,3.5,3.3,Instituição Atlética Sud-Americana,3.3
+15/16,15/16,27,Plaza Colónia,CA Fenix,1,0,2.2,3.2,3.0,Plaza Colónia,2.2
+15/16,15/16,27,Villa Teresa,CA Penarol,0,3,6.0,3.75,1.5,CA Penarol,1.5
+15/16,15/16,27,CA Cerro,El Tanque Sisley,2,0,1.75,3.4,4.33,CA Cerro,1.75
+15/16,15/16,27,Club Atlético Rentistas,CA River Plate,2,1,2.8,3.5,2.2,Club Atlético Rentistas,2.8
+15/16,15/16,27,Juventud de las Piedras,Defensor Sporting,2,1,2.88,3.1,2.38,Juventud de las Piedras,2.88
+15/16,15/16,27,Liverpool FC,Danubio,0,3,2.05,3.1,3.25,Danubio,3.25
+15/16,15/16,27,Nacional de Futebol,Racing Clube Montevideo,1,0,1.4,4.0,7.5,Nacional de Futebol,1.4
+15/16,15/16,28,CA Fenix,Juventud de las Piedras,2,2,2.05,3.2,3.4,Empate,3.2
+15/16,15/16,28,CA River Plate,El Tanque Sisley,1,0,1.44,4.33,7.0,CA River Plate,1.44
+15/16,15/16,28,Danubio,Villa Teresa,1,1,1.62,3.6,5.0,Empate,3.6
+15/16,15/16,28,Racing Clube Montevideo,Montevideo Wanderers FC,1,3,2.45,3.2,2.7,Montevideo Wanderers FC,2.7
+15/16,15/16,28,Defensor Sporting,CA Cerro,1,0,2.3,3.2,2.9,Defensor Sporting,2.3
+15/16,15/16,28,Club Atlético Rentistas,Liverpool FC,0,1,2.3,3.3,3.0,Liverpool FC,3.0
+15/16,15/16,28,CA Penarol,Nacional de Futebol,2,2,2.6,3.2,2.7,Empate,3.2
+15/16,15/16,28,Instituição Atlética Sud-Americana,Plaza Colónia,0,2,2.6,3.25,2.7,Plaza Colónia,2.7
+15/16,15/16,29,Juventud de las Piedras,Instituição Atlética Sud-Americana,0,1,2.3,3.25,2.88,Instituição Atlética Sud-Americana,2.88
+15/16,15/16,29,Montevideo Wanderers FC,CA Penarol,4,1,3.75,3.5,1.85,Montevideo Wanderers FC,3.75
+15/16,15/16,29,Plaza Colónia,Racing Clube Montevideo,2,2,1.62,3.6,5.0,Empate,3.6
+15/16,15/16,29,CA Cerro,CA Fenix,2,1,1.91,3.5,3.4,CA Cerro,1.91
+15/16,15/16,29,El Tanque Sisley,Defensor Sporting,5,6,3.1,3.4,2.0,Defensor Sporting,2.0
+15/16,15/16,29,Liverpool FC,CA River Plate,1,0,2.4,3.2,2.6,Liverpool FC,2.4
+15/16,15/16,29,Villa Teresa,Club Atlético Rentistas,1,1,3.0,3.2,2.2,Empate,3.2
+15/16,15/16,29,Nacional de Futebol,Danubio,0,2,1.5,3.75,6.0,Danubio,6.0
+15/16,15/16,30,CA Fenix,El Tanque Sisley,1,0,1.45,4.0,6.25,CA Fenix,1.45
+15/16,15/16,30,Club Atlético Rentistas,Nacional de Futebol,2,0,4.2,3.5,1.75,Club Atlético Rentistas,4.2
+15/16,15/16,30,Danubio,Montevideo Wanderers FC,1,4,2.45,3.2,2.7,Montevideo Wanderers FC,2.7
+15/16,15/16,30,Liverpool FC,Villa Teresa,1,0,1.62,3.6,5.0,Liverpool FC,1.62
+15/16,15/16,30,Racing Clube Montevideo,Juventud de las Piedras,0,0,1.85,3.4,3.8,Empate,3.4
+15/16,15/16,30,CA River Plate,Defensor Sporting,1,2,2.0,3.3,3.4,Defensor Sporting,3.4
+15/16,15/16,30,CA Penarol,Plaza Colónia,1,2,1.7,3.5,4.2,Plaza Colónia,4.2
+15/16,15/16,30,Instituição Atlética Sud-Americana,CA Cerro,2,2,2.8,3.6,2.15,Empate,3.6
+15/16,15/16,31,CA Cerro,Racing Clube Montevideo,1,2,1.91,3.4,3.4,Racing Clube Montevideo,3.4
+15/16,15/16,31,Juventud de las Piedras,CA Penarol,1,1,6.5,3.5,1.5,Empate,3.5
+15/16,15/16,31,Montevideo Wanderers FC,Club Atlético Rentistas,2,1,2.3,3.2,2.7,Montevideo Wanderers FC,2.3
+15/16,15/16,31,Nacional de Futebol,Liverpool FC,0,2,1.6,3.8,4.75,Liverpool FC,4.75
+15/16,15/16,31,Defensor Sporting,CA Fenix,1,0,1.75,3.5,4.2,Defensor Sporting,1.75
+15/16,15/16,31,El Tanque Sisley,Instituição Atlética Sud-Americana,0,1,2.88,3.2,2.2,Instituição Atlética Sud-Americana,2.2
+15/16,15/16,31,Villa Teresa,CA River Plate,2,0,2.88,3.4,2.1,Villa Teresa,2.88
+15/16,15/16,31,Plaza Colónia,Danubio,0,0,2.25,3.2,3.25,Empate,3.2
+2016,2016,1,Juventud de las Piedras,Instituição Atlética Sud-Americana,2,0,2.3,3.2,2.88,Juventud de las Piedras,2.3
+2016,2016,1,Plaza Colónia,Racing Clube Montevideo,1,1,2.15,3.25,3.1,Empate,3.25
+2016,2016,1,Villa Espanola,Rampla Juniors,1,2,2.38,3.2,2.63,Rampla Juniors,2.63
+2016,2016,1,CA Penarol,Liverpool FC,0,0,1.5,3.8,6.0,Empate,3.8
+2016,2016,2,CA Fenix,CA Cerro,0,1,2.2,3.25,3.0,CA Cerro,3.0
+2016,2016,2,Boston River,Defensor Sporting,1,1,3.1,3.25,2.15,Empate,3.25
+2016,2016,2,Danubio,Nacional de Futebol,2,1,2.7,3.3,2.38,Danubio,2.7
+2016,2016,2,Montevideo Wanderers FC,CA River Plate,1,1,2.63,3.3,2.63,Empate,3.3
+2016,2016,2,Instituição Atlética Sud-Americana,Villa Espanola,1,0,2.25,3.25,2.9,Instituição Atlética Sud-Americana,2.25
+2016,2016,2,Rampla Juniors,Danubio,2,1,3.4,3.3,2.0,Rampla Juniors,3.4
+2016,2016,2,CA Penarol,CA Fenix,2,0,1.44,3.8,6.5,CA Penarol,1.44
+2016,2016,2,CA Cerro,Montevideo Wanderers FC,1,3,2.6,3.4,2.3,Montevideo Wanderers FC,2.3
+2016,2016,2,CA River Plate,Boston River,1,5,1.7,3.5,4.5,Boston River,4.5
+2016,2016,2,Defensor Sporting,Juventud de las Piedras,0,1,1.83,3.5,3.75,Juventud de las Piedras,3.75
+2016,2016,2,Racing Clube Montevideo,Liverpool FC,0,1,2.5,3.2,2.6,Liverpool FC,2.6
+2016,2016,2,Nacional de Futebol,Plaza Colónia,3,2,1.36,4.2,8.0,Nacional de Futebol,1.36
+2016,2016,3,Boston River,CA Cerro,1,1,2.6,3.0,2.63,Empate,3.0
+2016,2016,3,CA Fenix,Racing Clube Montevideo,3,1,2.63,3.0,2.63,CA Fenix,2.63
+2016,2016,3,CA Penarol,Montevideo Wanderers FC,0,1,1.85,3.25,4.0,Montevideo Wanderers FC,4.0
+2016,2016,3,Plaza Colónia,Rampla Juniors,1,1,1.95,3.5,3.75,Empate,3.5
+2016,2016,3,Danubio,Villa Espanola,1,0,1.57,3.6,5.5,Danubio,1.57
+2016,2016,3,Defensor Sporting,Instituição Atlética Sud-Americana,2,0,1.8,3.4,4.2,Defensor Sporting,1.8
+2016,2016,3,Juventud de las Piedras,CA River Plate,0,0,2.6,3.2,2.5,Empate,3.2
+2016,2016,3,Liverpool FC,Nacional de Futebol,2,1,4.0,3.2,2.0,Liverpool FC,4.0
+2016,2016,4,CA Cerro,Juventud de las Piedras,1,1,1.91,3.4,3.6,Empate,3.4
+2016,2016,4,Instituição Atlética Sud-Americana,Danubio,0,2,3.0,3.4,2.15,Danubio,2.15
+2016,2016,4,Racing Clube Montevideo,Montevideo Wanderers FC,1,1,2.1,3.3,3.2,Empate,3.3
+2016,2016,4,CA Fenix,Nacional de Futebol,0,1,5.0,3.6,1.62,Nacional de Futebol,1.62
+2016,2016,4,CA River Plate,Defensor Sporting,0,5,2.2,3.2,3.1,Defensor Sporting,3.1
+2016,2016,4,Rampla Juniors,Liverpool FC,0,0,3.0,3.2,2.2,Empate,3.2
+2016,2016,4,Villa Espanola,Plaza Colónia,2,4,2.88,3.3,2.25,Plaza Colónia,2.25
+2016,2016,4,Boston River,CA Penarol,0,0,5.25,3.8,1.57,Empate,3.8
+2016,2016,5,Boston River,Racing Clube Montevideo,1,1,2.1,3.25,3.25,Empate,3.25
+2016,2016,5,Liverpool FC,Villa Espanola,1,0,1.53,4.0,5.25,Liverpool FC,1.53
+2016,2016,5,Montevideo Wanderers FC,Nacional de Futebol,1,3,3.0,3.4,2.15,Nacional de Futebol,2.15
+2016,2016,5,Defensor Sporting,CA Cerro,0,1,1.83,3.25,4.2,CA Cerro,4.2
+2016,2016,5,CA River Plate,Instituição Atlética Sud-Americana,0,3,2.0,3.2,3.6,Instituição Atlética Sud-Americana,3.6
+2016,2016,5,Danubio,Plaza Colónia,3,0,1.73,3.5,4.5,Danubio,1.73
+2016,2016,5,Rampla Juniors,CA Fenix,0,0,2.8,3.2,2.38,Empate,3.2
+2016,2016,5,Juventud de las Piedras,CA Penarol,1,0,7.0,4.0,1.44,Juventud de las Piedras,7.0
+2016,2016,6,CA River Plate,CA Fenix,1,2,2.25,3.2,2.88,CA Fenix,2.88
+2016,2016,6,Instituição Atlética Sud-Americana,Rampla Juniors,3,0,2.25,3.2,2.8,Instituição Atlética Sud-Americana,2.25
+2016,2016,6,Plaza Colónia,CA Penarol,0,0,5.5,3.4,1.62,Empate,3.4
+2016,2016,6,Racing Clube Montevideo,Danubio,4,2,3.5,3.2,2.0,Racing Clube Montevideo,3.5
+2016,2016,6,CA Cerro,Liverpool FC,2,0,2.4,3.0,2.9,CA Cerro,2.4
+2016,2016,6,Juventud de las Piedras,Boston River,0,1,2.3,2.9,3.2,Boston River,3.2
+2016,2016,6,Defensor Sporting,Montevideo Wanderers FC,1,1,2.4,3.1,2.8,Empate,3.1
+2016,2016,6,Villa Espanola,Nacional de Futebol,0,1,7.5,4.75,1.33,Nacional de Futebol,1.33
+2016,2016,7,Instituição Atlética Sud-Americana,Boston River,0,1,2.55,3.2,2.75,Boston River,2.75
+2016,2016,7,Liverpool FC,CA River Plate,2,2,2.1,3.4,3.4,Empate,3.4
+2016,2016,7,Montevideo Wanderers FC,Juventud de las Piedras,1,0,1.91,3.5,4.0,Montevideo Wanderers FC,1.91
+2016,2016,7,Nacional de Futebol,Rampla Juniors,2,0,1.36,4.5,9.0,Nacional de Futebol,1.36
+2016,2016,7,CA Fenix,Defensor Sporting,3,1,2.88,3.2,2.3,CA Fenix,2.88
+2016,2016,7,Danubio,CA Penarol,3,2,2.7,3.3,2.38,Danubio,2.7
+2016,2016,7,Plaza Colónia,CA Cerro,2,3,2.75,3.2,2.38,CA Cerro,2.38
+2016,2016,7,Villa Espanola,Racing Clube Montevideo,1,1,3.0,3.1,2.3,Empate,3.1
+2016,2016,8,Montevideo Wanderers FC,Boston River,1,0,1.91,3.25,3.8,Montevideo Wanderers FC,1.91
+2016,2016,8,Racing Clube Montevideo,Rampla Juniors,2,1,2.0,3.2,3.5,Racing Clube Montevideo,2.0
+2016,2016,8,CA Penarol,Villa Espanola,2,1,1.45,4.2,6.0,CA Penarol,1.45
+2016,2016,8,CA Cerro,Danubio,0,1,2.75,3.1,2.45,Danubio,2.45
+2016,2016,8,CA River Plate,Plaza Colónia,2,1,1.95,3.25,3.6,CA River Plate,1.95
+2016,2016,8,Defensor Sporting,Liverpool FC,1,3,2.0,3.2,3.5,Liverpool FC,3.5
+2016,2016,8,Juventud de las Piedras,CA Fenix,0,0,2.63,3.1,2.55,Empate,3.1
+2016,2016,8,Nacional de Futebol,Instituição Atlética Sud-Americana,1,0,1.44,4.0,6.5,Nacional de Futebol,1.44
+2016,2016,9,CA Fenix,Boston River,1,1,2.25,3.2,3.25,Empate,3.2
+2016,2016,9,Liverpool FC,Juventud de las Piedras,1,0,2.05,3.25,3.75,Liverpool FC,2.05
+2016,2016,9,Villa Espanola,CA Cerro,2,0,3.5,3.1,2.2,Villa Espanola,3.5
+2016,2016,9,Nacional de Futebol,Racing Clube Montevideo,3,1,1.53,4.33,5.5,Nacional de Futebol,1.53
+2016,2016,9,Danubio,CA River Plate,2,1,1.8,3.8,4.0,Danubio,1.8
+2016,2016,9,Montevideo Wanderers FC,Instituição Atlética Sud-Americana,2,1,1.6,4.0,4.5,Montevideo Wanderers FC,1.6
+2016,2016,9,Plaza Colónia,Defensor Sporting,0,1,2.6,3.2,2.5,Defensor Sporting,2.5
+2016,2016,9,Rampla Juniors,CA Penarol,1,0,6.5,4.33,1.4,,
+2016,2016,10,Boston River,Danubio,1,2,3.4,3.1,2.25,Danubio,2.25
+2016,2016,10,CA Fenix,Liverpool FC,1,0,2.38,3.2,2.75,CA Fenix,2.38
+2016,2016,10,Instituição Atlética Sud-Americana,CA Penarol,1,4,4.6,3.6,1.75,CA Penarol,1.75
+2016,2016,10,Rampla Juniors,Defensor Sporting,0,1,3.4,3.4,2.0,Defensor Sporting,2.0
+2016,2016,10,CA Cerro,Racing Clube Montevideo,2,3,2.05,3.4,3.2,Racing Clube Montevideo,3.2
+2016,2016,10,Juventud de las Piedras,Villa Espanola,1,1,2.2,3.25,3.0,Empate,3.25
+2016,2016,10,Montevideo Wanderers FC,Plaza Colónia,0,0,1.55,3.8,5.5,Empate,3.8
+2016,2016,10,Nacional de Futebol,CA River Plate,3,1,1.4,4.1,7.5,Nacional de Futebol,1.4
+2016,2016,12,CA Fenix,Instituição Atlética Sud-Americana,1,2,2.05,3.25,3.3,Instituição Atlética Sud-Americana,3.3
+2016,2016,12,Liverpool FC,Montevideo Wanderers FC,2,1,2.5,3.2,2.6,Liverpool FC,2.5
+2016,2016,12,Villa Espanola,Defensor Sporting,2,2,3.7,3.3,1.91,Empate,3.3
+2016,2016,12,CA Cerro,Nacional de Futebol,0,0,4.75,3.5,1.67,Empate,3.5
+2016,2016,12,Danubio,Juventud de las Piedras,1,1,1.55,3.8,5.25,Empate,3.8
+2016,2016,12,Plaza Colónia,Boston River,2,2,2.63,3.1,2.45,Empate,3.1
+2016,2016,12,Rampla Juniors,CA River Plate,0,2,2.4,3.25,2.63,CA River Plate,2.63
+2016,2016,12,Racing Clube Montevideo,CA Penarol,2,5,4.0,3.75,1.73,CA Penarol,1.73
+2016,2016,13,Racing Clube Montevideo,CA River Plate,2,1,2.2,3.0,3.25,Racing Clube Montevideo,2.2
+2016,2016,13,Villa Espanola,Boston River,0,3,2.8,3.25,2.3,Boston River,2.3
+2016,2016,13,CA Penarol,CA Cerro,1,2,1.53,3.6,6.0,CA Cerro,6.0
+2016,2016,13,Danubio,Montevideo Wanderers FC,0,1,2.05,3.4,3.2,Montevideo Wanderers FC,3.2
+2016,2016,13,Liverpool FC,Instituição Atlética Sud-Americana,1,1,1.83,3.4,4.0,Empate,3.4
+2016,2016,13,Plaza Colónia,CA Fenix,2,0,2.25,3.2,3.0,Plaza Colónia,2.25
+2016,2016,13,Rampla Juniors,Juventud de las Piedras,1,0,2.4,3.25,2.7,Rampla Juniors,2.4
+2016,2016,13,Defensor Sporting,Nacional de Futebol,3,2,3.6,3.3,1.95,Defensor Sporting,3.6
+2016,2016,14,Instituição Atlética Sud-Americana,Racing Clube Montevideo,2,2,2.25,3.2,3.0,Empate,3.2
+2016,2016,14,CA Cerro,Rampla Juniors,0,0,2.0,3.2,3.5,Empate,3.2
+2016,2016,14,CA River Plate,Villa Espanola,2,1,2.0,3.3,3.4,CA River Plate,2.0
+2016,2016,14,Juventud de las Piedras,Plaza Colónia,2,0,2.25,3.1,3.0,Juventud de las Piedras,2.25
+2016,2016,14,Montevideo Wanderers FC,CA Fenix,4,2,1.85,3.3,4.0,Montevideo Wanderers FC,1.85
+2016,2016,14,Defensor Sporting,Danubio,0,0,2.4,3.25,2.7,Empate,3.25
+2016,2016,14,CA Penarol,Nacional de Futebol,0,3,3.1,3.3,2.15,,
+2016,2016,15,Boston River,Liverpool FC,0,0,2.3,3.3,2.8,Empate,3.3
+2016,2016,15,Boston River,Rampla Juniors,2,0,2.0,3.3,3.4,Boston River,2.0
+2016,2016,15,CA River Plate,CA Penarol,3,1,4.2,3.3,1.8,CA River Plate,4.2
+2016,2016,15,Instituição Atlética Sud-Americana,CA Cerro,0,2,2.6,3.25,2.5,CA Cerro,2.5
+2016,2016,15,Instituição Atlética Sud-Americana,Cerrito CS,0,2,2.38,3.25,2.75,,
+2016,2016,15,CA Fenix,Danubio,4,1,3.0,3.2,2.25,CA Fenix,3.0
+2016,2016,15,Defensor Sporting,Racing Clube Montevideo,2,1,1.91,3.4,3.6,Defensor Sporting,1.91
+2016,2016,15,Liverpool FC,Plaza Colónia,1,1,1.85,3.3,4.0,Empate,3.3
+2016,2016,15,Montevideo Wanderers FC,Villa Espanola,3,1,1.45,4.0,6.5,Montevideo Wanderers FC,1.45
+2016,2016,15,Nacional de Futebol,Juventud de las Piedras,2,0,1.53,3.6,6.5,Nacional de Futebol,1.53
+2016,2016,16,Plaza Colónia,Instituição Atlética Sud-Americana,0,3,1.95,3.3,3.5,Instituição Atlética Sud-Americana,3.5
+2016,2016,16,Racing Clube Montevideo,Juventud de las Piedras,2,0,2.25,3.25,2.9,Racing Clube Montevideo,2.25
+2016,2016,16,Villa Espanola,CA Fenix,2,2,2.9,3.4,2.2,Empate,3.4
+2016,2016,16,CA Penarol,Defensor Sporting,0,2,2.38,3.4,2.63,Defensor Sporting,2.63
+2016,2016,16,Danubio,Liverpool FC,3,2,2.0,3.5,3.6,Danubio,2.0
+2016,2016,16,Nacional de Futebol,Boston River,1,0,1.57,3.8,6.0,Nacional de Futebol,1.57
+2016,2016,16,Rampla Juniors,Montevideo Wanderers FC,1,1,4.2,3.6,1.83,Empate,3.6
+2017,2017,1,CA Cerro,Racing Clube Montevideo,1,0,2.2,3.3,2.8,CA Cerro,2.2
+2017,2017,1,Instituição Atlética Sud-Americana,CA Fenix,0,2,2.3,3.2,2.75,CA Fenix,2.75
+2017,2017,1,Juventud de las Piedras,Nacional de Futebol,0,1,7.5,4.33,1.33,Nacional de Futebol,1.33
+2017,2017,1,CA River Plate,Liverpool FC,1,1,2.0,3.5,3.0,Empate,3.5
+2017,2017,1,Danubio,Montevideo Wanderers FC,0,0,2.0,3.25,3.3,Empate,3.25
+2017,2017,1,Defensor Sporting,Rampla Juniors,1,0,1.44,4.0,5.75,Defensor Sporting,1.44
+2017,2017,1,Plaza Colónia,Boston River,0,0,2.8,3.2,2.25,Empate,3.2
+2017,2017,1,CA Penarol,El Tanque Sisley,4,0,1.5,4.0,5.75,CA Penarol,1.5
+2017,2017,2,CA Fenix,Juventud de las Piedras,1,1,2.15,3.25,3.4,Empate,3.25
+2017,2017,2,Defensor Sporting,CA Cerro,1,1,2.15,3.2,3.5,Empate,3.2
+2017,2017,2,Liverpool FC,CA Penarol,0,0,3.75,3.4,2.0,Empate,3.4
+2017,2017,2,El Tanque Sisley,Racing Clube Montevideo,3,2,3.0,3.4,2.3,El Tanque Sisley,3.0
+2017,2017,2,Boston River,CA River Plate,2,0,2.75,3.1,2.45,Boston River,2.75
+2017,2017,2,Montevideo Wanderers FC,Plaza Colónia,3,1,1.55,3.75,5.5,Montevideo Wanderers FC,1.55
+2017,2017,2,Rampla Juniors,Instituição Atlética Sud-Americana,0,0,2.38,3.2,2.8,Empate,3.2
+2017,2017,2,Nacional de Futebol,Danubio,2,1,1.73,3.5,4.33,Nacional de Futebol,1.73
+2017,2017,3,Danubio,CA Fenix,4,4,2.2,3.2,3.4,Empate,3.2
+2017,2017,3,Juventud de las Piedras,Rampla Juniors,2,2,2.0,3.3,3.8,Empate,3.3
+2017,2017,3,Racing Clube Montevideo,Liverpool FC,1,1,2.5,3.2,2.75,Empate,3.2
+2017,2017,3,Plaza Colónia,Nacional de Futebol,0,1,8.5,4.0,1.44,Nacional de Futebol,1.44
+2017,2017,3,CA Cerro,El Tanque Sisley,4,3,1.83,3.3,4.0,CA Cerro,1.83
+2017,2017,3,CA River Plate,Montevideo Wanderers FC,1,2,2.75,3.2,2.38,Montevideo Wanderers FC,2.38
+2017,2017,3,Instituição Atlética Sud-Americana,Defensor Sporting,1,2,3.25,3.25,2.1,Defensor Sporting,2.1
+2017,2017,3,CA Penarol,Boston River,0,0,1.62,3.75,4.75,Empate,3.75
+2017,2017,4,Defensor Sporting,Juventud de las Piedras,2,1,2.0,3.25,3.5,Defensor Sporting,2.0
+2017,2017,4,Boston River,Racing Clube Montevideo,0,1,2.38,3.2,2.75,Racing Clube Montevideo,2.75
+2017,2017,4,Instituição Atlética Sud-Americana,CA River Plate,0,6,3.3,3.2,2.1,,
+2017,2017,4,Instituição Atlética Sud-Americana,CA Cerro,0,6,3.1,3.2,2.1,CA Cerro,2.1
+2017,2017,4,Montevideo Wanderers FC,CA Penarol,0,4,3.5,3.4,1.95,CA Penarol,1.95
+2017,2017,4,CA Fenix,Plaza Colónia,4,1,2.0,3.3,3.75,CA Fenix,2.0
+2017,2017,4,Liverpool FC,El Tanque Sisley,1,2,1.95,3.3,4.0,El Tanque Sisley,4.0
+2017,2017,4,Rampla Juniors,Danubio,2,0,2.8,3.4,2.4,Rampla Juniors,2.8
+2017,2017,5,CA Cerro,Liverpool FC,2,1,2.0,3.5,3.6,CA Cerro,2.0
+2017,2017,5,CA River Plate,CA Fenix,0,0,2.4,3.25,2.9,Empate,3.25
+2017,2017,5,Juventud de las Piedras,Instituição Atlética Sud-Americana,2,2,2.05,3.2,3.4,Empate,3.2
+2017,2017,5,Danubio,Defensor Sporting,0,2,2.15,3.2,3.2,Defensor Sporting,3.2
+2017,2017,5,El Tanque Sisley,Boston River,1,0,2.88,3.3,2.25,El Tanque Sisley,2.88
+2017,2017,5,Plaza Colónia,Rampla Juniors,0,1,2.4,3.2,2.75,Rampla Juniors,2.75
+2017,2017,5,Racing Clube Montevideo,Montevideo Wanderers FC,0,3,2.45,3.3,2.63,Montevideo Wanderers FC,2.63
+2017,2017,6,CA Fenix,CA Penarol,2,2,4.75,3.75,1.7,Empate,3.75
+2017,2017,6,Instituição Atlética Sud-Americana,Danubio,2,2,3.2,3.2,2.25,Empate,3.2
+2017,2017,6,Rampla Juniors,CA River Plate,3,0,2.5,3.2,2.88,Rampla Juniors,2.5
+2017,2017,6,Boston River,Liverpool FC,3,1,2.3,3.2,2.8,Boston River,2.3
+2017,2017,6,Defensor Sporting,Plaza Colónia,1,3,1.6,3.6,4.75,Plaza Colónia,4.75
+2017,2017,6,Juventud de las Piedras,CA Cerro,1,1,2.6,3.2,2.4,Empate,3.2
+2017,2017,6,Montevideo Wanderers FC,El Tanque Sisley,1,2,1.7,3.7,4.33,El Tanque Sisley,4.33
+2017,2017,6,Nacional de Futebol,Racing Clube Montevideo,3,2,1.4,4.2,7.0,Nacional de Futebol,1.4
+2017,2017,7,Danubio,Juventud de las Piedras,1,0,1.75,3.5,4.75,Danubio,1.75
+2017,2017,7,Liverpool FC,Montevideo Wanderers FC,0,4,2.88,3.2,2.45,Montevideo Wanderers FC,2.45
+2017,2017,7,CA Cerro,Boston River,2,0,2.38,3.25,3.0,CA Cerro,2.38
+2017,2017,7,El Tanque Sisley,Nacional de Futebol,0,1,6.0,4.1,1.53,Nacional de Futebol,1.53
+2017,2017,7,CA River Plate,Defensor Sporting,0,1,2.63,3.25,2.63,Defensor Sporting,2.63
+2017,2017,7,Plaza Colónia,Instituição Atlética Sud-Americana,2,3,2.3,3.25,3.1,Instituição Atlética Sud-Americana,3.1
+2017,2017,7,Racing Clube Montevideo,CA Fenix,1,0,2.7,3.2,2.6,Racing Clube Montevideo,2.7
+2017,2017,7,CA Penarol,Rampla Juniors,3,2,1.5,4.33,6.0,CA Penarol,1.5
+2017,2017,8,CA Fenix,El Tanque Sisley,2,1,2.2,3.2,3.4,CA Fenix,2.2
+2017,2017,8,Defensor Sporting,CA Penarol,2,2,2.7,3.4,2.5,Empate,3.4
+2017,2017,8,Montevideo Wanderers FC,Boston River,2,1,2.2,3.25,3.3,Montevideo Wanderers FC,2.2
+2017,2017,8,Rampla Juniors,Racing Clube Montevideo,0,3,2.3,3.25,3.1,Racing Clube Montevideo,3.1
+2017,2017,8,Danubio,CA Cerro,1,1,2.3,3.3,3.1,Empate,3.3
+2017,2017,8,Instituição Atlética Sud-Americana,CA River Plate,1,2,2.9,3.2,2.45,CA River Plate,2.45
+2017,2017,8,Juventud de las Piedras,Plaza Colónia,0,2,2.05,3.3,3.6,Plaza Colónia,3.6
+2017,2017,8,Nacional de Futebol,Liverpool FC,3,0,1.45,4.2,6.0,Nacional de Futebol,1.45
+2017,2017,9,Nacional de Futebol,CA River Plate,0,0,1.44,4.2,7.5,Empate,4.2
+2017,2017,9,Liverpool FC,CA Fenix,2,1,2.25,3.4,3.1,Liverpool FC,2.25
+2017,2017,9,Plaza Colónia,Danubio,0,0,3.1,3.2,2.3,Empate,3.2
+2017,2017,9,CA Penarol,Instituição Atlética Sud-Americana,4,0,1.57,3.4,6.0,CA Penarol,1.57
+2017,2017,9,Boston River,Nacional de Futebol,3,1,6.5,3.6,1.57,Boston River,6.5
+2017,2017,9,CA River Plate,Juventud de las Piedras,2,1,2.05,3.2,3.8,CA River Plate,2.05
+2017,2017,9,El Tanque Sisley,Rampla Juniors,2,0,2.55,3.25,2.75,El Tanque Sisley,2.55
+2017,2017,9,Racing Clube Montevideo,Defensor Sporting,0,0,2.55,3.25,2.75,Empate,3.25
+2017,2017,9,CA Cerro,Montevideo Wanderers FC,1,2,2.35,3.25,3.0,Montevideo Wanderers FC,3.0
+2017,2017,10,CA Penarol,Nacional de Futebol,1,1,2.8,3.4,2.4,Empate,3.4
+2017,2017,10,CA Fenix,Boston River,1,2,2.75,3.2,2.7,Boston River,2.7
+2017,2017,10,Defensor Sporting,El Tanque Sisley,3,0,1.91,3.25,4.0,Defensor Sporting,1.91
+2017,2017,10,Juventud de las Piedras,CA Penarol,0,2,6.5,3.75,1.55,CA Penarol,1.55
+2017,2017,10,Danubio,CA River Plate,0,0,2.25,3.25,3.2,Empate,3.25
+2017,2017,10,Instituição Atlética Sud-Americana,Racing Clube Montevideo,3,1,2.8,3.2,2.5,Instituição Atlética Sud-Americana,2.8
+2017,2017,10,Rampla Juniors,Liverpool FC,2,2,2.35,3.25,3.0,Empate,3.25
+2017,2017,10,Plaza Colónia,CA Cerro,2,2,2.88,3.2,2.45,Empate,3.2
+2017,2017,10,Nacional de Futebol,Montevideo Wanderers FC,2,1,1.73,3.6,4.75,Nacional de Futebol,1.73
+2017,2017,11,CA Cerro,Nacional de Futebol,1,3,3.75,3.3,2.0,Nacional de Futebol,2.0
+2017,2017,11,CA River Plate,Plaza Colónia,3,1,1.95,3.6,3.6,CA River Plate,1.95
+2017,2017,11,Montevideo Wanderers FC,CA Fenix,0,2,1.75,3.75,4.33,CA Fenix,4.33
+2017,2017,11,Racing Clube Montevideo,Juventud de las Piedras,0,2,2.15,3.1,3.6,Juventud de las Piedras,3.6
+2017,2017,11,Boston River,Rampla Juniors,4,0,2.05,3.25,3.75,Boston River,2.05
+2017,2017,11,El Tanque Sisley,Instituição Atlética Sud-Americana,2,1,2.25,3.1,3.4,El Tanque Sisley,2.25
+2017,2017,11,Liverpool FC,Defensor Sporting,0,1,3.4,3.3,2.15,Defensor Sporting,2.15
+2017,2017,11,CA Penarol,Danubio,1,0,1.67,3.5,5.5,CA Penarol,1.67
+2017,2017,12,Danubio,Racing Clube Montevideo,1,0,2.05,3.25,3.75,Danubio,2.05
+2017,2017,12,Juventud de las Piedras,El Tanque Sisley,3,0,2.4,3.0,3.2,Juventud de las Piedras,2.4
+2017,2017,12,Plaza Colónia,CA Penarol,1,1,5.0,3.75,1.67,Empate,3.75
+2017,2017,12,Defensor Sporting,Boston River,1,0,2.0,3.2,4.0,Defensor Sporting,2.0
+2017,2017,12,Instituição Atlética Sud-Americana,Liverpool FC,1,2,2.5,3.4,2.7,Liverpool FC,2.7
+2017,2017,12,Rampla Juniors,Montevideo Wanderers FC,4,3,3.6,3.3,1.95,Rampla Juniors,3.6
+2017,2017,12,CA Fenix,Nacional de Futebol,0,1,5.5,3.6,1.57,Nacional de Futebol,1.57
+2017,2017,13,Boston River,Instituição Atlética Sud-Americana,1,0,1.8,3.4,4.0,Boston River,1.8
+2017,2017,13,CA Cerro,CA Fenix,1,0,2.0,3.4,3.3,CA Cerro,2.0
+2017,2017,13,Liverpool FC,Juventud de las Piedras,2,2,2.15,3.1,3.3,Empate,3.1
+2017,2017,13,CA Penarol,CA River Plate,1,1,1.7,3.6,4.5,Empate,3.6
+2017,2017,13,El Tanque Sisley,Danubio,2,4,3.1,3.3,2.3,Danubio,2.3
+2017,2017,13,Montevideo Wanderers FC,Defensor Sporting,2,3,2.4,3.4,2.88,Defensor Sporting,2.88
+2017,2017,13,Racing Clube Montevideo,Plaza Colónia,2,2,2.05,3.4,3.5,Empate,3.4
+2017,2017,13,Nacional de Futebol,Rampla Juniors,1,0,1.45,4.33,7.0,Nacional de Futebol,1.45
+2017,2017,14,CA River Plate,Racing Clube Montevideo,1,2,2.05,3.2,3.4,Racing Clube Montevideo,3.4
+2017,2017,14,Danubio,Liverpool FC,0,0,1.91,3.4,3.6,Empate,3.4
+2017,2017,14,Defensor Sporting,Nacional de Futebol,3,2,3.1,3.3,2.15,Defensor Sporting,3.1
+2017,2017,14,Plaza Colónia,El Tanque Sisley,1,0,2.05,3.3,3.25,Plaza Colónia,2.05
+2017,2017,14,Rampla Juniors,CA Fenix,2,1,2.55,3.2,2.55,Rampla Juniors,2.55
+2017,2017,14,Instituição Atlética Sud-Americana,Montevideo Wanderers FC,1,2,3.5,3.2,2.15,Montevideo Wanderers FC,2.15
+2017,2017,14,Juventud de las Piedras,Boston River,2,5,2.7,3.1,2.7,Boston River,2.7
+2017,2017,14,CA Penarol,CA Cerro,1,2,1.91,3.4,4.0,CA Cerro,4.0
+2017,2017,15,CA Fenix,Defensor Sporting,1,2,4.33,3.6,1.73,Defensor Sporting,1.73
+2017,2017,15,Montevideo Wanderers FC,Juventud de las Piedras,1,2,1.67,3.6,4.2,Juventud de las Piedras,4.2
+2017,2017,15,Nacional de Futebol,Instituição Atlética Sud-Americana,4,3,1.4,4.33,6.5,Nacional de Futebol,1.4
+2017,2017,15,Boston River,Danubio,0,3,2.15,3.1,3.1,Danubio,3.1
+2017,2017,15,CA Cerro,Rampla Juniors,1,2,2.0,3.1,3.4,Rampla Juniors,3.4
+2017,2017,15,El Tanque Sisley,CA River Plate,2,2,3.2,3.2,2.05,Empate,3.2
+2017,2017,15,Liverpool FC,Plaza Colónia,1,0,1.91,3.25,3.5,Liverpool FC,1.91
+2017,2017,15,Racing Clube Montevideo,CA Penarol,1,3,4.0,3.4,1.7,CA Penarol,1.7
+2017,2017,17,CA Fenix,Liverpool FC,1,1,2.3,3.25,3.1,Empate,3.25
+2017,2017,17,Danubio,Nacional de Futebol,1,2,3.1,3.2,2.3,Nacional de Futebol,2.3
+2017,2017,17,Montevideo Wanderers FC,CA Cerro,1,0,2.15,3.3,3.4,Montevideo Wanderers FC,2.15
+2017,2017,17,Racing Clube Montevideo,Juventud de las Piedras,1,0,2.0,3.4,3.75,Racing Clube Montevideo,2.0
+2017,2017,17,CA River Plate,Instituição Atlética Sud-Americana,0,2,1.91,3.4,4.0,Instituição Atlética Sud-Americana,4.0
+2017,2017,17,El Tanque Sisley,Plaza Colónia,0,0,2.1,3.2,3.6,Empate,3.2
+2017,2017,17,Rampla Juniors,Defensor Sporting,1,2,3.6,3.4,2.05,Defensor Sporting,2.05
+2017,2017,18,Boston River,CA Penarol,0,0,4.5,3.75,1.75,Empate,3.75
+2017,2017,18,Juventud de las Piedras,CA River Plate,1,0,2.8,3.2,2.5,Juventud de las Piedras,2.8
+2017,2017,18,Liverpool FC,El Tanque Sisley,2,0,2.25,3.3,3.6,Liverpool FC,2.25
+2017,2017,18,CA Penarol,Rampla Juniors,4,1,1.4,4.5,7.5,CA Penarol,1.4
+2017,2017,18,CA Cerro,Danubio,3,0,3.6,3.2,2.1,CA Cerro,3.6
+2017,2017,18,Defensor Sporting,Boston River,3,1,1.91,3.4,4.0,Defensor Sporting,1.91
+2017,2017,18,Instituição Atlética Sud-Americana,Racing Clube Montevideo,0,1,2.88,3.25,2.45,Racing Clube Montevideo,2.45
+2017,2017,18,Plaza Colónia,CA Fenix,1,2,2.3,3.2,3.2,CA Fenix,3.2
+2017,2017,18,Nacional de Futebol,Montevideo Wanderers FC,1,1,1.75,3.5,4.75,Empate,3.5
+2017,2017,19,CA Fenix,Defensor Sporting,1,1,3.1,3.15,2.4,Empate,3.15
+2017,2017,19,Juventud de las Piedras,Instituição Atlética Sud-Americana,2,2,2.15,3.2,3.5,Empate,3.2
+2017,2017,19,Racing Clube Montevideo,Nacional de Futebol,1,3,5.0,3.5,1.73,Nacional de Futebol,1.73
+2017,2017,19,Danubio,Montevideo Wanderers FC,0,1,2.2,3.4,3.2,Montevideo Wanderers FC,3.2
+2017,2017,19,Liverpool FC,Plaza Colónia,1,1,1.75,3.4,5.0,Empate,3.4
+2017,2017,19,Rampla Juniors,Boston River,1,0,3.0,3.4,2.3,Rampla Juniors,3.0
+2017,2017,19,El Tanque Sisley,CA Penarol,1,2,11.0,5.0,1.4,CA Penarol,1.4
+2017,2017,20,Danubio,Racing Clube Montevideo,1,2,2.63,3.3,2.7,Racing Clube Montevideo,2.7
+2017,2017,20,Rampla Juniors,CA Fenix,1,1,2.15,3.25,3.4,Empate,3.25
+2017,2017,20,CA Penarol,Plaza Colónia,4,1,1.53,4.1,6.5,CA Penarol,1.53
+2017,2017,20,Boston River,El Tanque Sisley,3,1,1.73,3.5,4.0,Boston River,1.73
+2017,2017,20,CA Cerro,Instituição Atlética Sud-Americana,2,1,1.8,3.4,3.75,CA Cerro,1.8
+2017,2017,20,Defensor Sporting,Liverpool FC,2,0,1.8,3.4,3.75,Defensor Sporting,1.8
+2017,2017,20,Montevideo Wanderers FC,CA River Plate,2,2,2.25,3.4,3.1,Empate,3.4
+2017,2017,20,Nacional de Futebol,Juventud de las Piedras,3,1,1.4,4.0,7.0,Nacional de Futebol,1.4
+2017,2017,21,CA River Plate,Danubio,0,2,2.38,3.2,3.1,,
+2017,2017,21,Juventud de las Piedras,CA Cerro,1,1,3.25,3.2,2.25,,
+2017,2017,21,Racing Clube Montevideo,Montevideo Wanderers FC,0,1,3.0,3.3,2.38,,
+2017,2017,21,Instituição Atlética Sud-Americana,Nacional de Futebol,0,3,10.0,4.33,1.36,,
+2017,2017,21,CA Fenix,Boston River,1,2,2.38,3.2,3.0,,
+2017,2017,21,El Tanque Sisley,Rampla Juniors,1,2,2.55,3.2,2.8,,
+2017,2017,21,Liverpool FC,CA Penarol,1,2,13.0,5.0,1.6,,
+2017,2017,21,Plaza Colónia,Defensor Sporting,0,2,3.1,3.3,2.35,,
+2017,2017,22,Boston River,Plaza Colónia,0,1,1.91,3.3,3.3,,
+2017,2017,22,CA Fenix,El Tanque Sisley,2,1,1.95,3.25,3.25,,
+2017,2017,22,Rampla Juniors,Liverpool FC,1,0,2.2,2.38,4.0,,
+2017,2017,22,CA Penarol,Defensor Sporting,2,3,1.8,3.4,3.6,,
+2017,2017,22,Danubio,Juventud de las Piedras,0,0,1.95,3.2,3.3,,
+2017,2017,22,Montevideo Wanderers FC,Instituição Atlética Sud-Americana,2,0,1.53,3.75,4.8,,
+2017,2017,22,Racing Clube Montevideo,CA River Plate,1,1,2.05,3.2,3.05,,
+2017,2017,23,Nacional de Futebol,Defensor Sporting,1,0,2.15,3.2,2.9,,
+2017,2017,24,Boston River,Plaza Colónia,3,0,1.91,4.33,13.0,,
+2017,2017,24,CA Fenix,Instituição Atlética Sud-Americana,2,3,2.67,3.2,3.3,,
+2017,2017,24,Nacional de Futebol,Juventud de las Piedras,3,0,1.45,5.75,23.0,,
+2017,2017,24,Racing Clube Montevideo,CA Cerro,0,1,2.45,3.3,3.3,,
+2017,2017,24,El Tanque Sisley,CA Penarol,0,4,21.0,6.0,1.33,,
+2017,2017,24,Liverpool FC,CA River Plate,0,4,2.63,3.1,2.75,,
+2017,2017,24,Montevideo Wanderers FC,Danubio,1,3,8.5,3.7,2.75,,
+2017,2017,24,Rampla Juniors,Defensor Sporting,2,2,3.6,3.2,2.1,,
+2017,2017,25,CA Cerro,Defensor Sporting,0,3,3.25,3.3,2.2,,
+2017,2017,25,CA River Plate,Boston River,1,1,2.63,3.3,2.85,,
+2017,2017,25,Juventud de las Piedras,CA Fenix,0,2,2.3,3.2,3.1,,
+2017,2017,25,CA Penarol,Liverpool FC,2,1,1.36,4.5,7.0,,
+2017,2017,25,Danubio,Nacional de Futebol,1,1,3.8,3.2,2.6,,
+2017,2017,25,Instituição Atlética Sud-Americana,Rampla Juniors,1,1,2.5,3.5,8.0,,
+2017,2017,25,Plaza Colónia,Montevideo Wanderers FC,1,0,3.3,3.2,2.75,,
+2017,2017,25,Racing Clube Montevideo,El Tanque Sisley,0,2,3.6,3.5,3.6,,
+2017,2017,26,CA Fenix,Danubio,0,1,6.0,3.4,2.05,,
+2017,2017,26,Montevideo Wanderers FC,CA River Plate,2,2,2.55,3.2,3.25,,
+2017,2017,26,Rampla Juniors,Juventud de las Piedras,2,1,2.45,3.8,10.0,,
+2017,2017,26,Nacional de Futebol,Plaza Colónia,1,0,1.5,5.75,26.0,,
+2017,2017,26,Defensor Sporting,Instituição Atlética Sud-Americana,3,2,1.83,4.0,5.5,,
+2017,2017,26,El Tanque Sisley,CA Cerro,2,1,4.0,3.25,2.38,,
+2017,2017,26,Liverpool FC,Racing Clube Montevideo,1,1,3.0,3.5,8.0,,
+2017,2017,26,Boston River,CA Penarol,0,1,5.5,3.6,2.25,,
+2017,2017,27,Danubio,Rampla Juniors,1,1,1.73,3.6,5.0,Empate,3.6
+2017,2017,27,Juventud de las Piedras,Defensor Sporting,0,1,4.5,3.5,1.82,Defensor Sporting,1.82
+2017,2017,27,CA Penarol,Montevideo Wanderers FC,2,0,1.55,3.8,6.5,CA Penarol,1.55
+2017,2017,27,CA Cerro,Instituição Atlética Sud-Americana,2,1,1.85,3.5,4.2,,
+2017,2017,27,El Tanque Sisley,Liverpool FC,0,3,3.0,3.3,2.25,,
+2017,2017,27,Plaza Colónia,CA Fenix,1,3,2.45,3.1,3.0,,
+2017,2017,28,CA River Plate,Nacional de Futebol,2,1,4.0,3.3,1.83,,
+2017,2017,28,Defensor Sporting,Danubio,1,0,2.3,3.2,3.0,,
+2017,2017,28,Liverpool FC,CA Cerro,1,0,2.3,3.25,2.88,,
+2017,2017,28,Montevideo Wanderers FC,Racing Clube Montevideo,1,1,2.25,3.25,3.2,,
+2017,2017,28,Rampla Juniors,Plaza Colónia,2,0,2.0,3.4,3.6,,
+2017,2017,29,Boston River,El Tanque Sisley,1,0,1.91,3.6,3.8,,
+2017,2017,29,CA River Plate,Rampla Juniors,3,1,2.2,3.3,3.25,CA River Plate,2.2
+2017,2017,29,Liverpool FC,Boston River,1,2,2.4,3.4,2.8,Boston River,2.8
+2017,2017,29,Racing Clube Montevideo,Nacional de Futebol,0,1,5.0,3.6,1.73,Nacional de Futebol,1.73
+2017,2017,31,CA Penarol,CA Fenix,3,0,1.4,3.8,11.0,,
+2017,2017,31,CA Cerro,Juventud de las Piedras,3,2,2.0,3.25,4.1,,
+2017,2017,31,Danubio,Instituição Atlética Sud-Americana,1,0,2.25,3.3,3.3,,
+2017,2017,31,El Tanque Sisley,Montevideo Wanderers FC,1,1,3.8,3.4,2.0,,
+2017,2017,31,Plaza Colónia,Defensor Sporting,1,2,4.33,3.4,1.85,,
+2017,2017,32,Defensor Sporting,CA River Plate,2,1,2.0,3.3,3.6,Defensor Sporting,2.0
+2017,2017,32,CA Fenix,Racing Clube Montevideo,1,2,2.7,3.2,2.55,Racing Clube Montevideo,2.55
+2017,2017,32,Rampla Juniors,CA Penarol,1,4,6.5,4.33,1.45,CA Penarol,1.45
+2017,2017,32,Boston River,CA Cerro,1,0,2.2,3.3,2.95,Boston River,2.2
+2017,2017,32,Instituição Atlética Sud-Americana,Plaza Colónia,2,2,2.2,3.3,3.5,Empate,3.3
+2017,2017,32,Juventud de las Piedras,Danubio,2,1,3.6,3.25,2.05,Juventud de las Piedras,3.6
+2017,2017,32,Montevideo Wanderers FC,Liverpool FC,2,1,2.3,3.3,3.0,Montevideo Wanderers FC,2.3
+2017,2017,32,Nacional de Futebol,El Tanque Sisley,1,2,1.44,4.2,7.5,El Tanque Sisley,7.5
+2017,2017,34,CA River Plate,Instituição Atlética Sud-Americana,1,2,1.85,3.6,3.79,,
+2017,2017,34,Liverpool FC,Nacional de Futebol,1,4,5.5,3.75,1.8,,
+2017,2017,34,Plaza Colónia,Juventud de las Piedras,1,0,2.6,3.2,2.5,,
+2017,2017,34,Racing Clube Montevideo,Rampla Juniors,0,0,2.1,3.25,3.5,,
+2017,2017,34,Boston River,Montevideo Wanderers FC,1,1,2.54,3.25,2.75,Empate,3.25
+2017,2017,34,CA Cerro,Danubio,1,2,2.5,3.29,2.79,Danubio,2.79
+2017,2017,34,El Tanque Sisley,CA Fenix,1,1,2.79,3.25,2.63,Empate,3.25
+2017,2017,34,CA Penarol,Defensor Sporting,3,1,1.9,3.6,4.0,CA Penarol,1.9
+2017,2017,35,Danubio,Plaza Colónia,2,2,1.64,3.79,4.75,,
+2017,2017,35,Defensor Sporting,Racing Clube Montevideo,4,2,1.95,3.29,3.75,,
+2017,2017,35,Juventud de las Piedras,CA River Plate,1,0,2.27,3.2,3.0,,
+2017,2017,35,Montevideo Wanderers FC,CA Cerro,2,3,2.37,3.29,2.88,,
+2017,2017,35,Instituição Atlética Sud-Americana,CA Penarol,2,3,7.0,4.5,1.36,,
+2017,2017,35,CA Fenix,Liverpool FC,0,2,2.37,3.29,2.9,,
+2017,2017,35,Rampla Juniors,El Tanque Sisley,1,1,1.95,3.3,4.0,,
+2017,2017,35,Nacional de Futebol,Boston River,5,0,1.7,3.6,4.33,,
+2017,2017,35,CA Cerro,Plaza Colónia,1,0,1.93,3.5,3.7,,
+2017,2017,35,CA River Plate,Danubio,1,1,2.7,3.2,2.6,,
+2017,2017,35,Racing Clube Montevideo,Instituição Atlética Sud-Americana,2,3,2.27,3.2,3.1,,
+2017,2017,35,CA Penarol,Juventud de las Piedras,1,0,1.36,4.5,11.0,,
+2017,2017,35,Boston River,CA Fenix,0,0,1.9,3.3,3.5,,
+2017,2017,35,Liverpool FC,Rampla Juniors,1,2,2.37,3.39,2.7,,
+2017,2017,35,Montevideo Wanderers FC,Nacional de Futebol,2,3,5.0,3.39,1.7,,
+2017,2017,35,El Tanque Sisley,Defensor Sporting,0,2,5.0,3.79,1.66,,
+2017,2017,36,CA Fenix,Montevideo Wanderers FC,4,1,3.0,3.25,2.37,,
+2017,2017,36,Instituição Atlética Sud-Americana,El Tanque Sisley,1,1,2.17,3.5,3.25,,
+2017,2017,36,Juventud de las Piedras,Racing Clube Montevideo,0,2,2.6,3.2,2.79,,
+2017,2017,36,Plaza Colónia,CA River Plate,2,3,2.79,3.25,2.5,,
+2017,2017,36,Nacional de Futebol,CA Cerro,3,1,1.64,4.0,4.75,,
+2017,2017,36,Danubio,CA Penarol,0,2,5.25,3.79,1.65,,
+2017,2017,36,Rampla Juniors,Boston River,1,0,2.39,3.29,2.89,,
+2017,2017,36,Defensor Sporting,Liverpool FC,2,2,1.5,4.33,6.0,,
+2017,2017,36,CA Cerro,CA River Plate,2,2,2.22,3.1,2.9,,
+2017,2017,36,El Tanque Sisley,Juventud de las Piedras,2,2,2.45,3.29,2.55,,
+2017,2017,36,Nacional de Futebol,CA Fenix,1,0,1.44,4.5,5.0,,
+2017,2017,36,Boston River,Defensor Sporting,0,1,3.1,2.95,2.17,,
+2017,2017,36,Liverpool FC,Instituição Atlética Sud-Americana,2,4,2.33,3.1,2.75,,
+2017,2017,36,Montevideo Wanderers FC,Rampla Juniors,1,0,2.05,3.4,3.0,,
+2017,2017,36,Racing Clube Montevideo,Danubio,5,2,2.45,3.05,2.63,,
+2017,2017,36,CA Penarol,Plaza Colónia,3,0,1.18,6.3,14.0,,
+2017,2017,37,CA River Plate,CA Penarol,2,1,5.0,3.6,1.55,,
+2017,2017,37,Instituição Atlética Sud-Americana,Boston River,1,0,2.65,3.2,2.33,,
+2017,2017,37,Juventud de las Piedras,Liverpool FC,2,1,2.08,3.1,3.1,,
+2017,2017,37,Danubio,El Tanque Sisley,2,2,1.61,3.7,4.33,,
+2017,2017,37,Rampla Juniors,Nacional de Futebol,0,2,4.33,3.5,1.67,,
+2017,2017,37,Plaza Colónia,Racing Clube Montevideo,1,2,4.0,3.5,1.7,,
+2017,2017,37,Defensor Sporting,Montevideo Wanderers FC,2,1,1.61,3.8,4.75,,
+2017,2017,37,Boston River,Juventud de las Piedras,3,1,2.1,3.2,3.2,,
+2017,2017,37,CA Fenix,Rampla Juniors,1,1,2.3,3.1,2.8,,
+2017,2017,37,Liverpool FC,Danubio,5,0,2.88,3.2,2.25,,
+2017,2017,37,Montevideo Wanderers FC,Instituição Atlética Sud-Americana,1,0,2.25,3.2,2.85,,
+2017,2017,37,Nacional de Futebol,Defensor Sporting,1,1,2.0,3.2,3.4,,
+2017,2017,37,Racing Clube Montevideo,CA River Plate,0,0,2.45,3.1,2.63,,
+2017,2017,37,El Tanque Sisley,Plaza Colónia,1,1,1.55,3.75,5.0,,
+2017,2017,38,Plaza Colónia,Liverpool FC,0,1,3.5,3.4,1.85,,
+2017,2017,38,Rampla Juniors,CA Cerro,0,1,2.27,3.25,2.7,,
+2017,2017,38,CA Penarol,Racing Clube Montevideo,4,0,1.57,3.7,4.75,,
+2017,2017,38,CA River Plate,El Tanque Sisley,1,0,1.73,3.6,3.75,,
+2017,2017,38,Danubio,Boston River,1,0,2.45,3.1,2.55,,
+2017,2017,38,Defensor Sporting,CA Fenix,0,2,1.6,3.5,4.75,,
+2017,2017,38,Instituição Atlética Sud-Americana,Nacional de Futebol,3,2,4.0,3.7,1.67,,
+2017,2017,38,Juventud de las Piedras,Montevideo Wanderers FC,2,5,4.5,3.3,1.67,,
+2018,2018,1,CA Fenix,Rampla Juniors,3,1,2.14,3.1,3.25,CA Fenix,2.14
+2018,2018,1,CA River Plate,Boston River,2,2,1.95,3.25,3.6,Empate,3.25
+2018,2018,1,Torque,Nacional de Futebol,2,4,5.5,4.0,1.5,Nacional de Futebol,1.5
+2018,2018,1,CA Cerro,Liverpool FC,1,1,2.25,3.39,2.79,Empate,3.39
+2018,2018,1,Club Atletico Progreso,Danubio,1,1,3.6,3.1,2.0,Empate,3.1
+2018,2018,1,Defensor Sporting,CA Atenas de São Carlos,3,0,1.6,3.75,5.0,Defensor Sporting,1.6
+2018,2018,1,Racing Clube Montevideo,CA Penarol,0,2,6.25,4.2,1.44,CA Penarol,1.44
+2018,2018,2,Boston River,Montevideo Wanderers FC,1,3,2.62,2.89,2.7,Montevideo Wanderers FC,2.7
+2018,2018,2,Rampla Juniors,Nacional de Futebol,0,3,4.75,3.75,1.66,Nacional de Futebol,1.66
+2018,2018,2,Torque,Club Atletico Progreso,0,3,1.95,3.29,3.6,Club Atletico Progreso,3.6
+2018,2018,2,CA Atenas de São Carlos,Racing Clube Montevideo,1,0,2.5,3.29,2.79,CA Atenas de São Carlos,2.5
+2018,2018,2,CA Fenix,CA Cerro,0,0,2.62,3.0,2.87,Empate,3.0
+2018,2018,2,Danubio,Defensor Sporting,2,1,2.75,3.2,2.6,Danubio,2.75
+2018,2018,2,CA Penarol,CA River Plate,4,1,1.5,3.89,7.0,CA Penarol,1.5
+2018,2018,3,Club Atletico Progreso,Rampla Juniors,4,1,2.0,3.2,4.0,Club Atletico Progreso,2.0
+2018,2018,3,Liverpool FC,Boston River,2,2,2.39,3.1,3.1,Empate,3.1
+2018,2018,3,Montevideo Wanderers FC,CA Penarol,1,1,5.0,3.5,1.75,Empate,3.5
+2018,2018,3,CA River Plate,CA Atenas de São Carlos,3,1,1.8,3.5,4.5,CA River Plate,1.8
+2018,2018,3,Defensor Sporting,Torque,2,1,1.57,4.2,5.5,Defensor Sporting,1.57
+2018,2018,3,Racing Clube Montevideo,Danubio,1,2,2.75,3.2,2.6,Danubio,2.6
+2018,2018,3,Nacional de Futebol,CA Fenix,2,1,1.44,4.2,7.5,Nacional de Futebol,1.44
+2018,2018,4,Rampla Juniors,Defensor Sporting,1,1,3.79,3.39,1.95,Empate,3.39
+2018,2018,4,CA Penarol,Liverpool FC,2,1,1.36,4.75,8.5,CA Penarol,1.36
+2018,2018,4,CA Atenas de São Carlos,Montevideo Wanderers FC,2,1,3.0,3.2,2.37,CA Atenas de São Carlos,3.0
+2018,2018,4,CA Fenix,Club Atletico Progreso,2,0,2.2,3.2,3.39,CA Fenix,2.2
+2018,2018,4,Danubio,CA River Plate,1,0,2.14,3.29,3.39,Danubio,2.14
+2018,2018,4,Torque,Racing Clube Montevideo,2,2,2.75,3.2,2.5,Empate,3.2
+2018,2018,4,Nacional de Futebol,CA Cerro,4,0,1.5,4.33,6.0,Nacional de Futebol,1.5
+2018,2018,5,Liverpool FC,CA Atenas de São Carlos,1,0,2.0,3.25,3.75,Liverpool FC,2.0
+2018,2018,5,Montevideo Wanderers FC,Danubio,0,1,2.5,3.2,2.87,Danubio,2.87
+2018,2018,5,CA Cerro,Boston River,2,3,2.37,3.1,2.89,Boston River,2.89
+2018,2018,5,CA River Plate,Torque,2,2,1.95,3.39,3.75,Empate,3.39
+2018,2018,5,Club Atletico Progreso,Nacional de Futebol,2,1,7.5,4.2,1.44,Club Atletico Progreso,7.5
+2018,2018,5,Racing Clube Montevideo,Rampla Juniors,2,1,2.25,3.1,3.29,Racing Clube Montevideo,2.25
+2018,2018,5,Defensor Sporting,CA Fenix,3,2,1.66,3.5,5.5,Defensor Sporting,1.66
+2018,2018,6,CA Penarol,Boston River,2,1,1.36,5.0,8.5,CA Penarol,1.36
+2018,2018,6,Club Atletico Progreso,CA Cerro,0,1,2.2,3.39,3.2,CA Cerro,3.2
+2018,2018,6,Danubio,Liverpool FC,0,3,2.04,3.39,3.5,Liverpool FC,3.5
+2018,2018,6,Nacional de Futebol,Defensor Sporting,2,0,2.2,3.39,3.2,Nacional de Futebol,2.2
+2018,2018,6,CA Fenix,Racing Clube Montevideo,0,1,2.45,3.2,3.0,Racing Clube Montevideo,3.0
+2018,2018,6,Rampla Juniors,CA River Plate,1,2,3.2,3.25,2.25,CA River Plate,2.25
+2018,2018,6,Torque,Montevideo Wanderers FC,1,2,3.39,3.2,2.04,Montevideo Wanderers FC,2.04
+2018,2018,7,CA River Plate,CA Fenix,2,1,2.04,3.39,3.5,CA River Plate,2.04
+2018,2018,7,Defensor Sporting,Club Atletico Progreso,1,1,1.66,3.6,5.25,Empate,3.6
+2018,2018,7,Montevideo Wanderers FC,Rampla Juniors,1,1,1.9,3.39,4.0,Empate,3.39
+2018,2018,8,Boston River,CA Atenas de São Carlos,1,0,1.95,3.39,3.75,Boston River,1.95
+2018,2018,8,CA Cerro,CA Penarol,0,3,5.75,4.0,1.55,CA Penarol,1.55
+2018,2018,8,Liverpool FC,Torque,1,0,1.61,4.0,5.0,Liverpool FC,1.61
+2018,2018,8,Racing Clube Montevideo,Nacional de Futebol,0,1,4.75,4.0,1.57,Nacional de Futebol,1.57
+2018,2018,8,CA Fenix,Montevideo Wanderers FC,1,1,3.0,3.25,2.37,Empate,3.25
+2018,2018,8,Danubio,Boston River,0,0,1.9,3.39,4.2,Empate,3.39
+2018,2018,8,Defensor Sporting,CA Cerro,2,1,1.72,3.75,4.5,Defensor Sporting,1.72
+2018,2018,8,CA Atenas de São Carlos,CA Penarol,0,2,7.0,4.75,1.39,CA Penarol,1.39
+2018,2018,8,Club Atletico Progreso,Racing Clube Montevideo,3,0,2.54,3.25,2.54,Club Atletico Progreso,2.54
+2018,2018,8,Rampla Juniors,Liverpool FC,1,2,3.2,3.39,2.04,Liverpool FC,2.04
+2018,2018,8,Nacional de Futebol,CA River Plate,1,0,1.5,4.0,5.5,Nacional de Futebol,1.5
+2018,2018,9,CA Cerro,CA Atenas de São Carlos,1,0,1.8,3.39,4.5,CA Cerro,1.8
+2018,2018,9,CA Penarol,Danubio,1,1,1.5,4.0,7.0,Empate,4.0
+2018,2018,9,Boston River,Torque,1,1,2.29,3.5,2.7,Empate,3.5
+2018,2018,9,CA River Plate,Club Atletico Progreso,4,2,2.37,3.39,2.62,CA River Plate,2.37
+2018,2018,9,Liverpool FC,CA Fenix,1,2,2.2,3.1,3.1,CA Fenix,3.1
+2018,2018,9,Montevideo Wanderers FC,Nacional de Futebol,0,2,5.25,3.75,1.57,Nacional de Futebol,1.57
+2018,2018,9,Racing Clube Montevideo,Defensor Sporting,2,2,3.39,3.29,2.0,Empate,3.29
+2018,2018,9,Nacional de Futebol,Liverpool FC,0,0,1.57,3.79,6.0,Empate,3.79
+2018,2018,9,Club Atletico Progreso,Montevideo Wanderers FC,0,1,2.5,3.2,2.79,Montevideo Wanderers FC,2.79
+2018,2018,9,Rampla Juniors,Boston River,0,0,2.75,3.1,2.62,Empate,3.1
+2018,2018,9,Torque,CA Penarol,2,0,9.0,4.75,1.33,Torque,9.0
+2018,2018,9,Danubio,CA Atenas de São Carlos,5,0,1.61,3.75,5.5,Danubio,1.61
+2018,2018,9,Defensor Sporting,CA River Plate,5,2,1.8,3.5,4.5,Defensor Sporting,1.8
+2018,2018,9,Racing Clube Montevideo,CA Cerro,1,2,2.6,3.1,2.79,CA Cerro,2.79
+2018,2018,10,Boston River,CA Fenix,0,3,2.37,3.2,3.0,CA Fenix,3.0
+2018,2018,10,CA Atenas de São Carlos,Torque,2,0,2.2,3.1,3.29,CA Atenas de São Carlos,2.2
+2018,2018,10,CA Cerro,Danubio,3,2,2.39,3.1,3.0,CA Cerro,2.39
+2018,2018,10,CA River Plate,Racing Clube Montevideo,1,1,2.2,3.2,3.0,Empate,3.2
+2018,2018,10,Liverpool FC,Club Atletico Progreso,1,1,2.25,3.25,2.89,Empate,3.25
+2018,2018,10,Montevideo Wanderers FC,Defensor Sporting,1,2,3.29,3.25,2.04,Defensor Sporting,2.04
+2018,2018,10,CA Penarol,Rampla Juniors,2,1,1.3,4.75,8.5,CA Penarol,1.3
+2018,2018,11,Defensor Sporting,Liverpool FC,1,0,1.8,3.6,4.33,Defensor Sporting,1.8
+2018,2018,11,CA Fenix,CA Penarol,0,3,5.25,3.6,1.6,CA Penarol,1.6
+2018,2018,11,Racing Clube Montevideo,Montevideo Wanderers FC,2,3,2.25,3.2,3.2,Montevideo Wanderers FC,3.2
+2018,2018,11,Rampla Juniors,CA Atenas de São Carlos,1,1,2.1,3.29,3.5,Empate,3.29
+2018,2018,11,Torque,Danubio,0,3,4.0,3.39,1.9,Danubio,1.9
+2018,2018,11,Nacional de Futebol,Boston River,1,0,1.36,4.2,7.0,Nacional de Futebol,1.36
+2018,2018,12,Danubio,Rampla Juniors,3,1,1.75,3.5,4.75,Danubio,1.75
+2018,2018,12,Liverpool FC,Racing Clube Montevideo,2,1,2.4,3.25,2.75,Liverpool FC,2.4
+2018,2018,12,Montevideo Wanderers FC,CA River Plate,0,3,2.3,3.3,2.88,CA River Plate,2.88
+2018,2018,12,CA Cerro,Torque,1,1,1.85,3.4,4.0,Empate,3.4
+2018,2018,12,CA Atenas de São Carlos,CA Fenix,3,1,2.45,3.2,2.75,CA Atenas de São Carlos,2.45
+2018,2018,12,Boston River,Club Atletico Progreso,3,2,2.3,3.0,3.2,Boston River,2.3
+2018,2018,12,CA Penarol,Nacional de Futebol,1,1,2.45,3.2,2.75,Empate,3.2
+2018,2018,13,CA Fenix,Danubio,0,1,3.6,3.5,2.05,Danubio,2.05
+2018,2018,13,Montevideo Wanderers FC,CA Cerro,0,1,2.8,3.5,2.79,CA Cerro,2.79
+2018,2018,13,Nacional de Futebol,CA Atenas de São Carlos,2,1,1.28,5.5,13.0,,
+2018,2018,13,CA River Plate,Liverpool FC,5,0,2.37,3.5,2.88,CA River Plate,2.37
+2018,2018,13,Club Atletico Progreso,CA Penarol,0,1,5.0,3.6,1.9,CA Penarol,1.9
+2018,2018,13,Rampla Juniors,Torque,2,1,2.45,3.2,2.8,Rampla Juniors,2.45
+2018,2018,14,Defensor Sporting,Boston River,2,1,1.5,4.0,7.0,Defensor Sporting,1.5
+2018,2018,14,CA Atenas de São Carlos,Club Atletico Progreso,0,6,2.2,3.29,3.2,Club Atletico Progreso,3.2
+2018,2018,14,CA Penarol,Defensor Sporting,4,1,1.95,3.39,3.89,CA Penarol,1.95
+2018,2018,14,Danubio,Nacional de Futebol,1,2,4.0,3.5,1.91,Nacional de Futebol,1.91
+2018,2018,14,Torque,CA Fenix,0,2,2.37,3.3,3.0,CA Fenix,3.0
+2018,2018,14,Boston River,Racing Clube Montevideo,2,1,2.63,3.2,2.6,Boston River,2.63
+2018,2018,14,CA Cerro,Rampla Juniors,2,0,2.0,3.39,3.5,CA Cerro,2.0
+2018,2018,14,Liverpool FC,Montevideo Wanderers FC,2,0,2.39,3.4,2.75,Liverpool FC,2.39
+2018,2018,15,Defensor Sporting,CA Atenas de São Carlos,0,2,1.5,4.33,6.0,CA Atenas de São Carlos,6.0
+2018,2018,15,Torque,CA River Plate,2,2,3.0,3.6,2.2,Empate,3.6
+2018,2018,15,Nacional de Futebol,CA Fenix,3,1,1.44,4.2,7.5,Nacional de Futebol,1.44
+2018,2018,15,Racing Clube Montevideo,Liverpool FC,2,0,2.75,3.1,2.75,Racing Clube Montevideo,2.75
+2018,2018,15,Rampla Juniors,CA Cerro,0,1,3.1,3.1,2.5,CA Cerro,2.5
+2018,2018,15,CA Atenas de São Carlos,Torque,0,1,2.5,3.2,3.0,Torque,3.0
+2018,2018,15,CA River Plate,Defensor Sporting,1,0,3.1,3.5,2.3,CA River Plate,3.1
+2018,2018,15,Club Atletico Progreso,CA Penarol,4,3,7.0,4.0,1.5,Club Atletico Progreso,7.0
+2018,2018,15,CA Fenix,Rampla Juniors,1,3,2.2,3.25,3.39,Rampla Juniors,3.39
+2018,2018,15,CA Cerro,Nacional de Futebol,2,2,5.5,3.6,1.75,Empate,3.6
+2018,2018,15,Liverpool FC,Danubio,3,4,2.87,3.3,2.5,Danubio,2.5
+2018,2018,15,Montevideo Wanderers FC,Racing Clube Montevideo,0,1,2.79,3.25,2.55,Racing Clube Montevideo,2.55
+2018,2018,16,Danubio,Montevideo Wanderers FC,0,2,2.2,3.29,3.25,Montevideo Wanderers FC,3.25
+2018,2018,16,Defensor Sporting,Club Atletico Progreso,1,0,1.8,3.5,4.2,Defensor Sporting,1.8
+2018,2018,16,Rampla Juniors,Montevideo Wanderers FC,2,3,3.3,3.2,2.3,Montevideo Wanderers FC,2.3
+2018,2018,16,Torque,Boston River,0,1,2.63,3.1,2.7,Boston River,2.7
+2018,2018,16,Nacional de Futebol,Liverpool FC,1,1,1.44,4.2,6.5,Empate,4.2
+2018,2018,16,Danubio,CA Cerro,0,2,2.2,3.25,3.0,CA Cerro,3.0
+2018,2018,16,Racing Clube Montevideo,CA Fenix,1,0,2.1,3.3,3.3,Racing Clube Montevideo,2.1
+2018,2018,16,CA Penarol,CA River Plate,6,0,1.4,4.5,6.5,CA Penarol,1.4
+2018,2018,17,CA Penarol,Boston River,3,0,1.4,4.4,7.0,CA Penarol,1.4
+2018,2018,17,CA Fenix,Danubio,2,2,3.5,3.4,2.2,Empate,3.4
+2018,2018,17,Racing Clube Montevideo,Rampla Juniors,1,2,2.2,3.2,3.4,Rampla Juniors,3.4
+2018,2018,17,CA Atenas de São Carlos,CA Penarol,1,2,6.5,4.33,1.44,CA Penarol,1.44
+2018,2018,17,Boston River,Defensor Sporting,1,2,3.1,3.25,2.3,Defensor Sporting,2.3
+2018,2018,17,Club Atletico Progreso,CA River Plate,0,0,2.15,3.3,3.4,Empate,3.3
+2018,2018,17,Montevideo Wanderers FC,Nacional de Futebol,1,4,5.75,3.8,1.62,Nacional de Futebol,1.62
+2018,2018,17,CA Cerro,Liverpool FC,1,1,2.2,3.2,3.5,Empate,3.2
+2018,2018,18,CA River Plate,Boston River,1,0,2.37,3.2,3.1,CA River Plate,2.37
+2018,2018,18,Danubio,Rampla Juniors,4,1,1.75,3.6,4.75,Danubio,1.75
+2018,2018,18,Nacional de Futebol,Racing Clube Montevideo,5,0,1.44,4.2,8.0,Nacional de Futebol,1.44
+2018,2018,18,CA Cerro,Montevideo Wanderers FC,2,1,2.15,3.3,3.4,CA Cerro,2.15
+2018,2018,18,Club Atletico Progreso,CA Atenas de São Carlos,1,1,1.8,3.4,4.75,Empate,3.4
+2018,2018,18,Liverpool FC,CA Fenix,3,1,2.3,3.3,3.1,Liverpool FC,2.3
+2018,2018,18,CA Penarol,Torque,3,4,1.36,4.6,8.0,Torque,8.0
+2018,2018,18,Racing Clube Montevideo,Danubio,0,2,3.3,3.3,2.2,Danubio,2.2
+2018,2018,18,Rampla Juniors,Nacional de Futebol,0,2,8.0,4.33,1.4,Nacional de Futebol,1.4
+2018,2018,18,CA Fenix,CA Cerro,1,1,2.54,3.2,2.75,Empate,3.2
+2018,2018,18,Boston River,Club Atletico Progreso,0,0,2.6,3.2,2.7,Empate,3.2
+2018,2018,18,CA Atenas de São Carlos,CA River Plate,1,1,2.38,3.3,2.9,Empate,3.3
+2018,2018,18,Montevideo Wanderers FC,Liverpool FC,1,0,2.3,3.5,2.9,Montevideo Wanderers FC,2.3
+2018,2018,18,Torque,Defensor Sporting,1,0,3.2,3.2,2.3,Torque,3.2
+2018,2018,19,CA Cerro,Racing Clube Montevideo,0,0,2.1,3.25,3.3,Empate,3.25
+2018,2018,19,Danubio,Nacional de Futebol,0,2,5.5,3.75,1.64,Nacional de Futebol,1.64
+2018,2018,19,Liverpool FC,Rampla Juniors,2,1,1.85,3.5,4.33,Liverpool FC,1.85
+2018,2018,19,Montevideo Wanderers FC,CA Fenix,0,1,1.85,3.6,4.2,CA Fenix,4.2
+2018,2018,19,CA Atenas de São Carlos,Boston River,1,0,2.3,3.1,3.2,CA Atenas de São Carlos,2.3
+2018,2018,19,Club Atletico Progreso,Torque,0,2,2.3,3.1,3.25,Torque,3.25
+2018,2018,19,Defensor Sporting,CA Penarol,1,3,4.75,3.6,1.75,CA Penarol,1.75
+2018,2018,19,Nacional de Futebol,Torque,3,2,1.53,3.9,7.0,Nacional de Futebol,1.53
+2018,2018,20,Boston River,CA River Plate,2,3,2.4,3.25,2.75,CA River Plate,2.75
+2018,2018,20,Liverpool FC,CA Cerro,1,1,2.5,3.2,2.63,Empate,3.2
+2018,2018,20,CA Penarol,Racing Clube Montevideo,1,1,1.5,4.2,7.5,Empate,4.2
+2018,2018,20,CA Atenas de São Carlos,Defensor Sporting,2,5,3.75,3.3,2.1,Defensor Sporting,2.1
+2018,2018,20,Danubio,Club Atletico Progreso,2,2,2.0,3.25,4.0,Empate,3.25
+2018,2018,20,Rampla Juniors,CA Fenix,1,0,2.54,3.2,2.8,Rampla Juniors,2.54
+2018,2018,20,Nacional de Futebol,Torque,3,2,1.4,4.5,8.0,Nacional de Futebol,1.4
+2018,2018,21,Club Atletico Progreso,Torque,3,1,2.25,3.3,3.2,Club Atletico Progreso,2.25
+2018,2018,21,Defensor Sporting,Danubio,1,2,1.96,3.4,3.9,Danubio,3.9
+2018,2018,21,Nacional de Futebol,Rampla Juniors,2,1,1.3,5.0,10.5,Nacional de Futebol,1.3
+2018,2018,21,CA River Plate,CA Penarol,0,1,4.5,4.0,1.62,CA Penarol,1.62
+2018,2018,21,Montevideo Wanderers FC,Boston River,3,1,2.1,3.2,3.5,Montevideo Wanderers FC,2.1
+2018,2018,21,Racing Clube Montevideo,CA Atenas de São Carlos,0,0,2.0,3.4,3.75,Empate,3.4
+2018,2018,22,CA Atenas de São Carlos,CA River Plate,1,1,2.7,3.3,2.6,Empate,3.3
+2018,2018,22,Danubio,Racing Clube Montevideo,1,1,2.25,3.2,3.2,Empate,3.2
+2018,2018,22,CA Penarol,Montevideo Wanderers FC,3,0,1.57,4.2,5.75,CA Penarol,1.57
+2018,2018,22,Boston River,Liverpool FC,1,0,2.8,3.2,2.5,Boston River,2.8
+2018,2018,22,CA Fenix,Nacional de Futebol,0,3,7.0,4.0,1.44,Nacional de Futebol,1.44
+2018,2018,22,Rampla Juniors,Club Atletico Progreso,1,2,3.0,3.3,2.3,Club Atletico Progreso,2.3
+2018,2018,22,Torque,Defensor Sporting,0,0,3.0,3.3,2.4,Empate,3.3
+2018,2018,23,CA Cerro,Nacional de Futebol,1,2,5.75,3.8,1.57,Nacional de Futebol,1.57
+2018,2018,23,Montevideo Wanderers FC,CA Atenas de São Carlos,2,2,2.04,3.2,3.75,Empate,3.2
+2018,2018,23,Racing Clube Montevideo,Torque,0,1,2.3,3.25,3.0,Torque,3.0
+2018,2018,23,Club Atletico Progreso,CA Fenix,1,0,2.54,3.4,2.7,Club Atletico Progreso,2.54
+2018,2018,23,CA River Plate,Danubio,1,2,3.1,3.4,2.28,Danubio,2.28
+2018,2018,23,Defensor Sporting,Rampla Juniors,2,2,1.67,3.6,5.5,Empate,3.6
+2018,2018,23,Liverpool FC,CA Penarol,2,4,4.1,3.6,1.75,CA Penarol,1.75
+2018,2018,24,CA Atenas de São Carlos,Liverpool FC,0,1,2.6,3.0,2.7,Liverpool FC,2.7
+2018,2018,24,Danubio,Montevideo Wanderers FC,2,2,2.14,3.25,3.4,Empate,3.25
+2018,2018,24,Boston River,CA Cerro,2,3,2.5,3.2,2.8,CA Cerro,2.8
+2018,2018,24,CA Fenix,Defensor Sporting,1,2,2.8,3.2,2.45,Defensor Sporting,2.45
+2018,2018,24,Rampla Juniors,Racing Clube Montevideo,2,0,2.63,3.2,2.65,Rampla Juniors,2.63
+2018,2018,24,Torque,CA River Plate,3,0,2.5,3.4,2.7,Torque,2.5
+2018,2018,24,Nacional de Futebol,Club Atletico Progreso,1,0,1.53,4.0,6.0,Nacional de Futebol,1.53
+2018,2018,25,CA Cerro,Club Atletico Progreso,5,2,2.5,3.2,2.65,CA Cerro,2.5
+2018,2018,25,Racing Clube Montevideo,CA Fenix,2,1,2.5,3.2,2.6,Racing Clube Montevideo,2.5
+2018,2018,25,Boston River,CA Penarol,1,2,5.5,3.75,1.57,CA Penarol,1.57
+2018,2018,25,CA River Plate,Rampla Juniors,3,4,2.3,3.3,2.9,Rampla Juniors,2.9
+2018,2018,25,Liverpool FC,Danubio,3,0,2.7,3.3,2.37,Liverpool FC,2.7
+2018,2018,25,Montevideo Wanderers FC,Torque,1,0,2.4,3.25,2.7,Montevideo Wanderers FC,2.4
+2018,2018,25,Defensor Sporting,Nacional de Futebol,2,0,4.0,3.4,1.85,Defensor Sporting,4.0
+2018,2018,26,CA Fenix,CA River Plate,1,3,2.3,3.3,3.0,CA River Plate,3.0
+2018,2018,26,Rampla Juniors,Montevideo Wanderers FC,0,1,2.6,3.3,2.7,Montevideo Wanderers FC,2.7
+2018,2018,26,Nacional de Futebol,Racing Clube Montevideo,1,0,1.36,4.75,8.5,Nacional de Futebol,1.36
+2018,2018,26,CA Atenas de São Carlos,Boston River,1,0,2.54,3.1,2.8,CA Atenas de São Carlos,2.54
+2018,2018,26,Club Atletico Progreso,Defensor Sporting,0,0,2.88,3.25,2.4,Empate,3.25
+2018,2018,26,Torque,Liverpool FC,2,2,2.75,3.2,2.63,Empate,3.2
+2018,2018,26,CA Penarol,CA Cerro,3,2,1.44,4.2,7.5,CA Penarol,1.44
+2018,2018,27,CA Cerro,Defensor Sporting,1,1,2.87,3.25,2.38,Empate,3.25
+2018,2018,27,CA Penarol,CA Atenas de São Carlos,2,0,1.33,4.75,7.5,CA Penarol,1.33
+2018,2018,27,Montevideo Wanderers FC,CA Fenix,1,1,2.2,3.25,3.0,Empate,3.25
+2018,2018,27,Boston River,Danubio,0,0,2.9,3.2,2.4,Empate,3.2
+2018,2018,27,CA River Plate,Nacional de Futebol,0,0,6.0,4.33,1.53,Empate,4.33
+2018,2018,27,Liverpool FC,Rampla Juniors,2,0,2.14,3.4,3.4,Liverpool FC,2.14
+2018,2018,27,Racing Clube Montevideo,Club Atletico Progreso,2,0,3.2,3.2,2.3,Racing Clube Montevideo,3.2
+2018,2018,28,Torque,Boston River,3,2,2.3,3.4,3.0,Torque,2.3
+2018,2018,28,Nacional de Futebol,Montevideo Wanderers FC,1,3,1.44,4.2,7.0,Montevideo Wanderers FC,7.0
+2018,2018,28,CA Atenas de São Carlos,CA Cerro,0,1,2.8,3.25,2.45,CA Cerro,2.45
+2018,2018,28,CA Fenix,Liverpool FC,0,0,2.5,3.25,2.75,Empate,3.25
+2018,2018,28,Club Atletico Progreso,CA River Plate,2,2,2.14,3.35,3.4,Empate,3.35
+2018,2018,28,Danubio,CA Penarol,0,2,3.8,3.6,1.86,CA Penarol,1.86
+2018,2018,28,Defensor Sporting,Racing Clube Montevideo,2,1,1.8,3.5,4.5,Defensor Sporting,1.8
+2018,2018,29,CA Atenas de São Carlos,Danubio,0,0,3.4,3.4,2.1,Empate,3.4
+2018,2018,29,Liverpool FC,Nacional de Futebol,1,2,4.33,3.6,1.8,,
+2018,2018,29,Boston River,Rampla Juniors,0,0,2.55,3.2,2.7,Empate,3.2
+2018,2018,29,CA Cerro,Racing Clube Montevideo,1,2,2.1,3.3,3.4,Racing Clube Montevideo,3.4
+2018,2018,29,CA Penarol,Torque,1,1,1.44,4.4,6.5,Empate,4.4
+2018,2018,29,CA River Plate,Defensor Sporting,3,2,2.8,3.3,2.4,CA River Plate,2.8
+2018,2018,29,Montevideo Wanderers FC,Club Atletico Progreso,3,2,2.1,3.3,3.4,Montevideo Wanderers FC,2.1
+2018,2018,31,Club Atletico Progreso,Liverpool FC,1,1,2.38,3.2,3.1,Empate,3.2
+2018,2018,31,Defensor Sporting,Montevideo Wanderers FC,3,0,2.1,3.3,3.5,Defensor Sporting,2.1
+2018,2018,31,Torque,CA Atenas de São Carlos,1,1,1.87,3.3,4.5,Empate,3.3
+2018,2018,31,Danubio,CA Cerro,0,0,2.38,3.2,2.88,Empate,3.2
+2018,2018,31,CA Fenix,Boston River,2,1,2.34,3.2,3.0,CA Fenix,2.34
+2018,2018,31,Racing Clube Montevideo,CA River Plate,2,1,2.3,3.1,3.2,Racing Clube Montevideo,2.3
+2018,2018,31,Rampla Juniors,CA Penarol,1,0,6.6,4.2,1.44,Rampla Juniors,6.6
+2018,2018,32,CA Atenas de São Carlos,Rampla Juniors,2,2,2.1,3.2,3.6,Empate,3.2
+2018,2018,32,CA Penarol,CA Fenix,2,0,1.4,4.6,8.0,CA Penarol,1.4
+2018,2018,32,Liverpool FC,Defensor Sporting,2,1,2.75,3.25,2.5,Liverpool FC,2.75
+2018,2018,32,CA Cerro,CA River Plate,4,2,2.2,3.25,3.1,CA Cerro,2.2
+2018,2018,32,Danubio,Torque,3,1,1.9,3.25,4.33,Danubio,1.9
+2018,2018,32,Montevideo Wanderers FC,Racing Clube Montevideo,1,2,2.3,3.25,3.1,Racing Clube Montevideo,3.1
+2018,2018,32,Boston River,Nacional de Futebol,1,0,8.5,4.5,1.4,Boston River,8.5
+2018,2018,33,Nacional de Futebol,CA Penarol,1,1,2.3,3.3,3.1,Empate,3.3
+2018,2018,33,CA Fenix,CA Atenas de São Carlos,2,1,2.0,3.4,4.0,CA Fenix,2.0
+2018,2018,33,CA River Plate,Montevideo Wanderers FC,0,5,2.54,3.6,2.54,Montevideo Wanderers FC,2.54
+2018,2018,33,Club Atletico Progreso,Boston River,1,0,2.2,3.4,3.2,Club Atletico Progreso,2.2
+2018,2018,33,Racing Clube Montevideo,Liverpool FC,1,1,2.75,3.4,2.45,Empate,3.4
+2018,2018,33,Rampla Juniors,Danubio,0,0,3.2,3.3,2.25,Empate,3.3
+2018,2018,33,Torque,CA Cerro,0,0,2.25,3.4,3.1,Empate,3.4
+2018,2018,34,Torque,Rampla Juniors,0,0,2.1,3.1,3.6,Empate,3.1
+2018,2018,34,CA Penarol,Club Atletico Progreso,1,0,1.44,4.5,7.0,CA Penarol,1.44
+2018,2018,34,Danubio,CA Fenix,1,1,2.24,3.2,3.2,Empate,3.2
+2018,2018,34,Boston River,Defensor Sporting,3,1,5.0,3.8,1.65,Boston River,5.0
+2018,2018,34,CA Cerro,Montevideo Wanderers FC,1,1,2.11,3.4,3.5,Empate,3.4
+2018,2018,34,Liverpool FC,CA River Plate,4,1,1.91,3.5,4.0,Liverpool FC,1.91
+2018,2018,34,CA Atenas de São Carlos,Nacional de Futebol,2,2,6.0,4.1,1.5,Empate,4.1
+2018,2018,35,CA Fenix,Torque,2,1,2.12,3.3,3.8,CA Fenix,2.12
+2018,2018,35,Club Atletico Progreso,CA Atenas de São Carlos,5,0,1.8,3.4,4.5,Club Atletico Progreso,1.8
+2018,2018,35,Defensor Sporting,CA Penarol,1,2,3.8,3.4,2.0,CA Penarol,2.0
+2018,2018,35,Montevideo Wanderers FC,Liverpool FC,3,2,3.1,3.3,2.37,Montevideo Wanderers FC,3.1
+2018,2018,35,Nacional de Futebol,Danubio,1,0,1.67,3.6,5.25,Nacional de Futebol,1.67
+2018,2018,35,Racing Clube Montevideo,Boston River,3,0,2.21,3.2,3.4,Racing Clube Montevideo,2.21
+2018,2018,35,Rampla Juniors,CA Cerro,2,2,3.25,3.25,2.2,Empate,3.25
+2018,2018,36,Nacional de Futebol,CA Penarol,1,2,2.55,3.1,2.87,CA Penarol,2.87
+2019,2019,1,Juventud de las Piedras,CA Fenix,1,2,2.6,3.3,2.55,CA Fenix,2.55
+2019,2019,1,Liverpool FC,Nacional de Futebol,1,1,4.0,3.75,1.87,Empate,3.75
+2019,2019,1,Rampla Juniors,Club Atletico Progreso,3,4,2.63,3.6,2.5,Club Atletico Progreso,2.5
+2019,2019,1,Montevideo Wanderers FC,CA River Plate,1,1,2.37,3.5,2.62,Empate,3.5
+2019,2019,1,Boston River,Plaza Colónia,2,2,2.1,3.3,3.3,Empate,3.3
+2019,2019,1,Cerro Lago FC,Danubio,2,0,3.9,3.4,1.95,Cerro Lago FC,3.9
+2019,2019,1,Racing Clube Montevideo,CA Cerro,1,3,2.09,3.3,3.4,CA Cerro,3.4
+2019,2019,1,Defensor Sporting,CA Penarol,0,1,4.5,3.6,1.75,CA Penarol,1.75
+2019,2019,2,CA Cerro,Boston River,0,1,2.1,3.25,3.6,Boston River,3.6
+2019,2019,2,CA River Plate,Racing Clube Montevideo,4,1,2.75,3.0,2.8,CA River Plate,2.75
+2019,2019,2,Plaza Colónia,Danubio,0,1,2.45,3.2,2.9,Danubio,2.9
+2019,2019,2,CA Penarol,Rampla Juniors,5,0,1.25,4.75,12.0,CA Penarol,1.25
+2019,2019,2,CA Fenix,Liverpool FC,4,4,2.63,3.5,2.45,Empate,3.5
+2019,2019,2,Club Atletico Progreso,Juventud de las Piedras,1,0,2.1,3.3,3.4,Club Atletico Progreso,2.1
+2019,2019,2,Defensor Sporting,Cerro Lago FC,0,3,2.15,3.6,3.0,Cerro Lago FC,3.0
+2019,2019,3,Nacional de Futebol,Montevideo Wanderers FC,1,4,1.6,3.75,5.25,Montevideo Wanderers FC,5.25
+2019,2019,3,Cerro Lago FC,Plaza Colónia,1,0,1.83,3.5,4.33,Cerro Lago FC,1.83
+2019,2019,3,Liverpool FC,Club Atletico Progreso,3,5,2.2,3.4,2.87,Club Atletico Progreso,2.87
+2019,2019,3,Racing Clube Montevideo,Nacional de Futebol,1,1,6.0,4.0,1.53,Empate,4.0
+2019,2019,3,Boston River,CA River Plate,2,0,2.45,3.2,2.87,Boston River,2.45
+2019,2019,3,Danubio,CA Cerro,1,0,2.15,3.3,3.3,Danubio,2.15
+2019,2019,3,Rampla Juniors,Defensor Sporting,0,2,3.8,3.3,1.99,Defensor Sporting,1.99
+2019,2019,3,Juventud de las Piedras,CA Penarol,1,4,9.0,4.7,1.36,CA Penarol,1.36
+2019,2019,3,Montevideo Wanderers FC,CA Fenix,0,2,2.7,3.4,2.37,CA Fenix,2.37
+2019,2019,4,CA Cerro,Plaza Colónia,1,1,2.14,3.1,3.3,Empate,3.1
+2019,2019,4,Club Atletico Progreso,Montevideo Wanderers FC,2,2,2.45,3.1,2.7,Empate,3.1
+2019,2019,4,Defensor Sporting,Juventud de las Piedras,1,4,1.57,3.5,5.25,Juventud de las Piedras,5.25
+2019,2019,4,Nacional de Futebol,Boston River,2,2,1.65,3.8,4.5,Empate,3.8
+2019,2019,4,CA Fenix,Racing Clube Montevideo,2,0,2.36,3.3,2.8,CA Fenix,2.36
+2019,2019,4,CA River Plate,Danubio,1,1,2.7,3.4,2.38,Empate,3.4
+2019,2019,4,Rampla Juniors,Cerro Lago FC,2,1,2.6,3.4,2.45,Rampla Juniors,2.6
+2019,2019,4,CA Penarol,Liverpool FC,1,0,1.55,4.33,4.75,CA Penarol,1.55
+2019,2019,5,Boston River,CA Fenix,1,3,2.8,3.2,2.34,CA Fenix,2.34
+2019,2019,5,Danubio,Nacional de Futebol,2,0,2.9,3.4,2.4,Danubio,2.9
+2019,2019,5,Liverpool FC,Defensor Sporting,6,2,2.37,3.1,2.87,Liverpool FC,2.37
+2019,2019,5,Cerro Lago FC,CA Cerro,4,1,2.1,3.3,3.6,Cerro Lago FC,2.1
+2019,2019,5,Juventud de las Piedras,Rampla Juniors,1,1,2.55,3.5,2.5,Empate,3.5
+2019,2019,5,Plaza Colónia,CA River Plate,1,0,2.55,3.2,2.7,Plaza Colónia,2.55
+2019,2019,5,Racing Clube Montevideo,Club Atletico Progreso,3,0,2.45,3.4,2.62,Racing Clube Montevideo,2.45
+2019,2019,5,Montevideo Wanderers FC,CA Penarol,2,0,4.75,4.0,1.57,Montevideo Wanderers FC,4.75
+2019,2019,6,CA Fenix,Danubio,5,1,2.55,3.3,2.55,CA Fenix,2.55
+2019,2019,6,Rampla Juniors,Liverpool FC,2,0,2.75,3.3,2.37,Rampla Juniors,2.75
+2019,2019,6,CA Penarol,Racing Clube Montevideo,2,2,1.4,4.5,6.5,Empate,4.5
+2019,2019,6,Club Atletico Progreso,Boston River,1,1,2.15,3.4,3.1,Empate,3.4
+2019,2019,6,Defensor Sporting,Montevideo Wanderers FC,1,1,2.15,3.5,2.75,Empate,3.5
+2019,2019,6,Juventud de las Piedras,Cerro Lago FC,1,0,2.95,3.15,2.17,Juventud de las Piedras,2.95
+2019,2019,6,Nacional de Futebol,Plaza Colónia,3,0,1.34,5.0,7.0,Nacional de Futebol,1.34
+2019,2019,7,CA Cerro,Nacional de Futebol,0,2,7.0,4.5,1.4,Nacional de Futebol,1.4
+2019,2019,7,Liverpool FC,Juventud de las Piedras,2,1,1.83,3.5,4.0,Liverpool FC,1.83
+2019,2019,7,Boston River,CA Penarol,0,4,5.75,3.75,1.57,CA Penarol,1.57
+2019,2019,7,Cerro Lago FC,CA River Plate,2,0,2.2,3.4,3.2,Cerro Lago FC,2.2
+2019,2019,7,Danubio,Club Atletico Progreso,3,2,1.95,3.4,3.8,Danubio,1.95
+2019,2019,7,Montevideo Wanderers FC,Rampla Juniors,1,0,2.01,3.35,3.4,Montevideo Wanderers FC,2.01
+2019,2019,7,Plaza Colónia,CA Fenix,2,2,3.8,3.5,2.0,Empate,3.5
+2019,2019,7,Racing Clube Montevideo,Defensor Sporting,4,2,2.45,3.3,2.87,Racing Clube Montevideo,2.45
+2019,2019,8,Rampla Juniors,Racing Clube Montevideo,2,0,2.9,3.2,2.4,Rampla Juniors,2.9
+2019,2019,8,Juventud de las Piedras,Montevideo Wanderers FC,4,1,2.8,3.3,2.45,Juventud de las Piedras,2.8
+2019,2019,8,Nacional de Futebol,CA River Plate,6,0,1.62,3.7,6.0,Nacional de Futebol,1.62
+2019,2019,8,CA Penarol,Danubio,1,0,1.84,3.4,4.75,CA Penarol,1.84
+2019,2019,8,CA Fenix,CA Cerro,2,1,1.95,3.2,3.8,CA Fenix,1.95
+2019,2019,8,Club Atletico Progreso,Plaza Colónia,0,1,2.05,3.4,3.8,Plaza Colónia,3.8
+2019,2019,8,Defensor Sporting,Boston River,0,0,2.15,3.6,3.25,Empate,3.6
+2019,2019,8,Liverpool FC,Cerro Lago FC,3,2,2.2,3.25,3.4,Liverpool FC,2.2
+2019,2019,9,CA Cerro,Club Atletico Progreso,0,2,2.8,3.4,2.31,Club Atletico Progreso,2.31
+2019,2019,9,Danubio,Defensor Sporting,1,1,2.1,3.35,3.6,Empate,3.35
+2019,2019,9,Montevideo Wanderers FC,Liverpool FC,2,1,3.0,3.3,2.45,Montevideo Wanderers FC,3.0
+2019,2019,9,Plaza Colónia,CA Penarol,0,1,6.5,4.0,1.55,CA Penarol,1.55
+2019,2019,9,CA River Plate,CA Fenix,2,2,2.9,3.6,2.2,Empate,3.6
+2019,2019,9,Boston River,Rampla Juniors,1,1,2.15,3.4,3.1,Empate,3.4
+2019,2019,9,Racing Clube Montevideo,Juventud de las Piedras,2,1,1.95,3.6,3.6,Racing Clube Montevideo,1.95
+2019,2019,9,Cerro Lago FC,Nacional de Futebol,2,2,3.8,3.8,1.85,Empate,3.8
+2019,2019,10,CA Fenix,Nacional de Futebol,4,4,3.8,3.6,1.85,Empate,3.6
+2019,2019,10,Club Atletico Progreso,CA River Plate,4,0,1.81,3.6,4.0,Club Atletico Progreso,1.81
+2019,2019,10,Rampla Juniors,Danubio,0,0,3.25,3.4,2.15,Empate,3.4
+2019,2019,10,CA Penarol,CA Cerro,1,1,1.2,6.5,14.0,Empate,6.5
+2019,2019,10,Juventud de las Piedras,Boston River,0,1,2.45,3.4,2.7,Boston River,2.7
+2019,2019,10,Liverpool FC,Racing Clube Montevideo,1,1,2.2,3.5,3.1,Empate,3.5
+2019,2019,10,Defensor Sporting,Plaza Colónia,4,1,1.86,3.5,4.0,Defensor Sporting,1.86
+2019,2019,11,Montevideo Wanderers FC,Cerro Lago FC,0,0,2.38,3.4,2.88,Empate,3.4
+2019,2019,12,CA River Plate,CA Penarol,0,2,7.5,4.33,1.45,CA Penarol,1.45
+2019,2019,12,Boston River,Liverpool FC,0,4,2.4,3.25,2.88,Liverpool FC,2.88
+2019,2019,12,Plaza Colónia,Rampla Juniors,0,1,2.22,3.25,3.0,Rampla Juniors,3.0
+2019,2019,12,Nacional de Futebol,Club Atletico Progreso,4,0,1.54,4.0,5.5,Nacional de Futebol,1.54
+2019,2019,12,CA Cerro,Defensor Sporting,0,2,2.9,3.4,2.2,Defensor Sporting,2.2
+2019,2019,12,Danubio,Juventud de las Piedras,4,3,1.8,3.5,4.5,Danubio,1.8
+2019,2019,12,Racing Clube Montevideo,Montevideo Wanderers FC,2,4,2.3,3.2,3.1,Montevideo Wanderers FC,3.1
+2019,2019,12,Cerro Lago FC,CA Fenix,2,0,2.5,3.1,2.8,Cerro Lago FC,2.5
+2019,2019,13,Club Atletico Progreso,CA Fenix,3,0,2.62,3.6,2.45,Club Atletico Progreso,2.62
+2019,2019,13,Defensor Sporting,CA River Plate,1,1,2.0,3.55,3.75,Empate,3.55
+2019,2019,13,Juventud de las Piedras,Plaza Colónia,0,0,2.3,3.4,3.0,Empate,3.4
+2019,2019,13,Liverpool FC,Danubio,0,5,2.2,3.5,2.9,Danubio,2.9
+2019,2019,13,Montevideo Wanderers FC,Boston River,0,3,1.9,3.5,3.9,Boston River,3.9
+2019,2019,13,Racing Clube Montevideo,Cerro Lago FC,1,0,2.4,3.75,2.63,Racing Clube Montevideo,2.4
+2019,2019,13,Rampla Juniors,CA Cerro,2,0,2.63,3.5,2.7,Rampla Juniors,2.63
+2019,2019,13,CA Penarol,Nacional de Futebol,1,1,2.25,3.4,2.9,Empate,3.4
+2019,2019,14,CA Cerro,Juventud de las Piedras,1,0,2.63,3.4,2.45,CA Cerro,2.63
+2019,2019,14,CA Fenix,CA Penarol,1,2,4.6,3.9,1.65,CA Penarol,1.65
+2019,2019,14,CA River Plate,Rampla Juniors,2,1,2.45,3.3,2.7,CA River Plate,2.45
+2019,2019,14,Danubio,Montevideo Wanderers FC,0,2,1.95,3.5,3.5,Montevideo Wanderers FC,3.5
+2019,2019,14,Plaza Colónia,Liverpool FC,1,2,2.63,3.3,2.5,Liverpool FC,2.5
+2019,2019,14,Boston River,Racing Clube Montevideo,2,1,2.3,3.3,2.87,Boston River,2.3
+2019,2019,14,Cerro Lago FC,Club Atletico Progreso,0,0,1.91,3.4,3.75,Empate,3.4
+2019,2019,14,Nacional de Futebol,Defensor Sporting,1,0,1.61,3.9,5.0,Nacional de Futebol,1.61
+2019,2019,15,Defensor Sporting,CA Fenix,2,4,2.63,3.4,2.55,CA Fenix,2.55
+2019,2019,15,Juventud de las Piedras,CA River Plate,4,1,1.8,3.5,4.0,Juventud de las Piedras,1.8
+2019,2019,15,Rampla Juniors,Nacional de Futebol,0,3,5.5,4.2,1.54,Nacional de Futebol,1.54
+2019,2019,15,Boston River,Cerro Lago FC,2,3,2.55,3.2,2.63,Cerro Lago FC,2.63
+2019,2019,15,Montevideo Wanderers FC,Plaza Colónia,2,2,2.1,3.25,3.4,Empate,3.25
+2019,2019,15,Racing Clube Montevideo,Danubio,0,2,2.62,3.3,2.5,Danubio,2.5
+2019,2019,15,CA Penarol,Club Atletico Progreso,2,2,1.92,3.5,4.2,Empate,3.5
+2019,2019,16,Nacional de Futebol,Juventud de las Piedras,1,0,1.4,4.33,10.0,Nacional de Futebol,1.4
+2019,2019,16,CA Fenix,Rampla Juniors,3,1,1.7,3.7,4.5,CA Fenix,1.7
+2019,2019,16,Club Atletico Progreso,Defensor Sporting,0,3,2.25,3.35,3.25,Defensor Sporting,3.25
+2019,2019,16,Plaza Colónia,Racing Clube Montevideo,4,1,2.25,3.2,3.2,Plaza Colónia,2.25
+2019,2019,16,CA Cerro,Montevideo Wanderers FC,3,0,2.8,3.2,2.4,CA Cerro,2.8
+2019,2019,16,CA River Plate,Liverpool FC,0,0,2.3,3.4,3.2,Empate,3.4
+2019,2019,16,Danubio,Boston River,1,0,2.0,3.4,3.6,Danubio,2.0
+2019,2019,16,Cerro Lago FC,CA Penarol,1,0,3.4,3.4,2.05,Cerro Lago FC,3.4
+2019,2019,17,Liverpool FC,CA Cerro,2,2,1.83,3.2,5.0,Empate,3.2
+2019,2019,18,CA Cerro,Liverpool FC,0,2,2.75,3.4,2.4,Liverpool FC,2.4
+2019,2019,18,Cerro Lago FC,Racing Clube Montevideo,3,0,2.35,3.3,3.1,Cerro Lago FC,2.35
+2019,2019,18,Juventud de las Piedras,Danubio,2,2,2.7,3.35,2.45,Empate,3.35
+2019,2019,18,Nacional de Futebol,Defensor Sporting,1,2,1.57,4.1,5.0,Defensor Sporting,5.0
+2019,2019,18,CA Fenix,Rampla Juniors,1,0,1.75,3.6,4.1,CA Fenix,1.75
+2019,2019,18,CA River Plate,Club Atletico Progreso,0,0,2.3,3.75,2.63,Empate,3.75
+2019,2019,18,Plaza Colónia,Montevideo Wanderers FC,2,1,2.6,3.6,2.6,Plaza Colónia,2.6
+2019,2019,18,CA Penarol,Boston River,4,0,1.3,4.75,9.0,CA Penarol,1.3
+2019,2019,19,Club Atletico Progreso,CA Penarol,1,1,4.1,3.6,1.75,Empate,3.6
+2019,2019,19,Defensor Sporting,Juventud de las Piedras,1,1,1.85,3.5,4.0,Empate,3.5
+2019,2019,19,Montevideo Wanderers FC,Cerro Lago FC,1,2,2.55,3.4,2.63,Cerro Lago FC,2.63
+2019,2019,19,Racing Clube Montevideo,Plaza Colónia,0,2,2.2,3.3,2.9,Plaza Colónia,2.9
+2019,2019,19,Rampla Juniors,CA Cerro,0,1,2.15,3.3,3.3,CA Cerro,3.3
+2019,2019,19,Boston River,CA River Plate,0,0,2.5,3.2,2.6,Empate,3.2
+2019,2019,19,Danubio,Nacional de Futebol,1,2,3.3,3.3,2.05,Nacional de Futebol,2.05
+2019,2019,19,Liverpool FC,CA Fenix,5,1,2.05,3.6,3.1,Liverpool FC,2.05
+2019,2019,20,CA Penarol,Danubio,2,0,1.62,3.6,5.25,CA Penarol,1.62
+2019,2019,20,CA River Plate,Defensor Sporting,2,1,2.5,3.3,2.6,CA River Plate,2.5
+2019,2019,20,Plaza Colónia,Rampla Juniors,1,2,2.37,3.2,3.0,Rampla Juniors,3.0
+2019,2019,20,Nacional de Futebol,Club Atletico Progreso,4,2,1.5,4.0,5.5,Nacional de Futebol,1.5
+2019,2019,20,CA Cerro,Racing Clube Montevideo,1,2,2.5,3.4,2.63,Racing Clube Montevideo,2.63
+2019,2019,20,CA Fenix,Montevideo Wanderers FC,3,0,1.83,3.8,3.75,CA Fenix,1.83
+2019,2019,20,Juventud de las Piedras,Boston River,1,0,2.3,3.6,2.8,Juventud de las Piedras,2.3
+2019,2019,20,Cerro Lago FC,Liverpool FC,1,0,2.45,3.5,2.63,Cerro Lago FC,2.45
+2019,2019,21,Juventud de las Piedras,CA River Plate,1,2,2.4,3.2,2.75,CA River Plate,2.75
+2019,2019,21,Liverpool FC,Montevideo Wanderers FC,3,1,2.2,3.4,3.0,Liverpool FC,2.2
+2019,2019,21,Rampla Juniors,Cerro Lago FC,1,1,2.75,3.25,2.55,Empate,3.25
+2019,2019,21,Boston River,Nacional de Futebol,0,0,5.5,3.8,1.55,Empate,3.8
+2019,2019,21,Club Atletico Progreso,Danubio,2,0,2.5,3.2,2.75,Club Atletico Progreso,2.5
+2019,2019,21,Plaza Colónia,CA Cerro,0,0,2.2,3.2,3.1,Empate,3.2
+2019,2019,21,Racing Clube Montevideo,CA Fenix,3,1,2.3,3.4,2.75,Racing Clube Montevideo,2.3
+2019,2019,21,Defensor Sporting,CA Penarol,2,2,4.33,3.75,1.8,Empate,3.75
+2019,2019,22,CA Fenix,Plaza Colónia,0,1,1.91,3.4,3.8,Plaza Colónia,3.8
+2019,2019,22,Cerro Lago FC,CA Cerro,2,0,1.61,3.4,5.5,Cerro Lago FC,1.61
+2019,2019,22,Danubio,Boston River,1,2,2.05,3.25,3.5,Boston River,3.5
+2019,2019,22,Nacional de Futebol,CA River Plate,1,1,1.57,3.6,6.0,Empate,3.6
+2019,2019,22,Club Atletico Progreso,Defensor Sporting,3,1,2.4,3.4,2.8,Club Atletico Progreso,2.4
+2019,2019,22,Liverpool FC,Racing Clube Montevideo,3,1,1.8,3.5,4.0,Liverpool FC,1.8
+2019,2019,22,Montevideo Wanderers FC,Rampla Juniors,4,3,2.25,3.25,3.0,Montevideo Wanderers FC,2.25
+2019,2019,22,CA Penarol,Juventud de las Piedras,0,0,1.36,4.75,7.5,Empate,4.75
+2019,2019,23,Boston River,Club Atletico Progreso,1,1,2.8,3.25,2.6,Empate,3.25
+2019,2019,23,CA River Plate,CA Penarol,1,0,4.2,3.4,1.85,CA River Plate,4.2
+2019,2019,23,Plaza Colónia,Cerro Lago FC,3,1,3.5,3.25,2.38,Plaza Colónia,3.5
+2019,2019,23,Racing Clube Montevideo,Montevideo Wanderers FC,2,2,2.4,3.3,2.9,Empate,3.3
+2019,2019,23,CA Cerro,CA Fenix,0,1,2.5,3.4,2.5,CA Fenix,2.5
+2019,2019,23,Juventud de las Piedras,Nacional de Futebol,0,2,5.5,4.0,1.5,Nacional de Futebol,1.5
+2019,2019,23,Rampla Juniors,Liverpool FC,1,2,4.0,3.6,1.83,Liverpool FC,1.83
+2019,2019,23,Defensor Sporting,Danubio,3,1,1.95,3.4,3.4,Defensor Sporting,1.95
+2019,2019,24,Cerro Lago FC,CA Fenix,1,0,1.9,3.6,3.5,Cerro Lago FC,1.9
+2019,2019,24,Club Atletico Progreso,Juventud de las Piedras,0,0,1.95,3.3,3.6,Empate,3.3
+2019,2019,24,Defensor Sporting,Boston River,2,2,2.1,3.3,3.1,Empate,3.3
+2019,2019,24,Liverpool FC,Plaza Colónia,3,0,1.72,3.75,4.0,Liverpool FC,1.72
+2019,2019,24,Racing Clube Montevideo,Rampla Juniors,2,4,1.9,3.4,3.6,Rampla Juniors,3.6
+2019,2019,24,Montevideo Wanderers FC,CA Cerro,0,1,2.2,3.25,3.0,CA Cerro,3.0
+2019,2019,24,Danubio,CA River Plate,0,1,2.7,3.1,2.5,CA River Plate,2.5
+2019,2019,24,Nacional de Futebol,CA Penarol,3,0,2.3,3.3,2.7,Nacional de Futebol,2.3
+2019,2019,25,CA River Plate,Liverpool FC,2,2,3.3,3.3,2.0,,
+2019,2019,26,CA Cerro,Racing Clube Montevideo,1,0,2.7,3.2,2.62,CA Cerro,2.7
+2019,2019,26,CA Fenix,Juventud de las Piedras,2,2,1.7,3.6,5.25,Empate,3.6
+2019,2019,26,CA River Plate,Montevideo Wanderers FC,3,1,2.15,3.2,3.6,CA River Plate,2.15
+2019,2019,26,CA Penarol,Defensor Sporting,1,0,1.83,3.7,4.0,CA Penarol,1.83
+2019,2019,26,Club Atletico Progreso,Rampla Juniors,2,2,1.95,3.4,3.6,Empate,3.4
+2019,2019,26,Danubio,Cerro Lago FC,1,2,2.3,3.25,2.8,Cerro Lago FC,2.8
+2019,2019,26,Plaza Colónia,Boston River,1,0,2.3,3.0,3.1,Plaza Colónia,2.3
+2019,2019,26,Nacional de Futebol,Liverpool FC,4,1,1.8,3.6,3.8,Nacional de Futebol,1.8
+2019,2019,27,Juventud de las Piedras,Club Atletico Progreso,1,2,2.0,3.3,3.5,Club Atletico Progreso,3.5
+2019,2019,27,Racing Clube Montevideo,CA River Plate,1,1,2.6,3.3,2.4,Empate,3.3
+2019,2019,27,Cerro Lago FC,Defensor Sporting,1,4,2.25,3.3,3.0,Defensor Sporting,3.0
+2019,2019,27,Rampla Juniors,CA Penarol,1,2,5.0,3.85,1.6,CA Penarol,1.6
+2019,2019,27,Boston River,CA Cerro,2,2,2.4,3.0,2.9,Empate,3.0
+2019,2019,27,Danubio,Plaza Colónia,0,1,1.96,3.25,3.6,Plaza Colónia,3.6
+2019,2019,27,Liverpool FC,CA Fenix,1,1,2.0,3.5,3.3,Empate,3.5
+2019,2019,27,Montevideo Wanderers FC,Nacional de Futebol,0,1,5.0,3.8,1.66,Nacional de Futebol,1.66
+2019,2019,27,Juventud de las Piedras,CA Penarol,1,1,5.5,4.2,1.6,Empate,4.2
+2019,2019,27,Defensor Sporting,Rampla Juniors,1,0,1.8,3.6,4.33,Defensor Sporting,1.8
+2019,2019,27,CA Cerro,Danubio,0,1,2.63,3.5,2.55,Danubio,2.55
+2019,2019,27,CA Fenix,Montevideo Wanderers FC,3,3,2.05,3.6,3.25,Empate,3.6
+2019,2019,27,CA River Plate,Boston River,1,4,2.3,3.2,3.1,Boston River,3.1
+2019,2019,27,Club Atletico Progreso,Liverpool FC,2,1,2.6,3.4,2.55,Club Atletico Progreso,2.6
+2019,2019,27,Plaza Colónia,Cerro Lago FC,1,0,2.9,3.2,2.4,Plaza Colónia,2.9
+2019,2019,27,Nacional de Futebol,Racing Clube Montevideo,3,0,1.4,4.75,7.5,Nacional de Futebol,1.4
+2019,2019,29,Boston River,Nacional de Futebol,0,2,4.75,3.6,1.7,Nacional de Futebol,1.7
+2019,2019,29,Cerro Lago FC,Rampla Juniors,5,1,1.75,3.5,4.2,Cerro Lago FC,1.75
+2019,2019,29,Danubio,CA River Plate,1,1,2.3,3.3,3.1,Empate,3.3
+2019,2019,29,Racing Clube Montevideo,CA Fenix,4,1,2.62,3.4,2.62,Racing Clube Montevideo,2.62
+2019,2019,29,Montevideo Wanderers FC,Club Atletico Progreso,0,1,2.37,3.3,2.87,Club Atletico Progreso,2.87
+2019,2019,29,Juventud de las Piedras,Defensor Sporting,1,3,3.3,3.3,2.23,Defensor Sporting,2.23
+2019,2019,29,Liverpool FC,CA Penarol,1,0,4.2,3.5,1.85,Liverpool FC,4.2
+2019,2019,29,Plaza Colónia,CA Cerro,1,0,2.25,3.25,3.3,Plaza Colónia,2.25
+2019,2019,30,CA Fenix,Boston River,1,2,2.15,3.4,3.2,Boston River,3.2
+2019,2019,30,CA River Plate,Plaza Colónia,0,0,2.24,3.3,3.2,Empate,3.3
+2019,2019,30,Club Atletico Progreso,Racing Clube Montevideo,2,1,2.33,3.25,3.0,Club Atletico Progreso,2.33
+2019,2019,30,Nacional de Futebol,Danubio,1,0,1.53,4.0,6.0,Nacional de Futebol,1.53
+2019,2019,30,CA Cerro,Cerro Lago FC,0,2,3.2,3.5,2.2,Cerro Lago FC,2.2
+2019,2019,30,Rampla Juniors,Juventud de las Piedras,1,3,2.35,3.4,2.88,Juventud de las Piedras,2.88
+2019,2019,30,CA Penarol,Montevideo Wanderers FC,1,0,1.5,4.33,6.25,CA Penarol,1.5
+2019,2019,30,Defensor Sporting,Liverpool FC,0,0,2.3,3.6,3.0,Empate,3.6
+2019,2019,31,Boston River,Club Atletico Progreso,1,1,2.7,3.25,2.5,Empate,3.25
+2019,2019,31,CA Cerro,CA River Plate,3,2,3.25,3.2,2.25,CA Cerro,3.25
+2019,2019,31,Cerro Lago FC,Juventud de las Piedras,2,0,1.84,3.5,4.5,Cerro Lago FC,1.84
+2019,2019,31,Danubio,CA Fenix,1,1,2.05,3.35,3.4,Empate,3.35
+2019,2019,31,Plaza Colónia,Nacional de Futebol,0,2,5.0,3.8,1.7,Nacional de Futebol,1.7
+2019,2019,31,Liverpool FC,Rampla Juniors,1,0,1.44,4.5,6.5,Liverpool FC,1.44
+2019,2019,31,Racing Clube Montevideo,CA Penarol,3,3,4.2,3.85,1.73,Empate,3.85
+2019,2019,31,Montevideo Wanderers FC,Defensor Sporting,2,0,3.0,3.5,2.17,Montevideo Wanderers FC,3.0
+2019,2019,31,CA Fenix,Plaza Colónia,0,2,2.12,3.3,3.3,Plaza Colónia,3.3
+2019,2019,31,Club Atletico Progreso,Danubio,2,1,2.45,3.3,3.0,Club Atletico Progreso,2.45
+2019,2019,31,Nacional de Futebol,CA Cerro,2,0,1.4,4.5,7.5,Nacional de Futebol,1.4
+2019,2019,31,CA River Plate,Cerro Lago FC,3,2,2.4,3.4,2.88,CA River Plate,2.4
+2019,2019,31,Defensor Sporting,Racing Clube Montevideo,4,0,1.6,4.0,6.5,Defensor Sporting,1.6
+2019,2019,31,Juventud de las Piedras,Liverpool FC,0,0,3.0,3.45,2.2,Empate,3.45
+2019,2019,31,Rampla Juniors,Montevideo Wanderers FC,1,1,2.7,3.4,2.4,Empate,3.4
+2019,2019,31,CA Penarol,Boston River,1,0,1.53,4.2,6.5,CA Penarol,1.53
+2019,2019,32,CA Cerro,CA Fenix,1,0,2.65,3.4,2.55,CA Cerro,2.65
+2019,2019,32,CA River Plate,Nacional de Futebol,3,1,3.8,3.5,2.0,CA River Plate,3.8
+2019,2019,32,Plaza Colónia,Club Atletico Progreso,0,1,2.29,3.4,3.35,Club Atletico Progreso,3.35
+2019,2019,32,Boston River,Defensor Sporting,1,4,3.0,3.2,2.3,Defensor Sporting,2.3
+2019,2019,32,Danubio,CA Penarol,0,2,3.85,3.4,2.0,CA Penarol,2.0
+2019,2019,32,Racing Clube Montevideo,Rampla Juniors,3,1,1.93,3.75,3.75,Racing Clube Montevideo,1.93
+2019,2019,32,Montevideo Wanderers FC,Juventud de las Piedras,3,0,2.2,3.35,3.4,Montevideo Wanderers FC,2.2
+2019,2019,32,Cerro Lago FC,Liverpool FC,1,1,2.22,3.3,3.2,Empate,3.3
+2019,2019,33,Defensor Sporting,Danubio,1,2,1.95,3.8,3.75,Danubio,3.75
+2019,2019,33,Juventud de las Piedras,Racing Clube Montevideo,0,0,2.38,3.5,2.9,Empate,3.5
+2019,2019,33,Rampla Juniors,Boston River,0,1,2.85,3.2,2.5,Boston River,2.5
+2019,2019,33,CA Penarol,Plaza Colónia,2,1,1.6,3.75,5.75,CA Penarol,1.6
+2019,2019,33,CA Fenix,CA River Plate,1,0,2.3,3.4,2.88,CA Fenix,2.3
+2019,2019,33,Club Atletico Progreso,CA Cerro,1,1,1.88,3.4,4.25,Empate,3.4
+2019,2019,33,Liverpool FC,Montevideo Wanderers FC,2,2,1.95,3.6,3.6,Empate,3.6
+2019,2019,33,Nacional de Futebol,Cerro Lago FC,0,1,1.53,4.2,6.0,Cerro Lago FC,6.0
+2019,2019,34,Boston River,Juventud de las Piedras,2,1,2.12,3.1,3.75,Boston River,2.12
+2019,2019,34,CA Cerro,CA Penarol,1,3,6.0,3.8,1.61,CA Penarol,1.61
+2019,2019,34,CA River Plate,Club Atletico Progreso,1,2,2.45,3.25,2.75,Club Atletico Progreso,2.75
+2019,2019,34,Danubio,Rampla Juniors,1,1,1.85,3.5,4.33,Empate,3.5
+2019,2019,34,Plaza Colónia,Defensor Sporting,4,1,2.7,3.1,2.7,Plaza Colónia,2.7
+2019,2019,34,Cerro Lago FC,Montevideo Wanderers FC,0,2,1.8,3.6,4.2,Montevideo Wanderers FC,4.2
+2019,2019,34,Racing Clube Montevideo,Liverpool FC,0,2,2.8,3.4,2.45,Liverpool FC,2.45
+2019,2019,34,Nacional de Futebol,CA Fenix,2,0,1.4,4.75,8.0,Nacional de Futebol,1.4
+2019,2019,34,Juventud de las Piedras,Danubio,0,0,2.9,3.4,2.35,Empate,3.4
+2019,2019,34,Rampla Juniors,Plaza Colónia,0,1,2.55,3.2,2.75,Plaza Colónia,2.75
+2019,2019,34,CA Penarol,CA River Plate,1,0,1.55,4.3,5.75,CA Penarol,1.55
+2019,2019,34,CA Fenix,Cerro Lago FC,1,1,2.25,3.5,2.9,Empate,3.5
+2019,2019,34,Club Atletico Progreso,Nacional de Futebol,0,1,3.65,3.6,1.93,Nacional de Futebol,1.93
+2019,2019,34,Liverpool FC,Boston River,0,0,1.93,3.55,3.6,Empate,3.55
+2019,2019,34,Defensor Sporting,CA Cerro,1,1,1.73,3.9,4.33,Empate,3.9
+2019,2019,34,Montevideo Wanderers FC,Racing Clube Montevideo,0,2,2.3,3.6,2.9,Racing Clube Montevideo,2.9
+2019,2019,35,CA Fenix,Club Atletico Progreso,1,2,2.7,3.3,2.55,Club Atletico Progreso,2.55
+2019,2019,35,Boston River,Montevideo Wanderers FC,1,3,2.4,3.25,3.0,Montevideo Wanderers FC,3.0
+2019,2019,35,CA Cerro,Rampla Juniors,0,1,1.95,3.6,3.75,Rampla Juniors,3.75
+2019,2019,35,CA River Plate,Defensor Sporting,1,0,2.6,3.35,2.55,CA River Plate,2.6
+2019,2019,35,Cerro Lago FC,Racing Clube Montevideo,2,1,1.95,3.6,3.85,Cerro Lago FC,1.95
+2019,2019,35,Danubio,Liverpool FC,1,2,2.8,3.25,2.45,Liverpool FC,2.45
+2019,2019,35,Plaza Colónia,Juventud de las Piedras,1,0,1.88,3.4,4.15,Plaza Colónia,1.88
+2019,2019,35,Nacional de Futebol,CA Penarol,0,0,2.45,3.4,2.9,Empate,3.4
+2019,2019,36,Club Atletico Progreso,Cerro Lago FC,0,1,2.35,3.25,3.0,Cerro Lago FC,3.0
+2019,2019,36,Montevideo Wanderers FC,Danubio,2,1,2.25,3.4,3.2,Montevideo Wanderers FC,2.25
+2019,2019,36,Defensor Sporting,Nacional de Futebol,2,1,4.45,3.6,1.8,Defensor Sporting,4.45
+2019,2019,36,Juventud de las Piedras,CA Cerro,4,2,2.8,3.2,2.5,Juventud de las Piedras,2.8
+2019,2019,36,Liverpool FC,Plaza Colónia,0,1,1.91,3.35,4.0,Plaza Colónia,4.0
+2019,2019,36,Racing Clube Montevideo,Boston River,0,1,2.25,3.45,3.1,Boston River,3.1
+2019,2019,36,Rampla Juniors,CA River Plate,2,2,3.85,3.6,1.91,Empate,3.6
+2019,2019,36,CA Penarol,CA Fenix,2,1,1.33,5.2,10.5,CA Penarol,1.33
+2019,2019,37,CA Cerro,Liverpool FC,0,2,4.0,3.55,1.88,Liverpool FC,1.88
+2019,2019,37,CA River Plate,Juventud de las Piedras,1,0,1.57,4.0,5.5,CA River Plate,1.57
+2019,2019,37,Cerro Lago FC,Boston River,1,0,1.73,3.8,4.6,Cerro Lago FC,1.73
+2019,2019,37,Club Atletico Progreso,CA Penarol,0,0,3.3,3.4,2.22,Empate,3.4
+2019,2019,37,Danubio,Racing Clube Montevideo,3,2,2.85,3.5,2.4,Danubio,2.85
+2019,2019,37,Plaza Colónia,Montevideo Wanderers FC,0,0,2.3,3.35,3.4,Empate,3.35
+2019,2019,37,CA Fenix,Defensor Sporting,3,2,2.88,3.5,2.4,CA Fenix,2.88
+2019,2019,37,Nacional de Futebol,Rampla Juniors,4,3,1.2,6.5,14.0,Nacional de Futebol,1.2
+2019,2019,38,Boston River,Danubio,3,1,2.23,2.87,3.8,Boston River,2.23
+2019,2019,38,Liverpool FC,CA River Plate,0,1,2.22,3.4,3.3,CA River Plate,3.3
+2019,2019,38,Montevideo Wanderers FC,CA Cerro,0,2,1.5,4.15,6.0,CA Cerro,6.0
+2019,2019,38,Racing Clube Montevideo,Plaza Colónia,3,2,2.15,3.4,3.25,Racing Clube Montevideo,2.15
+2019,2019,38,Rampla Juniors,CA Fenix,2,1,3.5,3.6,2.25,Rampla Juniors,3.5
+2019,2019,38,CA Penarol,Cerro Lago FC,2,1,1.57,4.05,7.0,CA Penarol,1.57
+2019,2019,38,Defensor Sporting,Club Atletico Progreso,2,4,2.4,3.55,2.8,Club Atletico Progreso,2.8
+2019,2019,38,Juventud de las Piedras,Nacional de Futebol,0,3,12.0,5.25,1.26,Nacional de Futebol,1.26
+2019,2019,39,CA Penarol,Nacional de Futebol,0,2,3.0,3.25,2.52,Nacional de Futebol,2.52
+2019,2019,39,Nacional de Futebol,CA Penarol,1,0,2.15,3.15,3.6,Nacional de Futebol,2.15
+2020,2020,1,Deportivo Maldonado,Boston River,1,2,2.45,3.2,2.88,Boston River,2.88
+2020,2020,1,Torque,Club Atletico Progreso,1,3,2.4,3.4,2.72,Club Atletico Progreso,2.72
+2020,2020,1,CA Penarol,CA Cerro,2,1,1.35,5.0,10.0,CA Penarol,1.35
+2020,2020,1,Montevideo Wanderers FC,Defensor Sporting,0,0,2.4,3.5,2.7,Empate,3.5
+2020,2020,1,CA River Plate,CA Fenix,2,2,2.17,3.45,3.1,Empate,3.45
+2020,2020,1,Club Atlético Rentistas,Nacional de Futebol,2,0,8.0,4.6,1.38,Club Atlético Rentistas,8.0
+2020,2020,1,Cerro Lago FC,Danubio,1,0,2.72,3.2,2.55,Cerro Lago FC,2.72
+2020,2020,2,Liverpool FC,Plaza Colónia,1,0,1.93,3.4,4.05,Liverpool FC,1.93
+2020,2020,2,Boston River,Club Atlético Rentistas,2,3,2.2,3.4,3.2,Club Atlético Rentistas,3.2
+2020,2020,2,CA Cerro,CA River Plate,0,0,3.0,3.3,2.25,Empate,3.3
+2020,2020,2,Nacional de Futebol,Cerro Lago FC,2,2,1.61,3.85,6.0,Empate,3.85
+2020,2020,2,Club Atletico Progreso,Plaza Colónia,2,2,1.91,3.4,4.3,Empate,3.4
+2020,2020,2,Danubio,Montevideo Wanderers FC,0,1,2.27,3.25,3.0,Montevideo Wanderers FC,3.0
+2020,2020,2,Liverpool FC,Deportivo Maldonado,1,1,1.63,3.6,5.35,Empate,3.6
+2020,2020,2,Defensor Sporting,CA Penarol,2,1,3.4,3.25,2.17,Defensor Sporting,3.4
+2020,2020,3,CA Fenix,Torque,1,3,1.93,3.55,3.6,Torque,3.6
+2020,2020,4,Club Atlético Rentistas,Deportivo Maldonado,4,1,2.17,3.25,3.25,Club Atlético Rentistas,2.17
+2020,2020,4,Plaza Colónia,CA Fenix,1,1,2.42,3.2,2.9,Empate,3.2
+2020,2020,4,Torque,CA Cerro,1,1,2.29,3.25,3.1,Empate,3.25
+2020,2020,4,CA Penarol,Danubio,1,1,1.67,3.7,6.0,Empate,3.7
+2020,2020,4,CA River Plate,Defensor Sporting,1,1,2.4,3.3,2.9,Empate,3.3
+2020,2020,4,Liverpool FC,Club Atletico Progreso,1,1,2.17,3.45,3.4,Empate,3.45
+2020,2020,4,Cerro Lago FC,Boston River,0,0,2.12,3.3,3.35,Empate,3.3
+2020,2020,4,Montevideo Wanderers FC,Nacional de Futebol,2,2,4.0,3.55,1.87,Empate,3.55
+2020,2020,8,Club Atlético Rentistas,Liverpool FC,1,1,2.87,3.3,2.42,Empate,3.3
+2020,2020,8,CA Cerro,Plaza Colónia,1,0,2.8,3.1,2.85,CA Cerro,2.8
+2020,2020,8,Danubio,CA River Plate,1,3,2.42,3.2,3.0,CA River Plate,3.0
+2020,2020,8,Defensor Sporting,Torque,0,2,2.08,3.4,3.55,Torque,3.55
+2020,2020,8,CA Fenix,Club Atletico Progreso,1,1,2.65,3.3,2.52,Empate,3.3
+2020,2020,8,Deportivo Maldonado,Cerro Lago FC,1,1,3.75,3.4,2.07,Empate,3.4
+2020,2020,8,Boston River,Montevideo Wanderers FC,0,2,2.65,3.3,2.5,Montevideo Wanderers FC,2.5
+2020,2020,8,Nacional de Futebol,CA Penarol,1,1,2.82,3.0,2.7,Empate,3.0
+2020,2020,9,Plaza Colónia,Defensor Sporting,2,0,2.85,3.15,2.5,Plaza Colónia,2.85
+2020,2020,9,Torque,Danubio,1,2,2.45,3.2,2.88,Danubio,2.88
+2020,2020,9,Liverpool FC,CA Fenix,2,2,2.04,3.25,4.0,Empate,3.25
+2020,2020,9,CA River Plate,Nacional de Futebol,2,3,3.25,3.2,2.22,Nacional de Futebol,2.22
+2020,2020,9,Montevideo Wanderers FC,Deportivo Maldonado,2,2,2.15,3.3,3.6,Empate,3.3
+2020,2020,9,Club Atletico Progreso,CA Cerro,2,0,1.97,3.2,4.0,Club Atletico Progreso,1.97
+2020,2020,9,Cerro Lago FC,Club Atlético Rentistas,1,1,2.17,3.3,3.5,Empate,3.3
+2020,2020,9,CA Penarol,Boston River,2,0,1.46,4.3,7.5,CA Penarol,1.46
+2020,2020,10,Boston River,CA River Plate,1,1,2.9,3.3,2.32,Empate,3.3
+2020,2020,10,Club Atlético Rentistas,Montevideo Wanderers FC,0,0,2.87,3.3,2.35,Empate,3.3
+2020,2020,10,Danubio,Plaza Colónia,0,1,2.1,3.2,3.6,Plaza Colónia,3.6
+2020,2020,10,Deportivo Maldonado,CA Penarol,2,0,4.65,3.75,1.75,Deportivo Maldonado,4.65
+2020,2020,10,Defensor Sporting,Club Atletico Progreso,2,1,2.75,3.2,2.52,Defensor Sporting,2.75
+2020,2020,10,CA Cerro,CA Fenix,2,2,2.9,3.0,2.55,Empate,3.0
+2020,2020,10,Cerro Lago FC,Liverpool FC,4,3,2.9,3.1,2.6,Cerro Lago FC,2.9
+2020,2020,10,Nacional de Futebol,Torque,2,0,1.55,4.0,6.0,Nacional de Futebol,1.55
+2020,2020,10,Club Atletico Progreso,Danubio,1,0,2.32,3.15,3.1,Club Atletico Progreso,2.32
+2020,2020,10,CA River Plate,Deportivo Maldonado,0,1,2.27,3.4,3.35,Deportivo Maldonado,3.35
+2020,2020,10,CA Penarol,Club Atlético Rentistas,2,2,1.6,3.9,5.0,Empate,3.9
+2020,2020,10,CA Fenix,Defensor Sporting,5,0,3.1,3.45,2.3,CA Fenix,3.1
+2020,2020,10,Liverpool FC,CA Cerro,1,0,1.7,3.65,5.0,Liverpool FC,1.7
+2020,2020,10,Torque,Boston River,2,0,2.33,3.35,3.2,Torque,2.33
+2020,2020,10,Plaza Colónia,Nacional de Futebol,0,0,3.5,3.2,2.17,Empate,3.2
+2020,2020,10,Montevideo Wanderers FC,Cerro Lago FC,1,0,2.22,3.1,3.25,Montevideo Wanderers FC,2.22
+2020,2020,11,Danubio,CA Fenix,2,0,2.4,3.35,2.75,Danubio,2.4
+2020,2020,11,Boston River,Plaza Colónia,0,0,3.2,3.05,2.35,Empate,3.05
+2020,2020,11,Club Atlético Rentistas,CA River Plate,2,1,2.55,3.3,2.6,,
+2020,2020,11,Deportivo Maldonado,Torque,0,3,2.6,3.15,2.65,Torque,2.65
+2020,2020,11,Nacional de Futebol,Club Atletico Progreso,2,1,1.97,3.5,3.65,Nacional de Futebol,1.97
+2020,2020,11,Defensor Sporting,CA Cerro,1,1,2.05,3.35,3.6,Empate,3.35
+2020,2020,11,Montevideo Wanderers FC,Liverpool FC,2,0,2.65,3.1,2.7,Montevideo Wanderers FC,2.65
+2020,2020,11,CA Penarol,Cerro Lago FC,2,0,1.87,3.35,4.4,CA Penarol,1.87
+2020,2020,11,Plaza Colónia,Deportivo Maldonado,1,2,2.1,3.3,3.5,Deportivo Maldonado,3.5
+2020,2020,11,CA Fenix,Nacional de Futebol,1,2,4.2,3.65,1.87,Nacional de Futebol,1.87
+2020,2020,11,Torque,Club Atlético Rentistas,1,3,2.38,3.1,3.15,Club Atlético Rentistas,3.15
+2020,2020,11,Liverpool FC,Defensor Sporting,1,2,2.2,3.2,3.25,Defensor Sporting,3.25
+2020,2020,11,CA Cerro,Danubio,1,2,3.35,3.05,2.2,Danubio,2.2
+2020,2020,11,Club Atletico Progreso,Boston River,1,2,2.1,3.25,3.55,Boston River,3.55
+2020,2020,11,Cerro Lago FC,CA River Plate,2,1,2.45,3.0,3.2,Cerro Lago FC,2.45
+2020,2020,11,CA Penarol,Montevideo Wanderers FC,0,2,1.95,3.3,4.2,Montevideo Wanderers FC,4.2
+2020,2020,12,Cerro Lago FC,Torque,1,1,2.9,3.2,2.65,Empate,3.2
+2020,2020,12,Club Atlético Rentistas,Plaza Colónia,2,1,2.4,3.1,3.1,Club Atlético Rentistas,2.4
+2020,2020,12,Montevideo Wanderers FC,CA River Plate,0,2,2.07,3.2,3.8,CA River Plate,3.8
+2020,2020,12,CA Penarol,Liverpool FC,3,2,1.55,4.0,7.0,CA Penarol,1.55
+2020,2020,12,Boston River,CA Fenix,0,0,2.65,3.1,2.7,Empate,3.1
+2020,2020,12,Danubio,Defensor Sporting,0,0,2.63,3.05,2.82,Empate,3.05
+2020,2020,12,Deportivo Maldonado,Club Atletico Progreso,1,0,3.05,3.05,2.38,Deportivo Maldonado,3.05
+2020,2020,12,Nacional de Futebol,CA Cerro,5,1,1.44,4.2,7.45,Nacional de Futebol,1.44
+2020,2020,13,Plaza Colónia,Cerro Lago FC,1,3,2.37,3.1,3.3,Cerro Lago FC,3.3
+2020,2020,13,Club Atletico Progreso,Club Atlético Rentistas,2,2,2.55,3.5,2.7,Empate,3.5
+2020,2020,13,CA River Plate,CA Penarol,0,0,3.75,3.4,1.95,Empate,3.4
+2020,2020,13,Torque,Montevideo Wanderers FC,2,1,3.1,3.25,2.3,Torque,3.1
+2020,2020,13,CA Fenix,Deportivo Maldonado,1,0,2.42,3.3,2.75,CA Fenix,2.42
+2020,2020,13,Liverpool FC,Danubio,2,1,2.4,3.25,3.0,Liverpool FC,2.4
+2020,2020,13,CA Cerro,Boston River,2,1,2.7,2.85,2.87,CA Cerro,2.7
+2020,2020,13,Defensor Sporting,Nacional de Futebol,1,1,3.4,3.45,2.14,Empate,3.45
+2020,2020,13,Club Atletico Progreso,Cerro Lago FC,1,2,2.19,3.15,3.5,Cerro Lago FC,3.5
+2020,2020,13,Montevideo Wanderers FC,Plaza Colónia,1,2,1.83,3.25,4.6,Plaza Colónia,4.6
+2020,2020,13,CA Penarol,Torque,0,0,2.32,3.4,4.2,Empate,3.4
+2020,2020,13,CA River Plate,Liverpool FC,1,2,2.3,3.15,3.3,Liverpool FC,3.3
+2020,2020,13,Boston River,Defensor Sporting,1,1,3.8,3.35,2.0,Empate,3.35
+2020,2020,13,Club Atlético Rentistas,CA Fenix,1,1,2.2,3.4,3.25,Empate,3.4
+2020,2020,13,Deportivo Maldonado,CA Cerro,1,0,1.97,3.5,3.75,Deportivo Maldonado,1.97
+2020,2020,13,Nacional de Futebol,Danubio,2,0,1.75,3.6,4.75,Nacional de Futebol,1.75
+2020,2020,14,Plaza Colónia,CA Penarol,1,3,4.2,3.6,2.0,CA Penarol,2.0
+2020,2020,14,Cerro Lago FC,CA Fenix,0,0,2.3,3.3,3.2,Empate,3.3
+2020,2020,14,Defensor Sporting,Deportivo Maldonado,4,2,2.05,3.4,3.6,Defensor Sporting,2.05
+2020,2020,14,Danubio,Boston River,2,2,2.0,3.3,3.9,Empate,3.3
+2020,2020,14,Club Atletico Progreso,Montevideo Wanderers FC,3,0,2.75,3.2,2.63,Club Atletico Progreso,2.75
+2020,2020,14,CA Cerro,Club Atlético Rentistas,1,0,3.75,3.4,2.05,CA Cerro,3.75
+2020,2020,14,Torque,CA River Plate,1,0,2.3,3.3,3.2,Torque,2.3
+2020,2020,16,Liverpool FC,Nacional de Futebol,1,3,4.5,3.75,1.73,Nacional de Futebol,1.73
+2020,2020,17,Deportivo Maldonado,Danubio,0,0,2.87,3.3,2.5,Empate,3.3
+2020,2020,17,CA River Plate,Plaza Colónia,1,1,2.17,3.0,3.6,Empate,3.0
+2020,2020,17,CA Penarol,Club Atletico Progreso,2,1,1.6,4.0,5.0,CA Penarol,1.6
+2020,2020,17,Montevideo Wanderers FC,CA Fenix,1,2,2.5,3.0,3.2,CA Fenix,3.2
+2020,2020,17,Club Atlético Rentistas,Defensor Sporting,2,0,2.32,3.35,3.3,Club Atlético Rentistas,2.32
+2020,2020,17,Boston River,Nacional de Futebol,1,1,7.5,4.2,1.44,Empate,4.2
+2020,2020,17,Cerro Lago FC,CA Cerro,2,1,1.78,3.5,5.25,Cerro Lago FC,1.78
+2020,2020,17,Torque,Liverpool FC,2,1,2.2,3.45,3.2,Torque,2.2
+2020,2020,17,Club Atletico Progreso,CA River Plate,1,2,2.4,3.2,3.1,CA River Plate,3.1
+2020,2020,17,CA Fenix,CA Penarol,0,0,4.65,3.9,1.7,Empate,3.9
+2020,2020,17,CA Cerro,Montevideo Wanderers FC,1,1,3.1,3.4,2.35,Empate,3.4
+2020,2020,17,Liverpool FC,Boston River,3,2,2.17,3.4,3.25,Liverpool FC,2.17
+2020,2020,17,Danubio,Club Atlético Rentistas,1,1,3.2,3.2,2.25,Empate,3.2
+2020,2020,17,Defensor Sporting,Cerro Lago FC,2,0,2.3,3.2,3.3,Defensor Sporting,2.3
+2020,2020,17,Nacional de Futebol,Deportivo Maldonado,1,1,1.45,4.5,6.5,Empate,4.5
+2020,2020,17,Plaza Colónia,Torque,1,1,2.75,3.15,2.52,Empate,3.15
+2020,2020,18,Nacional de Futebol,Club Atlético Rentistas,0,1,1.78,3.75,4.2,Club Atlético Rentistas,4.2
+2020,2020,18,Plaza Colónia,Cerro Lago FC,0,3,3.0,3.15,2.5,Cerro Lago FC,2.5
+2020,2020,18,CA Penarol,CA River Plate,1,2,2.3,3.25,3.0,CA River Plate,3.0
+2020,2020,18,Boston River,Deportivo Maldonado,5,1,2.4,3.15,2.92,Boston River,2.4
+2020,2020,18,Torque,Club Atletico Progreso,1,2,2.1,3.6,4.0,Club Atletico Progreso,4.0
+2020,2020,18,Club Atlético Rentistas,Liverpool FC,1,2,2.32,3.6,2.8,Liverpool FC,2.8
+2020,2020,18,Danubio,Defensor Sporting,0,0,2.55,3.1,2.85,Empate,3.1
+2020,2020,18,Nacional de Futebol,CA Fenix,1,0,1.8,3.75,4.2,Nacional de Futebol,1.8
+2020,2020,18,CA Cerro,Montevideo Wanderers FC,1,0,3.3,3.15,2.25,CA Cerro,3.3
+2020,2020,19,Liverpool FC,CA Cerro,3,2,1.7,3.8,4.6,Liverpool FC,1.7
+2020,2020,19,CA River Plate,Danubio,4,0,2.45,2.9,3.3,CA River Plate,2.45
+2020,2020,19,Cerro Lago FC,Torque,2,1,2.75,2.88,2.8,Cerro Lago FC,2.75
+2020,2020,19,Club Atletico Progreso,Plaza Colónia,0,0,2.0,3.5,3.8,Empate,3.5
+2020,2020,19,CA Fenix,Boston River,2,0,2.1,3.4,3.5,CA Fenix,2.1
+2020,2020,19,Montevideo Wanderers FC,Club Atlético Rentistas,2,2,2.6,3.2,2.7,Empate,3.2
+2020,2020,20,Deportivo Maldonado,Nacional de Futebol,1,2,4.75,4.0,1.66,Nacional de Futebol,1.66
+2020,2020,20,Defensor Sporting,CA Penarol,2,1,3.0,3.1,2.45,Defensor Sporting,3.0
+2020,2020,21,Club Atlético Rentistas,Cerro Lago FC,0,0,2.45,3.25,3.15,Empate,3.25
+2020,2020,21,CA Cerro,Club Atletico Progreso,2,2,3.05,3.2,2.38,Empate,3.2
+2020,2020,21,Nacional de Futebol,Defensor Sporting,3,0,1.9,3.5,4.2,Nacional de Futebol,1.9
+2020,2020,21,Torque,Montevideo Wanderers FC,1,2,2.25,3.2,3.4,Montevideo Wanderers FC,3.4
+2020,2020,21,Danubio,CA Fenix,1,0,2.4,3.1,3.0,Danubio,2.4
+2020,2020,21,CA Penarol,Deportivo Maldonado,4,1,1.63,3.8,5.0,CA Penarol,1.63
+2020,2020,21,Boston River,CA River Plate,0,3,2.95,3.2,2.5,CA River Plate,2.5
+2020,2020,22,Plaza Colónia,Liverpool FC,2,2,3.5,3.3,2.2,Empate,3.3
+2020,2020,22,Club Atletico Progreso,Club Atlético Rentistas,0,0,2.65,3.2,2.7,Empate,3.2
+2020,2020,22,Montevideo Wanderers FC,Cerro Lago FC,1,0,2.8,3.1,2.8,Montevideo Wanderers FC,2.8
+2020,2020,22,Danubio,Boston River,0,0,2.22,3.15,3.3,Empate,3.15
+2020,2020,22,CA Fenix,CA Penarol,1,0,3.8,3.5,2.0,CA Fenix,3.8
+2020,2020,22,Deportivo Maldonado,Defensor Sporting,3,1,2.9,2.95,2.63,Deportivo Maldonado,2.9
+2020,2020,22,Plaza Colónia,CA Cerro,3,0,2.5,2.9,3.2,Plaza Colónia,2.5
+2020,2020,22,Liverpool FC,Torque,2,2,2.15,3.4,3.5,Empate,3.4
+2020,2020,22,CA River Plate,Nacional de Futebol,0,2,3.1,3.25,2.37,Nacional de Futebol,2.37
+2020,2020,23,Deportivo Maldonado,CA River Plate,2,1,3.1,3.3,2.4,Deportivo Maldonado,3.1
+2020,2020,23,Nacional de Futebol,Danubio,0,2,1.63,3.75,6.0,Danubio,6.0
+2020,2020,23,Defensor Sporting,CA Fenix,0,1,2.25,3.4,3.1,CA Fenix,3.1
+2020,2020,23,CA Penarol,Boston River,2,0,1.47,4.2,7.0,CA Penarol,1.47
+2020,2020,23,Torque,CA Cerro,3,0,2.25,3.25,3.35,Torque,2.25
+2020,2020,24,Cerro Lago FC,Liverpool FC,1,1,2.55,3.3,2.7,Empate,3.3
+2020,2020,24,Montevideo Wanderers FC,Club Atletico Progreso,3,0,2.5,3.2,3.05,Montevideo Wanderers FC,2.5
+2020,2020,24,Club Atlético Rentistas,Plaza Colónia,1,0,2.25,3.1,3.3,Club Atlético Rentistas,2.25
+2020,2020,24,CA Fenix,Deportivo Maldonado,1,1,2.35,3.35,3.1,Empate,3.35
+2020,2020,24,Club Atletico Progreso,Cerro Lago FC,2,2,2.55,3.2,2.8,Empate,3.2
+2020,2020,24,CA River Plate,Defensor Sporting,1,1,2.4,3.4,2.85,Empate,3.4
+2020,2020,24,Boston River,Nacional de Futebol,0,1,7.5,4.33,1.45,Nacional de Futebol,1.45
+2020,2020,25,Plaza Colónia,Torque,1,3,2.75,3.25,2.65,Torque,2.65
+2020,2020,25,Liverpool FC,Montevideo Wanderers FC,2,3,2.15,3.45,3.4,Montevideo Wanderers FC,3.4
+2020,2020,25,CA Cerro,Club Atlético Rentistas,0,2,3.3,3.1,2.45,Club Atlético Rentistas,2.45
+2020,2020,25,Club Atletico Progreso,Liverpool FC,1,2,2.9,3.0,2.3,Liverpool FC,2.3
+2020,2020,25,Cerro Lago FC,CA Cerro,0,0,1.66,3.6,5.3,Empate,3.6
+2020,2020,25,Montevideo Wanderers FC,Plaza Colónia,2,2,2.05,3.3,3.8,Empate,3.3
+2020,2020,26,CA River Plate,CA Fenix,3,2,2.1,3.3,3.8,CA River Plate,2.1
+2020,2020,26,CA Penarol,Nacional de Futebol,3,2,2.63,3.1,2.7,CA Penarol,2.63
+2020,2020,26,Deportivo Maldonado,Danubio,1,1,2.8,3.25,2.57,Empate,3.25
+2020,2020,27,Danubio,CA Penarol,1,4,3.3,3.15,2.15,CA Penarol,2.15
+2020,2020,28,Defensor Sporting,Boston River,1,1,2.05,3.25,3.75,Empate,3.25
+2020,2020,28,Torque,Club Atlético Rentistas,2,1,2.5,3.05,3.0,Torque,2.5
+2020,2020,28,Nacional de Futebol,Montevideo Wanderers FC,0,0,2.02,3.4,3.65,,
+2020,2020,28,Club Atletico Progreso,Torque,0,0,2.65,3.1,2.7,Empate,3.1
+2020,2020,28,CA Fenix,CA River Plate,1,1,2.75,3.1,2.65,Empate,3.1
+2020,2020,28,Nacional de Futebol,Club Atlético Rentistas,1,1,1.71,3.6,5.0,Empate,3.6
+2020,2020,28,Defensor Sporting,Montevideo Wanderers FC,1,1,2.6,3.2,2.75,Empate,3.2
+2020,2020,29,Plaza Colónia,Liverpool FC,0,0,3.2,3.35,2.26,Empate,3.35
+2020,2020,29,Boston River,Deportivo Maldonado,5,0,2.35,3.25,3.3,Boston River,2.35
+2020,2020,29,Torque,CA Fenix,3,0,2.4,3.1,3.3,Torque,2.4
+2020,2020,29,CA River Plate,CA Cerro,1,2,1.95,3.3,3.8,CA Cerro,3.8
+2020,2020,29,Cerro Lago FC,Nacional de Futebol,0,0,3.75,3.2,2.0,Empate,3.2
+2020,2020,29,Montevideo Wanderers FC,Danubio,2,0,2.2,3.2,3.2,Montevideo Wanderers FC,2.2
+2020,2020,29,Plaza Colónia,Club Atletico Progreso,0,1,2.55,2.9,3.0,Club Atletico Progreso,3.0
+2020,2020,29,Deportivo Maldonado,Liverpool FC,2,4,3.2,3.4,2.25,Liverpool FC,2.25
+2020,2020,29,Club Atlético Rentistas,Boston River,0,1,2.3,3.4,3.2,Boston River,3.2
+2020,2020,30,CA Penarol,Defensor Sporting,1,2,1.83,3.5,4.35,Defensor Sporting,4.35
+2020,2020,30,CA Fenix,Plaza Colónia,3,3,2.2,3.0,3.75,Empate,3.0
+2020,2020,30,Boston River,Cerro Lago FC,2,1,3.0,3.0,2.7,Boston River,3.0
+2020,2020,30,Club Atletico Progreso,Liverpool FC,0,4,2.7,3.1,2.7,Liverpool FC,2.7
+2020,2020,30,Deportivo Maldonado,Club Atlético Rentistas,3,1,3.1,3.1,2.5,Deportivo Maldonado,3.1
+2020,2020,30,Nacional de Futebol,Montevideo Wanderers FC,2,1,1.78,3.6,4.6,Nacional de Futebol,1.78
+2020,2020,30,Danubio,CA Penarol,0,1,3.6,3.3,2.1,CA Penarol,2.1
+2020,2020,30,CA Cerro,Torque,1,3,3.6,3.25,2.15,Torque,2.15
+2020,2020,30,Defensor Sporting,CA River Plate,0,2,2.35,3.1,3.05,CA River Plate,3.05
+2020,2020,31,Club Atletico Progreso,CA Fenix,0,1,2.4,3.0,3.0,CA Fenix,3.0
+2020,2020,31,Cerro Lago FC,Deportivo Maldonado,1,2,1.75,3.6,4.7,Deportivo Maldonado,4.7
+2020,2020,31,Liverpool FC,Club Atlético Rentistas,2,2,1.8,3.75,4.5,Empate,3.75
+2020,2020,31,CA Penarol,Nacional de Futebol,0,0,2.5,3.1,3.0,Empate,3.1
+2020,2020,31,Montevideo Wanderers FC,Boston River,2,2,2.2,3.2,3.8,Empate,3.2
+2020,2020,31,CA River Plate,Danubio,0,4,2.3,3.5,3.15,Danubio,3.15
+2020,2020,31,Plaza Colónia,CA Cerro,2,1,2.35,3.1,3.2,Plaza Colónia,2.35
+2020,2020,31,Torque,Defensor Sporting,0,0,2.25,3.4,3.2,Empate,3.4
+2020,2020,31,Club Atlético Rentistas,Cerro Lago FC,2,1,2.8,3.0,2.72,Club Atlético Rentistas,2.8
+2020,2020,31,CA Fenix,Liverpool FC,0,2,3.3,3.25,2.2,Liverpool FC,2.2
+2020,2020,31,Deportivo Maldonado,Montevideo Wanderers FC,1,1,3.0,3.0,2.45,Empate,3.0
+2020,2020,31,Boston River,CA Penarol,1,2,4.3,3.25,1.9,CA Penarol,1.9
+2020,2020,31,Danubio,Torque,0,4,2.65,3.2,2.6,Torque,2.6
+2020,2020,31,CA Cerro,Club Atletico Progreso,2,0,3.2,3.0,2.5,CA Cerro,3.2
+2020,2020,31,Defensor Sporting,Plaza Colónia,3,2,2.1,3.15,3.8,Defensor Sporting,2.1
+2020,2020,31,Nacional de Futebol,CA River Plate,3,0,1.72,3.75,5.0,Nacional de Futebol,1.72
+2020,2020,32,Liverpool FC,Cerro Lago FC,3,2,1.88,3.4,4.0,Liverpool FC,1.88
+2020,2020,32,Plaza Colónia,Danubio,3,0,2.95,3.05,2.6,Plaza Colónia,2.95
+2020,2020,32,Montevideo Wanderers FC,Club Atlético Rentistas,3,2,2.25,3.2,3.3,Montevideo Wanderers FC,2.25
+2020,2020,32,Torque,Nacional de Futebol,1,2,3.0,3.2,2.6,Nacional de Futebol,2.6
+2020,2020,32,CA Fenix,CA Cerro,3,3,2.2,3.2,3.3,Empate,3.2
+2020,2020,32,CA River Plate,Boston River,3,1,2.25,3.2,3.25,CA River Plate,2.25
+2020,2020,32,Club Atletico Progreso,Defensor Sporting,3,3,2.9,3.0,2.45,Empate,3.0
+2020,2020,32,CA Penarol,Deportivo Maldonado,1,1,1.57,4.33,6.0,Empate,4.33
+2020,2020,32,Cerro Lago FC,Montevideo Wanderers FC,1,3,2.42,3.2,3.0,Montevideo Wanderers FC,3.0
+2020,2020,32,Nacional de Futebol,Plaza Colónia,1,1,1.78,3.5,5.5,Empate,3.5
+2020,2020,32,CA Cerro,Liverpool FC,1,1,4.2,3.9,1.78,Empate,3.9
+2020,2020,32,Club Atlético Rentistas,CA Penarol,0,1,4.5,3.4,1.87,CA Penarol,1.87
+2020,2020,32,Deportivo Maldonado,CA River Plate,1,2,3.25,3.05,2.42,CA River Plate,2.42
+2020,2020,32,Defensor Sporting,CA Fenix,2,2,2.1,3.2,4.0,Empate,3.2
+2020,2020,33,Danubio,Club Atletico Progreso,0,1,2.6,3.2,2.7,Club Atletico Progreso,2.7
+2020,2020,33,Boston River,Torque,0,3,3.5,3.2,2.15,Torque,2.15
+2020,2020,33,CA River Plate,Club Atlético Rentistas,1,1,1.95,3.3,4.75,Empate,3.3
+2020,2020,33,Liverpool FC,Montevideo Wanderers FC,2,1,2.15,3.45,3.2,Liverpool FC,2.15
+2020,2020,33,Cerro Lago FC,CA Penarol,1,1,3.8,3.3,2.1,Empate,3.3
+2020,2020,33,CA Cerro,Defensor Sporting,0,0,3.6,3.4,2.12,Empate,3.4
+2020,2020,33,CA Fenix,Danubio,1,1,2.25,3.3,3.5,Empate,3.3
+2020,2020,33,Club Atletico Progreso,Nacional de Futebol,0,1,4.0,3.5,1.92,Nacional de Futebol,1.92
+2020,2020,33,Torque,Deportivo Maldonado,1,1,1.57,4.0,6.75,Empate,4.0
+2020,2020,33,Plaza Colónia,Boston River,3,0,2.4,2.95,3.25,Plaza Colónia,2.4
+2020,2020,33,CA River Plate,Cerro Lago FC,2,0,2.35,3.3,3.2,CA River Plate,2.35
+2020,2020,33,Defensor Sporting,Liverpool FC,0,3,3.4,3.4,2.2,Liverpool FC,2.2
+2020,2020,33,Montevideo Wanderers FC,CA Penarol,0,1,3.3,3.1,2.45,CA Penarol,2.45
+2020,2020,33,Club Atlético Rentistas,Torque,1,2,3.9,3.5,1.93,Torque,1.93
+2020,2020,33,Nacional de Futebol,CA Fenix,2,2,1.65,3.65,5.0,Empate,3.65
+2020,2020,34,Danubio,CA Cerro,2,1,2.4,3.15,3.1,Danubio,2.4
+2020,2020,34,Deportivo Maldonado,Plaza Colónia,1,1,3.3,3.0,2.4,Empate,3.0
+2020,2020,34,Boston River,Club Atletico Progreso,2,3,2.75,3.1,2.88,Club Atletico Progreso,2.88
+2020,2020,34,Liverpool FC,CA Penarol,1,1,3.2,3.3,2.25,Empate,3.3
+2020,2020,34,CA River Plate,Montevideo Wanderers FC,1,1,2.45,3.2,3.1,Empate,3.2
+2020,2020,34,CA Cerro,Nacional de Futebol,0,1,4.75,3.9,1.7,Nacional de Futebol,1.7
+2020,2020,34,CA Fenix,Boston River,2,1,2.4,3.2,3.0,CA Fenix,2.4
+2020,2020,34,Defensor Sporting,Danubio,1,1,2.25,3.4,3.5,Empate,3.4
+2020,2020,34,Torque,Cerro Lago FC,0,0,1.79,3.75,4.6,Empate,3.75
+2020,2020,35,Plaza Colónia,Club Atlético Rentistas,5,0,2.1,3.3,3.5,Plaza Colónia,2.1
+2020,2020,35,Club Atletico Progreso,Deportivo Maldonado,1,1,2.75,3.0,2.7,Empate,3.0
+2020,2020,35,Montevideo Wanderers FC,Torque,2,8,6.0,3.8,1.62,Torque,1.62
+2020,2020,35,Boston River,CA Cerro,2,0,1.88,3.6,4.0,Boston River,1.88
+2020,2020,35,CA Penarol,CA River Plate,2,0,1.73,3.5,5.3,CA Penarol,1.73
+2020,2020,35,Danubio,Liverpool FC,0,1,3.6,3.4,2.1,Liverpool FC,2.1
+2020,2020,35,Cerro Lago FC,Plaza Colónia,3,1,2.45,3.2,3.2,Cerro Lago FC,2.45
+2020,2020,35,Nacional de Futebol,Defensor Sporting,2,1,1.85,3.5,4.6,Nacional de Futebol,1.85
+2020,2020,36,Club Atlético Rentistas,Club Atletico Progreso,1,3,2.55,3.2,3.0,Club Atletico Progreso,3.0
+2020,2020,36,Deportivo Maldonado,CA Fenix,0,2,2.65,3.1,3.2,CA Fenix,3.2
+2020,2020,36,Plaza Colónia,Montevideo Wanderers FC,3,0,1.38,4.5,9.0,Plaza Colónia,1.38
+2020,2020,36,Defensor Sporting,Boston River,1,2,1.85,3.5,4.75,Boston River,4.75
+2020,2020,36,Danubio,Nacional de Futebol,2,1,5.5,3.6,1.66,Danubio,5.5
+2020,2020,36,CA Cerro,Deportivo Maldonado,2,3,3.1,3.2,2.55,Deportivo Maldonado,2.55
+2020,2020,36,Liverpool FC,CA River Plate,3,2,2.2,3.1,3.55,Liverpool FC,2.2
+2020,2020,36,Cerro Lago FC,Club Atletico Progreso,1,0,2.0,3.5,4.0,Cerro Lago FC,2.0
+2020,2020,36,Torque,CA Penarol,1,2,2.65,3.0,3.1,CA Penarol,3.1
+2020,2020,37,CA Fenix,Club Atlético Rentistas,3,0,2.05,3.45,3.5,CA Fenix,2.05
+2020,2020,37,Deportivo Maldonado,Defensor Sporting,2,1,3.75,3.3,2.22,Deportivo Maldonado,3.75
+2020,2020,37,Club Atlético Rentistas,CA Cerro,0,1,2.2,3.4,3.75,CA Cerro,3.75
+2020,2020,37,Boston River,Danubio,1,5,2.35,3.2,3.1,Danubio,3.1
+2020,2020,37,CA River Plate,Torque,1,1,3.5,3.5,2.07,Empate,3.5
+2020,2020,37,CA Penarol,Plaza Colónia,1,3,1.7,3.6,5.1,Plaza Colónia,5.1
+2020,2020,37,CA Fenix,Cerro Lago FC,1,0,2.55,3.3,2.75,CA Fenix,2.55
+2020,2020,37,Montevideo Wanderers FC,Club Atletico Progreso,1,3,2.3,3.5,3.2,Club Atletico Progreso,3.2
+2020,2020,37,Nacional de Futebol,Liverpool FC,0,4,2.15,3.6,3.1,Liverpool FC,3.1
+2020,2020,38,Danubio,Deportivo Maldonado,2,2,1.87,3.6,4.2,Empate,3.6
+2020,2020,38,Liverpool FC,Torque,4,1,3.2,3.6,2.2,Liverpool FC,3.2
+2020,2020,38,CA Cerro,Cerro Lago FC,0,1,5.4,3.55,1.9,Cerro Lago FC,1.9
+2020,2020,38,Nacional de Futebol,Boston River,1,2,1.6,4.0,5.5,Boston River,5.5
+2020,2020,38,CA Fenix,Montevideo Wanderers FC,3,3,1.65,4.33,5.0,Empate,4.33
+2020,2020,38,Club Atletico Progreso,CA Penarol,0,2,6.0,3.75,1.62,CA Penarol,1.62
+2020,2020,38,Defensor Sporting,Club Atlético Rentistas,0,0,1.8,3.75,4.75,Empate,3.75
+2020,2020,38,Plaza Colónia,CA River Plate,1,0,2.65,3.35,2.7,Plaza Colónia,2.65
+2020,2020,38,Boston River,Liverpool FC,1,0,2.95,3.4,2.3,Boston River,2.95
+2020,2020,38,Cerro Lago FC,Defensor Sporting,0,0,2.95,3.1,2.6,Empate,3.1
+2020,2020,38,Club Atlético Rentistas,Danubio,1,0,2.6,3.2,2.8,Club Atlético Rentistas,2.6
+2020,2020,38,Deportivo Maldonado,Nacional de Futebol,1,2,5.5,4.5,1.55,Nacional de Futebol,1.55
+2020,2020,39,Montevideo Wanderers FC,CA Cerro,1,1,2.25,3.1,3.8,Empate,3.1
+2020,2020,39,CA River Plate,Club Atletico Progreso,3,2,1.78,3.75,4.75,CA River Plate,1.78
+2020,2020,39,Torque,Plaza Colónia,2,0,2.4,3.1,3.2,Torque,2.4
+2020,2020,39,CA Penarol,CA Fenix,3,1,1.75,3.8,4.5,CA Penarol,1.75
+2020,2020,39,Club Atlético Rentistas,Liverpool FC,1,1,6.0,4.0,1.6,,
+2020,2020,39,Nacional de Futebol,Club Atlético Rentistas,3,0,1.66,3.7,6.0,Nacional de Futebol,1.66
+2020,2020,40,Club Atlético Rentistas,Nacional de Futebol,0,1,4.6,3.75,1.75,Nacional de Futebol,1.75
+2022,2022,1,Torque,Cerro Lago FC,1,1,1.87,3.8,4.05,Empate,3.8
+2022,2022,1,CA Fenix,CA Penarol,1,0,5.0,3.7,1.7,CA Fenix,5.0
+2022,2022,1,Defensor Sporting,Liverpool FC,0,3,3.0,3.3,2.32,Liverpool FC,2.32
+2022,2022,1,Albion FC,Club Atlético Rentistas,3,5,2.4,3.25,3.15,Club Atlético Rentistas,3.15
+2022,2022,1,Boston River,Plaza Colónia,0,0,3.05,3.3,2.45,Empate,3.3
+2022,2022,1,Nacional de Futebol,Deportivo Maldonado,2,3,1.47,4.33,7.25,Deportivo Maldonado,7.25
+2022,2022,2,CA River Plate,Montevideo Wanderers FC,1,1,2.7,3.25,2.62,Empate,3.25
+2022,2022,2,Cerrito CS,Danubio,0,1,3.0,3.1,2.55,Danubio,2.55
+2022,2022,2,Torque,CA Fenix,1,2,2.65,3.05,2.85,CA Fenix,2.85
+2022,2022,2,Plaza Colónia,CA River Plate,0,1,2.45,3.2,3.0,CA River Plate,3.0
+2022,2022,2,Club Atlético Rentistas,Nacional de Futebol,0,4,6.25,4.1,1.55,Nacional de Futebol,1.55
+2022,2022,2,Liverpool FC,Albion FC,4,0,1.47,4.2,6.5,Liverpool FC,1.47
+2022,2022,2,Boston River,Cerrito CS,0,1,2.4,3.1,3.2,Cerrito CS,3.2
+2022,2022,2,CA Penarol,Defensor Sporting,0,1,1.4,4.55,8.0,Defensor Sporting,8.0
+2022,2022,3,Montevideo Wanderers FC,Cerro Lago FC,1,0,2.05,3.2,3.95,Montevideo Wanderers FC,2.05
+2022,2022,3,Deportivo Maldonado,Danubio,1,2,2.85,3.0,2.65,Danubio,2.65
+2022,2022,3,Cerro Lago FC,Plaza Colónia,0,5,2.2,3.15,3.5,Plaza Colónia,3.5
+2022,2022,3,CA River Plate,Boston River,1,2,2.15,3.25,3.75,Boston River,3.75
+2022,2022,3,Defensor Sporting,Torque,1,3,2.95,3.2,2.45,Torque,2.45
+2022,2022,3,Albion FC,CA Penarol,1,1,8.0,4.65,1.38,Empate,4.65
+2022,2022,3,CA Fenix,Montevideo Wanderers FC,0,3,2.85,3.2,2.55,Montevideo Wanderers FC,2.55
+2022,2022,3,Danubio,Club Atlético Rentistas,0,1,2.25,3.4,3.2,Club Atlético Rentistas,3.2
+2022,2022,3,Nacional de Futebol,Liverpool FC,0,0,1.74,3.7,4.75,Empate,3.7
+2022,2022,4,Cerrito CS,Deportivo Maldonado,0,3,2.55,3.1,2.9,Deportivo Maldonado,2.9
+2022,2022,4,Boston River,Cerro Lago FC,3,0,2.5,3.15,2.92,Boston River,2.5
+2022,2022,4,Plaza Colónia,CA Fenix,1,1,2.6,3.1,3.0,Empate,3.1
+2022,2022,4,Club Atlético Rentistas,Deportivo Maldonado,1,2,2.52,3.25,2.9,Deportivo Maldonado,2.9
+2022,2022,4,Liverpool FC,Danubio,0,1,2.1,3.4,3.6,Danubio,3.6
+2022,2022,4,Montevideo Wanderers FC,Defensor Sporting,1,0,2.2,3.4,3.3,Montevideo Wanderers FC,2.2
+2022,2022,4,CA Penarol,Nacional de Futebol,1,0,2.25,3.2,3.45,CA Penarol,2.25
+2022,2022,5,CA River Plate,Cerrito CS,3,1,1.85,3.3,4.65,CA River Plate,1.85
+2022,2022,5,Torque,Albion FC,1,2,1.57,4.0,5.75,Albion FC,5.75
+2022,2022,5,Deportivo Maldonado,Liverpool FC,1,0,3.3,3.5,2.35,Deportivo Maldonado,3.3
+2022,2022,5,CA River Plate,Cerro Lago FC,1,1,2.27,3.3,3.55,Empate,3.3
+2022,2022,5,Danubio,CA Penarol,0,1,5.5,3.6,1.7,CA Penarol,1.7
+2022,2022,6,Cerrito CS,Club Atlético Rentistas,0,3,2.45,3.1,3.0,Club Atlético Rentistas,3.0
+2022,2022,6,CA Fenix,Boston River,0,2,2.32,3.25,3.05,Boston River,3.05
+2022,2022,6,Defensor Sporting,Plaza Colónia,0,0,2.3,3.3,3.3,Empate,3.3
+2022,2022,6,Albion FC,Montevideo Wanderers FC,1,1,3.75,3.4,2.1,Empate,3.4
+2022,2022,6,Nacional de Futebol,Torque,1,1,1.75,3.75,5.6,Empate,3.75
+2022,2022,7,CA Penarol,Deportivo Maldonado,1,1,1.42,4.5,9.0,Empate,4.5
+2022,2022,7,Plaza Colónia,Albion FC,1,1,1.8,3.55,4.6,Empate,3.55
+2022,2022,7,Liverpool FC,Club Atlético Rentistas,1,0,1.83,3.6,4.2,Liverpool FC,1.83
+2022,2022,7,CA River Plate,CA Fenix,3,1,2.33,3.2,3.3,CA River Plate,2.33
+2022,2022,7,Montevideo Wanderers FC,Nacional de Futebol,2,2,3.9,3.45,1.95,Empate,3.45
+2022,2022,8,Boston River,Defensor Sporting,1,1,2.35,3.2,3.35,Empate,3.2
+2022,2022,8,Torque,Danubio,1,1,2.18,3.35,3.25,Empate,3.35
+2022,2022,8,Cerro Lago FC,Cerrito CS,1,0,2.25,3.25,3.4,Cerro Lago FC,2.25
+2022,2022,9,Club Atlético Rentistas,CA Penarol,0,0,8.2,4.4,1.4,Empate,4.4
+2022,2022,9,Albion FC,Boston River,1,2,3.0,3.3,2.32,Boston River,2.32
+2022,2022,9,Danubio,Montevideo Wanderers FC,0,0,2.67,3.25,2.6,Empate,3.25
+2022,2022,9,Nacional de Futebol,Plaza Colónia,1,0,1.65,3.75,5.4,Nacional de Futebol,1.65
+2022,2022,9,Defensor Sporting,CA River Plate,3,2,2.37,3.4,2.92,Defensor Sporting,2.37
+2022,2022,9,CA Fenix,Cerro Lago FC,2,0,2.4,3.3,2.95,CA Fenix,2.4
+2022,2022,9,Cerrito CS,Liverpool FC,0,1,3.7,3.4,2.0,Liverpool FC,2.0
+2022,2022,9,Deportivo Maldonado,Torque,2,1,3.3,3.2,2.35,Deportivo Maldonado,3.3
+2022,2022,10,Cerro Lago FC,Defensor Sporting,0,0,2.35,3.3,3.1,Empate,3.3
+2022,2022,10,CA Penarol,Liverpool FC,2,1,2.0,3.3,3.75,CA Penarol,2.0
+2022,2022,10,Plaza Colónia,Danubio,1,1,2.4,3.05,3.15,Empate,3.05
+2022,2022,10,CA Fenix,Cerrito CS,2,0,2.3,3.3,3.1,CA Fenix,2.3
+2022,2022,10,CA River Plate,Albion FC,4,1,2.15,3.6,4.05,CA River Plate,2.15
+2022,2022,10,Boston River,Nacional de Futebol,0,6,3.8,3.4,2.0,Nacional de Futebol,2.0
+2022,2022,11,Montevideo Wanderers FC,Deportivo Maldonado,0,1,2.15,3.2,3.65,Deportivo Maldonado,3.65
+2022,2022,11,Torque,Club Atlético Rentistas,2,0,1.68,3.7,5.1,Torque,1.68
+2022,2022,11,Danubio,Boston River,0,0,2.15,3.3,3.6,Empate,3.3
+2022,2022,11,Defensor Sporting,CA Fenix,2,1,2.85,3.2,2.57,Defensor Sporting,2.85
+2022,2022,11,Liverpool FC,Torque,2,0,2.65,3.5,2.5,Liverpool FC,2.65
+2022,2022,11,Albion FC,Cerro Lago FC,2,1,2.8,3.25,2.47,Albion FC,2.8
+2022,2022,11,Cerrito CS,CA Penarol,0,0,6.25,4.15,1.53,Empate,4.15
+2022,2022,11,Deportivo Maldonado,Plaza Colónia,3,1,2.4,3.1,3.05,Deportivo Maldonado,2.4
+2022,2022,11,Nacional de Futebol,CA River Plate,1,1,1.55,4.2,5.75,Empate,4.2
+2022,2022,11,Club Atlético Rentistas,Montevideo Wanderers FC,1,3,3.0,3.3,2.32,Montevideo Wanderers FC,2.32
+2022,2022,12,Cerro Lago FC,Nacional de Futebol,0,2,4.9,3.6,1.73,Nacional de Futebol,1.73
+2022,2022,12,Montevideo Wanderers FC,Liverpool FC,0,0,2.57,3.25,2.75,Empate,3.25
+2022,2022,12,CA River Plate,Danubio,0,0,2.27,3.25,3.1,Empate,3.25
+2022,2022,12,Torque,CA Penarol,0,1,3.4,3.25,2.22,CA Penarol,2.22
+2022,2022,12,CA Fenix,Albion FC,2,1,1.9,3.55,4.0,CA Fenix,1.9
+2022,2022,12,Boston River,Deportivo Maldonado,2,0,2.55,3.2,2.8,Boston River,2.55
+2022,2022,12,Plaza Colónia,Club Atlético Rentistas,0,3,2.11,3.25,3.5,Club Atlético Rentistas,3.5
+2022,2022,13,Defensor Sporting,Cerrito CS,0,0,1.9,3.45,4.33,Empate,3.45
+2022,2022,14,Cerrito CS,Torque,2,2,4.5,3.6,1.78,Empate,3.6
+2022,2022,14,Albion FC,Defensor Sporting,0,3,3.6,3.5,2.0,Defensor Sporting,2.0
+2022,2022,14,Liverpool FC,Plaza Colónia,1,0,1.9,3.45,4.2,Liverpool FC,1.9
+2022,2022,14,Deportivo Maldonado,CA River Plate,2,1,2.42,3.25,2.9,Deportivo Maldonado,2.42
+2022,2022,14,Club Atlético Rentistas,Boston River,0,1,2.75,3.4,2.52,Boston River,2.52
+2022,2022,14,Danubio,Cerro Lago FC,2,0,2.32,3.1,3.3,Danubio,2.32
+2022,2022,14,CA Penarol,Montevideo Wanderers FC,1,0,1.62,3.7,5.75,CA Penarol,1.62
+2022,2022,15,Nacional de Futebol,CA Fenix,1,0,1.5,4.2,6.5,Nacional de Futebol,1.5
+2022,2022,15,CA River Plate,Club Atlético Rentistas,1,0,2.0,3.5,3.6,CA River Plate,2.0
+2022,2022,15,Plaza Colónia,CA Penarol,0,1,5.75,3.5,1.72,CA Penarol,1.72
+2022,2022,15,Defensor Sporting,Nacional de Futebol,0,2,3.75,3.35,2.1,Nacional de Futebol,2.1
+2022,2022,15,Montevideo Wanderers FC,Torque,1,1,3.05,3.35,2.25,Empate,3.35
+2022,2022,15,Cerro Lago FC,Deportivo Maldonado,1,0,2.85,3.2,2.5,Cerro Lago FC,2.85
+2022,2022,15,CA Fenix,Danubio,0,0,2.45,3.15,2.95,Empate,3.15
+2022,2022,15,Albion FC,Cerrito CS,2,2,2.65,3.3,2.6,Empate,3.3
+2022,2022,16,Boston River,Liverpool FC,2,3,3.1,3.2,2.3,Liverpool FC,2.3
+2022,2022,16,Deportivo Maldonado,CA Fenix,0,1,2.32,3.3,2.95,CA Fenix,2.95
+2022,2022,16,Club Atlético Rentistas,Cerro Lago FC,2,0,2.5,3.0,2.95,Club Atlético Rentistas,2.5
+2022,2022,16,Nacional de Futebol,Albion FC,2,0,1.35,5.0,8.0,Nacional de Futebol,1.35
+2022,2022,16,CA Penarol,Boston River,1,0,1.68,3.7,5.25,CA Penarol,1.68
+2022,2022,16,Liverpool FC,CA River Plate,2,1,2.0,3.65,3.4,Liverpool FC,2.0
+2022,2022,16,Danubio,Defensor Sporting,1,2,3.0,2.95,2.55,Defensor Sporting,2.55
+2022,2022,16,Cerrito CS,Montevideo Wanderers FC,0,2,3.8,3.45,1.95,Montevideo Wanderers FC,1.95
+2022,2022,17,Torque,Plaza Colónia,1,1,1.87,3.55,4.2,Empate,3.55
+2022,2022,17,Albion FC,Danubio,1,2,3.6,3.25,2.1,Danubio,2.1
+2022,2022,17,Cerro Lago FC,Liverpool FC,1,2,3.3,3.35,2.18,Liverpool FC,2.18
+2022,2022,17,Boston River,Torque,3,1,2.8,3.4,2.4,Boston River,2.8
+2022,2022,17,Nacional de Futebol,Cerrito CS,3,0,1.4,4.4,7.6,Nacional de Futebol,1.4
+2022,2022,17,Plaza Colónia,Montevideo Wanderers FC,1,0,3.0,3.2,2.4,Plaza Colónia,3.0
+2022,2022,17,CA River Plate,CA Penarol,0,0,4.1,3.1,1.98,Empate,3.1
+2022,2022,17,Defensor Sporting,Deportivo Maldonado,1,1,1.95,3.5,3.75,Empate,3.5
+2022,2022,18,CA Fenix,Club Atlético Rentistas,2,1,2.07,3.3,3.85,CA Fenix,2.07
+2022,2022,18,Torque,CA River Plate,0,0,2.22,3.5,3.4,Empate,3.5
+2022,2022,18,CA Penarol,Cerro Lago FC,0,1,1.59,3.75,6.7,Cerro Lago FC,6.7
+2022,2022,18,Deportivo Maldonado,Albion FC,0,0,1.65,3.95,5.0,Empate,3.95
+2022,2022,18,Cerrito CS,Plaza Colónia,1,1,3.5,3.25,2.18,Empate,3.25
+2022,2022,18,Club Atlético Rentistas,Defensor Sporting,1,0,3.4,3.3,2.15,Club Atlético Rentistas,3.4
+2022,2022,18,Danubio,Nacional de Futebol,2,1,4.5,3.25,1.87,Danubio,4.5
+2022,2022,18,Liverpool FC,CA Fenix,1,0,1.87,3.6,4.15,Liverpool FC,1.87
+2022,2022,19,Montevideo Wanderers FC,Boston River,1,2,2.62,3.2,2.75,Boston River,2.75
+2022,2022,19,Club Atlético Rentistas,Deportivo Maldonado,1,1,2.8,3.2,2.55,Empate,3.2
+2022,2022,19,CA River Plate,Cerrito CS,3,0,1.8,3.5,4.35,CA River Plate,1.8
+2022,2022,19,Montevideo Wanderers FC,Liverpool FC,1,0,3.1,3.2,2.45,Montevideo Wanderers FC,3.1
+2022,2022,19,Danubio,Cerro Lago FC,1,1,2.15,3.1,3.6,Empate,3.1
+2022,2022,19,CA Penarol,Torque,1,2,1.75,3.45,4.85,Torque,4.85
+2022,2022,20,CA Fenix,Albion FC,0,1,1.7,3.6,5.0,Albion FC,5.0
+2022,2022,20,Defensor Sporting,Nacional de Futebol,0,1,3.3,3.45,2.12,Nacional de Futebol,2.12
+2022,2022,20,Plaza Colónia,Boston River,0,0,3.25,3.1,2.37,Empate,3.1
+2022,2022,20,Albion FC,Montevideo Wanderers FC,1,1,3.5,3.4,2.07,Empate,3.4
+2022,2022,20,Liverpool FC,CA Fenix,2,2,2.02,3.25,3.75,Empate,3.25
+2022,2022,20,Nacional de Futebol,CA River Plate,3,0,1.6,3.75,5.75,Nacional de Futebol,1.6
+2022,2022,20,Torque,Club Atlético Rentistas,3,1,1.85,3.6,4.2,Torque,1.85
+2022,2022,20,Deportivo Maldonado,CA Penarol,1,3,3.85,3.0,2.12,CA Penarol,2.12
+2022,2022,20,Cerrito CS,Defensor Sporting,1,2,4.55,3.75,1.75,Defensor Sporting,1.75
+2022,2022,21,Boston River,Danubio,2,0,2.57,3.0,2.95,Boston River,2.57
+2022,2022,21,Cerro Lago FC,Plaza Colónia,1,0,2.52,2.9,3.1,Cerro Lago FC,2.52
+2022,2022,21,CA Fenix,Deportivo Maldonado,0,0,2.4,3.2,3.1,Empate,3.2
+2022,2022,21,Danubio,Nacional de Futebol,0,1,4.5,3.3,1.85,Nacional de Futebol,1.85
+2022,2022,21,Defensor Sporting,Cerro Lago FC,1,0,2.0,3.3,3.8,Defensor Sporting,2.0
+2022,2022,21,CA River Plate,Boston River,0,1,2.5,3.2,2.9,Boston River,2.9
+2022,2022,21,Plaza Colónia,Cerrito CS,3,0,2.05,3.2,4.0,Plaza Colónia,2.05
+2022,2022,21,CA Penarol,Liverpool FC,0,1,1.95,3.3,4.65,Liverpool FC,4.65
+2022,2022,22,Club Atlético Rentistas,Albion FC,0,1,2.18,3.25,3.6,Albion FC,3.6
+2022,2022,22,Montevideo Wanderers FC,Torque,1,0,2.72,3.2,2.92,Montevideo Wanderers FC,2.72
+2022,2022,23,Albion FC,Torque,1,0,3.6,3.6,2.05,Albion FC,3.6
+2022,2022,23,Deportivo Maldonado,Montevideo Wanderers FC,1,2,2.42,3.0,3.2,Montevideo Wanderers FC,3.2
+2022,2022,23,Liverpool FC,Club Atlético Rentistas,2,0,1.72,3.75,5.0,Liverpool FC,1.72
+2022,2022,23,Nacional de Futebol,Plaza Colónia,3,1,1.53,4.2,7.1,Nacional de Futebol,1.53
+2022,2022,23,Danubio,CA River Plate,1,3,2.4,3.0,3.25,CA River Plate,3.25
+2022,2022,23,Boston River,Defensor Sporting,2,3,3.05,3.25,2.42,Defensor Sporting,2.42
+2022,2022,23,CA Penarol,CA Fenix,0,0,1.7,3.6,5.4,Empate,3.6
+2022,2022,24,Cerrito CS,Cerro Lago FC,0,2,3.8,3.0,2.3,Cerro Lago FC,2.3
+2022,2022,24,Torque,Liverpool FC,2,3,2.92,3.3,2.4,Liverpool FC,2.4
+2022,2022,24,Albion FC,Deportivo Maldonado,2,3,3.4,3.2,2.19,Deportivo Maldonado,2.19
+2022,2022,24,Plaza Colónia,CA River Plate,0,0,3.15,3.1,2.37,Empate,3.1
+2022,2022,24,Club Atlético Rentistas,CA Fenix,0,1,2.92,3.3,2.4,CA Fenix,2.4
+2022,2022,24,Boston River,Cerrito CS,1,0,1.65,3.75,5.0,Boston River,1.65
+2022,2022,24,Montevideo Wanderers FC,CA Penarol,3,3,3.4,3.0,2.3,Empate,3.0
+2022,2022,24,Cerro Lago FC,Nacional de Futebol,0,0,4.75,3.65,1.72,Empate,3.65
+2022,2022,24,Defensor Sporting,Danubio,2,1,2.0,3.25,4.35,Defensor Sporting,2.0
+2022,2022,25,Liverpool FC,Albion FC,0,0,1.52,4.2,6.25,Empate,4.2
+2022,2022,25,Deportivo Maldonado,Torque,1,1,2.95,3.05,2.55,Empate,3.05
+2022,2022,25,CA Fenix,Montevideo Wanderers FC,1,0,2.55,3.0,2.95,CA Fenix,2.55
+2022,2022,25,Boston River,Cerro Lago FC,2,0,2.27,3.25,3.1,Boston River,2.27
+2022,2022,25,CA Penarol,Club Atlético Rentistas,2,0,1.53,3.8,7.0,CA Penarol,1.53
+2022,2022,25,Danubio,Plaza Colónia,2,0,2.22,2.95,3.8,Danubio,2.22
+2022,2022,25,CA River Plate,Defensor Sporting,1,1,2.95,3.25,2.42,Empate,3.25
+2022,2022,25,Nacional de Futebol,Cerrito CS,5,0,1.2,6.5,15.0,Nacional de Futebol,1.2
+2022,2022,25,Liverpool FC,Deportivo Maldonado,3,1,1.95,3.4,3.9,Liverpool FC,1.95
+2022,2022,25,Albion FC,CA Penarol,1,3,6.0,3.6,1.62,CA Penarol,1.62
+2022,2022,25,Montevideo Wanderers FC,Club Atlético Rentistas,3,1,1.9,3.4,4.15,Montevideo Wanderers FC,1.9
+2022,2022,25,Torque,CA Fenix,2,0,2.18,3.3,3.4,Torque,2.18
+2022,2022,25,Defensor Sporting,Plaza Colónia,1,2,1.83,3.5,4.55,Plaza Colónia,4.55
+2022,2022,25,Nacional de Futebol,Boston River,2,0,1.53,4.0,6.5,Nacional de Futebol,1.53
+2022,2022,26,Cerrito CS,Danubio,0,1,4.6,3.2,1.85,Danubio,1.85
+2022,2022,26,Cerro Lago FC,CA River Plate,0,0,2.5,3.1,2.9,Empate,3.1
+2022,2022,26,Liverpool FC,Nacional de Futebol,0,1,3.65,3.5,2.05,Nacional de Futebol,2.05
+2022,2022,26,Club Atlético Rentistas,Albion FC,2,4,2.5,3.15,2.95,Albion FC,2.95
+2022,2022,26,Plaza Colónia,Boston River,1,1,3.3,3.05,2.37,Empate,3.05
+2022,2022,26,Deportivo Maldonado,Nacional de Futebol,2,1,4.5,3.5,1.82,Deportivo Maldonado,4.5
+2022,2022,26,Danubio,Cerrito CS,0,0,1.53,4.0,7.0,Empate,4.0
+2022,2022,26,Cerro Lago FC,Torque,1,2,2.7,3.3,2.67,Torque,2.67
+2022,2022,26,Montevideo Wanderers FC,CA River Plate,1,2,2.65,3.25,2.65,CA River Plate,2.65
+2022,2022,27,Liverpool FC,Defensor Sporting,1,3,2.35,3.25,3.0,Defensor Sporting,3.0
+2022,2022,27,CA Penarol,CA Fenix,0,1,1.65,3.6,5.3,CA Fenix,5.3
+2022,2022,27,Nacional de Futebol,Club Atlético Rentistas,3,0,1.31,5.25,10.0,Nacional de Futebol,1.31
+2022,2022,27,CA River Plate,Plaza Colónia,2,0,1.83,3.45,4.6,CA River Plate,1.83
+2022,2022,27,Cerro Lago FC,Montevideo Wanderers FC,1,1,2.0,3.35,3.75,Empate,3.35
+2022,2022,27,Cerrito CS,Boston River,0,3,3.9,3.25,2.05,Boston River,2.05
+2022,2022,27,CA Fenix,Torque,1,0,2.55,3.05,2.87,CA Fenix,2.55
+2022,2022,27,Danubio,Deportivo Maldonado,0,0,2.25,2.95,3.65,Empate,2.95
+2022,2022,27,Defensor Sporting,CA Penarol,2,3,3.25,3.05,2.5,CA Penarol,2.5
+2022,2022,28,Albion FC,Liverpool FC,1,1,4.35,3.7,1.75,Empate,3.7
+2022,2022,28,Deportivo Maldonado,Cerrito CS,2,1,1.72,3.3,5.75,Deportivo Maldonado,1.72
+2022,2022,28,Montevideo Wanderers FC,CA Fenix,2,1,2.6,3.05,2.92,Montevideo Wanderers FC,2.6
+2022,2022,28,Boston River,CA River Plate,1,2,2.55,3.05,2.87,CA River Plate,2.87
+2022,2022,28,Plaza Colónia,Cerro Lago FC,2,0,3.0,2.87,2.62,Plaza Colónia,3.0
+2022,2022,28,Club Atlético Rentistas,Danubio,0,1,4.0,2.95,2.12,Danubio,2.12
+2022,2022,28,CA Penarol,Albion FC,2,0,1.53,4.2,7.0,CA Penarol,1.53
+2022,2022,28,Torque,Defensor Sporting,0,2,2.8,3.35,2.45,Defensor Sporting,2.45
+2022,2022,28,Liverpool FC,Nacional de Futebol,0,1,4.2,3.6,1.85,Nacional de Futebol,1.85
+2022,2022,29,Danubio,Torque,3,2,2.3,3.1,3.3,Danubio,2.3
+2022,2022,29,Cerrito CS,Cerro Lago FC,0,0,4.0,3.1,2.1,Empate,3.1
+2022,2022,29,Club Atlético Rentistas,Liverpool FC,0,2,4.65,3.8,1.7,Liverpool FC,1.7
+2022,2022,29,CA Fenix,CA River Plate,1,2,2.95,3.1,2.55,CA River Plate,2.55
+2022,2022,29,Nacional de Futebol,Montevideo Wanderers FC,2,0,1.35,5.0,8.5,Nacional de Futebol,1.35
+2022,2022,29,Defensor Sporting,Boston River,0,1,2.1,3.2,3.65,Boston River,3.65
+2022,2022,30,Albion FC,Plaza Colónia,1,0,2.5,3.05,2.95,Albion FC,2.5
+2022,2022,30,Deportivo Maldonado,CA Penarol,1,1,4.75,3.35,1.82,Empate,3.35
+2022,2022,30,Boston River,CA Fenix,1,1,2.4,3.1,3.25,Empate,3.1
+2022,2022,30,Montevideo Wanderers FC,Albion FC,0,0,2.07,3.5,3.65,Empate,3.5
+2022,2022,30,Club Atlético Rentistas,Cerrito CS,3,0,2.7,3.2,2.8,Club Atlético Rentistas,2.7
+2022,2022,30,Torque,Nacional de Futebol,0,3,6.0,4.15,1.55,Nacional de Futebol,1.55
+2022,2022,30,Liverpool FC,Deportivo Maldonado,1,1,1.8,3.75,4.3,Empate,3.75
+2022,2022,30,Plaza Colónia,Defensor Sporting,0,1,4.35,3.6,1.8,Defensor Sporting,1.8
+2022,2022,30,CA Penarol,Danubio,1,1,1.85,3.2,5.0,Empate,3.2
+2022,2022,31,Cerro Lago FC,CA River Plate,0,5,2.4,3.15,3.0,CA River Plate,3.0
+2022,2022,31,Deportivo Maldonado,Club Atlético Rentistas,2,1,1.88,3.5,4.2,Deportivo Maldonado,1.88
+2022,2022,31,Albion FC,Torque,1,0,3.1,3.4,2.27,Albion FC,3.1
+2022,2022,31,Danubio,Liverpool FC,1,1,2.9,3.1,2.55,Empate,3.1
+2022,2022,31,Defensor Sporting,Montevideo Wanderers FC,1,0,1.9,3.5,4.2,Defensor Sporting,1.9
+2022,2022,31,Nacional de Futebol,CA Penarol,3,1,1.8,3.4,5.0,Nacional de Futebol,1.8
+2022,2022,31,Cerro Lago FC,Boston River,1,1,2.9,3.05,2.6,Empate,3.05
+2022,2022,32,Cerrito CS,CA River Plate,1,5,5.25,3.75,1.7,CA River Plate,1.7
+2022,2022,32,CA Fenix,Plaza Colónia,0,1,2.15,3.1,3.6,Plaza Colónia,3.6
+2022,2022,32,Liverpool FC,Cerrito CS,3,0,1.42,4.33,8.0,Liverpool FC,1.42
+2022,2022,32,Torque,Deportivo Maldonado,3,3,2.45,3.2,3.0,Empate,3.2
+2022,2022,32,Montevideo Wanderers FC,Danubio,0,3,3.1,3.0,2.45,Danubio,2.45
+2022,2022,32,Boston River,Albion FC,1,0,1.88,3.1,4.75,Boston River,1.88
+2022,2022,32,Plaza Colónia,Nacional de Futebol,1,3,8.0,4.5,1.41,Nacional de Futebol,1.41
+2022,2022,32,CA River Plate,Defensor Sporting,0,1,2.65,3.3,2.62,Defensor Sporting,2.62
+2022,2022,32,Cerro Lago FC,CA Fenix,1,0,2.9,2.9,2.65,Cerro Lago FC,2.9
+2022,2022,32,CA Penarol,Club Atlético Rentistas,2,2,1.38,4.55,9.0,Empate,4.55
+2022,2022,33,Danubio,Plaza Colónia,1,1,1.87,3.3,4.75,Empate,3.3
+2022,2022,33,Deportivo Maldonado,Montevideo Wanderers FC,1,0,2.35,3.1,3.5,Deportivo Maldonado,2.35
+2022,2022,33,Club Atlético Rentistas,Torque,3,0,3.8,3.55,1.91,Club Atlético Rentistas,3.8
+2022,2022,33,Albion FC,CA River Plate,0,2,3.6,3.6,2.02,CA River Plate,2.02
+2022,2022,33,Nacional de Futebol,Boston River,1,0,1.36,4.75,9.5,Nacional de Futebol,1.36
+2022,2022,33,Cerrito CS,CA Fenix,0,2,4.55,3.5,1.83,CA Fenix,1.83
+2022,2022,33,Liverpool FC,CA Penarol,0,1,3.1,3.3,2.52,CA Penarol,2.52
+2022,2022,33,Defensor Sporting,Cerro Lago FC,0,1,1.75,3.6,4.75,Cerro Lago FC,4.75
+2022,2022,33,Plaza Colónia,Deportivo Maldonado,0,1,2.85,3.1,2.6,Deportivo Maldonado,2.6
+2022,2022,33,CA River Plate,Nacional de Futebol,1,1,5.2,3.65,1.67,Empate,3.65
+2022,2022,33,Montevideo Wanderers FC,Club Atlético Rentistas,1,0,1.88,3.4,4.05,Montevideo Wanderers FC,1.88
+2022,2022,33,Cerro Lago FC,Albion FC,1,2,2.15,3.1,3.6,Albion FC,3.6
+2022,2022,33,CA Penarol,Cerrito CS,3,1,1.21,6.0,15.0,CA Penarol,1.21
+2022,2022,34,Boston River,Danubio,0,1,2.95,2.95,2.72,Danubio,2.72
+2022,2022,34,Torque,Liverpool FC,0,2,3.35,3.5,2.07,Liverpool FC,2.07
+2022,2022,34,CA Fenix,Defensor Sporting,0,0,3.3,3.15,2.22,Empate,3.15
+2022,2022,34,Deportivo Maldonado,Boston River,2,1,3.5,3.2,2.45,Deportivo Maldonado,3.5
+2022,2022,34,Liverpool FC,Montevideo Wanderers FC,1,1,1.73,3.65,4.9,Empate,3.65
+2022,2022,34,Danubio,CA River Plate,3,0,2.65,3.05,2.8,Danubio,2.65
+2022,2022,34,CA Penarol,Torque,0,1,1.6,3.8,5.5,Torque,5.5
+2022,2022,34,Club Atlético Rentistas,Plaza Colónia,0,1,2.65,3.0,2.87,Plaza Colónia,2.87
+2022,2022,34,Nacional de Futebol,Cerro Lago FC,1,1,1.32,5.25,10.0,Empate,5.25
+2022,2022,34,Cerrito CS,Defensor Sporting,1,2,8.5,4.5,1.38,Defensor Sporting,1.38
+2022,2022,35,Albion FC,CA Fenix,1,1,3.0,3.1,2.5,Empate,3.1
+2022,2022,35,Cerro Lago FC,Danubio,1,0,3.4,3.0,2.3,Cerro Lago FC,3.4
+2022,2022,35,Plaza Colónia,Liverpool FC,1,3,5.25,3.4,1.88,Liverpool FC,1.88
+2022,2022,35,Torque,Cerrito CS,0,1,1.55,4.2,5.9,Cerrito CS,5.9
+2022,2022,35,CA Fenix,Nacional de Futebol,1,1,7.0,4.0,1.5,Empate,4.0
+2022,2022,35,Defensor Sporting,Albion FC,2,0,1.72,3.6,5.25,Defensor Sporting,1.72
+2022,2022,35,CA River Plate,Deportivo Maldonado,0,0,1.95,3.5,3.95,Empate,3.5
+2022,2022,35,Boston River,Club Atlético Rentistas,3,0,1.78,3.6,4.75,Boston River,1.78
+2022,2022,35,Montevideo Wanderers FC,CA Penarol,0,2,4.75,3.5,1.8,CA Penarol,1.8
+2022,2022,36,Deportivo Maldonado,Cerro Lago FC,0,1,2.25,3.1,3.5,Cerro Lago FC,3.5
+2022,2022,36,Cerrito CS,Albion FC,0,0,3.5,3.2,2.15,Empate,3.2
+2022,2022,36,Club Atlético Rentistas,CA River Plate,0,5,4.5,3.6,1.83,CA River Plate,1.83
+2022,2022,36,Danubio,CA Fenix,1,1,2.0,3.1,4.2,Empate,3.1
+2022,2022,36,Nacional de Futebol,Defensor Sporting,1,1,1.6,3.8,5.75,Empate,3.8
+2022,2022,36,Torque,Montevideo Wanderers FC,1,0,2.25,3.4,3.2,Torque,2.25
+2022,2022,36,Liverpool FC,Boston River,3,2,2.0,3.4,3.75,Liverpool FC,2.0
+2022,2022,36,CA Penarol,Plaza Colónia,0,1,1.45,4.33,8.0,Plaza Colónia,8.0
+2022,2022,37,CA Fenix,Deportivo Maldonado,0,1,2.6,2.9,3.2,Deportivo Maldonado,3.2
+2022,2022,37,Cerro Lago FC,Club Atlético Rentistas,2,1,1.93,3.2,4.33,Cerro Lago FC,1.93
+2022,2022,37,Plaza Colónia,Torque,0,2,3.0,3.1,2.9,Torque,2.9
+2022,2022,37,Boston River,CA Penarol,2,1,4.75,3.2,2.05,,
+2022,2022,37,Defensor Sporting,Danubio,1,1,2.32,3.0,3.4,Empate,3.0
+2022,2022,37,CA River Plate,Liverpool FC,0,1,2.37,3.3,3.0,Liverpool FC,3.0
+2022,2022,37,Albion FC,Nacional de Futebol,0,1,11.0,4.75,1.33,Nacional de Futebol,1.33
+2022,2022,37,Montevideo Wanderers FC,Cerrito CS,2,1,1.87,3.25,4.6,Montevideo Wanderers FC,1.87
+2022,2022,37,Club Atlético Rentistas,CA Fenix,1,3,4.0,3.4,1.98,CA Fenix,1.98
+2022,2022,37,Deportivo Maldonado,Defensor Sporting,0,0,3.35,3.15,2.35,Empate,3.15
+2022,2022,37,Liverpool FC,Cerro Lago FC,1,0,1.72,3.6,6.0,Liverpool FC,1.72
+2022,2022,37,Danubio,Albion FC,3,0,1.66,3.6,5.5,Danubio,1.66
+2022,2022,37,CA Penarol,CA River Plate,1,1,1.98,3.35,3.8,Empate,3.35
+2022,2022,38,Torque,Boston River,0,2,3.1,3.4,2.35,Boston River,2.35
+2022,2022,38,Montevideo Wanderers FC,Plaza Colónia,2,1,2.42,3.2,3.05,Montevideo Wanderers FC,2.42
+2022,2022,38,Cerrito CS,Nacional de Futebol,1,2,21.0,6.75,1.18,Nacional de Futebol,1.18
+2022,2022,38,CA River Plate,Torque,2,1,1.75,4.5,7.1,CA River Plate,1.75
+2022,2022,38,Defensor Sporting,Club Atlético Rentistas,2,3,1.38,4.65,8.75,Club Atlético Rentistas,8.75
+2022,2022,38,Cerro Lago FC,CA Penarol,0,2,4.5,3.45,1.8,CA Penarol,1.8
+2022,2022,38,Plaza Colónia,Cerrito CS,1,3,1.88,3.3,4.5,Cerrito CS,4.5
+2022,2022,38,CA Fenix,Liverpool FC,0,3,3.35,3.35,2.12,Liverpool FC,2.12
+2022,2022,38,Nacional de Futebol,Danubio,2,0,1.6,4.0,6.0,Nacional de Futebol,1.6
+2022,2022,39,Albion FC,Deportivo Maldonado,1,3,4.0,3.45,2.1,Deportivo Maldonado,2.1
+2022,2022,39,Boston River,Montevideo Wanderers FC,2,2,1.9,3.4,4.1,Empate,3.4
+2022,2022,39,Liverpool FC,Nacional de Futebol,1,4,4.05,3.3,1.93,Nacional de Futebol,1.93
+2023,2023,1,Racing Clube Montevideo,Boston River,0,2,2.92,3.05,2.55,Boston River,2.55
+2023,2023,1,CA Penarol,CA Cerro,2,0,1.42,4.33,8.0,CA Penarol,1.42
+2023,2023,1,Cerro Lago FC,CA River Plate,2,1,2.6,3.05,2.88,Cerro Lago FC,2.6
+2023,2023,1,La Luz,Montevideo Wanderers FC,1,3,2.85,3.1,2.7,Montevideo Wanderers FC,2.7
+2023,2023,1,Torque,Danubio,1,1,2.7,3.0,2.8,Empate,3.0
+2023,2023,1,Nacional de Futebol,Liverpool FC,2,1,1.55,3.9,6.6,Nacional de Futebol,1.55
+2023,2023,2,Plaza Colónia,Deportivo Maldonado,0,1,3.1,3.0,2.45,Deportivo Maldonado,2.45
+2023,2023,2,Defensor Sporting,CA Fenix,1,3,2.05,3.3,3.75,CA Fenix,3.75
+2023,2023,2,Nacional de Futebol,Cerro Lago FC,0,0,1.36,4.75,9.25,Empate,4.75
+2023,2023,2,CA Fenix,Torque,1,2,2.39,3.1,3.0,Torque,3.0
+2023,2023,2,CA River Plate,Plaza Colónia,2,0,1.98,3.3,4.0,CA River Plate,1.98
+2023,2023,2,Deportivo Maldonado,Racing Clube Montevideo,1,1,2.07,3.25,3.75,Empate,3.25
+2023,2023,2,Boston River,CA Cerro,0,3,1.87,3.6,4.15,CA Cerro,4.15
+2023,2023,2,Danubio,Liverpool FC,1,1,2.8,3.1,2.57,Empate,3.1
+2023,2023,3,Montevideo Wanderers FC,Defensor Sporting,1,1,3.0,3.2,2.45,Empate,3.2
+2023,2023,3,La Luz,CA Penarol,3,4,7.6,4.33,1.44,CA Penarol,1.44
+2023,2023,3,Cerro Lago FC,Danubio,1,0,2.7,3.0,2.8,Cerro Lago FC,2.7
+2023,2023,3,CA Cerro,Deportivo Maldonado,0,0,3.25,3.25,2.27,Empate,3.25
+2023,2023,3,Plaza Colónia,Nacional de Futebol,2,1,7.5,4.25,1.44,Plaza Colónia,7.5
+2023,2023,3,Racing Clube Montevideo,CA River Plate,0,0,3.5,3.25,2.15,Empate,3.25
+2023,2023,3,Defensor Sporting,La Luz,1,0,1.8,3.5,4.75,Defensor Sporting,1.8
+2023,2023,3,CA Penarol,Boston River,1,0,1.61,4.0,6.0,CA Penarol,1.61
+2023,2023,4,Liverpool FC,CA Fenix,3,1,2.1,3.2,3.2,Liverpool FC,2.1
+2023,2023,4,Torque,Montevideo Wanderers FC,0,1,2.33,3.25,3.1,Montevideo Wanderers FC,3.1
+2023,2023,4,CA River Plate,CA Cerro,3,2,1.96,3.15,4.15,CA River Plate,1.96
+2023,2023,4,CA Fenix,Cerro Lago FC,0,0,2.3,3.1,3.2,Empate,3.1
+2023,2023,4,Defensor Sporting,CA Penarol,2,2,3.5,3.35,2.07,Empate,3.35
+2023,2023,4,Danubio,Plaza Colónia,5,0,2.1,3.1,4.0,Danubio,2.1
+2023,2023,4,Deportivo Maldonado,Boston River,3,2,2.32,3.1,3.15,Deportivo Maldonado,2.32
+2023,2023,4,Nacional de Futebol,Racing Clube Montevideo,3,1,1.29,5.5,11.0,Nacional de Futebol,1.29
+2023,2023,5,La Luz,Torque,1,1,2.92,3.4,2.32,Empate,3.4
+2023,2023,5,Montevideo Wanderers FC,Liverpool FC,1,1,3.3,3.2,2.27,Empate,3.2
+2023,2023,5,Racing Clube Montevideo,Danubio,1,1,3.6,3.1,2.2,Empate,3.1
+2023,2023,5,Torque,Defensor Sporting,0,3,3.1,3.1,2.4,Defensor Sporting,2.4
+2023,2023,5,CA Cerro,Nacional de Futebol,2,2,7.7,4.3,1.43,Empate,4.3
+2023,2023,5,Boston River,CA River Plate,0,0,2.6,3.2,2.75,Empate,3.2
+2023,2023,5,Liverpool FC,La Luz,2,3,1.65,3.8,5.0,La Luz,5.0
+2023,2023,5,CA Penarol,Deportivo Maldonado,2,1,2.05,3.35,3.85,CA Penarol,2.05
+2023,2023,5,Cerro Lago FC,Montevideo Wanderers FC,0,0,2.4,3.1,3.05,Empate,3.1
+2023,2023,6,Plaza Colónia,CA Fenix,3,1,2.95,3.0,2.45,Plaza Colónia,2.95
+2023,2023,6,La Luz,Cerro Lago FC,0,3,2.85,3.05,2.57,Cerro Lago FC,2.57
+2023,2023,6,Montevideo Wanderers FC,Plaza Colónia,0,1,2.1,3.1,3.7,Plaza Colónia,3.7
+2023,2023,6,Nacional de Futebol,Boston River,3,1,1.47,4.2,6.5,Nacional de Futebol,1.47
+2023,2023,6,Danubio,CA Cerro,1,0,1.93,3.3,4.5,Danubio,1.93
+2023,2023,6,CA Fenix,Racing Clube Montevideo,0,1,1.95,3.25,4.0,Racing Clube Montevideo,4.0
+2023,2023,6,CA Penarol,Torque,2,2,1.57,3.9,6.0,Empate,3.9
+2023,2023,7,CA River Plate,Deportivo Maldonado,3,1,2.47,3.2,2.9,CA River Plate,2.47
+2023,2023,7,Defensor Sporting,Liverpool FC,2,2,2.5,3.3,2.9,Empate,3.3
+2023,2023,7,Plaza Colónia,La Luz,1,1,2.3,3.25,3.2,Empate,3.25
+2023,2023,7,Liverpool FC,Torque,1,0,1.88,3.55,3.9,Liverpool FC,1.88
+2023,2023,7,Deportivo Maldonado,Nacional de Futebol,0,0,4.75,3.6,1.75,Empate,3.6
+2023,2023,7,CA Penarol,CA River Plate,1,0,1.7,3.6,5.1,CA Penarol,1.7
+2023,2023,7,Cerro Lago FC,Defensor Sporting,0,3,2.92,3.1,2.5,Defensor Sporting,2.5
+2023,2023,7,Boston River,Danubio,3,3,2.7,3.1,2.7,Empate,3.1
+2023,2023,7,Racing Clube Montevideo,Montevideo Wanderers FC,1,1,2.8,3.1,2.6,Empate,3.1
+2023,2023,8,CA Cerro,CA Fenix,2,0,2.9,3.1,2.34,CA Cerro,2.9
+2023,2023,8,Defensor Sporting,Plaza Colónia,4,0,1.62,3.75,5.5,Defensor Sporting,1.62
+2023,2023,8,Danubio,Deportivo Maldonado,4,0,2.2,3.2,3.45,Danubio,2.2
+2023,2023,8,Liverpool FC,CA Penarol,1,0,3.55,3.5,2.02,Liverpool FC,3.55
+2023,2023,8,Montevideo Wanderers FC,CA Cerro,3,0,2.15,3.15,3.55,Montevideo Wanderers FC,2.15
+2023,2023,8,CA Fenix,Boston River,0,0,2.65,3.2,2.55,Empate,3.2
+2023,2023,8,Nacional de Futebol,CA River Plate,3,0,1.52,4.1,6.2,Nacional de Futebol,1.52
+2023,2023,8,La Luz,Racing Clube Montevideo,1,3,2.62,3.2,2.75,Racing Clube Montevideo,2.75
+2023,2023,9,Torque,Cerro Lago FC,1,2,2.22,3.15,3.4,Cerro Lago FC,3.4
+2023,2023,9,CA River Plate,Danubio,2,1,2.75,3.2,2.55,CA River Plate,2.75
+2023,2023,9,Cerro Lago FC,Liverpool FC,1,0,3.3,3.1,2.3,Cerro Lago FC,3.3
+2023,2023,9,CA Penarol,Nacional de Futebol,2,0,2.35,3.2,3.1,CA Penarol,2.35
+2023,2023,9,Deportivo Maldonado,CA Fenix,2,0,2.3,3.2,3.25,Deportivo Maldonado,2.3
+2023,2023,9,CA Cerro,La Luz,0,0,2.25,3.25,3.4,Empate,3.25
+2023,2023,9,Boston River,Montevideo Wanderers FC,0,1,2.65,3.3,2.85,Montevideo Wanderers FC,2.85
+2023,2023,10,Racing Clube Montevideo,Defensor Sporting,0,1,3.95,3.35,1.98,Defensor Sporting,1.98
+2023,2023,10,Plaza Colónia,Torque,1,2,3.2,3.2,2.3,Torque,2.3
+2023,2023,10,Montevideo Wanderers FC,Deportivo Maldonado,0,1,2.35,3.1,3.1,Deportivo Maldonado,3.1
+2023,2023,10,CA Fenix,CA River Plate,0,0,2.6,3.05,2.75,Empate,3.05
+2023,2023,10,Defensor Sporting,CA Cerro,1,1,1.7,3.5,5.5,Empate,3.5
+2023,2023,10,Torque,Racing Clube Montevideo,0,2,2.22,3.25,3.2,Racing Clube Montevideo,3.2
+2023,2023,10,Danubio,Nacional de Futebol,0,0,3.3,3.25,2.2,Empate,3.25
+2023,2023,10,Cerro Lago FC,CA Penarol,0,0,4.5,3.4,1.85,Empate,3.4
+2023,2023,11,Liverpool FC,Plaza Colónia,3,1,1.65,3.65,5.5,Liverpool FC,1.65
+2023,2023,11,La Luz,Boston River,2,1,3.0,3.3,2.3,La Luz,3.0
+2023,2023,11,Nacional de Futebol,CA Fenix,4,0,1.5,4.0,6.6,Nacional de Futebol,1.5
+2023,2023,11,Racing Clube Montevideo,Liverpool FC,1,1,3.05,3.3,2.45,Empate,3.3
+2023,2023,11,CA Penarol,Danubio,2,0,1.85,3.3,4.4,CA Penarol,1.85
+2023,2023,11,Plaza Colónia,Cerro Lago FC,2,0,2.9,3.0,2.6,Plaza Colónia,2.9
+2023,2023,11,Boston River,Defensor Sporting,1,0,3.3,3.3,2.18,Boston River,3.3
+2023,2023,11,CA River Plate,Montevideo Wanderers FC,1,2,2.25,3.1,3.4,Montevideo Wanderers FC,3.4
+2023,2023,11,CA Cerro,Torque,0,2,3.0,3.1,2.6,Torque,2.6
+2023,2023,12,La Luz,Deportivo Maldonado,4,2,3.1,3.25,2.4,La Luz,3.1
+2023,2023,12,Cerro Lago FC,Racing Clube Montevideo,2,1,2.37,2.95,3.3,Cerro Lago FC,2.37
+2023,2023,12,Torque,Boston River,1,1,2.55,3.25,2.9,Empate,3.25
+2023,2023,12,La Luz,CA River Plate,2,2,3.1,3.25,2.3,Empate,3.25
+2023,2023,12,Defensor Sporting,Deportivo Maldonado,1,1,1.95,3.3,4.0,Empate,3.3
+2023,2023,12,CA Fenix,Danubio,2,1,2.88,3.0,2.5,CA Fenix,2.88
+2023,2023,12,Plaza Colónia,CA Penarol,1,2,6.5,3.8,1.53,CA Penarol,1.53
+2023,2023,13,Liverpool FC,CA Cerro,1,1,1.72,3.7,5.0,Empate,3.7
+2023,2023,13,Montevideo Wanderers FC,Nacional de Futebol,0,1,4.75,3.5,1.8,Nacional de Futebol,1.8
+2023,2023,13,Boston River,Liverpool FC,1,3,2.62,3.4,2.52,Liverpool FC,2.52
+2023,2023,13,CA Penarol,CA Fenix,2,0,1.35,4.33,7.8,CA Penarol,1.35
+2023,2023,13,Danubio,Montevideo Wanderers FC,0,2,1.95,3.3,4.2,Montevideo Wanderers FC,4.2
+2023,2023,13,CA Cerro,Cerro Lago FC,0,0,2.55,3.0,3.0,Empate,3.0
+2023,2023,13,Nacional de Futebol,La Luz,3,0,1.42,4.5,7.3,Nacional de Futebol,1.42
+2023,2023,13,CA River Plate,Defensor Sporting,0,4,2.62,3.3,2.6,Defensor Sporting,2.6
+2023,2023,13,Racing Clube Montevideo,Plaza Colónia,1,1,2.12,3.15,3.6,Empate,3.15
+2023,2023,13,Deportivo Maldonado,Torque,3,2,2.45,3.2,2.9,Deportivo Maldonado,2.45
+2023,2023,14,Cerro Lago FC,Boston River,2,2,2.45,3.2,2.92,Empate,3.2
+2023,2023,14,Montevideo Wanderers FC,CA Fenix,0,3,2.7,3.1,2.75,CA Fenix,2.75
+2023,2023,14,Liverpool FC,Deportivo Maldonado,4,2,2.15,3.4,3.45,Liverpool FC,2.15
+2023,2023,14,La Luz,Danubio,3,1,3.2,3.3,2.25,La Luz,3.2
+2023,2023,14,Defensor Sporting,Nacional de Futebol,2,2,3.3,3.25,2.4,Empate,3.25
+2023,2023,14,Torque,CA River Plate,1,1,2.7,3.3,2.67,Empate,3.3
+2023,2023,15,Plaza Colónia,CA Cerro,1,1,2.35,3.2,3.15,Empate,3.2
+2023,2023,15,Racing Clube Montevideo,CA Penarol,0,2,5.75,3.75,1.64,CA Penarol,1.64
+2023,2023,15,Deportivo Maldonado,Cerro Lago FC,0,0,2.15,3.3,3.7,Empate,3.3
+2023,2023,15,CA River Plate,Liverpool FC,2,0,2.67,3.3,2.55,CA River Plate,2.67
+2023,2023,15,CA Penarol,Montevideo Wanderers FC,1,1,1.38,4.5,8.5,Empate,4.5
+2023,2023,15,CA Fenix,La Luz,0,2,2.2,3.3,3.2,La Luz,3.2
+2023,2023,15,Danubio,Defensor Sporting,1,1,2.85,3.2,2.47,Empate,3.2
+2023,2023,15,Torque,Nacional de Futebol,0,4,4.6,3.8,1.7,Nacional de Futebol,1.7
+2023,2023,16,Boston River,Plaza Colónia,1,1,2.05,3.4,3.7,Empate,3.4
+2023,2023,16,CA Cerro,Racing Clube Montevideo,1,0,2.65,3.0,2.8,CA Cerro,2.65
+2023,2023,17,Liverpool FC,Racing Clube Montevideo,3,2,1.83,3.65,4.25,Liverpool FC,1.83
+2023,2023,17,La Luz,CA Penarol,3,2,5.4,3.9,1.63,La Luz,5.4
+2023,2023,17,CA Cerro,Nacional de Futebol,1,1,5.0,3.6,1.71,Empate,3.6
+2023,2023,17,Montevideo Wanderers FC,Danubio,1,1,3.1,3.0,2.45,Empate,3.0
+2023,2023,17,Plaza Colónia,Cerro Lago FC,3,3,2.7,3.0,2.82,Empate,3.0
+2023,2023,17,CA River Plate,Boston River,0,1,2.25,3.4,3.1,Boston River,3.1
+2023,2023,18,Deportivo Maldonado,CA Fenix,1,1,2.25,3.2,3.1,Empate,3.2
+2023,2023,18,Torque,Defensor Sporting,1,1,4.0,3.4,1.95,Empate,3.4
+2023,2023,19,Danubio,Torque,1,0,1.98,3.4,3.85,Danubio,1.98
+2023,2023,19,Cerro Lago FC,Liverpool FC,1,3,2.67,3.25,2.7,Liverpool FC,2.7
+2023,2023,19,CA Fenix,CA Cerro,0,0,2.15,3.2,3.2,Empate,3.2
+2023,2023,19,Boston River,La Luz,4,0,2.47,3.35,2.75,Boston River,2.47
+2023,2023,19,Nacional de Futebol,Deportivo Maldonado,4,0,1.5,4.0,6.4,Nacional de Futebol,1.5
+2023,2023,19,Racing Clube Montevideo,Plaza Colónia,4,1,2.18,3.15,3.4,Racing Clube Montevideo,2.18
+2023,2023,19,CA Penarol,CA River Plate,1,3,1.53,4.0,6.1,CA River Plate,6.1
+2023,2023,19,Defensor Sporting,Montevideo Wanderers FC,2,0,1.87,3.5,4.33,Defensor Sporting,1.87
+2023,2023,20,Liverpool FC,Nacional de Futebol,3,0,3.2,3.55,2.15,Liverpool FC,3.2
+2023,2023,20,La Luz,Danubio,0,2,2.95,3.25,2.5,Danubio,2.5
+2023,2023,20,CA River Plate,Defensor Sporting,1,1,3.25,3.25,2.27,Empate,3.25
+2023,2023,20,Plaza Colónia,CA Fenix,1,1,2.8,3.1,2.5,Empate,3.1
+2023,2023,20,Montevideo Wanderers FC,CA Penarol,0,0,5.0,3.5,1.75,Empate,3.5
+2023,2023,20,CA Cerro,Racing Clube Montevideo,1,2,2.45,3.1,3.05,Racing Clube Montevideo,3.05
+2023,2023,20,Deportivo Maldonado,Cerro Lago FC,0,0,2.47,3.1,3.0,Empate,3.1
+2023,2023,20,Torque,Boston River,3,1,2.5,3.5,2.65,Torque,2.5
+2023,2023,21,Defensor Sporting,La Luz,3,0,1.7,3.75,4.75,Defensor Sporting,1.7
+2023,2023,21,Montevideo Wanderers FC,CA River Plate,4,0,2.4,3.2,3.0,Montevideo Wanderers FC,2.4
+2023,2023,21,Boston River,Danubio,1,0,2.55,3.25,2.75,Boston River,2.55
+2023,2023,21,CA Fenix,Racing Clube Montevideo,3,0,2.4,3.0,3.0,CA Fenix,2.4
+2023,2023,21,Cerro Lago FC,CA Cerro,0,1,2.22,3.2,3.95,CA Cerro,3.95
+2023,2023,22,Liverpool FC,Deportivo Maldonado,3,2,1.5,4.35,5.9,Liverpool FC,1.5
+2023,2023,22,CA Penarol,Torque,2,0,1.63,3.75,5.5,CA Penarol,1.63
+2023,2023,22,Nacional de Futebol,Plaza Colónia,4,1,1.32,5.0,9.5,Nacional de Futebol,1.32
+2023,2023,22,La Luz,Montevideo Wanderers FC,2,3,2.4,3.2,3.1,Montevideo Wanderers FC,3.1
+2023,2023,22,CA Cerro,Liverpool FC,1,0,3.8,3.3,2.05,CA Cerro,3.8
+2023,2023,22,Danubio,CA Penarol,1,0,3.6,3.1,2.15,Danubio,3.6
+2023,2023,22,Cerro Lago FC,CA Fenix,2,1,2.3,3.1,3.2,Cerro Lago FC,2.3
+2023,2023,22,Plaza Colónia,Deportivo Maldonado,1,3,2.67,3.2,2.75,Deportivo Maldonado,2.75
+2023,2023,22,Boston River,Defensor Sporting,0,1,3.2,3.4,2.2,Defensor Sporting,2.2
+2023,2023,22,Racing Clube Montevideo,Nacional de Futebol,2,2,5.75,4.0,1.57,Empate,4.0
+2023,2023,23,Torque,CA River Plate,0,1,2.18,3.3,3.45,CA River Plate,3.45
+2023,2023,23,Defensor Sporting,Danubio,2,1,1.98,3.4,4.2,Defensor Sporting,1.98
+2023,2023,23,Liverpool FC,Plaza Colónia,2,2,1.42,4.6,7.2,Empate,4.6
+2023,2023,23,Cerro Lago FC,Racing Clube Montevideo,2,0,2.32,3.2,3.2,Cerro Lago FC,2.32
+2023,2023,23,Nacional de Futebol,CA Fenix,0,1,1.5,4.0,6.25,CA Fenix,6.25
+2023,2023,23,CA River Plate,La Luz,0,0,2.5,3.3,2.87,Empate,3.3
+2023,2023,23,CA Penarol,Boston River,2,1,1.67,3.85,4.9,CA Penarol,1.67
+2023,2023,23,Montevideo Wanderers FC,Torque,1,1,2.47,3.25,2.95,Empate,3.25
+2023,2023,24,Deportivo Maldonado,CA Cerro,1,2,2.4,3.1,3.2,CA Cerro,3.2
+2023,2023,24,CA Fenix,Liverpool FC,0,1,3.2,3.3,2.15,Liverpool FC,2.15
+2023,2023,24,La Luz,Torque,1,3,2.6,3.25,2.75,Torque,2.75
+2023,2023,24,Racing Clube Montevideo,Deportivo Maldonado,2,0,2.7,3.1,2.8,Racing Clube Montevideo,2.7
+2023,2023,24,Danubio,CA River Plate,0,0,2.15,3.25,3.4,Empate,3.25
+2023,2023,24,Nacional de Futebol,Cerro Lago FC,1,0,1.57,4.1,6.2,Nacional de Futebol,1.57
+2023,2023,24,Boston River,Montevideo Wanderers FC,0,1,2.4,3.3,3.0,Montevideo Wanderers FC,3.0
+2023,2023,24,CA Penarol,Defensor Sporting,2,1,2.2,3.2,3.4,CA Penarol,2.2
+2023,2023,25,CA Cerro,Plaza Colónia,0,0,2.0,3.4,4.1,Empate,3.4
+2023,2023,25,Defensor Sporting,Liverpool FC,0,1,2.4,3.4,2.92,Liverpool FC,2.92
+2023,2023,26,Deportivo Maldonado,Plaza Colónia,0,0,1.95,3.5,4.0,Empate,3.5
+2023,2023,26,CA River Plate,Cerro Lago FC,0,0,2.5,3.1,3.1,Empate,3.1
+2023,2023,26,CA Fenix,Defensor Sporting,1,1,3.2,3.2,2.27,Empate,3.2
+2023,2023,26,CA Cerro,CA Penarol,1,1,5.25,3.5,1.7,Empate,3.5
+2023,2023,26,Montevideo Wanderers FC,La Luz,0,1,2.35,3.3,3.0,La Luz,3.0
+2023,2023,26,Boston River,Racing Clube Montevideo,1,0,2.2,3.3,3.5,Boston River,2.2
+2023,2023,26,Danubio,Torque,0,1,2.5,3.1,2.9,Torque,2.9
+2023,2023,26,Liverpool FC,Nacional de Futebol,0,0,2.65,3.5,2.5,Empate,3.5
+2023,2023,27,Torque,CA Fenix,1,1,2.3,3.25,3.1,Empate,3.25
+2023,2023,27,Defensor Sporting,Montevideo Wanderers FC,3,0,1.75,3.6,4.75,Defensor Sporting,1.75
+2023,2023,27,Plaza Colónia,CA River Plate,0,1,2.77,3.25,2.5,CA River Plate,2.5
+2023,2023,27,Liverpool FC,Danubio,1,0,1.83,3.5,4.33,Liverpool FC,1.83
+2023,2023,27,Cerro Lago FC,Nacional de Futebol,2,2,4.55,3.3,1.83,Empate,3.3
+2023,2023,27,CA Cerro,Boston River,1,2,2.7,3.15,2.65,Boston River,2.65
+2023,2023,27,Racing Clube Montevideo,Deportivo Maldonado,1,1,2.27,3.2,3.2,Empate,3.2
+2023,2023,27,CA Penarol,La Luz,2,2,1.52,4.0,6.2,Empate,4.0
+2023,2023,28,Montevideo Wanderers FC,Torque,2,1,3.05,3.3,2.32,Montevideo Wanderers FC,3.05
+2023,2023,28,Danubio,Cerro Lago FC,2,0,2.05,3.1,4.0,Danubio,2.05
+2023,2023,28,Boston River,CA Penarol,0,1,5.0,3.75,1.65,CA Penarol,1.65
+2023,2023,28,La Luz,Defensor Sporting,1,1,3.75,3.5,1.98,Empate,3.5
+2023,2023,28,CA Fenix,Liverpool FC,1,0,3.35,3.25,2.15,CA Fenix,3.35
+2023,2023,28,CA River Plate,Racing Clube Montevideo,0,0,2.42,3.1,3.1,Empate,3.1
+2023,2023,28,Nacional de Futebol,Plaza Colónia,0,0,1.37,4.75,8.0,Empate,4.75
+2023,2023,28,Deportivo Maldonado,CA Cerro,2,1,2.2,3.25,3.4,Deportivo Maldonado,2.2
+2023,2023,32,Racing Clube Montevideo,Nacional de Futebol,1,2,4.75,3.6,1.75,Nacional de Futebol,1.75
+2023,2023,32,Torque,La Luz,1,0,1.95,3.6,3.75,Torque,1.95
+2023,2023,32,Cerro Lago FC,CA Fenix,1,0,2.52,3.1,2.95,Cerro Lago FC,2.52
+2023,2023,32,Liverpool FC,Montevideo Wanderers FC,2,1,1.75,3.65,4.65,Liverpool FC,1.75
+2023,2023,32,CA Penarol,Defensor Sporting,2,1,1.93,3.4,4.2,CA Penarol,1.93
+2023,2023,32,Plaza Colónia,Danubio,1,0,3.4,3.25,2.18,Plaza Colónia,3.4
+2023,2023,32,Boston River,Deportivo Maldonado,2,0,2.45,3.4,2.88,Boston River,2.45
+2023,2023,32,CA Cerro,CA River Plate,1,0,2.7,3.0,2.85,CA Cerro,2.7
+2023,2023,33,CA Fenix,Plaza Colónia,1,4,2.2,3.0,3.75,Plaza Colónia,3.75
+2023,2023,33,Defensor Sporting,Torque,2,0,1.95,3.35,4.33,Defensor Sporting,1.95
+2023,2023,33,Deportivo Maldonado,CA Penarol,0,1,4.6,3.45,1.83,CA Penarol,1.83
+2023,2023,33,Danubio,Racing Clube Montevideo,0,2,2.05,3.1,4.0,Racing Clube Montevideo,4.0
+2023,2023,33,La Luz,Liverpool FC,0,2,3.95,3.6,1.98,Liverpool FC,1.98
+2023,2023,33,Montevideo Wanderers FC,Cerro Lago FC,1,1,2.4,3.2,3.25,Empate,3.2
+2023,2023,33,CA River Plate,Boston River,2,1,2.5,3.1,3.0,CA River Plate,2.5
+2023,2023,33,Nacional de Futebol,CA Cerro,2,1,1.42,4.5,8.0,Nacional de Futebol,1.42
+2023,2023,34,Liverpool FC,Defensor Sporting,2,0,2.3,3.4,3.35,Liverpool FC,2.3
+2023,2023,34,Plaza Colónia,Montevideo Wanderers FC,1,0,2.57,3.1,2.9,Plaza Colónia,2.57
+2023,2023,34,Cerro Lago FC,La Luz,1,3,2.25,3.2,3.4,La Luz,3.4
+2023,2023,34,Torque,CA Penarol,2,3,4.75,3.5,1.8,CA Penarol,1.8
+2023,2023,34,Racing Clube Montevideo,CA Fenix,2,0,2.3,3.1,3.4,Racing Clube Montevideo,2.3
+2023,2023,34,Deportivo Maldonado,CA River Plate,0,0,2.16,3.15,3.65,Empate,3.15
+2023,2023,34,CA Cerro,Danubio,1,1,3.3,3.25,2.27,Empate,3.25
+2023,2023,34,Boston River,Nacional de Futebol,2,0,4.5,3.75,1.75,Boston River,4.5
+2023,2023,34,Defensor Sporting,Cerro Lago FC,2,0,1.75,3.6,4.75,Defensor Sporting,1.75
+2023,2023,34,CA Fenix,CA Cerro,1,1,2.18,3.0,3.7,Empate,3.0
+2023,2023,34,CA River Plate,CA Penarol,0,3,4.5,3.45,1.84,CA Penarol,1.84
+2023,2023,34,La Luz,Plaza Colónia,1,1,2.15,3.3,3.4,Empate,3.3
+2023,2023,35,Torque,Liverpool FC,2,3,3.55,3.4,2.1,Liverpool FC,2.1
+2023,2023,35,Nacional de Futebol,Deportivo Maldonado,1,3,1.62,3.9,5.75,Deportivo Maldonado,5.75
+2023,2023,35,Danubio,Boston River,1,1,2.32,3.25,3.3,Empate,3.25
+2023,2023,35,Montevideo Wanderers FC,Racing Clube Montevideo,1,2,2.75,3.1,2.72,Racing Clube Montevideo,2.72
+2023,2023,36,CA Cerro,Montevideo Wanderers FC,0,1,2.47,3.0,3.3,Montevideo Wanderers FC,3.3
+2023,2023,36,Boston River,CA Fenix,1,1,2.11,3.35,3.5,Empate,3.35
+2023,2023,36,Cerro Lago FC,Torque,1,2,2.77,3.25,2.6,Torque,2.6
+2023,2023,36,CA River Plate,Nacional de Futebol,0,3,5.0,3.6,1.73,Nacional de Futebol,1.73
+2023,2023,36,Racing Clube Montevideo,La Luz,1,1,2.3,3.2,3.15,Empate,3.2
+2023,2023,36,Plaza Colónia,Defensor Sporting,0,2,4.4,3.45,1.9,Defensor Sporting,1.9
+2023,2023,36,CA Penarol,Liverpool FC,0,1,1.75,3.65,4.5,Liverpool FC,4.5
+2023,2023,37,Deportivo Maldonado,Danubio,1,2,2.4,3.2,3.15,Danubio,3.15
+2023,2023,37,Liverpool FC,Cerro Lago FC,3,0,1.53,4.2,6.4,Liverpool FC,1.53
+2023,2023,37,Torque,Plaza Colónia,2,2,1.91,3.4,4.3,Empate,3.4
+2023,2023,37,Defensor Sporting,Racing Clube Montevideo,3,0,1.7,3.7,5.75,Defensor Sporting,1.7
+2023,2023,37,Danubio,CA River Plate,0,0,2.3,3.25,3.25,Empate,3.25
+2023,2023,37,Nacional de Futebol,CA Penarol,2,2,2.38,3.3,3.2,Empate,3.3
+2023,2023,37,La Luz,CA Cerro,1,2,2.22,3.25,3.5,CA Cerro,3.5
+2023,2023,37,CA Fenix,Deportivo Maldonado,1,0,2.7,3.1,2.8,CA Fenix,2.7
+2023,2023,37,Montevideo Wanderers FC,Boston River,0,2,2.75,3.2,2.65,Boston River,2.65
+2023,2023,38,Racing Clube Montevideo,Torque,1,0,2.35,3.35,3.05,Racing Clube Montevideo,2.35
+2023,2023,38,Plaza Colónia,Liverpool FC,0,0,4.65,3.6,1.77,Empate,3.6
+2023,2023,38,CA Penarol,Cerro Lago FC,1,1,1.37,4.75,8.5,Empate,4.75
+2023,2023,38,CA Cerro,Defensor Sporting,1,1,4.65,3.25,1.85,Empate,3.25
+2023,2023,38,Deportivo Maldonado,Montevideo Wanderers FC,3,0,2.3,3.15,3.5,Deportivo Maldonado,2.3
+2023,2023,38,Nacional de Futebol,Danubio,1,3,1.65,3.8,5.7,Danubio,5.7
+2023,2023,38,CA River Plate,CA Fenix,1,0,2.9,3.15,2.63,CA River Plate,2.9
+2023,2023,38,Boston River,La Luz,1,2,2.22,3.35,3.3,La Luz,3.3
+2023,2023,38,Cerro Lago FC,Plaza Colónia,4,0,2.37,3.25,3.2,Cerro Lago FC,2.37
+2023,2023,38,Torque,CA Cerro,1,0,2.05,3.4,3.8,Torque,2.05
+2023,2023,38,Liverpool FC,Racing Clube Montevideo,2,3,1.72,4.0,5.75,Racing Clube Montevideo,5.75
+2023,2023,38,Danubio,CA Penarol,2,1,4.2,3.3,2.0,Danubio,4.2
+2023,2023,38,Deportivo Maldonado,La Luz,1,0,2.1,3.45,3.55,Deportivo Maldonado,2.1
+2023,2023,38,Montevideo Wanderers FC,CA River Plate,2,1,2.7,3.25,2.82,Montevideo Wanderers FC,2.7
+2023,2023,39,CA Fenix,Nacional de Futebol,1,1,4.2,3.65,1.9,Empate,3.65
+2023,2023,39,Defensor Sporting,Boston River,2,0,1.65,3.95,5.25,Defensor Sporting,1.65
+2023,2023,39,Boston River,Torque,2,0,2.5,3.3,2.92,Boston River,2.5
+2023,2023,39,CA Cerro,Liverpool FC,0,1,3.75,3.35,2.07,Liverpool FC,2.07
+2023,2023,39,CA Penarol,Plaza Colónia,0,0,1.36,4.9,10.0,Empate,4.9
+2023,2023,39,Racing Clube Montevideo,Cerro Lago FC,1,0,2.3,3.1,3.5,Racing Clube Montevideo,2.3
+2023,2023,39,Danubio,CA Fenix,0,0,2.4,3.1,3.3,Empate,3.1
+2023,2023,39,Deportivo Maldonado,Defensor Sporting,2,1,3.6,3.25,2.22,Deportivo Maldonado,3.6
+2023,2023,39,CA River Plate,La Luz,1,0,2.65,3.2,2.75,CA River Plate,2.65
+2023,2023,39,Nacional de Futebol,Montevideo Wanderers FC,3,1,1.52,4.2,6.5,Nacional de Futebol,1.52
+2023,2023,40,CA Fenix,CA Penarol,0,1,4.6,3.45,1.85,CA Penarol,1.85
+2023,2023,40,Plaza Colónia,Racing Clube Montevideo,0,1,3.1,3.15,2.5,Racing Clube Montevideo,2.5
+2023,2023,40,Torque,Deportivo Maldonado,5,1,2.6,3.25,2.77,Torque,2.6
+2023,2023,40,Liverpool FC,Boston River,2,0,1.63,4.3,5.2,Liverpool FC,1.63
+2023,2023,40,Montevideo Wanderers FC,Danubio,3,0,3.05,3.2,2.47,Montevideo Wanderers FC,3.05
+2023,2023,40,Defensor Sporting,CA River Plate,0,1,1.49,4.3,7.0,CA River Plate,7.0
+2023,2023,40,Cerro Lago FC,CA Cerro,0,0,2.32,3.2,3.2,Empate,3.2
+2023,2023,40,La Luz,Nacional de Futebol,0,1,4.35,3.85,1.75,Nacional de Futebol,1.75
+2023,2023,40,CA Fenix,Montevideo Wanderers FC,1,1,2.32,3.3,3.4,Empate,3.3
+2023,2023,40,CA River Plate,Torque,1,2,3.0,3.15,2.7,Torque,2.7
+2023,2023,40,CA Penarol,Racing Clube Montevideo,1,1,1.6,3.9,6.1,Empate,3.9
+2023,2023,40,Deportivo Maldonado,Liverpool FC,0,2,3.75,3.55,2.02,Liverpool FC,2.02
+2023,2023,40,Boston River,Cerro Lago FC,0,1,2.25,3.25,3.35,Cerro Lago FC,3.35
+2023,2023,40,Danubio,La Luz,2,1,2.2,3.35,3.5,Danubio,2.2
+2023,2023,41,CA Cerro,Plaza Colónia,1,1,1.73,3.5,5.5,Empate,3.5
+2023,2023,41,Nacional de Futebol,Defensor Sporting,1,0,2.1,3.4,3.75,Nacional de Futebol,2.1
+2023,2023,41,Liverpool FC,CA River Plate,2,1,1.95,3.25,4.9,Liverpool FC,1.95
+2023,2023,41,Montevideo Wanderers FC,CA Penarol,0,0,2.85,3.4,2.5,Empate,3.4
+2023,2023,41,Cerro Lago FC,Deportivo Maldonado,2,0,1.91,3.5,4.1,Cerro Lago FC,1.91
+2023,2023,41,Defensor Sporting,Danubio,0,2,1.82,3.6,4.4,Danubio,4.4
+2023,2023,41,La Luz,CA Fenix,0,2,3.05,2.92,2.6,CA Fenix,2.6
+2023,2023,41,Nacional de Futebol,Torque,1,1,1.65,4.2,5.25,Empate,4.2
+2023,2023,41,Racing Clube Montevideo,CA Cerro,0,1,2.27,3.1,3.5,CA Cerro,3.5
+2023,2023,41,Plaza Colónia,Boston River,3,2,2.9,3.25,2.5,Plaza Colónia,2.9
+2023,2023,41,Liverpool FC,CA Penarol,0,1,2.67,3.2,2.85,CA Penarol,2.85
+2023,2023,42,Liverpool FC,CA Penarol,2,0,3.0,3.2,2.65,Liverpool FC,3.0
+2023,2023,42,CA Penarol,Liverpool FC,0,1,2.1,3.4,3.65,Liverpool FC,3.65
+2024,2024,1,Nacional de Futebol,CA River Plate,2,1,1.55,4.1,6.25,Nacional de Futebol,1.55
+2024,2024,1,CA Fenix,Danubio,1,2,2.85,2.95,2.8,Danubio,2.8
+2024,2024,1,Miramar Misiones,Club Atletico Progreso,2,3,2.45,3.2,3.0,Club Atletico Progreso,3.0
+2024,2024,1,Deportivo Maldonado,Boston River,1,2,2.25,3.25,3.35,Boston River,3.35
+2024,2024,1,CA Cerro,Montevideo Wanderers FC,1,1,2.63,3.05,3.0,Empate,3.05
+2024,2024,1,Racing Clube Montevideo,Liverpool FC,2,2,3.1,3.3,2.42,Empate,3.3
+2024,2024,1,Cerro Lago FC,CA Penarol,1,2,5.75,3.55,1.7,CA Penarol,1.7
+2024,2024,2,Montevideo Wanderers FC,Racing Clube Montevideo,0,1,2.6,3.2,2.82,Racing Clube Montevideo,2.82
+2024,2024,2,Boston River,Danubio,0,0,2.65,3.25,2.75,Empate,3.25
+2024,2024,2,CA Penarol,Miramar Misiones,2,0,1.39,4.8,9.0,CA Penarol,1.39
+2024,2024,2,Cerro Lago FC,CA Fenix,0,0,2.5,3.05,3.2,Empate,3.05
+2024,2024,2,Liverpool FC,Nacional de Futebol,1,1,2.88,3.4,2.5,Empate,3.4
+2024,2024,2,Defensor Sporting,CA Cerro,5,0,1.75,3.75,4.75,,
+2024,2024,3,CA Cerro,Club Atletico Progreso,2,3,2.3,3.2,3.7,Club Atletico Progreso,3.7
+2024,2024,3,Miramar Misiones,Cerro Lago FC,1,2,3.05,3.1,2.47,Cerro Lago FC,2.47
+2024,2024,3,Racing Clube Montevideo,Defensor Sporting,1,2,3.7,3.35,2.05,Defensor Sporting,2.05
+2024,2024,3,Nacional de Futebol,Montevideo Wanderers FC,3,0,1.6,4.2,5.8,Nacional de Futebol,1.6
+2024,2024,3,CA Fenix,Boston River,1,2,2.37,3.15,3.15,Boston River,3.15
+2024,2024,3,Liverpool FC,Deportivo Maldonado,1,2,1.9,3.65,4.2,Deportivo Maldonado,4.2
+2024,2024,3,Rampla Juniors,CA Penarol,0,3,8.0,4.3,1.55,CA Penarol,1.55
+2024,2024,4,Miramar Misiones,CA Fenix,1,1,2.6,3.2,2.95,Empate,3.2
+2024,2024,4,CA River Plate,Boston River,1,2,2.52,3.2,3.0,Boston River,3.0
+2024,2024,4,CA Penarol,CA Cerro,3,0,1.49,5.2,11.0,CA Penarol,1.49
+2024,2024,4,Liverpool FC,Danubio,1,2,2.3,3.3,3.25,Danubio,3.25
+2024,2024,4,Club Atletico Progreso,Racing Clube Montevideo,4,3,2.8,3.3,3.0,Club Atletico Progreso,2.8
+2024,2024,4,Defensor Sporting,Nacional de Futebol,3,3,2.12,3.4,3.6,Empate,3.4
+2024,2024,5,Cerro Lago FC,Rampla Juniors,2,0,1.9,3.3,4.4,Cerro Lago FC,1.9
+2024,2024,5,Montevideo Wanderers FC,Deportivo Maldonado,0,0,2.8,3.3,2.6,Empate,3.3
+2024,2024,5,Boston River,Liverpool FC,1,1,2.77,3.25,2.52,Empate,3.25
+2024,2024,5,CA Fenix,CA River Plate,0,0,2.32,3.1,3.75,Empate,3.1
+2024,2024,5,Racing Clube Montevideo,CA Penarol,1,2,4.75,3.5,1.8,CA Penarol,1.8
+2024,2024,6,Rampla Juniors,Miramar Misiones,1,1,2.9,3.2,2.45,Empate,3.2
+2024,2024,6,Nacional de Futebol,Club Atletico Progreso,0,0,1.4,4.5,7.5,Empate,4.5
+2024,2024,6,Deportivo Maldonado,Defensor Sporting,1,0,3.8,3.4,2.02,Deportivo Maldonado,3.8
+2024,2024,6,CA Cerro,Cerro Lago FC,1,1,3.0,3.0,2.65,Empate,3.0
+2024,2024,6,Danubio,Montevideo Wanderers FC,0,2,2.18,3.25,3.75,Montevideo Wanderers FC,3.75
+2024,2024,7,Club Atletico Progreso,Rampla Juniors,4,2,1.75,3.85,4.85,Club Atletico Progreso,1.75
+2024,2024,7,Cerro Lago FC,Racing Clube Montevideo,0,2,2.5,3.1,2.95,Racing Clube Montevideo,2.95
+2024,2024,7,CA Penarol,Nacional de Futebol,0,0,2.22,3.15,3.45,Empate,3.15
+2024,2024,7,Rampla Juniors,CA Fenix,1,0,3.1,3.15,2.5,Rampla Juniors,3.1
+2024,2024,7,Liverpool FC,CA River Plate,1,1,1.95,3.25,4.33,Empate,3.25
+2024,2024,7,Defensor Sporting,Danubio,1,0,1.91,3.45,4.65,Defensor Sporting,1.91
+2024,2024,7,Club Atletico Progreso,Deportivo Maldonado,3,1,2.3,3.4,3.1,Club Atletico Progreso,2.3
+2024,2024,7,Miramar Misiones,CA Cerro,2,2,2.5,3.15,3.0,Empate,3.15
+2024,2024,7,Montevideo Wanderers FC,Boston River,0,2,2.8,3.15,2.55,Boston River,2.55
+2024,2024,8,Boston River,Defensor Sporting,2,2,3.2,3.3,2.22,Empate,3.3
+2024,2024,8,CA River Plate,Montevideo Wanderers FC,3,1,2.75,3.05,2.85,CA River Plate,2.75
+2024,2024,8,Racing Clube Montevideo,Miramar Misiones,1,1,1.91,3.5,4.0,Empate,3.5
+2024,2024,8,Danubio,Club Atletico Progreso,1,1,2.35,3.3,3.4,Empate,3.3
+2024,2024,8,Nacional de Futebol,Cerro Lago FC,1,0,1.62,3.9,5.5,Nacional de Futebol,1.62
+2024,2024,8,CA Cerro,Rampla Juniors,3,0,2.2,3.25,3.3,CA Cerro,2.2
+2024,2024,8,CA Fenix,Liverpool FC,1,3,2.7,2.95,3.0,Liverpool FC,3.0
+2024,2024,8,Deportivo Maldonado,CA Penarol,1,2,3.25,3.35,2.18,CA Penarol,2.18
+2024,2024,9,Club Atletico Progreso,Boston River,1,0,2.7,3.2,2.95,Club Atletico Progreso,2.7
+2024,2024,9,CA Cerro,CA Fenix,0,0,2.7,3.05,2.85,Empate,3.05
+2024,2024,9,Deportivo Maldonado,Cerro Lago FC,0,1,2.4,3.2,3.1,Cerro Lago FC,3.1
+2024,2024,9,Rampla Juniors,Racing Clube Montevideo,0,1,3.8,3.6,1.93,Racing Clube Montevideo,1.93
+2024,2024,9,Defensor Sporting,CA River Plate,2,1,1.62,3.75,6.0,Defensor Sporting,1.62
+2024,2024,9,CA Penarol,Danubio,2,0,1.6,3.7,6.5,CA Penarol,1.6
+2024,2024,10,Montevideo Wanderers FC,Liverpool FC,2,3,3.6,3.4,2.15,Liverpool FC,2.15
+2024,2024,10,Miramar Misiones,Nacional de Futebol,1,2,6.0,3.85,1.6,Nacional de Futebol,1.6
+2024,2024,10,Racing Clube Montevideo,CA Cerro,1,1,2.2,3.25,3.5,Empate,3.25
+2024,2024,10,Liverpool FC,Defensor Sporting,1,1,3.25,3.5,2.3,Empate,3.5
+2024,2024,10,Danubio,Cerro Lago FC,1,1,2.4,3.0,3.35,Empate,3.0
+2024,2024,10,Boston River,CA Penarol,1,3,4.0,3.6,1.95,CA Penarol,1.95
+2024,2024,10,Nacional de Futebol,Rampla Juniors,6,2,1.28,5.5,13.0,Nacional de Futebol,1.28
+2024,2024,10,Deportivo Maldonado,Miramar Misiones,1,2,2.25,3.3,3.3,Miramar Misiones,3.3
+2024,2024,10,CA Fenix,Montevideo Wanderers FC,1,2,2.5,3.0,3.1,Montevideo Wanderers FC,3.1
+2024,2024,10,CA River Plate,Club Atletico Progreso,2,2,3.2,3.15,2.37,Empate,3.15
+2024,2024,11,Rampla Juniors,Defensor Sporting,2,1,5.25,3.75,1.7,Rampla Juniors,5.25
+2024,2024,11,Rampla Juniors,Deportivo Maldonado,1,1,3.1,3.4,2.3,Empate,3.4
+2024,2024,11,Cerro Lago FC,Boston River,2,0,2.65,3.1,2.75,Cerro Lago FC,2.65
+2024,2024,11,Miramar Misiones,Danubio,3,5,3.3,3.2,2.3,Danubio,2.3
+2024,2024,11,Club Atletico Progreso,Liverpool FC,2,1,2.8,3.5,2.47,Club Atletico Progreso,2.8
+2024,2024,11,CA Cerro,Nacional de Futebol,1,2,5.5,3.75,1.63,Nacional de Futebol,1.63
+2024,2024,11,Defensor Sporting,Montevideo Wanderers FC,2,2,1.75,3.65,5.0,Empate,3.65
+2024,2024,12,Racing Clube Montevideo,CA Fenix,2,0,2.15,3.4,4.15,Racing Clube Montevideo,2.15
+2024,2024,12,CA Penarol,CA River Plate,3,0,1.34,4.7,8.5,CA Penarol,1.34
+2024,2024,12,Danubio,Rampla Juniors,1,1,1.87,3.35,4.3,Empate,3.35
+2024,2024,12,Liverpool FC,CA Penarol,2,2,4.5,3.5,1.85,Empate,3.5
+2024,2024,12,Nacional de Futebol,Racing Clube Montevideo,4,2,1.7,3.9,5.0,Nacional de Futebol,1.7
+2024,2024,12,Boston River,Miramar Misiones,3,1,2.2,3.3,3.25,Boston River,2.2
+2024,2024,12,Montevideo Wanderers FC,Club Atletico Progreso,2,0,3.0,3.45,2.3,Montevideo Wanderers FC,3.0
+2024,2024,12,CA River Plate,Cerro Lago FC,2,3,2.85,3.0,2.55,Cerro Lago FC,2.55
+2024,2024,12,CA Fenix,Defensor Sporting,0,2,3.4,3.25,2.15,Defensor Sporting,2.15
+2024,2024,12,Deportivo Maldonado,CA Cerro,3,0,2.3,3.2,3.25,Deportivo Maldonado,2.3
+2024,2024,13,Nacional de Futebol,CA Fenix,1,4,1.39,4.75,8.5,CA Fenix,8.5
+2024,2024,13,CA Cerro,Danubio,2,0,2.8,2.95,2.7,CA Cerro,2.8
+2024,2024,13,Miramar Misiones,CA River Plate,0,0,2.55,3.2,2.85,Empate,3.2
+2024,2024,13,Racing Clube Montevideo,Deportivo Maldonado,0,1,2.25,3.3,3.25,Deportivo Maldonado,3.25
+2024,2024,13,CA Penarol,Montevideo Wanderers FC,1,0,1.45,4.33,7.0,CA Penarol,1.45
+2024,2024,13,Rampla Juniors,Boston River,0,1,2.8,3.2,2.55,Boston River,2.55
+2024,2024,13,Club Atletico Progreso,Defensor Sporting,1,4,3.2,3.4,2.2,Defensor Sporting,2.2
+2024,2024,14,CA Fenix,Club Atletico Progreso,1,0,2.63,3.1,2.87,CA Fenix,2.63
+2024,2024,14,CA River Plate,Rampla Juniors,0,2,2.15,3.25,3.5,Rampla Juniors,3.5
+2024,2024,14,Defensor Sporting,CA Penarol,0,2,3.8,3.3,2.07,CA Penarol,2.07
+2024,2024,14,Danubio,Racing Clube Montevideo,0,1,2.6,3.3,2.75,Racing Clube Montevideo,2.75
+2024,2024,14,Boston River,CA Cerro,2,0,2.45,3.1,3.15,Boston River,2.45
+2024,2024,14,Montevideo Wanderers FC,Cerro Lago FC,1,0,2.7,3.0,2.8,Montevideo Wanderers FC,2.7
+2024,2024,15,Liverpool FC,Miramar Misiones,2,1,1.87,3.55,4.2,Liverpool FC,1.87
+2024,2024,15,Deportivo Maldonado,Nacional de Futebol,0,2,5.0,4.0,1.7,Nacional de Futebol,1.7
+2024,2024,15,CA Penarol,Club Atletico Progreso,3,1,1.75,3.7,4.7,CA Penarol,1.75
+2024,2024,15,Racing Clube Montevideo,Boston River,1,2,2.35,3.1,3.2,Boston River,3.2
+2024,2024,15,Miramar Misiones,Montevideo Wanderers FC,2,0,2.6,3.1,2.8,Miramar Misiones,2.6
+2024,2024,15,Nacional de Futebol,Danubio,1,0,1.5,4.1,7.0,Nacional de Futebol,1.5
+2024,2024,15,CA Cerro,CA River Plate,3,2,2.4,3.0,3.1,CA Cerro,2.4
+2024,2024,15,Deportivo Maldonado,CA Fenix,0,1,2.55,3.1,2.95,CA Fenix,2.95
+2024,2024,16,Montevideo Wanderers FC,Rampla Juniors,2,1,2.22,3.2,3.3,Montevideo Wanderers FC,2.22
+2024,2024,16,CA River Plate,Racing Clube Montevideo,3,3,3.1,3.1,2.37,Empate,3.1
+2024,2024,16,CA Fenix,CA Penarol,0,1,6.0,3.7,1.6,CA Penarol,1.6
+2024,2024,16,Defensor Sporting,Miramar Misiones,3,0,1.8,3.75,4.33,Defensor Sporting,1.8
+2024,2024,17,Liverpool FC,CA Cerro,0,3,1.8,3.7,4.6,CA Cerro,4.6
+2024,2024,17,Danubio,Deportivo Maldonado,1,1,2.55,3.0,2.95,Empate,3.0
+2024,2024,17,Club Atletico Progreso,Cerro Lago FC,0,1,2.35,3.25,3.05,Cerro Lago FC,3.05
+2024,2024,17,Boston River,Nacional de Futebol,1,3,4.6,3.8,1.75,Nacional de Futebol,1.75
+2024,2024,17,Liverpool FC,Miramar Misiones,0,1,1.88,3.55,4.1,Miramar Misiones,4.1
+2024,2024,17,Racing Clube Montevideo,CA Fenix,2,1,2.15,3.2,3.5,Racing Clube Montevideo,2.15
+2024,2024,17,Montevideo Wanderers FC,CA Penarol,2,0,5.8,3.95,1.57,Montevideo Wanderers FC,5.8
+2024,2024,17,Deportivo Maldonado,Defensor Sporting,0,2,3.8,3.4,2.05,Defensor Sporting,2.05
+2024,2024,17,Cerro Lago FC,Danubio,2,2,2.25,2.95,3.5,Empate,2.95
+2024,2024,17,Club Atletico Progreso,CA River Plate,1,0,2.1,3.4,3.8,Club Atletico Progreso,2.1
+2024,2024,17,CA Cerro,Nacional de Futebol,3,0,5.8,4.0,1.55,CA Cerro,5.8
+2024,2024,18,Rampla Juniors,Boston River,1,1,3.25,3.3,2.2,Empate,3.3
+2024,2024,18,Miramar Misiones,CA Cerro,1,0,2.9,3.1,2.5,Miramar Misiones,2.9
+2024,2024,18,CA River Plate,Deportivo Maldonado,1,1,2.5,3.1,3.15,Empate,3.1
+2024,2024,18,Nacional de Futebol,Liverpool FC,2,1,1.75,3.75,4.3,Nacional de Futebol,1.75
+2024,2024,18,Defensor Sporting,Club Atletico Progreso,1,1,1.75,3.75,4.5,Empate,3.75
+2024,2024,18,CA Fenix,Montevideo Wanderers FC,3,1,2.45,3.0,3.05,CA Fenix,2.45
+2024,2024,18,Danubio,Rampla Juniors,2,0,2.1,3.3,3.75,Danubio,2.1
+2024,2024,18,CA Penarol,Racing Clube Montevideo,1,1,1.65,3.9,5.5,Empate,3.9
+2024,2024,19,Boston River,Cerro Lago FC,0,2,2.5,3.2,2.88,Cerro Lago FC,2.88
+2024,2024,19,CA Cerro,Danubio,0,0,2.63,2.95,2.87,Empate,2.95
+2024,2024,19,Deportivo Maldonado,CA Fenix,1,3,2.9,2.95,2.62,CA Fenix,2.62
+2024,2024,19,Racing Clube Montevideo,Defensor Sporting,0,1,3.1,3.25,2.25,Defensor Sporting,2.25
+2024,2024,19,Club Atletico Progreso,CA Penarol,0,2,5.25,3.75,1.65,CA Penarol,1.65
+2024,2024,19,Liverpool FC,Boston River,1,0,1.9,3.6,3.9,Liverpool FC,1.9
+2024,2024,19,Rampla Juniors,Miramar Misiones,1,2,2.88,3.25,2.5,Miramar Misiones,2.5
+2024,2024,19,Cerro Lago FC,Nacional de Futebol,0,4,4.25,3.4,1.9,Nacional de Futebol,1.9
+2024,2024,19,Montevideo Wanderers FC,CA River Plate,1,3,2.45,3.3,2.85,CA River Plate,2.85
+2024,2024,20,Cerro Lago FC,Liverpool FC,1,0,3.35,3.1,2.2,Cerro Lago FC,3.35
+2024,2024,20,Boston River,CA Cerro,2,0,2.2,3.1,3.35,Boston River,2.2
+2024,2024,20,CA Penarol,Deportivo Maldonado,1,1,1.4,4.6,8.0,Empate,4.6
+2024,2024,20,CA Fenix,CA River Plate,1,0,2.25,3.05,3.3,CA Fenix,2.25
+2024,2024,20,Club Atletico Progreso,Racing Clube Montevideo,3,2,3.05,3.1,2.5,Club Atletico Progreso,3.05
+2024,2024,20,Nacional de Futebol,Rampla Juniors,1,1,1.25,5.8,12.0,Empate,5.8
+2024,2024,20,Defensor Sporting,Montevideo Wanderers FC,1,1,2.15,3.4,3.5,Empate,3.4
+2024,2024,20,Miramar Misiones,Danubio,2,3,2.5,3.0,3.3,Danubio,3.3
+2024,2024,21,Deportivo Maldonado,Racing Clube Montevideo,1,1,3.0,3.1,2.45,Empate,3.1
+2024,2024,21,Rampla Juniors,Liverpool FC,3,2,3.8,3.45,1.93,Rampla Juniors,3.8
+2024,2024,21,Danubio,Nacional de Futebol,0,6,4.9,3.5,1.75,Nacional de Futebol,1.75
+2024,2024,21,Boston River,Miramar Misiones,2,1,2.2,3.25,3.25,Boston River,2.2
+2024,2024,21,CA Cerro,Cerro Lago FC,0,1,2.62,3.0,2.8,Cerro Lago FC,2.8
+2024,2024,21,CA Fenix,Defensor Sporting,1,2,3.3,3.1,2.22,Defensor Sporting,2.22
+2024,2024,21,CA River Plate,CA Penarol,1,3,5.8,3.95,1.55,CA Penarol,1.55
+2024,2024,21,Montevideo Wanderers FC,Club Atletico Progreso,4,2,2.38,3.1,3.3,Montevideo Wanderers FC,2.38
+2024,2024,22,Defensor Sporting,CA River Plate,0,1,1.68,3.75,5.0,CA River Plate,5.0
+2024,2024,22,Cerro Lago FC,Rampla Juniors,0,1,2.0,3.3,3.8,Rampla Juniors,3.8
+2024,2024,22,Racing Clube Montevideo,Montevideo Wanderers FC,0,1,2.4,3.1,3.3,Montevideo Wanderers FC,3.3
+2024,2024,22,Nacional de Futebol,Miramar Misiones,4,0,1.44,4.5,7.0,Nacional de Futebol,1.44
+2024,2024,22,Liverpool FC,CA Cerro,0,1,2.05,3.25,3.7,CA Cerro,3.7
+2024,2024,22,Club Atletico Progreso,Deportivo Maldonado,0,1,2.25,3.3,3.15,Deportivo Maldonado,3.15
+2024,2024,22,CA Penarol,CA Fenix,2,0,1.5,4.0,6.25,CA Penarol,1.5
+2024,2024,22,Boston River,Danubio,1,2,2.57,3.1,2.95,Danubio,2.95
+2024,2024,23,Miramar Misiones,Cerro Lago FC,0,0,2.7,3.25,2.65,Empate,3.25
+2024,2024,23,CA Fenix,Club Atletico Progreso,1,1,2.45,3.3,2.95,Empate,3.3
+2024,2024,23,CA Penarol,Defensor Sporting,1,0,1.75,3.5,4.7,CA Penarol,1.75
+2024,2024,23,Montevideo Wanderers FC,Deportivo Maldonado,1,0,2.05,3.4,3.65,Montevideo Wanderers FC,2.05
+2024,2024,23,CA Cerro,Rampla Juniors,4,1,2.1,3.3,3.5,CA Cerro,2.1
+2024,2024,23,Danubio,Liverpool FC,2,0,2.92,3.25,2.47,Danubio,2.92
+2024,2024,23,Nacional de Futebol,Boston River,1,0,1.44,4.2,8.0,Nacional de Futebol,1.44
+2024,2024,24,CA River Plate,Racing Clube Montevideo,2,2,3.0,3.2,2.4,Empate,3.2
+2024,2024,24,Nacional de Futebol,CA Penarol,1,1,2.57,3.0,2.82,,
+2024,2024,26,Montevideo Wanderers FC,CA Cerro,1,0,2.2,3.1,3.4,Montevideo Wanderers FC,2.2
+2024,2024,26,Liverpool FC,Racing Clube Montevideo,1,1,2.35,3.25,3.0,Empate,3.25
+2024,2024,26,CA Penarol,Cerro Lago FC,0,0,1.6,3.95,7.5,Empate,3.95
+2024,2024,26,Boston River,Deportivo Maldonado,1,0,2.15,3.25,3.4,Boston River,2.15
+2024,2024,26,Danubio,CA Fenix,1,0,2.37,3.1,3.15,Danubio,2.37
+2024,2024,26,Club Atletico Progreso,Miramar Misiones,0,0,2.25,3.3,3.1,Empate,3.3
+2024,2024,26,CA River Plate,Nacional de Futebol,3,3,5.8,4.1,1.55,Empate,4.1
+2024,2024,26,Defensor Sporting,Rampla Juniors,1,2,1.47,4.4,6.2,Rampla Juniors,6.2
+2024,2024,29,Racing Clube Montevideo,Montevideo Wanderers FC,0,1,2.3,3.2,3.2,Montevideo Wanderers FC,3.2
+2024,2024,29,CA Cerro,Defensor Sporting,1,1,3.85,3.2,2.05,Empate,3.2
+2024,2024,29,Miramar Misiones,CA Penarol,1,2,8.0,4.5,1.4,CA Penarol,1.4
+2024,2024,29,Deportivo Maldonado,CA River Plate,0,1,2.47,3.1,2.92,CA River Plate,2.92
+2024,2024,29,Rampla Juniors,Club Atletico Progreso,2,0,2.9,3.2,2.5,Rampla Juniors,2.9
+2024,2024,29,CA Fenix,Cerro Lago FC,1,0,2.75,2.95,2.87,CA Fenix,2.75
+2024,2024,29,Danubio,Boston River,2,0,2.38,3.0,3.3,Danubio,2.38
+2024,2024,29,Nacional de Futebol,Liverpool FC,1,0,1.42,4.6,6.6,Nacional de Futebol,1.42
+2024,2024,30,Defensor Sporting,Racing Clube Montevideo,1,2,2.3,3.25,3.1,Racing Clube Montevideo,3.1
+2024,2024,30,Cerro Lago FC,Miramar Misiones,1,2,2.12,3.35,3.6,Miramar Misiones,3.6
+2024,2024,30,Club Atletico Progreso,CA Cerro,0,1,2.2,3.3,3.25,CA Cerro,3.25
+2024,2024,30,CA Penarol,Rampla Juniors,4,0,1.35,4.75,8.5,CA Penarol,1.35
+2024,2024,30,Danubio,CA River Plate,3,0,2.12,3.25,3.55,Danubio,2.12
+2024,2024,30,Deportivo Maldonado,Liverpool FC,0,1,2.85,3.05,2.7,Liverpool FC,2.7
+2024,2024,30,Montevideo Wanderers FC,Nacional de Futebol,0,2,5.2,3.6,1.65,Nacional de Futebol,1.65
+2024,2024,31,Boston River,CA Fenix,2,0,2.35,3.2,3.1,Boston River,2.35
+2024,2024,31,Deportivo Maldonado,Montevideo Wanderers FC,1,3,2.77,2.9,2.8,Montevideo Wanderers FC,2.8
+2024,2024,31,Rampla Juniors,Cerro Lago FC,2,0,2.85,3.1,2.67,Rampla Juniors,2.85
+2024,2024,31,Racing Clube Montevideo,Club Atletico Progreso,1,0,2.11,3.3,3.5,Racing Clube Montevideo,2.11
+2024,2024,31,Nacional de Futebol,Defensor Sporting,1,1,1.54,4.0,6.0,Empate,4.0
+2024,2024,31,CA Fenix,Miramar Misiones,0,0,2.5,2.95,3.15,Empate,2.95
+2024,2024,31,Boston River,CA River Plate,3,1,2.05,3.25,3.7,Boston River,2.05
+2024,2024,31,Danubio,Liverpool FC,1,0,2.45,3.0,3.0,Danubio,2.45
+2024,2024,31,CA Cerro,CA Penarol,0,5,3.4,3.15,2.2,CA Penarol,2.2
+2024,2024,32,Miramar Misiones,Rampla Juniors,0,0,2.12,3.25,3.45,Empate,3.25
+2024,2024,32,Cerro Lago FC,CA Cerro,3,1,2.2,3.0,3.65,Cerro Lago FC,2.2
+2024,2024,32,Montevideo Wanderers FC,Danubio,2,2,2.8,3.0,2.8,Empate,3.0
+2024,2024,32,CA River Plate,CA Fenix,4,3,2.38,3.35,2.82,CA River Plate,2.38
+2024,2024,32,Liverpool FC,Boston River,1,1,2.25,2.95,3.55,Empate,2.95
+2024,2024,32,Defensor Sporting,Deportivo Maldonado,3,1,1.7,3.6,5.25,Defensor Sporting,1.7
+2024,2024,32,Club Atletico Progreso,Nacional de Futebol,0,3,7.2,4.6,1.42,Nacional de Futebol,1.42
+2024,2024,33,CA Penarol,Racing Clube Montevideo,0,0,1.67,3.5,5.75,Empate,3.5
+2024,2024,33,CA River Plate,Liverpool FC,1,1,2.85,3.3,2.35,Empate,3.3
+2024,2024,33,CA Cerro,Miramar Misiones,0,1,2.5,3.1,3.2,Miramar Misiones,3.2
+2024,2024,33,Racing Clube Montevideo,Cerro Lago FC,0,0,2.15,3.1,3.6,Empate,3.1
+2024,2024,33,Danubio,Defensor Sporting,1,1,3.0,2.8,2.6,Empate,2.8
+2024,2024,33,Boston River,Montevideo Wanderers FC,3,2,2.38,3.0,3.2,Boston River,2.38
+2024,2024,33,CA Fenix,Rampla Juniors,1,0,2.22,3.15,3.4,CA Fenix,2.22
+2024,2024,33,Nacional de Futebol,CA Penarol,2,1,2.45,3.0,3.05,Nacional de Futebol,2.45
+2024,2024,33,Deportivo Maldonado,Club Atletico Progreso,2,2,2.55,2.95,3.15,Empate,2.95
+2024,2024,34,Liverpool FC,CA Fenix,1,2,2.05,3.25,3.6,CA Fenix,3.6
+2024,2024,34,CA Penarol,Deportivo Maldonado,2,0,1.28,5.5,11.5,CA Penarol,1.28
+2024,2024,34,Club Atletico Progreso,Danubio,0,0,3.3,3.15,2.3,Empate,3.15
+2024,2024,34,Rampla Juniors,CA Cerro,1,1,2.52,3.3,2.75,Empate,3.3
+2024,2024,34,Defensor Sporting,Boston River,1,2,2.1,3.2,3.5,Boston River,3.5
+2024,2024,34,Montevideo Wanderers FC,CA River Plate,0,1,2.1,3.4,3.7,CA River Plate,3.7
+2024,2024,34,Miramar Misiones,Racing Clube Montevideo,2,2,3.5,3.05,2.25,Empate,3.05
+2024,2024,34,Cerro Lago FC,Nacional de Futebol,0,1,8.5,4.2,1.44,Nacional de Futebol,1.44
+2024,2024,35,Liverpool FC,Montevideo Wanderers FC,1,1,2.11,3.4,3.25,Empate,3.4
+2024,2024,35,Racing Clube Montevideo,Rampla Juniors,2,1,1.78,3.4,5.0,Racing Clube Montevideo,1.78
+2024,2024,35,Danubio,CA Penarol,0,1,4.9,3.2,1.83,CA Penarol,1.83
+2024,2024,35,Boston River,Club Atletico Progreso,1,0,1.7,3.6,6.0,Boston River,1.7
+2024,2024,35,CA River Plate,Defensor Sporting,0,1,3.65,3.4,2.0,Defensor Sporting,2.0
+2024,2024,35,Cerro Lago FC,Deportivo Maldonado,1,0,1.96,3.1,4.33,Cerro Lago FC,1.96
+2024,2024,35,CA Fenix,CA Cerro,1,3,2.12,3.05,3.65,CA Cerro,3.65
+2024,2024,35,Nacional de Futebol,Miramar Misiones,5,1,1.22,6.25,12.0,Nacional de Futebol,1.22
+2024,2024,35,Club Atletico Progreso,CA River Plate,2,0,2.27,3.3,3.1,Club Atletico Progreso,2.27
+2024,2024,35,CA Penarol,Boston River,2,0,1.88,3.6,4.75,CA Penarol,1.88
+2024,2024,35,Cerro Lago FC,Danubio,0,0,2.75,2.9,2.85,Empate,2.9
+2024,2024,35,CA Cerro,Racing Clube Montevideo,1,1,3.2,3.0,2.35,Empate,3.0
+2024,2024,35,Rampla Juniors,Nacional de Futebol,2,1,9.0,5.0,1.33,Rampla Juniors,9.0
+2024,2024,35,Montevideo Wanderers FC,CA Fenix,1,2,2.2,3.2,3.25,CA Fenix,3.25
+2024,2024,36,Miramar Misiones,Deportivo Maldonado,1,0,2.25,3.15,3.2,Miramar Misiones,2.25
+2024,2024,36,Defensor Sporting,Liverpool FC,2,1,2.22,3.35,3.1,Defensor Sporting,2.22
+2024,2024,37,Deportivo Maldonado,Rampla Juniors,1,1,2.3,3.1,3.2,Empate,3.1
+2024,2024,37,Danubio,Miramar Misiones,1,0,1.95,3.25,4.05,Danubio,1.95
+2024,2024,37,Nacional de Futebol,CA Cerro,2,0,1.22,6.5,13.5,Nacional de Futebol,1.22
+2024,2024,37,Boston River,Cerro Lago FC,3,0,2.28,3.2,3.15,Boston River,2.28
+2024,2024,37,Liverpool FC,Club Atletico Progreso,2,1,1.88,3.45,4.0,Liverpool FC,1.88
+2024,2024,37,CA Fenix,Racing Clube Montevideo,0,2,3.0,3.1,2.55,Racing Clube Montevideo,2.55
+2024,2024,37,CA River Plate,CA Penarol,0,1,6.5,4.2,1.46,CA Penarol,1.46
+2024,2024,38,Montevideo Wanderers FC,Defensor Sporting,1,1,3.3,3.3,2.13,Empate,3.3
+2024,2024,38,CA Cerro,Deportivo Maldonado,0,0,2.2,3.1,3.45,Empate,3.1
+2024,2024,38,Racing Clube Montevideo,Nacional de Futebol,0,2,7.5,3.75,1.5,Nacional de Futebol,1.5
+2024,2024,38,Rampla Juniors,Danubio,0,2,3.3,3.2,2.2,Danubio,2.2
+2024,2024,38,Cerro Lago FC,CA River Plate,1,0,2.2,3.25,3.25,Cerro Lago FC,2.2
+2024,2024,38,CA Penarol,Liverpool FC,2,0,1.42,4.4,7.6,CA Penarol,1.42
+2024,2024,38,Miramar Misiones,Boston River,1,0,4.2,3.3,1.9,Miramar Misiones,4.2
+2024,2024,38,Club Atletico Progreso,Montevideo Wanderers FC,0,0,2.75,3.1,2.85,Empate,3.1
+2024,2024,38,Defensor Sporting,CA Fenix,1,0,1.85,3.5,4.2,Defensor Sporting,1.85
+2024,2024,39,Deportivo Maldonado,Racing Clube Montevideo,0,1,3.8,3.1,2.15,Racing Clube Montevideo,2.15
+2024,2024,39,CA River Plate,Miramar Misiones,0,0,2.1,3.15,3.6,Empate,3.15
+2024,2024,39,CA Fenix,Nacional de Futebol,0,6,9.6,5.0,1.31,Nacional de Futebol,1.31
+2024,2024,39,Cerro Lago FC,Liverpool FC,0,0,2.6,3.0,3.2,Empate,3.0
+2024,2024,39,Defensor Sporting,Club Atletico Progreso,3,0,1.65,3.6,5.6,Defensor Sporting,1.65
+2024,2024,39,Danubio,CA Cerro,0,0,1.78,3.3,4.8,Empate,3.3
+2024,2024,39,Boston River,Rampla Juniors,1,0,1.75,3.5,4.75,Boston River,1.75
+2024,2024,39,Montevideo Wanderers FC,CA Penarol,0,2,7.1,4.3,1.5,CA Penarol,1.5
+2024,2024,39,Nacional de Futebol,Deportivo Maldonado,5,2,1.16,8.0,19.0,Nacional de Futebol,1.16
+2024,2024,39,Miramar Misiones,Liverpool FC,2,2,3.1,3.2,2.47,Empate,3.2
+2024,2024,39,Racing Clube Montevideo,Danubio,0,0,2.18,2.85,3.75,Empate,2.85
+2024,2024,39,CA Penarol,Defensor Sporting,2,0,1.42,4.2,8.0,CA Penarol,1.42
+2024,2024,40,Club Atletico Progreso,CA Fenix,2,2,2.55,3.1,2.75,Empate,3.1
+2024,2024,40,CA Cerro,Boston River,0,0,3.2,3.1,2.42,Empate,3.1
+2024,2024,40,Cerro Lago FC,Montevideo Wanderers FC,4,0,1.95,3.15,4.2,Cerro Lago FC,1.95
+2024,2024,40,Rampla Juniors,CA River Plate,0,3,2.6,3.1,2.8,CA River Plate,2.8
+2024,2024,41,CA River Plate,CA Cerro,1,0,2.45,3.0,3.2,CA River Plate,2.45
+2024,2024,41,Rampla Juniors,Liverpool FC,0,1,2.57,3.1,2.75,Liverpool FC,2.75
+2024,2024,41,Montevideo Wanderers FC,Miramar Misiones,2,0,2.5,3.25,2.75,Montevideo Wanderers FC,2.5
+2024,2024,41,Club Atletico Progreso,CA Penarol,1,5,9.8,4.6,1.34,CA Penarol,1.34
+2024,2024,41,CA Fenix,Deportivo Maldonado,1,2,1.73,3.5,5.1,Deportivo Maldonado,5.1
+2024,2024,41,Boston River,Racing Clube Montevideo,1,2,2.35,3.1,3.2,Racing Clube Montevideo,3.2
+2024,2024,41,Cerro Lago FC,Defensor Sporting,3,0,3.1,3.0,2.45,Cerro Lago FC,3.1
+2024,2024,41,Danubio,Nacional de Futebol,0,0,7.8,4.33,1.4,Empate,4.33
+2024,2024,41,CA Cerro,Liverpool FC,1,3,2.75,2.85,2.9,Liverpool FC,2.9
+2024,2024,41,Cerro Lago FC,Club Atletico Progreso,2,1,2.18,3.05,3.8,Cerro Lago FC,2.18
+2024,2024,41,Miramar Misiones,Defensor Sporting,0,0,2.85,3.25,2.4,Empate,3.25
+2024,2024,41,Rampla Juniors,Montevideo Wanderers FC,1,1,1.71,3.55,4.75,Empate,3.55
+2024,2024,41,Racing Clube Montevideo,CA River Plate,2,0,1.88,3.35,4.3,Racing Clube Montevideo,1.88
+2024,2024,41,CA Penarol,CA Fenix,3,1,1.17,6.2,16.0,CA Penarol,1.17
+2024,2024,41,Nacional de Futebol,Boston River,3,1,1.42,4.5,7.5,Nacional de Futebol,1.42
+2024,2024,42,Deportivo Maldonado,Danubio,3,1,3.8,3.1,2.05,Deportivo Maldonado,3.8

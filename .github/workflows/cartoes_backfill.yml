@@ -1,0 +1,60 @@
+name: Model Benchmarking v4 - Backfill de cartões (FotMob)
+
+# Roda arquivos_do_claude/ingestao_fotmob_cartoes.py -- popula `match_events`
+# com eventos de cartão por JOGADOR (gap confirmado: a tabela existia desde
+# o schema original mas tinha 0 linhas), base da feature v4
+# (`jogadores_pendurados_home`/`_away`, `cartoes_acumulados_home`/`_away`,
+# ver scripts/dados_historicos.py).
+#
+# Só workflow_dispatch, disparado MANUALMENTE por liga (`liga_id`) -- o
+# volume total (~13,8 mil partidas nas 6 ligas do benchmarking, 1 chamada
+# de matchDetails por partida, mesmo endpoint/pacing já usado por
+# match_stats_fotmob) não cabe num job só dentro do teto de 6h do runner
+# gratuito do GitHub Actions -- rodar uma vez por liga (paralelo, cada
+# workflow_dispatch é um job independente) faz cada rodada terminar bem
+# mais rápido que uma rodada só sequencial com as 6 ligas.
+on:
+  workflow_dispatch:
+    inputs:
+      liga_id:
+        description: "league_id interno (1=Brasileirão, 4=Premier League, 7=La Liga, 10=Serie A Itália, 13=Bundesliga, 16=Ligue 1)"
+        required: true
+        type: string
+      limite:
+        description: "Processa só as N primeiras partidas pendentes (vazio = todas)"
+        required: false
+        type: string
+      forcar:
+        description: "Reprocessa mesmo partidas que já têm linhas em match_events"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  backfill-cartoes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backfill de cartões
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS="--liga-id ${{ inputs.liga_id }}"
+          if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+          if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          python arquivos_do_claude/ingestao_fotmob_cartoes.py $ARGS

@@ -1,16 +1,26 @@
 // src/pages/LigaDetalhe.jsx
-// Jogos reais (ingeridos pelo pipeline Python) de uma liga cadastrada — só
-// funciona pra ligas vinculadas ao pipeline (ligas.external_id preenchido,
-// que casa com leagues.external_id). Seletor de temporada + separação por
-// fase/rodada + paginação por bloco de rodadas (a lista inteira de uma
-// temporada pode ter 380 jogos, não dá pra jogar tudo na tela de uma vez).
+// Jogos reais (ingeridos pelo pipeline) de uma liga cadastrada — só funciona
+// pra ligas vinculadas ao pipeline: via ligas.pipeline_league_id (vínculo
+// direto, padrão pra ligas novas) ou, em ligas mais antigas que nunca
+// ganharam esse vínculo, por ligas.external_id = leagues.external_id
+// (fallback, só cobre ligas vindas da football-data.org). Seletor de
+// temporada + separação por fase/rodada + paginação por bloco de rodadas (a
+// lista inteira de uma temporada pode ter 380 jogos, não dá pra jogar tudo
+// na tela de uma vez).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange, UploadCloud, Loader2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
+import { apiUrl } from '../utils/apiUrl';
 
 const RODADAS_POR_PAGINA = 4;
+const LOTES_IMPORTACAO_PARTIDAS = [20, 50, 100, 200];
+// Limite seguro por CHAMADA (não por clique) — cada partida gasta 1-2
+// chamadas externas + várias escritas no banco, e o Vercel corta em 60s.
+// O lote escolhido na UI é o alvo total; o loop de rodadas abaixo soma até
+// chegar lá (mesmo padrão de "Resetar/recalcular rating" em Jogadores.jsx).
+const LIMITE_POR_RODADA = { 'api-football': 30, fotmob: 15 };
 
 const RESULTADO_COR = (mandante, gm, gv) => {
   if (gm == null || gv == null) return 'text-slate-500';
@@ -56,10 +66,48 @@ export default function LigaDetalhe() {
   const [temporada, setTemporada] = useState('');
   const [jogos, setJogos] = useState([]);
   const [carregandoJogos, setCarregandoJogos] = useState(false);
+  const [refetchJogos, setRefetchJogos] = useState(0);
   const [pagina, setPagina] = useState(0);
   const [aba, setAba] = useState('classificacao');
 
-  // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no pipeline via external_id
+  const [loteImportacao, setLoteImportacao] = useState(LOTES_IMPORTACAO_PARTIDAS[0]);
+  const [importando, setImportando] = useState(null); // 'api-football' | 'fotmob' | null
+  const [msgImportacao, setMsgImportacao] = useState('');
+  const [erroImportacao, setErroImportacao] = useState('');
+
+  const [temporadaNova, setTemporadaNova] = useState('');
+  const [criandoJogos, setCriandoJogos] = useState(null); // 'api-football' | 'fotmob' | null
+  const [msgCriarJogos, setMsgCriarJogos] = useState('');
+  const [erroCriarJogos, setErroCriarJogos] = useState('');
+
+  // O Supabase (PostgREST) corta em 1000 linhas por chamada sem paginar — uma
+  // liga com 8 temporadas facilmente passa de 1000 jogos, e sem ORDER BY as
+  // primeiras 1000 linhas tendem a ser as mais ANTIGAS (ordem de inserção),
+  // fazendo as temporadas mais novas nunca aparecerem no seletor. Pagina de
+  // verdade só a coluna season (leve) até cobrir todos os jogos. Extraída da
+  // effect original pra também poder ser chamada de novo depois de importar
+  // jogos de uma temporada nova (o seletor precisa refletir a temporada
+  // recém-criada sem precisar recarregar a página).
+  const carregarTemporadas = async (pipelineLigaId) => {
+    const temporadasData = [];
+    let pagina = 0;
+    while (true) {
+      const { data } = await supabase.from('matches').select('season').eq('league_id', pipelineLigaId).range(pagina * 1000, pagina * 1000 + 999);
+      temporadasData.push(...(data || []));
+      if (!data || data.length < 1000) break;
+      pagina++;
+    }
+    const unicas = [...new Set(temporadasData.map(t => t.season))].sort().reverse();
+    setTemporadas(unicas);
+    return unicas;
+  };
+
+  // 1) Carrega a liga (cadastro manual) e resolve a liga correspondente no
+  // pipeline — via pipeline_league_id (vínculo direto, preenchido por padrão
+  // pra ligas novas desde a importação via FotMob) com fallback pro
+  // casamento antigo por external_id (ligas mais antigas, vindas da
+  // football-data.org, que nunca ganharam o vínculo direto — ver migration
+  // add_pipeline_league_id_ligas).
   useEffect(() => {
     if (!supabaseAtivo) return;
     (async () => {
@@ -69,29 +117,17 @@ export default function LigaDetalhe() {
       if (lErro) { setErro('Liga não encontrada.'); setCarregandoLiga(false); return; }
       setLiga(l);
 
-      if (!l.external_id) { setCarregandoLiga(false); return; }
-
-      const { data: pipelineLiga } = await supabase.from('leagues').select('id').eq('external_id', l.external_id).maybeSingle();
-      if (pipelineLiga) {
-        setLeagueIdPipeline(pipelineLiga.id);
-        // O Supabase (PostgREST) corta em 1000 linhas por chamada sem paginar —
-        // uma liga com 8 temporadas facilmente passa de 1000 jogos, e sem
-        // ORDER BY as primeiras 1000 linhas tendem a ser as mais ANTIGAS (ordem
-        // de inserção), fazendo as temporadas mais novas nunca aparecerem no
-        // seletor (só nas páginas de time, que buscam por outro caminho). Pagina
-        // de verdade só a coluna season (leve) até cobrir todos os jogos.
-        const temporadasData = [];
-        let pagina = 0;
-        while (true) {
-          const { data } = await supabase.from('matches').select('season').eq('league_id', pipelineLiga.id).range(pagina * 1000, pagina * 1000 + 999);
-          temporadasData.push(...(data || []));
-          if (!data || data.length < 1000) break;
-          pagina++;
-        }
-        const unicas = [...new Set(temporadasData.map(t => t.season))].sort().reverse();
-        setTemporadas(unicas);
-        if (unicas.length > 0) setTemporada(unicas[0]);
+      let pipelineLigaId = l.pipeline_league_id || null;
+      if (!pipelineLigaId && l.external_id) {
+        const { data: pipelineLiga } = await supabase.from('leagues').select('id').eq('external_id', l.external_id).maybeSingle();
+        pipelineLigaId = pipelineLiga?.id || null;
       }
+
+      if (!pipelineLigaId) { setCarregandoLiga(false); return; }
+
+      setLeagueIdPipeline(pipelineLigaId);
+      const unicas = await carregarTemporadas(pipelineLigaId);
+      if (unicas.length > 0) setTemporada(unicas[0]);
       setCarregandoLiga(false);
     })();
   }, [id]);
@@ -111,7 +147,78 @@ export default function LigaDetalhe() {
       setJogos(data || []);
       setCarregandoJogos(false);
     })();
-  }, [leagueIdPipeline, temporada]);
+  }, [leagueIdPipeline, temporada, refetchJogos]);
+
+  // Importa/enriquece as partidas da temporada selecionada em lotes — o
+  // seletor (20/50/100/200) é o ALVO total do clique, mas cada partida gasta
+  // chamada(s) externa(s) pesada(s) + várias escritas no banco, então o
+  // Vercel corta bem antes de chegar em 200 numa chamada só. O loop abaixo
+  // faz rodadas sucessivas (limite seguro por rodada em LIMITE_POR_RODADA)
+  // até acumular o alvo ou a API confirmar que não sobrou mais nada
+  // pendente — mesmo padrão de "Resetar/recalcular rating" em Jogadores.jsx.
+  const importarPartidas = async (fonte, modo) => {
+    if (!leagueIdPipeline || !temporada) return;
+    const chave = fonte === 'fotmob' ? `fotmob-${modo || 'encerradas'}` : fonte;
+    setImportando(chave); setMsgImportacao(''); setErroImportacao('');
+    const rodadaLimite = LIMITE_POR_RODADA[fonte] || LIMITE_POR_RODADA['fotmob'];
+    let url;
+    if (fonte === 'fotmob') {
+      url = `/api/model-maintenance?tarefa=partidas-fotmob&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}&modo=${modo || 'encerradas'}`;
+    } else {
+      url = `/api/sync-match-stats?liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporada)}`;
+    }
+    try {
+      let totalProcessado = 0;
+      let rodada = 0;
+      const maxRodadas = Math.ceil(loteImportacao / rodadaLimite) + 3; // rede de segurança contra loop preso
+      while (totalProcessado < loteImportacao && rodada < maxRodadas) {
+        rodada++;
+        const resp = await fetch(apiUrl(`${url}&limite=${rodadaLimite}`));
+        const dados = await resp.json();
+        if (!resp.ok) throw new Error(dados.error?.message || 'Falha no lote.');
+        if (dados.mensagem) { setMsgImportacao(dados.mensagem); break; }
+        totalProcessado += dados.processados_agora || 0;
+        setMsgImportacao(
+          `Rodada ${rodada}: ${totalProcessado}/${loteImportacao} processados` +
+          (dados.restantes != null ? ` (restantes na temporada: ${dados.restantes})` : '') +
+          (dados.parado_por_rate_limit ? ' — parado por rate limit, retome depois' : '') + '...'
+        );
+        if (dados.parado_por_rate_limit || !dados.restantes || dados.restantes <= 0 || !dados.processados_agora) break;
+      }
+      const label = fonte === 'fotmob'
+        ? (modo === 'ao_vivo' ? 'FotMob Ao Vivo' : 'FotMob')
+        : 'API-Football';
+      setMsgImportacao(`Importação concluída (${label}): ${totalProcessado} jogo(s) processado(s) na temporada ${temporada}.`);
+      if (totalProcessado > 0) setRefetchJogos(n => n + 1);
+    } catch (e) {
+      setErroImportacao(e.message);
+    } finally {
+      setImportando(null);
+    }
+  };
+
+  // Cria os jogos (data/placar/times) de uma temporada que AINDA NÃO está no
+  // banco — diferente de importarPartidas acima, que só enriquece jogos já
+  // existentes. Ao contrário da enriquecida, criar jogo é barato (1 chamada
+  // externa trazendo a temporada inteira + upsert em lotes de 200 já feito
+  // no servidor) — cabe inteiro numa única chamada, sem precisar de rounds.
+  const criarJogos = async (fonte) => {
+    if (!leagueIdPipeline || !temporadaNova.trim()) return;
+    setCriandoJogos(fonte); setMsgCriarJogos(''); setErroCriarJogos('');
+    const tarefa = fonte === 'fotmob' ? 'importar-jogos-fotmob' : 'importar-jogos-api-football';
+    try {
+      const resp = await fetch(apiUrl(`/api/model-maintenance?tarefa=${tarefa}&liga_id=${leagueIdPipeline}&temporada=${encodeURIComponent(temporadaNova.trim())}`));
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao importar jogos.');
+      setMsgCriarJogos(`${dados.sincronizados ?? 0} de ${dados.total_jogos ?? '?'} jogo(s) importado(s) (${fonte === 'fotmob' ? 'FotMob' : 'API-Football'}) pra temporada "${temporadaNova.trim()}".`);
+      await carregarTemporadas(leagueIdPipeline);
+      setTemporada(String(temporadaNova.trim()));
+    } catch (e) {
+      setErroCriarJogos(e.message);
+    } finally {
+      setCriandoJogos(null);
+    }
+  };
 
 // Nome do mês em pt-BR, usado como agrupamento aproximado quando não há rodada
   // real salva (temporadas 2019-2022 das 5 ligas europeias grandes — a
@@ -194,10 +301,98 @@ export default function LigaDetalhe() {
         )}
       </div>
 
+      {leagueIdPipeline && (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Importar jogos de uma temporada nova</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={temporadaNova}
+              onChange={(e) => setTemporadaNova(e.target.value)}
+              disabled={!!criandoJogos}
+              placeholder="Temporada (ex: 2024)"
+              className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 w-40"
+            />
+            <button
+              onClick={() => criarJogos('api-football')}
+              disabled={!!criandoJogos || !temporadaNova.trim()}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Traz pro banco os jogos (data/placar/times) dessa temporada via API-Football, se ainda não estiverem importados"
+            >
+              {criandoJogos === 'api-football' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+              Importar jogos (API-Football)
+            </button>
+            <button
+              onClick={() => criarJogos('fotmob')}
+              disabled={!!criandoJogos || !temporadaNova.trim()}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Traz pro banco os jogos (data/placar/times) dessa temporada via FotMob, se ainda não estiverem importados"
+            >
+              {criandoJogos === 'fotmob' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+              Importar jogos (FotMob)
+            </button>
+          </div>
+        </div>
+      )}
+      {(msgCriarJogos || erroCriarJogos) && (
+        <div className={`text-sm px-4 py-3 rounded-xl mb-4 ${erroCriarJogos ? 'bg-red-950/30 border border-red-600/40 text-red-300' : 'bg-emerald-950/20 border border-emerald-600/30 text-emerald-300'}`}>
+          {erroCriarJogos || msgCriarJogos}
+        </div>
+      )}
+
+      {leagueIdPipeline && temporadas.length > 0 && (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 w-full">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Importar detalhe das partidas da temporada {temporada}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={loteImportacao}
+                onChange={(e) => setLoteImportacao(Number(e.target.value))}
+                disabled={!!importando}
+                className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100"
+              >
+                {LOTES_IMPORTACAO_PARTIDAS.map(n => <option key={n} value={n}>{n}/{n}</option>)}
+              </select>
+              <button
+                onClick={() => importarPartidas('api-football')}
+                disabled={!!importando}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Importa/completa chutes, posse, escanteios, faltas, cartões e xG (via API-Football) da temporada ${temporada}`}
+              >
+                {importando === 'api-football' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+                Detalhe (API-Football)
+              </button>
+              <button
+                onClick={() => importarPartidas('fotmob', 'encerradas')}
+                disabled={!!importando}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Importa stats de partidas encerradas (match_date < agora-2h) via FotMob da temporada ${temporada}`}
+              >
+                {importando === 'fotmob-encerradas' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+                Encerradas (FotMob)
+              </button>
+              <button
+                onClick={() => importarPartidas('fotmob', 'ao_vivo')}
+                disabled={!!importando}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-amber-600/60 text-amber-300 text-sm hover:bg-amber-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={`Importa stats de partidas com match_date nos últimos 120 min (em andamento ou recém-encerradas) via FotMob`}
+              >
+                {importando === 'fotmob-ao_vivo' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
+                Ao Vivo (FotMob)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {(msgImportacao || erroImportacao) && (
+        <div className={`text-sm px-4 py-3 rounded-xl mb-4 ${erroImportacao ? 'bg-red-950/30 border border-red-600/40 text-red-300' : 'bg-emerald-950/20 border border-emerald-600/30 text-emerald-300'}`}>
+          {erroImportacao || msgImportacao}
+        </div>
+      )}
+
       {!leagueIdPipeline ? (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center">
           <p className="text-slate-500 text-sm">
-            Essa liga não está vinculada ao pipeline de dados (sem jogos importados) — só ligas com <code className="text-slate-400">external_id</code> preenchido (as espelhadas de <code className="text-slate-400">leagues</code>) têm jogos aqui.
+            Essa liga não está vinculada ao pipeline de dados (sem jogos importados) — use "Importar do FotMob" em <Link to="/ligas" className="text-emerald-400 hover:underline">Ligas</Link> pra trazer os jogos de uma temporada.
           </p>
         </div>
       ) : carregandoJogos ? (

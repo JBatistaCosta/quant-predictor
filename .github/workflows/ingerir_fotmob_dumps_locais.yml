@@ -1,0 +1,70 @@
+name: Ingestão dos dumps locais do FotMob (repository-fotmob)
+
+# Roda arquivos_do_claude/ingestao_fotmob_dumps_locais.py -- consome os
+# payloads matchDetails já baixados e gzipados no repositório separado
+# jbatistacosta/repository-fotmob (staging público, ver README daquele
+# repo), sem NENHUMA chamada de rede ao FotMob -- todo o scraping já foi
+# feito por dump_matchdetails.py naquele outro repositório. Popula/
+# completa match_stats_fotmob, match_context_fotmob, players, match_
+# lineup_fotmob, match_player_stats_fotmob e match_shots_fotmob.
+#
+# Reaproveita a MESMA lógica de parse de ingestao_fotmob.py (função
+# processar_matchdetails_completo, extraída de lá pra cá) -- nunca deve
+# divergir das tabelas que o scraper ao vivo já grava.
+#
+# Só workflow_dispatch, disparado MANUALMENTE (mesma disciplina de todo
+# workflow FotMob deste repo) -- dispare, espere terminar (o log final
+# mostra progresso total), dispare de novo se ainda faltar.
+on:
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Processa só as N primeiras partidas pendentes (vazio = todas as ~15.7k do repository-fotmob)"
+        required: false
+        type: string
+      lote:
+        description: "Tamanho do lote em memória antes de gravar no banco (default 200)"
+        required: false
+        type: string
+      forcar:
+        description: "Reprocessa mesmo partidas já em match_source_ids (source=fotmob)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  ingerir-dumps-fotmob:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    steps:
+      - name: Checkout do quant-predictor
+        uses: actions/checkout@v4
+
+      - name: Checkout do repository-fotmob (dumps já baixados)
+        uses: actions/checkout@v4
+        with:
+          repository: jbatistacosta/repository-fotmob
+          path: _repository-fotmob
+          token: ${{ secrets.REPO_FOTMOB_PAT }}
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar ingestão dos dumps locais
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS="--pasta-dados _repository-fotmob/data"
+          if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+          if [ -n "${{ inputs.lote }}" ]; then ARGS="$ARGS --lote ${{ inputs.lote }}"; fi
+          if [ "${{ inputs.forcar }}" = "true" ]; then ARGS="$ARGS --forcar"; fi
+          python arquivos_do_claude/ingestao_fotmob_dumps_locais.py $ARGS

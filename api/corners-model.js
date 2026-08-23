@@ -26,6 +26,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { negBinomialCDF } from './_lib/negbin.js';
+import { applyCors } from './_lib/cors.js';
 
 // Usado só quando a liga do confronto não tem disp_r calibrado ainda (ex:
 // Brasileirão, Champions, Eurocopa — sem model_stat_estimates de escanteios
@@ -116,6 +117,57 @@ async function escanteiosEsperados(supabase, teamId, mandante) {
   return { valor: null, origem: 'sem_dado' };
 }
 
+// Parâmetros do modelo misto pra este confronto, quando existirem.
+//
+// O modelo misto (scripts/treinar_modelo_hibrido.py) estima λ por ML e grava
+// em `model_match_estimates.params`, indexado por match_id. A calculadora
+// manual (AnaliseEvento.jsx) trabalha com NOMES de time, não com partida, então
+// a ponte é achar a partida entre os dois times: a próxima agendada, ou a mais
+// recente disputada.
+//
+// Devolve null em silêncio quando não há partida ou não há parâmetro — a
+// calculadora tem fallback (a fórmula multiplicativa de sempre), e um confronto
+// hipotético que nunca aconteceu simplesmente não tem λ estimado.
+async function parametrosModeloMisto(supabase, homeId, awayId) {
+  const { data: partidas } = await supabase
+    .from('matches')
+    .select('id, match_date, status')
+    .eq('home_team_id', homeId)
+    .eq('away_team_id', awayId)
+    .order('match_date', { ascending: false })
+    .limit(20);
+
+  if (!partidas || partidas.length === 0) return null;
+
+  // Agendadas primeiro (é o caso de uso real: prever o que ainda vai acontecer);
+  // entre as disputadas, a mais recente.
+  const agendadas = partidas.filter(p => p.status === 'scheduled');
+  const ordenadas = [...agendadas.reverse(), ...partidas.filter(p => p.status !== 'scheduled')];
+
+  const { data: estimativas } = await supabase
+    .from('model_match_estimates')
+    .select('match_id, model_name, params')
+    .in('match_id', ordenadas.map(p => p.id))
+    .not('params', 'is', null);
+
+  if (!estimativas || estimativas.length === 0) return null;
+
+  // Respeita a ordem de preferência de partida definida acima.
+  for (const partida of ordenadas) {
+    const linha = estimativas.find(e => e.match_id === partida.id);
+    if (linha?.params?.lambda_home) {
+      return {
+        match_id: partida.id,
+        match_date: partida.match_date,
+        status: partida.status,
+        model_name: linha.model_name,
+        params: linha.params,
+      };
+    }
+  }
+  return null;
+}
+
 async function dispRDaLiga(supabase, leagueId) {
   if (!leagueId) return { valor: DISP_R_PADRAO, origem: 'padrao_generico' };
   const { data } = await supabase
@@ -130,6 +182,7 @@ async function dispRDaLiga(supabase, leagueId) {
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
@@ -152,10 +205,11 @@ export default async function handler(req, res) {
     if (!timeMandante) return res.status(404).json({ error: { message: `Time "${mandante}" não encontrado na tabela teams (times do pipeline Python).` } });
     if (!timeVisitante) return res.status(404).json({ error: { message: `Time "${visitante}" não encontrado na tabela teams (times do pipeline Python).` } });
 
-    const [esperadoMandante, esperadoVisitante, ligaId] = await Promise.all([
+    const [esperadoMandante, esperadoVisitante, ligaId, modeloMisto] = await Promise.all([
       escanteiosEsperados(supabase, timeMandante.id, true),
       escanteiosEsperados(supabase, timeVisitante.id, false),
       ligaMaisRecente(supabase, timeMandante.id),
+      parametrosModeloMisto(supabase, timeMandante.id, timeVisitante.id),
     ]);
 
     if (esperadoMandante.valor === null || esperadoVisitante.valor === null) {
@@ -181,6 +235,10 @@ export default async function handler(req, res) {
         total: lambdaCorners,
       },
       mercados: linhasCalculadas,
+      // Presente só quando o modelo misto tem estimativa pra uma partida entre
+      // esses dois times. `null` é resposta normal (confronto hipotético, ou
+      // partida fora do escopo de treino), e a calculadora trata como tal.
+      modelo_misto: modeloMisto,
     });
   } catch (erro) {
     res.status(500).json({ error: { message: erro.message } });

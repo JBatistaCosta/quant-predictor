@@ -1,0 +1,44 @@
+name: Model Benchmarking - Backfill de previsões históricas (1X2 + Over/Under 2.5)
+
+# Roda scripts/backfill_predicoes_historicas.py -- popula `predicoes` com
+# previsão de TODOS os modelos (dixon_coles_v1 + 18 modelos de árvore,
+# v1-v5/v3B), nos 2 mercados com odds reais (1X2 e Over/Under 2.5), pro
+# Test Set out-of-sample inteiro (temporada 2025+) -- não só as ~10
+# fixtures futuras que o cron diário (predict.yml) escolhe por rodada.
+# Corrige "modelos v3+ não aparecem na Simulação de Carteira" (v3/v4/v5/
+# v3B são recentes demais pra terem acumulado partida finalizada
+# sozinhos) e "não houve treinamento pra Over/Under 2.5 nos outros
+# modelos" (houve, só nunca tinha sido persistido em lugar servível --
+# ver migração add_mercado_predicoes).
+#
+# Só workflow_dispatch -- é um backfill pontual (idempotente, upsert por
+# match_id+model_name+mercado), não precisa rodar de novo depois que os
+# modelos "encostarem" via cron diário.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backfill-predicoes-historicas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backfill de previsões históricas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backfill_predicoes_historicas.py

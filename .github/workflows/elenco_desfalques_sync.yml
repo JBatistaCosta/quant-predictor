@@ -1,0 +1,59 @@
+name: Desfalques e Transferências do Elenco (FotMob)
+
+# Roda arquivos_do_claude/ingestao_fotmob_elenco.py -- mantém
+# player_availability_fotmob (desfalques/lesões, usado por
+# obter_squad_rating_atual e pela engenharia de features ao vivo do XI
+# previsto) e team_transfers_fotmob em dia. Antes desse workflow o script
+# só rodava manualmente (decisão de agendamento tinha ficado em aberto no
+# próprio docstring) -- desfalque muda toda semana e alimenta previsão de
+# partida futura, então precisa de atualização automática, não só backfill
+# pontual.
+#
+# 1 chamada por time (~210 times com crosswalk FotMob), ~5min, sem custo de
+# cota (FotMob é grátis, mesmo pacing de 1.3s dos outros scripts da família).
+#
+# Roda antes do sync de predições do XI (prever_xi.yml, 05:30 UTC) pra
+# desfalque de hoje já entrar nas features ao vivo do dia.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"  # 05:00 UTC diário
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Processa só os N primeiros times (vazio = todos com crosswalk)"
+        required: false
+        type: string
+      team_id:
+        description: "Um time só, id interno (vazio = todos)"
+        required: false
+        type: string
+
+jobs:
+  sync-desfalques:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Sincronizar desfalques e transferências
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.limite }}" ]; then ARGS="$ARGS --limite ${{ inputs.limite }}"; fi
+          if [ -n "${{ inputs.team_id }}" ]; then ARGS="$ARGS --team-id ${{ inputs.team_id }}"; fi
+          python arquivos_do_claude/ingestao_fotmob_elenco.py $ARGS

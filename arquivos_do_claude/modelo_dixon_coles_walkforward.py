@@ -24,12 +24,12 @@ import pandas as pd
 from supabase import create_client
 
 from modelo_dixon_coles import (
-    ajustar_dixon_coles, matriz_placares, mercados,
+    ajustar_dixon_coles, matriz_placares_com_lambda, mercados,
     carregar_partidas, XI, LIGAS, TEMPORADAS_TREINO_POR_LIGA, TEMPORADA_TESTE,
 )
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 MODEL_NAME = "dixon_coles_walkforward_v1"
 JANELA_DIAS = 7  # retreina a cada ~1 semana de jogos novos
@@ -55,7 +55,7 @@ def rodar_liga_walkforward(supabase, liga_ext_id):
     print(f"\n[{liga_ext_id}] {teste['janela'].nunique()} janelas de retreino "
           f"({len(teste)} jogos de teste no total)")
 
-    previsoes, log_loss_soma, n_previstos, pulados_total = [], 0.0, 0, 0
+    previsoes, estimativas_xg, log_loss_soma, n_previstos, pulados_total = [], [], 0.0, 0, 0
     historico_2025 = base_treino.iloc[0:0].copy()  # fatia vazia preserva dtypes (datetime etc)
 
     for janela_num, jogos_janela in teste.groupby("janela"):
@@ -76,7 +76,7 @@ def rodar_liga_walkforward(supabase, liga_ext_id):
         pulados_total += len(jogos_janela) - len(previsiveis)
 
         for _, jogo in previsiveis.iterrows():
-            m = matriz_placares(modelo, jogo["home"], jogo["away"])
+            m, lam, mu = matriz_placares_com_lambda(modelo, jogo["home"], jogo["away"])
             probs = mercados(m)
 
             resultado = ("draw" if jogo["hg"] == jogo["ag"]
@@ -90,6 +90,10 @@ def rodar_liga_walkforward(supabase, liga_ext_id):
                     "market": mercado, "selection": selecao,
                     "probability": round(float(p), 5),
                 })
+            estimativas_xg.append({
+                "match_id": int(jogo["id"]), "model_name": MODEL_NAME,
+                "xg_home_previsto": round(lam, 3), "xg_away_previsto": round(mu, 3),
+            })
 
         # Esses jogos da janela (já resolvidos) entram no histórico pra
         # próxima janela — é isso que torna o processo "walk-forward"
@@ -100,10 +104,22 @@ def rodar_liga_walkforward(supabase, liga_ext_id):
     print(f"  {n_previstos} jogos previstos, {pulados_total} pulados | "
           f"log loss walk-forward: {log_loss:.4f}")
 
+    # Dedup por chave de conflito antes de gravar -- ver mesmo comentário em
+    # modelo_dixon_coles.py (fixture duplicada pro mesmo match_id quebra o
+    # upsert inteiro).
+    previsoes = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
+    estimativas_xg = list({(e["match_id"], e["model_name"]): e for e in estimativas_xg}.values())
+
     for i in range(0, len(previsoes), 500):
         supabase.table("model_predictions").upsert(
             previsoes[i : i + 500],
             on_conflict="match_id,model_name,market,selection",
+        ).execute()
+
+    for i in range(0, len(estimativas_xg), 500):
+        supabase.table("model_match_estimates").upsert(
+            estimativas_xg[i : i + 500],
+            on_conflict="match_id,model_name",
         ).execute()
 
     return {"liga": liga_ext_id, "log_loss": log_loss, "jogos": n_previstos}

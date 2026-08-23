@@ -1,0 +1,42 @@
+name: Modelo v9 - Walk-forward CV + Feature Analysis
+
+# Roda scripts/walkforward_cv_v9.py:
+#   - 3 folds temporais (treino/val/test por ano de match_date)
+#   - 4 modelos base: CatBoost / XGBoost / LightGBM / MLP (FEATURES_V9 = V8)
+#   - Stacking LogísticaRegressão treinado em OOF predictions dos 3 folds
+#   - Feature coverage (% não-nulos por feature no dataset histórico)
+#   - Feature importance via CatBoost built-in (fold_3)
+#   - Resultados persistidos nas tabelas model_v9_walkforward_results /
+#     model_v9_feature_importance / model_v9_feature_coverage do Supabase
+#
+# Só workflow_dispatch — é uma rotina de VALIDAÇÃO, não vai no cron diário.
+# Tempo estimado: 45-90min (4 modelos × 3 folds + refit fold_3 para stacking).
+# Timeout generoso (150min) para cobrir o MLP que é mais lento que as árvores.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  walkforward-cv-v9:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward CV v9
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/walkforward_cv_v9.py

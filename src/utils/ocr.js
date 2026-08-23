@@ -4,6 +4,8 @@
 // AnaliseEstatisticaJogo.jsx poder reaproveitar sem duplicar o parsing/erro.
 // Não muda nenhum comportamento — é a função original, só movida.
 
+import { apiUrl } from './apiUrl';
+
 export const normalizeImageToJpeg = (file, maxWidth = 1400, quality = 0.85) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => {
@@ -39,7 +41,7 @@ export async function extractJsonFromImage(file, prompt) {
 
   let response;
   try {
-    response = await fetch('/api/ocr', {
+    response = await fetch(apiUrl('/api/ocr'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: base64Data, mediaType, prompt }),

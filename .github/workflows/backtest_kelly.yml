@@ -1,0 +1,46 @@
+name: Model Benchmarking - Backtest (ROI/Kelly/EV+)
+
+# Roda scripts/backtest_kelly.py (grid search + tuning + backtest out-of-
+# sample dos 4 modelos do Model Benchmarking) e persiste o resultado em
+# model_benchmarking_backtest/_liga -- alimenta o painel de backtest em
+# /model-benchmarking, equivalente ao "Backtest de apostas simuladas (EV+)"
+# já existente em Estatísticas dos Modelos.
+#
+# Só workflow_dispatch (não entra no cron): grid search em 3 modelos de
+# árvore (9 combinações de hiperparâmetro cada) + tuning do Dixon-Coles +
+# comparação de qualidade contra o mercado é bem mais caro em CPU que o
+# predict.yml diário -- rodar isso toda noite sem necessidade real não
+# compensa o tempo de execução no runner gratuito do GitHub Actions.
+#
+# Roda o grid search + tuning QUATRO vezes (1X2, Over/Under 2.5 gols,
+# Over/Under 9.5 escanteios e faixa de gols, ver `MERCADOS` em
+# backtest_kelly.py) -- timeout dobrado de novo (era 100min pra 2 mercados)
+# pra dar folga.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backtest-kelly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backtest (grid search + tuning + simulação Kelly)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backtest_kelly.py

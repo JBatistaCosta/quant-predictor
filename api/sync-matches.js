@@ -30,6 +30,8 @@
 // chamado manualmente.
 
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
+import { gravarComDedupCruzado } from './_lib/dedupMatches.js';
 
 const BASE_URL = 'https://api.football-data.org/v4';
 const LIGAS_PIPELINE = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'BSA', 'EC', 'CLI', 'ELC', 'DED', 'PPL', 'WC'];
@@ -81,8 +83,8 @@ async function sincronizarLiga(codigo, apiKey, supabase, mapaExternalIdParaTeamI
 
   const dados = await chamarFootballData(`/competitions/${codigo}/matches?season=${temporada}`, apiKey);
 
-  let inseridosOuAtualizados = 0;
   const timesCriados = new Set();
+  const linhas = [];
 
   for (const m of dados.matches || []) {
     const homeTeamId = await resolverOuCriarTime(supabase, mapaExternalIdParaTeamId, m.homeTeam);
@@ -91,7 +93,7 @@ async function sincronizarLiga(codigo, apiKey, supabase, mapaExternalIdParaTeamI
     if (!awayTeamId) timesCriados.add(`falhou: ${m.awayTeam?.name}`);
     if (!homeTeamId || !awayTeamId) continue;
 
-    const { error } = await supabase.from('matches').upsert({
+    linhas.push({
       external_id: `fd_${m.id}`,
       league_id: ligaRow.id,
       season: temporada,
@@ -103,17 +105,23 @@ async function sincronizarLiga(codigo, apiKey, supabase, mapaExternalIdParaTeamI
       status: MAPA_STATUS[m.status] || 'scheduled',
       round: m.matchday ?? null,
       stage: m.stage ?? null,
-    }, { onConflict: 'external_id' });
-    if (!error) inseridosOuAtualizados++;
+    });
   }
 
+  // dedup cruzado: não cria linha nova se outra fonte (API-Football,
+  // FotMob) já tiver essa mesma partida gravada nessa liga -- ver
+  // api/_lib/dedupMatches.js.
+  const { gravados, duplicatas_evitadas } = await gravarComDedupCruzado(supabase, ligaRow.id, linhas);
+
   return {
-    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: inseridosOuAtualizados,
+    codigo, temporada, total_jogos: dados.matches?.length ?? 0, sincronizados: gravados,
+    duplicatas_evitadas: duplicatas_evitadas || undefined,
     times_com_problema: timesCriados.size > 0 ? [...timesCriados] : undefined,
   };
 }
 
 export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
   // Chamadas do Vercel Cron trazem esse header automaticamente; se CRON_SECRET
   // estiver configurada, bloqueia chamada externa sem o segredo.
   const cronSecret = process.env.CRON_SECRET;
