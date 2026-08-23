@@ -15,6 +15,23 @@ Mapeamento de Unificação:
   - Troyes:                 ID 511 ('ES Troyes AC') -> ID 498 ('Troyes')
   - Paderborn:              ID 507 ('SC Paderborn 07') -> ID 489 ('Paderborn')
 
+Segunda leva (2026-08-23) -- achada investigando os "7 times com crosswalk
+perdido pós-merge" da rodada acima: 4 desses 7 não eram só crosswalk faltando,
+eram time duplicado de novo (outro team_id criado quando o crosswalk foi
+refeito), com histórico de partida real dividido entre os dois. Direção
+escolhida = manter o team_id com MAIS partidas (maximiza dado preservado); em
+2 dos 4 casos isso também devolveu o crosswalk FotMob que tinha se perdido:
+  - Schalke 04:             ID 852 ('FC Schalke 04') -> ID 490 ('Schalke 04')
+  - Troyes:                 ID 853 ('ES Troyes AC') -> ID 498 ('Troyes')
+  - West Bromwich Albion:   ID 479 ('West Brom') -> ID 594 ('West Bromwich Albion FC')
+  - Norwich City:           ID 478 ('Norwich') -> ID 599 ('Norwich City FC')
+Executado direto via SQL em produção (não por este script -- as tabelas
+tabelas_fk abaixo já estavam desatualizadas frente ao schema atual, ver
+xi_previsto/xi_titular_walkforward/team_elo_external que faltavam aqui;
+usado dedupe-then-update em vez de update-then-except pra evitar travar em
+transação longa contra tabelas grandes). Restam sem crosswalk resolvido:
+Paderborn (489, sem duplicata achada) -- nenhum dos 3 tem jogo agendado.
+
 Uso:
   python scripts/unificar_times_duplicados.py [--dry-run]
 """
@@ -54,6 +71,11 @@ PARES_UNIFICACAO = [
     (477, 602, "Watford"),
     (511, 498, "Troyes"),
     (507, 489, "Paderborn"),
+    # Segunda leva (2026-08-23) -- ver docstring do módulo
+    (852, 490, "Schalke 04 (2a duplicata)"),
+    (853, 498, "Troyes (2a duplicata)"),
+    (479, 594, "West Bromwich Albion"),
+    (478, 599, "Norwich City"),
 ]
 
 
@@ -96,7 +118,13 @@ def unificar_time(id_secundario: int, id_principal: int, nome_clube: str):
         "match_stats_fbref",
         "match_stats_escanteios",
         "player_career_history_fotmob",
-        "player_ratings"
+        "player_ratings",
+        # Adicionadas 2026-08-23: tinham FK real pra teams.id (conferido via
+        # information_schema) mas faltavam nesta lista -- teriam ficado com
+        # linha órfã apontando pro id_secundario deletado no passo 6.
+        "xi_previsto",
+        "xi_titular_walkforward",
+        "team_elo_external",
     ]
 
     for tab in tabelas_fk:
