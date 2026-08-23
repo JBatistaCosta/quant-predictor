@@ -500,10 +500,22 @@ def main() -> None:
     # entram em treino/calibração/avaliação -- exatamente a mesma função
     # `montar_dataset_ml_empilhado`, sem split nenhum, porque toda a linha
     # dela é inferência. Vazio quando --ligas-extra não é passado.
+    #
+    # `exigir_forma_minima=False`: o corte padrão descarta partida onde o
+    # time não tem forma de gols DENTRO do escopo de liga da chamada -- faz
+    # sentido pro dataset de TREINO, mas aqui o escopo é estreito de
+    # propósito (só copas/torneios continentais), então um time com
+    # histórico de sobra em OUTRA competição (fora deste --ligas-extra)
+    # aparecia como "sem histórico" e a partida inteira era descartada, sem
+    # gerar estimativa nenhuma -- bug real encontrado via relato de usuário
+    # (Copa Sudamericana/Copa do Brasil/FIFA Intercontinental Cup perdendo
+    # 25-65% das partidas finalizadas por esse mecanismo).
     dataset_extra = pd.DataFrame()
     if league_ids_extra:
         logger.info("Montando dataset das ligas 'extra'...")
-        dataset_extra = dh.montar_dataset_ml_empilhado(supabase, league_ids_manual=league_ids_extra)
+        dataset_extra = dh.montar_dataset_ml_empilhado(
+            supabase, league_ids_manual=league_ids_extra, exigir_forma_minima=False
+        )
         if dataset_extra.empty:
             logger.warning("Dataset das ligas 'extra' veio vazio -- seguindo só com as ligas de treino.")
 
