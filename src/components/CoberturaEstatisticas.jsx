@@ -1,10 +1,14 @@
 // src/components/CoberturaEstatisticas.jsx
 // Aba de Configurações: cobertura de estatísticas por liga/temporada, lendo
 // direto da view vw_cobertura_estatisticas (migration
-// cria_views_cobertura_estatisticas_odds). Três fontes distintas de stats
+// cria_views_cobertura_estatisticas_odds, com xG combinado adicionado em
+// vw_cobertura_estatisticas_xg_combinado). Três fontes distintas de stats
 // no banco: match_stats (genérica, legada -- na prática pouco preenchida,
 // ver CONTEXTO_PROJETO.md), match_stats.xg (xG via Understat, só 5 ligas
-// europeias) e match_stats_fotmob (a fonte rica de verdade hoje).
+// europeias) e match_stats_fotmob (a fonte rica de verdade hoje, com xG
+// próprio e cobertura bem mais ampla). A coluna "xG" usa pct_xg_combinado:
+// conta a partida como coberta se QUALQUER uma das duas fontes tiver xG,
+// usando uma como fallback da outra.
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
@@ -51,11 +55,11 @@ export default function CoberturaEstatisticas() {
 
   const porLiga = {};
   for (const l of linhas) {
-    if (!porLiga[l.liga]) porLiga[l.liga] = { temporadas: [], finalizadas: 0, com_match_stats: 0, com_xg: 0, com_fotmob: 0 };
+    if (!porLiga[l.liga]) porLiga[l.liga] = { temporadas: [], finalizadas: 0, com_match_stats: 0, com_xg_combinado: 0, com_fotmob: 0 };
     porLiga[l.liga].temporadas.push(l);
     porLiga[l.liga].finalizadas += l.finalizadas || 0;
     porLiga[l.liga].com_match_stats += l.com_match_stats || 0;
-    porLiga[l.liga].com_xg += l.com_xg || 0;
+    porLiga[l.liga].com_xg_combinado += l.com_xg_combinado || 0;
     porLiga[l.liga].com_fotmob += l.com_fotmob || 0;
   }
 
@@ -63,7 +67,7 @@ export default function CoberturaEstatisticas() {
     <div className="space-y-3">
       <p className="text-slate-400 text-sm">
         Cobertura de estatísticas por liga e temporada — <span className="text-slate-300 font-semibold">Stats</span> (match_stats genérica),{' '}
-        <span className="text-slate-300 font-semibold">xG</span> (via Understat, só 5 ligas europeias) e{' '}
+        <span className="text-slate-300 font-semibold">xG</span> (Understat OU FotMob, o que estiver disponível) e{' '}
         <span className="text-slate-300 font-semibold">FotMob</span> (fonte rica atual: chutes, passes, duelos, xG detalhado).
       </p>
 
@@ -103,7 +107,9 @@ export default function CoberturaEstatisticas() {
                         <td className="py-1.5 text-slate-300 font-mono">{t.season}</td>
                         <td className="py-1.5 text-right text-slate-400">{t.finalizadas}</td>
                         <td className="py-1.5 pl-4 w-32"><BarraPct pct={t.pct_match_stats} /></td>
-                        <td className="py-1.5 pl-4 w-32"><BarraPct pct={t.pct_xg} /></td>
+                        <td className="py-1.5 pl-4 w-32" title={`Understat: ${t.pct_xg ?? 0}% · FotMob: ${t.pct_xg_fotmob ?? 0}%`}>
+                          <BarraPct pct={t.pct_xg_combinado} />
+                        </td>
                         <td className="py-1.5 pl-4 w-32"><BarraPct pct={t.pct_fotmob} /></td>
                       </tr>
                     ))}
