@@ -49,6 +49,17 @@ só) -- omitidos, o escopo é resolvido de `leagues.modelo_misto_escopo`
 ('treino'/'extra'/NULL). Reclassificar uma liga é um `UPDATE`, não uma
 mudança de código nem de input do `workflow_dispatch`.
 
+Jogos futuros: toda partida `status='scheduled'` de qualquer liga em
+escopo (treino OU extra) também recebe estimativa -- mesmo espírito das
+ligas extra (só `.predict`, nunca `.fit`, nunca entra em `avaliar()`/
+`baselines()`), usando o mecanismo `match_ids_extra` de
+`montar_dataset_ml_empilhado` (o mesmo que `estimar_partida_custom.py`/
+`prever_partidas_futuras_custom.py` já usam) pra injetar partida de
+QUALQUER status no dataset. Sem persistência do modelo ajustado entre
+execuções, então manter a previsão de jogo futuro atualizada exige
+rodar o script de novo (o cron do workflow roda diário + semanal --
+ver `.github/workflows/treinar_modelo_hibrido.yml`).
+
 Uso:
     set SUPABASE_URL=...
     set SUPABASE_KEY=sua_service_role_key
@@ -552,6 +563,50 @@ def main() -> None:
         if dataset_extra.empty:
             logger.warning("Dataset das ligas 'extra' veio vazio -- seguindo só com as ligas de treino.")
 
+    # Jogos FUTUROS (status='scheduled') de qualquer liga em escopo (treino +
+    # extra): mesmo espírito das ligas extra -- só .predict com os parâmetros
+    # já ajustados, nunca .fit, nunca entram em avaliar()/baselines(). Sem
+    # isso, o painel nunca mostra estimativa nenhuma pra uma partida que
+    # ainda não aconteceu, mesmo estando numa liga de TREINO (achado real:
+    # usuário viu "sem estimativa" numa partida do Brasileirão -- a liga
+    # estava certinha no escopo, só que a partida era futura, e
+    # `carregar_partidas_finalizadas` só busca `status='finished'`).
+    #
+    # Forma pré-jogo reaproveita o histórico das ligas de TREINO
+    # (`league_ids`) via `match_ids_extra` -- mesmo mecanismo que
+    # `estimar_partida_custom.py`/`prever_partidas_futuras_custom.py` já
+    # usam pra injetar partida específica de qualquer status no dataset
+    # "Feature Stacked" sem esperar `status='finished'`. `exigir_forma_
+    # minima=False` pelo mesmo motivo das ligas extra: um time de fora do
+    # escopo de treino (ex. clube estreando numa copa continental) pode não
+    # ter forma calculável aqui e ainda assim merece estimativa, só com
+    # `NaN` nessas colunas -- CatBoost lida nativamente.
+    dataset_futuro = pd.DataFrame()
+    ligas_com_jogo_futuro = (league_ids or []) + (league_ids_extra or [])
+    if ligas_com_jogo_futuro:
+        def factory_futuros(inicio, fim):
+            return (
+                supabase.table("matches")
+                .select("id")
+                .in_("league_id", ligas_com_jogo_futuro)
+                .eq("status", "scheduled")
+                .order("id")
+                .range(inicio, fim)
+            )
+
+        match_ids_futuros = [linha["id"] for linha in dh._paginar(factory_futuros)]
+        if match_ids_futuros:
+            logger.info("Montando dataset de %d partida(s) futura(s) (status='scheduled')...", len(match_ids_futuros))
+            dataset_futuro = dh.montar_dataset_ml_empilhado(
+                supabase, league_ids_manual=league_ids, match_ids_extra=match_ids_futuros, exigir_forma_minima=False
+            )
+            # A chamada acima devolve TODO o histórico das ligas de treino de
+            # novo (é o mesmo `league_ids_manual` já usado em `dataset`) --
+            # filtra só os jogos futuros pedidos via `match_ids_extra`.
+            dataset_futuro = dataset_futuro[dataset_futuro["match_id"].isin(match_ids_futuros)].reset_index(drop=True)
+            if dataset_futuro.empty:
+                logger.warning("Dataset de jogos futuros veio vazio -- seguindo sem eles.")
+
     # FEATURES_V10 (default de VARIANTES_GOLS/MODELO_CORNERS, ver modelos_ml.py)
     # referencia nomes de coluna de xG/xGOT do esquema ANTIGO de forma
     # pré-jogo (`media_xg_5j_home` etc., de COLUNAS_FORMA_XG) -- mas
@@ -581,18 +636,30 @@ def main() -> None:
                 len(treino), len(calib), len(teste),
                 teste["match_date"].min(), teste["match_date"].max())
 
-    # Ligas "extra" entram só como mais um item pra APLICAR o regressor já
-    # ajustado (`treinar_lambda_corners`/`treinar_lambdas_gols` fazem
-    # .fit em `treino` e .predict em cada item de `aplicar_em` -- nenhuma
-    # das duas funções precisa mudar de assinatura pra isso).
-    tem_extra = not dataset_extra.empty
-    aplicar_em_corners = [calib, teste] + ([dataset_extra] if tem_extra else [])
+    # Ligas "extra" e jogos futuros entram só como mais itens pra APLICAR o
+    # regressor já ajustado (`treinar_lambda_corners`/`treinar_lambdas_gols`
+    # fazem .fit em `treino` e .predict em cada item de `aplicar_em` --
+    # nenhuma das duas funções precisa mudar de assinatura pra isso).
+    # Lista rotulada (não posicional) porque cada item é opcional
+    # independente -- um DataFrame vazio quebraria `preparar_liga_para_
+    # catboost` (não tem nem a coluna "liga"), então cada um só entra se
+    # não estiver vazio.
+    extras: list[tuple[str, pd.DataFrame]] = []
+    if not dataset_extra.empty:
+        extras.append(("extra", dataset_extra))
+    if not dataset_futuro.empty:
+        extras.append(("futuro", dataset_futuro))
+
+    aplicar_em_corners = [calib, teste] + [d for _, d in extras]
     lam_corners_todos = treinar_lambda_corners(treino, aplicar_em_corners)
     if lam_corners_todos:
         lam_corners_calib, lam_corners_teste, *resto_corners = lam_corners_todos
-        lam_corners_extra = resto_corners[0] if resto_corners else None
+        lam_corners_por_rotulo = dict(zip((rotulo for rotulo, _ in extras), resto_corners))
     else:
-        lam_corners_calib = lam_corners_teste = lam_corners_extra = None
+        lam_corners_calib = lam_corners_teste = None
+        lam_corners_por_rotulo = {}
+    lam_corners_extra = lam_corners_por_rotulo.get("extra")
+    lam_corners_futuro = lam_corners_por_rotulo.get("futuro")
 
     referencias = baselines(treino, teste)
     logger.info("Baselines (log-verossimilhança do placar, maior=melhor): climatologia=%.4f, Poisson sem covariáveis=%.4f",
@@ -602,19 +669,19 @@ def main() -> None:
     resumo = {}
     for model_name, alvos in VARIANTES_GOLS.items():
         logger.info("\n=== %s ===", model_name)
-        aplicar_em_gols = [calib, teste] + ([dataset_extra] if tem_extra else [])
+        aplicar_em_gols = [calib, teste] + [d for _, d in extras]
         lambdas = treinar_lambdas_gols(model_name, alvos, treino, aplicar_em_gols)
         if lambdas is None:
             continue
-        if tem_extra:
-            (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste), (lam_h_extra, lam_a_extra) = lambdas
-        else:
-            (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste) = lambdas
-            lam_h_extra = lam_a_extra = None
+        (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste), *resto_gols = lambdas
+        lam_gols_por_rotulo = dict(zip((rotulo for rotulo, _ in extras), resto_gols))
+        lam_h_extra, lam_a_extra = lam_gols_por_rotulo.get("extra", (None, None))
+        lam_h_futuro, lam_a_futuro = lam_gols_por_rotulo.get("futuro", (None, None))
 
         # ρ, dispersão e α/β SÓ vêm da calibração das ligas de treino --
-        # nunca recalculados pras ligas extra. É exatamente essa reutilização
-        # que faz a inferência nelas ser "sem treinar".
+        # nunca recalculados pras ligas extra nem pros jogos futuros. É
+        # exatamente essa reutilização que faz a inferência neles ser
+        # "sem treinar".
         parametros = ajustar_parametros_estruturais(calib, lam_h_calib, lam_a_calib, lam_corners_calib)
         metricas = avaliar(teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
         metricas.update(referencias)
@@ -628,13 +695,19 @@ def main() -> None:
             persistir(supabase, model_name, teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
             registrar_no_models_registry(supabase, model_name, metricas)
 
-            if tem_extra and lam_h_extra is not None:
+            if lam_h_extra is not None:
                 persistir(supabase, model_name, dataset_extra, lam_h_extra, lam_a_extra, lam_corners_extra, parametros)
-                logger.info("[%s] +%d partidas 'extra' (ligas %s) persistidas com os parâmetros ajustados nas ligas de treino.",
-                            model_name, len(dataset_extra), args.ligas_extra)
-        elif tem_extra and lam_h_extra is not None:
-            logger.info("[%s] (--sem-gravar) +%d partidas 'extra' (ligas %s) seriam persistidas.",
-                        model_name, len(dataset_extra), args.ligas_extra)
+                logger.info("[%s] +%d partidas 'extra' persistidas com os parâmetros ajustados nas ligas de treino.",
+                            model_name, len(dataset_extra))
+            if lam_h_futuro is not None:
+                persistir(supabase, model_name, dataset_futuro, lam_h_futuro, lam_a_futuro, lam_corners_futuro, parametros)
+                logger.info("[%s] +%d partida(s) futura(s) (status='scheduled') persistidas.",
+                            model_name, len(dataset_futuro))
+        else:
+            if lam_h_extra is not None:
+                logger.info("[%s] (--sem-gravar) +%d partidas 'extra' seriam persistidas.", model_name, len(dataset_extra))
+            if lam_h_futuro is not None:
+                logger.info("[%s] (--sem-gravar) +%d partida(s) futura(s) seriam persistidas.", model_name, len(dataset_futuro))
 
     print("\n" + "=" * 78)
     print("RESUMO -- log-verossimilhança média do placar observado (maior = melhor)")

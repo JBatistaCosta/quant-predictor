@@ -11,6 +11,10 @@ name: Treino do Modelo Misto (paramétrico)
 #
 # Custo de API externa: zero — lê só o que já está no Supabase.
 #
+# Além das ligas de treino, também aplica o modelo (só inferência, nunca
+# fit) nas ligas "extra" e em toda partida `status='scheduled'` de qualquer
+# liga em escopo — ver docstring de scripts/treinar_modelo_hibrido.py.
+#
 # Timeout de 180min pelo mesmo motivo de prever_partidas_futuras_custom.yml:
 # o gargalo é montar o dataset "Feature Stacked" (montar_dataset_ml_empilhado
 # faz muitas queries paginadas), não o fit dos regressores, que leva segundos.
@@ -34,11 +38,18 @@ on:
         type: boolean
         default: false
   schedule:
-    # Semanal, domingo 03:00 UTC — antes do predict.yml diário (04:00) e
-    # fora da janela dos jobs de ingestão (05:00-08:00). Semanal e não
-    # diário porque o modelo depende de histórico acumulado: retreinar todo
-    # dia muda o resultado por ruído, não por informação nova.
-    - cron: "0 3 * * 0"
+    # Diário, 03:00 UTC — antes do predict.yml diário (04:00) e fora da
+    # janela dos jobs de ingestão (05:00-08:00). Era só semanal (domingo);
+    # virou diário pra manter a previsão de JOGO FUTURO (`status='scheduled'`
+    # de qualquer liga em escopo, ver docstring do script) atualizada com
+    # elo/forma de véspera -- retreinar os regressores todo dia não muda o
+    # resultado por ruído de forma preocupante (o fit em si é rápido,
+    # segundos; retreinar mais vezes só usa o MESMO histórico acumulado de
+    # novo), mas o `metrics_test` gravado em `models_registry` passa a
+    # variar dia a dia -- não interpretar essa variação como tendência de
+    # qualidade, é o `Test Set` mudando de tamanho conforme partidas viram
+    # `finished`, não o modelo piorando/melhorando.
+    - cron: "0 3 * * *"
 
 jobs:
   treinar-modelo-hibrido:

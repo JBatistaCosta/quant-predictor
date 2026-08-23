@@ -3068,13 +3068,23 @@ def montar_dataset_ml_empilhado(
 
     ids_faltantes = [mid for mid in (match_ids_extra or []) if not (partidas["id"] == mid).any()]
     if ids_faltantes:
-        resposta_extra = (
-            supabase.table("matches")
-            .select("id, league_id, season, match_date, home_team_id, away_team_id, home_goals, away_goals, match_stage, is_neutral, leagues(name)")
-            .in_("id", ids_faltantes)
-            .execute()
+        # `.in_("id", ids_faltantes)` sem paginação corta em silêncio nas
+        # primeiras 1000 linhas (corte do PostgREST) -- com `match_ids_extra`
+        # grande (ex. cobertura de jogo futuro de todas as ligas em escopo,
+        # ~1600 partidas), as IDs além da 1000ª eram logadas como "não
+        # encontrado" mesmo existindo de verdade em `matches`, silenciosamente
+        # descartadas do dataset. `_paginar_por_lotes_de_id` já resolve isso
+        # (lote de IDs + `.range()` dentro de cada lote).
+        linhas_extra = _paginar_por_lotes_de_id(
+            lambda lote, inicio, fim: (
+                supabase.table("matches")
+                .select("id, league_id, season, match_date, home_team_id, away_team_id, home_goals, away_goals, match_stage, is_neutral, leagues(name)")
+                .in_("id", lote)
+                .order("id")
+                .range(inicio, fim)
+            ),
+            ids_faltantes,
         )
-        linhas_extra = resposta_extra.data or []
         ids_encontrados = {linha["id"] for linha in linhas_extra}
         for mid in ids_faltantes:
             if mid not in ids_encontrados:
