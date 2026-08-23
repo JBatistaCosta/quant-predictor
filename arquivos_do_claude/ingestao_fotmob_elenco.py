@@ -114,14 +114,22 @@ def parse_transferencias(payload, team_id, player_id_por_fotmob):
     return linhas
 
 
-def buscar_paginado(supabase, tabela, colunas, filtros=None):
+def buscar_paginado(supabase, tabela, colunas, filtros=None, order="id"):
+    """`.order()` explícito é obrigatório junto de `.range()` -- sem isso o
+    Postgres não garante ordem estável de retorno entre execuções pra linhas
+    empatadas, o que já causou um bug real: com team_id duplicado em
+    team_source_ids (corrigido, ver migration unique_team_source_fotmob),
+    a ordem não-determinística decidia qual dos dois source_id do FotMob era
+    processado por último (e portanto "vencia" o delete-then-upsert do
+    elenco) -- resultado flutuava entre o elenco certo e o de outro clube
+    de uma execução pra outra."""
     resultado = []
     pagina = 0
     while True:
         q = supabase.table(tabela).select(colunas)
         for chave, valor in (filtros or {}).items():
             q = q.eq(chave, valor)
-        chunk = q.range(pagina * 1000, pagina * 1000 + 999).execute().data
+        chunk = q.order(order).range(pagina * 1000, pagina * 1000 + 999).execute().data
         resultado.extend(chunk)
         if len(chunk) < 1000:
             break
@@ -176,6 +184,12 @@ def main():
             # Remove jogadores que saíram do elenco desde o último snapshot
             supabase.table("player_availability_fotmob").delete().eq("team_id", c["team_id"]).not_.in_("fotmob_player_id", ids_atuais).execute()
             supabase.table("player_availability_fotmob").upsert(elenco, on_conflict="team_id,fotmob_player_id").execute()
+
+            # Snapshot JSON do mesmo elenco, só pra auditoria/debug humano
+            # (pedido do usuário) -- não usado por nenhum pipeline de ML,
+            # que continua lendo player_availability_fotmob (relacional,
+            # acima) pra filtro/join em lote.
+            supabase.table("teams").update({"elenco_atual_fotmob": elenco}).eq("id", c["team_id"]).execute()
 
         transfs = parse_transferencias(payload, c["team_id"], player_id_por_fotmob)
         if transfs:
