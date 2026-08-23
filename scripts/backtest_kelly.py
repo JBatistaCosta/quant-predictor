@@ -696,17 +696,82 @@ def _carregar_odds_pinnacle_brutas(
     return odds_por_partida
 
 
-def _devigar_odds_por_partida(odds_por_partida: dict[int, dict[str, float]], mercado: str = "1X2") -> dict[int, dict[str, float]]:
-    """Devigagem proporcional: `prob_i = (1/odd_i) / soma(1/odd_j)`, que
-    reparte o overround igualmente entre as seleções do mercado (2 ou 3)."""
+def _resolver_parametro_devig(g) -> float:
+    """Bissecção genérica com expansão dinâmica de bracket: acha t>=0 tal
+    que g(t)=0, dobrando o limite superior até trocar de sinal (favoritos
+    muito curtos, tipo odd=1.01, precisam de t bem maior que um bracket fixo
+    pequeno daria conta). Mesma lógica usada no lado JS
+    (api/backtest-betting.js, resolverParametroDevig) e na migration SQL
+    (supabase/migrations/20260811190000_devig_odds_ratio_logaritmico.sql,
+    _devig_resolver_t) -- os três validados batendo entre si e com a
+    planilha de referência (true_odds_calculator.xlsm) até a 10ª casa
+    decimal."""
+    g0 = g(0.0)
+    if abs(g0) < 1e-14:
+        return 0.0
+    t_lo, g_lo = 0.0, g0
+    t_hi, g_hi = 0.0, g0
+    while g_hi > 0:
+        t_hi = 1.0 if t_hi == 0 else t_hi * 2
+        g_hi = g(t_hi)
+        if t_hi > 1e15:
+            break  # odds degeneradas (<=1) não deveriam chegar aqui
+    for _ in range(200):
+        t_mid = (t_lo + t_hi) / 2
+        g_mid = g(t_mid)
+        if abs(g_mid) < 1e-12:
+            return t_mid
+        if (g_mid > 0) == (g_lo > 0):
+            t_lo, g_lo = t_mid, g_mid
+        else:
+            t_hi = t_mid
+    return (t_lo + t_hi) / 2
+
+
+def _devig_odds_ratio(odds: dict[str, float]) -> dict[str, float]:
+    """Devig via Odds Ratio (Cheung): resolve c em
+    sum(q_i / (c + q_i - c*q_i)) = 1, onde q_i = 1/odd_i (prob. implícita
+    bruta)."""
+    selecoes = list(odds.keys())
+    q = {s: 1 / odds[s] for s in selecoes}
+
+    def g(t: float) -> float:
+        c = 1 + t
+        return sum(q[s] / (c + q[s] - c * q[s]) for s in selecoes) - 1
+
+    c = 1 + _resolver_parametro_devig(g)
+    return {s: q[s] / (c + q[s] - c * q[s]) for s in selecoes}
+
+
+def _devig_logaritmico(odds: dict[str, float]) -> dict[str, float]:
+    """Devig via Logarithmic function (power): resolve c em
+    sum(odd_i^c) = 1 e usa odd_i^c direto como probabilidade."""
+    selecoes = list(odds.keys())
+
+    def g(t: float) -> float:
+        return sum(odds[s] ** (-t) for s in selecoes) - 1
+
+    c = -_resolver_parametro_devig(g)
+    return {s: odds[s] ** c for s in selecoes}
+
+
+def _devigar_odds_por_partida(
+    odds_por_partida: dict[int, dict[str, float]], mercado: str = "1X2", metodo: str = "odds_ratio"
+) -> dict[int, dict[str, float]]:
+    """Devig via Odds Ratio (Cheung, padrão) ou Logarithmic function
+    (`metodo='logaritmico'`) -- ver `_devig_odds_ratio`/`_devig_logaritmico`.
+    Substituiu a devigagem proporcional simples (repartia o overround
+    igualmente entre as seleções, sem corrigir a distorção de margem entre
+    favorito e zebra) -- mesma dupla de métodos usada em
+    api/backtest-betting.js, api/model-stats.js e na view `v_market_edge`."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
+    devig_fn = _devig_logaritmico if metodo == "logaritmico" else _devig_odds_ratio
     devigadas: dict[int, dict[str, float]] = {}
     for match_id, odds in odds_por_partida.items():
         if not all(odds.get(s) for s in selecoes):
             continue
-        probs_brutas = {s: 1 / odds[s] for s in selecoes}
-        overround = sum(probs_brutas.values())
-        devigadas[match_id] = {f"prob_{s}": probs_brutas[s] / overround for s in selecoes}
+        probs = devig_fn({s: odds[s] for s in selecoes})
+        devigadas[match_id] = {f"prob_{s}": probs[s] for s in selecoes}
     return devigadas
 
 
@@ -905,9 +970,8 @@ def _carregar_pinnacle_devigada_por_snapshot(supabase, match_ids: list[int], sna
     for match_id, odds in odds_por_partida.items():
         if not all(odds.get(s) for s in ("home", "draw", "away")):
             continue
-        probs_brutas = {s: 1 / odds[s] for s in ("home", "draw", "away")}
-        overround = sum(probs_brutas.values())
-        devigadas[match_id] = {f"prob_{s}": probs_brutas[s] / overround for s in ("home", "draw", "away")}
+        probs = _devig_odds_ratio({s: odds[s] for s in ("home", "draw", "away")})
+        devigadas[match_id] = {f"prob_{s}": probs[s] for s in ("home", "draw", "away")}
     return devigadas
 
 
