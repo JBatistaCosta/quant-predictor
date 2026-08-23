@@ -132,7 +132,7 @@ def main():
         while True:
             q = (
                 supabase.table("matches")
-                .select("id, home_team_id, away_team_id, match_date, league_id, home_goals, away_goals")
+                .select("id, home_team_id, away_team_id, match_date, league_id, home_goals, away_goals, season")
                 .eq("league_id", lid)
                 .order("id")
                 .range(page * 1000, page * 1000 + 999)
@@ -163,17 +163,37 @@ def main():
         print("Nada a fazer.")
         return
 
-    # ── Cache de fixture lists por (fotmob_league_id, year) ───────────────────
+    # ── Cache de fixture lists por (fotmob_league_id, temporada) ───────────────
     fixture_cache: dict = {}
 
-    def get_fixture_index(fotmob_league_id: str, year: int) -> dict:
-        """Busca e cacheia fixture list. Tenta formato 'AAAA' e depois 'AAAA-1/AAAA'."""
-        key = (fotmob_league_id, year)
+    def get_fixture_index(fotmob_league_id: str, temporada) -> dict:
+        """Busca e cacheia fixture list pra UMA temporada (matches.season, ex. '2026' —
+        já é o ano de INÍCIO da temporada, mesma convenção usada em toda a base). Tenta
+        o formato 'AAAA' primeiro (ligas de temporada = ano civil, ex. Brasileirão) e
+        'AAAA/AAAA+1' depois (ligas europeias de calendário ago-mai — FotMob exige
+        intervalo, 'AAAA' sozinho devolve 0 fixtures).
+
+        Importante: a chave de cache (e a escolha de temporada) usa `matches.season`,
+        NÃO o ano civil de `match_date` — dois jogos com o mesmo ano civil podem ser de
+        temporadas europeias DIFERENTES (ex. um jogo de maio/2026, cauda da temporada
+        2025/2026, e um de agosto/2026, abertura da 2026/2027, têm `match_date.year`
+        igual a 2026 mas pertencem a fixture lists distintas). Cachear por ano civil
+        causava um bug real: a primeira temporada resolvida pra um dado ano ficava
+        presa no cache e era reusada (errada) pro resto dos jogos daquele ano civil —
+        os jogos de abertura de temporada (agosto) ficavam presos em "sem ID FotMob
+        identificado" pra sempre porque a fixture list cacheada era da temporada
+        ANTERIOR, já encerrada."""
+        key = (fotmob_league_id, str(temporada))
         if key in fixture_cache:
             return fixture_cache[key]
 
         index: dict = {}
-        for season_str in [str(year), f"{year - 1}/{year}"]:
+        candidatos_temporada = [str(temporada)]
+        try:
+            candidatos_temporada.append(f"{int(temporada)}/{int(temporada) + 1}")
+        except (TypeError, ValueError):
+            pass
+        for season_str in candidatos_temporada:
             try:
                 r = requests.get(
                     f"{BASE}/fixtures",
@@ -240,8 +260,8 @@ def main():
             if not m.get("match_date"):
                 n_sem_id += 1
                 continue
-            year = dt.datetime.fromisoformat(str(m["match_date"]).replace("Z", "+00:00")).year
-            index = get_fixture_index(fotmob_league_id, year)
+            temporada = m.get("season") or dt.datetime.fromisoformat(str(m["match_date"]).replace("Z", "+00:00")).year
+            index = get_fixture_index(fotmob_league_id, temporada)
             fx = casar_fixture(index, m["home_team_id"], m["away_team_id"], m["match_date"])
             if not fx:
                 n_sem_id += 1
@@ -264,15 +284,28 @@ def main():
             time.sleep(PACING_SEGUNDOS)
             continue
 
-        # Atualizar placar se faltando
+        # Atualizar placar se faltando.
+        # FotMob usa header.teams[].score como placar definitivo; general.homeScore.current
+        # é o placar ao vivo e pode ser None em partidas já encerradas.
         if m["home_goals"] is None and args.modo in ("tudo", "placar"):
             try:
-                home_g = d["general"]["homeScore"].get("current")
-                away_g = d["general"]["awayScore"].get("current")
+                header_teams = d.get("header", {}).get("teams", [])
+                general = d.get("general", {}) or {}
+                # `or` trocado por checagem explícita de None: placar 0 é um valor
+                # válido (ex. vitória 2-0) e era falso-negativo com `or`, caindo pro
+                # fallback abaixo e estourando KeyError quando general.homeScore não
+                # existe no payload (chave nem sempre presente em partidas encerradas).
+                home_g = header_teams[0].get("score") if header_teams else None
+                if home_g is None:
+                    home_g = (general.get("homeScore") or {}).get("current")
+                away_g = header_teams[1].get("score") if len(header_teams) > 1 else None
+                if away_g is None:
+                    away_g = (general.get("awayScore") or {}).get("current")
                 if home_g is not None:
-                    supabase.table("matches").update(
-                        {"home_goals": home_g, "away_goals": away_g}
-                    ).eq("id", match_id).execute()
+                    update_data = {"home_goals": home_g, "away_goals": away_g}
+                    if general.get("finished"):
+                        update_data["status"] = "finished"
+                    supabase.table("matches").update(update_data).eq("id", match_id).execute()
             except Exception as exc:
                 print(f"  [{i+1}/{len(pendentes)}] Aviso: placar match_id={match_id}: {exc}")
 

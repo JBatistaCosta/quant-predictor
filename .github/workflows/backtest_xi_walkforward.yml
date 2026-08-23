@@ -1,0 +1,41 @@
+name: Backtest Walk-Forward do Modelo de XI Titular
+
+# Roda scripts/backtest_xi_walkforward.py -- por temporada, retreina o
+# ensemble do zero só com dado ESTRITAMENTE anterior a ela e avalia nela
+# (nunca vista), grava em xi_backtest_walkforward. Diferente de
+# treinar_modelo_xi.yml (treina UMA VEZ, split fixo, vira o modelo de
+# produção): aqui cada temporada tem seu próprio modelo descartável, só
+# pra responder "o modelo teria acertado a escalação real, fingindo não
+# saber" sem vazamento -- mesmo espírito de walkforward_cv_v9.py.
+#
+# Só workflow_dispatch -- caro (retreina o ensemble uma vez por temporada),
+# não faz sentido em cron; rodar de novo quando match_lineup_fotmob crescer
+# o suficiente pra valer a pena, ou depois de mudança no script.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backtest-xi-walkforward:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backtest walk-forward do XI
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backtest_xi_walkforward.py

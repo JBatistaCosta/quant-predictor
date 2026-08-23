@@ -422,6 +422,13 @@ const ALGORITMOS = [
   { value: 'logistic_regression', label: 'Regressão Logística' },
   { value: 'random_forest', label: 'Random Forest' },
   { value: 'dixon_coles', label: 'Dixon-Coles' },
+  // Modelo misto: ML estima os PARÂMETROS de uma distribuição (λ dos gols por
+  // equipe, λ dos escanteios) e os mercados saem dela por integração. Ao
+  // contrário dos demais, um treino só produz dezenas de mercados coerentes
+  // entre si — incluindo placar exato e handicap, que nenhum classificador
+  // daqui cobre. O "target" escolhido serve só pra dizer em qual mercado
+  // reportar as métricas comparáveis; todos são gravados de qualquer forma.
+  { value: 'hibrido_parametrico', label: 'Modelo Misto (paramétrico)' },
 ];
 
 // Algoritmos disponíveis para o modo Walk-Forward CV
@@ -974,6 +981,15 @@ export default function TreinoCustom() {
                         <option key={a.value} value={a.value}>{a.label}</option>
                       ))}
                     </select>
+                    {form.algorithm === 'hibrido_parametrico' && (
+                      <p className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/30 rounded-md p-2 mt-2 leading-relaxed">
+                        O ML estima os <strong>parâmetros</strong> da distribuição (λ dos gols por equipe, λ dos escanteios) e todos os mercados
+                        saem dela por integração — 1X2, over/under em várias linhas, BTTS, faixas, handicap asiático, placar exato e escanteios,
+                        coerentes entre si por construção. O alvo escolhido ao lado serve só pra dizer em qual mercado reportar as métricas
+                        comparáveis com os outros algoritmos; <strong>todos</strong> são gravados. Usa split 60/20/20 (com fatia própria de
+                        calibração) em vez do split de 2 vias dos classificadores.
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>

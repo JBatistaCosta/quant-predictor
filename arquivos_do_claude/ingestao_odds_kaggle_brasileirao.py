@@ -130,6 +130,7 @@ def main() -> None:
             registros.append({
                 "match_id": achado["id"], "bookmaker": BOOKMAKER, "market": "1X2",
                 "selection": selecao, "odds": float(valor), "snapshot": "closing",
+                "origem": BOOKMAKER,
             })
 
     print(f"{len(linhas_csv)} linhas no CSV -- {casados} casadas, {sem_match} sem partida correspondente, "

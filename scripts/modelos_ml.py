@@ -19,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, CatBoostRegressor
-from lightgbm import LGBMClassifier, early_stopping
+from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
@@ -30,16 +30,10 @@ from xgboost import XGBClassifier
 from dados_historicos import (
     CAT_FEATURES,
     FEATURES,
-    FEATURES_V2,
-    FEATURES_V3,
-    FEATURES_V3B,
-    FEATURES_V4,
-    FEATURES_V5,
-    FEATURES_V6,
-    FEATURES_V7,
-    FEATURES_V8,
     FEATURES_V9,
     FEATURES_V10,
+    FEATURES_V11,
+    FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
     RESULTADO_CORNERS_UNDER95,
@@ -109,110 +103,80 @@ FRACAO_COLSAMPLE = 0.8
 # Set). `n_estimators` do LightGBM fica fixo em 80 (não entra na grade de
 # tuning) -- é a config "leve e rápida" pedida originalmente pro modelo.
 #
-# v2 (parâmetros de jogador, ver dados_historicos.FEATURES_V2), v3
-# (+ fadiga, ver dados_historicos.FEATURES_V3), v4 (+ disciplina/risco de
-# suspensão por cartão, ver dados_historicos.FEATURES_V4), v5 (+
-# classificação/H2H/árbitro, ver dados_historicos.FEATURES_V5) e v3B (+
-# força do XI titular/valor de mercado, ver dados_historicos.FEATURES_V3B)
-# reaproveitam os mesmos defaults da v1 como ponto de partida -- ainda não
-# passaram por tuning dedicado, `backtest_kelly.py` faz grid search igual
-# pras seis.
+# v1-v8 (+v3B) removidos -- superadas pela v9 (mesmas features da v8 +
+# stacking + MLP, ver walkforward_cv_v9.py), sem uso em produção.
 PARAMS_DEFAULT = {
-    "catboost_v1": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v1": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v1": {"num_leaves": 15, "learning_rate": 0.1},
-    "catboost_v2": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v2": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v2": {"num_leaves": 15, "learning_rate": 0.1},
-    "catboost_v3": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v3": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v3": {"num_leaves": 15, "learning_rate": 0.1},
-    "catboost_v4": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v4": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v4": {"num_leaves": 15, "learning_rate": 0.1},
-    "catboost_v5": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v5": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v5": {"num_leaves": 15, "learning_rate": 0.1},
-    "catboost_v3b": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v3b": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v3b": {"num_leaves": 15, "learning_rate": 0.1},
     # Regressor de xG (não é classificação -- ver treinar_catboost_regressor).
-    # Mesmos defaults da v1, ainda sem tuning dedicado.
+    # Mesmos defaults de sempre, ainda sem tuning dedicado.
     "catboost_xg_regressor_v1": {"depth": 6, "learning_rate": 0.05},
     "catboost_xgot_regressor_v1": {"depth": 6, "learning_rate": 0.05},
-    # v6 (progresso da temporada, ver dados_historicos.FEATURES_V6) -- mesmos
-    # defaults da v1, ainda sem tuning dedicado.
-    "catboost_v6": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v6": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v6": {"num_leaves": 15, "learning_rate": 0.1},
-    # v7 (estatísticas de jogo do FBref, ver dados_historicos.FEATURES_V7) --
-    # mesmos defaults da v1, ainda sem tuning dedicado.
-    "catboost_v7": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v7": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v7": {"num_leaves": 15, "learning_rate": 0.1},
-    # v8 (estatísticas do FotMob, ver dados_historicos.FEATURES_V8) -- mesmos
-    # defaults da v1, ainda sem tuning dedicado.
-    "catboost_v8": {"depth": 6, "learning_rate": 0.05},
-    "xgboost_v8": {"max_depth": 4, "learning_rate": 0.08},
-    "lightgbm_v8": {"num_leaves": 15, "learning_rate": 0.1},
+    # v2 -- mesmos hiperparâmetros do v1, só muda o feature set (força do
+    # XI titular, ver FEATURES_XG_XI_V2 em dados_historicos.py).
+    "catboost_xg_regressor_v2": {"depth": 6, "learning_rate": 0.05},
+    "catboost_xgot_regressor_v2": {"depth": 6, "learning_rate": 0.05},
+    # Modelo misto/paramétrico -- estimam o λ que alimenta as distribuições
+    # de `distribuicoes.py`, não uma probabilidade de classe. Perda de
+    # Poisson (ver `treinar_catboost_poisson`). Mesmos defaults dos demais
+    # regressores, ainda sem tuning dedicado.
+    #
+    # `hibrido_gols_v1` treina em GOLS REAIS; `hibrido_gols_xg_v1` treina em
+    # xG observado. As duas existem de propósito, pra decidir empiricamente
+    # (log-verossimilhança do placar out-of-sample) em vez de por argumento:
+    # gols têm 100% de cobertura e são o alvo que de fato se quer prever,
+    # mas são ruidosos; xG é menos ruidoso porém cobre 75-88% nas 5
+    # europeias e 40% no Brasileirão (medido no banco), e é ele próprio a
+    # estimativa de um modelo de terceiro.
+    "hibrido_gols_v1": {"depth": 6, "learning_rate": 0.05},
+    "hibrido_gols_xg_v1": {"depth": 6, "learning_rate": 0.05},
+    "hibrido_corners_v1": {"depth": 6, "learning_rate": 0.05},
+    "hibrido_gols_lgbm_v1": {"num_leaves": 15, "learning_rate": 0.05},
     # v9 — mesmas features da v8; MLP tunado após primeira rodada mostrar log-loss ~1.07
     # (próximo ao baseline aleatório 1.099). Arquitetura maior + mais paciência no early stopping.
     "catboost_v9": {"depth": 6, "learning_rate": 0.05},
     "xgboost_v9": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v9": {"num_leaves": 15, "learning_rate": 0.1},
     "mlp_v9": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
+    # v10/v11 -- mesmos hiperparâmetros da v9 (só o feature set muda entre
+    # versões, não o algoritmo) -- v10 estava FALTANDO aqui até agora: como
+    # `rodar_predicoes.py` acessa `PARAMS_DEFAULT[nome_modelo]` direto (sem
+    # `.get()`) dentro de um `try/except` genérico por modelo, o KeyError
+    # era pego e só LOGADO -- catboost_v10/xgboost_v10/lightgbm_v10/mlp_v10
+    # nunca geraram uma predição de verdade em produção, falha silenciosa
+    # todo dia. Corrigido aqui de propósito (achado ao registrar a v11).
+    "catboost_v10": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v10": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v10": {"num_leaves": 15, "learning_rate": 0.1},
+    "mlp_v10": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
+    "catboost_v11": {"depth": 6, "learning_rate": 0.05},
+    "xgboost_v11": {"max_depth": 4, "learning_rate": 0.08},
+    "lightgbm_v11": {"num_leaves": 15, "learning_rate": 0.1},
+    "mlp_v11": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
 }
 
-# Lista de features por modelo -- v1 usa `FEATURES` (elo/forma/xG de time),
-# v2 usa `FEATURES_V2` (+ força do elenco), v3 usa `FEATURES_V3` (+
-# descanso pré-jogo/fadiga), v4 usa `FEATURES_V4` (+ risco de suspensão por
-# cartão), v5 usa `FEATURES_V5` (+ classificação/H2H/árbitro), v3B usa
-# `FEATURES_V3B` (v5 + força do XI titular confirmado/valor de mercado na
-# data do jogo -- nome "v3B" mantido do PR #114, mas o conjunto de
-# features é v5 + XI titular, não v2 + XI titular).
+# Lista de features por modelo -- v1-v8 (+v3B) removidos (superadas pela
+# v9, sem uso em produção; as listas `FEATURES_V2`..`FEATURES_V8` em
+# dados_historicos.py continuam existindo, são a base cumulativa de onde
+# `FEATURES_V9`/`FEATURES_V10` derivam, só não têm mais MODELO nenhum
+# registrado nelas diretamente).
 # dixon_coles_v1 não entra aqui (não é um modelo baseado em
 # `TREINADORES`/lista de features -- é Poisson puro).
 FEATURES_POR_MODELO = {
-    "catboost_v1": FEATURES,
-    "xgboost_v1": FEATURES,
-    "lightgbm_v1": FEATURES,
-    "catboost_v2": FEATURES_V2,
-    "xgboost_v2": FEATURES_V2,
-    "lightgbm_v2": FEATURES_V2,
-    "catboost_v3": FEATURES_V3,
-    "xgboost_v3": FEATURES_V3,
-    "lightgbm_v3": FEATURES_V3,
-    "catboost_v4": FEATURES_V4,
-    "xgboost_v4": FEATURES_V4,
-    "lightgbm_v4": FEATURES_V4,
-    "catboost_v5": FEATURES_V5,
-    "xgboost_v5": FEATURES_V5,
-    "lightgbm_v5": FEATURES_V5,
-    "catboost_v3b": FEATURES_V3B,
-    "xgboost_v3b": FEATURES_V3B,
-    "lightgbm_v3b": FEATURES_V3B,
-    # Regressor de xG/xGOT -- mesmas features base da v1 (elo/forma/xG/liga),
+    # Regressor de xG/xGOT -- mesmas features base (elo/forma/xG/liga),
     # prevendo um valor contínuo (gols esperados / xGOT) em vez de classe.
     "catboost_xg_regressor_v1": FEATURES,
     "catboost_xgot_regressor_v1": FEATURES,
-    # v6 = v5 (classificação/H2H/árbitro) + progresso_temporada (0-1, posição
-    # da partida no calendário da temporada) -- linhagem separada de v3B
-    # (v5 + XI titular), não empilha as duas.
-    "catboost_v6": FEATURES_V6,
-    "xgboost_v6": FEATURES_V6,
-    "lightgbm_v6": FEATURES_V6,
-    # v7 = v6 + forma pré-jogo das estatísticas do FBref (posse, chutes,
-    # chutes no alvo, escanteios, faltas, cartões) -- linhagem separada de
-    # v3B pela mesma razão de v6.
-    "catboost_v7": FEATURES_V7,
-    "xgboost_v7": FEATURES_V7,
-    "lightgbm_v7": FEATURES_V7,
-    # v8 = v7 + forma pré-jogo das estatísticas do FotMob (~22 colunas com
-    # boa cobertura -- xG detalhado, finalização, construção de jogo,
-    # defesa, duelos). Linhagem separada de v3B pela mesma razão de v6/v7.
-    "catboost_v8": FEATURES_V8,
-    "xgboost_v8": FEATURES_V8,
-    "lightgbm_v8": FEATURES_V8,
+    # v2 -- v1 + força do XI titular na data da partida (titular_rating/
+    # titular_valor_mercado home/away + diferenciais), ver FEATURES_XG_XI_V2.
+    "catboost_xg_regressor_v2": FEATURES_XG_XI_V2,
+    "catboost_xgot_regressor_v2": FEATURES_XG_XI_V2,
+    # Modelo misto -- feature set mais completo disponível (v10), já que o
+    # ponto do híbrido é justamente levar pro λ todo o contexto pré-jogo que
+    # o Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
+    # classificação), em vez de só força de ataque/defesa por time.
+    "hibrido_gols_v1": FEATURES_V10,
+    "hibrido_gols_xg_v1": FEATURES_V10,
+    "hibrido_corners_v1": FEATURES_V10,
+    "hibrido_gols_lgbm_v1": FEATURES_V10,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     "catboost_v9": FEATURES_V9,
     "xgboost_v9": FEATURES_V9,
@@ -226,6 +190,15 @@ FEATURES_POR_MODELO = {
     "xgboost_v10": FEATURES_V10,
     "lightgbm_v10": FEATURES_V10,
     "mlp_v10": FEATURES_V10,
+    # v11 — v10 + força do XI titular com abertura (previsto) e fechamento
+    # (real) como features paralelas -- ver comentário de FEATURES_V11 em
+    # dados_historicos.py. NÃO estende a cadeia v9/v10 automaticamente --
+    # versão opcional/selecionável, validada via walkforward_cv_v11.py
+    # antes de entrar no loop diário (rodar_predicoes.py).
+    "catboost_v11": FEATURES_V11,
+    "xgboost_v11": FEATURES_V11,
+    "lightgbm_v11": FEATURES_V11,
+    "mlp_v11": FEATURES_V11,
 }
 
 
@@ -375,6 +348,110 @@ def prever_catboost_regressor(modelo, _extra, df: pd.DataFrame, features: list[s
     return modelo.predict(df[features])
 
 
+# ---------------------------------------------------------------------------
+# Regressão de CONTAGEM (perda de Poisson) -- modelo misto/paramétrico
+# ---------------------------------------------------------------------------
+# Diferença central pro `treinar_catboost_regressor` acima, que é RMSE: aqui
+# o alvo é uma CONTAGEM (gols, escanteios) e o que queremos estimar é a TAXA
+# λ que a gerou, não um valor central qualquer.
+#
+# Por que a perda de Poisson, com honestidade sobre o tamanho do ganho:
+#   - RMSE assume ruído gaussiano homocedástico; contagem não é isso (numa
+#     Poisson a variância é igual à média). A perda de Poisson é a
+#     verossimilhança do próprio processo que gera o dado.
+#   - Positividade é garantida por construção: o modelo aprende `log λ` e a
+#     exponencial na saída impede λ ≤ 0. Com RMSE nada garante isso, e um λ
+#     negativo é inadmissível dentro da matriz de placares.
+#   - O ponto MAIS forte é o acoplamento: a mesma verossimilhança que treina
+#     o regressor é a que `distribuicoes.py` usa pra derivar os mercados.
+#     Calibração deixa de ser remendo por mercado e vira propriedade do
+#     ajuste.
+#
+# O que um teste sintético NÃO mostrou (registrado pra não superestimarmos o
+# ganho): com 20k amostras de log λ suave, RMSE recuperou λ praticamente tão
+# bem quanto Poisson (RMSE contra o λ verdadeiro: 0,132 vs 0,134) e não
+# produziu nenhum λ negativo. Ou seja: a vantagem prática na recuperação do
+# λ pode ser pequena. A escolha se sustenta na coerência com a camada de
+# distribuição e na garantia de positividade, não numa promessa de erro
+# menor -- quem decide de fato é a comparação out-of-sample entre as
+# variantes (`treinar_modelo_hibrido.py`).
+#
+# Verificado empiricamente (não suposto): tanto CatBoost `loss_function=
+# "Poisson"` quanto LightGBM `objective="poisson"` devolvem λ JÁ
+# exponenciado em `.predict()` -- não log λ. Aplicar `exp()` por cima
+# destruiria a estimativa (correlação com o λ real cai de 0,99 pra 0,14).
+def treinar_catboost_poisson(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str,
+    features: list[str] = FEATURES,
+):
+    """Regressor de contagem CatBoost com perda de Poisson.
+
+    Devolve λ (já exponenciado), não log λ -- `CatBoostRegressor` com
+    `loss_function="Poisson"` aplica a exponencial na predição.
+    """
+    modelo = CatBoostRegressor(
+        loss_function="Poisson",
+        thread_count=2,
+        iterations=200,
+        cat_features=CAT_FEATURES,
+        random_seed=42,
+        verbose=False,
+        **params,
+    )
+    treino = preparar_liga_para_catboost(train_df)
+    modelo.fit(treino[features], treino[coluna_alvo])
+    return modelo, None, None
+
+
+def prever_catboost_poisson(modelo, _extra, df: pd.DataFrame, features: list[str] = FEATURES):
+    """λ previsto por partida. Piso em 0.01 porque λ = 0 zera a
+    verossimilhança de qualquer placar diferente de 0x0 e envenenaria o
+    log -- não deveria acontecer com perda de Poisson, mas o custo do
+    guarda é nulo."""
+    df = preparar_liga_para_catboost(df)
+    return np.maximum(modelo.predict(df[features]), 0.01)
+
+
+def treinar_lightgbm_poisson(
+    params: dict,
+    train_df: pd.DataFrame,
+    coluna_alvo: str,
+    features: list[str] = FEATURES,
+):
+    """Mesma ideia do CatBoost acima, com LightGBM.
+
+    Segunda família pra comparação -- o projeto já trata CatBoost/XGBoost/
+    LightGBM como variantes intercambiáveis no benchmarking, e vale saber se
+    a escolha de biblioteca move a estimativa de λ. Devolve `(modelo,
+    categorias_liga)` porque o LightGBM precisa das categorias vistas no
+    treino pra alinhar a coluna `liga` na predição (mesmo `extra` de
+    `treinar_lightgbm`).
+    """
+    treino = train_df.copy()
+    categorias_liga = pd.Categorical(treino["liga"]).categories
+    treino["liga"] = pd.Categorical(treino["liga"], categories=categorias_liga)
+
+    modelo = LGBMRegressor(
+        objective="poisson",
+        n_estimators=200,
+        subsample=FRACAO_SUBSAMPLE,
+        colsample_bytree=FRACAO_COLSAMPLE,
+        random_state=42,
+        verbose=-1,
+        **params,
+    )
+    modelo.fit(treino[features], treino[coluna_alvo], categorical_feature=CAT_FEATURES)
+    return modelo, categorias_liga
+
+
+def prever_lightgbm_poisson(modelo, categorias_liga, df: pd.DataFrame, features: list[str] = FEATURES):
+    df = df.copy()
+    df["liga"] = alinhar_categoria_liga(df["liga"], categorias_liga)
+    return np.maximum(modelo.predict(df[features]), 0.01)
+
+
 def treinar_xgboost(
     params: dict,
     train_df: pd.DataFrame,
@@ -512,37 +589,27 @@ def prever_lightgbm(modelo, categorias_liga, df: pd.DataFrame, features: list[st
 
 # treinar(params, train_df, coluna_alvo=..., features=...) -> (modelo, extra)
 # | prever(modelo, extra, df, features=...) -> (probs, classes)
-# v2/v3/v4/v5/v3B reaproveitam as MESMAS funções de treino/predição da v1 (só a
-# lista de features muda, ver `FEATURES_POR_MODELO` -- passada
-# explicitamente pelo chamador em cada call, não fica implícita no dict).
+# v2-v8 (+v3B) removidos -- superadas pela v9, sem uso em produção.
+#
+# v1 NÃO foi removido (BUG REAL corrigido: chegou a ser removido nessa
+# limpeza, achando que não tinha uso em produção -- errado. `model_
+# artifacts.py` (treinar_e_prever/prever_com_estado, usado por TODO o
+# Treino Customizado: treino simples/walk-forward, "Estimar partida" sob
+# demanda e a previsão em lote de partidas futuras,
+# `prever_partidas_futuras_custom.py`) monta a chave `f"{algoritmo}_v1"`
+# pra QUALQUER config customizada com algoritmo catboost/xgboost/lightgbm
+# -- sem essa entrada, treino E predição desses algoritmos ficam
+# quebrados pra sempre nesse painel, não só predição. Achado real: rodar
+# o job de previsão em lote pela primeira vez gerou `KeyError:
+# 'xgboost_v1'` pra toda config com artefato xgboost/stacking com membro
+# xgboost). Mesmas funções de treino/predição já usadas pela v9/v10 --
+# "v1" aqui não é sobre feature set nenhum, é só o algoritmo puro sem
+# nenhum extra, exatamente o que o Treino Customizado precisa (o usuário
+# escolhe as features na hora, não uma versão fixa).
 TREINADORES = {
     "catboost_v1": (treinar_catboost, prever_catboost),
     "xgboost_v1": (treinar_xgboost, prever_xgboost),
     "lightgbm_v1": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v2": (treinar_catboost, prever_catboost),
-    "xgboost_v2": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v2": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v3": (treinar_catboost, prever_catboost),
-    "xgboost_v3": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v3": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v4": (treinar_catboost, prever_catboost),
-    "xgboost_v4": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v4": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v5": (treinar_catboost, prever_catboost),
-    "xgboost_v5": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v5": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v3b": (treinar_catboost, prever_catboost),
-    "xgboost_v3b": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v3b": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v6": (treinar_catboost, prever_catboost),
-    "xgboost_v6": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v6": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v7": (treinar_catboost, prever_catboost),
-    "xgboost_v7": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v7": (treinar_lightgbm, prever_lightgbm),
-    "catboost_v8": (treinar_catboost, prever_catboost),
-    "xgboost_v8": (treinar_xgboost, prever_xgboost),
-    "lightgbm_v8": (treinar_lightgbm, prever_lightgbm),
     # v9 — mesmas features da v8, 4ª família de algoritmo (MLP) adicionada;
     # stacking sobre as 4 famílias base é treinado separadamente em
     # `walkforward_cv_v9.py` (precisa de OOF predictions, não entra aqui).
@@ -555,6 +622,14 @@ TREINADORES = {
     "xgboost_v10": (treinar_xgboost, prever_xgboost),
     "lightgbm_v10": (treinar_lightgbm, prever_lightgbm),
     "mlp_v10": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
+    # v11 — v10 + força do XI titular (abertura/fechamento). Registrada aqui
+    # significa que roda no loop diário de rodar_predicoes.py junto com
+    # v9/v10 (mesma convenção -- TREINADORES não tem opt-in separado por
+    # versão), validada em paralelo por walkforward_cv_v11.py.
+    "catboost_v11": (treinar_catboost, prever_catboost),
+    "xgboost_v11": (treinar_xgboost, prever_xgboost),
+    "lightgbm_v11": (treinar_lightgbm, prever_lightgbm),
+    "mlp_v11": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
 }
 
 
@@ -675,3 +750,4 @@ def montar_meta_features(
 # Corrige os placeholders mlp depois de definir as funções.
 TREINADORES["mlp_v9"] = (treinar_mlp, prever_mlp)
 TREINADORES["mlp_v10"] = (treinar_mlp, prever_mlp)
+TREINADORES["mlp_v11"] = (treinar_mlp, prever_mlp)

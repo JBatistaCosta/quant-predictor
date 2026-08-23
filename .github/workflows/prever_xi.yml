@@ -1,0 +1,48 @@
+name: Predição do XI Titular Provável (fixtures futuras)
+
+# Roda scripts/rodar_xi_previsto.py -- pra cada partida `scheduled` nos
+# próximos 7 dias, calcula probabilidade de titular por jogador do elenco
+# atual (player_availability_fotmob, snapshot real do elenco + posição,
+# excluindo lesionado) usando o ensemble de modelos treinado por
+# treinar_modelo_xi.yml, e grava em xi_previsto.
+#
+# Roda depois do sync de desfalques (elenco_desfalques_sync.yml, 05:00 UTC)
+# pra já refletir o snapshot de lesão mais recente do dia.
+
+on:
+  schedule:
+    - cron: "30 5 * * *"  # 05:30 UTC diário
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Janela de dias à frente para prever (default 7)"
+        required: false
+        type: string
+
+jobs:
+  prever-xi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Prever XI titular provável
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+          python scripts/rodar_xi_previsto.py $ARGS

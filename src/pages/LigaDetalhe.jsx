@@ -66,6 +66,7 @@ export default function LigaDetalhe() {
   const [temporada, setTemporada] = useState('');
   const [jogos, setJogos] = useState([]);
   const [carregandoJogos, setCarregandoJogos] = useState(false);
+  const [refetchJogos, setRefetchJogos] = useState(0);
   const [pagina, setPagina] = useState(0);
   const [aba, setAba] = useState('classificacao');
 
@@ -146,7 +147,7 @@ export default function LigaDetalhe() {
       setJogos(data || []);
       setCarregandoJogos(false);
     })();
-  }, [leagueIdPipeline, temporada]);
+  }, [leagueIdPipeline, temporada, refetchJogos]);
 
   // Importa/enriquece as partidas da temporada selecionada em lotes — o
   // seletor (20/50/100/200) é o ALVO total do clique, mas cada partida gasta
@@ -188,6 +189,7 @@ export default function LigaDetalhe() {
         ? (modo === 'ao_vivo' ? 'FotMob Ao Vivo' : 'FotMob')
         : 'API-Football';
       setMsgImportacao(`Importação concluída (${label}): ${totalProcessado} jogo(s) processado(s) na temporada ${temporada}.`);
+      if (totalProcessado > 0) setRefetchJogos(n => n + 1);
     } catch (e) {
       setErroImportacao(e.message);
     } finally {

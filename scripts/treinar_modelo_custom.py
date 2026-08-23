@@ -72,6 +72,17 @@ TARGETS = {
 ALGORITMOS_ML = {"catboost", "xgboost", "lightgbm"}
 # Algoritmos nativos sklearn (logistic_regression, random_forest)
 ALGORITMOS_SKLEARN = {"logistic_regression", "random_forest"}
+# Modelo misto/paramétrico: ML estima os PARÂMETROS de uma distribuição e os
+# mercados saem dela por integração (ver scripts/distribuicoes.py e
+# treinar_modelo_hibrido.py).
+#
+# É um ALGORITMO e não um target, de propósito. Os demais algoritmos aqui são
+# classificadores: um fit produz um mercado. Este produz DEZENAS de mercados
+# coerentes entre si de um fit só, então não cabe na ideia de "escolha o
+# mercado que quer prever". O `target` da configuração continua sendo usado,
+# mas só pra decidir em qual mercado reportar as métricas comparáveis com os
+# outros modelos -- todos os mercados são gravados de qualquer jeito.
+ALGORITMOS_PARAMETRICOS = {"hibrido_parametrico"}
 
 # Mapeamento: target_key → nome do mercado e tradução int→string usados em model_predictions
 _TARGET_PRED_META = {
@@ -189,8 +200,15 @@ def carregar_dataset(
     todas_ligas: bool = False,
     league_ids: list[int] | None = None,
     seasons: list[str] | None = None,
+    colunas_extra: list[str] | None = None,
 ) -> pd.DataFrame:
     """Carrega o dataset completo com as features solicitadas.
+
+    `colunas_extra` preserva colunas que não são feature nem o alvo de
+    classe -- usado pelo algoritmo paramétrico, que precisa das CONTAGENS
+    observadas (gols e escanteios) pra ajustar os λ e os parâmetros
+    estruturais. Sem isso elas seriam descartadas pela seleção de colunas
+    logo abaixo.
 
     Reutiliza dh.montar_dataset_completo, que já faz todos os joins,
     rolling windows, elo, squad_rating etc. — devolvendo TODAS as features
@@ -253,6 +271,7 @@ def carregar_dataset(
     # como feature; sem isso, falha com KeyError: 'liga'.
     cols_necessarias = list(dict.fromkeys(
         ml.CAT_FEATURES + features + [target_info["coluna"], "match_date", "match_id"]
+        + (colunas_extra or [])
     ))
     cols_presentes = [c for c in cols_necessarias if c in dataset.columns]
     dataset = dataset[cols_presentes].dropna(subset=[target_info["coluna"]]).copy()
@@ -452,6 +471,131 @@ def treinar_via_sklearn(
 # Salvar predições por partida
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Treino paramétrico (modelo misto)
+# ---------------------------------------------------------------------------
+# Colunas de contagem que o paramétrico precisa preservar no dataset. Não são
+# features (usar o placar da própria partida como entrada vazaria o
+# resultado) -- são os ALVOS dos regressores de λ e a base pra ajustar ρ,
+# dispersão e split.
+COLUNAS_CONTAGEM_PARAMETRICO = [
+    "home_goals", "away_goals",
+    "total_corners", "total_corners_home", "total_corners_away",
+]
+
+# Mercados derivados que servem de métrica comparável com os classificadores.
+# O paramétrico gera dezenas; estes são os que existem como target no painel,
+# então são os que permitem comparar maçã com maçã.
+_MERCADO_POR_TARGET = {
+    "1x2": ("1X2", ["home", "draw", "away"]),
+    "over_under_2.5": ("over_under_2.5", ["under", "over"]),
+    "btts": ("btts", ["no", "yes"]),
+    "faixa_gols": ("faixa_gols", ["0-1", "2-3", "4-6", "7+"]),
+    "corners_over_under_9.5": ("corners_over_under_9.5", ["under", "over"]),
+    "faixa_corners": ("faixa_corners", ["≤8", "9-10", "11-12", "13+"]),
+}
+
+
+def treinar_via_parametrico(
+    supabase,
+    features: list[str],
+    dataset: pd.DataFrame,
+    target_key: str,
+    model_name: str,
+):
+    """Treina o modelo misto: ML estima os parâmetros, a distribuição gera os mercados.
+
+    Reaproveita `treinar_modelo_hibrido.py` inteiro em vez de reimplementar
+    -- as funções de lá são de módulo (o `main()` é guardado por
+    `__name__`), então importar é seguro e evita que as duas versões
+    divirjam com o tempo.
+
+    Diferenças em relação aos algoritmos de classificação deste script:
+      - split 60/20/20 (treino/calibração/teste), não 2 vias. A fatia de
+        calibração é onde ρ, dispersão e α/β são ajustados condicionados nos
+        λ do ML -- fazer isso no treino subestimaria a dispersão, porque o
+        modelo já viu aquelas partidas;
+      - grava TODOS os mercados derivados, não só o do `target`;
+      - a métrica principal é a log-verossimilhança do placar observado, que
+        mede a distribuição inteira. As métricas de mercado são calculadas
+        no mercado do `target` só pra permitir comparação direta com os
+        classificadores.
+
+    Devolve `(metricas, probs_test, classes_test, ordem_selecoes)` no formato
+    que o `main()` já espera.
+    """
+    import treinar_modelo_hibrido as hib
+
+    faltando = [c for c in ("home_goals", "away_goals") if c not in dataset.columns]
+    if faltando:
+        raise RuntimeError(
+            f"Colunas de contagem ausentes no dataset: {faltando}. O algoritmo paramétrico "
+            "precisa do placar real pra treinar os λ."
+        )
+
+    # Sobrescreve o feature set global pelas features que o usuário escolheu
+    # no painel -- é o que dá sentido a "Treino Customizado" aqui.
+    #
+    # `features` (vindo de carregar_dataset) é a seleção do usuário, sem
+    # garantia de incluir "liga" -- diferente de FEATURES/FEATURES_V9/V10 em
+    # dados_historicos.py, que sempre embutem CAT_FEATURES por construção
+    # (`FEATURES = FEATURES_NUMERICAS + CAT_FEATURES`). Os treinadores
+    # *_poisson/*_regressor passam `cat_features=CAT_FEATURES` (["liga"])
+    # pro CatBoost e chamam `.fit(treino[features], ...)` -- se "liga" não
+    # estiver em `features`, o CatBoost recebe uma feature categórica que
+    # não existe no DataFrame de treino e quebra com
+    # `ValueError: 'liga' is not in list` (confirmado rodando de verdade
+    # com um subconjunto de features sem "liga" selecionado no painel).
+    features_com_liga = list(dict.fromkeys(features + ml.CAT_FEATURES))
+    for chave in ("hibrido_gols_v1", "hibrido_corners_v1"):
+        ml.FEATURES_POR_MODELO[chave] = features_com_liga
+
+    treino, calib, teste = hib.dividir_cronologicamente(dataset)
+    logger.info("Split paramétrico 60/20/20: %d treino / %d calibração / %d teste",
+                len(treino), len(calib), len(teste))
+    if len(treino) < 100 or len(teste) < 20:
+        raise RuntimeError(
+            f"Dados insuficientes pro split 60/20/20 (treino={len(treino)}, teste={len(teste)})."
+        )
+
+    lam_corners = hib.treinar_lambda_corners(treino, [calib, teste])
+    lam_corners_calib, lam_corners_teste = (lam_corners if lam_corners else (None, None))
+
+    lambdas = hib.treinar_lambdas_gols(
+        "hibrido_gols_v1", hib.VARIANTES_GOLS["hibrido_gols_v1"], treino, [calib, teste]
+    )
+    if lambdas is None:
+        raise RuntimeError("Não foi possível treinar os λ de gols — verifique a cobertura de placar no escopo escolhido.")
+    (lam_h_calib, lam_a_calib), (lam_h_teste, lam_a_teste) = lambdas
+
+    parametros = hib.ajustar_parametros_estruturais(calib, lam_h_calib, lam_a_calib, lam_corners_calib)
+    metricas = hib.avaliar(teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
+    metricas.update(hib.baselines(treino, teste))
+
+    # Grava parâmetros por partida + TODOS os mercados derivados.
+    hib.persistir(supabase, model_name, teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
+
+    # Métricas no mercado do target, pra comparar com os classificadores.
+    mercado_alvo, ordem = _MERCADO_POR_TARGET.get(target_key, _MERCADO_POR_TARGET["1x2"])
+    linhas = []
+    for pos in range(len(teste)):
+        derivados = hib.derivar_mercados(
+            float(lam_h_teste[pos]), float(lam_a_teste[pos]), parametros["rho"],
+            float(lam_corners_teste[pos]) if lam_corners_teste is not None else None,
+            parametros,
+        )
+        linhas.append([derivados.get((mercado_alvo, sel), 0.0) for sel in ordem])
+
+    probs_test = np.asarray(linhas, dtype=float)
+    metricas["mercado_metricas"] = mercado_alvo
+    metricas["n_mercados_gravados"] = len(set(m for m, _ in hib.derivar_mercados(
+        float(lam_h_teste[0]), float(lam_a_teste[0]), parametros["rho"],
+        float(lam_corners_teste[0]) if lam_corners_teste is not None else None, parametros,
+    )))
+
+    return metricas, probs_test, np.arange(len(ordem)), ordem
+
+
 def salvar_predicoes_no_banco(
     supabase,
     test_df: pd.DataFrame,
@@ -545,12 +689,29 @@ def main():
             raise ValueError(f"Target {target_key!r} não suportado. Use: {list(TARGETS)}")
 
         # 2. Carrega e prepara dataset
-        dataset, features_usadas = carregar_dataset(supabase, features_req, target_info, todas_ligas, league_ids, seasons)
-        train_df, test_df = split_dataset(dataset, target_info["coluna"], features_usadas)
+        eh_parametrico = algoritmo in ALGORITMOS_PARAMETRICOS
+        dataset, features_usadas = carregar_dataset(
+            supabase, features_req, target_info, todas_ligas, league_ids, seasons,
+            colunas_extra=COLUNAS_CONTAGEM_PARAMETRICO if eh_parametrico else None,
+        )
+
+        # O paramétrico faz o próprio split (60/20/20, com fatia de
+        # calibração) dentro de treinar_via_parametrico — ver a docstring de
+        # lá pra por quê. Os classificadores seguem com o split de 2 vias.
+        if not eh_parametrico:
+            train_df, test_df = split_dataset(dataset, target_info["coluna"], features_usadas)
 
         # 3. Treina o modelo
         curva_aprendizado = None
-        if algoritmo in ALGORITMOS_ML:
+        if eh_parametrico:
+            modelo, features_finais = None, features_usadas
+            metricas, probs_test, classes_test, ordem_selecoes = treinar_via_parametrico(
+                supabase, features_usadas, dataset, target_key, model_name=cfg["name"],
+            )
+            # O paramétrico já gravou TODOS os mercados em model_predictions
+            # (inclusive o do target) durante o treino; não repetir no passo 5.
+            test_df = None
+        elif algoritmo in ALGORITMOS_ML:
             metricas, modelo, features_finais, curva_aprendizado, probs_test, classes_test = treinar_via_ml(
                 algoritmo, features_usadas, hyperparameters,
                 train_df, test_df, target_info["coluna"], target_info["tipo"],
@@ -608,7 +769,11 @@ def main():
 
         # 5. Salva predições por partida para que o modelo apareça em Estatísticas,
         #    Backtest e Simulação de Carteira automaticamente.
-        salvar_predicoes_no_banco(supabase, test_df, probs_test, classes_test, cfg["name"], target_key)
+        #    O paramétrico é a exceção: ele já gravou TODOS os mercados
+        #    derivados (não só o do target) durante o próprio treino, então
+        #    repetir aqui só reescreveria um subconjunto do que já está lá.
+        if not eh_parametrico:
+            salvar_predicoes_no_banco(supabase, test_df, probs_test, classes_test, cfg["name"], target_key)
 
         # 6. Refit final no dataset INTEIRO (treino + teste do backtest, não
         #    só o split de treino) e persiste o artefato -- permite que

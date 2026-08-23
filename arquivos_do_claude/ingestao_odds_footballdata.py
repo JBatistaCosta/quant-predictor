@@ -3,8 +3,9 @@ Ingestão de odds reais de mercado via football-data.co.uk -> tabela
 odds_market no Supabase.
 
 Fonte 100% gratuita, sem chave de API, sem limite de requisições — é só
-um CSV estático por liga/temporada. Cobre as 5 ligas europeias (sem
-Brasileirão, que não está no escopo dessa fonte).
+um CSV estático por liga/temporada. Cobre as 5 ligas europeias "grandes"
++ Championship/Eredivisie/Primeira Liga (sem Brasileirão, que não está no
+escopo dessa fonte -- ver ingestao_odds_footballdata_brasil.py).
 
 Grava 4 "casas" por partida: Bet365, Pinnacle, William Hill e a MÉDIA do
 mercado (Avg — consenso entre várias casas, ótimo pra comparar com a odd
@@ -30,8 +31,8 @@ import pandas as pd
 import requests
 from supabase import create_client
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 # Nosso código de liga -> código de divisão do football-data.co.uk
 LIGAS = {
@@ -40,6 +41,12 @@ LIGAS = {
     "SA":  "I1",
     "BL1": "D1",
     "FL1": "F1",
+    # Cobertura confirmada testando as URLs reais (2023/24 a 2025/26) antes
+    # de adicionar -- mesmas colunas de bookmaker (B365/PS/WH/Avg) e mesmo
+    # formato 1X2 + over/under 2.5 das 5 ligas acima, zero custo de cota.
+    "ELC": "E1",  # Championship
+    "DED": "N1",  # Eredivisie
+    "PPL": "P1",  # Primeira Liga
 }
 
 # (prefixo no CSV, nome de exibição) das casas que vamos gravar
@@ -49,6 +56,13 @@ BOOKMAKERS = [
     ("WH", "william_hill"),
     ("Avg", "media_mercado"),
 ]
+
+# BUG REAL corrigido: a checagem de idempotência (ja_tem_odds) e o insert
+# não distinguiam origem -- "pinnacle"/"bet365" são os MESMOS nomes
+# usados pelo backfill da OddsPapi. Sem isso, uma partida já coberta pela
+# OddsPapi nunca recebia a própria linha deste script (achava que "já
+# tinha odds"). Escopado por origem=ORIGEM.
+ORIGEM = "football_data_co_uk"
 
 # football-data.co.uk usa nomes de time em inglês/estilo próprio — mais
 # uma convenção diferente de todas as anteriores. Aliases conhecidos de
@@ -80,6 +94,13 @@ ALIASES_MANUAIS = {
     "brest": "Stade Brestois 29",
     "lyon": "Olympique Lyonnais",
     "rennes": "Stade Rennais FC 1901",
+    # Championship (ELC) -- achados rodando ELC/2023-2025 pela 1ª vez.
+    "west brom": "West Bromwich Albion FC",
+    "qpr": "Queens Park Rangers FC",
+    # Primeira Liga (PPL) -- achados rodando PPL/2023-2025 pela 1ª vez.
+    "sp braga": "Sporting Clube de Braga",
+    "sp lisbon": "Sporting Clube de Portugal",
+    "guimaraes": "Vitória SC",
 }
 _TOKENS_IGNORADOS = {
     "fc", "cf", "afc", "fbpa", "fbc", "sc", "ac", "ssc", "as", "rc", "cd",
@@ -155,6 +176,26 @@ def main():
     if not jogos:
         sys.exit(f"Nenhum jogo de {liga_cod}/{temporada} no banco.")
 
+    # Idempotência: pula partidas que já têm odds gravadas (sem isso, rodar
+    # de novo pra pegar só o fim de uma temporada em andamento -- ex.: o CSV
+    # da fonte foi baixado no meio do campeonato e a segunda metade só ficou
+    # disponível depois -- duplicava as linhas já gravadas, já que o INSERT
+    # no fim do script não é upsert).
+    ids_jogos = [j["id"] for j in jogos]
+    ja_tem_odds = set()
+    inicio = 0
+    while True:
+        lote = (supabase.table("odds_market").select("match_id")
+                .eq("origem", ORIGEM)
+                .in_("match_id", ids_jogos)
+                .range(inicio, inicio + 999).execute().data)
+        ja_tem_odds.update(r["match_id"] for r in lote)
+        if len(lote) < 1000:
+            break
+        inicio += 1000
+    if ja_tem_odds:
+        print(f"  {len(ja_tem_odds)} partida(s) já com odds desta fonte gravadas -- serão puladas.")
+
     nossos = pd.DataFrame(jogos)
     nossos["data"] = pd.to_datetime(nossos["match_date"], utc=True).dt.date
 
@@ -188,7 +229,7 @@ def main():
         if "confira" in metodo:
             print(f"  ATENÇÃO ({metodo}): '{nome_fd}' -> '{nome_por_id[mapa_times[nome_fd]]}'")
 
-    registros, sem_match, sem_odds = [], 0, 0
+    registros, sem_match, sem_odds, ja_gravadas = [], 0, 0, 0
     for _, linha in df.iterrows():
         home_id = mapa_times.get(linha["HomeTeam"])
         away_id = mapa_times.get(linha["AwayTeam"])
@@ -203,6 +244,9 @@ def main():
             sem_match += 1
             continue
         match_id = int(cand.iloc[0]["id"])
+        if match_id in ja_tem_odds:
+            ja_gravadas += 1
+            continue
 
         teve_odds = False
         for prefixo, nome_casa in BOOKMAKERS:
@@ -213,7 +257,7 @@ def main():
                     if v is not None and not pd.isna(v):
                         registros.append({"match_id": match_id, "bookmaker": nome_casa,
                                           "market": "1X2", "selection": selecao,
-                                          "odds": round(float(v), 3)})
+                                          "odds": round(float(v), 3), "origem": ORIGEM})
                         teve_odds = True
 
             # Pinnacle usa prefixo "PS" pro 1X2 mas só "P" (sem o S) pro
@@ -226,7 +270,7 @@ def main():
                     if v is not None and not pd.isna(v):
                         registros.append({"match_id": match_id, "bookmaker": nome_casa,
                                           "market": "over_under_2.5", "selection": selecao,
-                                          "odds": round(float(v), 3)})
+                                          "odds": round(float(v), 3), "origem": ORIGEM})
                         teve_odds = True
         if not teve_odds:
             sem_odds += 1
@@ -235,7 +279,8 @@ def main():
         supabase.table("odds_market").insert(registros[i : i + 500]).execute()
 
     print(f"\n{liga_cod}/{temporada}: {len(registros)} linhas de odds gravadas "
-          f"({sem_match} partidas sem correspondência, {sem_odds} partidas casadas sem odds na fonte).")
+          f"({sem_match} partidas sem correspondência, {sem_odds} partidas casadas sem odds na fonte, "
+          f"{ja_gravadas} já tinham odds gravadas antes).")
 
 
 if __name__ == "__main__":

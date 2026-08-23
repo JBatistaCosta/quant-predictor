@@ -96,6 +96,21 @@ def main():
         artefato = (cfg.get("model_artifacts") or {}).get(algoritmo_escolhido)
 
         if not artefato:
+            # O modelo misto não persiste artefato: ele não é um
+            # classificador com `predict_proba`, é um conjunto de
+            # regressores de parâmetro mais os parâmetros estruturais
+            # (ρ, dispersão, α/β) estimados na fatia de calibração. Suas
+            # previsões já ficam gravadas em `model_predictions` (todos os
+            # mercados) e os parâmetros em `model_match_estimates`, então a
+            # estimativa sob demanda não faz sentido pra ele -- é melhor
+            # dizer isso do que reclamar de artefato faltando, que manda o
+            # usuário retreinar sem necessidade.
+            if algoritmo_escolhido == "hibrido_parametrico":
+                raise ValueError(
+                    "Configurações do Modelo Misto (paramétrico) não usam estimativa sob demanda: o treino já "
+                    "grava todos os mercados em model_predictions e os parâmetros por partida em "
+                    "model_match_estimates. Consulte a partida direto na página de estatísticas dela."
+                )
             raise ValueError(
                 f"O algoritmo/grupo {algoritmo_escolhido!r} dessa configuração ainda não tem um modelo "
                 "treinado e persistido — treine (ou retreine) a configuração no painel Treino Customizado primeiro."
@@ -111,7 +126,7 @@ def main():
         # Monta o dataset só pra extrair a feature da partida-alvo (elo/
         # forma/xG pré-jogo etc., calculadas a partir do histórico recente
         # dos dois times) -- mesmo pipeline de montar_dataset_ml_empilhado
-        # usado no treino, ver docstring do parâmetro match_id_extra em
+        # usado no treino, ver docstring do parâmetro match_ids_extra em
         # dados_historicos.py. Não precisamos do pool de treino aqui: o
         # modelo já foi treinado e persistido por treinar_modelo_custom.py/
         # treinar_modelo_custom_wf.py.
@@ -121,7 +136,7 @@ def main():
             todas_as_ligas=todas_ligas,
             league_ids_manual=league_ids,
             seasons=seasons,
-            match_id_extra=match_id,
+            match_ids_extra=[match_id],
         )
         if dataset.empty:
             raise RuntimeError("Dataset vazio — verifique o escopo de ligas/temporadas da configuração.")

@@ -1,0 +1,44 @@
+name: Ingestão de Escalação Real Pré-Jogo (FotMob)
+
+# Roda scripts/ingerir_escalacao_pre_jogo.py -- captura a escalação titular
+# oficial assim que o FotMob publica (tipicamente ~60min antes do apito),
+# gravando em match_lineup_fotmob. Viabiliza o cutover "abertura -> real"
+# da força do XI titular em produção (FEATURES_V11/obter_titular_atual já
+# cai pra escalação real automaticamente quando ela existe -- o gap era
+# ninguém ir buscar essa escalação ANTES do apito).
+#
+# Cron a cada 15min, mas o script sai rápido (sem nenhuma chamada de API)
+# quando não há partida na janela de 90min à frente -- custo de cota real
+# só acontece quando tem jogo por perto de verdade. Escopo restrito: só
+# escreve players/match_lineup_fotmob, nunca stats/placar (isso continua
+# sendo do atualizar_partidas_finalizadas.py, depois que a partida termina).
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  ingerir-escalacao-pre-jogo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Capturar escalação pré-jogo
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/ingerir_escalacao_pre_jogo.py

@@ -28,8 +28,8 @@ from modelo_dixon_coles import (
     carregar_partidas, XI, LIGAS, TEMPORADAS_TREINO_POR_LIGA, TEMPORADA_TESTE,
 )
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://cgurxgfdmpmsnrshqycx.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNndXJ4Z2ZkbXBtc25yc2hxeWN4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzM0NTU3NiwiZXhwIjoyMDk4OTIxNTc2fQ.FFp-jjSWJYS-2u_0sOdJzPIcJdDfE_wSfw_Kr11H8Us")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 
 MODEL_NAME = "dixon_coles_walkforward_v1"
 JANELA_DIAS = 7  # retreina a cada ~1 semana de jogos novos
@@ -103,6 +103,12 @@ def rodar_liga_walkforward(supabase, liga_ext_id):
     log_loss = log_loss_soma / n_previstos if n_previstos else float("nan")
     print(f"  {n_previstos} jogos previstos, {pulados_total} pulados | "
           f"log loss walk-forward: {log_loss:.4f}")
+
+    # Dedup por chave de conflito antes de gravar -- ver mesmo comentário em
+    # modelo_dixon_coles.py (fixture duplicada pro mesmo match_id quebra o
+    # upsert inteiro).
+    previsoes = list({(p["match_id"], p["model_name"], p["market"], p["selection"]): p for p in previsoes}.values())
+    estimativas_xg = list({(e["match_id"], e["model_name"]): e for e in estimativas_xg}.values())
 
     for i in range(0, len(previsoes), 500):
         supabase.table("model_predictions").upsert(
