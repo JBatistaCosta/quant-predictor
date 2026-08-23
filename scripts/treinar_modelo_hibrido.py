@@ -43,11 +43,17 @@ nelas (só `.predict`, nunca `.fit`) reaproveitando os MESMOS ρ/dispersão/
 α,β da calibração, e as estimativas/mercados delas são persistidos junto,
 sem entrar em `avaliar()`/`baselines()`/`models_registry`.
 
+Escopo por padrão vem do banco, não de lista hardcoded: `--ligas` e
+`--ligas-extra` são overrides manuais (útil pra teste rápido numa liga
+só) -- omitidos, o escopo é resolvido de `leagues.modelo_misto_escopo`
+('treino'/'extra'/NULL). Reclassificar uma liga é um `UPDATE`, não uma
+mudança de código nem de input do `workflow_dispatch`.
+
 Uso:
     set SUPABASE_URL=...
     set SUPABASE_KEY=sua_service_role_key
-    python treinar_modelo_hibrido.py
-    python treinar_modelo_hibrido.py --ligas "Premier League"   # teste rápido
+    python treinar_modelo_hibrido.py                              # escopo via leagues.modelo_misto_escopo
+    python treinar_modelo_hibrido.py --ligas "Premier League"     # override manual, teste rápido
     python treinar_modelo_hibrido.py --ligas "Premier League" --ligas-extra "Copa do Brasil,Copa Sudamericana"
 """
 
@@ -461,18 +467,31 @@ def baselines(treino: pd.DataFrame, teste: pd.DataFrame) -> dict:
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(description="Treina o modelo misto (parâmetros por ML + distribuição).")
-    parser.add_argument("--ligas", default="", help="Nomes de liga separados por vírgula (padrão: as 6 do benchmark).")
+    parser.add_argument(
+        "--ligas", default="",
+        help="Nomes de liga separados por vírgula -- override manual, útil pra teste rápido numa "
+             "liga só. Omitido (padrão): resolve o escopo de `leagues.modelo_misto_escopo='treino'`.",
+    )
     parser.add_argument(
         "--ligas-extra", default="",
         help="Ligas SEM treino nem avaliação (baixa cobertura de dado, ex.: sem xG real) -- "
              "aplica o modelo já ajustado nas ligas de --ligas e grava as estimativas/mercados "
-             "delas também, sem entrar no fit dos regressores nem nas métricas reportadas.",
+             "delas também, sem entrar no fit dos regressores nem nas métricas reportadas. "
+             "Override manual; omitido (padrão): resolve de `leagues.modelo_misto_escopo='extra'`.",
     )
     parser.add_argument("--sem-gravar", action="store_true", help="Avalia sem escrever no Supabase.")
     args = parser.parse_args()
 
     supabase = create_client(obter_env("SUPABASE_URL"), obter_env("SUPABASE_KEY"))
 
+    # `--ligas`/`--ligas-extra` continuam existindo como override manual
+    # (teste rápido numa liga só), mas o caminho normal é o escopo gravado
+    # em `leagues.modelo_misto_escopo` -- reclassificar uma liga vira "mudar
+    # uma coluna", não "editar código nem lembrar a string exata no próximo
+    # workflow_dispatch". Sem `--ligas` e sem nenhuma liga marcada "treino"
+    # ainda, `league_ids` fica `None` e `montar_dataset_ml_empilhado` cai no
+    # fallback antigo (`LIGAS_MODEL_BENCHMARKING`), sem quebrar quem já usa
+    # o script sem saber da coluna.
     league_ids = None
     if args.ligas:
         nomes = [n.strip() for n in args.ligas.split(",") if n.strip()]
@@ -480,7 +499,14 @@ def main() -> None:
         league_ids = [linha["id"] for linha in (resposta.data or [])]
         if not league_ids:
             sys.exit(f"Nenhuma liga encontrada com os nomes {nomes}.")
-        logger.info("Escopo restrito a %d liga(s): %s", len(league_ids), nomes)
+        logger.info("Escopo restrito a %d liga(s) (via --ligas): %s", len(league_ids), nomes)
+    else:
+        resposta = supabase.table("leagues").select("id, name").eq("modelo_misto_escopo", "treino").execute()
+        linhas = resposta.data or []
+        league_ids = [linha["id"] for linha in linhas] or None
+        if league_ids:
+            logger.info("Escopo de treino via `leagues.modelo_misto_escopo='treino'`: %d liga(s): %s",
+                        len(league_ids), sorted(l["name"] for l in linhas))
 
     league_ids_extra = None
     if args.ligas_extra:
@@ -489,7 +515,14 @@ def main() -> None:
         league_ids_extra = [linha["id"] for linha in (resposta_extra.data or [])]
         if not league_ids_extra:
             sys.exit(f"Nenhuma liga 'extra' encontrada com os nomes {nomes_extra}.")
-        logger.info("Ligas 'extra' (inferência sem treino/avaliação): %d liga(s): %s", len(league_ids_extra), nomes_extra)
+        logger.info("Ligas 'extra' (via --ligas-extra): %d liga(s): %s", len(league_ids_extra), nomes_extra)
+    else:
+        resposta_extra = supabase.table("leagues").select("id, name").eq("modelo_misto_escopo", "extra").execute()
+        linhas_extra = resposta_extra.data or []
+        league_ids_extra = [linha["id"] for linha in linhas_extra] or None
+        if league_ids_extra:
+            logger.info("Ligas 'extra' via `leagues.modelo_misto_escopo='extra'`: %d liga(s): %s",
+                        len(league_ids_extra), sorted(l["name"] for l in linhas_extra))
 
     logger.info("Montando dataset (pode levar alguns minutos)...")
     dataset = dh.montar_dataset_ml_empilhado(supabase, league_ids_manual=league_ids)
