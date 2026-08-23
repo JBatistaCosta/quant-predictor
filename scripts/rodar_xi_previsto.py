@@ -726,6 +726,24 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
             elenco_time["prob_titular"] = prever_probabilidades(modelos, meta_modelo, elenco_time)
             elenco_time = elenco_time.sort_values("prob_titular", ascending=False)
             titulares_previstos = selecionar_titulares_por_posicao(elenco_time)
+
+            # Apaga (não só reseta a flag) linha de jogador que não está mais
+            # no elenco atual pra este (match, time) -- achado em produção:
+            # jogador que saiu do elenco (ou cujo snapshot foi corrigido
+            # depois de um bug de sincronização -- ver migration
+            # unique_team_source_fotmob) ficava com linha órfã em xi_previsto
+            # pra sempre, só com is_titular_previsto resetado pra false pelo
+            # bloco de reset abaixo, nunca removida de fato -- 223 linhas
+            # órfãs encontradas em produção, 12 delas ainda marcadas titular
+            # porque o reset só roda ANTES do upsert deste mesmo dia, então
+            # qualquer corrupção do elenco DEPOIS da última rodada bem-
+            # sucedida ficava sem detecção até a rodada seguinte. Delete
+            # explícito por (match, time) fecha esse gap: quem não está no
+            # pool atual não sobra em xi_previsto de jeito nenhum, mesmo que
+            # o reset de flag abaixo não rode a tempo.
+            ids_atuais = elenco_time["player_id"].astype(int).tolist()
+            supabase.table("xi_previsto").delete().eq("match_id", int(fixture["id"])).eq("team_id", int(team_id)).not_.in_("player_id", ids_atuais).execute()
+
             for _, jogador in elenco_time.iterrows():
                 linhas.append(
                     {
