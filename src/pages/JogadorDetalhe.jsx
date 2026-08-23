@@ -235,7 +235,7 @@ export default function JogadorDetalhe() {
 
       const { data: hist, error: erroHist } = await supabase
         .from('match_player_stats_fotmob')
-        .select('id, team_id, rating, minutes_played, goals, assists, xg, xa, total_shots, chances_created, matches(id, match_date, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url))')
+        .select('id, team_id, rating, minutes_played, goals, assists, xg, xa, xgot, total_shots, chances_created, matches(id, match_date, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url))')
         .eq('player_id', id)
         .order('match_date', { foreignTable: 'matches', ascending: false })
         .limit(n);
@@ -258,6 +258,7 @@ export default function JogadorDetalhe() {
           assists: p.assists,
           xg: p.xg,
           xa: p.xa,
+          xgot: p.xgot,
           totalShots: p.total_shots,
           chancesCreated: p.chances_created,
         }));
@@ -271,14 +272,27 @@ export default function JogadorDetalhe() {
     const comMinutos = partidas.filter(p => p.minutesPlayed != null && p.minutesPlayed > 0);
     const comNota = comMinutos.filter(p => p.rating != null);
     const media = (arr, campo) => arr.length > 0 ? arr.reduce((s, p) => s + (Number(p[campo]) || 0), 0) / arr.length : null;
+
+    // G-xG (gols menos xG acumulado) só faz sentido comparando gols e xG na
+    // MESMA amostra de jogos (onde o FotMob tem os dois preenchidos) — sobre
+    // várias partidas, não jogo a jogo, senão é ruído de amostra pequena, não
+    // sinal real de "finalizador acima/abaixo do esperado" (mesma disciplina
+    // estatística já aplicada no resto do projeto).
+    const comXg = comMinutos.filter(p => p.xg != null);
+    const golsAmostraXg = comXg.reduce((s, p) => s + (p.goals || 0), 0);
+    const xgAcumulado = comXg.reduce((s, p) => s + (Number(p.xg) || 0), 0);
+
     return {
       jogos: comMinutos.length,
       notaMedia: media(comNota, 'rating'),
       gols: comMinutos.reduce((s, p) => s + (p.goals || 0), 0),
       assistencias: comMinutos.reduce((s, p) => s + (p.assists || 0), 0),
-      xgMedio: media(comMinutos.filter(p => p.xg != null), 'xg'),
+      xgMedio: media(comXg, 'xg'),
       xaMedio: media(comMinutos.filter(p => p.xa != null), 'xa'),
+      xgotMedio: media(comMinutos.filter(p => p.xgot != null), 'xgot'),
       minutosMedios: media(comMinutos, 'minutesPlayed'),
+      gMenosXg: comXg.length > 0 ? golsAmostraXg - xgAcumulado : null,
+      gMenosXgAmostra: comXg.length,
     };
   }, [partidas]);
 
@@ -509,7 +523,7 @@ export default function JogadorDetalhe() {
           <>
             <GraficoForma partidas={[...partidas].reverse()} />
 
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center mt-5">
+            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 text-center mt-5">
               <div className="bg-slate-900 rounded-lg py-2">
                 <div className="text-[10px] text-slate-500 uppercase">Jogos</div>
                 <div className="text-sm font-bold text-slate-200">{resumo.jogos}</div>
@@ -533,6 +547,16 @@ export default function JogadorDetalhe() {
               <div className="bg-slate-900 rounded-lg py-2">
                 <div className="text-[10px] text-slate-500 uppercase">xA médio</div>
                 <div className="text-sm font-bold text-slate-300">{resumo.xaMedio?.toFixed(2) ?? '—'}</div>
+              </div>
+              <div className="bg-slate-900 rounded-lg py-2">
+                <div className="text-[10px] text-slate-500 uppercase">xGOT médio</div>
+                <div className="text-sm font-bold text-slate-300">{resumo.xgotMedio?.toFixed(2) ?? '—'}</div>
+              </div>
+              <div className="bg-slate-900 rounded-lg py-2" title={resumo.gMenosXg != null ? `Gols - xG acumulado nos ${resumo.gMenosXgAmostra} jogos com xG registrado` : 'Sem jogos com xG registrado nessa janela'}>
+                <div className="text-[10px] text-slate-500 uppercase">G-xG</div>
+                <div className={`text-sm font-bold ${resumo.gMenosXg == null ? 'text-slate-300' : resumo.gMenosXg > 0.5 ? 'text-emerald-400' : resumo.gMenosXg < -0.5 ? 'text-red-400' : 'text-slate-300'}`}>
+                  {resumo.gMenosXg != null ? (resumo.gMenosXg > 0 ? '+' : '') + resumo.gMenosXg.toFixed(2) : '—'}
+                </div>
               </div>
             </div>
           </>

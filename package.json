@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting",
     "start": "node server/index.js",
+    "test": "vitest run",
     "test:paridade": "node scripts/verificar_paridade_js.mjs"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
-    "vite": "^5.3.1"
+    "vite": "^5.3.1",
+    "vitest": "^4.1.10"
   }
 }
