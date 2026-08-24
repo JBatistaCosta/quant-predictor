@@ -3156,9 +3156,20 @@ def montar_dataset_ml_empilhado(
     # `_carregar_total_corners_por_partida`) e pra não se confundirem com
     # `corners_home`/`corners_away`, que são a matéria-prima FBref da FORMA
     # pré-jogo (`forma_escanteios`), de cobertura bem menor.
+    # `_anexar_stats_fotmob_por_partida` nomeia a coluna bruta merged como
+    # `{col_raw}_fm_home`/`_away`, com `col_raw` = CHAVE de
+    # `COLUNAS_STATS_FOTMOB` ("corners"), não o nome curto/VALOR
+    # ("escanteios_fm") usado só pras médias de forma (`colunas_forma_fotmob`,
+    # linha ~3130). Usar o nome curto aqui (bug real, corrigido) fazia
+    # `col in partidas.columns` dar sempre False -- `total_corners_home`/
+    # `_away` nunca existiam no dataset final, então `corners_alpha`/`beta`
+    # (split Beta-Binomial em `ajustar_parametros_estruturais`) nunca eram
+    # calculados, e o painel caía no fallback `alpha=1,beta=1` (Beta
+    # uniforme -- split sempre 50/50, "simétrico" entre mandante/visitante
+    # independente de quem realmente domina escanteios na partida real).
     escanteios_por_time = {
-        "escanteios_fm_home": "total_corners_home",
-        "escanteios_fm_away": "total_corners_away",
+        "corners_fm_home": "total_corners_home",
+        "corners_fm_away": "total_corners_away",
     }
     base_cols.extend(col for col in escanteios_por_time if col in partidas.columns)
     dataset = partidas[base_cols].copy()
