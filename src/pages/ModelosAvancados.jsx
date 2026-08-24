@@ -20,7 +20,7 @@ const ABAS_MODELOS = [
   { id: 'simulacao-carteira', label: 'Simulação de Carteira', icone: Wallet, conteudo: <SimulacaoCarteira /> },
   { id: 'carteira-paper-trading', label: 'Carteira (Paper Trading)', icone: Landmark, conteudo: <CarteiraPaperTrading /> },
   { id: 'treino-custom', label: 'Treino Customizado', icone: FlaskConical, conteudo: <TreinoCustom /> },
-  { id: 'modelo-v9', label: 'Modelo v9', icone: Layers, conteudo: <ModeloV9 /> },
+  { id: 'modelo-v9', label: 'Walk-forward CV (v9/v11)', icone: Layers, conteudo: <ModeloV9 /> },
 ];
 
 export default function ModelosAvancados() {
@@ -30,7 +30,7 @@ export default function ModelosAvancados() {
         <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
           <Zap className="text-emerald-400" size={28} /> Modelos Avançados
         </h1>
-        <p className="text-slate-400 mt-1 text-sm">Benchmarking, simulação de carteira, carteira paper trading, treino customizado e o modelo v9.</p>
+        <p className="text-slate-400 mt-1 text-sm">Benchmarking, simulação de carteira, carteira paper trading, treino customizado e walk-forward CV (v9/v11).</p>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 md:p-6">

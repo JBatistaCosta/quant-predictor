@@ -1,20 +1,42 @@
 // src/pages/ModeloV9.jsx
-// Painel do Modelo v9: walk-forward CV por fold, curvas de treinamento,
-// importância de features e análise exploratória de cobertura.
+// Painel walk-forward CV por fold, curvas de treinamento, importância de
+// features e análise exploratória de cobertura -- com seletor de versão
+// (v9/v11). v11 (scripts/walkforward_cv_v11.py) grava nas tabelas
+// `model_v11_*`, schema idêntico ao de v9 (`model_v9_*`), só muda o
+// prefixo -- por isso dá pra reaproveitar o mesmo componente trocando só
+// o nome das tabelas consultadas. v10 fica de fora de propósito: não tem
+// nenhum script de walk-forward nem tabelas `model_v10_*` no banco (só
+// entra no ladder diário de predições e no backtest de apostas), não tem
+// dado nenhum pra mostrar aqui ainda.
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { BarChart3, GitBranch, Search, ChevronUp, ChevronDown, Layers, RefreshCw, TrendingUp } from 'lucide-react';
 
-const COR_MODELO = {
-  catboost_v9: '#f97316',
-  xgboost_v9: '#3b82f6',
-  lightgbm_v9: '#22c55e',
-  mlp_v9: '#a855f7',
-  stacking_v9: '#f59e0b',
+const VERSOES = [
+  { id: 'v9', label: 'v9', workflow: 'walkforward_cv_v9.yml' },
+  { id: 'v11', label: 'v11', workflow: 'walkforward_cv_v11.yml' },
+];
+
+const CORES_POR_VERSAO = {
+  v9: {
+    catboost_v9: '#f97316',
+    xgboost_v9: '#3b82f6',
+    lightgbm_v9: '#22c55e',
+    mlp_v9: '#a855f7',
+    stacking_v9: '#f59e0b',
+  },
+  v11: {
+    catboost_v11: '#f97316',
+    xgboost_v11: '#3b82f6',
+    lightgbm_v11: '#22c55e',
+    mlp_v11: '#a855f7',
+    stacking_v11: '#f59e0b',
+    stacking_v11_sem_mlp: '#ec4899',
+  },
 };
 
-function badgeModelo(nome) {
-  const cor = COR_MODELO[nome] || '#64748b';
+function badgeModelo(nome, corModelo) {
+  const cor = corModelo[nome] || '#64748b';
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold"
       style={{ background: cor + '22', color: cor, border: `1px solid ${cor}55` }}>
@@ -26,7 +48,7 @@ function badgeModelo(nome) {
 // ---------------------------------------------------------------------------
 // Gráfico de barras por fold
 // ---------------------------------------------------------------------------
-function MiniBarChart({ dados, metrica, altura = 160 }) {
+function MiniBarChart({ dados, metrica, corModelo, altura = 160 }) {
   if (!dados.length) return null;
   const modelos = [...new Set(dados.map(d => d.modelo))];
   const folds = ['fold_1', 'fold_2', 'fold_3'];
@@ -62,7 +84,7 @@ function MiniBarChart({ dados, metrica, altura = 160 }) {
                 const x = fi * foldW + (mi + 0.5) * barW;
                 const y = yPos(val);
                 const h = innerH - y;
-                const cor = COR_MODELO[modelo] || '#64748b';
+                const cor = corModelo[modelo] || '#64748b';
                 return (
                   <g key={modelo}>
                     <rect x={x} y={y} width={barW * 0.8} height={Math.max(h, 1)} fill={cor} opacity={0.8} rx={2} />
@@ -84,13 +106,13 @@ function MiniBarChart({ dados, metrica, altura = 160 }) {
 // ---------------------------------------------------------------------------
 // Curva de treinamento (linha)
 // ---------------------------------------------------------------------------
-function CurvaChart({ curva, modelo, altura = 160 }) {
+function CurvaChart({ curva, modelo, corModelo, altura = 160 }) {
   if (!curva || !curva.length) return (
     <div className="flex items-center justify-center h-20 text-slate-600 text-xs">
       Curva não disponível (MLP / sem early stopping)
     </div>
   );
-  const cor = COR_MODELO[modelo] || '#64748b';
+  const cor = corModelo[modelo] || '#64748b';
   const largura = 460;
   const margem = { top: 8, right: 10, bottom: 24, left: 44 };
   const innerW = largura - margem.left - margem.right;
@@ -160,6 +182,7 @@ function ImportanciaBar({ valor, max }) {
 // Componente principal
 // ---------------------------------------------------------------------------
 export default function ModeloV9() {
+  const [versao, setVersao] = useState('v9');
   const [aba, setAba] = useState('walkforward');
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -175,14 +198,17 @@ export default function ModeloV9() {
   const [buscaFeature, setBuscaFeature] = useState('');
   const [ordenacaoCob, setOrdenacaoCob] = useState({ col: 'coverage_pct', dir: 'desc' });
 
-  async function carregar() {
+  const corModelo = CORES_POR_VERSAO[versao];
+  const versaoInfo = VERSOES.find((v) => v.id === versao);
+
+  async function carregar(versaoAlvo) {
     setCarregando(true);
     setErro(null);
     try {
       const [{ data: r }, { data: imp }, { data: cob }] = await Promise.all([
-        supabase.from('model_v9_walkforward_results').select('*').order('fold'),
-        supabase.from('model_v9_feature_importance').select('*').order('importance_mean', { ascending: false }),
-        supabase.from('model_v9_feature_coverage').select('*').order('feature_group'),
+        supabase.from(`model_${versaoAlvo}_walkforward_results`).select('*').order('fold'),
+        supabase.from(`model_${versaoAlvo}_feature_importance`).select('*').order('importance_mean', { ascending: false }),
+        supabase.from(`model_${versaoAlvo}_feature_coverage`).select('*').order('feature_group'),
       ]);
       setResultados(r || []);
       setImportancia(imp || []);
@@ -194,7 +220,7 @@ export default function ModeloV9() {
     }
   }
 
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => { carregar(versao); }, [versao]);
 
   const resultadosFiltrados = useMemo(
     () => resultados.filter(r => (r.market || '1X2') === mercadoWF),
@@ -257,15 +283,27 @@ export default function ModeloV9() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Layers className="text-emerald-400" size={22} /> Modelo v9
+            <Layers className="text-emerald-400" size={22} /> Modelo {versao}
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
             Walk-forward CV · MLP como 4ª família · Stacking (LogísticaRegressão sobre OOF)
           </p>
         </div>
-        <button onClick={carregar} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-          <RefreshCw size={14} /> Atualizar
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1">
+            {VERSOES.map((v) => (
+              <button key={v.id} onClick={() => setVersao(v.id)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                  versao === v.id ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'text-slate-400 hover:text-slate-200 border border-slate-700'
+                }`}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => carregar(versao)} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            <RefreshCw size={14} /> Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Abas */}
@@ -285,7 +323,7 @@ export default function ModeloV9() {
       {semDados && !erro && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-500 text-sm">
           <p className="font-semibold text-slate-300 mb-2">Nenhum dado disponível ainda.</p>
-          <p>Dispare o workflow <code className="bg-slate-700 px-1 rounded">walkforward_cv_v9.yml</code> no GitHub Actions para gerar os resultados.</p>
+          <p>Dispare o workflow <code className="bg-slate-700 px-1 rounded">{versaoInfo.workflow}</code> no GitHub Actions para gerar os resultados.</p>
         </div>
       )}
 
@@ -294,7 +332,7 @@ export default function ModeloV9() {
         <div className="space-y-6">
           {/* Legenda */}
           <div className="flex flex-wrap gap-2">
-            {Object.entries(COR_MODELO).map(([nome, cor]) => (
+            {Object.entries(corModelo).map(([nome, cor]) => (
               <span key={nome} className="text-xs px-2 py-0.5 rounded font-bold"
                 style={{ background: cor + '22', color: cor, border: `1px solid ${cor}55` }}>{nome}</span>
             ))}
@@ -320,7 +358,7 @@ export default function ModeloV9() {
           {resultadosFiltrados.length === 0 && (
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-500 text-sm">
               Nenhum resultado para o mercado <span className="font-bold text-slate-300">{mercadoWF}</span> ainda.
-              Rode o workflow <code className="bg-slate-700 px-1 rounded">walkforward_cv_v9.yml</code> para gerar.
+              Rode o workflow <code className="bg-slate-700 px-1 rounded">{versaoInfo.workflow}</code> para gerar.
             </div>
           )}
 
@@ -343,7 +381,7 @@ export default function ModeloV9() {
             <p className="text-xs text-slate-500 font-semibold mb-3 uppercase tracking-wide">
               {metricaWF.replace('_test', '').replace('_', ' ')} por fold
             </p>
-            <MiniBarChart dados={resultadosFiltrados} metrica={metricaWF} />
+            <MiniBarChart dados={resultadosFiltrados} metrica={metricaWF} corModelo={corModelo} />
           </div>
 
           {/* Tabela detalhada */}
@@ -365,7 +403,7 @@ export default function ModeloV9() {
                 <tbody>
                   {resultadosFiltrados.map((r, i) => (
                     <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                      <td className="px-4 py-2.5">{badgeModelo(r.modelo)}</td>
+                      <td className="px-4 py-2.5">{badgeModelo(r.modelo, corModelo)}</td>
                       <td className="px-4 py-2.5 text-slate-300 font-mono text-xs">{r.fold}</td>
                       <td className="px-4 py-2.5 text-right text-slate-400 text-xs">{r.n_treino?.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-right text-slate-400 text-xs">{r.n_val?.toLocaleString()}</td>
@@ -407,7 +445,7 @@ export default function ModeloV9() {
                       <th className="px-3 py-2 text-left">Liga</th>
                       {modelosDisponiveisFold.map(m => (
                         <th key={m} className="px-3 py-2 text-center" colSpan={2}>
-                          {badgeModelo(m)}
+                          {badgeModelo(m, corModelo)}
                         </th>
                       ))}
                     </tr>
@@ -469,7 +507,7 @@ export default function ModeloV9() {
                 MLP e stacking não têm curva iterativa.
               </p>
               {['fold_1', 'fold_2', 'fold_3'].map(fold => {
-                const rowsFold = resultados.filter(r => r.fold === fold && r.modelo !== 'stacking_v9');
+                const rowsFold = resultados.filter(r => r.fold === fold && !r.modelo.startsWith('stacking_'));
                 if (!rowsFold.length) return null;
                 return (
                   <div key={fold} className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
@@ -480,12 +518,12 @@ export default function ModeloV9() {
                       {rowsFold.map(r => (
                         <div key={r.modelo} className="space-y-1">
                           <div className="flex items-center justify-between">
-                            {badgeModelo(r.modelo)}
+                            {badgeModelo(r.modelo, corModelo)}
                             <span className="text-[10px] text-slate-500 font-mono">
                               logloss test {r.logloss_test?.toFixed(4)}
                             </span>
                           </div>
-                          <CurvaChart curva={r.learning_curve} modelo={r.modelo} />
+                          <CurvaChart curva={r.learning_curve} modelo={r.modelo} corModelo={corModelo} />
                         </div>
                       ))}
                     </div>
