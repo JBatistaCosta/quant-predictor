@@ -413,11 +413,18 @@ export default async function handler(req, res) {
   const { modelo, mercado, liga_id } = req.query;
 
   try {
-    // Só busca odds da Pinnacle quando o "modelo" sintético pode aparecer no
-    // resultado (nenhum filtro de modelo, ou o filtro é exatamente ele) --
-    // mesma economia de round-trip já usada pra `predicoes`/Model Benchmarking.
+    // A busca de odds da Pinnacle só roda quando `modelo` pede ESPECIFICAMENTE
+    // o sintético -- diferente do resto deste endpoint (que serve a chamada
+    // SEM filtro nenhum da carga inicial do painel, com todo o resto das
+    // tabelas trazido por inteiro). Rodar essa query também na chamada sem
+    // filtro empurrava o tempo total (paginação de mais uma tabela grande,
+    // em paralelo com todas as outras) pra além do `statement_timeout` do
+    // Postgres e do `maxDuration` da function (bug real, testado em produção
+    // -- ver ModelosStats.jsx, que faz uma segunda chamada só pra esse
+    // modelo, em paralelo com a chamada sem filtro, exatamente pra não
+    // empilhar esse custo na carga inicial).
     const mercadosPinnacleAlvo = mercado ? Object.keys(MERCADO_SELECOES_PINNACLE).filter((m) => m === mercado) : Object.keys(MERCADO_SELECOES_PINNACLE);
-    const precisaPinnacleDevigada = (!modelo || modelo === 'mercado_pinnacle_devigado') && mercadosPinnacleAlvo.length > 0;
+    const precisaPinnacleDevigada = modelo === 'mercado_pinnacle_devigado' && mercadosPinnacleAlvo.length > 0;
     const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw] = await Promise.all([
       buscarTudoPaginado(() => {
         let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
