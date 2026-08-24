@@ -416,7 +416,8 @@ export default async function handler(req, res) {
     // Só busca odds da Pinnacle quando o "modelo" sintético pode aparecer no
     // resultado (nenhum filtro de modelo, ou o filtro é exatamente ele) --
     // mesma economia de round-trip já usada pra `predicoes`/Model Benchmarking.
-    const precisaPinnacleDevigada = !modelo || modelo === 'mercado_pinnacle_devigado';
+    const mercadosPinnacleAlvo = mercado ? Object.keys(MERCADO_SELECOES_PINNACLE).filter((m) => m === mercado) : Object.keys(MERCADO_SELECOES_PINNACLE);
+    const precisaPinnacleDevigada = (!modelo || modelo === 'mercado_pinnacle_devigado') && mercadosPinnacleAlvo.length > 0;
     const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw] = await Promise.all([
       buscarTudoPaginado(() => {
         let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
@@ -434,8 +435,15 @@ export default async function handler(req, res) {
             if (modelo) q = q.eq('model_name', modelo);
             return q;
           }),
+      // `odds_market` tem DEZENAS de outros mercados da Pinnacle (handicap
+      // asiático/europeu em várias linhas, placar exato, cartões, 1º/2º tempo
+      // etc. -- ver api/model-maintenance.js `tarefaOddsHistorico`), então
+      // SEM filtro de `market` aqui essa query pagina um volume gigante de
+      // linhas irrelevantes e estoura o `statement_timeout` do Postgres (bug
+      // real, achado testando em produção) -- `.in('market', ...)` restringe
+      // ao mesmo conjunto que `MERCADO_SELECOES_PINNACLE` sabe devigar.
       precisaPinnacleDevigada
-        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle'))
+        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo))
         : Promise.resolve([]),
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
