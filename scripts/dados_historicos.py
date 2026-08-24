@@ -167,6 +167,55 @@ def _paginar_por_lotes_de_id(
     return todas_as_linhas
 
 
+def _paginar_por_cursor(query_builder_factory: Callable[[], object], tamanho_pagina: int = TAMANHO_PAGINA) -> list[dict]:
+    """Pagina por keyset (cursor na PK `id`) em vez de `.range()`/OFFSET.
+
+    OFFSET faz o Postgres reescanear e descartar as linhas já vistas a cada
+    página -- custo que cresce com o QUADRADO do número de páginas dentro de
+    uma mesma fatia de `.in_()`. Visto de verdade em produção: o treino do
+    modelo misto (cobertura de jogo futuro, ~1600+ match_id extra) estourou
+    `statement_timeout` (57014) numa página em `offset=16000` de
+    `match_player_stats_fotmob`, dentro de `_carregar_squad_rating_pre_jogo`
+    -- um lote de match_id grande o bastante gera dezenas de páginas ali (um
+    jogador por linha), e o custo acumulado de OFFSET nas últimas páginas
+    passou do limite. `.gt("id", cursor).order("id").limit(n)` usa o índice
+    da PK pra pular direto pro próximo bloco, sem reescanear nada -- custo
+    por página constante, não crescente.
+
+    `query_builder_factory()` devolve o query builder já com `.select(...)`
+    (incluindo `"id"`, obrigatório -- é o cursor) e qualquer `.eq()`/`.in_()`
+    aplicado, mas SEM `.order()`/`.gt()`/`.limit()` -- esta função aplica os
+    três sozinha, a cada página, porque dependem do cursor da página
+    anterior."""
+    todas_as_linhas: list[dict] = []
+    cursor = 0
+    while True:
+        resposta = query_builder_factory().gt("id", cursor).order("id").limit(tamanho_pagina).execute()
+        linhas = resposta.data or []
+        todas_as_linhas.extend(linhas)
+        if len(linhas) < tamanho_pagina:
+            break
+        cursor = linhas[-1]["id"]
+    return todas_as_linhas
+
+
+def _paginar_por_lotes_de_id_cursor(
+    query_builder_factory: Callable[[list], object], ids: list, tamanho_pagina: int = TAMANHO_PAGINA
+) -> list[dict]:
+    """Mesma combinação de `_paginar_por_lotes_de_id` (lote de IDs pra evitar
+    URL longa demais / HTTP 520), mas paginando cada lote por CURSOR em vez
+    de OFFSET -- ver `_paginar_por_cursor`. Usar quando um lote pode gerar
+    muitas páginas (tabela com várias linhas por id do lote, ex. jogadores
+    por partida) -- exatamente o caso que estourou o `statement_timeout` em
+    `_carregar_squad_rating_pre_jogo`.
+    `query_builder_factory(lote)` devolve o builder já filtrado por
+    `.in_(..., lote)`, sem `.order()`/`.gt()`/`.limit()`."""
+    todas_as_linhas: list[dict] = []
+    for lote in _dividir_em_lotes(ids):
+        todas_as_linhas.extend(_paginar_por_cursor(lambda lote=lote: query_builder_factory(lote), tamanho_pagina))
+    return todas_as_linhas
+
+
 # =============================================================================
 # Carregamento base
 # =============================================================================
@@ -740,29 +789,29 @@ def _carregar_squad_rating_pre_jogo(supabase: Client, match_ids: list[int]) -> p
     if not match_ids:
         return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
 
-    def factory_escalacao(lote, inicio, fim):
+    def factory_escalacao(lote):
         return (
             supabase.table("match_player_stats_fotmob")
-            .select("match_id, team_id, player_id, minutes_played")
+            .select("id, match_id, team_id, player_id, minutes_played")
             .in_("match_id", lote)
-            .order("match_id")
-            .range(inicio, fim)
         )
 
-    escalacoes = pd.DataFrame(_paginar_por_lotes_de_id(factory_escalacao, match_ids))
+    # Paginação por CURSOR (não OFFSET) -- um lote de match_id grande (ex.
+    # cobertura de jogo futuro) pode gerar dezenas de páginas aqui (um
+    # jogador por linha), e OFFSET nessas páginas estourou statement_timeout
+    # de verdade em produção (ver docstring de `_paginar_por_cursor`).
+    escalacoes = pd.DataFrame(_paginar_por_lotes_de_id_cursor(factory_escalacao, match_ids))
     if escalacoes.empty:
         return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
 
-    def factory_ratings(lote, inicio, fim):
+    def factory_ratings(lote):
         return (
             supabase.table("player_rating_history")
-            .select("match_id, player_id, rating_antes")
+            .select("id, match_id, player_id, rating_antes")
             .in_("match_id", lote)
-            .order("match_id")
-            .range(inicio, fim)
         )
 
-    ratings = pd.DataFrame(_paginar_por_lotes_de_id(factory_ratings, match_ids))
+    ratings = pd.DataFrame(_paginar_por_lotes_de_id_cursor(factory_ratings, match_ids))
     if ratings.empty:
         return pd.DataFrame(columns=["match_id", "team_id", "squad_rating_antes"])
 
@@ -1026,16 +1075,17 @@ def _carregar_cartoes_jogador_pre_jogo(
     match_ids = partidas["id"].astype(int).tolist()
     partidas_meta = partidas[["id", "league_id", "season", "match_date"]]
 
-    def factory_escalacao(lote, inicio, fim):
+    def factory_escalacao(lote):
         return (
             supabase.table("match_player_stats_fotmob")
-            .select("match_id, team_id, player_id, minutes_played")
+            .select("id, match_id, team_id, player_id, minutes_played")
             .in_("match_id", lote)
-            .order("match_id")
-            .range(inicio, fim)
         )
 
-    escalacoes = pd.DataFrame(_paginar_por_lotes_de_id(factory_escalacao, match_ids))
+    # Cursor, não OFFSET -- mesmo risco de statement_timeout já corrigido em
+    # `_carregar_squad_rating_pre_jogo` (mesma tabela, mesmo formato "várias
+    # linhas por partida"), ver docstring de `_paginar_por_cursor`.
+    escalacoes = pd.DataFrame(_paginar_por_lotes_de_id_cursor(factory_escalacao, match_ids))
     escalacoes = escalacoes[escalacoes["player_id"].notna()] if not escalacoes.empty else escalacoes
     if escalacoes.empty:
         return pd.DataFrame(columns=colunas_saida)
