@@ -26,17 +26,65 @@ import {
 import { devigarOddsRatio, stakeKelly25 } from '../utils/devig';
 import { toPct } from '../utils/format';
 
-// Mercados em que o modelo misto (gols) tem probabilidade calculada E que
-// aparecem salvos em odds_market com o MESMO formato de chave — únicos
-// candidatos pra comparação de EV (escanteios não têm odds salvas hoje, ver
-// CONTEXTO_PROJETO.md; handicap asiático usa uma convenção de nome diferente
-// em odds_market, `asian_handicap_<linha>`, fora de escopo por ora).
+// Mercados em que o modelo misto (gols/escanteios) tem probabilidade
+// calculada E que aparecem salvos em odds_market — únicos candidatos pra
+// comparação de EV. A chave usada aqui é sempre a string de `market` como
+// salva no banco; handicap (asiático e de escanteios) usa outra convenção
+// de nome (`asian_handicap_<linha>`/`corners_handicap_<linha>`) e fica fora
+// de escopo por ora.
 const LINHAS_OU_EV = [0.5, 1.5, 2.5, 3.5, 4.5];
-function mercadosComparaveis(mercadosGols) {
-  if (!mercadosGols) return {};
-  const saida = { '1X2': mercadosGols['1X2'], btts: mercadosGols.btts };
-  for (const linha of LINHAS_OU_EV) saida[`over_under_${rotuloLinha(linha)}`] = mercadosGols[`over_under_${rotuloLinha(linha)}`];
+const LINHAS_OU_CORNERS_EV = [7.5, 8.5, 9.5, 10.5, 11.5]; // total do jogo — mesmas linhas de LINHAS_OU_CORNERS
+const LINHAS_OU_CORNERS_TIME_EV = [3.5, 4.5, 5.5, 6.5]; // por time — mesmas linhas do card "Escanteios por time"
+
+function mercadosComparaveis(mercadosGols, mercadosCorners) {
+  const saida = {};
+  if (mercadosGols) {
+    saida['1X2'] = mercadosGols['1X2'];
+    saida.btts = mercadosGols.btts;
+    for (const linha of LINHAS_OU_EV) saida[`over_under_${rotuloLinha(linha)}`] = mercadosGols[`over_under_${rotuloLinha(linha)}`];
+  }
+  if (mercadosCorners) {
+    saida.corners_1x2 = mercadosCorners.corners_1X2;
+    for (const linha of LINHAS_OU_CORNERS_EV) {
+      saida[`corners_over_under_full_time_${rotuloLinha(linha)}`] = mercadosCorners[`corners_over_under_${rotuloLinha(linha)}`];
+    }
+    for (const linha of LINHAS_OU_CORNERS_TIME_EV) {
+      saida[`corners_over_under_team_1_${rotuloLinha(linha)}`] = mercadosCorners[`corners_home_over_under_${rotuloLinha(linha)}`];
+      saida[`corners_over_under_team_2_${rotuloLinha(linha)}`] = mercadosCorners[`corners_away_over_under_${rotuloLinha(linha)}`];
+    }
+  }
   return saida;
+}
+
+// Todas as strings de `market` acima, num array — usado pra filtrar a
+// consulta em odds_market direto no Supabase (`.in('market', ...)`), o que
+// já evita de longe o corte silencioso de 1000 linhas do PostgREST (partidas
+// antigas/muito negociadas podem ter dezenas de milhares de linhas somando
+// TODOS os mercados salvos — a paginação abaixo cobre o resto).
+const MERCADOS_EV = [
+  '1X2', 'btts', ...LINHAS_OU_EV.map((l) => `over_under_${rotuloLinha(l)}`),
+  'corners_1x2', ...LINHAS_OU_CORNERS_EV.map((l) => `corners_over_under_full_time_${rotuloLinha(l)}`),
+  ...LINHAS_OU_CORNERS_TIME_EV.map((l) => `corners_over_under_team_1_${rotuloLinha(l)}`),
+  ...LINHAS_OU_CORNERS_TIME_EV.map((l) => `corners_over_under_team_2_${rotuloLinha(l)}`),
+];
+
+function formatarSnapshot(capturedAt) {
+  return new Date(capturedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function rotuloMercado(mercado) {
+  if (mercado === '1X2') return '1X2 (gols)';
+  if (mercado === 'btts') return 'Ambas Marcam';
+  if (mercado === 'corners_1x2') return 'Escanteios 1X2';
+  const ouGols = mercado.match(/^over_under_(\d+\.\d)$/);
+  if (ouGols) return `O/U ${ouGols[1]} gols`;
+  const ouCornersTotal = mercado.match(/^corners_over_under_full_time_(\d+\.\d)$/);
+  if (ouCornersTotal) return `O/U ${ouCornersTotal[1]} escanteios (total)`;
+  const ouCornersTime1 = mercado.match(/^corners_over_under_team_1_(\d+\.\d)$/);
+  if (ouCornersTime1) return `O/U ${ouCornersTime1[1]} escanteios (mandante)`;
+  const ouCornersTime2 = mercado.match(/^corners_over_under_team_2_(\d+\.\d)$/);
+  if (ouCornersTime2) return `O/U ${ouCornersTime2[1]} escanteios (visitante)`;
+  return mercado;
 }
 
 const LINHAS_OU_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5];
@@ -133,12 +181,39 @@ function LinhaBinaria({ rotulo, over, under, rotuloOver = 'Over', rotuloUnder = 
   );
 }
 
+// Busca TODAS as linhas de odds_market da partida nos mercados em escopo,
+// paginado de verdade (loop de `.range()` até vir página incompleta) -- não
+// é frescura: uma partida negociada por muito tempo/muitos bookmakers pode
+// somar dezenas de milhares de linhas mesmo já filtrando por mercado, então
+// confiar numa consulta sem `.range()` reproduziria o corte silencioso de
+// 1000 linhas do PostgREST já documentado em várias partes do projeto.
+async function buscarOddsPaginado(matchId) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let pagina = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('odds_market')
+      .select('bookmaker, market, selection, odds, captured_at')
+      .eq('match_id', matchId)
+      .in('market', MERCADOS_EV)
+      .order('captured_at', { ascending: false })
+      .range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    pagina++;
+  }
+  return resultado;
+}
+
 export default function AnaliseAvancadaEvento() {
   const { matchId } = useParams();
   const [jogo, setJogo] = useState(null);
   const [estimativas, setEstimativas] = useState([]);
   const [modelSelecionado, setModelSelecionado] = useState(null);
-  const [oddsPorBookmaker, setOddsPorBookmaker] = useState({});
+  const [oddsRaw, setOddsRaw] = useState([]);
+  const [snapshotSelecionado, setSnapshotSelecionado] = useState(''); // '' = mais recente de cada casa
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
@@ -148,53 +223,67 @@ export default function AnaliseAvancadaEvento() {
     (async () => {
       setCarregando(true);
       setErro('');
-      const [{ data: j, error: erroJogo }, { data: est, error: erroEst }, { data: odds, error: erroOdds }] = await Promise.all([
-        supabase
-          .from('matches')
-          .select('id, match_date, status, home_goals, away_goals, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
-          .eq('id', matchId)
-          .single(),
-        supabase
-          .from('model_match_estimates')
-          .select('model_name, params')
-          .eq('match_id', matchId)
-          .not('params', 'is', null),
-        // Só os mercados que o modelo também precifica (ver mercadosComparaveis) --
-        // filtrar aqui já evita de longe o corte silencioso de 1000 linhas do
-        // PostgREST (uma partida rica em snapshots da Pinnacle pode passar de
-        // 300 "market" distintos contando 1º tempo/handicap, fora de escopo).
-        supabase
-          .from('odds_market')
-          .select('bookmaker, market, selection, odds, captured_at')
-          .eq('match_id', matchId)
-          .in('market', ['1X2', 'btts', 'over_under_0.5', 'over_under_1.5', 'over_under_2.5', 'over_under_3.5', 'over_under_4.5'])
-          .order('captured_at', { ascending: false }),
-      ]);
-      if (cancelado) return;
+      try {
+        const [{ data: j, error: erroJogo }, { data: est, error: erroEst }, odds] = await Promise.all([
+          supabase
+            .from('matches')
+            .select('id, match_date, status, home_goals, away_goals, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
+            .eq('id', matchId)
+            .single(),
+          supabase
+            .from('model_match_estimates')
+            .select('model_name, params')
+            .eq('match_id', matchId)
+            .not('params', 'is', null),
+          buscarOddsPaginado(matchId),
+        ]);
+        if (cancelado) return;
 
-      if (erroJogo || !j) { setErro('Jogo não encontrado.'); setCarregando(false); return; }
-      if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
-      if (erroOdds) { setErro(erroOdds.message); setCarregando(false); return; }
+        if (erroJogo || !j) { setErro('Jogo não encontrado.'); setCarregando(false); return; }
+        if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
 
-      setJogo(j);
+        setJogo(j);
+        setOddsRaw(odds);
+        setSnapshotSelecionado('');
 
-      // Linhas vêm ordenadas captured_at desc -- a primeira ocorrência de cada
-      // (bookmaker, market, selection) é a mais recente, então vence.
-      const porBookmaker = {};
-      for (const r of odds || []) {
-        if (!porBookmaker[r.bookmaker]) porBookmaker[r.bookmaker] = {};
-        const chave = `${r.market}|${r.selection}`;
-        if (!(chave in porBookmaker[r.bookmaker])) porBookmaker[r.bookmaker][chave] = r.odds;
+        const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
+        setEstimativas(validas);
+        setModelSelecionado(validas[0]?.model_name ?? null);
+        setCarregando(false);
+      } catch (e) {
+        if (!cancelado) { setErro(e.message); setCarregando(false); }
       }
-      setOddsPorBookmaker(porBookmaker);
-
-      const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
-      setEstimativas(validas);
-      setModelSelecionado(validas[0]?.model_name ?? null);
-      setCarregando(false);
     })();
     return () => { cancelado = true; };
   }, [matchId]);
+
+  // Timestamps distintos observados em QUALQUER casa/mercado, mais recente
+  // primeiro -- alimenta o seletor de snapshot. Cada casa sincroniza em
+  // horários próprios (confirmado: Pinnacle e Betano nunca coincidem no
+  // captured_at da mesma partida), então "escolher um snapshot" não filtra
+  // por timestamp exato -- ver oddsPorBookmaker abaixo.
+  const snapshotsDisponiveis = useMemo(
+    () => [...new Set(oddsRaw.map((r) => r.captured_at))].sort((a, b) => new Date(b) - new Date(a)),
+    [oddsRaw]
+  );
+
+  // Odd mais recente de cada (bookmaker, market, selection) NA DATA (ou
+  // antes) do snapshot escolhido -- com snapshotSelecionado='' (padrão),
+  // equivale a "mais recente de cada casa", sem exigir que todas as casas
+  // tenham sincronizado no mesmo instante.
+  const oddsPorBookmaker = useMemo(() => {
+    const limite = snapshotSelecionado ? new Date(snapshotSelecionado).getTime() : Infinity;
+    const porBookmaker = {};
+    for (const r of oddsRaw) {
+      if (new Date(r.captured_at).getTime() > limite) continue;
+      if (!porBookmaker[r.bookmaker]) porBookmaker[r.bookmaker] = {};
+      const chave = `${r.market}|${r.selection}`;
+      // oddsRaw já vem ordenado captured_at desc -- a primeira ocorrência
+      // dentro do limite é a mais recente até aquele ponto.
+      if (!(chave in porBookmaker[r.bookmaker])) porBookmaker[r.bookmaker][chave] = r.odds;
+    }
+    return porBookmaker;
+  }, [oddsRaw, snapshotSelecionado]);
 
   const estimativaAtiva = useMemo(
     () => estimativas.find((e) => e.model_name === modelSelecionado) || null,
@@ -212,17 +301,27 @@ export default function AnaliseAvancadaEvento() {
     return mercadosDeGols(matriz, { linhasOverUnder: LINHAS_OU_GOLS, linhasHandicap: LINHAS_HANDICAP });
   }, [parametros]);
 
+  const mercadosCorners = useMemo(() => {
+    if (!parametros?.cornersLambdaTotal || !parametros?.cornersDispR) return null;
+    return mercadosDeEscanteios(
+      parametros.cornersLambdaTotal, parametros.cornersDispR,
+      parametros.cornersAlpha || 1, parametros.cornersBeta || 1,
+      { linhasTotais: LINHAS_OU_CORNERS }
+    );
+  }, [parametros]);
+
   // Verificação de EV vs. cada mercado salvo (odds_market) -- só faz sentido
   // pra partida ainda não realizada: depois do apito final a odd real vira
   // histórico de backtest (api/backtest-betting.js já cobre isso), não uma
-  // decisão de aposta. Pra cada casa de apostas com odds salvas nos mercados
-  // que o modelo também precifica, devigamos (Odds Ratio) e comparamos com a
-  // probabilidade do modelo -- edge = p_modelo - p_mercado devigada, EV usa a
-  // odd REAL (não devigada, é o que se paga de fato), stake sugerida em
-  // Kelly 1/4 (mesmo padrão de api/backtest-betting.js/SimulacaoCarteira.jsx).
+  // decisão de aposta. Pra cada casa de apostas com odds salvas (no snapshot
+  // escolhido) nos mercados que o modelo também precifica (gols E
+  // escanteios), devigamos (Odds Ratio) e comparamos com a probabilidade do
+  // modelo -- edge = p_modelo - p_mercado devigada, EV usa a odd REAL (não
+  // devigada, é o que se paga de fato), stake sugerida em Kelly 1/4 (mesmo
+  // padrão de api/backtest-betting.js/SimulacaoCarteira.jsx).
   const verificacaoEV = useMemo(() => {
-    if (jogo?.status !== 'scheduled' || !mercadosGols) return [];
-    const comparaveis = mercadosComparaveis(mercadosGols);
+    if (jogo?.status !== 'scheduled' || (!mercadosGols && !mercadosCorners)) return [];
+    const comparaveis = mercadosComparaveis(mercadosGols, mercadosCorners);
     const linhas = [];
     for (const [bookmaker, oddsChave] of Object.entries(oddsPorBookmaker)) {
       for (const [mercado, probsModelo] of Object.entries(comparaveis)) {
@@ -249,16 +348,7 @@ export default function AnaliseAvancadaEvento() {
       }
     }
     return linhas.sort((a, b) => b.edge - a.edge);
-  }, [jogo?.status, mercadosGols, oddsPorBookmaker]);
-
-  const mercadosCorners = useMemo(() => {
-    if (!parametros?.cornersLambdaTotal || !parametros?.cornersDispR) return null;
-    return mercadosDeEscanteios(
-      parametros.cornersLambdaTotal, parametros.cornersDispR,
-      parametros.cornersAlpha || 1, parametros.cornersBeta || 1,
-      { linhasTotais: LINHAS_OU_CORNERS }
-    );
-  }, [parametros]);
+  }, [jogo?.status, mercadosGols, mercadosCorners, oddsPorBookmaker]);
 
   // Mesma matriz que já alimenta 1X2/placar exato acima, só que truncada
   // pra uma grade menor (0-7) que cabe na tela célula a célula.
@@ -419,11 +509,31 @@ export default function AnaliseAvancadaEvento() {
               {jogo.status === 'scheduled' && (
                 <div className="mt-4">
                   <Secao titulo="Verificação de EV vs. mercado" icone={Scale}>
+                    {snapshotsDisponiveis.length > 0 && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <label className="text-[10px] text-slate-500 uppercase font-bold shrink-0">Snapshot</label>
+                        <select
+                          value={snapshotSelecionado}
+                          onChange={(e) => setSnapshotSelecionado(e.target.value)}
+                          className="bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-200"
+                        >
+                          <option value="">Mais recente de cada casa</option>
+                          {snapshotsDisponiveis.map((ts) => (
+                            <option key={ts} value={ts}>{formatarSnapshot(ts)}</option>
+                          ))}
+                        </select>
+                        <span className="text-[10px] text-slate-600">
+                          "Mais recente de cada casa" não exige sincronismo entre bookmakers — cada um sincroniza no
+                          seu próprio horário; um snapshot escolhido mostra o que estava salvo até aquele instante.
+                        </span>
+                      </div>
+                    )}
                     {verificacaoEV.length === 0 ? (
                       <p className="text-sm text-slate-600">
                         Nenhuma casa de apostas com odds salvas nos mercados que o modelo precifica (1X2, Over/Under
-                        de gols, Ambas Marcam) pra esta partida ainda — importe odds pela tela de rodada ou aguarde o
-                        próximo sync.
+                        de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida
+                        {snapshotSelecionado ? ' nesse snapshot' : ' ainda'} — importe odds pela tela de rodada,
+                        {snapshotSelecionado ? ' escolha outro snapshot' : ' aguarde o próximo sync'}.
                       </p>
                     ) : (
                       <>
@@ -445,7 +555,7 @@ export default function AnaliseAvancadaEvento() {
                               {verificacaoEV.map((l, i) => (
                                 <tr key={i} className="border-t border-slate-800">
                                   <td className="py-1.5 text-slate-300 capitalize">{l.bookmaker.replace(/_/g, ' ')}</td>
-                                  <td className="py-1.5 text-slate-400 font-mono text-xs">{l.mercado} · {l.selecao}</td>
+                                  <td className="py-1.5 text-slate-400 text-xs">{rotuloMercado(l.mercado)} · <span className="uppercase">{l.selecao}</span></td>
                                   <td className="py-1.5 text-right font-mono text-slate-200">{l.oddReal.toFixed(2)}</td>
                                   <td className="py-1.5 text-right font-mono text-slate-300">{toPct(l.pModelo)}</td>
                                   <td className="py-1.5 text-right font-mono text-slate-500">{toPct(l.pMercado)}</td>
