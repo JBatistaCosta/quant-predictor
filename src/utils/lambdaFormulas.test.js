@@ -159,6 +159,31 @@ describe('fórmula decay', () => {
   });
 });
 
+describe('fórmula ml_params', () => {
+  it('usa os λ do ML direto, sem aplicar gamma de mando de novo', () => {
+    const { trueXG1, trueXG2, aviso } = getLambdaFormula('ml_params').calc({
+      m,
+      params: { lambdaHome: 1.9, lambdaAway: 0.8 },
+    });
+    expect(trueXG1).toBe(1.9);
+    expect(trueXG2).toBe(0.8);
+    expect(aviso).toBeUndefined();
+  });
+
+  it.each([
+    ['nenhum parâmetro', {}],
+    ['lambda zerado', { lambdaHome: 0, lambdaAway: 1.2 }],
+    ['lambda negativo', { lambdaHome: -0.5, lambdaAway: 1.2 }],
+    ['lambda não numérico', { lambdaHome: 'x', lambdaAway: 1.2 }],
+  ])('cai pra multiplicativo com aviso quando os λ são inválidos (%s)', (_descricao, params) => {
+    const { trueXG1, trueXG2, aviso } = getLambdaFormula('ml_params').calc({ m, params });
+    const multiplicativo = getLambdaFormula('multiplicativo').calc({ m });
+    expect(trueXG1).toBeCloseTo(multiplicativo.trueXG1, 10);
+    expect(trueXG2).toBeCloseTo(multiplicativo.trueXG2, 10);
+    expect(aviso).toBeTruthy();
+  });
+});
+
 describe('fórmula dinamica', () => {
   it('cai pra multiplicativo com aviso quando os parâmetros estão incompletos', () => {
     const { trueXG1, trueXG2, aviso } = getLambdaFormula('dinamica').calc({ m, params: {} });

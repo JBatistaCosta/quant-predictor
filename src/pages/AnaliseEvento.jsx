@@ -1741,11 +1741,11 @@ export default function AnaliseEvento() {
                     )}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[10px] text-slate-500 uppercase font-bold">λ do mandante</label>
+                        <label className="text-[10px] text-slate-500 uppercase font-bold">xG estimado — mandante</label>
                         <input type="number" step="0.01" min="0" placeholder="ex: 1.73" value={formulaParams.lambdaHome} onChange={(e) => setFormulaParam('lambdaHome', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
                       </div>
                       <div>
-                        <label className="text-[10px] text-slate-500 uppercase font-bold">λ do visitante</label>
+                        <label className="text-[10px] text-slate-500 uppercase font-bold">xG estimado — visitante</label>
                         <input type="number" step="0.01" min="0" placeholder="ex: 1.02" value={formulaParams.lambdaAway} onChange={(e) => setFormulaParam('lambdaAway', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-md p-2 text-sm text-slate-100 mt-1" />
                       </div>
                     </div>

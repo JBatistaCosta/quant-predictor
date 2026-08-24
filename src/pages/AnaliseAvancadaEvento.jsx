@@ -18,11 +18,26 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import {
   matrizPlacares, mercadosDeGols, mercadosDeEscanteios, distribuicaoConjuntaEscanteios, lerParametrosPartida, rotuloLinha,
 } from '../utils/distribuicoesMercados';
+import { devigarOddsRatio, stakeKelly25 } from '../utils/devig';
+import { toPct } from '../utils/format';
+
+// Mercados em que o modelo misto (gols) tem probabilidade calculada E que
+// aparecem salvos em odds_market com o MESMO formato de chave — únicos
+// candidatos pra comparação de EV (escanteios não têm odds salvas hoje, ver
+// CONTEXTO_PROJETO.md; handicap asiático usa uma convenção de nome diferente
+// em odds_market, `asian_handicap_<linha>`, fora de escopo por ora).
+const LINHAS_OU_EV = [0.5, 1.5, 2.5, 3.5, 4.5];
+function mercadosComparaveis(mercadosGols) {
+  if (!mercadosGols) return {};
+  const saida = { '1X2': mercadosGols['1X2'], btts: mercadosGols.btts };
+  for (const linha of LINHAS_OU_EV) saida[`over_under_${rotuloLinha(linha)}`] = mercadosGols[`over_under_${rotuloLinha(linha)}`];
+  return saida;
+}
 
 const LINHAS_OU_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5];
 const LINHAS_HANDICAP = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5];
@@ -123,6 +138,7 @@ export default function AnaliseAvancadaEvento() {
   const [jogo, setJogo] = useState(null);
   const [estimativas, setEstimativas] = useState([]);
   const [modelSelecionado, setModelSelecionado] = useState(null);
+  const [oddsPorBookmaker, setOddsPorBookmaker] = useState({});
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
@@ -132,7 +148,7 @@ export default function AnaliseAvancadaEvento() {
     (async () => {
       setCarregando(true);
       setErro('');
-      const [{ data: j, error: erroJogo }, { data: est, error: erroEst }] = await Promise.all([
+      const [{ data: j, error: erroJogo }, { data: est, error: erroEst }, { data: odds, error: erroOdds }] = await Promise.all([
         supabase
           .from('matches')
           .select('id, match_date, status, home_goals, away_goals, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
@@ -143,13 +159,35 @@ export default function AnaliseAvancadaEvento() {
           .select('model_name, params')
           .eq('match_id', matchId)
           .not('params', 'is', null),
+        // Só os mercados que o modelo também precifica (ver mercadosComparaveis) --
+        // filtrar aqui já evita de longe o corte silencioso de 1000 linhas do
+        // PostgREST (uma partida rica em snapshots da Pinnacle pode passar de
+        // 300 "market" distintos contando 1º tempo/handicap, fora de escopo).
+        supabase
+          .from('odds_market')
+          .select('bookmaker, market, selection, odds, captured_at')
+          .eq('match_id', matchId)
+          .in('market', ['1X2', 'btts', 'over_under_0.5', 'over_under_1.5', 'over_under_2.5', 'over_under_3.5', 'over_under_4.5'])
+          .order('captured_at', { ascending: false }),
       ]);
       if (cancelado) return;
 
       if (erroJogo || !j) { setErro('Jogo não encontrado.'); setCarregando(false); return; }
       if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
+      if (erroOdds) { setErro(erroOdds.message); setCarregando(false); return; }
 
       setJogo(j);
+
+      // Linhas vêm ordenadas captured_at desc -- a primeira ocorrência de cada
+      // (bookmaker, market, selection) é a mais recente, então vence.
+      const porBookmaker = {};
+      for (const r of odds || []) {
+        if (!porBookmaker[r.bookmaker]) porBookmaker[r.bookmaker] = {};
+        const chave = `${r.market}|${r.selection}`;
+        if (!(chave in porBookmaker[r.bookmaker])) porBookmaker[r.bookmaker][chave] = r.odds;
+      }
+      setOddsPorBookmaker(porBookmaker);
+
       const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
       setEstimativas(validas);
       setModelSelecionado(validas[0]?.model_name ?? null);
@@ -173,6 +211,45 @@ export default function AnaliseAvancadaEvento() {
     const matriz = matrizPlacares(parametros.lambdaHome, parametros.lambdaAway, parametros.rho);
     return mercadosDeGols(matriz, { linhasOverUnder: LINHAS_OU_GOLS, linhasHandicap: LINHAS_HANDICAP });
   }, [parametros]);
+
+  // Verificação de EV vs. cada mercado salvo (odds_market) -- só faz sentido
+  // pra partida ainda não realizada: depois do apito final a odd real vira
+  // histórico de backtest (api/backtest-betting.js já cobre isso), não uma
+  // decisão de aposta. Pra cada casa de apostas com odds salvas nos mercados
+  // que o modelo também precifica, devigamos (Odds Ratio) e comparamos com a
+  // probabilidade do modelo -- edge = p_modelo - p_mercado devigada, EV usa a
+  // odd REAL (não devigada, é o que se paga de fato), stake sugerida em
+  // Kelly 1/4 (mesmo padrão de api/backtest-betting.js/SimulacaoCarteira.jsx).
+  const verificacaoEV = useMemo(() => {
+    if (jogo?.status !== 'scheduled' || !mercadosGols) return [];
+    const comparaveis = mercadosComparaveis(mercadosGols);
+    const linhas = [];
+    for (const [bookmaker, oddsChave] of Object.entries(oddsPorBookmaker)) {
+      for (const [mercado, probsModelo] of Object.entries(comparaveis)) {
+        if (!probsModelo) continue;
+        const selecoes = Object.keys(probsModelo);
+        const oddsSelecoes = {};
+        for (const s of selecoes) {
+          const odd = oddsChave[`${mercado}|${s}`];
+          if (odd != null) oddsSelecoes[s] = odd;
+        }
+        if (Object.keys(oddsSelecoes).length !== selecoes.length) continue; // precisa de TODAS as pernas do mercado pra devigar
+        const devigado = devigarOddsRatio(oddsSelecoes);
+        for (const s of selecoes) {
+          const pModelo = probsModelo[s];
+          const oddReal = oddsSelecoes[s];
+          const pMercado = devigado[s];
+          const edge = pModelo - pMercado;
+          const ev = pModelo * oddReal - 1;
+          linhas.push({
+            bookmaker, mercado, selecao: s, oddReal, pModelo, pMercado, edge, ev,
+            kelly25: stakeKelly25(pModelo, oddReal),
+          });
+        }
+      }
+    }
+    return linhas.sort((a, b) => b.edge - a.edge);
+  }, [jogo?.status, mercadosGols, oddsPorBookmaker]);
 
   const mercadosCorners = useMemo(() => {
     if (!parametros?.cornersLambdaTotal || !parametros?.cornersDispR) return null;
@@ -304,8 +381,8 @@ export default function AnaliseAvancadaEvento() {
               {' '}<code className="text-slate-400">model_match_estimates.params</code>, sem edição manual.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <CardParametro label="λ mandante" valor={fmtNum(parametros?.lambdaHome, 2)} />
-              <CardParametro label="λ visitante" valor={fmtNum(parametros?.lambdaAway, 2)} />
+              <CardParametro label="xG estimado — mandante" valor={fmtNum(parametros?.lambdaHome, 2)} />
+              <CardParametro label="xG estimado — visitante" valor={fmtNum(parametros?.lambdaAway, 2)} />
               <CardParametro label="ρ (Dixon-Coles)" valor={fmtNum(parametros?.rho, 4)} />
               {parametros?.cornersLambdaTotal != null && (
                 <CardParametro label="λ escanteios (total)" valor={fmtNum(parametros.cornersLambdaTotal, 2)} />
@@ -338,6 +415,67 @@ export default function AnaliseAvancadaEvento() {
                   <span className="text-2xl font-black text-white">{fmtPct(mercadosGols['1X2'].away)}</span>
                 </div>
               </div>
+
+              {jogo.status === 'scheduled' && (
+                <div className="mt-4">
+                  <Secao titulo="Verificação de EV vs. mercado" icone={Scale}>
+                    {verificacaoEV.length === 0 ? (
+                      <p className="text-sm text-slate-600">
+                        Nenhuma casa de apostas com odds salvas nos mercados que o modelo precifica (1X2, Over/Under
+                        de gols, Ambas Marcam) pra esta partida ainda — importe odds pela tela de rodada ou aguarde o
+                        próximo sync.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-slate-500 text-xs uppercase">
+                                <th className="text-left pb-2">Casa</th>
+                                <th className="text-left pb-2">Mercado</th>
+                                <th className="text-right pb-2">Odd real</th>
+                                <th className="text-right pb-2">Prob. modelo</th>
+                                <th className="text-right pb-2">Prob. mercado (devig)</th>
+                                <th className="text-right pb-2">Edge</th>
+                                <th className="text-right pb-2">EV</th>
+                                <th className="text-right pb-2">Stake Kelly 25%</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {verificacaoEV.map((l, i) => (
+                                <tr key={i} className="border-t border-slate-800">
+                                  <td className="py-1.5 text-slate-300 capitalize">{l.bookmaker.replace(/_/g, ' ')}</td>
+                                  <td className="py-1.5 text-slate-400 font-mono text-xs">{l.mercado} · {l.selecao}</td>
+                                  <td className="py-1.5 text-right font-mono text-slate-200">{l.oddReal.toFixed(2)}</td>
+                                  <td className="py-1.5 text-right font-mono text-slate-300">{toPct(l.pModelo)}</td>
+                                  <td className="py-1.5 text-right font-mono text-slate-500">{toPct(l.pMercado)}</td>
+                                  <td className={`py-1.5 text-right font-mono font-bold ${l.edge > 0.02 ? 'text-emerald-400' : l.edge < -0.02 ? 'text-red-400' : 'text-slate-400'}`}>
+                                    {l.edge > 0 ? '+' : ''}{(l.edge * 100).toFixed(1)}pp
+                                  </td>
+                                  <td className={`py-1.5 text-right font-mono ${l.ev > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                    {l.ev > 0 ? '+' : ''}{(l.ev * 100).toFixed(1)}%
+                                  </td>
+                                  <td className="py-1.5 text-right font-mono text-slate-300">{l.kelly25 > 0 ? `${(l.kelly25 * 100).toFixed(2)}%` : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-3 leading-relaxed">
+                          Edge = probabilidade do modelo − probabilidade do mercado (devigada, Odds Ratio). EV usa a
+                          odd REAL (com margem da casa), não a devigada. Stake Kelly 25% = ¼ do critério de Kelly
+                          sobre a odd real, com teto de 25% da banca por aposta — mesma matemática de
+                          `api/backtest-betting.js`. <strong className="text-slate-500">Contexto importante antes de
+                          usar isso pra apostar de verdade:</strong> a avaliação pareada do modelo misto contra o
+                          mercado (Pinnacle devigada) mostrou o mercado batendo o modelo em log-loss nos 3 mercados
+                          testados (1X2, Over/Under 2.5, BTTS), com IC 95% não cruzando zero — um edge positivo
+                          isolado aqui pode ser ruído de amostra, não vantagem real comprovada.
+                        </p>
+                      </>
+                    )}
+                  </Secao>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
                 <Secao titulo="Dupla chance & BTTS" icone={Percent}>
