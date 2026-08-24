@@ -83,6 +83,11 @@ GRADE_HIPERPARAMETROS = {
     "catboost_v1": [{"depth": d, "learning_rate": lr} for d, lr in product([3, 4, 6], [0.03, 0.05, 0.1])],
     "xgboost_v1": [{"max_depth": d, "learning_rate": lr} for d, lr in product([2, 3, 4], [0.03, 0.08, 0.15])],
     "lightgbm_v1": [{"num_leaves": nl, "learning_rate": lr} for nl, lr in product([7, 15, 31], [0.05, 0.1, 0.2])],
+    # MLP (v9+) não ganha grid search aqui -- mesmo critério de
+    # `walkforward_cv_v9.py`, que também roda `treinar_mlp` só com os
+    # defaults de `params.get(...)` (hidden_layer_sizes/learning_rate_init/
+    # etc.), sem varrer hiperparâmetro. Config vazia == usa os defaults.
+    "mlp_v9": [{}],
 }
 # Derivado de `modelos_ml.TREINADORES` em vez de uma lista fixa de sufixos
 # -- a lista fixa (_v2.._v5/_v3b) já ficou pra trás uma vez (catboost_v6/v7
@@ -90,15 +95,28 @@ GRADE_HIPERPARAMETROS = {
 # esses 2 -- só não quebrou o backtest inteiro porque o loop principal
 # envolve cada modelo num try/except). Assim, qualquer versão nova
 # registrada em TREINADORES (v9, v10...) herda a grade da v1 automaticamente,
-# sem precisar lembrar de atualizar esta lista de novo.
+# sem precisar lembrar de atualizar esta lista de novo. "mlp" entrou na
+# lista de prefixos depois de uma rodada real confirmar `KeyError: 'mlp_v9'`
+# (só "mlp_v9" tinha grade explícita acima; v10/v11 caíam fora) -- todo
+# "mlp_*" agora herda a config vazia de "mlp_v9".
 for _nome_modelo in modelos_ml.TREINADORES:
     if _nome_modelo in GRADE_HIPERPARAMETROS:
         continue
-    for _prefixo in ("catboost", "xgboost", "lightgbm"):
+    for _prefixo in ("catboost", "xgboost", "lightgbm", "mlp"):
         if _nome_modelo.startswith(_prefixo):
-            GRADE_HIPERPARAMETROS[_nome_modelo] = GRADE_HIPERPARAMETROS[f"{_prefixo}_v1"]
+            GRADE_HIPERPARAMETROS[_nome_modelo] = GRADE_HIPERPARAMETROS[f"{_prefixo}_v1" if _prefixo != "mlp" else "mlp_v9"]
             break
 del _nome_modelo, _prefixo
+
+# catboost_v1/xgboost_v1/lightgbm_v1 são só o algoritmo puro, sem feature
+# set nenhum definido em `modelos_ml.FEATURES_POR_MODELO` -- servem de
+# scaffolding pra qualquer config do Treino Customizado (`f"{algoritmo}_v1"`,
+# ver comentário em `modelos_ml.TREINADORES`), que sempre sobrescreve as
+# features na hora (`treinar_via_parametrico`). Não tem "feature set padrão"
+# nenhum que fizesse sentido testar aqui como modelo standalone -- achado
+# real (`KeyError: 'catboost_v1'` em `FEATURES_POR_MODELO`) numa rodada de
+# produção. Pulados de propósito, não é bug.
+MODELOS_SEM_FEATURE_SET_PADRAO = {"catboost_v1", "xgboost_v1", "lightgbm_v1"}
 
 # =============================================================================
 # Mercados cobertos por esta análise -- 1X2 (3 seleções), Over/Under 2.5
@@ -215,6 +233,23 @@ def tunar_treinar_e_calibrar(
     coluna_alvo = MERCADOS[mercado]["coluna_alvo"]
     codigo_por_selecao = MERCADOS[mercado]["codigo_por_selecao"]
     treinar, prever = modelos_ml.TREINADORES[nome_modelo]
+    # Mesmo filtro defensivo de `carregar_dataset` (treinar_modelo_custom.py)
+    # e `treinar_modelo_hibrido.py` (PR #314) -- `FEATURES_NUMERICAS` (base
+    # de FEATURES_V2..V11) referencia nomes de coluna de xG/xGOT do esquema
+    # ANTIGO (`media_xg_5j_home` etc.) que `montar_dataset_ml_empilhado` não
+    # gera mais (usa `_forma_por_mando_multi_janelas`, esquema novo) -- sem
+    # esse filtro, todo modelo v9/v10/v11 quebra com KeyError puro aqui (achado
+    # #15 em CONTEXTO_PROJETO.md). Mutar `FEATURES_POR_MODELO` em memória (não
+    # só a variável local) porque o loop em `main()` também lê o dict global
+    # direto pra montar a predição final do Test Set, depois desta função
+    # retornar. Correção de fundo (portar pro esquema novo, restaurando xG em
+    # todos os modelos de produção) é decisão separada, não tomada aqui.
+    features_originais = modelos_ml.FEATURES_POR_MODELO[nome_modelo]
+    colunas_dataset = set(train_df.columns)
+    faltando = [f for f in features_originais if f not in colunas_dataset]
+    if faltando:
+        logger.warning("[%s] [%s] features ausentes no dataset (ignoradas): %s", mercado, nome_modelo, faltando)
+        modelos_ml.FEATURES_POR_MODELO[nome_modelo] = [f for f in features_originais if f in colunas_dataset]
     features = modelos_ml.FEATURES_POR_MODELO[nome_modelo]
     melhor_params, melhor_log_loss = None, np.inf
     melhor_modelo_val, melhor_extra_val, melhor_curva = None, None, None
@@ -1240,8 +1275,11 @@ def main() -> None:
             except Exception:
                 logger.exception("[%s] Falha no baseline dixon_coles_v1 -- pulando, os outros modelos continuam.", mercado)
 
-        # --- catboost_v1 / xgboost_v1 / lightgbm_v1 (e v2-v5/v3B): tuning + calibração ---
+        # --- catboost/xgboost/lightgbm/mlp v9/v10/v11 (+ v1 raw, quando tem feature set): tuning + calibração ---
         for nome_modelo in modelos_ml.TREINADORES:
+            if nome_modelo in MODELOS_SEM_FEATURE_SET_PADRAO:
+                logger.info("[%s] %s sem feature set padrão (só usado pelo Treino Customizado) -- pulando.", mercado, nome_modelo)
+                continue
             try:
                 logger.info("[%s] Tuning + calibração + treino final: %s", mercado, nome_modelo)
                 modelo, extra, melhor_params, coeficientes_por_metodo, curva = tunar_treinar_e_calibrar(
