@@ -87,6 +87,58 @@ function rotuloMercado(mercado) {
   return mercado;
 }
 
+// Confere se uma seleção específica bateu com o resultado REAL da partida --
+// só usado pra partida já finalizada (ver "Resultado" na Verificação de EV).
+// `resultado` = { golsHome, golsAway, cornersHome, cornersAway } — corners
+// ficam null quando a fonte de estatística não cobre a partida (ver
+// buscarCornersReais), e nesse caso os mercados de escanteios retornam null
+// (sem dado real pra avaliar), não `false`.
+function avaliarSelecao(mercado, selecao, resultado) {
+  const totalGols = resultado.golsHome + resultado.golsAway;
+  if (mercado === '1X2') {
+    const vencedor = resultado.golsHome > resultado.golsAway ? 'home' : resultado.golsHome < resultado.golsAway ? 'away' : 'draw';
+    return selecao === vencedor;
+  }
+  if (mercado === 'btts') {
+    const ambasMarcaram = resultado.golsHome > 0 && resultado.golsAway > 0;
+    return (selecao === 'yes') === ambasMarcaram;
+  }
+  const ouGols = mercado.match(/^over_under_(\d+\.\d)$/);
+  if (ouGols) return (selecao === 'over') === (totalGols > Number(ouGols[1]));
+
+  if (resultado.cornersHome == null || resultado.cornersAway == null) return null;
+  if (mercado === 'corners_1x2') {
+    const vencedor = resultado.cornersHome > resultado.cornersAway ? 'home' : resultado.cornersHome < resultado.cornersAway ? 'away' : 'draw';
+    return selecao === vencedor;
+  }
+  const totalCorners = resultado.cornersHome + resultado.cornersAway;
+  const ouCornersTotal = mercado.match(/^corners_over_under_full_time_(\d+\.\d)$/);
+  if (ouCornersTotal) return (selecao === 'over') === (totalCorners > Number(ouCornersTotal[1]));
+  const ouCornersTime1 = mercado.match(/^corners_over_under_team_1_(\d+\.\d)$/);
+  if (ouCornersTime1) return (selecao === 'over') === (resultado.cornersHome > Number(ouCornersTime1[1]));
+  const ouCornersTime2 = mercado.match(/^corners_over_under_team_2_(\d+\.\d)$/);
+  if (ouCornersTime2) return (selecao === 'over') === (resultado.cornersAway > Number(ouCornersTime2[1]));
+  return null;
+}
+
+// Escanteios reais (casa/fora) da partida finalizada -- mesmo fallback já
+// usado no painel de cobertura de estatísticas (PR #328): prioriza
+// match_stats (Understat/fbref/football-data.co.uk, 5 ligas europeias +
+// Brasileirão via football-data.co.uk), cai pra match_stats_fotmob (FotMob,
+// cobertura mais ampla) quando a primeira fonte não tem a partida.
+async function buscarCornersReais(matchId, homeTeamId, awayTeamId) {
+  const [{ data: ms }, { data: msf }] = await Promise.all([
+    supabase.from('match_stats').select('team_id, corners').eq('match_id', matchId),
+    supabase.from('match_stats_fotmob').select('team_id, corners').eq('match_id', matchId),
+  ]);
+  const cornersDoTime = (teamId) => {
+    const doMs = ms?.find((r) => r.team_id === teamId)?.corners;
+    if (doMs != null) return doMs;
+    return msf?.find((r) => r.team_id === teamId)?.corners ?? null;
+  };
+  return { cornersHome: cornersDoTime(homeTeamId), cornersAway: cornersDoTime(awayTeamId) };
+}
+
 const LINHAS_OU_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5];
 const LINHAS_HANDICAP = [-1.5, -1, -0.5, 0, 0.5, 1, 1.5];
 const LINHAS_OU_CORNERS = [7.5, 8.5, 9.5, 10.5, 11.5];
@@ -187,16 +239,23 @@ function LinhaBinaria({ rotulo, over, under, rotuloOver = 'Over', rotuloUnder = 
 // somar dezenas de milhares de linhas mesmo já filtrando por mercado, então
 // confiar numa consulta sem `.range()` reproduziria o corte silencioso de
 // 1000 linhas do PostgREST já documentado em várias partes do projeto.
-async function buscarOddsPaginado(matchId) {
+//
+// `apenasClosing` filtra pra `snapshot='closing'` (mesmo critério de
+// api/backtest-betting.js) -- usado só pra partida já finalizada, onde faz
+// sentido comparar contra a odd de FECHAMENTO real (a que valia de fato na
+// hora do apito inicial), não contra qualquer captura ao longo do tempo.
+async function buscarOddsPaginado(matchId, { apenasClosing = false } = {}) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
   while (true) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('odds_market')
       .select('bookmaker, market, selection, odds, captured_at')
       .eq('match_id', matchId)
-      .in('market', MERCADOS_EV)
+      .in('market', MERCADOS_EV);
+    if (apenasClosing) query = query.eq('snapshot', 'closing');
+    const { data, error } = await query
       .order('captured_at', { ascending: false })
       .range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
@@ -214,6 +273,7 @@ export default function AnaliseAvancadaEvento() {
   const [modelSelecionado, setModelSelecionado] = useState(null);
   const [oddsRaw, setOddsRaw] = useState([]);
   const [snapshotSelecionado, setSnapshotSelecionado] = useState(''); // '' = mais recente de cada casa
+  const [resultadoReal, setResultadoReal] = useState(null); // só preenchido pra partida finalizada
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
@@ -224,27 +284,35 @@ export default function AnaliseAvancadaEvento() {
       setCarregando(true);
       setErro('');
       try {
-        const [{ data: j, error: erroJogo }, { data: est, error: erroEst }, odds] = await Promise.all([
-          supabase
-            .from('matches')
-            .select('id, match_date, status, home_goals, away_goals, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
-            .eq('id', matchId)
-            .single(),
+        const { data: j, error: erroJogo } = await supabase
+          .from('matches')
+          .select('id, match_date, status, home_goals, away_goals, leagues(name), home:teams!matches_home_team_id_fkey(id,name,crest_url), away:teams!matches_away_team_id_fkey(id,name,crest_url)')
+          .eq('id', matchId)
+          .single();
+        if (cancelado) return;
+        if (erroJogo || !j) { setErro('Jogo não encontrado.'); setCarregando(false); return; }
+
+        const finalizada = j.status === 'finished';
+        // Agendada: todo o histórico de captured_at, pro seletor de snapshot.
+        // Finalizada: só a odd de FECHAMENTO (snapshot='closing'), comparada
+        // contra o resultado real -- ver Verificação de EV mais abaixo.
+        // Qualquer outro status (ao vivo/adiado/cancelado): não busca odds.
+        const [{ data: est, error: erroEst }, odds, corners] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
             .eq('match_id', matchId)
             .not('params', 'is', null),
-          buscarOddsPaginado(matchId),
+          (j.status === 'scheduled' || finalizada) ? buscarOddsPaginado(matchId, { apenasClosing: finalizada }) : Promise.resolve([]),
+          finalizada ? buscarCornersReais(matchId, j.home?.id, j.away?.id) : Promise.resolve(null),
         ]);
         if (cancelado) return;
-
-        if (erroJogo || !j) { setErro('Jogo não encontrado.'); setCarregando(false); return; }
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
 
         setJogo(j);
         setOddsRaw(odds);
         setSnapshotSelecionado('');
+        setResultadoReal(finalizada ? { golsHome: j.home_goals, golsAway: j.away_goals, ...corners } : null);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -310,17 +378,21 @@ export default function AnaliseAvancadaEvento() {
     );
   }, [parametros]);
 
-  // Verificação de EV vs. cada mercado salvo (odds_market) -- só faz sentido
-  // pra partida ainda não realizada: depois do apito final a odd real vira
-  // histórico de backtest (api/backtest-betting.js já cobre isso), não uma
-  // decisão de aposta. Pra cada casa de apostas com odds salvas (no snapshot
-  // escolhido) nos mercados que o modelo também precifica (gols E
-  // escanteios), devigamos (Odds Ratio) e comparamos com a probabilidade do
-  // modelo -- edge = p_modelo - p_mercado devigada, EV usa a odd REAL (não
-  // devigada, é o que se paga de fato), stake sugerida em Kelly 1/4 (mesmo
-  // padrão de api/backtest-betting.js/SimulacaoCarteira.jsx).
+  // Verificação de EV vs. cada mercado salvo (odds_market) -- útil tanto ANTES
+  // (partida agendada, decisão de aposta de verdade) quanto DEPOIS (partida
+  // finalizada, conferência de erros/acertos contra o resultado real) do
+  // jogo. Pra cada casa de apostas com odds salvas (no snapshot escolhido, ou
+  // a odd de fechamento se finalizada) nos mercados que o modelo também
+  // precifica (gols E escanteios), devigamos (Odds Ratio) e comparamos com a
+  // probabilidade do modelo -- edge = p_modelo - p_mercado devigada, EV usa a
+  // odd REAL (não devigada, é o que se paga de fato), stake sugerida em
+  // Kelly 1/4 (mesmo padrão de api/backtest-betting.js/SimulacaoCarteira.jsx).
+  // Em partida finalizada, cada linha também ganha `acertou` (a seleção bateu
+  // com o resultado real?) e `retorno` (lucro/prejuízo em % da banca SE a
+  // stake de Kelly 25% sugerida tivesse sido apostada de verdade).
+  const finalizada = jogo?.status === 'finished';
   const verificacaoEV = useMemo(() => {
-    if (jogo?.status !== 'scheduled' || (!mercadosGols && !mercadosCorners)) return [];
+    if (!(jogo?.status === 'scheduled' || finalizada) || (!mercadosGols && !mercadosCorners)) return [];
     const comparaveis = mercadosComparaveis(mercadosGols, mercadosCorners);
     const linhas = [];
     for (const [bookmaker, oddsChave] of Object.entries(oddsPorBookmaker)) {
@@ -340,15 +412,17 @@ export default function AnaliseAvancadaEvento() {
           const pMercado = devigado[s];
           const edge = pModelo - pMercado;
           const ev = pModelo * oddReal - 1;
-          linhas.push({
-            bookmaker, mercado, selecao: s, oddReal, pModelo, pMercado, edge, ev,
-            kelly25: stakeKelly25(pModelo, oddReal),
-          });
+          const kelly25 = stakeKelly25(pModelo, oddReal);
+          const acertou = finalizada && resultadoReal ? avaliarSelecao(mercado, s, resultadoReal) : null;
+          const retorno = finalizada && acertou != null && kelly25 > 0
+            ? (acertou ? kelly25 * (oddReal - 1) : -kelly25)
+            : null;
+          linhas.push({ bookmaker, mercado, selecao: s, oddReal, pModelo, pMercado, edge, ev, kelly25, acertou, retorno });
         }
       }
     }
     return linhas.sort((a, b) => b.edge - a.edge);
-  }, [jogo?.status, mercadosGols, mercadosCorners, oddsPorBookmaker]);
+  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, oddsPorBookmaker, resultadoReal]);
 
   // Mesma matriz que já alimenta 1X2/placar exato acima, só que truncada
   // pra uma grade menor (0-7) que cabe na tela célula a célula.
@@ -506,10 +580,20 @@ export default function AnaliseAvancadaEvento() {
                 </div>
               </div>
 
-              {jogo.status === 'scheduled' && (
+              {(jogo.status === 'scheduled' || finalizada) && (
                 <div className="mt-4">
-                  <Secao titulo="Verificação de EV vs. mercado" icone={Scale}>
-                    {snapshotsDisponiveis.length > 0 && (
+                  <Secao
+                    titulo={finalizada ? 'Verificação de EV vs. mercado (fechamento) — erros e acertos' : 'Verificação de EV vs. mercado'}
+                    icone={Scale}
+                  >
+                    {finalizada && (
+                      <p className="text-[11px] text-slate-500 mb-3">
+                        Comparação contra a odd de FECHAMENTO real (<code className="text-slate-400">snapshot='closing'</code>,
+                        a que valia na hora do apito inicial) e o resultado real da partida — não é mais uma decisão
+                        de aposta, é conferência do que teria acontecido.
+                      </p>
+                    )}
+                    {!finalizada && snapshotsDisponiveis.length > 0 && (
                       <div className="flex items-center gap-2 mb-3">
                         <label className="text-[10px] text-slate-500 uppercase font-bold shrink-0">Snapshot</label>
                         <select
@@ -530,13 +614,27 @@ export default function AnaliseAvancadaEvento() {
                     )}
                     {verificacaoEV.length === 0 ? (
                       <p className="text-sm text-slate-600">
-                        Nenhuma casa de apostas com odds salvas nos mercados que o modelo precifica (1X2, Over/Under
-                        de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida
-                        {snapshotSelecionado ? ' nesse snapshot' : ' ainda'} — importe odds pela tela de rodada,
-                        {snapshotSelecionado ? ' escolha outro snapshot' : ' aguarde o próximo sync'}.
+                        {finalizada
+                          ? 'Nenhuma odd de fechamento salva nos mercados que o modelo precifica (1X2, Over/Under de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida.'
+                          : <>Nenhuma casa de apostas com odds salvas nos mercados que o modelo precifica (1X2, Over/Under
+                              de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida
+                              {snapshotSelecionado ? ' nesse snapshot' : ' ainda'} — importe odds pela tela de rodada,
+                              {snapshotSelecionado ? ' escolha outro snapshot' : ' aguarde o próximo sync'}.</>}
                       </p>
                     ) : (
                       <>
+                        {finalizada && (() => {
+                          const avaliadas = verificacaoEV.filter((l) => l.edge > 0.02 && l.acertou != null);
+                          const acertos = avaliadas.filter((l) => l.acertou).length;
+                          return avaliadas.length > 0 ? (
+                            <p className="text-sm mb-3">
+                              Entre as seleções com edge {'>'} 2pp (as que teriam recebido stake de Kelly):{' '}
+                              <span className="font-bold text-emerald-400">{acertos} acerto{acertos !== 1 ? 's' : ''}</span>
+                              {' '}·{' '}
+                              <span className="font-bold text-red-400">{avaliadas.length - acertos} erro{avaliadas.length - acertos !== 1 ? 's' : ''}</span>
+                            </p>
+                          ) : null;
+                        })()}
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
@@ -549,6 +647,8 @@ export default function AnaliseAvancadaEvento() {
                                 <th className="text-right pb-2">Edge</th>
                                 <th className="text-right pb-2">EV</th>
                                 <th className="text-right pb-2">Stake Kelly 25%</th>
+                                {finalizada && <th className="text-right pb-2">Resultado</th>}
+                                {finalizada && <th className="text-right pb-2">Retorno</th>}
                               </tr>
                             </thead>
                             <tbody>
@@ -566,6 +666,18 @@ export default function AnaliseAvancadaEvento() {
                                     {l.ev > 0 ? '+' : ''}{(l.ev * 100).toFixed(1)}%
                                   </td>
                                   <td className="py-1.5 text-right font-mono text-slate-300">{l.kelly25 > 0 ? `${(l.kelly25 * 100).toFixed(2)}%` : '—'}</td>
+                                  {finalizada && (
+                                    <td className="py-1.5 text-right font-bold">
+                                      {l.acertou == null ? <span className="text-slate-700">—</span>
+                                        : l.acertou ? <span className="text-emerald-400">✓ Acertou</span>
+                                        : <span className="text-red-400">✗ Errou</span>}
+                                    </td>
+                                  )}
+                                  {finalizada && (
+                                    <td className={`py-1.5 text-right font-mono ${l.retorno == null ? 'text-slate-700' : l.retorno > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                      {l.retorno == null ? '—' : `${l.retorno > 0 ? '+' : ''}${(l.retorno * 100).toFixed(2)}%`}
+                                    </td>
+                                  )}
                                 </tr>
                               ))}
                             </tbody>
@@ -575,11 +687,14 @@ export default function AnaliseAvancadaEvento() {
                           Edge = probabilidade do modelo − probabilidade do mercado (devigada, Odds Ratio). EV usa a
                           odd REAL (com margem da casa), não a devigada. Stake Kelly 25% = ¼ do critério de Kelly
                           sobre a odd real, com teto de 25% da banca por aposta — mesma matemática de
-                          `api/backtest-betting.js`. <strong className="text-slate-500">Contexto importante antes de
+                          `api/backtest-betting.js`.
+                          {finalizada && ' Retorno = lucro/prejuízo em % da banca SE a stake de Kelly 25% sugerida tivesse sido apostada de verdade (só calculado quando havia stake > 0).'}
+                          {' '}<strong className="text-slate-500">Contexto importante antes de
                           usar isso pra apostar de verdade:</strong> a avaliação pareada do modelo misto contra o
                           mercado (Pinnacle devigada) mostrou o mercado batendo o modelo em log-loss nos 3 mercados
                           testados (1X2, Over/Under 2.5, BTTS), com IC 95% não cruzando zero — um edge positivo
-                          isolado aqui pode ser ruído de amostra, não vantagem real comprovada.
+                          isolado aqui (ou um punhado de acertos numa partida só) pode ser ruído de amostra, não
+                          vantagem real comprovada.
                         </p>
                       </>
                     )}
