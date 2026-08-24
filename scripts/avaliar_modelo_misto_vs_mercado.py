@@ -1,18 +1,31 @@
 #!/usr/bin/env python3
-"""Avaliação pareada do modelo misto contra o mercado (Pinnacle devigado).
+"""Avaliação pareada do modelo misto contra o mercado (Pinnacle devigado),
+SEPARADA por abertura e fechamento.
 
 Ferramenta de análise, não parte do pipeline de produção -- roda uma vez,
 sob demanda (mesma categoria de `verificar_distribuicoes.py`), depois de
 `treinar_modelo_hibrido.py` ter persistido `model_predictions`/
 `model_match_estimates`.
 
-Compara, para cada `model_name` em `["hibrido_gols_v1", "hibrido_gols_xg_v1"]`
-e cada mercado em `["1X2", "over_under_2.5", "btts"]`, o log-loss do modelo
-contra o log-loss da probabilidade implícita da Pinnacle devigada
-(`backtest_kelly.carregar_odds_pinnacle_devigadas`), usando o bootstrap
+Compara, para cada `model_name` em `["hibrido_gols_v1", "hibrido_gols_xg_v1"]`,
+cada mercado em `["1X2", "over_under_2.5", "btts"]` e cada snapshot em
+`["pre_closing" (abertura), "closing" (fechamento)]`, o log-loss do modelo
+contra o log-loss da probabilidade implícita da Pinnacle devigada NESSE
+snapshot especificamente (sem fallback entre eles -- diferente de
+`backtest_kelly.carregar_odds_pinnacle_devigadas`, que mistura abertura
+com fallback de fechamento pra maximizar cobertura; aqui o objetivo é
+justamente NÃO misturar, pra responder "o modelo bate o mercado na
+abertura? e no fechamento?" como duas perguntas separadas). Usa o bootstrap
 PAREADO já existente em `backtest_kelly.comparar_pareado_com_mercado` --
 mesma disciplina do achado #3 do CONTEXTO_PROJETO.md, agora aplicada ao
-modelo misto (nunca tinha rodado contra ele).
+modelo misto.
+
+Cobertura de odds Pinnacle por snapshot medida em ago/2026 (`execute_sql`):
+1X2 abertura=14.920 partidas / fechamento=7.337; over_under_2.5
+abertura=14.509 / fechamento=2.639; **btts abertura=90 (amostra pequena
+demais pra bootstrap confiável) / fechamento=1.659**. O relatório final
+avisa quando a amostra de abertura for pequena, em vez de omitir o
+resultado ou fingir que é confiável.
 
 Não grava nada no Supabase -- só leitura e relatório em stdout.
 
@@ -116,7 +129,17 @@ def _perdas_por_partida(probs_por_partida: dict[int, dict[str, float]], resultad
     return np.array(perdas)
 
 
-def avaliar_combinacao(supabase, model_name: str, mercado: str) -> dict | None:
+# (snapshot, rótulo pro relatório) -- "pre_closing" é a odd de ABERTURA
+# neste banco (nome herdado da fonte de dado, não literal), "closing" é o
+# FECHAMENTO de verdade. Ver docstring do módulo.
+SNAPSHOTS_AVALIADOS = [("pre_closing", "abertura"), ("closing", "fechamento")]
+
+# Abaixo desse n, o bootstrap pareado ainda roda (a função aceita qualquer
+# n>0), mas o resultado é pouco confiável -- avisar em vez de calar.
+AMOSTRA_MINIMA_CONFIAVEL = 100
+
+
+def avaliar_combinacao(supabase, model_name: str, mercado: str, snapshot: str, rotulo: str) -> dict | None:
     predicoes = _carregar_predicoes(supabase, model_name, mercado)
     if not predicoes:
         logger.warning("%s [%s]: sem previsões em model_predictions -- pulando.", model_name, mercado)
@@ -124,13 +147,17 @@ def avaliar_combinacao(supabase, model_name: str, mercado: str) -> dict | None:
 
     match_ids = list(predicoes.keys())
     resultados_reais = _carregar_resultados_reais(supabase, match_ids, mercado)
-    odds_devig = bk.carregar_odds_pinnacle_devigadas(supabase, match_ids, mercado)
+    # snapshot PURO, sem fallback pro outro -- diferente de
+    # carregar_odds_pinnacle_devigadas (que mistura abertura+fechamento pra
+    # maximizar cobertura). Aqui o ponto é justamente não misturar.
+    odds_brutas = bk._carregar_odds_pinnacle_brutas(supabase, match_ids, mercado, snapshot=snapshot, com_fallback_fechamento=False)
+    odds_devig = bk._devigar_odds_por_partida(odds_brutas, mercado)
 
     match_ids_validos = sorted(set(predicoes) & set(resultados_reais) & set(odds_devig))
     if len(match_ids_validos) < 30:
         logger.warning(
-            "%s [%s]: só %d partidas com previsão + resultado + odd Pinnacle -- amostra pequena demais pra bootstrap confiável.",
-            model_name, mercado, len(match_ids_validos),
+            "%s [%s, %s]: só %d partidas com previsão + resultado + odd Pinnacle -- amostra pequena demais pra bootstrap confiável.",
+            model_name, mercado, rotulo, len(match_ids_validos),
         )
         if not match_ids_validos:
             return None
@@ -138,13 +165,17 @@ def avaliar_combinacao(supabase, model_name: str, mercado: str) -> dict | None:
     perdas_modelo = _perdas_por_partida(predicoes, resultados_reais, match_ids_validos, mercado)
     perdas_mercado = _perdas_por_partida(odds_devig, resultados_reais, match_ids_validos, mercado)
 
+    aviso_amostra = " -- AMOSTRA PEQUENA, resultado pouco confiável" if len(match_ids_validos) < AMOSTRA_MINIMA_CONFIAVEL else ""
     logger.info(
-        "%s [%s]: n=%d | log-loss modelo=%.4f | log-loss mercado (Pinnacle devigado)=%.4f",
-        model_name, mercado, len(match_ids_validos), perdas_modelo.mean(), perdas_mercado.mean(),
+        "%s [%s, %s]: n=%d | log-loss modelo=%.4f | log-loss mercado (Pinnacle devigado)=%.4f%s",
+        model_name, mercado, rotulo, len(match_ids_validos), perdas_modelo.mean(), perdas_mercado.mean(), aviso_amostra,
     )
 
     comparacao = bk.comparar_pareado_com_mercado(perdas_modelo, perdas_mercado)
-    return {"nome": f"{model_name} [{mercado}]", "comparacao": comparacao}
+    nome = f"{model_name} [{mercado}, {rotulo}]"
+    if aviso_amostra:
+        nome += " (n pequeno)"
+    return {"nome": nome, "comparacao": comparacao}
 
 
 def main() -> None:
@@ -153,9 +184,10 @@ def main() -> None:
     linhas_pareadas = []
     for model_name in MODEL_NAMES:
         for mercado in MERCADOS_AVALIADOS:
-            resultado = avaliar_combinacao(supabase, model_name, mercado)
-            if resultado is not None:
-                linhas_pareadas.append(resultado)
+            for snapshot, rotulo in SNAPSHOTS_AVALIADOS:
+                resultado = avaliar_combinacao(supabase, model_name, mercado, snapshot, rotulo)
+                if resultado is not None:
+                    linhas_pareadas.append(resultado)
 
     bk.imprimir_relatorio_pareado(linhas_pareadas)
 
