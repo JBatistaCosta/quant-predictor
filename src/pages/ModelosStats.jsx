@@ -11,6 +11,11 @@ import CurvaPnlEv from '../components/CurvaPnlEv';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
+// `mercado_pinnacle_devigado` (api/model-stats.js) é a odd de fechamento da
+// Pinnacle devigada tratada como se fosse um modelo — mesmo pipeline de
+// log-loss/Brier/calibração, só rótulo de exibição muda.
+const MODELO_ROTULO = { mercado_pinnacle_devigado: 'Mercado (Pinnacle devigada)' };
+const rotuloModelo = (nome) => MODELO_ROTULO[nome] || nome;
 
 function fmt(v, formato) {
   return formato === 'pct' ? `${(v * 100).toFixed(1)}%` : v.toFixed(4);
@@ -216,7 +221,7 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
         )}
       </div>
       <p className="text-[11px] text-slate-500 mb-3">
-        {filtroModelo} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção favorecida.
+        {rotuloModelo(filtroModelo)} — {MERCADO_ROTULO[filtroMercado] || filtroMercado}. EV estimado usa a probabilidade do modelo contra a odd real de fechamento (não devigada) na seleção favorecida.
         {(temXg || temXgot) && ' xG/xGOT só em modelos que calculam esses valores (Dixon-Coles, regressores dedicados).'}
       </p>
 
@@ -748,7 +753,7 @@ export default function ModelosStats() {
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap gap-3">
           <select value={filtroModelo} onChange={(e) => setFiltroModelo(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
             <option value="">Todos os modelos</option>
-            {modelos.map(m => <option key={m} value={m}>{m}</option>)}
+            {modelos.map(m => <option key={m} value={m}>{rotuloModelo(m)}</option>)}
           </select>
           <select value={filtroMercado} onChange={(e) => setFiltroMercado(e.target.value)} className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
             <option value="">Todos os mercados</option>
@@ -781,7 +786,7 @@ export default function ModelosStats() {
             <div key={i} className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
               <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
                 <h2 className="text-sm font-bold text-slate-200">
-                  {g.model_name} <span className="text-slate-500">·</span> {MERCADO_ROTULO[g.market] || g.market} <span className="text-slate-500">·</span> {ligasPorId[g.league_id] || `Liga #${g.league_id}`}
+                  {rotuloModelo(g.model_name)} <span className="text-slate-500">·</span> {MERCADO_ROTULO[g.market] || g.market} <span className="text-slate-500">·</span> {ligasPorId[g.league_id] || `Liga #${g.league_id}`}
                 </h2>
                 <span className="text-xs text-slate-500">{g.n_jogos} jogos avaliados</span>
               </div>

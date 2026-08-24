@@ -11,6 +11,16 @@
 // de odds de gols), então nesse mercado só sai a métrica do modelo, sem
 // comparação.
 //
+// A odd de FECHAMENTO da Pinnacle (bookmaker='pinnacle') entra também como um
+// "modelo" sintético próprio (model_name='mercado_pinnacle_devigado', ver
+// normalizarPinnacleDevigada) — devigada pelo mesmo método Odds Ratio usado
+// no resto do arquivo, passa pelo MESMO pipeline de log-loss/Brier/acurácia/
+// log-verossimilhança/calibração em quintis que qualquer modelo real, em
+// qualquer mercado/liga com odds da Pinnacle disponíveis. Serve pra tratar a
+// Pinnacle devigada como referência de "mercado eficiente" com as mesmas
+// métricas de qualidade probabilística usadas nos modelos do projeto, não só
+// como comparação de edge.
+//
 // Também aplica a calibração salva em model_calibration (Platt Scaling e
 // Isotonic Regression, ajustados por api/fit-calibration.js) quando existe
 // pra aquele model_name+market+selection, devolvendo as métricas COM e SEM
@@ -128,6 +138,42 @@ function devigarLogaritmico(oddsPorSelecao) {
 // esportivas); passe metodo='logaritmico' pra usar o outro.
 function devigar(oddsPorSelecao, metodo = 'odds_ratio') {
   return metodo === 'logaritmico' ? devigarLogaritmico(oddsPorSelecao) : devigarOddsRatio(oddsPorSelecao);
+}
+
+// Odds de FECHAMENTO da Pinnacle (referência de "linha eficiente", menor
+// margem do mercado) tratadas como se fossem previsões de um modelo próprio
+// (`model_name='mercado_pinnacle_devigado'`) -- devigadas pelo mesmo método
+// Odds Ratio já padrão neste arquivo, entram no MESMO pipeline de
+// agrupamento/log-loss/Brier/acurácia/calibração em quintis usado pros
+// modelos reais, então log-verossimilhança, Diagrama de Confiabilidade etc.
+// saem de graça pra qualquer mercado/liga com odds da Pinnacle -- sem
+// duplicar cálculo. Só markets com conjunto de seleções fechado conhecido
+// (não dá pra devigar um conjunto parcial sem viés); escanteios não têm odds
+// no banco, então não geram linha aqui (mesma limitação já documentada pro
+// resto do painel).
+const MERCADO_SELECOES_PINNACLE = {
+  '1X2': ['home', 'draw', 'away'],
+  'over_under_2.5': ['over', 'under'],
+};
+
+function normalizarPinnacleDevigada(oddsRows) {
+  const porChave = {};
+  oddsRows.forEach((r) => {
+    const chave = `${r.match_id}__${r.market}`;
+    if (!porChave[chave]) porChave[chave] = {};
+    porChave[chave][r.selection] = Number(r.odds);
+  });
+  const linhas = [];
+  Object.entries(porChave).forEach(([chave, oddsSel]) => {
+    const [matchIdStr, market] = chave.split('__');
+    const selecoesEsperadas = MERCADO_SELECOES_PINNACLE[market];
+    if (!selecoesEsperadas || !selecoesEsperadas.every((s) => oddsSel[s] != null)) return;
+    const probs = devigar(oddsSel);
+    selecoesEsperadas.forEach((s) => {
+      linhas.push({ model_name: 'mercado_pinnacle_devigado', market, selection: s, probability: probs[s], match_id: Number(matchIdStr) });
+    });
+  });
+  return linhas;
 }
 
 function chaveMercado(m) {
@@ -367,7 +413,11 @@ export default async function handler(req, res) {
   const { modelo, mercado, liga_id } = req.query;
 
   try {
-    const [predicoesAntigas, predicoesBenchmarkingRaw] = await Promise.all([
+    // Só busca odds da Pinnacle quando o "modelo" sintético pode aparecer no
+    // resultado (nenhum filtro de modelo, ou o filtro é exatamente ele) --
+    // mesma economia de round-trip já usada pra `predicoes`/Model Benchmarking.
+    const precisaPinnacleDevigada = !modelo || modelo === 'mercado_pinnacle_devigado';
+    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw] = await Promise.all([
       buscarTudoPaginado(() => {
         let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
         if (modelo) q = q.eq('model_name', modelo);
@@ -384,12 +434,19 @@ export default async function handler(req, res) {
             if (modelo) q = q.eq('model_name', modelo);
             return q;
           }),
+      precisaPinnacleDevigada
+        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle'))
+        : Promise.resolve([]),
     ]);
+    let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
+    if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
+
     // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
     // pra garantir consistência em chaveMercado, chaveOdds e chaveGrupo.
     const predicoes = [
       ...predicoesAntigas.map(p => ({ ...p, market: p.market === '1x2' ? '1X2' : p.market })),
       ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw),
+      ...pinnacleLinhas,
     ];
     if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [] });
 
@@ -699,6 +756,12 @@ export default async function handler(req, res) {
         model_name: g.model_name, market: g.market, league_id: g.league_id,
         n_jogos: nJogos,
         log_loss_modelo: logLossModelo, brier_modelo: brierModelo,
+        // log-verossimilhança TOTAL (soma de log p, não a média) -- log-loss já
+        // é a média de -log(p), então log_likelihood = -log_loss * n; exposto à
+        // parte porque cresce com o tamanho da amostra (não é comparável entre
+        // grupos de n diferente do jeito que log-loss médio é).
+        log_likelihood_modelo: -logLossModelo * linhasClasseReal.length,
+        log_likelihood_mercado: temOdds ? -logLossMercado * linhasComOdds.length : null,
         log_loss_mercado: logLossMercado, brier_mercado: brierMercado,
         accuracy_modelo: accuracyModelo, accuracy_mercado: accuracyMercado,
         tem_odds: temOdds,
