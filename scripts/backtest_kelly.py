@@ -153,6 +153,16 @@ MERCADOS = {
         # chaves aqui estavam como "under"/"over" sem o prefixo.
         "codigo_por_selecao": {"corners_under": dados_historicos.RESULTADO_CORNERS_UNDER95, "corners_over": dados_historicos.RESULTADO_CORNERS_OVER95},
     },
+    "corners_over_under_9.5": {
+        "coluna_alvo": "resultado_corners_ou95",
+        # Sem prefixo "corners_" de propósito -- diferente de "corners_ou95"
+        # acima (mercado do classificador). Esta entrada é pro modelo misto:
+        # `model_predictions.selection` grava "under"/"over" puro (mesmo
+        # padrão de over_under_2.5), e a odd real em `odds_market` (mercado
+        # "corners_over_under_full_time_9.5") também usa "under"/"over" sem
+        # prefixo -- ver `_nome_mercado_odds`.
+        "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CORNERS_UNDER95, "over": dados_historicos.RESULTADO_CORNERS_OVER95},
+    },
     "faixa_gols": {
         "coluna_alvo": "resultado_faixa_gols",
         "codigo_por_selecao": {
@@ -173,6 +183,19 @@ MERCADOS = {
 # `rp._prever_probs_dixon_coles`), mas não tem NENHUMA noção de escanteio.
 # `main()` pula o baseline dixon_coles inteiro pros mercados aqui listados.
 MERCADOS_SEM_DIXON_COLES = {"corners_ou95"}
+
+# "corners_over_under_9.5" existe em MERCADOS só pra dar a
+# `avaliar_modelo_misto_vs_mercado.py` acesso a `codigo_por_selecao` (usada
+# via `bk.MERCADOS[...]`) e às funções genéricas de odds
+# (`_carregar_odds_pinnacle_brutas`/`_devigar_odds_por_partida`) -- não é um
+# mercado do pipeline de CLASSIFICADORES (`main()` abaixo). Diferente de
+# "corners_ou95" (seleções com prefixo "corners_", combinando com
+# `modelos_ml.ROTULOS_SAIDA`), esta entrada usa seleções sem prefixo
+# ("under"/"over", combinando com `model_predictions` do modelo misto e com
+# `odds_market`) -- se `main()` tentasse treinar um classificador com essa
+# entrada, cairia no mesmo KeyError já documentado acima (prefixo
+# incompatível com `ROTULOS_SAIDA`). `main()` pula todo mercado aqui listado.
+MERCADOS_SOMENTE_MODELO_MISTO = {"corners_over_under_9.5"}
 
 
 def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) -> int:
@@ -345,8 +368,14 @@ def tunar_e_calibrar_dixon_coles(
 # =============================================================================
 def _nome_mercado_odds(mercado: str) -> str:
     """`market` em `odds_market` usa `"1X2"` ou `"over_under_2.5"` -- mesmos
-    literais das chaves de `MERCADOS`, então é uma identidade, mas fica
-    isolado aqui pra não espalhar a suposição pelo arquivo todo."""
+    literais das chaves de `MERCADOS`, então é uma identidade pra esses
+    casos, mas fica isolado aqui pra não espalhar a suposição pelo arquivo
+    todo. Única exceção real: `odds_market` grava escanteios como
+    `"corners_over_under_full_time_9.5"` (nome herdado da OddsPapi), string
+    diferente da chave `"corners_over_under_9.5"` que `MERCADOS`/
+    `model_predictions` usam -- por isso o mapeamento explícito aqui."""
+    if mercado == "corners_over_under_9.5":
+        return "corners_over_under_full_time_9.5"
     return mercado
 
 
@@ -1129,6 +1158,8 @@ def main() -> None:
     match_ids_validos_1x2: set[int] = set()
 
     for mercado in MERCADOS:
+        if mercado in MERCADOS_SOMENTE_MODELO_MISTO:
+            continue
         logger.info("=" * 86)
         logger.info("MERCADO: %s", mercado)
         logger.info("=" * 86)

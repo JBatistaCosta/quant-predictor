@@ -8,24 +8,32 @@ sob demanda (mesma categoria de `verificar_distribuicoes.py`), depois de
 `model_match_estimates`.
 
 Compara, para cada `model_name` em `["hibrido_gols_v1", "hibrido_gols_xg_v1"]`,
-cada mercado em `["1X2", "over_under_2.5", "btts"]` e cada snapshot em
-`["pre_closing" (abertura), "closing" (fechamento)]`, o log-loss do modelo
-contra o log-loss da probabilidade implícita da Pinnacle devigada NESSE
-snapshot especificamente (sem fallback entre eles -- diferente de
-`backtest_kelly.carregar_odds_pinnacle_devigadas`, que mistura abertura
-com fallback de fechamento pra maximizar cobertura; aqui o objetivo é
-justamente NÃO misturar, pra responder "o modelo bate o mercado na
-abertura? e no fechamento?" como duas perguntas separadas). Usa o bootstrap
-PAREADO já existente em `backtest_kelly.comparar_pareado_com_mercado` --
-mesma disciplina do achado #3 do CONTEXTO_PROJETO.md, agora aplicada ao
+cada mercado em `["1X2", "over_under_2.5", "btts", "corners_over_under_9.5"]`
+e cada snapshot em `["pre_closing" (abertura), "closing" (fechamento)]`, o
+log-loss do modelo contra o log-loss da probabilidade implícita da Pinnacle
+devigada NESSE snapshot especificamente (sem fallback entre eles --
+diferente de `backtest_kelly.carregar_odds_pinnacle_devigadas`, que mistura
+abertura com fallback de fechamento pra maximizar cobertura; aqui o
+objetivo é justamente NÃO misturar, pra responder "o modelo bate o mercado
+na abertura? e no fechamento?" como duas perguntas separadas). Usa o
+bootstrap PAREADO já existente em `backtest_kelly.comparar_pareado_com_mercado`
+-- mesma disciplina do achado #3 do CONTEXTO_PROJETO.md, agora aplicada ao
 modelo misto.
 
 Cobertura de odds Pinnacle por snapshot medida em ago/2026 (`execute_sql`):
 1X2 abertura=14.920 partidas / fechamento=7.337; over_under_2.5
 abertura=14.509 / fechamento=2.639; **btts abertura=90 (amostra pequena
-demais pra bootstrap confiável) / fechamento=1.659**. O relatório final
-avisa quando a amostra de abertura for pequena, em vez de omitir o
-resultado ou fingir que é confiável.
+demais pra bootstrap confiável) / fechamento=1.659**; escanteios
+(`corners_over_under_full_time_9.5`, nome diferente do usado em
+`model_predictions` -- ver `backtest_kelly._nome_mercado_odds`) abertura=152
+/ fechamento=2.795 partidas. O relatório final avisa quando a amostra de
+abertura for pequena, em vez de omitir o resultado ou fingir que é
+confiável.
+
+O resultado real (`home_goals`/`away_goals` de `matches`) não cobre
+escanteios -- pra esse mercado, `_carregar_resultados_reais` usa
+`dados_historicos._carregar_total_corners_por_partida` (soma casa+visitante
+de `match_stats_fotmob`) em vez da tabela `matches`.
 
 Não grava nada no Supabase -- só leitura e relatório em stdout.
 
@@ -42,6 +50,7 @@ import os
 import sys
 
 import numpy as np
+import pandas as pd
 from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -52,7 +61,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("avaliar_modelo_misto_vs_mercado")
 
 MODEL_NAMES = ["hibrido_gols_v1", "hibrido_gols_xg_v1"]
-MERCADOS_AVALIADOS = ["1X2", "over_under_2.5", "btts"]
+MERCADOS_AVALIADOS = ["1X2", "over_under_2.5", "btts", "corners_over_under_9.5"]
 
 
 def obter_env(nome: str) -> str:
@@ -100,6 +109,22 @@ def _resultado_real_codigo(home_goals: int, away_goals: int, mercado: str) -> in
 
 
 def _carregar_resultados_reais(supabase, match_ids: list[int], mercado: str) -> dict[int, int]:
+    if mercado == "corners_over_under_9.5":
+        # Escanteios não vêm de `matches` (só tem placar) -- resultado real é
+        # a soma casa+visitante de `match_stats_fotmob`, mesma fonte usada
+        # como alvo de treino (ver `dh._carregar_total_corners_por_partida`).
+        # `total_corners` fica NaN quando falta uma das duas linhas
+        # (casa/visitante) -- filtrado abaixo, igual ao corte já feito lá.
+        df = dh._carregar_total_corners_por_partida(supabase, match_ids)
+        resultados: dict[int, int] = {}
+        for _, linha in df.iterrows():
+            if pd.isna(linha["total_corners"]):
+                continue
+            resultados[int(linha["match_id"])] = (
+                dh.RESULTADO_CORNERS_OVER95 if linha["total_corners"] > 9.5 else dh.RESULTADO_CORNERS_UNDER95
+            )
+        return resultados
+
     def factory(lote, inicio, fim):
         return (
             supabase.table("matches")
