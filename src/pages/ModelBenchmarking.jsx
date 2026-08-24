@@ -1,24 +1,20 @@
 // src/pages/ModelBenchmarking.jsx — rota /model-benchmarking
-// Painel dos modelos do Model Benchmarking (dixon_coles_v1 + catboost/
-// xgboost/lightgbm) competindo lado a lado, com o botão que dispara o
+// Painel dos modelos do Model Benchmarking, com o botão que dispara o
 // workflow_dispatch do predict.yml no GitHub Actions (api/model-maintenance
 // ?tarefa=disparar-predicoes). Leitura direta de `predicoes`/`market_odds`
 // (RLS pública) -- só o disparo exige login (Authorization: Bearer do
 // access_token do Supabase Auth, verificado no servidor).
 //
-// Exibição restrita a partir da v3 (pedido do usuário: "deixe somente a
-// partir da terceira versão de cada modelo") -- v1/v2 de catboost/xgboost/
-// lightgbm continuam sendo treinados/previstos todo dia (rodar_predicoes.py/
-// backtest_kelly.py não mudaram, só esta tela), simplesmente não aparecem
-// mais aqui. v2 soma força do elenco às features de time da v1; v3 soma
-// descanso pré-jogo/fadiga à v2; v4 soma risco de suspensão por acúmulo de
-// cartão à v3; v5 soma classificação/tabela atual, confronto direto (H2H) e
-// tendência de árbitro à v4; v3B soma força do XI titular CONFIRMADO +
-// valor de mercado na data do jogo à v5 (nome "v3B" vem do PR #114, mas o
-// conjunto de features aqui é v5 + XI titular, não v2 + XI titular).
-// dixon_coles_v1 fica como baseline de referência (modelo Poisson à parte,
-// nunca ganhou a escada de features v2/v3/v4/v5/v3B, então "a partir da v3"
-// não se aplica a ele).
+// A tabela de predições DIÁRIAS logo abaixo (`partidas`) só mostra
+// `MODELOS_BASE` (utils/modelosBenchmarking.js) -- hoje só `dixon_coles_v1`,
+// já que v1-v8 de catboost/xgboost/lightgbm foram removidos do pipeline
+// (superados pela família v9/v10/v11, ver comentário em
+// `modelosBenchmarking.js`). O painel "Backtest completo" abaixo é
+// independente disso: lê `model_benchmarking_backtest` sem filtro nenhum
+// de modelo, então mostra qualquer linha que `scripts/backtest_kelly.py`
+// gravar (dixon_coles_v1 + toda versão registrada em
+// `modelos_ml.TREINADORES` -- hoje v1 raw/v9/v10/v11 de catboost/xgboost/
+// lightgbm/mlp, contando as variantes calibradas).
 import React, { useState, useEffect, useCallback } from 'react';
 import { Zap, Loader2, AlertTriangle, TrendingUp, PlayCircle, ChevronDown, ChevronRight, FileDown } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
@@ -221,8 +217,8 @@ function baixarRelatorioHtml(html) {
 // Kelly/IC95%/EV+) equivalente ao "Backtest de apostas simuladas (EV+)" de
 // Estatísticas dos Modelos, mas lendo o resultado JÁ PERSISTIDO por
 // scripts/backtest_kelly.py (via model_benchmarking_backtest/_liga) em vez
-// de calcular na hora -- o backtest de verdade (grid search + tuning, 2
-// mercados x 19 modelos) é caro demais pra rodar dentro de uma função
+// de calcular na hora -- o backtest de verdade (grid search + tuning, 4
+// mercados x toda versão de modelos_ml.TREINADORES) é caro demais pra rodar dentro de uma função
 // serverless, então roda no GitHub Actions (backtest_kelly.yml, disparado
 // por ?tarefa=disparar-backtest) e só o resultado final é lido aqui.
 //
@@ -276,7 +272,7 @@ function BacktestModelBenchmarking({ session }) {
       if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
       setMensagemDisparo({
         tipo: 'ok',
-        texto: 'Disparado! Grid search + tuning + simulação Kelly nos 19 modelos (v1 a v5 + v3B), em 4 mercados (1X2, Over/Under 2.5, Escanteios O/U 9,5 e Faixa de gols) -- é bem mais pesado que as predições diárias, pode levar mais de 1h. Volte depois e clique em "Recarregar".',
+        texto: 'Disparado! Grid search + tuning + simulação Kelly no Dixon-Coles + catboost/xgboost/lightgbm/mlp (v9/v10/v11), em 4 mercados (1X2, Over/Under 2.5, Escanteios O/U 9,5 e Faixa de gols) -- é bem mais pesado que as predições diárias, pode levar mais de 1h. Volte depois e clique em "Recarregar".',
       });
     } catch (e) {
       setMensagemDisparo({ tipo: 'erro', texto: e.message });
@@ -574,10 +570,9 @@ export default function ModelBenchmarking() {
         <div>
           <h1 className="text-xl font-bold text-slate-100">Model Benchmarking</h1>
           <p className="text-sm text-slate-500">
-            Dixon-Coles + CatBoost/XGBoost/LightGBM (v1 a v5 + v3B — v2 soma força do elenco, v3 soma fadiga, v4 soma
-            risco de suspensão por cartão, v5 soma tabela/H2H/árbitro, v3B soma XI titular confirmado/valor de
-            mercado) competindo lado a lado — dados gerados de forma assíncrona pelo GitHub Actions
-            (<code>scripts/rodar_predicoes.py</code>).
+            Predições diárias do Dixon-Coles pras próximas partidas — dados gerados de forma assíncrona pelo GitHub
+            Actions (<code>scripts/rodar_predicoes.py</code>). O painel "Backtest completo" mais abaixo cobre também
+            catboost/xgboost/lightgbm/mlp (v9/v10/v11), com metodologia de validação separada.
           </p>
         </div>
         <div className="flex items-center gap-2">
