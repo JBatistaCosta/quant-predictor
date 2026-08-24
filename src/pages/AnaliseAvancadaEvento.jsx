@@ -240,22 +240,22 @@ function LinhaBinaria({ rotulo, over, under, rotuloOver = 'Over', rotuloUnder = 
 // confiar numa consulta sem `.range()` reproduziria o corte silencioso de
 // 1000 linhas do PostgREST já documentado em várias partes do projeto.
 //
-// `apenasClosing` filtra pra `snapshot='closing'` (mesmo critério de
-// api/backtest-betting.js) -- usado só pra partida já finalizada, onde faz
-// sentido comparar contra a odd de FECHAMENTO real (a que valia de fato na
-// hora do apito inicial), não contra qualquer captura ao longo do tempo.
-async function buscarOddsPaginado(matchId, { apenasClosing = false } = {}) {
+// Traz todo o histórico (não só `snapshot='closing'`) mesmo pra partida já
+// finalizada: nem toda partida tem uma linha marcada como fechamento de
+// verdade (a marcação depende do pipeline que capturou aquela odd), e nesse
+// caso a última captura `pre_closing` antes do jogo é a melhor aproximação
+// disponível -- o snapshot escolhido pelo usuário decide, "closing" é só
+// mais um ponto na lista, destacado quando existe (ver snapshotsFechamento).
+async function buscarOddsPaginado(matchId) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
   while (true) {
-    let query = supabase
+    const { data, error } = await supabase
       .from('odds_market')
-      .select('bookmaker, market, selection, odds, captured_at')
+      .select('bookmaker, market, selection, odds, captured_at, snapshot')
       .eq('match_id', matchId)
-      .in('market', MERCADOS_EV);
-    if (apenasClosing) query = query.eq('snapshot', 'closing');
-    const { data, error } = await query
+      .in('market', MERCADOS_EV)
       .order('captured_at', { ascending: false })
       .range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
@@ -293,17 +293,17 @@ export default function AnaliseAvancadaEvento() {
         if (erroJogo || !j) { setErro('Jogo não encontrado.'); setCarregando(false); return; }
 
         const finalizada = j.status === 'finished';
-        // Agendada: todo o histórico de captured_at, pro seletor de snapshot.
-        // Finalizada: só a odd de FECHAMENTO (snapshot='closing'), comparada
-        // contra o resultado real -- ver Verificação de EV mais abaixo.
-        // Qualquer outro status (ao vivo/adiado/cancelado): não busca odds.
+        // Agendada OU finalizada: todo o histórico de captured_at, pro
+        // seletor de snapshot -- fechamento (quando existe) aparece como
+        // mais uma opção na lista, não é exigido. Qualquer outro status (ao
+        // vivo/adiado/cancelado): não busca odds.
         const [{ data: est, error: erroEst }, odds, corners] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
             .eq('match_id', matchId)
             .not('params', 'is', null),
-          (j.status === 'scheduled' || finalizada) ? buscarOddsPaginado(matchId, { apenasClosing: finalizada }) : Promise.resolve([]),
+          (j.status === 'scheduled' || finalizada) ? buscarOddsPaginado(matchId) : Promise.resolve([]),
           finalizada ? buscarCornersReais(matchId, j.home?.id, j.away?.id) : Promise.resolve(null),
         ]);
         if (cancelado) return;
@@ -332,6 +332,15 @@ export default function AnaliseAvancadaEvento() {
   // por timestamp exato -- ver oddsPorBookmaker abaixo.
   const snapshotsDisponiveis = useMemo(
     () => [...new Set(oddsRaw.map((r) => r.captured_at))].sort((a, b) => new Date(b) - new Date(a)),
+    [oddsRaw]
+  );
+
+  // Quais desses timestamps têm pelo menos uma linha marcada snapshot='closing'
+  // -- só pra destacar na lista (rótulo "fechamento"), nem toda partida tem
+  // uma (a marcação depende da fonte); sem ela, a última captura pre_closing
+  // antes do jogo já serve como aproximação.
+  const snapshotsFechamento = useMemo(
+    () => new Set(oddsRaw.filter((r) => r.snapshot === 'closing').map((r) => r.captured_at)),
     [oddsRaw]
   );
 
@@ -583,17 +592,18 @@ export default function AnaliseAvancadaEvento() {
               {(jogo.status === 'scheduled' || finalizada) && (
                 <div className="mt-4">
                   <Secao
-                    titulo={finalizada ? 'Verificação de EV vs. mercado (fechamento) — erros e acertos' : 'Verificação de EV vs. mercado'}
+                    titulo={finalizada ? 'Verificação de EV vs. mercado — erros e acertos' : 'Verificação de EV vs. mercado'}
                     icone={Scale}
                   >
                     {finalizada && (
                       <p className="text-[11px] text-slate-500 mb-3">
-                        Comparação contra a odd de FECHAMENTO real (<code className="text-slate-400">snapshot='closing'</code>,
-                        a que valia na hora do apito inicial) e o resultado real da partida — não é mais uma decisão
-                        de aposta, é conferência do que teria acontecido.
+                        Comparação contra o resultado real da partida — não é mais uma decisão de aposta, é
+                        conferência do que teria acontecido. Escolha o snapshot mais próximo do apito inicial abaixo
+                        (o de fechamento, quando existe, vem marcado); sem fechamento salvo, a última captura prévia
+                        antes do jogo já serve pra esse propósito.
                       </p>
                     )}
-                    {!finalizada && snapshotsDisponiveis.length > 0 && (
+                    {snapshotsDisponiveis.length > 0 && (
                       <div className="flex items-center gap-2 mb-3">
                         <label className="text-[10px] text-slate-500 uppercase font-bold shrink-0">Snapshot</label>
                         <select
@@ -603,7 +613,9 @@ export default function AnaliseAvancadaEvento() {
                         >
                           <option value="">Mais recente de cada casa</option>
                           {snapshotsDisponiveis.map((ts) => (
-                            <option key={ts} value={ts}>{formatarSnapshot(ts)}</option>
+                            <option key={ts} value={ts}>
+                              {formatarSnapshot(ts)}{snapshotsFechamento.has(ts) ? ' (fechamento)' : ''}
+                            </option>
                           ))}
                         </select>
                         <span className="text-[10px] text-slate-600">
@@ -614,12 +626,12 @@ export default function AnaliseAvancadaEvento() {
                     )}
                     {verificacaoEV.length === 0 ? (
                       <p className="text-sm text-slate-600">
+                        Nenhuma casa de apostas com odds salvas nos mercados que o modelo precifica (1X2, Over/Under
+                        de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida
+                        {snapshotSelecionado ? ' nesse snapshot' : ''}
                         {finalizada
-                          ? 'Nenhuma odd de fechamento salva nos mercados que o modelo precifica (1X2, Over/Under de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida.'
-                          : <>Nenhuma casa de apostas com odds salvas nos mercados que o modelo precifica (1X2, Over/Under
-                              de gols, Ambas Marcam, 1X2/Over-Under de escanteios) pra esta partida
-                              {snapshotSelecionado ? ' nesse snapshot' : ' ainda'} — importe odds pela tela de rodada,
-                              {snapshotSelecionado ? ' escolha outro snapshot' : ' aguarde o próximo sync'}.</>}
+                          ? '.'
+                          : <> ainda — importe odds pela tela de rodada, {snapshotSelecionado ? 'escolha outro snapshot' : 'aguarde o próximo sync'}.</>}
                       </p>
                     ) : (
                       <>
