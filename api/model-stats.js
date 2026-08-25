@@ -190,16 +190,37 @@ function chaveMercado(m) {
 // Recebe uma FÁBRICA de query (não a query já construída) — cada página
 // precisa de uma instância nova do builder, reaproveitar a mesma após
 // executada não é seguro no supabase-js.
+//
+// Páginas são buscadas em LOTES PARALELOS (não uma de cada vez): `.range()`
+// endereça um offset absoluto, então a página N não depende da N-1 terminar
+// -- diferente da paginação por keyset (cursor) usada em model_predictions
+// (essa sim sequencial de verdade, ver `buscarModelPredictionsPaginado`).
+// Achado real em produção: com `odds_market` já em milhões de linhas, uma
+// busca de ~32 mil linhas da Pinnacle (33 páginas) ou ~23 mil da média de
+// mercado (24 páginas) rodando uma página de cada vez soma dezenas de
+// segundos só de round-trip (cada página individual é rápida no Postgres,
+// ~tempo de rede é o gargalo) -- fazia `?modelo=mercado_pinnacle_devigado`
+// estourar o `statement_timeout`/`maxDuration` de forma intermitente
+// (funcionava às vezes, dependendo da carga do momento). Buscar em lotes de
+// `CONCORRENCIA_PAGINACAO` páginas por vez, em paralelo, corta esse tempo
+// pelo mesmo fator.
+const CONCORRENCIA_PAGINACAO = 8;
 async function buscarTudoPaginado(criarQuery) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
-  while (true) {
-    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
-    if (error) throw error;
-    resultado.push(...(data || []));
-    if (!data || data.length < TAMANHO_PAGINA) break;
-    pagina++;
+  let acabou = false;
+  while (!acabou) {
+    const paginasDoLote = Array.from({ length: CONCORRENCIA_PAGINACAO }, (_, i) => pagina + i);
+    const respostas = await Promise.all(
+      paginasDoLote.map((p) => criarQuery().range(p * TAMANHO_PAGINA, p * TAMANHO_PAGINA + TAMANHO_PAGINA - 1))
+    );
+    for (const { data, error } of respostas) {
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANHO_PAGINA) acabou = true;
+    }
+    pagina += CONCORRENCIA_PAGINACAO;
   }
   return resultado;
 }
