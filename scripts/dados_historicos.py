@@ -425,6 +425,14 @@ def obter_forma_recente_por_mando(
             "media_xg_sofrido_5j_away": xg_fora.get("xg", {}).get("sofrido"),
             "xgot_home_5j": xg_casa.get("xgot", {}).get("marcado"),
             "xgot_away_5j": xg_fora.get("xgot", {}).get("marcado"),
+            # "sofrido" de xGOT já vem calculado por _stats_marcado_sofrido_lote
+            # (mesma chamada acima, sem custo de query extra) -- só nunca tinha
+            # sido exposto aqui. Ver achado #15 (CONTEXTO_PROJETO.md) e
+            # FEATURES_V10_XG_CORRIGIDO (modelos_ml.py): sem isso, o lado AO
+            # VIVO nunca teria como alimentar xgot_sofrido_home_5j/_away_5j do
+            # jeito que o treino agora espera.
+            "xgot_sofrido_home_5j": xg_casa.get("xgot", {}).get("sofrido"),
+            "xgot_sofrido_away_5j": xg_fora.get("xgot", {}).get("sofrido"),
             "tackles_home_5j": xg_casa.get("tackles", {}).get("marcado"),
             "tackles_away_5j": xg_fora.get("tackles", {}).get("marcado"),
             "interceptions_home_5j": xg_casa.get("interceptions", {}).get("marcado"),
