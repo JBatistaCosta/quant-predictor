@@ -544,19 +544,41 @@ export default async function handler(req, res) {
     // empilhar esse custo na carga inicial).
     const mercadosPinnacleAlvo = mercado ? Object.keys(MERCADO_SELECOES_PINNACLE).filter((m) => m === mercado) : Object.keys(MERCADO_SELECOES_PINNACLE);
     const precisaPinnacleDevigada = modelo === 'mercado_pinnacle_devigado' && mercadosPinnacleAlvo.length > 0;
-    // Sem `modelo`, NÃO busca model_predictions cru -- a tabela tem 5,2M+
-    // linhas (53 model_name distintos, cresce via cron diário) e mesmo com
-    // índice dedicado uma agregação ao vivo leva 12-40s por mercado (medido
-    // em produção via EXPLAIN ANALYZE), acima do maxDuration=60s desta
-    // function. Nesse caso os números de log-loss/Brier/acurácia do MODELO
-    // vêm pré-calculados de `model_stats_resumo` (ver essa tabela e
-    // `?tarefa=recalcular-model-stats` em api/model-maintenance.js) --
-    // comparação com o mercado e calibração em quintis continuam vindo do
-    // caminho abaixo, só ficam ausentes nesses grupos (frontend já trata
-    // "sem odds pra comparar"/`calibracao_disponivel=false`). Com `modelo`
-    // específico, a query já é rápida (filtra no banco), então mantém o
-    // cálculo ao vivo de sempre, com todo o detalhe.
-    const precisaResumoPreCalculado = !modelo;
+    // `model_stats_resumo` só cobre estes 3 mercados (ver
+    // `recalcular_model_stats_resumo` -- migration
+    // 20260825002000_fn_recalcular_model_stats_resumo.sql).
+    const MERCADOS_COM_RESUMO_PRECALCULADO = ['1X2', 'over_under_2.5', 'corners_over_under_9.5'];
+    // A tabela `model_predictions` tem 5,2M+ linhas (53 model_name distintos,
+    // cresce via cron diário) -- pra um `model_name`+`market` grande (ex.:
+    // hibrido_gols_v1/corners_over_under_9.5, 30k+ linhas / ~31 páginas de
+    // 1000), mesmo com keyset (índice certo, ~300-600ms por página medido
+    // via EXPLAIN ANALYZE com role privilegiado) a busca AO VIVO ainda
+    // estourou de verdade em produção (500 "statement timeout", 3 tentativas
+    // sucessivas nesta sessão: #359 ORDER BY, #360 keyset, #361
+    // paralelização). Causa raiz real, só encontrada depois de checar
+    // `pg_roles`: a role usada por `SUPABASE_KEY` (`anon`) tem
+    // `statement_timeout=3s` (`authenticated`=8s) -- BEM abaixo do
+    // `maxDuration=60s` da function e do que os testes via `execute_sql`
+    // (role privilegiada, sem esse limite) mediam. 31 requisições
+    // SEQUENCIAIS via PostgREST (overhead de rede/RLS por cima do tempo de
+    // execução puro no Postgres) somam tempo real suficiente pra alguma
+    // página eventualmente estourar os 3s sob carga -- nenhuma quantidade de
+    // otimização de índice/paralelização de OUTRAS consultas resolve isso,
+    // porque o teto é por-consulta, não pro tempo total do endpoint.
+    //
+    // Por isso: pros 3 mercados que `model_stats_resumo` já cobre, usa o
+    // pré-calculado MESMO quando `modelo` está filtrado (antes só usava sem
+    // `modelo`) -- evita o scan gigante de `model_predictions` inteiramente
+    // pra esse caso. Comparação com o mercado e calibração em quintis
+    // ficam ausentes nesses grupos (frontend já trata "sem odds pra
+    // comparar"/`calibracao_disponivel=false`) -- só a qualidade intrínseca
+    // do modelo (log-loss/Brier/acurácia), que é exatamente o que
+    // `model_stats_resumo` guarda. Mercados fora dessa lista (btts,
+    // handicap, faixa_gols, placar_exato, as outras linhas de escanteios
+    // etc.) continuam no cálculo ao vivo -- não têm alternativa
+    // pré-calculada, e sozinhos (um `market` só, não o `model_name` inteiro)
+    // costumam ter bem menos linhas que corners_over_under_9.5.
+    const precisaResumoPreCalculado = !modelo || (mercado && MERCADOS_COM_RESUMO_PRECALCULADO.includes(mercado));
 
     // As duas levas de consultas abaixo (predições/pinnacle/resumo E as
     // tabelas "fixas" matches/odds_market/market_odds/match_stats/
@@ -602,6 +624,7 @@ export default async function handler(req, res) {
     const promiseResumoRows = precisaResumoPreCalculado
       ? buscarTudoPaginado(() => {
           let q = supabase.from('model_stats_resumo').select('model_name, market, league_id, n_jogos, log_loss_modelo, brier_modelo, accuracy_modelo');
+          if (modelo) q = q.eq('model_name', modelo);
           if (mercado) q = q.eq('market', mercado);
           if (liga_id) q = q.eq('league_id', Number(liga_id));
           return q;
