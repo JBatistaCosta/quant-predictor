@@ -682,13 +682,22 @@ export default function ModelosStats() {
       setCarregando(true);
       setErro('');
       try {
-        const [respStats, ligasResp] = await Promise.all([
+        // A odd devigada da Pinnacle (`mercado_pinnacle_devigado`) vem numa
+        // chamada SEPARADA, em paralelo com a chamada principal (sem
+        // filtro) -- rodar as duas dentro da MESMA invocação do endpoint
+        // (function única) estourava o `maxDuration`/statement_timeout do
+        // Postgres na carga inicial do painel (bug real de produção, ver
+        // api/model-stats.js). Falha nessa chamada extra não derruba o
+        // painel inteiro -- só o "modelo" Pinnacle não aparece na lista.
+        const [respStats, respPinnacle, ligasResp] = await Promise.all([
           fetch(apiUrl('/api/model-stats')),
+          fetch(apiUrl('/api/model-stats?modelo=mercado_pinnacle_devigado')).catch(() => null),
           supabaseAtivo ? supabase.from('leagues').select('id, name') : Promise.resolve({ data: [] }),
         ]);
         const dataStats = await respStats.json();
         if (!respStats.ok) throw new Error(dataStats.error?.message || 'Erro ao carregar estatísticas.');
-        setGrupos(dataStats.grupos || []);
+        const gruposPinnacle = respPinnacle && respPinnacle.ok ? (await respPinnacle.json()).grupos || [] : [];
+        setGrupos([...(dataStats.grupos || []), ...gruposPinnacle]);
         const mapa = {};
         (ligasResp.data || []).forEach(l => { mapa[l.id] = l.name; });
         setLigasPorId(mapa);
