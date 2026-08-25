@@ -51,6 +51,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from postgrest.exceptions import APIError
 from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -71,23 +72,58 @@ def obter_env(nome: str) -> str:
     return valor
 
 
+TAMANHO_PAGINA_PREDICOES = 1000
+
+
 def _carregar_predicoes(supabase, model_name: str, mercado: str) -> dict[int, dict[str, float]]:
     """`model_predictions` (match_id, selection, probability) filtrado por
     model_name/market, no formato largo (`prob_<selecao>`) que
-    `backtest_kelly` espera -- paginado, `.range()` em laço obrigatório."""
-    def factory(inicio, fim):
-        return (
+    `backtest_kelly` espera.
+
+    Paginação por KEYSET composto (match_id, selection), NÃO `.range()`
+    (OFFSET) -- mesmo padrão já validado em
+    `rodar_xi_previsto._buscar_paginado_por_lote` (ali documentado: OFFSET
+    degrada com a profundidade independente de índice, porque o Postgres
+    ainda precisa pular N linhas; o índice `(model_name, market, match_id)`
+    de `model_predictions` -- achado #19/PR #325 -- casa exatamente com
+    `ORDER BY match_id`, então o cursor vira um predicado de índice em vez
+    de "pular N linhas", custo ~constante por página independente da
+    profundidade). Reapareceu aqui rodando de verdade (workflow run
+    32791326723): `hibrido_gols_v1`/`1X2` já tem 46.635 linhas (bem além do
+    tamanho medido quando aquele índice foi criado -- o modelo misto passou
+    a cobrir jogos futuros via cron diário desde então) e o `.range()`
+    antigo estourou `statement_timeout` na página 32 (offset=31000)."""
+    predicoes: dict[int, dict[str, float]] = {}
+    cursor: tuple[int, str] | None = None
+    while True:
+        query = (
             supabase.table("model_predictions")
             .select("match_id, selection, probability")
             .eq("model_name", model_name)
             .eq("market", mercado)
             .order("match_id")
-            .range(inicio, fim)
+            .order("selection")
+            .limit(TAMANHO_PAGINA_PREDICOES)
         )
-
-    predicoes: dict[int, dict[str, float]] = {}
-    for linha in dh._paginar(factory):
-        predicoes.setdefault(linha["match_id"], {})[f"prob_{linha['selection']}"] = linha["probability"]
+        if cursor is not None:
+            cursor_match_id, cursor_selecao = cursor
+            query = query.or_(f"match_id.gt.{cursor_match_id},and(match_id.eq.{cursor_match_id},selection.gt.{cursor_selecao})")
+        try:
+            pagina = query.execute().data or []
+        except APIError as e:
+            if e.code == "57014":
+                logger.warning(
+                    "%s [%s]: timeout paginando model_predictions (cursor=%s) -- seguindo com %d partida(s) já lida(s).",
+                    model_name, mercado, cursor, len(predicoes),
+                )
+                break
+            raise
+        for linha in pagina:
+            predicoes.setdefault(linha["match_id"], {})[f"prob_{linha['selection']}"] = linha["probability"]
+        if len(pagina) < TAMANHO_PAGINA_PREDICOES:
+            break
+        ultimo = pagina[-1]
+        cursor = (ultimo["match_id"], ultimo["selection"])
     return predicoes
 
 
