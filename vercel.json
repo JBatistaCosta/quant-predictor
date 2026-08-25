@@ -18,6 +18,18 @@
     {
       "path": "/api/model-maintenance?tarefa=paper-carteira-rodar-todas",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/model-maintenance?tarefa=recalcular-model-stats&mercado=corners_over_under_9.5",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/model-maintenance?tarefa=recalcular-model-stats&mercado=over_under_2.5",
+      "schedule": "10 10 * * *"
+    },
+    {
+      "path": "/api/model-maintenance?tarefa=recalcular-model-stats&mercado=1X2",
+      "schedule": "20 10 * * *"
     }
   ],
   "functions": {
