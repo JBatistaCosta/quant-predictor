@@ -1,0 +1,22 @@
+-- `odds_market` já tinha um índice pro padrão "1 mercado específico +
+-- snapshot + bookmaker" (migration 20260824213000, achado #19-like) --
+-- mas api/model-stats.js busca odds de UM bookmaker+snapshot SEM filtro
+-- de `market` (todos os mercados de uma vez, pra "media_mercado" e pra
+-- "pinnacle" quando comparando com o modelo sintético), e esse padrão não
+-- tem índice nenhum: `idx_odds_market_market_snapshot_bookmaker_match`
+-- lidera com `market`, que fica ausente aqui, então o planner não usa
+-- esse índice pra filtrar snapshot+bookmaker eficientemente.
+--
+-- Confirmado via EXPLAIN ANALYZE em produção: `WHERE snapshot='closing'
+-- AND bookmaker='media_mercado' ORDER BY id OFFSET 20000` levava
+-- 11,8s (parallel seq scan + sort) -- e mesmo SEM `ORDER BY` (plano via
+-- o índice existente, sem alinhamento de fato) já levava 4s no mesmo
+-- offset. Ambos acima do `statement_timeout=3s` da role `anon`
+-- (confirmado consultando `pg_roles` -- teto que `EXPLAIN ANALYZE`
+-- rodado com role privilegiada não expõe), o que quebrava tanto a carga
+-- SEM filtro do painel `/modelos` (usa a leitura de `media_mercado`)
+-- quanto a comparação com `mercado_pinnacle_devigado` (usa a leitura de
+-- `pinnacle`) -- as duas passam por essa mesma consulta em
+-- api/model-stats.js, sem filtro de `market`.
+CREATE INDEX IF NOT EXISTS idx_odds_market_snapshot_bookmaker_id
+    ON public.odds_market (snapshot, bookmaker, id);

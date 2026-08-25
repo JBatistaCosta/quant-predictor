@@ -618,8 +618,21 @@ export default async function handler(req, res) {
     // linhas irrelevantes e estoura o `statement_timeout` do Postgres (bug
     // real, achado testando em produção) -- `.in('market', ...)` restringe
     // ao mesmo conjunto que `MERCADO_SELECOES_PINNACLE` sabe devigar.
+    //
+    // Esta consulta e `promiseOddsRowsAntigas`/`promiseCorneragensBrutas`
+    // abaixo usam `buscarTudoPaginado` (OFFSET paralelo com `.order('id')`
+    // default), não `buscarTudoPaginadoKeyset` -- achado testando em
+    // produção depois do #363: sem filtro de `market`, nenhum índice
+    // existente servia `snapshot+bookmaker` (só havia índices liderados por
+    // `market` ou por `match_id`), e tanto o plano SEM ordenação (4s no
+    // offset 20000) quanto COM `ORDER BY id` (11,8s, sequential scan +
+    // sort) estouravam o `statement_timeout=3s` da role `anon`. Resolvido
+    // com um índice novo (`idx_odds_market_snapshot_bookmaker_id`,
+    // migration 20260825050000) -- com ele, `.order('id')` vira Index Scan
+    // direto (502ms no mesmo offset), então o OFFSET paralelo (mais rápido
+    // que keyset sequencial pra esse volume) volta a ser seguro.
     const promisePinnacleOdds = precisaPinnacleDevigada
-      ? buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo), ['match_id', 'id'])
+      ? buscarTudoPaginado(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo))
       : Promise.resolve([]);
     const promiseResumoRows = precisaResumoPreCalculado
       ? buscarTudoPaginado(() => {
@@ -640,9 +653,9 @@ export default async function handler(req, res) {
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
     // round-trips do que quebrar em lotes de match_id.
     const promiseTodasMatches = buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id'));
-    const promiseOddsRowsAntigas = buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'), ['match_id', 'id']);
+    const promiseOddsRowsAntigas = buscarTudoPaginado(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'));
     const promiseMarketOddsRaw = buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away'));
-    const promiseCorneragensBrutas = buscarTudoPaginadoKeyset(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null), ['match_id', 'id']);
+    const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
 
     const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows] = await Promise.all([
