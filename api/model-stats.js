@@ -192,9 +192,7 @@ function chaveMercado(m) {
 // executada não é seguro no supabase-js.
 //
 // Páginas são buscadas em LOTES PARALELOS (não uma de cada vez): `.range()`
-// endereça um offset absoluto, então a página N não depende da N-1 terminar
-// -- diferente da paginação por keyset (cursor) usada em model_predictions
-// (essa sim sequencial de verdade, ver `buscarModelPredictionsPaginado`).
+// endereça um offset absoluto, então a página N não depende da N-1 terminar.
 // Achado real em produção: com `odds_market` já em milhões de linhas, uma
 // busca de ~32 mil linhas da Pinnacle (33 páginas) ou ~23 mil da média de
 // mercado (24 páginas) rodando uma página de cada vez soma dezenas de
@@ -215,10 +213,38 @@ const CONCORRENCIA_PAGINACAO = 8;
 // página que falhou, não no lote inteiro -- barato (mesmo offset, mesma
 // query) e cobre a variância pontual sem esconder um erro de verdade
 // (schema/permissão continuam falhando depois das tentativas).
-async function buscarPaginaComRetry(criarQuery, inicio, fim, tentativas = 3) {
+async function buscarPaginaComRetry(criarQuery, inicio, fim, colunasOrdem, tentativas = 3) {
   let ultimoErro;
   for (let i = 0; i < tentativas; i++) {
-    const { data, error } = await criarQuery().range(inicio, fim);
+    // ORDER BY é OBRIGATÓRIO aqui, não só estilo -- sem ele o Postgres não
+    // garante NENHUMA ordem estável de linha entre chamadas de `.range()`
+    // (OFFSET/LIMIT) separadas, e as `CONCORRENCIA_PAGINACAO` páginas de um
+    // lote são disparadas como consultas INDEPENDENTES em paralelo -- sem
+    // ordenação, cada uma pode escolher um plano/ordem de varredura
+    // ligeiramente diferente, produzindo linha duplicada em mais de uma
+    // "página" (e outra pulada). Achado real em produção rodando o painel
+    // filtrado por model_name+market: `model_predictions` tinha exatamente
+    // 842 linhas (421 partidas × 2 seleções) pra hibrido_gols_v1/
+    // corners_over_under_9.5 na liga 1 (conferido via SQL direto), mas o
+    // endpoint devolvia 1538 (770+768) -- quase o dobro, inflando o
+    // denominador de acurácia/log-loss e derrubando a acurácia reportada
+    // pra 13,5% (o valor real, batendo com o `model_stats_resumo`
+    // pré-calculado via SQL, é ~51%).
+    //
+    // `colunasOrdem` é OBRIGATÓRIO no caller (não tem default aqui de
+    // propósito) -- `id` sozinho é seguro em qualquer tabela (é a PK), mas
+    // pra `model_predictions`/`odds_market`/`match_stats` filtradas pelas
+    // colunas líderes dos índices reais (achado #19, migration
+    // `20260824213000_indice_odds_market_...`) ordenar por `id` faz o
+    // planner IGNORAR esse índice e varrer em ordem de `id` (mesmo achado
+    // de `rodar_xi_previsto.py`: ORDER BY desalinhado do índice de filtro
+    // vira quase full-scan) -- por isso os callers dessas tabelas passam
+    // `['match_id', 'id']` (alinha com o índice E garante ordem 100%
+    // estável via o `id` como desempate, já que `match_id` sozinho repete
+    // entre seleções/bookmakers).
+    let query = criarQuery();
+    for (const coluna of colunasOrdem) query = query.order(coluna);
+    const { data, error } = await query.range(inicio, fim);
     if (!error) return data;
     ultimoErro = error;
     if (i < tentativas - 1) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
@@ -226,7 +252,7 @@ async function buscarPaginaComRetry(criarQuery, inicio, fim, tentativas = 3) {
   throw ultimoErro;
 }
 
-async function buscarTudoPaginado(criarQuery) {
+async function buscarTudoPaginado(criarQuery, colunasOrdem = ['id']) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
@@ -234,7 +260,7 @@ async function buscarTudoPaginado(criarQuery) {
   while (!acabou) {
     const paginasDoLote = Array.from({ length: CONCORRENCIA_PAGINACAO }, (_, i) => pagina + i);
     const respostas = await Promise.all(
-      paginasDoLote.map((p) => buscarPaginaComRetry(criarQuery, p * TAMANHO_PAGINA, p * TAMANHO_PAGINA + TAMANHO_PAGINA - 1))
+      paginasDoLote.map((p) => buscarPaginaComRetry(criarQuery, p * TAMANHO_PAGINA, p * TAMANHO_PAGINA + TAMANHO_PAGINA - 1, colunasOrdem))
     );
     for (const data of respostas) {
       resultado.push(...(data || []));
@@ -343,7 +369,7 @@ async function calcularStatsXi(supabase) {
 
   const [matchesRows, lineupRows] = await Promise.all([
     Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status').in('id', l)))).then((r) => r.flat()),
-    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('match_lineup_fotmob').select('match_id, team_id, player_id, is_starter').in('match_id', l)))).then((r) => r.flat()),
+    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('match_lineup_fotmob').select('match_id, team_id, player_id, is_starter').in('match_id', l), ['match_id', 'id']))).then((r) => r.flat()),
   ]);
 
   const matchPorId = {};
@@ -488,7 +514,7 @@ export default async function handler(req, res) {
             // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
             if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
             return q;
-          }),
+          }, ['match_id', 'id']),
       // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
       // já filtra tudo fora, sem precisar de query condicional separada.
       mercado && mercado !== '1X2'
@@ -506,7 +532,7 @@ export default async function handler(req, res) {
       // real, achado testando em produção) -- `.in('market', ...)` restringe
       // ao mesmo conjunto que `MERCADO_SELECOES_PINNACLE` sabe devigar.
       precisaPinnacleDevigada
-        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo))
+        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo), ['match_id', 'id'])
         : Promise.resolve([]),
       precisaResumoPreCalculado
         ? buscarTudoPaginado(() => {
@@ -563,9 +589,9 @@ export default async function handler(req, res) {
     // round-trips do que quebrar em lotes de match_id.
     const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id')),
-      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'), ['match_id', 'id']),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
-      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, corners').not('corners', 'is', null)),
+      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, corners').not('corners', 'is', null), ['match_id', 'id']),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
     const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
