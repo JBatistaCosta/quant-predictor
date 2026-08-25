@@ -628,7 +628,12 @@ export default async function handler(req, res) {
           if (mercado) q = q.eq('market', mercado);
           if (liga_id) q = q.eq('league_id', Number(liga_id));
           return q;
-        })
+        // `model_stats_resumo` não tem coluna `id` -- sua PK é o composto
+        // (model_name, market, league_id) (migration
+        // 20260825001000_model_stats_resumo.sql). O default `['id']` de
+        // `buscarTudoPaginado` quebrava aqui com "column
+        // model_stats_resumo.id does not exist" -- passar a PK real.
+        }, ['model_name', 'market', 'league_id'])
       : Promise.resolve([]);
 
     // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
