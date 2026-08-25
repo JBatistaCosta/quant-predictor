@@ -32,6 +32,7 @@ from dados_historicos import (
     FEATURES,
     FEATURES_V9,
     FEATURES_V10,
+    FEATURES_V10_XG_CORRIGIDO,
     FEATURES_V11,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
@@ -173,10 +174,19 @@ FEATURES_POR_MODELO = {
     # ponto do híbrido é justamente levar pro λ todo o contexto pré-jogo que
     # o Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
     # classificação), em vez de só força de ataque/defesa por time.
-    "hibrido_gols_v1": FEATURES_V10,
-    "hibrido_gols_xg_v1": FEATURES_V10,
-    "hibrido_corners_v1": FEATURES_V10,
-    "hibrido_gols_lgbm_v1": FEATURES_V10,
+    # FEATURES_V10_XG_CORRIGIDO em vez de FEATURES_V10 -- teste isolado do
+    # achado #15 (CONTEXTO_PROJETO.md): V10 herda `COLUNAS_FORMA_XG`/
+    # `COLUNAS_FORMA_XGOT` com nome de coluna que não existe mais no dataset,
+    # então os 4 modelos híbridos hoje treinam sem NENHUM sinal de xG/xGOT
+    # (achado real, medido em ago/2026: mercado bate os dois em 1X2/O-U/BTTS
+    # com IC95% > 0, ver `scripts/avaliar_modelo_misto_vs_mercado.py` e
+    # achado #18). Só os 4 `hibrido_*` apontam pra cá de propósito -- ver
+    # docstring de FEATURES_V10_XG_CORRIGIDO em dados_historicos.py pra não
+    # misturar esse teste com o dos classificadores catboost_v9/v10/etc.
+    "hibrido_gols_v1": FEATURES_V10_XG_CORRIGIDO,
+    "hibrido_gols_xg_v1": FEATURES_V10_XG_CORRIGIDO,
+    "hibrido_corners_v1": FEATURES_V10_XG_CORRIGIDO,
+    "hibrido_gols_lgbm_v1": FEATURES_V10_XG_CORRIGIDO,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     "catboost_v9": FEATURES_V9,
     "xgboost_v9": FEATURES_V9,

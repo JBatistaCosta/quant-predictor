@@ -2876,6 +2876,36 @@ FEATURES_NUMERICAS_V10 = FEATURES_NUMERICAS_V9 + [
 ]
 FEATURES_V10 = FEATURES_NUMERICAS_V10 + CAT_FEATURES
 
+# V10 com o achado #15 corrigido (CONTEXTO_PROJETO.md) -- `FEATURES_NUMERICAS`
+# (herdada por toda a cadeia V1..V10) referencia `COLUNAS_FORMA_XG`/
+# `COLUNAS_FORMA_XGOT`, que apontam pro esquema de nome ANTIGO
+# (`media_xg_5j_home` etc.), de antes de `_forma_por_mando_multi_janelas`
+# substituir o cálculo de forma de xG/xGOT -- essas colunas nunca são
+# geradas hoje, então `carregar_dataset` descarta as 8 (4 de xG + 4 de
+# xGOT) silenciosamente, e catboost_v9/v10, xgboost_v9/v10, lightgbm_v9/v10,
+# mlp_v9/v10 e os 4 `hibrido_*` (ver `FEATURES_POR_MODELO` em
+# `modelos_ml.py`) treinam sem NENHUM sinal de xG/xGOT, sem que ninguém
+# tenha percebido. Correção de fundo (portar a cadeia toda) muda o que
+# TODOS esses modelos já em produção usam -- decisão maior, não tomada
+# aqui. Esta lista é um teste ISOLADO e escopado: mesmas 4+4 features na
+# mesma janela (5j) que `COLUNAS_FORMA_XG`/`COLUNAS_FORMA_XGOT` sempre
+# pretenderam ter, só com o nome de coluna que existe de verdade no
+# dataset hoje -- mesmo padrão já provado por `FEATURES_XG_XI_V2` (usada
+# pelos regressores `catboost_xg_regressor_v2`/`catboost_xgot_regressor_v2`,
+# nunca por um modelo de RESULTADO). Usada só por
+# `FEATURES_POR_MODELO["hibrido_*"]` em `modelos_ml.py`, pra medir se
+# restaurar xG/xGOT muda o log-loss out-of-sample do modelo misto contra
+# baseline -- não usada por nenhum catboost_v9/v10/xgboost_v9/v10/etc
+# de propósito, pra não misturar o efeito desse fix com o de qualquer
+# outro modelo no mesmo teste.
+FEATURES_NUMERICAS_V10_XG_CORRIGIDO = [
+    f for f in FEATURES_NUMERICAS_V10 if f not in COLUNAS_FORMA_XG.values() and f not in COLUNAS_FORMA_XGOT.values()
+] + [
+    "xg_home_5j", "xg_sofrido_home_5j", "xg_away_5j", "xg_sofrido_away_5j",
+    "xgot_home_5j", "xgot_sofrido_home_5j", "xgot_away_5j", "xgot_sofrido_away_5j",
+]
+FEATURES_V10_XG_CORRIGIDO = FEATURES_NUMERICAS_V10_XG_CORRIGIDO + CAT_FEATURES
+
 # v11 — tudo da v10 + força do XI titular com dois sinais temporais
 # separados, "abertura" (previsto, antes da escalação real sair) e
 # "fechamento" (real, escalação confirmada) -- mesmo espírito do padrão
