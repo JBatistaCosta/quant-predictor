@@ -489,6 +489,11 @@ export default function TreinoCustom() {
   const [resetando, setResetando] = useState(null); // config_id sendo resetado
   const [excluindo, setExcluindo] = useState(null); // config_id sendo excluído
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(null); // config_id aguardando confirm
+  const [orfaosAberto, setOrfaosAberto] = useState(false);
+  const [orfaos, setOrfaos] = useState(null); // null = ainda não carregado
+  const [carregandoOrfaos, setCarregandoOrfaos] = useState(false);
+  const [excluindoOrfao, setExcluindoOrfao] = useState(null); // nome_base sendo excluído
+  const [confirmandoExclusaoOrfao, setConfirmandoExclusaoOrfao] = useState(null);
   const [mensagem, setMensagem] = useState(null); // { tipo: 'ok'|'erro', texto }
   const [expandidos, setExpandidos] = useState({}); // config_id → bool
   const [grupoExpandido, setGrupoExpandido] = useState({}); // grupo → bool
@@ -847,6 +852,44 @@ export default function TreinoCustom() {
     }
   }
 
+  // --------- Modelos órfãos (config já excluída, previsões ficaram no banco) ---------
+  // Carregado sob demanda (painel colapsado por padrão) -- a auditoria varre
+  // model_predictions inteira no banco (~9s, tabela com milhões de linhas),
+  // não vale pagar esse custo em toda carga da página.
+  async function carregarOrfaos() {
+    setCarregandoOrfaos(true);
+    try {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=modelos-custom-orfaos'));
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      setOrfaos(dados.orfaos || []);
+    } catch (e) {
+      mostrarMensagem('erro', e.message);
+    } finally {
+      setCarregandoOrfaos(false);
+    }
+  }
+
+  async function excluirOrfao(nomeBase) {
+    if (!session) { mostrarMensagem('erro', 'Faça login para esta ação.'); return; }
+    setExcluindoOrfao(nomeBase);
+    setConfirmandoExclusaoOrfao(null);
+    try {
+      const resp = await fetch(
+        apiUrl(`/api/model-maintenance?tarefa=excluir-modelo-orfao&nome=${encodeURIComponent(nomeBase)}`),
+        { method: 'POST', headers: authHeader },
+      );
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      mostrarMensagem('ok', `"${nomeBase}" excluído (${dados.dados_removidos?.model_predictions ?? 0} previsões removidas).`);
+      setOrfaos((atual) => (atual || []).filter((o) => o.nome_base !== nomeBase));
+    } catch (e) {
+      mostrarMensagem('erro', e.message);
+    } finally {
+      setExcluindoOrfao(null);
+    }
+  }
+
   // --------- Renderização ---------
   function fmtData(iso) {
     if (!iso) return '—';
@@ -901,6 +944,60 @@ export default function TreinoCustom() {
             <Plus size={16} /> Nova configuração
           </button>
         </div>
+      </div>
+
+      {/* Modelos órfãos: config já excluída, previsões ficaram no banco */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl">
+        <button
+          onClick={() => {
+            const abrindo = !orfaosAberto;
+            setOrfaosAberto(abrindo);
+            if (abrindo && orfaos === null) carregarOrfaos();
+          }}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm text-slate-300 hover:text-white transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-400" />
+            Modelos órfãos (config excluída, previsões ainda no banco)
+            {orfaos !== null && orfaos.length > 0 && (
+              <span className="bg-amber-900/50 border border-amber-700 text-amber-300 rounded-full px-2 py-0.5 text-xs">{orfaos.length}</span>
+            )}
+          </span>
+          {orfaosAberto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+        {orfaosAberto && (
+          <div className="px-4 pb-4 space-y-2">
+            {carregandoOrfaos ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={14} className="animate-spin" /> Verificando...</div>
+            ) : orfaos && orfaos.length === 0 ? (
+              <p className="text-sm text-slate-500">Nenhum modelo órfão encontrado.</p>
+            ) : (
+              (orfaos || []).map((o) => (
+                <div key={o.nome_base} className="flex items-center justify-between gap-3 bg-slate-900 border border-slate-700/50 rounded-lg px-3 py-2">
+                  <div className="text-sm">
+                    <span className="text-slate-200 font-medium">{o.nome_base}</span>
+                    <span className="text-slate-500"> — {o.variantes} variante(s), {o.total_previsoes} previsões</span>
+                  </div>
+                  {confirmandoExclusaoOrfao === o.nome_base ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-slate-400">Excluir de vez?</span>
+                      <button onClick={() => excluirOrfao(o.nome_base)} className="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white">Sim</button>
+                      <button onClick={() => setConfirmandoExclusaoOrfao(null)} className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300">Não</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmandoExclusaoOrfao(o.nome_base)}
+                      disabled={excluindoOrfao === o.nome_base}
+                      className="shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-900/50 border border-red-700 text-red-300 hover:bg-red-900 disabled:opacity-50"
+                    >
+                      {excluindoOrfao === o.nome_base ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Excluir
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Toast de mensagem */}

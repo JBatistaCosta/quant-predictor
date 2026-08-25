@@ -866,6 +866,40 @@ async function tarefaEstimarPartidaCustom(supabase, authHeader, body) {
 // TAREFAS: Gestão de configs customizadas (excluir / copiar / cancelar / resetar)
 // ============================================================
 
+// Tabelas que guardam linhas por `model_name` (string livre, sem FK de volta
+// pra custom_model_configs.id) alimentadas pelo pipeline de Treino
+// Customizado -- ver scripts/prever_partidas_futuras_custom.py
+// `nome_do_modelo` ("{nome da config} [{algoritmo}]", ou
+// "{nome} [Stacking: {grupo}]") e scripts/calibracao.py (sufixo
+// `_calibrado_platt`/`_calibrado_isotonic` no MESMO nome). Excluir só a
+// config sem tocar essas tabelas deixava as previsões órfãs pra sempre --
+// motivo raiz descoberto investigando o volume de model_predictions
+// (migration 20260825001000_model_stats_resumo).
+const TABELAS_MODEL_NAME_CUSTOM = ['model_predictions', 'model_calibration', 'model_match_estimates', 'model_stat_estimates', 'model_stats_resumo'];
+
+function escaparCoringasLike(texto) {
+  return texto.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+// Apaga toda linha, em toda tabela relevante, cujo `model_name` comece com
+// "{nomeBase} [" -- cobre qualquer algoritmo/grupo de stacking e as duas
+// variantes calibradas de cada um (o sufixo `_calibrado_*` vem DEPOIS do
+// "]", então o prefixo "{nomeBase} [" já as pega todas). `nomeBase` é texto
+// livre digitado pelo usuário na config -- escapado antes de virar padrão
+// LIKE (`%`/`_` são coringas do LIKE, não têm risco de injeção via
+// supabase-js/PostgREST, mas sem escapar um nome com esses caracteres
+// apagaria mais linhas do que deveria).
+async function excluirDadosDoModeloPorNomeBase(supabase, nomeBase) {
+  const padrao = `${escaparCoringasLike(nomeBase)} [%`;
+  const contagens = {};
+  for (const tabela of TABELAS_MODEL_NAME_CUSTOM) {
+    const { error, count } = await supabase.from(tabela).delete({ count: 'exact' }).like('model_name', padrao);
+    if (error) throw error;
+    contagens[tabela] = count ?? 0;
+  }
+  return contagens;
+}
+
 async function tarefaExcluirConfigCustom(supabase, authHeader, configId) {
   if (!configId) return { status: 400, error: 'Parâmetro config_id é obrigatório.' };
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
@@ -876,9 +910,42 @@ async function tarefaExcluirConfigCustom(supabase, authHeader, configId) {
   if (!cfg) return { status: 404, error: 'Configuração não encontrada.' };
   if (cfg.status === 'treinando') return { status: 409, error: 'Não é possível excluir um modelo em treinamento. Pare primeiro.' };
 
+  const dadosRemovidos = await excluirDadosDoModeloPorNomeBase(supabase, cfg.name);
+
   const { error } = await supabase.from('custom_model_configs').delete().eq('id', configId);
   if (error) throw error;
-  return { status: 200, excluido: configId, name: cfg.name };
+  return { status: 200, excluido: configId, name: cfg.name, dados_removidos: dadosRemovidos };
+}
+
+// Modelos customizados cuja CONFIG já foi deletada mas cujas previsões
+// ficaram órfãs (exclusões feitas ANTES desta correção, ou apagadas direto
+// no banco) -- ver `modelos_custom_orfaos()` (migration
+// 20260825010000_fn_modelos_custom_orfaos.sql) pra critério exato. Só
+// relata, não apaga nada (leitura, sem autenticação -- mesmo padrão de
+// outras tarefas de diagnóstico deste arquivo).
+async function tarefaModelosCustomOrfaos(supabase) {
+  const { data, error } = await supabase.rpc('modelos_custom_orfaos');
+  if (error) throw error;
+  return { orfaos: data || [] };
+}
+
+// Exclusão de verdade de um modelo órfão específico (nome_base exato,
+// vindo da lista de `tarefaModelosCustomOrfaos`) -- autenticada, mesmo
+// padrão de `tarefaExcluirConfigCustom`, já que é uma exclusão permanente
+// de dado de produção.
+async function tarefaExcluirModeloOrfao(supabase, authHeader, nomeBase) {
+  if (!nomeBase) return { status: 400, error: 'Parâmetro nome é obrigatório.' };
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const { data: cfgExistente } = await supabase
+    .from('custom_model_configs').select('id').eq('name', nomeBase).maybeSingle();
+  if (cfgExistente) {
+    return { status: 409, error: `Existe uma config ativa chamada "${nomeBase}" -- não é órfão. Use ?tarefa=excluir-config-custom&config_id=${cfgExistente.id} se quiser excluir o modelo inteiro.` };
+  }
+
+  const dadosRemovidos = await excluirDadosDoModeloPorNomeBase(supabase, nomeBase);
+  return { status: 200, excluido: nomeBase, dados_removidos: dadosRemovidos };
 }
 
 async function tarefaCopiarConfigCustom(supabase, authHeader, configId) {
@@ -5517,6 +5584,17 @@ export default async function handler(req, res) {
     if (tarefa === 'excluir-config-custom') {
       const configId = (req.body || {}).config_id || req.query.config_id;
       const resultado = await tarefaExcluirConfigCustom(supabase, req.headers.authorization, configId);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'modelos-custom-orfaos') {
+      return res.status(200).json(await tarefaModelosCustomOrfaos(supabase));
+    }
+
+    if (tarefa === 'excluir-modelo-orfao') {
+      const nomeBase = (req.body || {}).nome || req.query.nome;
+      const resultado = await tarefaExcluirModeloOrfao(supabase, req.headers.authorization, nomeBase);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
