@@ -490,7 +490,7 @@ def main():
                 menor_delta, melhor = delta, c
         return melhor
 
-    n_ok, n_sem_par, n_falha = 0, 0, 0
+    n_ok, n_sem_par, n_falha, n_id_reaproveitado = 0, 0, 0, 0
 
     for i, fx in enumerate(finished):
         casado = casar(fx["home"]["id"], fx["away"]["id"], fx["status"]["utcTime"])
@@ -511,6 +511,29 @@ def main():
             n_falha += 1
             time.sleep(PACING_SEGUNDOS)
             continue
+
+        # Achado real (2026-08-25): o FotMob reaproveita `matchId` antigos pra
+        # partidas novas -- `/api/data/fixtures?season=X` continua listando o
+        # id associado ao jogo histórico correto, mas `/matchDetails?matchId=`
+        # pra esse MESMO id pode devolver um jogo completamente diferente (às
+        # vezes anos no futuro) entre os mesmos 2 times, sem erro HTTP nenhum.
+        # Sem essa checagem, um re-sync `--forcar` gravaria silenciosamente as
+        # stats do jogo ERRADO em cima da partida histórica (achado rodando
+        # `--forcar` numa amostra de 10 partidas 2017-2025 que já estavam
+        # "sem stats" -- todas tinham essa troca de id, confirmado comparando
+        # a data de `header.status.utcTime` contra a data esperada do fixture).
+        data_retornada = ((d.get("header") or {}).get("status") or {}).get("utcTime")
+        if data_retornada:
+            try:
+                _esperado = dt.datetime.fromisoformat(fx["status"]["utcTime"].replace("Z", "+00:00"))
+                _retornado = dt.datetime.fromisoformat(data_retornada.replace("Z", "+00:00"))
+                if abs((_retornado - _esperado).total_seconds()) > 36 * 3600:
+                    print(f"  matchId={fx['id']} reaproveitado pelo FotMob (esperado {fx['status']['utcTime']}, veio {data_retornada}) -- pulando sem gravar nada")
+                    n_id_reaproveitado += 1
+                    time.sleep(PACING_SEGUNDOS)
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         try:
             extraido = processar_matchdetails_completo(d, match_id, fx["id"], fotmob_to_internal)
@@ -583,7 +606,7 @@ def main():
             print(f"  processados {i + 1}/{len(finished)}...")
         time.sleep(PACING_SEGUNDOS)
 
-    print(f"\nOK: {n_ok} jogos sincronizados, {n_sem_par} sem par em matches, {n_falha} falhas de rede.")
+    print(f"\nOK: {n_ok} jogos sincronizados, {n_sem_par} sem par em matches, {n_falha} falhas de rede, {n_id_reaproveitado} com matchId reaproveitado pelo FotMob (pulados sem gravar).")
 
 
 if __name__ == "__main__":
