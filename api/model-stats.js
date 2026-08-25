@@ -205,6 +205,27 @@ function chaveMercado(m) {
 // `CONCORRENCIA_PAGINACAO` páginas por vez, em paralelo, corta esse tempo
 // pelo mesmo fator.
 const CONCORRENCIA_PAGINACAO = 8;
+
+// Buscar 8 páginas em paralelo (ver comentário acima) tem uma consequência
+// real, testada em produção: se UMA das 8 esbarrar num `statement_timeout`
+// pontual do Postgres (contenção passageira, não um erro de verdade -- as
+// outras 7 do mesmo lote passam normal), `Promise.all` propaga o erro e
+// derruba o endpoint inteiro mesmo a chamada geral tendo terminado rápido
+// (achado: `500` em só 9s, bem abaixo do `maxDuration`). Retry curto SÓ na
+// página que falhou, não no lote inteiro -- barato (mesmo offset, mesma
+// query) e cobre a variância pontual sem esconder um erro de verdade
+// (schema/permissão continuam falhando depois das tentativas).
+async function buscarPaginaComRetry(criarQuery, inicio, fim, tentativas = 3) {
+  let ultimoErro;
+  for (let i = 0; i < tentativas; i++) {
+    const { data, error } = await criarQuery().range(inicio, fim);
+    if (!error) return data;
+    ultimoErro = error;
+    if (i < tentativas - 1) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+  }
+  throw ultimoErro;
+}
+
 async function buscarTudoPaginado(criarQuery) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
@@ -213,10 +234,9 @@ async function buscarTudoPaginado(criarQuery) {
   while (!acabou) {
     const paginasDoLote = Array.from({ length: CONCORRENCIA_PAGINACAO }, (_, i) => pagina + i);
     const respostas = await Promise.all(
-      paginasDoLote.map((p) => criarQuery().range(p * TAMANHO_PAGINA, p * TAMANHO_PAGINA + TAMANHO_PAGINA - 1))
+      paginasDoLote.map((p) => buscarPaginaComRetry(criarQuery, p * TAMANHO_PAGINA, p * TAMANHO_PAGINA + TAMANHO_PAGINA - 1))
     );
-    for (const { data, error } of respostas) {
-      if (error) throw error;
+    for (const data of respostas) {
       resultado.push(...(data || []));
       if (!data || data.length < TAMANHO_PAGINA) acabou = true;
     }
