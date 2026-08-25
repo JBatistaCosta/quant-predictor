@@ -271,6 +271,58 @@ async function buscarTudoPaginado(criarQuery, colunasOrdem = ['id']) {
   return resultado;
 }
 
+// KEYSET (cursor composto), não OFFSET -- pra tabelas GRANDES filtradas
+// pelas colunas líderes de um índice real (`model_predictions` por
+// model_name+market, achado #19; `odds_market` por market+snapshot+
+// bookmaker) onde a consulta varre o índice inteiro, não uma fatia
+// pequena. Achado real testando em produção logo depois do fix de
+// `.order()` acima: adicionar `ORDER BY match_id, id` a essas consultas
+// corrigiu a duplicação, mas fez `?modelo=hibrido_gols_v1&mercado=
+// corners_over_under_9.5` estourar `statement_timeout` (500 em 30s) --
+// forçar ordem de verdade reabriu o mesmo problema já resolvido em Python
+// nesta sessão (`avaliar_modelo_misto_vs_mercado._carregar_predicoes`) e
+// em `rodar_xi_previsto.py`: OFFSET profundo custa O(offset) mesmo com o
+// índice certo, porque o Postgres ainda precisa pular N linhas por
+// página, e a versão SEM ordenação só parecia rápida porque cada
+// `.range()` conseguia escapar sem varrer de verdade (ao custo de
+// resultado errado). Cursor composto `(match_id, id)` via
+// `.or("match_id.gt.X,and(match_id.eq.X,id.gt.Y)")` vira um predicado de
+// índice em vez de "pular N linhas" -- custo ~constante por página,
+// independente da profundidade. Sequencial (não paralelo como
+// `buscarTudoPaginado`) porque o cursor da página N depende da última
+// linha da página N-1 -- aceitável aqui (poucas dezenas de páginas nas
+// consultas que usam isto, não milhares).
+async function buscarTudoPaginadoKeyset(criarQuery, colunasOrdem) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let cursor = null;
+  while (true) {
+    let query = criarQuery();
+    for (const coluna of colunasOrdem) query = query.order(coluna);
+    query = query.limit(TAMANHO_PAGINA);
+    if (cursor !== null) {
+      const clausulas = colunasOrdem.map((coluna, i) => {
+        const partes = colunasOrdem.slice(0, i).map((c, j) => `${c}.eq.${cursor[j]}`);
+        partes.push(`${coluna}.gt.${cursor[i]}`);
+        return partes.length > 1 ? `and(${partes.join(',')})` : partes[0];
+      });
+      query = query.or(clausulas.join(','));
+    }
+    let data, error;
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      ({ data, error } = await query);
+      if (!error) break;
+      if (tentativa < 2) await new Promise((r) => setTimeout(r, 300 * (tentativa + 1)));
+    }
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    const ultimo = data[data.length - 1];
+    cursor = colunasOrdem.map((c) => ultimo[c]);
+  }
+  return resultado;
+}
+
 // Normaliza as saídas do pipeline "Model Benchmarking" (`predicoes`/
 // `market_odds`, ver scripts/rodar_predicoes.py) pro MESMO formato usado
 // pelo pipeline mais antigo (`model_predictions`/`odds_market`, uma linha
@@ -369,7 +421,7 @@ async function calcularStatsXi(supabase) {
 
   const [matchesRows, lineupRows] = await Promise.all([
     Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, season, status').in('id', l)))).then((r) => r.flat()),
-    Promise.all(lotes.map((l) => buscarTudoPaginado(() => supabase.from('match_lineup_fotmob').select('match_id, team_id, player_id, is_starter').in('match_id', l), ['match_id', 'id']))).then((r) => r.flat()),
+    Promise.all(lotes.map((l) => buscarTudoPaginadoKeyset(() => supabase.from('match_lineup_fotmob').select('id, match_id, team_id, player_id, is_starter').in('match_id', l), ['match_id', 'id']))).then((r) => r.flat()),
   ]);
 
   const matchPorId = {};
@@ -508,7 +560,7 @@ export default async function handler(req, res) {
     const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows] = await Promise.all([
       precisaResumoPreCalculado
         ? Promise.resolve([])
-        : buscarTudoPaginado(() => {
+        : buscarTudoPaginadoKeyset(() => {
             let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
             if (modelo) q = q.eq('model_name', modelo);
             // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
@@ -532,7 +584,7 @@ export default async function handler(req, res) {
       // real, achado testando em produção) -- `.in('market', ...)` restringe
       // ao mesmo conjunto que `MERCADO_SELECOES_PINNACLE` sabe devigar.
       precisaPinnacleDevigada
-        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo), ['match_id', 'id'])
+        ? buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo), ['match_id', 'id'])
         : Promise.resolve([]),
       precisaResumoPreCalculado
         ? buscarTudoPaginado(() => {
@@ -589,9 +641,9 @@ export default async function handler(req, res) {
     // round-trips do que quebrar em lotes de match_id.
     const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id')),
-      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'), ['match_id', 'id']),
+      buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'), ['match_id', 'id']),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
-      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, team_id, corners').not('corners', 'is', null), ['match_id', 'id']),
+      buscarTudoPaginadoKeyset(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null), ['match_id', 'id']),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
     const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
