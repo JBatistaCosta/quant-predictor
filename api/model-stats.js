@@ -547,7 +547,7 @@ export default async function handler(req, res) {
     // Sem `modelo`, NÃO busca model_predictions cru -- a tabela tem 5,2M+
     // linhas (53 model_name distintos, cresce via cron diário) e mesmo com
     // índice dedicado uma agregação ao vivo leva 12-40s por mercado (medido
-    // em produção via EXPLAIN ANALYZE), acima do maxDuration=30s desta
+    // em produção via EXPLAIN ANALYZE), acima do maxDuration=60s desta
     // function. Nesse caso os números de log-loss/Brier/acurácia do MODELO
     // vêm pré-calculados de `model_stats_resumo` (ver essa tabela e
     // `?tarefa=recalcular-model-stats` em api/model-maintenance.js) --
@@ -557,43 +557,68 @@ export default async function handler(req, res) {
     // específico, a query já é rápida (filtra no banco), então mantém o
     // cálculo ao vivo de sempre, com todo o detalhe.
     const precisaResumoPreCalculado = !modelo;
+
+    // As duas levas de consultas abaixo (predições/pinnacle/resumo E as
+    // tabelas "fixas" matches/odds_market/market_odds/match_stats/
+    // model_calibration) são DISPARADAS juntas, não uma leva depois da
+    // outra -- nenhuma delas depende do resultado da outra (a segunda leva
+    // filtra só por critérios constantes, nunca por `predicoes`/
+    // `matchIdsSet`; o cruzamento com `matchIdsSet` acontece só depois,
+    // em JS). Achado real em produção: mesmo com a paginação por keyset já
+    // corrigida (#360), rodar as duas levas em SÉRIE (await a primeira,
+    // só then começar a segunda) somava os dois tempos e estourava os 30s
+    // de `maxDuration` pra `?modelo=hibrido_gols_v1&mercado=
+    // corners_over_under_9.5` (cada leva sozinha cabia no orçamento, a
+    // SOMA não). Disparando as 9 consultas juntas, o tempo total passa a
+    // ser o MÁXIMO entre as duas levas, não a soma.
+    const promisePredicoesAntigas = precisaResumoPreCalculado
+      ? Promise.resolve([])
+      : buscarTudoPaginadoKeyset(() => {
+          let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+          if (modelo) q = q.eq('model_name', modelo);
+          // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
+          if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
+          return q;
+        }, ['match_id', 'id']);
+    // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
+    // já filtra tudo fora, sem precisar de query condicional separada.
+    const promisePredicoesBenchmarking = mercado && mercado !== '1X2'
+      ? Promise.resolve([])
+      : buscarTudoPaginado(() => {
+          let q = supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('mercado', '1X2');
+          if (modelo) q = q.eq('model_name', modelo);
+          return q;
+        });
+    // `odds_market` tem DEZENAS de outros mercados da Pinnacle (handicap
+    // asiático/europeu em várias linhas, placar exato, cartões, 1º/2º tempo
+    // etc. -- ver api/model-maintenance.js `tarefaOddsHistorico`), então
+    // SEM filtro de `market` aqui essa query pagina um volume gigante de
+    // linhas irrelevantes e estoura o `statement_timeout` do Postgres (bug
+    // real, achado testando em produção) -- `.in('market', ...)` restringe
+    // ao mesmo conjunto que `MERCADO_SELECOES_PINNACLE` sabe devigar.
+    const promisePinnacleOdds = precisaPinnacleDevigada
+      ? buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo), ['match_id', 'id'])
+      : Promise.resolve([]);
+    const promiseResumoRows = precisaResumoPreCalculado
+      ? buscarTudoPaginado(() => {
+          let q = supabase.from('model_stats_resumo').select('model_name, market, league_id, n_jogos, log_loss_modelo, brier_modelo, accuracy_modelo');
+          if (mercado) q = q.eq('market', mercado);
+          if (liga_id) q = q.eq('league_id', Number(liga_id));
+          return q;
+        })
+      : Promise.resolve([]);
+
+    // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
+    // que o universo de match_ids das previsões) e filtra em JS — bem menos
+    // round-trips do que quebrar em lotes de match_id.
+    const promiseTodasMatches = buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id'));
+    const promiseOddsRowsAntigas = buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'), ['match_id', 'id']);
+    const promiseMarketOddsRaw = buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away'));
+    const promiseCorneragensBrutas = buscarTudoPaginadoKeyset(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null), ['match_id', 'id']);
+    const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
+
     const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows] = await Promise.all([
-      precisaResumoPreCalculado
-        ? Promise.resolve([])
-        : buscarTudoPaginadoKeyset(() => {
-            let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
-            if (modelo) q = q.eq('model_name', modelo);
-            // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
-            if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
-            return q;
-          }, ['match_id', 'id']),
-      // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
-      // já filtra tudo fora, sem precisar de query condicional separada.
-      mercado && mercado !== '1X2'
-        ? Promise.resolve([])
-        : buscarTudoPaginado(() => {
-            let q = supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('mercado', '1X2');
-            if (modelo) q = q.eq('model_name', modelo);
-            return q;
-          }),
-      // `odds_market` tem DEZENAS de outros mercados da Pinnacle (handicap
-      // asiático/europeu em várias linhas, placar exato, cartões, 1º/2º tempo
-      // etc. -- ver api/model-maintenance.js `tarefaOddsHistorico`), então
-      // SEM filtro de `market` aqui essa query pagina um volume gigante de
-      // linhas irrelevantes e estoura o `statement_timeout` do Postgres (bug
-      // real, achado testando em produção) -- `.in('market', ...)` restringe
-      // ao mesmo conjunto que `MERCADO_SELECOES_PINNACLE` sabe devigar.
-      precisaPinnacleDevigada
-        ? buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo), ['match_id', 'id'])
-        : Promise.resolve([]),
-      precisaResumoPreCalculado
-        ? buscarTudoPaginado(() => {
-            let q = supabase.from('model_stats_resumo').select('model_name, market, league_id, n_jogos, log_loss_modelo, brier_modelo, accuracy_modelo');
-            if (mercado) q = q.eq('market', mercado);
-            if (liga_id) q = q.eq('league_id', Number(liga_id));
-            return q;
-          })
-        : Promise.resolve([]),
+      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows,
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
     if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
@@ -636,15 +661,10 @@ export default async function handler(req, res) {
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
-    // que o universo de match_ids das previsões) e filtra em JS — bem menos
-    // round-trips do que quebrar em lotes de match_id.
+    // As 5 promessas abaixo já foram disparadas mais acima (em paralelo com
+    // a primeira leva) -- só falta esperar.
     const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
-      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id')),
-      buscarTudoPaginadoKeyset(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'), ['match_id', 'id']),
-      buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
-      buscarTudoPaginadoKeyset(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null), ['match_id', 'id']),
-      buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
+      promiseTodasMatches, promiseOddsRowsAntigas, promiseMarketOddsRaw, promiseCorneragensBrutas, promiseCalibracoes,
     ]);
     const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
 
