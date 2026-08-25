@@ -1772,6 +1772,36 @@ function aplicarIsotonicPredicao(p, xs, ys) {
 
 const logLossTermo = (p, y) => (y ? -Math.log(clamp(p)) : -Math.log(1 - clamp(p)));
 
+// Mercados que `recalcular_model_stats_resumo` (Postgres, migration
+// 20260825002000) sabe agregar -- mesmos 3 mercados que api/model-stats.js
+// já processa (escanteios não têm odds pra comparar, mas o modelo próprio
+// ainda tem log-loss/Brier/acurácia calculável).
+const MERCADOS_MODEL_STATS_RESUMO = ['1X2', 'over_under_2.5', 'corners_over_under_9.5'];
+
+// Recalcula model_stats_resumo (tabela pré-agregada que api/model-stats.js
+// lê na carga SEM FILTRO do painel /modelos, ver essa tabela e a migration
+// acima pro motivo). Chama a função Postgres UM MERCADO por vez -- 1X2
+// sozinho leva ~39s contra os 780k+ linhas de model_predictions (medido em
+// produção), perto do maxDuration=60s desta function; rodar os 3 mercados
+// numa chamada só arriscaria estourar. Sem `?mercado=X`, roda só o mercado
+// mais barato (corners) como smoke test -- pra recalcular tudo, chamar 3x
+// com `?mercado=1X2`, `?mercado=over_under_2.5` e
+// `?mercado=corners_over_under_9.5`.
+async function tarefaRecalcularModelStats(supabase, mercado) {
+  if (mercado && !MERCADOS_MODEL_STATS_RESUMO.includes(mercado)) {
+    return { error: `mercado inválido -- use um de: ${MERCADOS_MODEL_STATS_RESUMO.join(', ')}` };
+  }
+  const mercados = mercado ? [mercado] : [MERCADOS_MODEL_STATS_RESUMO[MERCADOS_MODEL_STATS_RESUMO.length - 1]];
+  const resultado = [];
+  for (const m of mercados) {
+    const inicio = Date.now();
+    const { data, error } = await supabase.rpc('recalcular_model_stats_resumo', { p_mercado: m });
+    if (error) throw error;
+    resultado.push({ mercado: m, grupos_atualizados: data, duracao_ms: Date.now() - inicio });
+  }
+  return { resultado };
+}
+
 async function tarefaCalibracao(supabase, minimo) {
   const predicoes = await buscarTudoPaginado(() => supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id'));
   const matches = await buscarTudoPaginado(() => supabase.from('matches').select('id, status, home_goals, away_goals, match_date').eq('status', 'finished').not('home_goals', 'is', null));
@@ -5321,6 +5351,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'calibracao') {
       return res.status(200).json(await tarefaCalibracao(supabase, Number(minimo) || 80));
+    }
+
+    if (tarefa === 'recalcular-model-stats') {
+      const resultado = await tarefaRecalcularModelStats(supabase, req.query.mercado || null);
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
     }
 
     if (tarefa === 'fotmob-liga-buscar') {

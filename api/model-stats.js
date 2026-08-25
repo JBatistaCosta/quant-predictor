@@ -425,14 +425,29 @@ export default async function handler(req, res) {
     // empilhar esse custo na carga inicial).
     const mercadosPinnacleAlvo = mercado ? Object.keys(MERCADO_SELECOES_PINNACLE).filter((m) => m === mercado) : Object.keys(MERCADO_SELECOES_PINNACLE);
     const precisaPinnacleDevigada = modelo === 'mercado_pinnacle_devigado' && mercadosPinnacleAlvo.length > 0;
-    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw] = await Promise.all([
-      buscarTudoPaginado(() => {
-        let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
-        if (modelo) q = q.eq('model_name', modelo);
-        // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
-        if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
-        return q;
-      }),
+    // Sem `modelo`, NÃO busca model_predictions cru -- a tabela tem 5,2M+
+    // linhas (53 model_name distintos, cresce via cron diário) e mesmo com
+    // índice dedicado uma agregação ao vivo leva 12-40s por mercado (medido
+    // em produção via EXPLAIN ANALYZE), acima do maxDuration=30s desta
+    // function. Nesse caso os números de log-loss/Brier/acurácia do MODELO
+    // vêm pré-calculados de `model_stats_resumo` (ver essa tabela e
+    // `?tarefa=recalcular-model-stats` em api/model-maintenance.js) --
+    // comparação com o mercado e calibração em quintis continuam vindo do
+    // caminho abaixo, só ficam ausentes nesses grupos (frontend já trata
+    // "sem odds pra comparar"/`calibracao_disponivel=false`). Com `modelo`
+    // específico, a query já é rápida (filtra no banco), então mantém o
+    // cálculo ao vivo de sempre, com todo o detalhe.
+    const precisaResumoPreCalculado = !modelo;
+    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows] = await Promise.all([
+      precisaResumoPreCalculado
+        ? Promise.resolve([])
+        : buscarTudoPaginado(() => {
+            let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+            if (modelo) q = q.eq('model_name', modelo);
+            // v9 gravou '1x2' (minúscula) — incluir as duas variantes quando filtrar por 1X2
+            if (mercado) q = mercado === '1X2' ? q.in('market', ['1X2', '1x2']) : q.eq('market', mercado);
+            return q;
+          }),
       // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
       // já filtra tudo fora, sem precisar de query condicional separada.
       mercado && mercado !== '1X2'
@@ -452,9 +467,37 @@ export default async function handler(req, res) {
       precisaPinnacleDevigada
         ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', mercadosPinnacleAlvo))
         : Promise.resolve([]),
+      precisaResumoPreCalculado
+        ? buscarTudoPaginado(() => {
+            let q = supabase.from('model_stats_resumo').select('model_name, market, league_id, n_jogos, log_loss_modelo, brier_modelo, accuracy_modelo');
+            if (mercado) q = q.eq('market', mercado);
+            if (liga_id) q = q.eq('league_id', Number(liga_id));
+            return q;
+          })
+        : Promise.resolve([]),
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
     if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
+
+    // Grupos pré-calculados (ver comentário acima sobre `model_stats_resumo`)
+    // -- não tem comparação com mercado nem calibração em quintis, só a
+    // qualidade do MODELO em si; campos correspondentes ficam null/vazios,
+    // no mesmo formato que o resto do endpoint devolve pros outros grupos.
+    const gruposResumo = resumoRows.map(r => ({
+      model_name: r.model_name, market: r.market, league_id: r.league_id,
+      n_jogos: r.n_jogos,
+      log_loss_modelo: r.log_loss_modelo != null ? Number(r.log_loss_modelo) : null,
+      brier_modelo: r.brier_modelo != null ? Number(r.brier_modelo) : null,
+      log_likelihood_modelo: r.log_loss_modelo != null ? -Number(r.log_loss_modelo) * r.n_jogos : null,
+      log_likelihood_mercado: null,
+      log_loss_mercado: null, brier_mercado: null,
+      accuracy_modelo: r.accuracy_modelo != null ? Number(r.accuracy_modelo) : null, accuracy_mercado: null,
+      tem_odds: false,
+      calibracao_disponivel: false,
+      log_loss_platt: null, brier_platt: null, accuracy_platt: null,
+      log_loss_isotonic: null, brier_isotonic: null, accuracy_isotonic: null,
+      por_selecao: [],
+    }));
 
     // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
     // pra garantir consistência em chaveMercado, chaveOdds e chaveGrupo.
@@ -463,7 +506,14 @@ export default async function handler(req, res) {
       ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw),
       ...pinnacleLinhas,
     ];
-    if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [] });
+    if ((!predicoes || predicoes.length === 0) && gruposResumo.length === 0) return res.status(200).json({ grupos: [] });
+    if (predicoes.length === 0) {
+      // Só tem grupos pré-calculados (caso normal da chamada sem `modelo`
+      // quando `predicoesBenchmarkingRaw`/`pinnacleLinhas` vêm vazios) --
+      // nada pra computar ao vivo, devolve direto.
+      gruposResumo.sort((a, b) => a.model_name.localeCompare(b.model_name) || a.market.localeCompare(b.market) || a.league_id - b.league_id);
+      return res.status(200).json({ grupos: gruposResumo });
+    }
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
@@ -787,8 +837,9 @@ export default async function handler(req, res) {
       };
     });
 
-    saida.sort((a, b) => a.model_name.localeCompare(b.model_name) || a.market.localeCompare(b.market) || a.league_id - b.league_id);
-    res.status(200).json({ grupos: saida });
+    const saidaCompleta = [...saida, ...gruposResumo];
+    saidaCompleta.sort((a, b) => a.model_name.localeCompare(b.model_name) || a.market.localeCompare(b.market) || a.league_id - b.league_id);
+    res.status(200).json({ grupos: saidaCompleta });
   } catch (erro) {
     res.status(500).json({ error: { message: erro.message } });
   }
