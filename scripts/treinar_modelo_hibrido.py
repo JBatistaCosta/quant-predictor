@@ -702,10 +702,14 @@ def main() -> None:
                     model_name, metricas["log_verossimilhanca_placar"], metricas["log_loss_1x2"],
                     metricas["brier_1x2"], 100 * metricas["acuracia_1x2"])
 
-        # Diagnóstico temporário (investigação da forma "mesma liga") --
-        # mesma métrica, só que restrita às partidas CONTINENTAIS do Test
-        # Set, onde a mistura de competição na janela pooled é maior. Não
-        # persiste nada nem afeta o fluxo normal -- só mais uma linha de log.
+        # Diagnóstico contínuo (monitoramento do achado de mistura de
+        # competição) -- mesma métrica, só que restrita às partidas
+        # CONTINENTAIS do Test Set, onde a mistura de competição na janela
+        # pooled é maior e onde a feature "mesma liga" (FEATURES_NUMERICAS_
+        # V12_MESMA_LIGA) mostrou ganho real (log-loss/Brier/acurácia
+        # melhores nas 4 métricas, ver PR #368). Mantido no cron diário pra
+        # acompanhar se o efeito se sustenta com dado novo. Não persiste
+        # nada nem afeta o fluxo normal -- só mais uma linha de log.
         if "liga" in teste.columns:
             mask_continental = teste["liga"].isin(LIGAS_CONTINENTAIS_DIAGNOSTICO).to_numpy()
             if mask_continental.sum() >= 20:

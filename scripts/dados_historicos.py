@@ -3030,11 +3030,16 @@ FEATURES_V11_XG_CORRIGIDO = FEATURES_NUMERICAS_V11_XG_CORRIGIDO + CAT_FEATURES
 # tolerado nativamente pelos modelos de árvore, mesma disciplina do resto
 # do dataset.
 #
-# Não estende a cadeia v9/v10/v11 automaticamente -- registrada como
-# versão separada, testada primeiro ISOLADA nos 4 `hibrido_*` (dry-run via
-# `treinar_modelo_hibrido.py --sem-gravar`, comparando log-verossimilhança
-# do placar contra a baseline V10_XG_CORRIGIDO já validada) antes de
-# decidir se estende aos classificadores v9/v10/v11.
+# Validado via dry-run real (`treinar_modelo_hibrido.py --sem-gravar`,
+# escopo de 9 ligas -- 6 domésticas do benchmark + UEFA Champions League/
+# Copa Libertadores/Copa Sudamericana, Test Set de 2625 partidas): efeito
+# agregado pequeno e misto (diluído por ~75% de jogos domésticos, onde a
+# mistura de competição já é rara), mas nas 459 partidas CONTINENTAIS do
+# Test Set especificamente -- onde a mistura é maior -- log-verossimilhança/
+# log-loss/Brier/acurácia melhoraram nas 4 métricas em `hibrido_gols_v1` E
+# `hibrido_gols_xg_v1` (ver PR #368). Ativado nos 4 `hibrido_*` (`modelos_ml.
+# FEATURES_POR_MODELO`); extensão aos classificadores v9/v10/v11 fica pra
+# decisão separada.
 FEATURES_NUMERICAS_V12_MESMA_LIGA = FEATURES_NUMERICAS_V10_XG_CORRIGIDO + [
     *COLUNAS_FORMA_GOLS_MESMA_LIGA.values(),
     "xg_mesma_liga_home_5j", "xg_mesma_liga_sofrido_home_5j",
