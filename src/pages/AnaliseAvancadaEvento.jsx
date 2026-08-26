@@ -25,6 +25,7 @@ import {
 } from '../utils/distribuicoesMercados';
 import { devigarOddsRatio, stakeKelly25 } from '../utils/devig';
 import { toPct } from '../utils/format';
+import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 
 // Mercados em que o modelo misto (gols/escanteios) tem probabilidade
 // calculada E que aparecem salvos em odds_market — únicos candidatos pra
@@ -276,6 +277,7 @@ export default function AnaliseAvancadaEvento() {
   const [resultadoReal, setResultadoReal] = useState(null); // só preenchido pra partida finalizada
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+  const [calibracaoRows, setCalibracaoRows] = useState([]);
 
   useEffect(() => {
     if (!supabaseAtivo) return;
@@ -297,7 +299,7 @@ export default function AnaliseAvancadaEvento() {
         // seletor de snapshot -- fechamento (quando existe) aparece como
         // mais uma opção na lista, não é exigido. Qualquer outro status (ao
         // vivo/adiado/cancelado): não busca odds.
-        const [{ data: est, error: erroEst }, odds, corners] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, { data: calib }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -305,6 +307,19 @@ export default function AnaliseAvancadaEvento() {
             .not('params', 'is', null),
           (j.status === 'scheduled' || finalizada) ? buscarOddsPaginado(matchId) : Promise.resolve([]),
           finalizada ? buscarCornersReais(matchId, j.home?.id, j.away?.id) : Promise.resolve(null),
+          // Calibração Platt/Isotonic já ajustada (model_calibration), mesmo
+          // padrão de AnaliseEstatisticaJogo.jsx -- o edge/EV/Kelly abaixo
+          // usa a probabilidade CALIBRADA quando existe pra essa combinação
+          // (model_name, mercado, seleção), já que o modelo bruto do modelo
+          // misto é sistematicamente overconfident nalguns mercados (achado
+          // #6) e o Kelly (dimensionamento de aposta REAL sugerido aqui)
+          // assume p confiável. Cobertura real hoje é só 1X2/btts/
+          // over_under_2.5 (ver achado #22-adjacente) -- outras linhas/
+          // escanteios ficam sem match e caem no fallback pra probabilidade
+          // crua (ver `calibrarProbabilidade`), sem quebrar nada.
+          (j.status === 'scheduled' || finalizada)
+            ? supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_calibrado, n_teste')
+            : Promise.resolve({ data: [] }),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -313,6 +328,7 @@ export default function AnaliseAvancadaEvento() {
         setOddsRaw(odds);
         setSnapshotSelecionado('');
         setResultadoReal(finalizada ? { golsHome: j.home_goals, golsAway: j.away_goals, ...corners } : null);
+        setCalibracaoRows(calib || []);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -399,6 +415,8 @@ export default function AnaliseAvancadaEvento() {
   // Em partida finalizada, cada linha também ganha `acertou` (a seleção bateu
   // com o resultado real?) e `retorno` (lucro/prejuízo em % da banca SE a
   // stake de Kelly 25% sugerida tivesse sido apostada de verdade).
+  const indiceCalibracao = useMemo(() => indexarCalibracao(calibracaoRows), [calibracaoRows]);
+
   const finalizada = jogo?.status === 'finished';
   const verificacaoEV = useMemo(() => {
     if (!(jogo?.status === 'scheduled' || finalizada) || (!mercadosGols && !mercadosCorners)) return [];
@@ -419,19 +437,29 @@ export default function AnaliseAvancadaEvento() {
           const pModelo = probsModelo[s];
           const oddReal = oddsSelecoes[s];
           const pMercado = devigado[s];
-          const edge = pModelo - pMercado;
-          const ev = pModelo * oddReal - 1;
-          const kelly25 = stakeKelly25(pModelo, oddReal);
+          // Edge/EV/Kelly usam a probabilidade CALIBRADA quando essa
+          // combinação (model_name, mercado, seleção) já foi calibrada --
+          // cai pra crua (pModelo) quando não tem (ver calibrarProbabilidade).
+          const calibrado = modelSelecionado
+            ? calibrarProbabilidade(pModelo, indiceCalibracao, modelSelecionado, mercado, s)
+            : null;
+          const pParaCalculo = calibrado?.probabilidade ?? pModelo;
+          const edge = pParaCalculo - pMercado;
+          const ev = pParaCalculo * oddReal - 1;
+          const kelly25 = stakeKelly25(pParaCalculo, oddReal);
           const acertou = finalizada && resultadoReal ? avaliarSelecao(mercado, s, resultadoReal) : null;
           const retorno = finalizada && acertou != null && kelly25 > 0
             ? (acertou ? kelly25 * (oddReal - 1) : -kelly25)
             : null;
-          linhas.push({ bookmaker, mercado, selecao: s, oddReal, pModelo, pMercado, edge, ev, kelly25, acertou, retorno });
+          linhas.push({
+            bookmaker, mercado, selecao: s, oddReal, pModelo, pCalibrado: calibrado?.probabilidade ?? null,
+            metodoCalibracao: calibrado?.metodo ?? null, pMercado, edge, ev, kelly25, acertou, retorno,
+          });
         }
       }
     }
     return linhas.sort((a, b) => b.edge - a.edge);
-  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, oddsPorBookmaker, resultadoReal]);
+  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, oddsPorBookmaker, resultadoReal, modelSelecionado, indiceCalibracao]);
 
   // Mesma matriz que já alimenta 1X2/placar exato acima, só que truncada
   // pra uma grade menor (0-7) que cabe na tela célula a célula.
@@ -654,7 +682,7 @@ export default function AnaliseAvancadaEvento() {
                                 <th className="text-left pb-2">Casa</th>
                                 <th className="text-left pb-2">Mercado</th>
                                 <th className="text-right pb-2">Odd real</th>
-                                <th className="text-right pb-2">Prob. modelo</th>
+                                <th className="text-right pb-2">Prob. modelo{verificacaoEV.some((l) => l.pCalibrado != null) ? '*' : ''}</th>
                                 <th className="text-right pb-2">Prob. mercado (devig)</th>
                                 <th className="text-right pb-2">Edge</th>
                                 <th className="text-right pb-2">EV</th>
@@ -669,7 +697,14 @@ export default function AnaliseAvancadaEvento() {
                                   <td className="py-1.5 text-slate-300 capitalize">{l.bookmaker.replace(/_/g, ' ')}</td>
                                   <td className="py-1.5 text-slate-400 text-xs">{rotuloMercado(l.mercado)} · <span className="uppercase">{l.selecao}</span></td>
                                   <td className="py-1.5 text-right font-mono text-slate-200">{l.oddReal.toFixed(2)}</td>
-                                  <td className="py-1.5 text-right font-mono text-slate-300">{toPct(l.pModelo)}</td>
+                                  <td
+                                    className="py-1.5 text-right font-mono text-slate-300"
+                                    title={l.pCalibrado != null
+                                      ? `Calibrado (${l.metodoCalibracao === 'platt' ? 'Platt Scaling' : 'Isotonic Regression'}) -- cru: ${toPct(l.pModelo)}`
+                                      : undefined}
+                                  >
+                                    {toPct(l.pCalibrado ?? l.pModelo)}{l.pCalibrado != null && <span className="text-emerald-500">*</span>}
+                                  </td>
                                   <td className="py-1.5 text-right font-mono text-slate-500">{toPct(l.pMercado)}</td>
                                   <td className={`py-1.5 text-right font-mono font-bold ${l.edge > 0.02 ? 'text-emerald-400' : l.edge < -0.02 ? 'text-red-400' : 'text-slate-400'}`}>
                                     {l.edge > 0 ? '+' : ''}{(l.edge * 100).toFixed(1)}pp
@@ -700,6 +735,7 @@ export default function AnaliseAvancadaEvento() {
                           odd REAL (com margem da casa), não a devigada. Stake Kelly 25% = ¼ do critério de Kelly
                           sobre a odd real, com teto de 25% da banca por aposta — mesma matemática de
                           `api/backtest-betting.js`.
+                          {verificacaoEV.some((l) => l.pCalibrado != null) && ' * Probabilidade calibrada (Platt Scaling/Isotonic Regression, model_calibration) -- Edge/EV/Stake usam o valor calibrado quando existe pra essa combinação de modelo/mercado/seleção; sem calibração ainda disponível, cai pra probabilidade crua.'}
                           {finalizada && ' Retorno = lucro/prejuízo em % da banca SE a stake de Kelly 25% sugerida tivesse sido apostada de verdade (só calculado quando havia stake > 0).'}
                           {' '}<strong className="text-slate-500">Contexto importante antes de
                           usar isso pra apostar de verdade:</strong> a avaliação pareada do modelo misto contra o
