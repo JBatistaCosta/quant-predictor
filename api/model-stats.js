@@ -584,7 +584,18 @@ export default async function handler(req, res) {
     // etc.) continuam no cálculo ao vivo -- não têm alternativa
     // pré-calculada, e sozinhos (um `market` só, não o `model_name` inteiro)
     // costumam ter bem menos linhas que corners_over_under_9.5.
-    const precisaResumoPreCalculado = !modelo || (mercado && MERCADOS_COM_RESUMO_PRECALCULADO.includes(mercado));
+    // `forcar_ao_vivo=true` -- botão "Calcular calibração ao vivo" do
+    // frontend (ModelosStats.jsx), só aparece quando modelo+mercado JÁ
+    // estão filtrados pro usuário (nunca automático, nunca sem os dois
+    // filtros -- senão reproduziria o mesmo timeout que motivou usar o
+    // resumo pré-calculado pra esses 3 mercados). Pedido do usuário:
+    // restaurar "Calibração por seleção (previsto vs. real, em quintis)"
+    // pra 1X2/over_under_2.5/corners_over_under_9.5 sem mexer na tabela
+    // pré-calculada nem na function SQL (que já foi afinada recentemente
+    // pra evitar o mesmo timeout) -- o risco de estourar os 3s fica
+    // restrito a um clique explícito, não à carga normal da página.
+    const forcarAoVivo = req.query.forcar_ao_vivo === 'true' && !!modelo && !!mercado;
+    const precisaResumoPreCalculado = !forcarAoVivo && (!modelo || (mercado && MERCADOS_COM_RESUMO_PRECALCULADO.includes(mercado)));
 
     // As duas levas de consultas abaixo (predições/pinnacle/resumo E as
     // tabelas "fixas" matches/odds_market/market_odds/match_stats/

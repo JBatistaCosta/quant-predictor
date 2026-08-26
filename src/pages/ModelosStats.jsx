@@ -11,6 +11,13 @@ import CurvaPnlEv from '../components/CurvaPnlEv';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
+// Mesmos 3 mercados de MERCADOS_COM_RESUMO_PRECALCULADO em api/model-stats.js
+// -- a carga normal da página usa `model_stats_resumo` (pré-calculado) pra
+// esses, que nunca traz `por_selecao`/calibração em quintis (evita o timeout
+// de 3s da role anon num scan ao vivo de model_predictions). O botão
+// "Calcular calibração ao vivo" só aparece nesses mercados, e só quando
+// clicado -- nunca automático.
+const MERCADOS_COM_RESUMO_PRECALCULADO = ['1X2', 'over_under_2.5', 'corners_over_under_9.5'];
 // `mercado_pinnacle_devigado` (api/model-stats.js) é a odd de fechamento da
 // Pinnacle devigada tratada como se fosse um modelo — mesmo pipeline de
 // log-loss/Brier/calibração, só rótulo de exibição muda.
@@ -680,6 +687,32 @@ export default function ModelosStats() {
   const [filtroModelo, setFiltroModelo] = useState('');
   const [filtroMercado, setFiltroMercado] = useState('');
   const [filtroLiga, setFiltroLiga] = useState('');
+  const [carregandoAoVivo, setCarregandoAoVivo] = useState(() => new Set());
+  const [erroAoVivo, setErroAoVivo] = useState({});
+
+  // Recalcula model_name+market ao vivo (todas as ligas de uma vez),
+  // ignorando `model_stats_resumo` -- só chamado pelo botão "Calcular
+  // calibração ao vivo", nunca automaticamente (ver MERCADOS_COM_RESUMO_
+  // PRECALCULADO acima e api/model-stats.js).
+  async function calcularAoVivo(modelName, market) {
+    const chave = `${modelName}|${market}`;
+    setCarregandoAoVivo(prev => new Set(prev).add(chave));
+    setErroAoVivo(prev => ({ ...prev, [chave]: '' }));
+    try {
+      const resp = await fetch(apiUrl(`/api/model-stats?modelo=${encodeURIComponent(modelName)}&mercado=${encodeURIComponent(market)}&forcar_ao_vivo=true`));
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error?.message || 'Erro ao calcular ao vivo.');
+      const novosGrupos = data.grupos || [];
+      setGrupos(prev => [
+        ...prev.filter(g => !(g.model_name === modelName && g.market === market)),
+        ...novosGrupos,
+      ]);
+    } catch (e) {
+      setErroAoVivo(prev => ({ ...prev, [chave]: e.message }));
+    } finally {
+      setCarregandoAoVivo(prev => { const next = new Set(prev); next.delete(chave); return next; });
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -841,12 +874,32 @@ export default function ModelosStats() {
 
               <div className="space-y-3">
                 <span className="text-[10px] uppercase font-bold text-slate-500">Calibração por seleção (previsto vs. real, em quintis)</span>
-                {g.por_selecao.map((s, j) => (
-                  <div key={j}>
-                    <span className="text-xs text-slate-400 font-semibold">{SELECAO_ROTULO[s.selecao] || s.selecao}</span>
-                    <Calibracao quintis={s.calibracao} />
+                {g.por_selecao.length === 0 && MERCADOS_COM_RESUMO_PRECALCULADO.includes(g.market) ? (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => calcularAoVivo(g.model_name, g.market)}
+                      disabled={carregandoAoVivo.has(`${g.model_name}|${g.market}`)}
+                      className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-200 font-semibold px-3 py-1.5 rounded-lg text-xs">
+                      {carregandoAoVivo.has(`${g.model_name}|${g.market}`)
+                        ? <Loader2 className="animate-spin" size={13} />
+                        : <PlayCircle size={13} />}
+                      Calcular calibração ao vivo
+                    </button>
+                    <span className="text-[10px] text-slate-600">
+                      Este mercado usa estatísticas pré-calculadas (evita timeout) -- não traz calibração por padrão.
+                    </span>
                   </div>
-                ))}
+                ) : (
+                  g.por_selecao.map((s, j) => (
+                    <div key={j}>
+                      <span className="text-xs text-slate-400 font-semibold">{SELECAO_ROTULO[s.selecao] || s.selecao}</span>
+                      <Calibracao quintis={s.calibracao} />
+                    </div>
+                  ))
+                )}
+                {erroAoVivo[`${g.model_name}|${g.market}`] && (
+                  <p className="text-[11px] text-red-400">{erroAoVivo[`${g.model_name}|${g.market}`]}</p>
+                )}
               </div>
             </div>
           ))}
