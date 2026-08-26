@@ -311,7 +311,11 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   const [edgeMinimo, setEdgeMinimo] = useState(0.02);
   const [staking, setStaking] = useState('flat');
   const [fracaoKelly, setFracaoKelly] = useState(0.25);
-  const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
+  // Default 'platt' (não 'nenhuma') -- Platt Scaling melhorou o log-loss
+  // calibrado na maioria das combinações modelo×mercado medidas (achado
+  // #6/CONTEXTO_PROJETO.md); Isotonic piorou em ~metade dos casos com o
+  // volume de amostra disponível hoje, então não é um default seguro.
+  const [usarCalibracao, setUsarCalibracao] = useState('platt');
   const [grupoCurvaIdx, setGrupoCurvaIdx] = useState(0);
 
   const rodar = async () => {
