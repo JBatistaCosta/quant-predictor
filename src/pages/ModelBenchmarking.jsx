@@ -57,14 +57,16 @@ function fmtPeriodo(inicio, fim) {
 const MERCADOS_BACKTEST = [
   { chave: '1X2', rotulo: '1X2' },
   { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
+  { chave: 'btts', rotulo: 'Ambas Marcam (BTTS)' },
   { chave: 'corners_ou95', rotulo: 'Escanteios O/U 9,5' },
   { chave: 'faixa_gols', rotulo: 'Faixa de gols' },
 ];
 // Escanteios e faixa de gols não têm nenhuma fonte de odds de mercado neste
-// projeto (a OddsPapi só cobre 1X2 e Over/Under 2.5 em `odds_market`) --
-// pra esses 2, o backtest só traz qualidade intrínseca da probabilidade
-// (log-loss/Brier/Acurácia), nunca ROI/Kelly/EV+ (fica sempre 0 apostas,
-// não é bug -- ver comentário no topo de `MERCADOS` em backtest_kelly.py).
+// projeto -- pra esses 2, o backtest só traz qualidade intrínseca da
+// probabilidade (log-loss/Brier/Acurácia), nunca ROI/Kelly/EV+ (fica
+// sempre 0 apostas, não é bug -- ver comentário no topo de `MERCADOS` em
+// backtest_kelly.py). 1X2/over_under_2.5/btts têm odds reais (Pinnacle
+// entre outras casas) e produzem ROI/Kelly normalmente.
 const MERCADOS_SEM_ROI = new Set(['corners_ou95', 'faixa_gols']);
 const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
 

@@ -63,8 +63,13 @@ function aplicarIsotonic(p, xs, ys) {
   return p;
 }
 
-// Resultado real de cada partida, por mercado — mesma lógica usada na
-// avaliação de log-loss feita manualmente antes (ver CONTEXTO_PROJETO.md).
+// Resultado real de cada partida, por mercado — indexado pela MESMA
+// string usada em odds_market.market/model_predictions.market. Antes
+// disso era um ternário de 3 opções (chaveMercado) que jogava QUALQUER
+// mercado desconhecido (btts, dupla_chance, handicap etc) no bucket de
+// escanteios O/U 9,5 -- corrigido aqui e em api/backtest-betting.js
+// (mesma duplicação, mesmo bug). Mercado sem entrada aqui agora fica
+// undefined em vez de comparar contra o resultado errado.
 function calcularResultadosReais(matches, corners) {
   const porMatch = {};
   for (const m of matches) {
@@ -73,11 +78,12 @@ function calcularResultadosReais(matches, corners) {
     porMatch[m.id] = {
       league_id: m.league_id,
       '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      over_under_2_5: total > 2.5 ? 'over' : 'under',
+      'over_under_2.5': total > 2.5 ? 'over' : 'under',
+      btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
     };
   }
   for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9_5'] = totalCorners > 9.5 ? 'over' : 'under';
+    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
   }
   return porMatch;
 }
@@ -154,6 +160,7 @@ function devigar(oddsPorSelecao, metodo = 'odds_ratio') {
 const MERCADO_SELECOES_PINNACLE = {
   '1X2': ['home', 'draw', 'away'],
   'over_under_2.5': ['over', 'under'],
+  btts: ['yes', 'no'],
 };
 
 function normalizarPinnacleDevigada(oddsRows) {
@@ -176,11 +183,10 @@ function normalizarPinnacleDevigada(oddsRows) {
   return linhas;
 }
 
-function chaveMercado(m) {
-  // v9 gravou '1x2' (minúscula) — normaliza antes do switch
-  if (m === '1X2' || m === '1x2') return '1X2';
-  if (m === 'over_under_2.5') return 'over_under_2_5';
-  return 'corners_over_under_9_5';
+// v9 gravou '1x2' (minúscula) em alguns pontos — normaliza pro mesmo
+// mercado antes de indexar `resultadosReais`.
+function normalizarMercado(m) {
+  return m === '1x2' ? '1X2' : m;
 }
 
 // O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
@@ -809,7 +815,7 @@ export default async function handler(req, res) {
       const partidas = matchIdsRelatorio.map(matchId => {
         const match = matchesValidos.find(m => m.id === matchId);
         const selecoes = porMatch[matchId];
-        const mercadoChave = chaveMercado(mercado);
+        const mercadoChave = normalizarMercado(mercado);
         const resultado = resultadosReais[matchId];
         const chaveOdds = `${matchId}__${mercado}`;
         const oddsSel = oddsPorMatchMercado[chaveOdds] || {};
@@ -871,7 +877,7 @@ export default async function handler(req, res) {
         };
       }
 
-      const mercadoChave = chaveMercado(p.market);
+      const mercadoChave = normalizarMercado(p.market);
       const y = resultado[mercadoChave] === p.selection ? 1 : 0;
       const chaveOdds = `${p.match_id}__${p.market}`;
       const pMercado = probMercado[chaveOdds]?.[p.selection] ?? null;
