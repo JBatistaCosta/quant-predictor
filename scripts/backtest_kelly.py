@@ -197,18 +197,39 @@ MERCADOS_SEM_DIXON_COLES = {"corners_ou95"}
 # incompatível com `ROTULOS_SAIDA`). `main()` pula todo mercado aqui listado.
 MERCADOS_SOMENTE_MODELO_MISTO = {"corners_over_under_9.5"}
 
+# Modelo misto com ML (CatBoost Poisson + camada paramétrica de
+# distribuicoes.py, treinado por treinar_modelo_hibrido.py) -- pré-treinado
+# num split cronológico PRÓPRIO (60% treino / calibração / teste, ver
+# FRACAO_TREINO em treinar_modelo_hibrido.py), diferente do split deste
+# script. Nunca é retreinado aqui: suas previsões já persistidas em
+# `model_predictions` são só LIDAS e avaliadas com a mesma simulação de
+# apostas dos outros modelos (loop dedicado em `main()`, DEPOIS do `for
+# mercado in MERCADOS` principal -- roda pros 4 mercados em
+# MERCADOS_HIBRIDO_VALIDOS, incluindo `corners_over_under_9.5`, que o loop
+# principal pula inteiro via MERCADOS_SOMENTE_MODELO_MISTO). Mesmos 2
+# modelos e mesmos 4 mercados já usados em `avaliar_modelo_misto_vs_mercado.py`
+# (ferramenta de análise só-leitura, nunca persiste) -- aqui o resultado
+# VAI pro relatório persistido em `model_benchmarking_backtest`.
+MODELOS_HIBRIDOS = ("hibrido_gols_v1", "hibrido_gols_xg_v1")
+MERCADOS_HIBRIDO_VALIDOS = {"1X2", "over_under_2.5", "btts", "corners_over_under_9.5"}
+
 
 def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) -> int:
     """Mesma ideia de `rp._resultado_codigo`, mas escolhe o espaço de
     códigos certo pro mercado -- usado no caminho do Dixon-Coles, que
     calcula resultado real a partir de `home_goals`/`away_goals` crus (ao
     contrário dos modelos de árvore, que já leem a coluna pronta do
-    dataset "Feature Stacked"). Nunca chamada pra `corners_ou95` (ver
+    dataset "Feature Stacked"), e também no caminho do modelo misto pra
+    1X2/over_under_2.5/btts (ver `carregar_resultados_reais_hibrido`) --
+    escanteios usa uma fonte de dado diferente (`match_stats_fotmob`, sem
+    placar), tratado à parte lá. Nunca chamada pra `corners_ou95` (ver
     `MERCADOS_SEM_DIXON_COLES`)."""
     if mercado == "1X2":
         return rp._resultado_codigo(home_goals, away_goals)
     if mercado == "faixa_gols":
         return dados_historicos.codigo_faixa_gols(home_goals + away_goals)
+    if mercado == "btts":
+        return dados_historicos.RESULTADO_BTTS_YES if (home_goals > 0 and away_goals > 0) else dados_historicos.RESULTADO_BTTS_NO
     return dados_historicos.RESULTADO_OVER25 if (home_goals + away_goals) > 2.5 else dados_historicos.RESULTADO_UNDER25
 
 
@@ -873,6 +894,90 @@ def carregar_odds_pinnacle_abertura_bruta(supabase, match_ids: list[int], mercad
     return {match_id: {f"odd_{s}": odd for s, odd in odds.items()} for match_id, odds in odds_por_partida.items()}
 
 
+# =============================================================================
+# Modelo misto com ML (hibrido_gols_v1/hibrido_gols_xg_v1) -- lido de
+# `model_predictions`, nunca retreinado aqui (ver MODELOS_HIBRIDOS acima).
+# Mesma lógica de resultado real já validada em
+# `avaliar_modelo_misto_vs_mercado.py` (ferramenta de análise só-leitura),
+# reaproveitada aqui pro loop que PERSISTE em `model_benchmarking_backtest`.
+# =============================================================================
+def carregar_predicoes_hibrido(supabase, model_name: str, mercado: str) -> dict[int, dict[str, float]]:
+    """`model_predictions` (match_id, selection, probability) já persistido
+    por `treinar_modelo_hibrido.py`, no mesmo formato largo `prob_<selecao>`
+    que `montar_apostas`/`_metricas_probabilisticas` esperam dos outros
+    modelos (mesma ideia de `modelos_ml.empacotar_predicoes`, só que lido
+    direto do banco em vez de vir de `prever()`)."""
+    def factory(inicio, fim):
+        return (
+            supabase.table("model_predictions")
+            .select("match_id, selection, probability")
+            .eq("model_name", model_name)
+            .eq("market", mercado)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    predicoes: dict[int, dict[str, float]] = {}
+    for linha in dados_historicos._paginar(factory):
+        predicoes.setdefault(linha["match_id"], {})[f"prob_{linha['selection']}"] = linha["probability"]
+    return predicoes
+
+
+def carregar_partidas_hibrido(supabase, match_ids: list[int]) -> dict[int, dict]:
+    """`matches` (league_id, home_goals, away_goals, match_date), só
+    finalizadas, pros match_ids que o modelo misto REALMENTE TEM em
+    `model_predictions` -- nunca os do split deste script (Test Set dos
+    modelos de árvore/Dixon-Coles), que não é garantidamente o mesmo split
+    cronológico usado por `treinar_modelo_hibrido.py`. Serve pra
+    liga/período em TODOS os 4 mercados (inclusive escanteios, que não usa
+    `home_goals`/`away_goals` pro resultado real -- ver
+    `carregar_resultados_reais_hibrido` -- mas ainda precisa da liga/data
+    daqui pra quebra por liga do relatório)."""
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("matches")
+            .select("id, league_id, home_goals, away_goals, match_date")
+            .in_("id", lote)
+            .eq("status", "finished")
+            .order("id")
+            .range(inicio, fim)
+        )
+
+    partidas: dict[int, dict] = {}
+    for linha in dados_historicos._paginar_por_lotes_de_id(factory, match_ids):
+        partidas[linha["id"]] = linha
+    return partidas
+
+
+def carregar_resultados_reais_hibrido(supabase, match_ids: list[int], mercado: str) -> dict[int, int]:
+    """Resultado real por mercado pros match_ids que o modelo misto tem em
+    `model_predictions` -- 1X2/over_under_2.5/btts vêm do placar em
+    `matches` (`_resultado_codigo_mercado`); escanteios (`corners_over_
+    under_9.5`) não têm placar, o resultado real é a soma casa+visitante de
+    `match_stats_fotmob` (mesma fonte usada como alvo de treino, ver
+    `dados_historicos._carregar_total_corners_por_partida`) -- MESMA lógica
+    já usada em `avaliar_modelo_misto_vs_mercado.py`, reaproveitada aqui
+    pra manter os dois relatórios (análise só-leitura vs. persistido)
+    consistentes entre si."""
+    if mercado == "corners_over_under_9.5":
+        df = dados_historicos._carregar_total_corners_por_partida(supabase, match_ids)
+        resultados: dict[int, int] = {}
+        for _, linha in df.iterrows():
+            if pd.isna(linha["total_corners"]):
+                continue
+            resultados[int(linha["match_id"])] = (
+                dados_historicos.RESULTADO_CORNERS_OVER95 if linha["total_corners"] > 9.5 else dados_historicos.RESULTADO_CORNERS_UNDER95
+            )
+        return resultados
+
+    partidas = carregar_partidas_hibrido(supabase, match_ids)
+    return {
+        mid: _resultado_codigo_mercado(p["home_goals"], p["away_goals"], mercado)
+        for mid, p in partidas.items()
+        if p["home_goals"] is not None and p["away_goals"] is not None
+    }
+
+
 def _metricas_probabilisticas(
     predicoes: dict[int, dict[str, float]], resultados_reais: dict[int, int], match_ids_validos: set[int], mercado: str = "1X2"
 ) -> tuple[float, float, float, int]:
@@ -1129,6 +1234,13 @@ def imprimir_relatorio_clv(resultados_clv: dict[str, dict]) -> None:
 # =============================================================================
 def main() -> None:
     supabase = rp.get_supabase_client()
+
+    # Nome de liga por league_id -- usado só pelo loop do modelo misto (ver
+    # MODELOS_HIBRIDOS/MERCADOS_HIBRIDO_VALIDOS mais abaixo), que busca as
+    # próprias partidas direto do banco (nunca do dataset ML, que só cobre
+    # o split cronológico deste script) e por isso precisa de um jeito
+    # independente de nomear a liga na quebra por liga do relatório.
+    nomes_liga = {linha["id"]: linha["name"] for linha in (supabase.table("leagues").select("id, name").execute().data or [])}
 
     logger.info("Montando dataset 'Feature Stacked' (5-8 temporadas, ligas de elite)...")
     dataset = dados_historicos.montar_dataset_ml_empilhado(supabase, anos_por_liga=rp.JANELA_ML_ANOS)
@@ -1397,6 +1509,121 @@ def main() -> None:
             predicoes_1x2_diagnostico = todas_as_predicoes_teste
             resultados_reais_1x2 = resultados_reais
             match_ids_validos_1x2 = match_ids_validos_qualidade
+
+    # --- hibrido_gols_v1 / hibrido_gols_xg_v1: modelo misto com ML ---
+    # Loop PRÓPRIO, fora do `for mercado in MERCADOS` acima -- cobre os 4
+    # mercados em MERCADOS_HIBRIDO_VALIDOS, incluindo `corners_over_under_
+    # 9.5` (que o loop principal pula inteiro, ver MERCADOS_SOMENTE_MODELO_
+    # MISTO -- nunca treina classificador nesse mercado). Nunca retreina o
+    # modelo misto aqui: só lê `model_predictions`/resultado real/odds pros
+    # match_ids que ELE REALMENTE TEM (nunca os do Test Set dos modelos de
+    # árvore, que usa um split cronológico diferente -- ver MODELOS_
+    # HIBRIDOS acima). Reaproveita a MESMA simulação de apostas (montar_
+    # apostas/Kelly/bootstrap) dos outros modelos.
+    for mercado in MERCADOS_HIBRIDO_VALIDOS:
+        for nome_hibrido in MODELOS_HIBRIDOS:
+            try:
+                preds_hibrido = carregar_predicoes_hibrido(supabase, nome_hibrido, mercado)
+                if not preds_hibrido:
+                    logger.info("[%s] %s: sem previsões em model_predictions -- pulando.", mercado, nome_hibrido)
+                    continue
+
+                match_ids_h = list(preds_hibrido.keys())
+                resultados_hibrido = carregar_resultados_reais_hibrido(supabase, match_ids_h, mercado)
+                match_ids_com_resultado_h = set(resultados_hibrido.keys())
+                if not match_ids_com_resultado_h:
+                    logger.info("[%s] %s: nenhum resultado real disponível -- pulando.", mercado, nome_hibrido)
+                    continue
+
+                partidas_hibrido = carregar_partidas_hibrido(supabase, match_ids_h)
+                liga_por_match_id_h = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_hibrido.items()}
+
+                odds_fechamento_h = carregar_melhores_odds_fechamento(supabase, match_ids_h, mercado)
+                odds_abertura_h = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_h, mercado)
+
+                apostas_fechamento_h = montar_apostas(preds_hibrido, odds_fechamento_h, resultados_hibrido, liga_por_match_id_h, mercado)
+                apostas_abertura_h = montar_apostas(preds_hibrido, odds_abertura_h, resultados_hibrido, liga_por_match_id_h, mercado)
+                resumo_f_h = resumir_backtest(nome_hibrido, apostas_fechamento_h, None)
+                resumo_a_h = resumir_backtest(nome_hibrido, apostas_abertura_h, None)
+                log_loss_h, brier_h, accuracy_h, n_qualidade_h = _metricas_probabilisticas(
+                    preds_hibrido, resultados_hibrido, match_ids_com_resultado_h, mercado
+                )
+
+                datas_h = [partidas_hibrido[mid]["match_date"] for mid in match_ids_com_resultado_h if mid in partidas_hibrido]
+                periodo_inicio_h = min(datas_h)[:10] if datas_h else None
+                periodo_fim_h = max(datas_h)[:10] if datas_h else None
+
+                relatorio.append({
+                    "model_name": nome_hibrido,
+                    "mercado": mercado,
+                    "periodo_inicio": periodo_inicio_h,
+                    "periodo_fim": periodo_fim_h,
+                    "treino_periodo_inicio": None,
+                    "treino_periodo_fim": None,
+                    "validacao_periodo_inicio": None,
+                    "validacao_periodo_fim": None,
+                    "hiperparametros": None,
+                    "n_apostas": resumo_f_h["n_apostas"],
+                    "roi_medio": resumo_f_h["roi_medio"],
+                    "roi_ic95_inferior": resumo_f_h["roi_ic95_inferior"],
+                    "roi_ic95_superior": resumo_f_h["roi_ic95_superior"],
+                    "significativo": resumo_f_h["significativo"],
+                    "n_apostas_abertura": resumo_a_h["n_apostas"],
+                    "roi_abertura_medio": resumo_a_h["roi_medio"],
+                    "roi_abertura_ic95_inferior": resumo_a_h["roi_ic95_inferior"],
+                    "roi_abertura_ic95_superior": resumo_a_h["roi_ic95_superior"],
+                    "significativo_abertura": resumo_a_h["significativo"],
+                    "log_loss": log_loss_h,
+                    "brier": brier_h,
+                    "accuracy": accuracy_h,
+                    "n_amostras_qualidade": n_qualidade_h,
+                })
+
+                apostas_f_por_liga_h: dict[str, list[dict]] = {}
+                for a in apostas_fechamento_h:
+                    apostas_f_por_liga_h.setdefault(a.get("liga") or "desconhecida", []).append(a)
+                apostas_a_por_liga_h: dict[str, list[dict]] = {}
+                for a in apostas_abertura_h:
+                    apostas_a_por_liga_h.setdefault(a.get("liga") or "desconhecida", []).append(a)
+                match_ids_por_liga_h: dict[str, set[int]] = {}
+                for mid in match_ids_com_resultado_h:
+                    match_ids_por_liga_h.setdefault(liga_por_match_id_h.get(mid) or "desconhecida", set()).add(mid)
+
+                for liga in set(apostas_f_por_liga_h) | set(apostas_a_por_liga_h) | set(match_ids_por_liga_h):
+                    mids_liga = match_ids_por_liga_h.get(liga, set())
+                    datas_liga = [partidas_hibrido[mid]["match_date"] for mid in mids_liga if mid in partidas_hibrido]
+                    resumo_f_l = resumir_backtest(nome_hibrido, apostas_f_por_liga_h.get(liga, []), None)
+                    resumo_a_l = resumir_backtest(nome_hibrido, apostas_a_por_liga_h.get(liga, []), None)
+                    log_loss_l, brier_l, accuracy_l, n_qualidade_l = _metricas_probabilisticas(
+                        preds_hibrido, resultados_hibrido, mids_liga, mercado
+                    )
+                    relatorio_por_liga.append({
+                        "model_name": nome_hibrido,
+                        "liga": liga,
+                        "mercado": mercado,
+                        "periodo_inicio": min(datas_liga)[:10] if datas_liga else None,
+                        "periodo_fim": max(datas_liga)[:10] if datas_liga else None,
+                        "n_apostas": resumo_f_l["n_apostas"],
+                        "roi_medio": resumo_f_l["roi_medio"],
+                        "roi_ic95_inferior": resumo_f_l["roi_ic95_inferior"],
+                        "roi_ic95_superior": resumo_f_l["roi_ic95_superior"],
+                        "significativo": resumo_f_l["significativo"],
+                        "n_apostas_abertura": resumo_a_l["n_apostas"],
+                        "roi_abertura_medio": resumo_a_l["roi_medio"],
+                        "roi_abertura_ic95_inferior": resumo_a_l["roi_ic95_inferior"],
+                        "roi_abertura_ic95_superior": resumo_a_l["roi_ic95_superior"],
+                        "significativo_abertura": resumo_a_l["significativo"],
+                        "log_loss": log_loss_l,
+                        "brier": brier_l,
+                        "accuracy": accuracy_l,
+                        "n_amostras_qualidade": n_qualidade_l,
+                    })
+                imprimir_relatorio_qualidade([{
+                    "nome": f"{nome_hibrido} [{mercado}]", "log_loss": log_loss_h, "brier": brier_h,
+                    "accuracy": accuracy_h, "n": n_qualidade_h,
+                }])
+            except Exception:
+                logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)
 
     salvar_relatorio(supabase, relatorio)
     salvar_relatorio_por_liga(supabase, relatorio_por_liga)

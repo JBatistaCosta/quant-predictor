@@ -58,10 +58,20 @@ function aplicarIsotonic(p, xs, ys) {
   return p;
 }
 
-function chaveMercado(m) {
-  return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
+// v9 grava '1x2' (minúscula) em alguns pontos -- normaliza pro mesmo
+// mercado antes de indexar `resultadosReais`.
+function normalizarMercado(m) {
+  return m === '1x2' ? '1X2' : m;
 }
 
+// Resultado real por mercado, indexado pela MESMA string usada em
+// odds_market.market/model_predictions.market -- antes disso era um
+// ternário de 3 opções que jogava QUALQUER mercado desconhecido (btts,
+// dupla_chance, handicap etc) no bucket de escanteios O/U 9,5, com o
+// mesmo nome genérico (chaveMercado/calcularResultadosReais) duplicado em
+// api/model-stats.js -- corrigido nos dois arquivos: mercado sem entrada
+// aqui agora fica undefined (aposta não conta como vitória, não é
+// silenciosamente comparada contra o resultado errado).
 function calcularResultadosReais(matches, corners) {
   const porMatch = {};
   for (const m of matches) {
@@ -70,11 +80,12 @@ function calcularResultadosReais(matches, corners) {
     porMatch[m.id] = {
       league_id: m.league_id,
       '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      over_under_2_5: total > 2.5 ? 'over' : 'under',
+      'over_under_2.5': total > 2.5 ? 'over' : 'under',
+      btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
     };
   }
   for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9_5'] = totalCorners > 9.5 ? 'over' : 'under';
+    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
   }
   return porMatch;
 }
@@ -316,7 +327,7 @@ export default async function handler(req, res) {
       const edge = pAposta - pMercado;
       if (edge < edgeMinimo) continue;
 
-      const venceu = resultadosReais[p.match_id][chaveMercado(p.market)] === p.selection ? 1 : 0;
+      const venceu = resultadosReais[p.match_id][normalizarMercado(p.market)] === p.selection ? 1 : 0;
       const stakeUnitario = staking === 'kelly' ? Math.min(fracaoKelly(pAposta, oddReal) * fracaoKellyMult, 0.25) : 1;
       if (stakeUnitario <= 0) continue;
 
