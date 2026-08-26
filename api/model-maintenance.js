@@ -18,11 +18,17 @@
 //                                   ano mod 7) — ciclo completo fecha em ~1 semana. Existe
 //                                   porque processar tudo numa chamada só já deu timeout
 //                                   antes (testado, ver CONTEXTO_PROJETO.md).
-//   ?tarefa=calibracao&modelo=X          -> reajusta Platt Scaling + Isotonic Regression pro model_name X (todos os mercados/seleções dele)
-//   ?tarefa=calibracao&modelo=X&minimo=N -> idem, exigindo N amostras de treino mínimas (padrão 80)
+//   ?tarefa=calibracao&modelo=X                  -> reajusta Platt Scaling + Isotonic Regression pro model_name X (todos os mercados/seleções dele)
+//   ?tarefa=calibracao&modelo=X&mercado=Y         -> idem, restrito a UM mercado (necessário pro modelo misto, ver abaixo)
+//   ?tarefa=calibracao&modelo=X&minimo=N          -> idem, exigindo N amostras de treino mínimas (padrão 80)
 //   `modelo` é OBRIGATÓRIO -- sem filtro de model_name a consulta em
 //   model_predictions (2,5M+ linhas/81 model_name) estoura o maxDuration de
-//   60s (medido em produção). Chamar uma vez por model_name relevante.
+//   60s (medido em produção). Pros classificadores do Model Benchmarking
+//   (~45k linhas por model_name) `modelo` sozinho já cabe no orçamento; pro
+//   modelo misto (`hibrido_*`, 37 mercados/104 seleções por partida -- só
+//   hibrido_gols_v1 tem 1,6M+ linhas) também estoura só com `modelo`,
+//   precisa de `&mercado=` também (medido em produção). Chamar uma vez por
+//   (model_name, mercado relevante).
 //   ?tarefa=odds-descobrir      -> FASE 1 do sync de odds (OddsPapi): resolve torneios/mercados/
 //                                   casas uma vez só (precisa de ODDSPAPI_KEY) — ver comentário
 //                                   detalhado na função abaixo antes de rodar (cota é 250 req/mês)
@@ -1894,11 +1900,20 @@ async function tarefaRecalcularModelStats(supabase, mercado) {
 // existe, criado especificamente pra esse padrão de acesso) e reduz o volume
 // o bastante pra caber no orçamento -- mesmo padrão de chunking já usado em
 // `tarefaRecalcularModelStats` (`?mercado=X`, ver comentário acima).
-async function tarefaCalibracao(supabase, minimo, modelo) {
+async function tarefaCalibracao(supabase, minimo, modelo, mercado) {
   if (!modelo) {
     return { error: 'Especifique ?modelo=X (nome exato de model_predictions.model_name) -- sem filtro, a consulta estoura o maxDuration de 60s.' };
   }
-  const predicoes = await buscarTudoPaginado(() => supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id').eq('model_name', modelo));
+  // `mercado` é opcional pros classificadores do Model Benchmarking (poucas
+  // dezenas de milhares de linhas por model_name, cabe tranquilo em 60s),
+  // mas é NECESSÁRIO pro modelo misto (`hibrido_*`, 37 mercados/104 seleções
+  // por partida -- só `hibrido_gols_v1` sozinho tem 1,6M+ linhas, estourava
+  // o timeout mesmo já filtrado por model_name, medido em produção).
+  const predicoes = await buscarTudoPaginado(() => {
+    let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id').eq('model_name', modelo);
+    if (mercado) q = q.eq('market', mercado);
+    return q;
+  });
   const matches = await buscarTudoPaginado(() => supabase.from('matches').select('id, status, home_goals, away_goals, match_date').eq('status', 'finished').not('home_goals', 'is', null));
   const corneragens = await buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null));
 
@@ -5452,7 +5467,7 @@ export default async function handler(req, res) {
     }
 
     if (tarefa === 'calibracao') {
-      const resultadoCalib = await tarefaCalibracao(supabase, Number(minimo) || 80, req.query.modelo || null);
+      const resultadoCalib = await tarefaCalibracao(supabase, Number(minimo) || 80, req.query.modelo || null, req.query.mercado || null);
       if (resultadoCalib.error) return res.status(400).json({ error: { message: resultadoCalib.error } });
       return res.status(200).json(resultadoCalib);
     }
