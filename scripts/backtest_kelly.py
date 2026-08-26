@@ -968,6 +968,20 @@ def carregar_odds_pinnacle_devigadas(supabase, match_ids: list[int], mercado: st
     return _devigar_odds_por_partida(odds_por_partida, mercado)
 
 
+def carregar_odds_pinnacle_devigadas_fechamento(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
+    """Mesma ideia de `carregar_odds_pinnacle_devigadas`, mas SÓ closing
+    de verdade, sem fallback nenhum pra abertura -- forma o par abertura/
+    fechamento da referência de mercado (linha "mercado_pinnacle_sem_vig"
+    vs. "mercado_pinnacle_sem_vig_fechamento"), espelhando o mesmo par já
+    usado nas 2 colunas de ROI de cada modelo (fech./abert.). Cobertura
+    bem mais estreita que a versão com fallback (só 1 temporada pras 5
+    ligas europeias, ver CONTEXTO_PROJETO.md) -- pode ficar vazia pra
+    partidas/mercados sem odd de fechamento capturada, o que é esperado,
+    não um bug."""
+    odds_por_partida = _carregar_odds_pinnacle_brutas(supabase, match_ids, mercado, snapshot="closing", com_fallback_fechamento=False)
+    return _devigar_odds_por_partida(odds_por_partida, mercado)
+
+
 def carregar_odds_pinnacle_abertura_bruta(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
     """Odds cruas (com vig, NÃO devigadas) de ABERTURA da Pinnacle, no
     formato `odd_{selecao}` esperado por `montar_apostas` -- alimenta o
@@ -1116,6 +1130,31 @@ def carregar_resultado_1x2_bruto_hibrido(supabase, match_ids: list[int]) -> dict
         else:
             resultados[mid] = "draw"
     return resultados
+
+
+def carregar_referencia_dupla_chance_pinnacle(
+    supabase, match_ids: list[int], carregar_devigada_1x2=carregar_odds_pinnacle_devigadas
+) -> dict[int, dict[str, float]]:
+    """Referência de mercado pra dupla chance -- NÃO devigada diretamente
+    (as odds de "1X"/"X2"/"12" não formam uma partição do espaço de
+    resultados -- 2 das 3 sempre "vencem" juntas -- então o devig
+    tradicional, que assume as N odds cobrindo exatamente 100% de
+    probabilidade, não se aplica aqui). Em vez disso, deriva da odd de
+    1X2 devigada (que É uma partição válida: home/draw/away) por soma de
+    pares -- P(1X)=P(home)+P(draw), P(X2)=P(draw)+P(away),
+    P(12)=P(home)+P(away) -- mesma técnica de qualquer calculadora de
+    dupla chance a partir de 1X2. `carregar_devigada_1x2` escolhe o par
+    abertura (padrão, com fallback)/fechamento (`carregar_odds_pinnacle_
+    devigadas_fechamento`)."""
+    devigada_1x2 = carregar_devigada_1x2(supabase, match_ids, "1X2")
+    referencia: dict[int, dict[str, float]] = {}
+    for match_id, probs in devigada_1x2.items():
+        referencia[match_id] = {
+            "prob_1X": probs["prob_home"] + probs["prob_draw"],
+            "prob_X2": probs["prob_draw"] + probs["prob_away"],
+            "prob_12": probs["prob_home"] + probs["prob_away"],
+        }
+    return referencia
 
 
 def montar_apostas_dupla_chance(
@@ -1506,6 +1545,14 @@ def main() -> None:
         odds_fechamento = carregar_melhores_odds_fechamento(supabase, match_ids_teste_m, mercado)
         odds_abertura = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_teste_m, mercado)
         pinnacle_devigada = carregar_odds_pinnacle_devigadas(supabase, match_ids_teste_m, mercado)
+        # Par abertura/fechamento da referência de mercado -- mesma ideia
+        # das 2 colunas de ROI (fech./abert.) que cada modelo já tem.
+        # `pinnacle_devigada` (acima) é abertura COM fallback pra
+        # fechamento (mistura as duas, maximiza cobertura); esta aqui é
+        # SÓ fechamento, sem fallback nenhum -- pedido explícito do
+        # usuário pra poder comparar a qualidade da Pinnacle nos dois
+        # momentos separadamente, não só o ROI.
+        pinnacle_devigada_fechamento = carregar_odds_pinnacle_devigadas_fechamento(supabase, match_ids_teste_m, mercado)
         resultados_reais = {int(mid): int(r) for mid, r in zip(test_df_m["match_id"], test_df_m[coluna_alvo])}
         # Qualidade INTRÍNSECA do modelo (log-loss/Brier/Acurácia) usa TODO
         # o Test Set resolvido deste mercado -- não depende de odd nenhuma.
@@ -1516,6 +1563,7 @@ def main() -> None:
         # odds ainda aparecem no relatório principal.
         match_ids_com_resultado = set(resultados_reais.keys())
         match_ids_validos_qualidade = set(pinnacle_devigada.keys()) & match_ids_com_resultado
+        match_ids_validos_qualidade_fechamento = set(pinnacle_devigada_fechamento.keys()) & match_ids_com_resultado
         if not match_ids_validos_qualidade:
             logger.warning(
                 "[%s] Nenhuma odd da Pinnacle encontrada pro Test Set -- comparação com o mercado ficará vazia "
@@ -1694,6 +1742,44 @@ def main() -> None:
                     }
                 )
 
+        # --- mesma linha, mas SÓ fechamento (par abertura/fechamento pedido
+        # pelo usuário, espelhando as 2 colunas de ROI de cada modelo) ---
+        if match_ids_validos_qualidade_fechamento:
+            log_loss_f, brier_f, accuracy_f, n_f = _metricas_probabilisticas(
+                pinnacle_devigada_fechamento, resultados_reais, match_ids_validos_qualidade_fechamento, mercado
+            )
+            relatorio.append(
+                {
+                    "model_name": "mercado_pinnacle_sem_vig_fechamento",
+                    "mercado": mercado,
+                    "periodo_inicio": periodo_inicio_mercado,
+                    "periodo_fim": periodo_fim_mercado,
+                    "log_loss": log_loss_f,
+                    "brier": brier_f,
+                    "accuracy": accuracy_f,
+                    "n_amostras_qualidade": n_f,
+                }
+            )
+            match_ids_qual_por_liga_f: dict[str, set[int]] = {}
+            for mid in match_ids_validos_qualidade_fechamento:
+                match_ids_qual_por_liga_f.setdefault(liga_por_match_id.get(mid) or "desconhecida", set()).add(mid)
+            for liga, mids in match_ids_qual_por_liga_f.items():
+                log_loss_l, brier_l, accuracy_l, n_l = _metricas_probabilisticas(pinnacle_devigada_fechamento, resultados_reais, mids, mercado)
+                periodo_ini_l, periodo_fim_l = periodo_por_liga_mercado.get(liga, (None, None))
+                relatorio_por_liga.append(
+                    {
+                        "model_name": "mercado_pinnacle_sem_vig_fechamento",
+                        "liga": liga,
+                        "mercado": mercado,
+                        "periodo_inicio": periodo_ini_l,
+                        "periodo_fim": periodo_fim_l,
+                        "log_loss": log_loss_l,
+                        "brier": brier_l,
+                        "accuracy": accuracy_l,
+                        "n_amostras_qualidade": n_l,
+                    }
+                )
+
         imprimir_relatorio([r for r in relatorio if r["mercado"] == mercado and "roi_medio" in r])
         imprimir_relatorio_por_liga([r for r in relatorio_por_liga if r["mercado"] == mercado and "roi_medio" in r])
         imprimir_relatorio_qualidade(
@@ -1824,6 +1910,63 @@ def main() -> None:
             except Exception:
                 logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)
 
+        # --- linha de referência "mercado_pinnacle_sem_vig" (+ fechamento) ---
+        # Só pros mercados que NÃO passam pelo loop clássico acima (esse já
+        # grava a própria referência pra 1X2/over_under_2.5/btts -- gravar
+        # de novo aqui duplicaria a chave única (model_name, mercado) em
+        # model_benchmarking_backtest). Usa o universo de match_ids que
+        # hibrido_gols_v1 tem pra esse mercado (hibrido_gols_v1/xg_v1 têm
+        # cobertura praticamente idêntica -- mesmo split, mesmo pipeline).
+        if mercado not in ("1X2", "over_under_2.5", "btts"):
+            try:
+                match_ids_mkt = list(carregar_predicoes_hibrido(supabase, MODELOS_HIBRIDOS[0], mercado).keys())
+                if match_ids_mkt:
+                    resultados_mkt = carregar_resultados_reais_hibrido(supabase, match_ids_mkt, mercado)
+                    partidas_mkt = carregar_partidas_hibrido(supabase, match_ids_mkt)
+                    liga_por_match_id_mkt = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_mkt.items()}
+
+                    for nome_ref, odds_fn in (
+                        ("mercado_pinnacle_sem_vig", carregar_odds_pinnacle_devigadas),
+                        ("mercado_pinnacle_sem_vig_fechamento", carregar_odds_pinnacle_devigadas_fechamento),
+                    ):
+                        devigada_mkt = odds_fn(supabase, match_ids_mkt, mercado)
+                        match_ids_validos_mkt = set(devigada_mkt.keys()) & set(resultados_mkt.keys())
+                        if not match_ids_validos_mkt:
+                            continue
+                        log_loss_mkt, brier_mkt, accuracy_mkt, n_mkt = _metricas_probabilisticas(
+                            devigada_mkt, resultados_mkt, match_ids_validos_mkt, mercado
+                        )
+                        datas_mkt = [partidas_mkt[mid]["match_date"] for mid in match_ids_validos_mkt if mid in partidas_mkt]
+                        relatorio.append({
+                            "model_name": nome_ref,
+                            "mercado": mercado,
+                            "periodo_inicio": min(datas_mkt)[:10] if datas_mkt else None,
+                            "periodo_fim": max(datas_mkt)[:10] if datas_mkt else None,
+                            "log_loss": log_loss_mkt,
+                            "brier": brier_mkt,
+                            "accuracy": accuracy_mkt,
+                            "n_amostras_qualidade": n_mkt,
+                        })
+                        match_ids_qual_por_liga_mkt: dict[str, set[int]] = {}
+                        for mid in match_ids_validos_mkt:
+                            match_ids_qual_por_liga_mkt.setdefault(liga_por_match_id_mkt.get(mid) or "desconhecida", set()).add(mid)
+                        for liga, mids in match_ids_qual_por_liga_mkt.items():
+                            log_loss_l, brier_l, accuracy_l, n_l = _metricas_probabilisticas(devigada_mkt, resultados_mkt, mids, mercado)
+                            datas_liga_mkt = [partidas_mkt[mid]["match_date"] for mid in mids if mid in partidas_mkt]
+                            relatorio_por_liga.append({
+                                "model_name": nome_ref,
+                                "liga": liga,
+                                "mercado": mercado,
+                                "periodo_inicio": min(datas_liga_mkt)[:10] if datas_liga_mkt else None,
+                                "periodo_fim": max(datas_liga_mkt)[:10] if datas_liga_mkt else None,
+                                "log_loss": log_loss_l,
+                                "brier": brier_l,
+                                "accuracy": accuracy_l,
+                                "n_amostras_qualidade": n_l,
+                            })
+            except Exception:
+                logger.exception("[%s] Falha ao calcular referência 'mercado_pinnacle_sem_vig' -- pulando.", mercado)
+
     # --- hibrido_gols_v1 / hibrido_gols_xg_v1: dupla chance (simulação própria) ---
     # Mesmo modelo misto, mesmo princípio (nunca retreinado, só lê
     # model_predictions) -- fora do loop acima porque dupla chance não
@@ -1927,6 +2070,58 @@ def main() -> None:
                 })
         except Exception:
             logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)
+
+    # --- dupla chance: referência "mercado_pinnacle_sem_vig" (+ fechamento) ---
+    # Derivada da 1X2 devigada (ver carregar_referencia_dupla_chance_pinnacle
+    # -- dupla chance em si não devig a, não é uma partição válida), scorada
+    # com _metricas_dupla_chance (mesma disciplina de evento binário por
+    # seleção usada pros modelos acima, não _metricas_probabilisticas).
+    try:
+        match_ids_dc = list(carregar_predicoes_hibrido(supabase, MODELOS_HIBRIDOS[0], "dupla_chance").keys())
+        if match_ids_dc:
+            resultado_bruto_dc = carregar_resultado_1x2_bruto_hibrido(supabase, match_ids_dc)
+            partidas_dc = carregar_partidas_hibrido(supabase, match_ids_dc)
+            liga_por_match_id_dc = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_dc.items()}
+
+            for nome_ref, carregar_devigada_1x2 in (
+                ("mercado_pinnacle_sem_vig", carregar_odds_pinnacle_devigadas),
+                ("mercado_pinnacle_sem_vig_fechamento", carregar_odds_pinnacle_devigadas_fechamento),
+            ):
+                referencia_dc = carregar_referencia_dupla_chance_pinnacle(supabase, match_ids_dc, carregar_devigada_1x2)
+                match_ids_validos_dc = set(referencia_dc.keys()) & set(resultado_bruto_dc.keys())
+                if not match_ids_validos_dc:
+                    continue
+                log_loss_dc, brier_dc, accuracy_dc, n_dc = _metricas_dupla_chance(referencia_dc, resultado_bruto_dc, match_ids_validos_dc)
+                datas_dc = [partidas_dc[mid]["match_date"] for mid in match_ids_validos_dc if mid in partidas_dc]
+                relatorio.append({
+                    "model_name": nome_ref,
+                    "mercado": "dupla_chance",
+                    "periodo_inicio": min(datas_dc)[:10] if datas_dc else None,
+                    "periodo_fim": max(datas_dc)[:10] if datas_dc else None,
+                    "log_loss": log_loss_dc,
+                    "brier": brier_dc,
+                    "accuracy": accuracy_dc,
+                    "n_amostras_qualidade": n_dc,
+                })
+                match_ids_qual_por_liga_dc: dict[str, set[int]] = {}
+                for mid in match_ids_validos_dc:
+                    match_ids_qual_por_liga_dc.setdefault(liga_por_match_id_dc.get(mid) or "desconhecida", set()).add(mid)
+                for liga, mids in match_ids_qual_por_liga_dc.items():
+                    log_loss_l, brier_l, accuracy_l, n_l = _metricas_dupla_chance(referencia_dc, resultado_bruto_dc, mids)
+                    datas_liga_dc = [partidas_dc[mid]["match_date"] for mid in mids if mid in partidas_dc]
+                    relatorio_por_liga.append({
+                        "model_name": nome_ref,
+                        "liga": liga,
+                        "mercado": "dupla_chance",
+                        "periodo_inicio": min(datas_liga_dc)[:10] if datas_liga_dc else None,
+                        "periodo_fim": max(datas_liga_dc)[:10] if datas_liga_dc else None,
+                        "log_loss": log_loss_l,
+                        "brier": brier_l,
+                        "accuracy": accuracy_l,
+                        "n_amostras_qualidade": n_l,
+                    })
+    except Exception:
+        logger.exception("[dupla_chance] Falha ao calcular referência 'mercado_pinnacle_sem_vig' -- pulando.")
 
     salvar_relatorio(supabase, relatorio)
     salvar_relatorio_por_liga(supabase, relatorio_por_liga)

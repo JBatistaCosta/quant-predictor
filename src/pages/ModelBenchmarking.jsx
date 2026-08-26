@@ -86,7 +86,11 @@ const MERCADOS_BACKTEST = [
 // cobre -- ver MERCADOS_HIBRIDO_VALIDOS em backtest_kelly.py) têm odds
 // reais da Pinnacle e produzem ROI/Kelly normalmente.
 const MERCADOS_SEM_ROI = new Set(['corners_ou95', 'faixa_gols']);
+// Par abertura/fechamento da referência de mercado -- mesma ideia das 2
+// colunas de ROI (fech./abert.) que cada modelo já tem, pedido do usuário
+// pra poder comparar a qualidade da Pinnacle nos dois momentos separados.
 const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
+const MODEL_NAME_MERCADO_REF_FECHAMENTO = 'mercado_pinnacle_sem_vig_fechamento';
 
 function escaparHtml(valor) {
   return String(valor ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -103,8 +107,9 @@ function montarRelatorioHtml(relatorio, relatorioPorLiga) {
   const secoes = MERCADOS_BACKTEST.map(({ chave, rotulo }) => {
     const linhas = relatorio.filter((r) => (r.mercado || '1X2') === chave);
     const referencia = linhas.find((r) => r.model_name === MODEL_NAME_MERCADO_REF);
+    const referenciaFechamento = linhas.find((r) => r.model_name === MODEL_NAME_MERCADO_REF_FECHAMENTO);
     const modelos = linhas
-      .filter((r) => r.model_name !== MODEL_NAME_MERCADO_REF)
+      .filter((r) => r.model_name !== MODEL_NAME_MERCADO_REF && r.model_name !== MODEL_NAME_MERCADO_REF_FECHAMENTO)
       .sort((a, b) => (b.roi_ic95_inferior ?? -Infinity) - (a.roi_ic95_inferior ?? -Infinity));
     const periodo = referencia || modelos[0];
     const porLiga = relatorioPorLiga.filter((r) => (r.mercado || '1X2') === chave);
@@ -115,6 +120,9 @@ function montarRelatorioHtml(relatorio, relatorioPorLiga) {
 
     const linhaReferencia = referencia
       ? `<tr class="ref"><td>Pinnacle sem vig (mercado)</td><td class="num">${fmtNum(referencia.log_loss)}</td><td class="num">${fmtNum(referencia.brier)}</td><td class="num">${fmtPct(referencia.accuracy)}</td><td colspan="8" class="dim">— (referência, sem ROI)</td></tr>`
+      : '';
+    const linhaReferenciaFechamento = referenciaFechamento
+      ? `<tr class="ref"><td>Pinnacle sem vig (fechamento)</td><td class="num">${fmtNum(referenciaFechamento.log_loss)}</td><td class="num">${fmtNum(referenciaFechamento.brier)}</td><td class="num">${fmtPct(referenciaFechamento.accuracy)}</td><td colspan="8" class="dim">— (referência, sem ROI)</td></tr>`
       : '';
 
     const linhasModelo = modelos
@@ -165,7 +173,7 @@ function montarRelatorioHtml(relatorio, relatorioPorLiga) {
           <th>Apostas (fech.)</th><th>ROI (fech.)</th><th>IC 95% (fech.)</th><th>EV+?</th>
           <th>Apostas (abert.)</th><th>ROI (abert.)</th><th>IC 95% (abert.)</th><th>EV+?</th>
         </tr></thead>
-        <tbody>${linhaReferencia}${linhasModelo}</tbody>
+        <tbody>${linhaReferencia}${linhaReferenciaFechamento}${linhasModelo}</tbody>
       </table>
       ${linhasPorLiga ? `<h3>Quebra por liga (variante crua)</h3><table>
         <thead><tr>
@@ -304,8 +312,9 @@ function BacktestModelBenchmarking({ session }) {
   const relatorioMercado = relatorio.filter((r) => (r.mercado || '1X2') === mercado);
   const relatorioPorLigaMercado = relatorioPorLiga.filter((r) => (r.mercado || '1X2') === mercado);
   const referenciaMercado = relatorioMercado.find((r) => r.model_name === MODEL_NAME_MERCADO_REF);
+  const referenciaMercadoFechamento = relatorioMercado.find((r) => r.model_name === MODEL_NAME_MERCADO_REF_FECHAMENTO);
   const relatorioModelos = relatorioMercado
-    .filter((r) => r.model_name !== MODEL_NAME_MERCADO_REF)
+    .filter((r) => r.model_name !== MODEL_NAME_MERCADO_REF && r.model_name !== MODEL_NAME_MERCADO_REF_FECHAMENTO)
     .sort((a, b) => (b.roi_ic95_inferior ?? -Infinity) - (a.roi_ic95_inferior ?? -Infinity));
   const ultimaExecucao = relatorio.reduce((max, r) => (r.executado_em > max ? r.executado_em : max), '');
   const periodo = referenciaMercado || relatorioModelos[0];
@@ -413,6 +422,16 @@ function BacktestModelBenchmarking({ session }) {
                   <td className="p-1.5 text-right text-sky-200">{fmtNum(referenciaMercado.log_loss)}</td>
                   <td className="p-1.5 text-right text-sky-200">{fmtNum(referenciaMercado.brier)}</td>
                   <td className="p-1.5 text-right text-sky-200">{fmtPct(referenciaMercado.accuracy)}</td>
+                  <td className="p-1.5 text-right text-slate-700" colSpan={8}>— (referência, sem ROI)</td>
+                </tr>
+              )}
+              {referenciaMercadoFechamento && (
+                <tr className="bg-sky-500/5 italic">
+                  <td className="p-1.5"></td>
+                  <td className="p-1.5 text-sky-300">Pinnacle sem vig (fechamento)</td>
+                  <td className="p-1.5 text-right text-sky-200">{fmtNum(referenciaMercadoFechamento.log_loss)}</td>
+                  <td className="p-1.5 text-right text-sky-200">{fmtNum(referenciaMercadoFechamento.brier)}</td>
+                  <td className="p-1.5 text-right text-sky-200">{fmtPct(referenciaMercadoFechamento.accuracy)}</td>
                   <td className="p-1.5 text-right text-slate-700" colSpan={8}>— (referência, sem ROI)</td>
                 </tr>
               )}
