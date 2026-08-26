@@ -188,10 +188,10 @@ FEATURES_POR_MODELO = {
     # continentais). Testado isolado nos 4 `hibrido_*` primeiro (mesmo
     # padrão do achado #15/PR #366) antes de decidir se estende aos
     # classificadores v9/v10/v11.
-    "hibrido_gols_v1": FEATURES_V12_MESMA_LIGA,
-    "hibrido_gols_xg_v1": FEATURES_V12_MESMA_LIGA,
-    "hibrido_corners_v1": FEATURES_V12_MESMA_LIGA,
-    "hibrido_gols_lgbm_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_gols_v1": FEATURES_V10_XG_CORRIGIDO,
+    "hibrido_gols_xg_v1": FEATURES_V10_XG_CORRIGIDO,
+    "hibrido_corners_v1": FEATURES_V10_XG_CORRIGIDO,
+    "hibrido_gols_lgbm_v1": FEATURES_V10_XG_CORRIGIDO,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     # FEATURES_V9_XG_CORRIGIDO em vez de FEATURES_V9 -- achado #15
     # (CONTEXTO_PROJETO.md), mesmo fix já testado isolado nos 4 `hibrido_*`
