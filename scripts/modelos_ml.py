@@ -36,6 +36,7 @@ from dados_historicos import (
     FEATURES_V10_XG_CORRIGIDO,
     FEATURES_V11,
     FEATURES_V11_XG_CORRIGIDO,
+    FEATURES_V12_MESMA_LIGA,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
@@ -172,14 +173,25 @@ FEATURES_POR_MODELO = {
     # titular_valor_mercado home/away + diferenciais), ver FEATURES_XG_XI_V2.
     "catboost_xg_regressor_v2": FEATURES_XG_XI_V2,
     "catboost_xgot_regressor_v2": FEATURES_XG_XI_V2,
-    # Modelo misto -- feature set mais completo disponível (v10), já que o
-    # ponto do híbrido é justamente levar pro λ todo o contexto pré-jogo que
-    # o Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
+    # Modelo misto -- feature set mais completo disponível, já que o ponto
+    # do híbrido é justamente levar pro λ todo o contexto pré-jogo que o
+    # Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
     # classificação), em vez de só força de ataque/defesa por time.
-    "hibrido_gols_v1": FEATURES_V10_XG_CORRIGIDO,
-    "hibrido_gols_xg_v1": FEATURES_V10_XG_CORRIGIDO,
-    "hibrido_corners_v1": FEATURES_V10_XG_CORRIGIDO,
-    "hibrido_gols_lgbm_v1": FEATURES_V10_XG_CORRIGIDO,
+    #
+    # FEATURES_V12_MESMA_LIGA em vez de FEATURES_V10_XG_CORRIGIDO -- teste
+    # (dry-run, `treinar_modelo_hibrido.py --sem-gravar`) da forma "mesma
+    # liga" em paralelo à pooled (ver comentário de FEATURES_NUMERICAS_V12_
+    # MESMA_LIGA em dados_historicos.py): a janela pooled mistura competição
+    # doméstica e continental pro mesmo time, achado real via investigação
+    # (28,8% das previsões com pelo menos 1 jogo de outra competição na
+    # janela, chegando a 61,5%/quase metade da janela nas previsões
+    # continentais). Testado isolado nos 4 `hibrido_*` primeiro (mesmo
+    # padrão do achado #15/PR #366) antes de decidir se estende aos
+    # classificadores v9/v10/v11.
+    "hibrido_gols_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_gols_xg_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_corners_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_gols_lgbm_v1": FEATURES_V12_MESMA_LIGA,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     # FEATURES_V9_XG_CORRIGIDO em vez de FEATURES_V9 -- achado #15
     # (CONTEXTO_PROJETO.md), mesmo fix já testado isolado nos 4 `hibrido_*`

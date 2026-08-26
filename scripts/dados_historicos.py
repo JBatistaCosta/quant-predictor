@@ -1326,44 +1326,57 @@ def obter_estadio_provavel_mandante(supabase: Client, team_ids: list[int]) -> di
     return resultado
 
 
-def _forma_por_mando_multi_janelas(partidas: pd.DataFrame, col_home: str, col_away: str, prefixo: str) -> pd.DataFrame:
+def _forma_por_mando_multi_janelas(
+    partidas: pd.DataFrame, col_home: str, col_away: str, prefixo: str, agrupar_por_liga: bool = False
+) -> pd.DataFrame:
     """Calcula janelas de 5j, 10j, 20j e seus repectivos decays (ewm) para uma métrica,
-    gerando um DataFrame com todas as combinações de `prefixo`."""
-    casa = partidas[["id", "match_date", "home_team_id", col_home, col_away]].sort_values(["home_team_id", "match_date"]).copy()
-    fora = partidas[["id", "match_date", "away_team_id", col_home, col_away]].sort_values(["away_team_id", "match_date"]).copy()
-    
+    gerando um DataFrame com todas as combinações de `prefixo`.
+
+    `agrupar_por_liga=True` agrupa por (time, liga) em vez de só time --
+    mesma janela, mas só considerando jogos anteriores do time NA MESMA
+    competição da partida sendo prevista. Ver `_forma_por_mando` (docstring
+    completa da motivação/tolerância a NaN)."""
+    grupo_casa = ["home_team_id", "league_id"] if agrupar_por_liga else ["home_team_id"]
+    grupo_fora = ["away_team_id", "league_id"] if agrupar_por_liga else ["away_team_id"]
+    cols_extra = ["league_id"] if agrupar_por_liga else []
+
+    casa = partidas[["id", "match_date", "home_team_id", *cols_extra, col_home, col_away]].sort_values(["home_team_id", "match_date"]).copy()
+    fora = partidas[["id", "match_date", "away_team_id", *cols_extra, col_home, col_away]].sort_values(["away_team_id", "match_date"]).copy()
+
     colunas_finais = []
-    
+
     for janela in [5, 10, 20]:
         # Simple rolling
         c_m_col = f"{prefixo}_home_{janela}j"
         c_s_col = f"{prefixo}_sofrido_home_{janela}j"
-        casa[c_m_col] = casa.groupby("home_team_id")[col_home].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
-        casa[c_s_col] = casa.groupby("home_team_id")[col_away].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
-        
+        casa[c_m_col] = casa.groupby(grupo_casa)[col_home].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+        casa[c_s_col] = casa.groupby(grupo_casa)[col_away].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+
         f_m_col = f"{prefixo}_away_{janela}j"
         f_s_col = f"{prefixo}_sofrido_away_{janela}j"
-        fora[f_m_col] = fora.groupby("away_team_id")[col_away].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
-        fora[f_s_col] = fora.groupby("away_team_id")[col_home].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
-        
+        fora[f_m_col] = fora.groupby(grupo_fora)[col_away].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+        fora[f_s_col] = fora.groupby(grupo_fora)[col_home].transform(lambda s: s.shift(1).rolling(janela, min_periods=1).mean())
+
         # Exponential decay rolling
         c_m_dec_col = f"{prefixo}_home_{janela}j_decay"
         c_s_dec_col = f"{prefixo}_sofrido_home_{janela}j_decay"
-        casa[c_m_dec_col] = casa.groupby("home_team_id")[col_home].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
-        casa[c_s_dec_col] = casa.groupby("home_team_id")[col_away].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
-        
+        casa[c_m_dec_col] = casa.groupby(grupo_casa)[col_home].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+        casa[c_s_dec_col] = casa.groupby(grupo_casa)[col_away].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+
         f_m_dec_col = f"{prefixo}_away_{janela}j_decay"
         f_s_dec_col = f"{prefixo}_sofrido_away_{janela}j_decay"
-        fora[f_m_dec_col] = fora.groupby("away_team_id")[col_away].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
-        fora[f_s_dec_col] = fora.groupby("away_team_id")[col_home].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
-        
+        fora[f_m_dec_col] = fora.groupby(grupo_fora)[col_away].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+        fora[f_s_dec_col] = fora.groupby(grupo_fora)[col_home].transform(lambda s: s.shift(1).ewm(span=janela, min_periods=1).mean())
+
         colunas_finais.extend([c_m_col, c_s_col, f_m_col, f_s_col, c_m_dec_col, c_s_dec_col, f_m_dec_col, f_s_dec_col])
-        
+
     return casa.set_index("id")[[c for c in colunas_finais if "home" in c]].join(
         fora.set_index("id")[[c for c in colunas_finais if "away" in c]]
     )
 
-def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str]) -> pd.DataFrame:
+def _forma_por_mando(
+    partidas: pd.DataFrame, col_home: str, col_away: str, saida: dict[str, str], agrupar_por_liga: bool = False
+) -> pd.DataFrame:
     """Média móvel pré-jogo (`.shift(1)` antes do `.rolling()` -- sem isso a
     média incluiria o próprio jogo que se está tentando prever, vazamento
     clássico em backtest de esporte), calculada SEPARADAMENTE pro histórico
@@ -1377,20 +1390,37 @@ def _forma_por_mando(partidas: pd.DataFrame, col_home: str, col_away: str, saida
     da casa e do time de fora NAQUELA partida (ex.: `home_goals`/
     `away_goals`, ou `xg_home`/`xg_away`) -- serve tanto pra gols quanto
     pra xG com a mesma função, já que em ambos os casos "o que o adversário
-    fez" é exatamente "o que o time sofreu"."""
-    casa = partidas[["id", "match_date", "home_team_id", col_home, col_away]].sort_values(["home_team_id", "match_date"]).copy()
-    casa[saida["marcado_home"]] = casa.groupby("home_team_id")[col_home].transform(
+    fez" é exatamente "o que o time sofreu".
+
+    `agrupar_por_liga=True` agrupa por (time, liga) em vez de só time: a
+    janela passa a só contar jogos anteriores do time NA MESMA competição
+    (`league_id`) da partida sendo prevista -- pooled (padrão) mistura
+    doméstico e continental no mesmo cálculo, o que mostrou-se uma mistura
+    real de sinal (times jogam em patamar bem diferente entre as duas,
+    ~0,46 gols/jogo de diferença de margem medida pros mesmos clubes; ver
+    achado de mistura de competição, CONTEXTO_PROJETO.md). Fica NaN quando
+    o time não tem jogo anterior naquela liga dentro do escopo carregado
+    (ex.: estreia de fase de grupos continental) -- os modelos de árvore já
+    toleram NaN nativamente em todo o resto do dataset, sem tratamento
+    especial necessário aqui. É sempre uma feature PARALELA à pooled, nunca
+    a substitui."""
+    grupo_casa = ["home_team_id", "league_id"] if agrupar_por_liga else ["home_team_id"]
+    grupo_fora = ["away_team_id", "league_id"] if agrupar_por_liga else ["away_team_id"]
+    cols_extra = ["league_id"] if agrupar_por_liga else []
+
+    casa = partidas[["id", "match_date", "home_team_id", *cols_extra, col_home, col_away]].sort_values(["home_team_id", "match_date"]).copy()
+    casa[saida["marcado_home"]] = casa.groupby(grupo_casa)[col_home].transform(
         lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
     )
-    casa[saida["sofrido_home"]] = casa.groupby("home_team_id")[col_away].transform(
+    casa[saida["sofrido_home"]] = casa.groupby(grupo_casa)[col_away].transform(
         lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
     )
 
-    fora = partidas[["id", "match_date", "away_team_id", col_home, col_away]].sort_values(["away_team_id", "match_date"]).copy()
-    fora[saida["marcado_away"]] = fora.groupby("away_team_id")[col_away].transform(
+    fora = partidas[["id", "match_date", "away_team_id", *cols_extra, col_home, col_away]].sort_values(["away_team_id", "match_date"]).copy()
+    fora[saida["marcado_away"]] = fora.groupby(grupo_fora)[col_away].transform(
         lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
     )
-    fora[saida["sofrido_away"]] = fora.groupby("away_team_id")[col_home].transform(
+    fora[saida["sofrido_away"]] = fora.groupby(grupo_fora)[col_home].transform(
         lambda s: s.shift(1).rolling(JANELA_ROLLING_ML, min_periods=1).mean()
     )
 
@@ -1743,6 +1773,17 @@ COLUNAS_FORMA_GOLS = {
     "sofrido_home": "media_gols_sofridos_5j_home",
     "marcado_away": "media_gols_marcados_5j_away",
     "sofrido_away": "media_gols_sofridos_5j_away",
+}
+# Par "mesma liga" de COLUNAS_FORMA_GOLS -- mesma média móvel de 5 jogos,
+# mas contando só jogos anteriores do time NA MESMA competição da partida
+# sendo prevista (ver `_forma_por_mando(..., agrupar_por_liga=True)` e o
+# comentário de FEATURES_NUMERICAS_V12_MESMA_LIGA). Paralela à pooled
+# (COLUNAS_FORMA_GOLS), nunca a substitui.
+COLUNAS_FORMA_GOLS_MESMA_LIGA = {
+    "marcado_home": "media_gols_marcados_5j_mesma_liga_home",
+    "sofrido_home": "media_gols_sofridos_5j_mesma_liga_home",
+    "marcado_away": "media_gols_marcados_5j_mesma_liga_away",
+    "sofrido_away": "media_gols_sofridos_5j_mesma_liga_away",
 }
 COLUNAS_FORMA_XG = {
     "marcado_home": "media_xg_5j_home",
@@ -2969,6 +3010,45 @@ FEATURES_NUMERICAS_V11_XG_CORRIGIDO = FEATURES_NUMERICAS_V10_XG_CORRIGIDO + [
 ]
 FEATURES_V11_XG_CORRIGIDO = FEATURES_NUMERICAS_V11_XG_CORRIGIDO + CAT_FEATURES
 
+# v12 -- tudo da v10 já corrigida (achado #15) + forma "mesma liga" em
+# paralelo (12 features: gols + xG + xGOT, janela de 5 jogos), contando só
+# jogos anteriores do time NA MESMA competição da partida sendo prevista
+# (`_forma_por_mando`/`_forma_por_mando_multi_janelas` com
+# `agrupar_por_liga=True`). Motivação medida em dado real (não teórica):
+# 28,8% das previsões tinham pelo menos 1 jogo de OUTRA competição na
+# janela pooled de 5 jogos (`COLUNAS_FORMA_GOLS`/`xg_home_5j`/etc.), e nas
+# partidas continentais especificamente (Champions League/Libertadores)
+# isso sobe pra 61,5% das previsões com quase metade da janela (fração
+# média 0,462) vinda da liga doméstica -- com uma diferença real de ~0,46
+# gols/jogo de margem de placar pros MESMOS clubes entre competição
+# doméstica e continental (ver CONTEXTO_PROJETO.md).
+#
+# Aditivo, não substitui: a janela pooled continua existindo do lado dela
+# (CatBoost/XGBoost/LightGBM decidem o peso relativo de cada uma). Fica
+# NaN quando o time não tem jogo anterior NA MESMA liga dentro do escopo
+# carregado -- comum logo na estreia de uma fase de grupos continental --
+# tolerado nativamente pelos modelos de árvore, mesma disciplina do resto
+# do dataset.
+#
+# Validado via dry-run real (`treinar_modelo_hibrido.py --sem-gravar`,
+# escopo de 9 ligas -- 6 domésticas do benchmark + UEFA Champions League/
+# Copa Libertadores/Copa Sudamericana, Test Set de 2625 partidas): efeito
+# agregado pequeno e misto (diluído por ~75% de jogos domésticos, onde a
+# mistura de competição já é rara), mas nas 459 partidas CONTINENTAIS do
+# Test Set especificamente -- onde a mistura é maior -- log-verossimilhança/
+# log-loss/Brier/acurácia melhoraram nas 4 métricas em `hibrido_gols_v1` E
+# `hibrido_gols_xg_v1` (ver PR #368). Ativado nos 4 `hibrido_*` (`modelos_ml.
+# FEATURES_POR_MODELO`); extensão aos classificadores v9/v10/v11 fica pra
+# decisão separada.
+FEATURES_NUMERICAS_V12_MESMA_LIGA = FEATURES_NUMERICAS_V10_XG_CORRIGIDO + [
+    *COLUNAS_FORMA_GOLS_MESMA_LIGA.values(),
+    "xg_mesma_liga_home_5j", "xg_mesma_liga_sofrido_home_5j",
+    "xg_mesma_liga_away_5j", "xg_mesma_liga_sofrido_away_5j",
+    "xgot_mesma_liga_home_5j", "xgot_mesma_liga_sofrido_home_5j",
+    "xgot_mesma_liga_away_5j", "xgot_mesma_liga_sofrido_away_5j",
+]
+FEATURES_V12_MESMA_LIGA = FEATURES_NUMERICAS_V12_MESMA_LIGA + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.
@@ -3216,8 +3296,17 @@ def montar_dataset_ml_empilhado(
     partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
+    forma_gols_mesma_liga = _forma_por_mando(
+        partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS_MESMA_LIGA, agrupar_por_liga=True
+    )
     forma_xg = _forma_por_mando_multi_janelas(partidas, "xg_home", "xg_away", "xg")
+    forma_xg_mesma_liga = _forma_por_mando_multi_janelas(
+        partidas, "xg_home", "xg_away", "xg_mesma_liga", agrupar_por_liga=True
+    )
     forma_xgot = _forma_por_mando_multi_janelas(partidas, "xgot_home", "xgot_away", "xgot")
+    forma_xgot_mesma_liga = _forma_por_mando_multi_janelas(
+        partidas, "xgot_home", "xgot_away", "xgot_mesma_liga", agrupar_por_liga=True
+    )
     forma_posse = _forma_por_mando(partidas, "possession_home", "possession_away", COLUNAS_FORMA_POSSE)
     forma_chutes = _forma_por_mando(partidas, "shots_home", "shots_away", COLUNAS_FORMA_CHUTES)
     forma_chutes_alvo = _forma_por_mando(partidas, "shots_on_target_home", "shots_on_target_away", COLUNAS_FORMA_CHUTES_ALVO)
@@ -3294,8 +3383,11 @@ def montar_dataset_ml_empilhado(
     dataset = dataset.merge(elo_home[["id", "home_team_id", "elo_home"]], on=["id", "home_team_id"], how="left")
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
     dataset = dataset.join(forma_gols, on="id")
+    dataset = dataset.join(forma_gols_mesma_liga, on="id")
     dataset = dataset.join(forma_xg, on="id")
+    dataset = dataset.join(forma_xg_mesma_liga, on="id")
     dataset = dataset.join(forma_xgot, on="id")
+    dataset = dataset.join(forma_xgot_mesma_liga, on="id")
     dataset = dataset.join(forma_posse, on="id")
     dataset = dataset.join(forma_chutes, on="id")
     dataset = dataset.join(forma_chutes_alvo, on="id")
@@ -3517,6 +3609,20 @@ def montar_dataset_ml_empilhado(
         ],
         *[
             f"xgot_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
+        # Forma "mesma liga" (v12, paralela à pooled acima -- ver
+        # FEATURES_NUMERICAS_V12_MESMA_LIGA): mesmas 3 famílias (gols/xG/
+        # xGOT), só contando jogos anteriores do time NA MESMA competição.
+        *COLUNAS_FORMA_GOLS_MESMA_LIGA.values(),
+        *[
+            f"xg_mesma_liga_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
+        *[
+            f"xgot_mesma_liga_{s}_{j}"
             for s in ("home", "sofrido_home", "away", "sofrido_away")
             for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
         ],
