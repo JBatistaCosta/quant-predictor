@@ -58,15 +58,33 @@ const MERCADOS_BACKTEST = [
   { chave: '1X2', rotulo: '1X2' },
   { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
   { chave: 'btts', rotulo: 'Ambas Marcam (BTTS)' },
-  { chave: 'corners_ou95', rotulo: 'Escanteios O/U 9,5' },
+  { chave: 'dupla_chance', rotulo: 'Dupla Chance' },
+  { chave: 'over_under_1.5', rotulo: 'Over/Under 1.5' },
+  { chave: 'over_under_3.5', rotulo: 'Over/Under 3.5' },
+  { chave: 'handicap_-2.0', rotulo: 'Handicap -2' },
+  { chave: 'handicap_-1.0', rotulo: 'Handicap -1' },
+  { chave: 'handicap_1.0', rotulo: 'Handicap +1' },
+  { chave: 'handicap_2.0', rotulo: 'Handicap +2' },
+  { chave: 'corners_over_under_7.5', rotulo: 'Escanteios O/U 7,5' },
+  { chave: 'corners_over_under_8.5', rotulo: 'Escanteios O/U 8,5' },
+  { chave: 'corners_over_under_9.5', rotulo: 'Escanteios O/U 9,5 (modelo misto)' },
+  { chave: 'corners_over_under_10', rotulo: 'Escanteios O/U 10' },
+  { chave: 'corners_over_under_10.5', rotulo: 'Escanteios O/U 10,5' },
+  { chave: 'corners_over_under_11', rotulo: 'Escanteios O/U 11' },
+  { chave: 'corners_over_under_11.5', rotulo: 'Escanteios O/U 11,5' },
+  { chave: 'corners_over_under_12', rotulo: 'Escanteios O/U 12' },
+  { chave: 'corners_over_under_12.5', rotulo: 'Escanteios O/U 12,5' },
+  { chave: 'corners_ou95', rotulo: 'Escanteios O/U 9,5 (classificador)' },
   { chave: 'faixa_gols', rotulo: 'Faixa de gols' },
 ];
-// Escanteios e faixa de gols não têm nenhuma fonte de odds de mercado neste
-// projeto -- pra esses 2, o backtest só traz qualidade intrínseca da
-// probabilidade (log-loss/Brier/Acurácia), nunca ROI/Kelly/EV+ (fica
-// sempre 0 apostas, não é bug -- ver comentário no topo de `MERCADOS` em
-// backtest_kelly.py). 1X2/over_under_2.5/btts têm odds reais (Pinnacle
-// entre outras casas) e produzem ROI/Kelly normalmente.
+// Escanteios (classificador) e faixa de gols não têm nenhuma fonte de odds
+// de mercado neste projeto -- pra esses 2, o backtest só traz qualidade
+// intrínseca da probabilidade (log-loss/Brier/Acurácia), nunca ROI/Kelly/
+// EV+ (fica sempre 0 apostas, não é bug -- ver comentário no topo de
+// `MERCADOS` em backtest_kelly.py). Todos os outros (incluindo dupla
+// chance/handicap/escanteios "modelo misto", que só o modelo misto com ML
+// cobre -- ver MERCADOS_HIBRIDO_VALIDOS em backtest_kelly.py) têm odds
+// reais da Pinnacle e produzem ROI/Kelly normalmente.
 const MERCADOS_SEM_ROI = new Set(['corners_ou95', 'faixa_gols']);
 const MODEL_NAME_MERCADO_REF = 'mercado_pinnacle_sem_vig';
 
@@ -326,7 +344,7 @@ function BacktestModelBenchmarking({ session }) {
         {ultimaExecucao && <span className="text-slate-500"> Última rodada: {new Date(ultimaExecucao).toLocaleString('pt-BR')}.</span>}
       </p>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {MERCADOS_BACKTEST.map((m) => (
           <button key={m.chave} onClick={() => setMercado(m.chave)}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${mercado === m.chave ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>

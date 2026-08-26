@@ -17,9 +17,11 @@ name: Model Benchmarking - Backtest (ROI/Kelly/EV+)
 # backtest_kelly.py) -- timeout aumentado de novo (era 200min pra 4
 # mercados) pra dar folga pro 5º mercado. Também avalia (sem retreinar --
 # só lê `model_predictions`, custo desprezível) o modelo misto com ML
-# (`hibrido_gols_v1`/`hibrido_gols_xg_v1`, ver `MODELOS_HIBRIDOS`) nos 4
-# mercados onde o nome bate com o que ele grava (1X2, Over/Under 2.5,
-# BTTS, escanteios) -- loop À PARTE, fora do grid search principal.
+# (`hibrido_gols_v1`/`hibrido_gols_xg_v1`, ver `MODELOS_HIBRIDOS`) em 19
+# mercados (1X2, Over/Under 2.5, BTTS, Dupla Chance, Over/Under 1.5/3.5,
+# Handicap -2/-1/+1/+2 e Escanteios O/U em 9 linhas de 7.5 a 12.5 -- ver
+# `MERCADOS_HIBRIDO_VALIDOS`/`MERCADOS["dupla_chance"]`) -- loops À PARTE,
+# fora do grid search principal, sem custo de treino nenhum.
 
 on:
   workflow_dispatch: {}
