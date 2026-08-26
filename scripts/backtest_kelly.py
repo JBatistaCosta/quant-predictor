@@ -400,7 +400,15 @@ def _melhores_odds_fechamento_snapshot(
             .range(inicio, fim)
         )
 
-    linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids)
+    # tamanho_lote reduzido (default 500 -> 100): a query já filtra por
+    # market+snapshot+bookmaker além do .in_(match_id, lote), e com
+    # odds_market na casa de milhões de linhas (ver CONTEXTO_PROJETO.md,
+    # achado sobre views de cobertura de odds) um lote de ~280 ids já
+    # estourava statement_timeout (57014) NA PRIMEIRA página -- não é o
+    # caso clássico de OFFSET fundo (achado #21), é o filtro combinado
+    # sendo caro num lote grande. Mesmo padrão de mitigação (encolher
+    # tamanho_lote em vez de mudar a estratégia de paginação).
+    linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids, tamanho_lote=100)
 
     melhor: dict[int, dict[str, float]] = {}
     for linha in linhas:
