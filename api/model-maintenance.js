@@ -1783,8 +1783,22 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
 // 70/30. Platt via gradiente descendente, Isotonic via PAVA.
 // ============================================================
 
+// Mercados que `resultadoReal` sabe calcular o desfecho de verdade.
+// BUG REAL CORRIGIDO: antes disso, qualquer mercado que não fosse '1X2' nem
+// 'over_under_2.5' caía num fallback pra 'corners_over_under_9_5' -- inclusive
+// 'btts', que nunca teve branch próprio. Como a seleção do BTTS é 'yes'/'no'
+// e o resultado calculado pelo fallback era 'over'/'under' (escanteios), a
+// comparação `real === selection` NUNCA batia, então TODA calibração de BTTS
+// já gravada em `model_calibration` foi ajustada contra um alvo sempre-0
+// (falso), não o resultado real de BTTS. Mercados fora dos 4 reconhecidos
+// aqui agora retornam `null` (não calibra) em vez de cair nesse fallback
+// errado em silêncio.
 function chaveMercadoCalib(m) {
-  return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
+  if (m === '1X2') return '1X2';
+  if (m === 'over_under_2.5') return 'over_under_2_5';
+  if (m === 'btts') return 'btts';
+  if (m === 'corners_over_under_9.5') return 'corners_over_under_9_5';
+  return null;
 }
 
 function ajustarPlatt(xs, ys) {
@@ -1896,9 +1910,16 @@ async function tarefaCalibracao(supabase, minimo) {
       const real = total > 2.5 ? 'over' : 'under';
       return real === selection ? 1 : 0;
     }
-    if (cornersPorJogo[matchId] == null) return null;
-    const real = cornersPorJogo[matchId] > 9.5 ? 'over' : 'under';
-    return real === selection ? 1 : 0;
+    if (chave === 'btts') {
+      const real = (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no';
+      return real === selection ? 1 : 0;
+    }
+    if (chave === 'corners_over_under_9_5') {
+      if (cornersPorJogo[matchId] == null) return null;
+      const real = cornersPorJogo[matchId] > 9.5 ? 'over' : 'under';
+      return real === selection ? 1 : 0;
+    }
+    return null; // mercado sem lógica de resultado real aqui -- não calibra
   }
 
   const grupos = {};
