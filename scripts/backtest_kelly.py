@@ -178,6 +178,41 @@ MERCADOS = {
     },
 }
 
+# Entradas SÓ pro modelo misto (ver MERCADOS_SOMENTE_MODELO_MISTO/
+# MERCADOS_HIBRIDO_VALIDOS abaixo) -- nenhuma tem `coluna_alvo` real (não
+# existe no dataset "Feature Stacked", `main()` nunca treina classificador
+# nelas). `codigo_por_selecao` aqui só serve pra `carregar_melhores_odds_
+# fechamento`/`_carregar_odds_pinnacle_brutas` saberem quais campos
+# `odd_<selecao>` buscar -- os CÓDIGOS batem com `carregar_resultados_
+# reais_hibrido` (0/1 pra over/under e escanteios, 0/1/2 pra handicap),
+# nunca com os `RESULTADO_*` de mercados diferentes.
+MERCADOS["over_under_1.5"] = {"coluna_alvo": None, "codigo_por_selecao": {"under": 0, "over": 1}}
+MERCADOS["over_under_3.5"] = {"coluna_alvo": None, "codigo_por_selecao": {"under": 0, "over": 1}}
+for _linha_corners in ("7.5", "8.5", "10", "10.5", "11", "11.5", "12", "12.5"):
+    MERCADOS[f"corners_over_under_{_linha_corners}"] = {
+        "coluna_alvo": None,
+        "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CORNERS_UNDER95, "over": dados_historicos.RESULTADO_CORNERS_OVER95},
+    }
+del _linha_corners
+# Só as 4 linhas INTEIRAS com odd real de "european_handicap" no banco
+# (ver _nome_mercado_odds) -- handicap_0.0 (sem "european_handicap_0" no
+# banco) e as linhas de meio gol (sem equivalente de handicap europeu, só
+# "asian_handicap", mercado diferente, fora do pedido) ficam de fora.
+for _linha_handicap in ("-2.0", "-1.0", "1.0", "2.0"):
+    MERCADOS[f"handicap_{_linha_handicap}"] = {"coluna_alvo": None, "codigo_por_selecao": {"home": 0, "away": 1, "push": 2}}
+del _linha_handicap
+# Dupla chance: os 3 códigos abaixo NUNCA são comparados por igualdade
+# contra um `resultado_real` (ao contrário de todo outro mercado aqui) --
+# 2 das 3 seleções sempre "vencem" simultaneamente (ex.: 1X e 12 vencem
+# junto se o mandante ganha), então `montar_apostas`/`_metricas_
+# probabilisticas` (que assumem exatamente 1 vencedor por partida) não
+# servem pra esse mercado. Tem uma simulação PRÓPRIA (ver
+# `montar_apostas_dupla_chance`/`_metricas_dupla_chance` no loop do modelo
+# misto) -- os códigos aqui só existem pra reaproveitar `codigo_por_
+# selecao.keys()` na busca de odds (`carregar_melhores_odds_fechamento`),
+# nunca são lidos como valor.
+MERCADOS["dupla_chance"] = {"coluna_alvo": None, "codigo_por_selecao": {"1X": 0, "X2": 1, "12": 2}}
+
 # dixon_coles_v1 é um modelo Poisson de GOLS -- prevê faixa de gols pelo
 # mesmo grid de placares usado pra 1X2/over_under_2.5 (ver
 # `rp._prever_probs_dixon_coles`), mas não tem NENHUMA noção de escanteio.
@@ -195,7 +230,12 @@ MERCADOS_SEM_DIXON_COLES = {"corners_ou95"}
 # `odds_market`) -- se `main()` tentasse treinar um classificador com essa
 # entrada, cairia no mesmo KeyError já documentado acima (prefixo
 # incompatível com `ROTULOS_SAIDA`). `main()` pula todo mercado aqui listado.
-MERCADOS_SOMENTE_MODELO_MISTO = {"corners_over_under_9.5"}
+MERCADOS_SOMENTE_MODELO_MISTO = {
+    "corners_over_under_9.5", "corners_over_under_7.5", "corners_over_under_8.5", "corners_over_under_10",
+    "corners_over_under_10.5", "corners_over_under_11", "corners_over_under_11.5", "corners_over_under_12",
+    "corners_over_under_12.5", "over_under_1.5", "over_under_3.5", "handicap_-2.0", "handicap_-1.0",
+    "handicap_1.0", "handicap_2.0", "dupla_chance",
+}
 
 # Modelo misto com ML (CatBoost Poisson + camada paramétrica de
 # distribuicoes.py, treinado por treinar_modelo_hibrido.py) -- pré-treinado
@@ -204,14 +244,17 @@ MERCADOS_SOMENTE_MODELO_MISTO = {"corners_over_under_9.5"}
 # script. Nunca é retreinado aqui: suas previsões já persistidas em
 # `model_predictions` são só LIDAS e avaliadas com a mesma simulação de
 # apostas dos outros modelos (loop dedicado em `main()`, DEPOIS do `for
-# mercado in MERCADOS` principal -- roda pros 4 mercados em
-# MERCADOS_HIBRIDO_VALIDOS, incluindo `corners_over_under_9.5`, que o loop
-# principal pula inteiro via MERCADOS_SOMENTE_MODELO_MISTO). Mesmos 2
-# modelos e mesmos 4 mercados já usados em `avaliar_modelo_misto_vs_mercado.py`
-# (ferramenta de análise só-leitura, nunca persiste) -- aqui o resultado
-# VAI pro relatório persistido em `model_benchmarking_backtest`.
+# mercado in MERCADOS` principal -- roda pros mercados em
+# MERCADOS_HIBRIDO_VALIDOS, todos pulados inteiro pelo loop principal via
+# MERCADOS_SOMENTE_MODELO_MISTO). `dupla_chance` fica FORA deste set --
+# tem loop e simulação própria (ver comentário em MERCADOS["dupla_chance"]).
 MODELOS_HIBRIDOS = ("hibrido_gols_v1", "hibrido_gols_xg_v1")
-MERCADOS_HIBRIDO_VALIDOS = {"1X2", "over_under_2.5", "btts", "corners_over_under_9.5"}
+MERCADOS_HIBRIDO_VALIDOS = {
+    "1X2", "over_under_2.5", "btts", "corners_over_under_9.5", "corners_over_under_7.5",
+    "corners_over_under_8.5", "corners_over_under_10", "corners_over_under_10.5", "corners_over_under_11",
+    "corners_over_under_11.5", "corners_over_under_12", "corners_over_under_12.5", "over_under_1.5",
+    "over_under_3.5", "handicap_-2.0", "handicap_-1.0", "handicap_1.0", "handicap_2.0",
+}
 
 
 def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) -> int:
@@ -391,13 +434,53 @@ def _nome_mercado_odds(mercado: str) -> str:
     """`market` em `odds_market` usa `"1X2"` ou `"over_under_2.5"` -- mesmos
     literais das chaves de `MERCADOS`, então é uma identidade pra esses
     casos, mas fica isolado aqui pra não espalhar a suposição pelo arquivo
-    todo. Única exceção real: `odds_market` grava escanteios como
-    `"corners_over_under_full_time_9.5"` (nome herdado da OddsPapi), string
-    diferente da chave `"corners_over_under_9.5"` que `MERCADOS`/
-    `model_predictions` usam -- por isso o mapeamento explícito aqui."""
-    if mercado == "corners_over_under_9.5":
-        return "corners_over_under_full_time_9.5"
+    todo. 3 famílias divergem de verdade: (1) escanteios: `odds_market`
+    grava `"corners_over_under_full_time_{linha}"` (nome herdado da
+    OddsPapi), string diferente da chave `"corners_over_under_{linha}"`
+    que `MERCADOS`/`model_predictions` usam; (2) handicap: `model_
+    predictions` grava `"handicap_{linha}"` (convenção do modelo misto,
+    ver `distribuicoes.py` -- linha aplicada ao mandante, negativo =
+    mandante em desvantagem), `odds_market` grava `"european_handicap_
+    {linha_inteira}"` (SEM o `.0`, só existe pra linhas INTEIRAS -- meio
+    gol não tem odd de handicap europeu no banco, fica sem tradução de
+    propósito); (3) dupla chance: `"dupla_chance"` (modelo) vs.
+    `"double_chance_full_time"` (odds) -- nome totalmente diferente.
+    Validado empiricamente contra produção (ver PR que introduziu isso):
+    filtrando só partidas onde o mandante é franco favorito no 1X2 (odd
+    Pinnacle < 1.35), a odd do mandante cobrir `european_handicap_-1`
+    fica em ~1.67 (linha quase justa) e piora em -2/-3/-4 -- mesmo sinal
+    "negativo = mandante em desvantagem" que o modelo usa, confirma que
+    NÃO precisa inverter o sinal na tradução."""
+    if mercado.startswith("corners_over_under_"):
+        return f"corners_over_under_full_time_{mercado.rsplit('_', 1)[-1]}"
+    if mercado.startswith("handicap_"):
+        linha = float(mercado.split("_", 1)[1])
+        if linha == int(linha):
+            return f"european_handicap_{int(linha)}"
+        return mercado  # meio gol -- sem odd correspondente, fica sem tradução de propósito
+    if mercado == "dupla_chance":
+        return "double_chance_full_time"
     return mercado
+
+
+def _traduzir_selecao_odds(mercado: str, selecao_odds: str) -> str:
+    """Traduz a `selection` como gravada em `odds_market` de volta pro
+    nome que `MERCADOS`/`model_predictions` usa -- só 2 casos divergem:
+    (1) handicap inteiro: a Pinnacle chama o empate ajustado de "draw"
+    (like um 1X2 normal -- 3ª seleção genuinamente precificada, NÃO
+    devolução de aposta), o modelo misto chama a MESMA coisa de "push"
+    (terminologia de handicap asiático, mas o evento por trás é
+    idêntico); (2) dupla chance: `odds_market` grava minúsculo e com a
+    letra invertida (`"1x"`/`"2x"`), o modelo grava `"1X"`/`"X2"` --
+    `"12"` já bate igual nos dois lados."""
+    if mercado.startswith("handicap_") and selecao_odds == "draw":
+        return "push"
+    if mercado == "dupla_chance":
+        if selecao_odds == "1x":
+            return "1X"
+        if selecao_odds == "2x":
+            return "X2"
+    return selecao_odds
 
 
 def _melhores_odds_fechamento_snapshot(
@@ -433,7 +516,7 @@ def _melhores_odds_fechamento_snapshot(
 
     melhor: dict[int, dict[str, float]] = {}
     for linha in linhas:
-        campo = campo_por_selecao.get(linha["selection"])
+        campo = campo_por_selecao.get(_traduzir_selecao_odds(mercado, linha["selection"]))
         if not campo:
             continue
         atual = melhor.setdefault(linha["match_id"], {c: 0.0 for c in campo_por_selecao.values()})
@@ -776,9 +859,10 @@ def _carregar_odds_pinnacle_brutas(
         linhas = dados_historicos._paginar_por_lotes_de_id(factory, ids)
         odds_por_partida: dict[int, dict[str, float]] = {}
         for linha in linhas:
-            if linha["selection"] not in selecoes:
+            selecao = _traduzir_selecao_odds(mercado, linha["selection"])
+            if selecao not in selecoes:
                 continue
-            odds_por_partida.setdefault(linha["match_id"], {})[linha["selection"]] = linha["odds"]
+            odds_por_partida.setdefault(linha["match_id"], {})[selecao] = linha["odds"]
         return odds_por_partida
 
     odds_por_partida = buscar(match_ids, snapshot)
@@ -951,31 +1035,146 @@ def carregar_partidas_hibrido(supabase, match_ids: list[int]) -> dict[int, dict]
 
 def carregar_resultados_reais_hibrido(supabase, match_ids: list[int], mercado: str) -> dict[int, int]:
     """Resultado real por mercado pros match_ids que o modelo misto tem em
-    `model_predictions` -- 1X2/over_under_2.5/btts vêm do placar em
-    `matches` (`_resultado_codigo_mercado`); escanteios (`corners_over_
-    under_9.5`) não têm placar, o resultado real é a soma casa+visitante de
-    `match_stats_fotmob` (mesma fonte usada como alvo de treino, ver
-    `dados_historicos._carregar_total_corners_por_partida`) -- MESMA lógica
-    já usada em `avaliar_modelo_misto_vs_mercado.py`, reaproveitada aqui
-    pra manter os dois relatórios (análise só-leitura vs. persistido)
-    consistentes entre si."""
-    if mercado == "corners_over_under_9.5":
+    `model_predictions`:
+    - `corners_over_under_{linha}` (qualquer linha, 7.5-12.5 inclusive
+      `_9.5`): sem placar, resultado real é a soma casa+visitante de
+      `match_stats_fotmob` (mesma fonte usada como alvo de treino, ver
+      `dados_historicos._carregar_total_corners_por_partida`) -- MESMA
+      lógica já usada em `avaliar_modelo_misto_vs_mercado.py`.
+    - `over_under_{linha}` (1.5/3.5, qualquer linha futura): total de
+      gols (`matches.home_goals+away_goals`) comparado com a linha
+      extraída do nome do mercado.
+    - `handicap_{linha}`: margem ajustada (home_goals-away_goals+linha),
+      MESMA fórmula/convenção de `distribuicoes.py` (linha aplicada ao
+      mandante) -- 0=home, 1=away, 2=push (empate ajustado).
+    - Todo o resto (1X2/over_under_2.5/btts): `_resultado_codigo_mercado`,
+      igual antes."""
+    if mercado.startswith("corners_over_under_"):
+        linha = float(mercado.rsplit("_", 1)[-1])
         df = dados_historicos._carregar_total_corners_por_partida(supabase, match_ids)
         resultados: dict[int, int] = {}
-        for _, linha in df.iterrows():
-            if pd.isna(linha["total_corners"]):
+        for _, linha_df in df.iterrows():
+            if pd.isna(linha_df["total_corners"]):
                 continue
-            resultados[int(linha["match_id"])] = (
-                dados_historicos.RESULTADO_CORNERS_OVER95 if linha["total_corners"] > 9.5 else dados_historicos.RESULTADO_CORNERS_UNDER95
+            resultados[int(linha_df["match_id"])] = (
+                dados_historicos.RESULTADO_CORNERS_OVER95 if linha_df["total_corners"] > linha else dados_historicos.RESULTADO_CORNERS_UNDER95
             )
         return resultados
 
     partidas = carregar_partidas_hibrido(supabase, match_ids)
-    return {
-        mid: _resultado_codigo_mercado(p["home_goals"], p["away_goals"], mercado)
-        for mid, p in partidas.items()
-        if p["home_goals"] is not None and p["away_goals"] is not None
-    }
+    partidas_validas = {mid: p for mid, p in partidas.items() if p["home_goals"] is not None and p["away_goals"] is not None}
+
+    if mercado.startswith("over_under_"):
+        linha = float(mercado.rsplit("_", 1)[-1])
+        return {mid: (1 if (p["home_goals"] + p["away_goals"]) > linha else 0) for mid, p in partidas_validas.items()}
+
+    if mercado.startswith("handicap_"):
+        linha = float(mercado.split("_", 1)[1])
+        resultados = {}
+        for mid, p in partidas_validas.items():
+            margem = (p["home_goals"] - p["away_goals"]) + linha
+            resultados[mid] = 0 if margem > 0 else (2 if margem == 0 else 1)
+        return resultados
+
+    return {mid: _resultado_codigo_mercado(p["home_goals"], p["away_goals"], mercado) for mid, p in partidas_validas.items()}
+
+
+# =============================================================================
+# Dupla chance -- simulação PRÓPRIA, fora do padrão genérico usado pelo
+# resto do arquivo (ver comentário em MERCADOS["dupla_chance"]): 2 das 3
+# seleções ("1X"/"X2"/"12") sempre vencem juntas (ex.: mandante vence ->
+# "1X" e "12" vencem, só "X2" perde), então não existe um único
+# `resultado_real` comparável por igualdade contra `codigo_por_selecao`
+# como em todo outro mercado -- `montar_apostas`/`_metricas_
+# probabilisticas` assumem exatamente 1 vencedor e por isso NÃO servem
+# aqui. Reaproveita `kelly_fracionario`/`bootstrap_ic95_roi`/
+# `resumir_backtest` (esses sim genéricos: só operam sobre a lista de
+# apostas já resolvida, não assumem nada sobre o mercado).
+# =============================================================================
+DUPLA_CHANCE_SELECOES = ("1X", "X2", "12")
+_DUPLA_CHANCE_VENCEDORAS_POR_RESULTADO = {
+    "home": {"1X", "12"},
+    "draw": {"1X", "X2"},
+    "away": {"X2", "12"},
+}
+
+
+def carregar_resultado_1x2_bruto_hibrido(supabase, match_ids: list[int]) -> dict[int, str]:
+    """Resultado bruto ("home"/"draw"/"away") pros match_ids que o modelo
+    misto tem em `model_predictions` -- base pra decidir quais das 3
+    seleções de dupla chance venceram (ver `_DUPLA_CHANCE_VENCEDORAS_POR_
+    RESULTADO`)."""
+    partidas = carregar_partidas_hibrido(supabase, match_ids)
+    resultados: dict[int, str] = {}
+    for mid, p in partidas.items():
+        if p["home_goals"] is None or p["away_goals"] is None:
+            continue
+        if p["home_goals"] > p["away_goals"]:
+            resultados[mid] = "home"
+        elif p["home_goals"] < p["away_goals"]:
+            resultados[mid] = "away"
+        else:
+            resultados[mid] = "draw"
+    return resultados
+
+
+def montar_apostas_dupla_chance(
+    predicoes: dict[int, dict[str, float]],
+    odds_por_partida: dict[int, dict[str, float]],
+    resultado_1x2_bruto: dict[int, str],
+    liga_por_match_id: dict[int, str] | None = None,
+) -> list[dict]:
+    """Mesmo filtro de edge/Kelly de `montar_apostas`, mas `acertou` checa
+    se a seleção está no conjunto de vencedoras do resultado bruto (ver
+    módulo acima), não igualdade contra um código único."""
+    apostas = []
+    for match_id, probs in predicoes.items():
+        odds = odds_por_partida.get(match_id)
+        bruto = resultado_1x2_bruto.get(match_id)
+        if not odds or bruto is None:
+            continue
+        vencedoras = _DUPLA_CHANCE_VENCEDORAS_POR_RESULTADO[bruto]
+        for selecao in DUPLA_CHANCE_SELECOES:
+            odd = odds.get(f"odd_{selecao}")
+            if not odd:
+                continue
+            prob_modelo = probs[f"prob_{selecao}"]
+            edge = prob_modelo - (1 / odd)
+            if edge < EDGE_MINIMO:
+                continue
+            apostas.append({
+                "match_id": match_id, "selecao": selecao, "prob_modelo": prob_modelo, "odd": odd,
+                "acertou": selecao in vencedoras,
+                "liga": (liga_por_match_id or {}).get(match_id),
+            })
+    return apostas
+
+
+def _metricas_dupla_chance(
+    predicoes: dict[int, dict[str, float]], resultado_1x2_bruto: dict[int, str], match_ids_validos: set[int]
+) -> tuple[float, float, float, int]:
+    """Log-loss/Brier/Acurácia AVALIADOS POR SELEÇÃO (cada uma das 3 é um
+    evento binário independente -- "essa combinação aconteceu, sim ou
+    não" -- log-loss binário padrão por seleção, sem competir entre si
+    como em `_metricas_probabilisticas`). Acurácia = fração em que a
+    seleção de MAIOR probabilidade do modelo está entre as vencedoras."""
+    perdas, briers, acertos = [], [], []
+    for match_id in match_ids_validos:
+        probs = predicoes.get(match_id)
+        bruto = resultado_1x2_bruto.get(match_id)
+        if probs is None or bruto is None:
+            continue
+        vencedoras = _DUPLA_CHANCE_VENCEDORAS_POR_RESULTADO[bruto]
+        for selecao in DUPLA_CHANCE_SELECOES:
+            p = max(min(probs[f"prob_{selecao}"], 1 - 1e-15), 1e-15)
+            y = 1.0 if selecao in vencedoras else 0.0
+            perdas.append(-(y * np.log(p) + (1 - y) * np.log(1 - p)))
+            briers.append((p - y) ** 2)
+        selecao_prevista = max(DUPLA_CHANCE_SELECOES, key=lambda s: probs[f"prob_{s}"])
+        acertos.append(1.0 if selecao_prevista in vencedoras else 0.0)
+    if not acertos:
+        return float("nan"), float("nan"), float("nan"), 0
+    return float(np.mean(perdas)), float(np.mean(briers)), float(np.mean(acertos)), len(acertos)
 
 
 def _metricas_probabilisticas(
@@ -1624,6 +1823,110 @@ def main() -> None:
                 }])
             except Exception:
                 logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)
+
+    # --- hibrido_gols_v1 / hibrido_gols_xg_v1: dupla chance (simulação própria) ---
+    # Mesmo modelo misto, mesmo princípio (nunca retreinado, só lê
+    # model_predictions) -- fora do loop acima porque dupla chance não
+    # cabe no formato genérico de "1 vencedor por partida" (ver comentário
+    # em MERCADOS["dupla_chance"]/montar_apostas_dupla_chance).
+    mercado = "dupla_chance"
+    for nome_hibrido in MODELOS_HIBRIDOS:
+        try:
+            preds_hibrido = carregar_predicoes_hibrido(supabase, nome_hibrido, mercado)
+            if not preds_hibrido:
+                logger.info("[%s] %s: sem previsões em model_predictions -- pulando.", mercado, nome_hibrido)
+                continue
+
+            match_ids_h = list(preds_hibrido.keys())
+            resultado_bruto_h = carregar_resultado_1x2_bruto_hibrido(supabase, match_ids_h)
+            match_ids_com_resultado_h = set(resultado_bruto_h.keys())
+            if not match_ids_com_resultado_h:
+                logger.info("[%s] %s: nenhum resultado real disponível -- pulando.", mercado, nome_hibrido)
+                continue
+
+            partidas_hibrido = carregar_partidas_hibrido(supabase, match_ids_h)
+            liga_por_match_id_h = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_hibrido.items()}
+
+            odds_fechamento_h = carregar_melhores_odds_fechamento(supabase, match_ids_h, mercado)
+            odds_abertura_h = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_h, mercado)
+
+            apostas_fechamento_h = montar_apostas_dupla_chance(preds_hibrido, odds_fechamento_h, resultado_bruto_h, liga_por_match_id_h)
+            apostas_abertura_h = montar_apostas_dupla_chance(preds_hibrido, odds_abertura_h, resultado_bruto_h, liga_por_match_id_h)
+            resumo_f_h = resumir_backtest(nome_hibrido, apostas_fechamento_h, None)
+            resumo_a_h = resumir_backtest(nome_hibrido, apostas_abertura_h, None)
+            log_loss_h, brier_h, accuracy_h, n_qualidade_h = _metricas_dupla_chance(
+                preds_hibrido, resultado_bruto_h, match_ids_com_resultado_h
+            )
+
+            datas_h = [partidas_hibrido[mid]["match_date"] for mid in match_ids_com_resultado_h if mid in partidas_hibrido]
+            periodo_inicio_h = min(datas_h)[:10] if datas_h else None
+            periodo_fim_h = max(datas_h)[:10] if datas_h else None
+
+            relatorio.append({
+                "model_name": nome_hibrido,
+                "mercado": mercado,
+                "periodo_inicio": periodo_inicio_h,
+                "periodo_fim": periodo_fim_h,
+                "treino_periodo_inicio": None,
+                "treino_periodo_fim": None,
+                "validacao_periodo_inicio": None,
+                "validacao_periodo_fim": None,
+                "hiperparametros": None,
+                "n_apostas": resumo_f_h["n_apostas"],
+                "roi_medio": resumo_f_h["roi_medio"],
+                "roi_ic95_inferior": resumo_f_h["roi_ic95_inferior"],
+                "roi_ic95_superior": resumo_f_h["roi_ic95_superior"],
+                "significativo": resumo_f_h["significativo"],
+                "n_apostas_abertura": resumo_a_h["n_apostas"],
+                "roi_abertura_medio": resumo_a_h["roi_medio"],
+                "roi_abertura_ic95_inferior": resumo_a_h["roi_ic95_inferior"],
+                "roi_abertura_ic95_superior": resumo_a_h["roi_ic95_superior"],
+                "significativo_abertura": resumo_a_h["significativo"],
+                "log_loss": log_loss_h,
+                "brier": brier_h,
+                "accuracy": accuracy_h,
+                "n_amostras_qualidade": n_qualidade_h,
+            })
+
+            apostas_f_por_liga_h: dict[str, list[dict]] = {}
+            for a in apostas_fechamento_h:
+                apostas_f_por_liga_h.setdefault(a.get("liga") or "desconhecida", []).append(a)
+            apostas_a_por_liga_h: dict[str, list[dict]] = {}
+            for a in apostas_abertura_h:
+                apostas_a_por_liga_h.setdefault(a.get("liga") or "desconhecida", []).append(a)
+            match_ids_por_liga_h: dict[str, set[int]] = {}
+            for mid in match_ids_com_resultado_h:
+                match_ids_por_liga_h.setdefault(liga_por_match_id_h.get(mid) or "desconhecida", set()).add(mid)
+
+            for liga in set(apostas_f_por_liga_h) | set(apostas_a_por_liga_h) | set(match_ids_por_liga_h):
+                mids_liga = match_ids_por_liga_h.get(liga, set())
+                datas_liga = [partidas_hibrido[mid]["match_date"] for mid in mids_liga if mid in partidas_hibrido]
+                resumo_f_l = resumir_backtest(nome_hibrido, apostas_f_por_liga_h.get(liga, []), None)
+                resumo_a_l = resumir_backtest(nome_hibrido, apostas_a_por_liga_h.get(liga, []), None)
+                log_loss_l, brier_l, accuracy_l, n_qualidade_l = _metricas_dupla_chance(preds_hibrido, resultado_bruto_h, mids_liga)
+                relatorio_por_liga.append({
+                    "model_name": nome_hibrido,
+                    "liga": liga,
+                    "mercado": mercado,
+                    "periodo_inicio": min(datas_liga)[:10] if datas_liga else None,
+                    "periodo_fim": max(datas_liga)[:10] if datas_liga else None,
+                    "n_apostas": resumo_f_l["n_apostas"],
+                    "roi_medio": resumo_f_l["roi_medio"],
+                    "roi_ic95_inferior": resumo_f_l["roi_ic95_inferior"],
+                    "roi_ic95_superior": resumo_f_l["roi_ic95_superior"],
+                    "significativo": resumo_f_l["significativo"],
+                    "n_apostas_abertura": resumo_a_l["n_apostas"],
+                    "roi_abertura_medio": resumo_a_l["roi_medio"],
+                    "roi_abertura_ic95_inferior": resumo_a_l["roi_ic95_inferior"],
+                    "roi_abertura_ic95_superior": resumo_a_l["roi_ic95_superior"],
+                    "significativo_abertura": resumo_a_l["significativo"],
+                    "log_loss": log_loss_l,
+                    "brier": brier_l,
+                    "accuracy": accuracy_l,
+                    "n_amostras_qualidade": n_qualidade_l,
+                })
+        except Exception:
+            logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)
 
     salvar_relatorio(supabase, relatorio)
     salvar_relatorio_por_liga(supabase, relatorio_por_liga)
