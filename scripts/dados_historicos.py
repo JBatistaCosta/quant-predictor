@@ -3607,6 +3607,20 @@ def montar_dataset_ml_empilhado(
             for s in ("home", "sofrido_home", "away", "sofrido_away")
             for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
         ],
+        # Forma "mesma liga" (v12, paralela à pooled acima -- ver
+        # FEATURES_NUMERICAS_V12_MESMA_LIGA): mesmas 3 famílias (gols/xG/
+        # xGOT), só contando jogos anteriores do time NA MESMA competição.
+        *COLUNAS_FORMA_GOLS_MESMA_LIGA.values(),
+        *[
+            f"xg_mesma_liga_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
+        *[
+            f"xgot_mesma_liga_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
         # xG / xGOT / xGA Bayesiano e flags de estimativa
         "xg_bayesiano_home", "xg_bayesiano_away",
         "xga_bayesiano_home", "xga_bayesiano_away",
