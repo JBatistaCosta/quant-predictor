@@ -1802,11 +1802,22 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
 // (falso), não o resultado real de BTTS. Mercados fora dos 4 reconhecidos
 // aqui agora retornam `null` (não calibra) em vez de cair nesse fallback
 // errado em silêncio.
+// BUG REAL CORRIGIDO: `market` não tem casing consistente entre origens --
+// os classificadores do Model Benchmarking (rodar_predicoes.py) gravam
+// '1x2' minúsculo, o modelo misto (treinar_modelo_hibrido.py) grava '1X2'
+// maiúsculo (mesma partida, mesmo mercado, string diferente). Comparação
+// case-SENSITIVE aqui fazia essa função nunca reconhecer 1X2 dos
+// classificadores -- caía no fallback errado (mesma classe de bug do BTTS
+// acima) ou, com o fallback já corrigido pra `null`, simplesmente nunca
+// calibrava 1X2 pra nenhum catboost/xgboost/lightgbm/mlp (medido em
+// produção: recalibrar catboost_v9 sem esse fix devolvia só btts/
+// over_under_2.5, nunca 1X2). Normaliza pra minúsculo antes de comparar.
 function chaveMercadoCalib(m) {
-  if (m === '1X2') return '1X2';
-  if (m === 'over_under_2.5') return 'over_under_2_5';
-  if (m === 'btts') return 'btts';
-  if (m === 'corners_over_under_9.5') return 'corners_over_under_9_5';
+  const norm = (m || '').toLowerCase();
+  if (norm === '1x2') return '1X2';
+  if (norm === 'over_under_2.5') return 'over_under_2_5';
+  if (norm === 'btts') return 'btts';
+  if (norm === 'corners_over_under_9.5') return 'corners_over_under_9_5';
   return null;
 }
 
