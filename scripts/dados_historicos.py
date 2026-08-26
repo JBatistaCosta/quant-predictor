@@ -2865,6 +2865,17 @@ FEATURES_NUMERICAS_V9 = FEATURES_NUMERICAS_V8 + [
 ]
 FEATURES_V9 = FEATURES_NUMERICAS_V9 + CAT_FEATURES
 
+# V9 com o achado #15 corrigido -- ver docstring completa de
+# FEATURES_V10_XG_CORRIGIDO logo abaixo (mesma lógica, só que sobre a base
+# V9 em vez de V10, pra catboost_v9/xgboost_v9/lightgbm_v9/mlp_v9).
+FEATURES_NUMERICAS_V9_XG_CORRIGIDO = [
+    f for f in FEATURES_NUMERICAS_V9 if f not in COLUNAS_FORMA_XG.values() and f not in COLUNAS_FORMA_XGOT.values()
+] + [
+    "xg_home_5j", "xg_sofrido_home_5j", "xg_away_5j", "xg_sofrido_away_5j",
+    "xgot_home_5j", "xgot_sofrido_home_5j", "xgot_away_5j", "xgot_sofrido_away_5j",
+]
+FEATURES_V9_XG_CORRIGIDO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + CAT_FEATURES
+
 # v10 — tudo da v9 + features do XI titular expandidas:
 #   • titular_avg_age_home/away: idade média dos titulares NA DATA DA PARTIDA,
 #     calculada de players.birth_date (novo campo, migração 20260729120000).
@@ -2890,22 +2901,24 @@ FEATURES_V10 = FEATURES_NUMERICAS_V10 + CAT_FEATURES
 # (`media_xg_5j_home` etc.), de antes de `_forma_por_mando_multi_janelas`
 # substituir o cálculo de forma de xG/xGOT -- essas colunas nunca são
 # geradas hoje, então `carregar_dataset` descarta as 8 (4 de xG + 4 de
-# xGOT) silenciosamente, e catboost_v9/v10, xgboost_v9/v10, lightgbm_v9/v10,
-# mlp_v9/v10 e os 4 `hibrido_*` (ver `FEATURES_POR_MODELO` em
-# `modelos_ml.py`) treinam sem NENHUM sinal de xG/xGOT, sem que ninguém
-# tenha percebido. Correção de fundo (portar a cadeia toda) muda o que
-# TODOS esses modelos já em produção usam -- decisão maior, não tomada
-# aqui. Esta lista é um teste ISOLADO e escopado: mesmas 4+4 features na
-# mesma janela (5j) que `COLUNAS_FORMA_XG`/`COLUNAS_FORMA_XGOT` sempre
-# pretenderam ter, só com o nome de coluna que existe de verdade no
-# dataset hoje -- mesmo padrão já provado por `FEATURES_XG_XI_V2` (usada
-# pelos regressores `catboost_xg_regressor_v2`/`catboost_xgot_regressor_v2`,
-# nunca por um modelo de RESULTADO). Usada só por
-# `FEATURES_POR_MODELO["hibrido_*"]` em `modelos_ml.py`, pra medir se
-# restaurar xG/xGOT muda o log-loss out-of-sample do modelo misto contra
-# baseline -- não usada por nenhum catboost_v9/v10/xgboost_v9/v10/etc
-# de propósito, pra não misturar o efeito desse fix com o de qualquer
-# outro modelo no mesmo teste.
+# xGOT) silenciosamente. Mesmas 4+4 features na mesma janela (5j) que
+# `COLUNAS_FORMA_XG`/`COLUNAS_FORMA_XGOT` sempre pretenderam ter, só com o
+# nome de coluna que existe de verdade no dataset hoje -- mesmo padrão já
+# provado por `FEATURES_XG_XI_V2` (usada pelos regressores
+# `catboost_xg_regressor_v2`/`catboost_xgot_regressor_v2`).
+#
+# Testado primeiro ISOLADO nos 4 `hibrido_*` (medido via retrain de
+# avaliação real, log-verossimilhança do placar melhorou nos dois
+# variantes de gols -- ver PR #366/CONTEXTO_PROJETO.md), e depois
+# estendido aos classificadores catboost_v9/v10, xgboost_v9/v10,
+# lightgbm_v9/v10, mlp_v9/v10 (ver `FEATURES_POR_MODELO` em
+# `modelos_ml.py`) -- mesmo bug, mesma correção, agora validada via
+# `backtest_kelly.py` (Train/Val/Test + log-loss vs. Pinnacle devigado)
+# antes de entrar no cron diário (`predict.yml`, sem flag de dry-run).
+# `rodar_predicoes.py` já expõe os 8 nomes corrigidos no lado AO VIVO
+# (aditivo, não remove os nomes antigos) desde que o modelo misto foi
+# corrigido, então não há risco de descompasso treino/serving nesses 8
+# nomes especificamente.
 FEATURES_NUMERICAS_V10_XG_CORRIGIDO = [
     f for f in FEATURES_NUMERICAS_V10 if f not in COLUNAS_FORMA_XG.values() and f not in COLUNAS_FORMA_XGOT.values()
 ] + [
@@ -2943,6 +2956,18 @@ FEATURES_NUMERICAS_V11 = FEATURES_NUMERICAS_V10 + [
     "rating_diff_xi_fechamento", "valor_diff_xi_fechamento",
 ]
 FEATURES_V11 = FEATURES_NUMERICAS_V11 + CAT_FEATURES
+
+# V11 com o achado #15 corrigido -- mesma lógica de FEATURES_V10_XG_CORRIGIDO,
+# só que estendendo a base V10 já corrigida em vez da V10 quebrada.
+FEATURES_NUMERICAS_V11_XG_CORRIGIDO = FEATURES_NUMERICAS_V10_XG_CORRIGIDO + [
+    "titular_rating_abertura_home", "titular_rating_abertura_away",
+    "titular_valor_mercado_abertura_home", "titular_valor_mercado_abertura_away",
+    "titular_rating_fechamento_home", "titular_rating_fechamento_away",
+    "titular_valor_mercado_fechamento_home", "titular_valor_mercado_fechamento_away",
+    "rating_diff_xi_abertura", "valor_diff_xi_abertura",
+    "rating_diff_xi_fechamento", "valor_diff_xi_fechamento",
+]
+FEATURES_V11_XG_CORRIGIDO = FEATURES_NUMERICAS_V11_XG_CORRIGIDO + CAT_FEATURES
 
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
