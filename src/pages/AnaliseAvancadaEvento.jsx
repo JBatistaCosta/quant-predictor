@@ -318,7 +318,7 @@ export default function AnaliseAvancadaEvento() {
           // escanteios ficam sem match e caem no fallback pra probabilidade
           // crua (ver `calibrarProbabilidade`), sem quebrar nada.
           (j.status === 'scheduled' || finalizada)
-            ? supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_calibrado, n_teste')
+            ? supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_bruto, log_loss_calibrado, n_teste')
             : Promise.resolve({ data: [] }),
         ]);
         if (cancelado) return;
