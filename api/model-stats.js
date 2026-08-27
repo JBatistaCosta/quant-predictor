@@ -37,6 +37,13 @@
 // rodado pra esse combo) vira `null` nos 4 campos `log_loss_ic_*`/
 // `accuracy_ic_*`, tratado como "IC não calculado" pelo front.
 //
+// E o teste de McNemar pareado (qui-quadrado) de `model_stats_mcnemar`
+// (migration 20260827154200, mesmo script/populador) — cada modelo contra o
+// LÍDER (menor log-loss) do mesmo grupo, campos `mcnemar_*` (achado #29).
+// `mcnemar_eh_lider=true` marca quem é o líder (nunca tem comparação contra
+// si mesmo); os demais campos `mcnemar_*` ficam `null` quando não há
+// comparação calculada (amostra pareada <30) OU quando o grupo é o líder.
+//
 // COMO CHAMAR:
 //   /api/model-stats                                  (tudo)
 //   /api/model-stats?modelo=dixon_coles_v1&mercado=1X2&liga_id=4
@@ -689,6 +696,24 @@ export default async function handler(req, res) {
       if (liga_id) q = q.eq('league_id', Number(liga_id));
       return q;
     }, ['model_name', 'market', 'league_id']);
+    // `model_stats_mcnemar` (migration 20260827154200) -- teste de McNemar
+    // pareado (qui-quadrado, correção de Yates) de cada modelo contra o
+    // LÍDER (menor log-loss médio) do mesmo grupo -- achado #29,
+    // CONTEXTO_PROJETO.md: duas IC95% marginais sobrepostas (achado #27/#28)
+    // não provam empate técnico, é leitura conservadora informal. Populada
+    // pelo MESMO script/workflow de `model_stats_ic`. O líder do grupo nunca
+    // aparece como `model_name` aqui (só é comparado, nunca compara consigo
+    // mesmo) -- ausência de linha pra um `model_name` pode significar tanto
+    // "é o líder" quanto "amostra pareada insuficiente", diferenciados no
+    // front via `mcnemarLiderPorGrupo` (todo model_name que aparece como
+    // `model_lider` em alguma linha do mesmo grupo).
+    const promiseStatsMcnemarRows = buscarTudoPaginado(() => {
+      let q = supabase.from('model_stats_mcnemar').select('model_name, market, league_id, model_lider, n_pareado, n_favorece_model, n_favorece_lider, qui2, p_valor, significativo, confiavel');
+      if (modelo) q = q.eq('model_name', modelo);
+      if (mercado) q = q.eq('market', mercado);
+      if (liga_id) q = q.eq('league_id', Number(liga_id));
+      return q;
+    }, ['market', 'league_id', 'model_name']);
 
     // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
@@ -699,8 +724,8 @@ export default async function handler(req, res) {
     const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
 
-    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows] = await Promise.all([
-      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows, promiseStatsIcRows,
+    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows, statsMcnemarRows] = await Promise.all([
+      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows, promiseStatsIcRows, promiseStatsMcnemarRows,
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
     if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
@@ -712,13 +737,32 @@ export default async function handler(req, res) {
     // "IC não calculado" pelo front, nunca um erro.
     const icPorChave = {};
     statsIcRows.forEach(r => { icPorChave[`${r.model_name}__${r.market}__${r.league_id}`] = r; });
+    // McNemar (ver comentário de `promiseStatsMcnemarRows`) -- indexado do
+    // mesmo jeito; `mcnemarLiderPorGrupo` marca quem é o líder de cada grupo
+    // (market+league_id), pra o front distinguir "é o líder, por isso não
+    // tem comparação" de "amostra pareada insuficiente, por isso não tem
+    // comparação" -- os dois casos são `mcnemar == null`.
+    const mcnemarPorChave = {};
+    const mcnemarLiderPorGrupo = {};
+    statsMcnemarRows.forEach(r => {
+      mcnemarPorChave[`${r.model_name}__${r.market}__${r.league_id}`] = r;
+      mcnemarLiderPorGrupo[`${r.model_lider}__${r.market}__${r.league_id}`] = r.model_lider;
+    });
     function anexarIc(modelName, market, leagueId) {
       const ic = icPorChave[`${modelName}__${market}__${leagueId}`];
+      const mc = mcnemarPorChave[`${modelName}__${market}__${leagueId}`];
+      const ehLiderMcnemar = mcnemarLiderPorGrupo[`${modelName}__${market}__${leagueId}`] === modelName;
       return {
         log_loss_ic_inf: ic ? Number(ic.log_loss_ic_inf) : null,
         log_loss_ic_sup: ic ? Number(ic.log_loss_ic_sup) : null,
         accuracy_ic_inf: ic ? Number(ic.accuracy_ic_inf) : null,
         accuracy_ic_sup: ic ? Number(ic.accuracy_ic_sup) : null,
+        mcnemar_lider: mc ? mc.model_lider : null,
+        mcnemar_n_pareado: mc ? mc.n_pareado : null,
+        mcnemar_p_valor: mc ? Number(mc.p_valor) : null,
+        mcnemar_significativo: mc ? mc.significativo : null,
+        mcnemar_confiavel: mc ? mc.confiavel : null,
+        mcnemar_eh_lider: ehLiderMcnemar,
       };
     }
 
