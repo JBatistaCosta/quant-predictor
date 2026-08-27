@@ -28,7 +28,16 @@ function fmt(v, formato) {
   return formato === 'pct' ? `${(v * 100).toFixed(1)}%` : v.toFixed(4);
 }
 
-function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }) {
+// IC95% por bootstrap (achado #27, CONTEXTO_PROJETO.md — populado por
+// scripts/avaliar_ic_modelos_por_liga.py, ausente = script nunca rodou pra
+// essa combinação ou amostra <30 partidas, tratado como "sem IC calculado",
+// nunca como erro).
+function LinhaIc({ ic, formato }) {
+  if (!ic || ic[0] == null || ic[1] == null) return null;
+  return <div className="text-[10px] text-slate-500 mt-0.5">IC95% [{fmt(ic[0], formato)}, {fmt(ic[1], formato)}]</div>;
+}
+
+function Metrica({ label, modelo, mercado, ic, menorMelhor = true, formato = 'num' }) {
   if (modelo == null) {
     return (
       <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
@@ -43,6 +52,7 @@ function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }
       <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
         <div className="text-[10px] text-slate-500 uppercase">{label}</div>
         <div className="text-lg font-bold text-slate-200 mt-1">{fmt(modelo, formato)}</div>
+        <LinhaIc ic={ic} formato={formato} />
         <div className="text-[10px] text-slate-600 mt-0.5">sem odds pra comparar</div>
       </div>
     );
@@ -56,6 +66,7 @@ function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }
         <span className="text-slate-600 text-xs">vs</span>
         <span className={`text-lg font-bold ${!modeloMelhor ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(mercado, formato)}</span>
       </div>
+      <LinhaIc ic={ic} formato={formato} />
       <div className="text-[10px] text-slate-600 mt-0.5">modelo vs. mercado (fechamento)</div>
     </div>
   );
@@ -658,9 +669,9 @@ function gerarMarkdown(grupos, ligasPorId) {
   for (const g of grupos) {
     md += `## ${g.model_name} — ${MERCADO_ROTULO[g.market] || g.market} — ${ligasPorId[g.league_id] || `Liga #${g.league_id}`}\n\n`;
     md += `- Jogos avaliados: ${g.n_jogos}\n`;
-    md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
+    md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}${g.log_loss_ic_inf != null ? ` — IC95% [${g.log_loss_ic_inf.toFixed(4)}, ${g.log_loss_ic_sup.toFixed(4)}]` : ''}\n`;
     md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
-    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}\n\n`;
+    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}${g.accuracy_ic_inf != null ? ` — IC95% [${(g.accuracy_ic_inf * 100).toFixed(1)}%, ${(g.accuracy_ic_sup * 100).toFixed(1)}%]` : ''}\n\n`;
     if (g.calibracao_disponivel) {
       md += `**Ajuste de calibração (com e sem)**\n\n`;
       md += `| Método | Log-loss | Brier | Acurácia |\n|---|---|---|---|\n`;
@@ -837,9 +848,9 @@ export default function ModelosStats() {
               </div>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
-                <Metrica label="Log-loss" modelo={g.log_loss_modelo} mercado={g.log_loss_mercado} />
+                <Metrica label="Log-loss" modelo={g.log_loss_modelo} mercado={g.log_loss_mercado} ic={[g.log_loss_ic_inf, g.log_loss_ic_sup]} />
                 <Metrica label="Brier Score" modelo={g.brier_modelo} mercado={g.brier_mercado} />
-                <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" />
+                <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" ic={[g.accuracy_ic_inf, g.accuracy_ic_sup]} />
               </div>
 
               <AjusteCalibracao g={g} />

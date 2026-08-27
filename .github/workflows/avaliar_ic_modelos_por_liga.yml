@@ -1,0 +1,57 @@
+name: IC95% por Bootstrap dos Modelos por Liga
+
+# Roda scripts/avaliar_ic_modelos_por_liga.py -- calcula, por bootstrap (2000
+# reamostragens), o IC95% do log-loss/acurácia de cada modelo em cada liga, e
+# grava em model_stats_ic (migration 20260827063903). Responde "essa
+# diferença entre modelos no ranking de /modelos é real ou é ruído de amostra
+# pequena?" -- ver achado #27 do CONTEXTO_PROJETO.md (o "melhor modelo" em
+# Over/Under 2.5 na Bundesliga/Champions League/Copa Libertadores não
+# resistia a essa checagem).
+#
+# Ferramenta de análise que ESCREVE (diferente de avaliar_modelo_misto_vs_
+# mercado.yml, que só lê) -- mas não é parte do pipeline de produção
+# (model_predictions/matches não mudam), só workflow_dispatch, sem cron: o
+# ranking por liga não muda rápido o suficiente pra justificar recálculo
+# automático: rodar sob demanda depois de uma leva nova de predições/partidas
+# finalizadas é suficiente.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mercados:
+        description: "Subconjunto separado por vírgula (vazio = 1X2, over_under_2.5, corners_over_under_9.5)"
+        required: false
+        type: string
+      sem_gravar:
+        description: "Só avaliar e imprimir, sem escrever em model_stats_ic"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  avaliar-ic-modelos-por-liga:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Calcular IC95% por liga
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/avaliar_ic_modelos_por_liga.py \
+            ${{ inputs.mercados && format('--mercados "{0}"', inputs.mercados) || '' }} \
+            ${{ inputs.sem_gravar && '--sem-gravar' || '' }}

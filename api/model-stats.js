@@ -29,6 +29,14 @@
 //
 // Agrupa por liga (matches.league_id) — filtros opcionais na URL.
 //
+// Também anexa (quando existe) o IC95% por bootstrap de log_loss/accuracy de
+// `model_stats_ic` (migration 20260827063903), populada sob demanda por
+// `scripts/avaliar_ic_modelos_por_liga.py` — responde "essa diferença entre
+// modelos no ranking por liga é real ou é ruído de amostra pequena?" (achado
+// #27, CONTEXTO_PROJETO.md). Ausente (amostra <30 partidas, ou script nunca
+// rodado pra esse combo) vira `null` nos 4 campos `log_loss_ic_*`/
+// `accuracy_ic_*`, tratado como "IC não calculado" pelo front.
+//
 // COMO CHAMAR:
 //   /api/model-stats                                  (tudo)
 //   /api/model-stats?modelo=dixon_coles_v1&mercado=1X2&liga_id=4
@@ -665,6 +673,22 @@ export default async function handler(req, res) {
         // model_stats_resumo.id does not exist" -- passar a PK real.
         }, ['model_name', 'market', 'league_id'])
       : Promise.resolve([]);
+    // `model_stats_ic` (migration 20260827063903) -- IC95% por bootstrap do
+    // log-loss/acurácia (achado #27, CONTEXTO_PROJETO.md: o ranking "melhor
+    // por liga" sem intervalo de confiança confunde edge real com ruído de
+    // amostra pequena). Populada por `scripts/avaliar_ic_modelos_por_liga.py`
+    // (fora do Vercel -- bootstrap não cabe no orçamento de uma function),
+    // não pelo mesmo mecanismo de `model_stats_resumo`. Tabela pequena (uma
+    // linha por model_name+market+league_id com amostra suficiente) -- busca
+    // sempre, sem o gate de `precisaResumoPreCalculado`, já que é uma tabela
+    // independente e não sofre do mesmo risco de timeout.
+    const promiseStatsIcRows = buscarTudoPaginado(() => {
+      let q = supabase.from('model_stats_ic').select('model_name, market, league_id, log_loss_ic_inf, log_loss_ic_sup, accuracy_ic_inf, accuracy_ic_sup');
+      if (modelo) q = q.eq('model_name', modelo);
+      if (mercado) q = q.eq('market', mercado);
+      if (liga_id) q = q.eq('league_id', Number(liga_id));
+      return q;
+    }, ['model_name', 'market', 'league_id']);
 
     // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
@@ -675,11 +699,28 @@ export default async function handler(req, res) {
     const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
 
-    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows] = await Promise.all([
-      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows,
+    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows] = await Promise.all([
+      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows, promiseStatsIcRows,
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
     if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
+
+    // IC95% por bootstrap (ver comentário de `promiseStatsIcRows`) -- indexado
+    // por model_name+market+league_id pra anexar em QUALQUER grupo de saída
+    // (pré-calculado ou ao vivo) que bater a mesma chave; ausente (amostra
+    // menor que 30, ver AMOSTRA_MINIMA do script) vira `null`, tratado como
+    // "IC não calculado" pelo front, nunca um erro.
+    const icPorChave = {};
+    statsIcRows.forEach(r => { icPorChave[`${r.model_name}__${r.market}__${r.league_id}`] = r; });
+    function anexarIc(modelName, market, leagueId) {
+      const ic = icPorChave[`${modelName}__${market}__${leagueId}`];
+      return {
+        log_loss_ic_inf: ic ? Number(ic.log_loss_ic_inf) : null,
+        log_loss_ic_sup: ic ? Number(ic.log_loss_ic_sup) : null,
+        accuracy_ic_inf: ic ? Number(ic.accuracy_ic_inf) : null,
+        accuracy_ic_sup: ic ? Number(ic.accuracy_ic_sup) : null,
+      };
+    }
 
     // Grupos pré-calculados (ver comentário acima sobre `model_stats_resumo`)
     // -- não tem comparação com mercado nem calibração em quintis, só a
@@ -699,6 +740,7 @@ export default async function handler(req, res) {
       log_loss_platt: null, brier_platt: null, accuracy_platt: null,
       log_loss_isotonic: null, brier_isotonic: null, accuracy_isotonic: null,
       por_selecao: [],
+      ...anexarIc(r.model_name, r.market, r.league_id),
     }));
 
     // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
@@ -1031,6 +1073,7 @@ export default async function handler(req, res) {
         log_loss_platt: calibPlatt.logLoss, brier_platt: calibPlatt.brier, accuracy_platt: accuracyPlatt,
         log_loss_isotonic: calibIsotonic.logLoss, brier_isotonic: calibIsotonic.brier, accuracy_isotonic: accuracyIsotonic,
         por_selecao: selecoes,
+        ...anexarIc(g.model_name, g.market, g.league_id),
       };
     });
 
