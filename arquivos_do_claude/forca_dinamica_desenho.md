@@ -1,13 +1,16 @@
 # Força dinâmica dos times — desenho da arquitetura
 
-> **STATUS (14/07/2026): PAUSADO — não passou na validação ainda.**
+> **STATUS (25/08/2026): PAUSADO — hipótese do IEKF testada e DESCARTADA;
+> causa real identificada, ainda sem correção implementada.**
 > Guardado aqui como candidato a comparação futura contra o
 > `modelo_dixon_coles_walkforward.py` (retreino em lote periódico), que
 > foi implementado em paralelo e É validado. Quando algum dos dois tiver
 > tempo/interesse dedicado, comparar log loss dos dois em holdout real e
 > seguir com o que ganhar.
 >
-> **Diagnóstico já feito** (não repetir do zero):
+> **Diagnóstico original (14/07/2026)**, testado a fundo em 25/08/2026
+> (`forca_dinamica_iekf.py`, reproduzível — rodar `python
+> arquivos_do_claude/forca_dinamica_iekf.py`):
 > - Teste com força real 100% estática (sem deriva) e Q=0 deveria
 >   convergir pro valor real. Não convergiu — ficou um erro residual de
 >   ~0.12 mesmo depois de 60 rodadas (600 partidas).
@@ -16,12 +19,53 @@
 >   `atk - atk.mean()`; o filtro sequencial não tinha nada equivalente).
 >   Corrigir isso (recentralizar após cada rodada) reduziu o erro de
 >   0.124 para 0.097 — melhora real, mas não resolve tudo.
-> - **Causa provável do restante**: a linearização de Newton de um passo
->   só (EKF "puro") é grosseira demais pra verossimilhança de Poisson tão
->   ruidosa (variância = lambda, tipicamente só ~1.5 — pouquíssima
->   informação por partida). Próximo passo de investigação, se retomado:
->   iterar a linearização algumas vezes por atualização (IEKF) antes de
->   aceitar o novo estado, em vez de um passo de Newton só.
+> - Hipótese levantada então pro resto do erro: a linearização de Newton
+>   de um passo só (EKF "puro") seria grosseira demais pra verossimilhança
+>   de Poisson tão ruidosa (variância = lambda, tipicamente só ~1.5).
+>
+> **Teste da hipótese (25/08/2026) — resultado: DESCARTADA.**
+> Implementado IEKF de verdade (Newton iterado, sempre recombinando contra
+> o prior original — ver derivação abaixo) e comparado contra o EKF atual
+> na mesma simulação sintética:
+> - IEKF (`n_iter=5`) reduz o RMSE só ~3% (0.245→0.238) — não é "a
+>   explicação". E rodar com `n_iter=20` ou `50` dá resultado **idêntico**
+>   a `n_iter=5`: o Newton já está 100% convergido em 5 passos. Não é
+>   falta de iteração — a moda que o filtro acha já é a moda **exata** do
+>   posterior 1D.
+> - **Causa real, isolada com um teste mínimo** (1 parâmetro escalar, 1
+>   observação de Poisson, sem nada sequencial ou multi-time): a **moda**
+>   do posterior (o que Newton/EKF/IEKF sempre calculam, por definição) é
+>   sistematicamente **maior** que a **média exata** do posterior (via
+>   integração numérica), em torno de +0.06 a +0.07 pra `V0≈0.6`, positivo
+>   pra todo `y` plausível — não é ruído, é viés de forma. Causa: a
+>   verossimilhança de Poisson em contagem baixa é assimétrica (skewed), e
+>   aproximar o posterior por uma Gaussiana centrada na moda (aproximação
+>   de Laplace) sistematicamente erra a média nessa direção. Iterar Newton
+>   não ajuda em nada — só acha a moda (já enviesada) com mais precisão
+>   numérica.
+> - **Por que isso apareceu como "só defesa" e não "ataque" no diagnóstico
+>   original**: o mesmo viés compartilhado afeta ataque e defesa por
+>   igual, mas a recentralização de gauge (`atk -= atk.mean()`, necessária
+>   de qualquer forma pra identificabilidade — é a única direção não
+>   identificada do modelo) cancela esse viés agregado em ataque de
+>   graça, como efeito colateral. Defesa não tem recentralização nenhuma
+>   (não precisa dela pra identificabilidade) e por isso acumula o mesmo
+>   viés sem correção: erro médio medido em defesa = **+0.133**, contra
+>   ~0.000 em ataque, no experimento de 60 rodadas.
+> - Recentralizar defesa também (mesmo sem ser exigido pela
+>   identificabilidade) reduz RMSE de 0.238 para 0.214 — melhora parcial,
+>   confirma o mecanismo, mas não é a correção de verdade (ainda sobra
+>   dispersão por time, e é um patch, não um fix da causa raiz).
+>
+> **Próximo passo de investigação, se retomado**: não é mais "iterar
+> mais" — é corrigir o viés moda↔média da aproximação de Laplace. Duas
+> direções candidatas, nenhuma implementada ainda: (a) correção analítica
+> de viés de 1ª ordem (tipo Edgeworth/Skovgaard, usando a 3ª derivada do
+> log-posterior na moda) aplicada depois de cada update; (b) trocar a
+> aproximação da moda por **moment matching** de verdade (média e
+> variância exatas do posterior 1D via quadratura numérica, tipo
+> Gauss-Hermite, em vez de moda+curvatura) — mais caro por update mas
+> ainda O(1) por time, e ataca a causa raiz em vez de aproximá-la melhor.
 
 ## O problema com o Kalman "puro"
 
@@ -123,3 +167,11 @@ que não jogaram naquela rodada — que só passam pelo passo de predição
 2. Rodar o filtro e conferir se ele consegue *rastrear* essa mudança —
    comparando com um modelo estático (que não deveria conseguir).
 3. Só depois disso, conectar no banco de verdade.
+
+O passo 1/2 com força **estática** (caso mais simples, sem passeio
+aleatório nenhum) já está implementado e é o que gerou o diagnóstico do
+bloco de status no topo — `forca_dinamica_iekf.py`, reproduzível, contém
+os 3 experimentos (EKF vs IEKF, viés ataque/defesa, teste decisivo
+moda-vs-média). O passo com deriva real (passeio aleatório de verdade,
+`Q>0`) ainda não foi feito — não faz sentido investir nele antes de
+resolver o viés moda/média, que contamina os dois casos igualmente.

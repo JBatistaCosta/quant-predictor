@@ -11,6 +11,13 @@ import CurvaPnlEv from '../components/CurvaPnlEv';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
+// Mesmos 3 mercados de MERCADOS_COM_RESUMO_PRECALCULADO em api/model-stats.js
+// -- a carga normal da página usa `model_stats_resumo` (pré-calculado) pra
+// esses, que nunca traz `por_selecao`/calibração em quintis (evita o timeout
+// de 3s da role anon num scan ao vivo de model_predictions). O botão
+// "Calcular calibração ao vivo" só aparece nesses mercados, e só quando
+// clicado -- nunca automático.
+const MERCADOS_COM_RESUMO_PRECALCULADO = ['1X2', 'over_under_2.5', 'corners_over_under_9.5'];
 // `mercado_pinnacle_devigado` (api/model-stats.js) é a odd de fechamento da
 // Pinnacle devigada tratada como se fosse um modelo — mesmo pipeline de
 // log-loss/Brier/calibração, só rótulo de exibição muda.
@@ -21,7 +28,16 @@ function fmt(v, formato) {
   return formato === 'pct' ? `${(v * 100).toFixed(1)}%` : v.toFixed(4);
 }
 
-function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }) {
+// IC95% por bootstrap (achado #27, CONTEXTO_PROJETO.md — populado por
+// scripts/avaliar_ic_modelos_por_liga.py, ausente = script nunca rodou pra
+// essa combinação ou amostra <30 partidas, tratado como "sem IC calculado",
+// nunca como erro).
+function LinhaIc({ ic, formato }) {
+  if (!ic || ic[0] == null || ic[1] == null) return null;
+  return <div className="text-[10px] text-slate-500 mt-0.5">IC95% [{fmt(ic[0], formato)}, {fmt(ic[1], formato)}]</div>;
+}
+
+function Metrica({ label, modelo, mercado, ic, menorMelhor = true, formato = 'num' }) {
   if (modelo == null) {
     return (
       <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
@@ -36,6 +52,7 @@ function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }
       <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
         <div className="text-[10px] text-slate-500 uppercase">{label}</div>
         <div className="text-lg font-bold text-slate-200 mt-1">{fmt(modelo, formato)}</div>
+        <LinhaIc ic={ic} formato={formato} />
         <div className="text-[10px] text-slate-600 mt-0.5">sem odds pra comparar</div>
       </div>
     );
@@ -49,6 +66,7 @@ function Metrica({ label, modelo, mercado, menorMelhor = true, formato = 'num' }
         <span className="text-slate-600 text-xs">vs</span>
         <span className={`text-lg font-bold ${!modeloMelhor ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(mercado, formato)}</span>
       </div>
+      <LinhaIc ic={ic} formato={formato} />
       <div className="text-[10px] text-slate-600 mt-0.5">modelo vs. mercado (fechamento)</div>
     </div>
   );
@@ -310,8 +328,11 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   const [resultado, setResultado] = useState(null);
   const [edgeMinimo, setEdgeMinimo] = useState(0.02);
   const [staking, setStaking] = useState('flat');
-  const [fracaoKelly, setFracaoKelly] = useState(0.25);
-  const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
+  // Default 'platt' (não 'nenhuma') -- Platt Scaling melhorou o log-loss
+  // calibrado na maioria das combinações modelo×mercado medidas (achado
+  // #6/CONTEXTO_PROJETO.md); Isotonic piorou em ~metade dos casos com o
+  // volume de amostra disponível hoje, então não é um default seguro.
+  const [usarCalibracao, setUsarCalibracao] = useState('platt');
   const [grupoCurvaIdx, setGrupoCurvaIdx] = useState(0);
 
   const rodar = async () => {
@@ -319,7 +340,6 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
     setErro('');
     try {
       const params = new URLSearchParams({ edge_minimo: edgeMinimo, staking, usar_calibracao: usarCalibracao });
-      if (staking === 'kelly') params.set('fracao_kelly', fracaoKelly);
       if (filtroModelo) params.set('modelo', filtroModelo);
       if (filtroMercado) params.set('mercado', filtroMercado);
       if (filtroLiga) params.set('liga_id', filtroLiga);
@@ -358,10 +378,11 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
           </select>
         </div>
         {staking === 'kelly' && (
-          <div>
+          <div className="max-w-xs">
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fração Kelly</label>
-            <input type="number" step="0.05" min="0.05" max="1" value={fracaoKelly} onChange={(e) => setFracaoKelly(e.target.value)}
-              className="w-24 bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100" />
+            <p className="text-xs text-slate-400 py-2">
+              Automática por faixa de odd (política de risco): 1/4 até @2.50, 1/5 até @4.00, 1/8 até @8.00, stake fixa acima disso — cada faixa também tem seu próprio corte mínimo de EV e teto de stake.
+            </p>
           </div>
         )}
         <div>
@@ -648,9 +669,9 @@ function gerarMarkdown(grupos, ligasPorId) {
   for (const g of grupos) {
     md += `## ${g.model_name} — ${MERCADO_ROTULO[g.market] || g.market} — ${ligasPorId[g.league_id] || `Liga #${g.league_id}`}\n\n`;
     md += `- Jogos avaliados: ${g.n_jogos}\n`;
-    md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
+    md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}${g.log_loss_ic_inf != null ? ` — IC95% [${g.log_loss_ic_inf.toFixed(4)}, ${g.log_loss_ic_sup.toFixed(4)}]` : ''}\n`;
     md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
-    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}\n\n`;
+    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}${g.accuracy_ic_inf != null ? ` — IC95% [${(g.accuracy_ic_inf * 100).toFixed(1)}%, ${(g.accuracy_ic_sup * 100).toFixed(1)}%]` : ''}\n\n`;
     if (g.calibracao_disponivel) {
       md += `**Ajuste de calibração (com e sem)**\n\n`;
       md += `| Método | Log-loss | Brier | Acurácia |\n|---|---|---|---|\n`;
@@ -676,6 +697,32 @@ export default function ModelosStats() {
   const [filtroModelo, setFiltroModelo] = useState('');
   const [filtroMercado, setFiltroMercado] = useState('');
   const [filtroLiga, setFiltroLiga] = useState('');
+  const [carregandoAoVivo, setCarregandoAoVivo] = useState(() => new Set());
+  const [erroAoVivo, setErroAoVivo] = useState({});
+
+  // Recalcula model_name+market ao vivo (todas as ligas de uma vez),
+  // ignorando `model_stats_resumo` -- só chamado pelo botão "Calcular
+  // calibração ao vivo", nunca automaticamente (ver MERCADOS_COM_RESUMO_
+  // PRECALCULADO acima e api/model-stats.js).
+  async function calcularAoVivo(modelName, market) {
+    const chave = `${modelName}|${market}`;
+    setCarregandoAoVivo(prev => new Set(prev).add(chave));
+    setErroAoVivo(prev => ({ ...prev, [chave]: '' }));
+    try {
+      const resp = await fetch(apiUrl(`/api/model-stats?modelo=${encodeURIComponent(modelName)}&mercado=${encodeURIComponent(market)}&forcar_ao_vivo=true`));
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error?.message || 'Erro ao calcular ao vivo.');
+      const novosGrupos = data.grupos || [];
+      setGrupos(prev => [
+        ...prev.filter(g => !(g.model_name === modelName && g.market === market)),
+        ...novosGrupos,
+      ]);
+    } catch (e) {
+      setErroAoVivo(prev => ({ ...prev, [chave]: e.message }));
+    } finally {
+      setCarregandoAoVivo(prev => { const next = new Set(prev); next.delete(chave); return next; });
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -801,9 +848,9 @@ export default function ModelosStats() {
               </div>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
-                <Metrica label="Log-loss" modelo={g.log_loss_modelo} mercado={g.log_loss_mercado} />
+                <Metrica label="Log-loss" modelo={g.log_loss_modelo} mercado={g.log_loss_mercado} ic={[g.log_loss_ic_inf, g.log_loss_ic_sup]} />
                 <Metrica label="Brier Score" modelo={g.brier_modelo} mercado={g.brier_mercado} />
-                <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" />
+                <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" ic={[g.accuracy_ic_inf, g.accuracy_ic_sup]} />
               </div>
 
               <AjusteCalibracao g={g} />
@@ -837,12 +884,32 @@ export default function ModelosStats() {
 
               <div className="space-y-3">
                 <span className="text-[10px] uppercase font-bold text-slate-500">Calibração por seleção (previsto vs. real, em quintis)</span>
-                {g.por_selecao.map((s, j) => (
-                  <div key={j}>
-                    <span className="text-xs text-slate-400 font-semibold">{SELECAO_ROTULO[s.selecao] || s.selecao}</span>
-                    <Calibracao quintis={s.calibracao} />
+                {g.por_selecao.length === 0 && MERCADOS_COM_RESUMO_PRECALCULADO.includes(g.market) ? (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => calcularAoVivo(g.model_name, g.market)}
+                      disabled={carregandoAoVivo.has(`${g.model_name}|${g.market}`)}
+                      className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-200 font-semibold px-3 py-1.5 rounded-lg text-xs">
+                      {carregandoAoVivo.has(`${g.model_name}|${g.market}`)
+                        ? <Loader2 className="animate-spin" size={13} />
+                        : <PlayCircle size={13} />}
+                      Calcular calibração ao vivo
+                    </button>
+                    <span className="text-[10px] text-slate-600">
+                      Este mercado usa estatísticas pré-calculadas (evita timeout) -- não traz calibração por padrão.
+                    </span>
                   </div>
-                ))}
+                ) : (
+                  g.por_selecao.map((s, j) => (
+                    <div key={j}>
+                      <span className="text-xs text-slate-400 font-semibold">{SELECAO_ROTULO[s.selecao] || s.selecao}</span>
+                      <Calibracao quintis={s.calibracao} />
+                    </div>
+                  ))
+                )}
+                {erroAoVivo[`${g.model_name}|${g.market}`] && (
+                  <p className="text-[11px] text-red-400">{erroAoVivo[`${g.model_name}|${g.market}`]}</p>
+                )}
               </div>
             </div>
           ))}

@@ -189,7 +189,13 @@ export default function SimulacaoCarteira() {
   const [temporada, setTemporada] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
-  const [usarCalibracao, setUsarCalibracao] = useState('nenhuma');
+  // Default 'platt' (não 'nenhuma') -- Platt Scaling melhorou o log-loss
+  // calibrado na maioria das combinações modelo×mercado medidas (achado
+  // #6/CONTEXTO_PROJETO.md); Isotonic piorou em ~metade dos casos com o
+  // volume de amostra disponível hoje, então não é um default seguro. Kelly
+  // assume probabilidade confiável -- rodar sem calibrar por padrão
+  // superestimava o tamanho da aposta sugerida.
+  const [usarCalibracao, setUsarCalibracao] = useState('platt');
   const [bancaInicial, setBancaInicial] = useState(1000);
   const [tipoStake, setTipoStake] = useState('kelly');
   const [stakeFixa, setStakeFixa] = useState(10);

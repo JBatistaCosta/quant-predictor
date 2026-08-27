@@ -101,6 +101,17 @@ VARIANTES_GOLS = {
 }
 MODELO_CORNERS = "hibrido_corners_v1"
 
+# Ligas continentais (Champions League/Libertadores/Sudamericana) -- usado
+# só pelo breakdown de diagnóstico em `avaliar_continental` (investigação
+# da forma "mesma liga", ver FEATURES_NUMERICAS_V12_MESMA_LIGA em
+# dados_historicos.py): é nessas partidas especificamente que a janela
+# pooled mistura competição doméstica e continental (~61,5% das previsões
+# continentais tinham jogo de outra competição na janela de 5, achado
+# medido -- ver CONTEXTO_PROJETO.md), então é onde a hipótese prevê o
+# ganho de verdade -- métrica agregada (doméstico + continental junto,
+# ~75% doméstico onde a mistura já é rara) pode diluir o efeito.
+LIGAS_CONTINENTAIS_DIAGNOSTICO = {"UEFA Champions League", "Copa Libertadores", "Copa Sudamericana"}
+
 # Lote de upsert. 500 é o mesmo tamanho já usado por modelo_dixon_coles.py
 # e treinar_regressor_xg.py.
 LOTE_UPSERT = 500
@@ -690,6 +701,32 @@ def main() -> None:
         logger.info("[%s] log-verossimilhança do placar: %.4f | log-loss 1X2: %.4f | Brier 1X2: %.4f | acurácia: %.1f%%",
                     model_name, metricas["log_verossimilhanca_placar"], metricas["log_loss_1x2"],
                     metricas["brier_1x2"], 100 * metricas["acuracia_1x2"])
+
+        # Diagnóstico contínuo (monitoramento do achado de mistura de
+        # competição) -- mesma métrica, só que restrita às partidas
+        # CONTINENTAIS do Test Set, onde a mistura de competição na janela
+        # pooled é maior e onde a feature "mesma liga" (FEATURES_NUMERICAS_
+        # V12_MESMA_LIGA) mostrou ganho real (log-loss/Brier/acurácia
+        # melhores nas 4 métricas, ver PR #368). Mantido no cron diário pra
+        # acompanhar se o efeito se sustenta com dado novo. Não persiste
+        # nada nem afeta o fluxo normal -- só mais uma linha de log.
+        if "liga" in teste.columns:
+            mask_continental = teste["liga"].isin(LIGAS_CONTINENTAIS_DIAGNOSTICO).to_numpy()
+            if mask_continental.sum() >= 20:
+                lam_corners_teste_cont = lam_corners_teste[mask_continental] if lam_corners_teste is not None else None
+                metricas_continental = avaliar(
+                    teste.iloc[mask_continental], lam_h_teste[mask_continental], lam_a_teste[mask_continental],
+                    lam_corners_teste_cont, parametros,
+                )
+                logger.info(
+                    "[%s][CONTINENTAL n=%d] log-verossimilhança do placar: %.4f | log-loss 1X2: %.4f | Brier 1X2: %.4f | acurácia: %.1f%%",
+                    model_name, mask_continental.sum(), metricas_continental["log_verossimilhanca_placar"],
+                    metricas_continental["log_loss_1x2"], metricas_continental["brier_1x2"],
+                    100 * metricas_continental["acuracia_1x2"],
+                )
+            else:
+                logger.info("[%s][CONTINENTAL] só %d partida(s) continental(is) no Test Set -- pulando diagnóstico.",
+                             model_name, int(mask_continental.sum()))
 
         if not args.sem_gravar:
             persistir(supabase, model_name, teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)

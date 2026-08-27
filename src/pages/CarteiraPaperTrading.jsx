@@ -35,9 +35,16 @@ function fmtData(iso) {
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Default 'platt' (não 'nenhuma') -- Platt Scaling melhorou o log-loss
+// calibrado na maioria das combinações modelo×mercado medidas (achado
+// #6/CONTEXTO_PROJETO.md); Isotonic piorou em ~metade dos casos com o
+// volume de amostra disponível hoje, então não é um default seguro. Kelly
+// assume probabilidade confiável -- rodar sem calibrar por padrão
+// superestimava o tamanho da aposta sugerida (carteira de PAPER TRADING
+// de verdade, não só backtest histórico).
 const ESTADO_FORM_INICIAL = {
   nome: '', modelo: '', mercado: '1X2', liga_id: '',
-  usar_calibracao: 'nenhuma', tipo_stake: 'kelly', stake_fixa: 10, kelly_multiplier: 0.25,
+  usar_calibracao: 'platt', tipo_stake: 'kelly', stake_fixa: 10, kelly_multiplier: 0.25,
   teto_exposicao_pct: 0.15, ev_minimo: 1.02, ev_maximo: 2.0, stake_minima_pct: 0.005, banca_inicial: 1000,
 };
 

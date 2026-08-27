@@ -12,10 +12,16 @@ name: Model Benchmarking - Backtest (ROI/Kelly/EV+)
 # predict.yml diário -- rodar isso toda noite sem necessidade real não
 # compensa o tempo de execução no runner gratuito do GitHub Actions.
 #
-# Roda o grid search + tuning QUATRO vezes (1X2, Over/Under 2.5 gols,
-# Over/Under 9.5 escanteios e faixa de gols, ver `MERCADOS` em
-# backtest_kelly.py) -- timeout dobrado de novo (era 100min pra 2 mercados)
-# pra dar folga.
+# Roda o grid search + tuning CINCO vezes (1X2, Over/Under 2.5 gols,
+# Over/Under 9.5 escanteios, faixa de gols e BTTS, ver `MERCADOS` em
+# backtest_kelly.py) -- timeout aumentado de novo (era 200min pra 4
+# mercados) pra dar folga pro 5º mercado. Também avalia (sem retreinar --
+# só lê `model_predictions`, custo desprezível) o modelo misto com ML
+# (`hibrido_gols_v1`/`hibrido_gols_xg_v1`, ver `MODELOS_HIBRIDOS`) em 19
+# mercados (1X2, Over/Under 2.5, BTTS, Dupla Chance, Over/Under 1.5/3.5,
+# Handicap -2/-1/+1/+2 e Escanteios O/U em 9 linhas de 7.5 a 12.5 -- ver
+# `MERCADOS_HIBRIDO_VALIDOS`/`MERCADOS["dupla_chance"]`) -- loops À PARTE,
+# fora do grid search principal, sem custo de treino nenhum.
 
 on:
   workflow_dispatch: {}
@@ -23,7 +29,7 @@ on:
 jobs:
   backtest-kelly:
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 260
 
     steps:
       - name: Checkout do repositório

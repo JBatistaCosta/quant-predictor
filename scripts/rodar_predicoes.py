@@ -537,6 +537,19 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "media_xg_sofrido_5j_home": forma_casa.get("media_xg_sofrido_5j_home"),
                 "media_xg_5j_away": forma_fora.get("media_xg_5j_away"),
                 "media_xg_sofrido_5j_away": forma_fora.get("media_xg_sofrido_5j_away"),
+                # Nomes NOVOS (mesmos valores de forma_casa/forma_fora acima,
+                # só com a chave que FEATURES_V10_XG_CORRIGIDO espera -- ver
+                # achado #15/CONTEXTO_PROJETO.md e modelos_ml.py) --
+                # aditivo, não substitui as chaves antigas acima (outros
+                # modelos ainda podem referenciar o nome antigo).
+                "xg_home_5j": forma_casa.get("media_xg_5j_home"),
+                "xg_sofrido_home_5j": forma_casa.get("media_xg_sofrido_5j_home"),
+                "xg_away_5j": forma_fora.get("media_xg_5j_away"),
+                "xg_sofrido_away_5j": forma_fora.get("media_xg_sofrido_5j_away"),
+                "xgot_home_5j": forma_casa.get("xgot_home_5j"),
+                "xgot_sofrido_home_5j": forma_casa.get("xgot_sofrido_home_5j"),
+                "xgot_away_5j": forma_fora.get("xgot_away_5j"),
+                "xgot_sofrido_away_5j": forma_fora.get("xgot_sofrido_away_5j"),
                 "squad_rating_home": squad_rating_atual.get(id_casa, float("nan")),
                 "squad_rating_away": squad_rating_atual.get(id_fora, float("nan")),
                 "days_since_last_match_home": dias_casa,

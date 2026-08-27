@@ -324,18 +324,18 @@ function devigar(oddsPorSelecao, metodo = 'odds_ratio') {
 // Previsões do modelo pra essa partida + a melhor fonte de odds disponível
 // (prioriza a média de mercado no fechamento; sem isso, cai pra qualquer casa)
 // + calibração Platt/Isotonic já ajustada (model_calibration) — aplicada aqui
-// em cima da probabilidade crua, escolhendo por combinação o método com menor
-// log-loss medido no teste (ver src/utils/calibration.js). O edge exibido usa
-// a probabilidade CALIBRADA quando disponível, já que o achado documentado é
-// que o modelo bruto é sistematicamente overconfident nos mercados binários —
-// um edge calculado sobre probabilidade não calibrada superestima a vantagem
-// real. Cai pra crua (sem calibração) só quando a combinação nunca teve
-// amostra suficiente pra calibrar.
+// em cima da probabilidade crua, escolhendo por combinação o candidato com
+// menor log-loss medido no teste, entre Platt, Isotonic e a própria
+// probabilidade crua (ver src/utils/calibration.js). Cai pra crua quando a
+// combinação nunca teve amostra suficiente pra calibrar OU quando a bruta
+// mediu menor log-loss que as duas calibrações (achado: acontece em ~30%
+// das combinações já calibradas, sobretudo nos classificadores v9/v11 em
+// 1X2/BTTS — não é só fallback de "sem dado").
 async function buscarComparacaoModeloMercado(matchId) {
   const [{ data: previsoes }, { data: oddsRows }, { data: calibracaoRows }] = await Promise.all([
     supabase.from('model_predictions').select('model_name, market, selection, probability').eq('match_id', matchId),
     supabase.from('odds_market').select('bookmaker, market, selection, odds, snapshot, captured_at').eq('match_id', matchId).order('captured_at', { ascending: false }),
-    supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_calibrado, n_teste'),
+    supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_bruto, log_loss_calibrado, n_teste'),
   ]);
   if (!previsoes || previsoes.length === 0) return [];
 

@@ -9,7 +9,14 @@
 // de verdade), em ordem cronológica. Duas formas de banca: flat (1 unidade
 // fixa por aposta) ou Kelly fracionário (fração do critério de Kelly sobre a
 // banca INICIAL, não compondo — mantém as apostas comparáveis entre grupos
-// em vez de path-dependentes).
+// em vez de path-dependentes). No modo Kelly, a fração aplicada, o corte
+// mínimo de EV e o teto de stake por aposta vêm da política de risco por
+// faixa de odd (api/_lib/stakingPolicy.js, pedida explicitamente pelo
+// usuário) -- não são mais fixos: odd mais alta usa fração menor, corte de EV
+// mais alto e teto de stake mais baixo. `edge_minimo` continua um filtro
+// SEPARADO (significância do edge modelo-vs-mercado), aplicado antes; a
+// política por faixa entra depois, só pro tamanho da stake e um corte de EV
+// adicional específico da faixa.
 //
 // O número que importa de verdade pra "escolher o melhor modelo" não é o ROI
 // simulado sozinho — com poucas centenas de jogos por liga, um ROI positivo
@@ -21,7 +28,7 @@
 //
 // COMO CHAMAR:
 //   /api/backtest-betting                                   (tudo, limiar/staking padrão)
-//   /api/backtest-betting?edge_minimo=0.03&staking=kelly&fracao_kelly=0.25
+//   /api/backtest-betting?edge_minimo=0.03&staking=kelly      (fração/corte de EV/teto vêm da faixa de odd de cada aposta)
 //   /api/backtest-betting?modelo=dixon_coles_walkforward_v1&mercado=1X2&liga_id=4
 //   /api/backtest-betting?usar_calibracao=platt   (usa a prob. calibrada em vez da crua, tanto pro edge quanto pro Kelly)
 //
@@ -35,6 +42,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { calcularCurvaPnlEv } from './_lib/curvaPnlEv.js';
+import { calcularStakeKellyPorFaixa } from './_lib/stakingPolicy.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -58,10 +66,20 @@ function aplicarIsotonic(p, xs, ys) {
   return p;
 }
 
-function chaveMercado(m) {
-  return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
+// v9 grava '1x2' (minúscula) em alguns pontos -- normaliza pro mesmo
+// mercado antes de indexar `resultadosReais`.
+function normalizarMercado(m) {
+  return m === '1x2' ? '1X2' : m;
 }
 
+// Resultado real por mercado, indexado pela MESMA string usada em
+// odds_market.market/model_predictions.market -- antes disso era um
+// ternário de 3 opções que jogava QUALQUER mercado desconhecido (btts,
+// dupla_chance, handicap etc) no bucket de escanteios O/U 9,5, com o
+// mesmo nome genérico (chaveMercado/calcularResultadosReais) duplicado em
+// api/model-stats.js -- corrigido nos dois arquivos: mercado sem entrada
+// aqui agora fica undefined (aposta não conta como vitória, não é
+// silenciosamente comparada contra o resultado errado).
 function calcularResultadosReais(matches, corners) {
   const porMatch = {};
   for (const m of matches) {
@@ -70,11 +88,12 @@ function calcularResultadosReais(matches, corners) {
     porMatch[m.id] = {
       league_id: m.league_id,
       '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      over_under_2_5: total > 2.5 ? 'over' : 'under',
+      'over_under_2.5': total > 2.5 ? 'over' : 'under',
+      btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
     };
   }
   for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9_5'] = totalCorners > 9.5 ? 'over' : 'under';
+    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
   }
   return porMatch;
 }
@@ -187,14 +206,6 @@ async function buscarTudoPaginado(criarQuery) {
   return resultado;
 }
 
-// Fração de Kelly clássica pra aposta binária: f* = (p*b - (1-p)) / b, b = odd-1
-function fracaoKelly(p, odd) {
-  const b = odd - 1;
-  if (b <= 0) return 0;
-  const f = (p * b - (1 - p)) / b;
-  return Math.max(0, f);
-}
-
 // Bootstrap: reamostra os lucros individuais com reposição N vezes, devolve IC 95% do ROI
 function bootstrapROI(apostas, iteracoes = 2000) {
   const n = apostas.length;
@@ -222,7 +233,6 @@ export default async function handler(req, res) {
   const { modelo, mercado, liga_id } = req.query;
   const edgeMinimo = req.query.edge_minimo != null ? Number(req.query.edge_minimo) : 0.02;
   const staking = req.query.staking === 'kelly' ? 'kelly' : 'flat';
-  const fracaoKellyMult = req.query.fracao_kelly != null ? Number(req.query.fracao_kelly) : 0.25;
   const usarCalibracao = ['platt', 'isotonic'].includes(req.query.usar_calibracao) ? req.query.usar_calibracao : 'nenhuma';
 
   try {
@@ -316,8 +326,13 @@ export default async function handler(req, res) {
       const edge = pAposta - pMercado;
       if (edge < edgeMinimo) continue;
 
-      const venceu = resultadosReais[p.match_id][chaveMercado(p.market)] === p.selection ? 1 : 0;
-      const stakeUnitario = staking === 'kelly' ? Math.min(fracaoKelly(pAposta, oddReal) * fracaoKellyMult, 0.25) : 1;
+      const venceu = resultadosReais[p.match_id][normalizarMercado(p.market)] === p.selection ? 1 : 0;
+      let stakeUnitario = 1;
+      if (staking === 'kelly') {
+        const politica = calcularStakeKellyPorFaixa(pAposta, oddReal);
+        if (!politica.apostar) continue; // fora da política por faixa (odd<1.30, EV abaixo do corte da faixa, ou Kelly completo negativo)
+        stakeUnitario = politica.stakeFracaoBanca;
+      }
       if (stakeUnitario <= 0) continue;
 
       const lucro = venceu ? stakeUnitario * (oddReal - 1) : -stakeUnitario;
@@ -370,7 +385,7 @@ export default async function handler(req, res) {
     } : null;
 
     res.status(200).json({
-      parametros: { edge_minimo: edgeMinimo, staking, fracao_kelly: staking === 'kelly' ? fracaoKellyMult : null, usar_calibracao: usarCalibracao },
+      parametros: { edge_minimo: edgeMinimo, staking, staking_por_faixa: staking === 'kelly', usar_calibracao: usarCalibracao },
       resumo_geral: resumoGeral,
       grupos,
     });

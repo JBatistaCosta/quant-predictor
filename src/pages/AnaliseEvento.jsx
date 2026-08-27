@@ -12,6 +12,7 @@ import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format'
 import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions';
 import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
 import { apiUrl } from '../utils/apiUrl';
+import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
 
@@ -178,7 +179,6 @@ export default function AnaliseEvento() {
   // Monte Carlo & Kelly State
   const [bankroll, setBankroll] = useState('100');
   const [bookieOdd, setBookieOdd] = useState('1.85');
-  const [kellyFraction, setKellyFraction] = useState(0.25);
   const [kellyTarget, setKellyTarget] = useState('1');
   const [mcResults, setMcResults] = useState(null);
   const [kellyRecommendation, setKellyRecommendation] = useState(null);
@@ -1085,30 +1085,35 @@ export default function AnaliseEvento() {
       const bookieOddNum = toNumber(bookieOdd);
       const bankrollNum = toNumber(bankroll);
 
-      const b = bookieOddNum - 1;
-      const q = 1 - p;
-      const f = b > 0 ? (p * b - q) / b : -1;
+      const politica = calcularStakeKellyPorFaixa(p, bookieOddNum);
 
-      if (f > 0) {
-        const safeFraction = f * kellyFraction;
-        const recommendedBet = bankrollNum * safeFraction;
+      if (politica.apostar) {
+        const recommendedBet = bankrollNum * politica.stakeFracaoBanca;
         setKellyRecommendation({
           edge: true,
           target: targetLabel,
           fairOdd: p > 0 ? (1 / p).toFixed(2) : '—',
           stake: recommendedBet.toFixed(2),
-          pct: (safeFraction * 100).toFixed(2),
-          fullKelly: (f * 100).toFixed(2),
-          message: `Vantagem matemática (EV+) detectada em "${targetLabel}" @ ${bookieOddNum.toFixed(2)}. Stake recomendada:`
+          pct: (politica.stakeFracaoBanca * 100).toFixed(2),
+          fullKelly: politica.kellyCompleto != null ? (politica.kellyCompleto * 100).toFixed(2) : null,
+          faixa: politica.faixa,
+          ev: (politica.ev * 100).toFixed(2),
+          message: `Vantagem matemática (EV+) detectada em "${targetLabel}" @ ${bookieOddNum.toFixed(2)}. Stake recomendada pela faixa de odd ${politica.faixa.oddMin.toFixed(2)}–${politica.faixa.oddMax === Infinity ? '∞' : politica.faixa.oddMax.toFixed(2)}:`
         });
       } else {
+        const mensagens = {
+          odd_fora_da_politica: `A odd ${bookieOddNum.toFixed(2)} está abaixo de 1.30 — fora da política de staking por faixa de odd. Nenhuma stake recomendada.`,
+          ev_abaixo_do_corte: `EV de +${(politica.ev * 100).toFixed(1)}% detectado em "${targetLabel}" @ ${bookieOddNum.toFixed(2)}, mas abaixo do corte mínimo de ${(politica.faixa.evMinimo * 100).toFixed(1)}% exigido pela faixa ${politica.faixa.oddMin.toFixed(2)}–${politica.faixa.oddMax === Infinity ? '∞' : politica.faixa.oddMax.toFixed(2)}. A matemática manda NÃO apostar.`,
+          kelly_completo_negativo: `Aposta EV- em "${targetLabel}". A odd ${bookieOddNum.toFixed(2)} está abaixo da odd justa do modelo. A matemática manda NÃO apostar.`,
+        };
         setKellyRecommendation({
           edge: false,
           target: targetLabel,
           fairOdd: p > 0 ? (1 / p).toFixed(2) : '—',
           stake: 0,
           pct: 0,
-          message: `Aposta EV- em "${targetLabel}". A odd ${bookieOddNum.toFixed(2)} está abaixo da odd justa do modelo. A matemática manda NÃO apostar.`
+          faixa: politica.faixa,
+          message: mensagens[politica.motivo] || mensagens.kelly_completo_negativo,
         });
       }
 
@@ -1426,7 +1431,11 @@ export default function AnaliseEvento() {
     return list;
   }, [results, bookieOddsData]);
 
-  const evPlusCount = marketScan ? marketScan.filter(m => m.ev > 0).length : 0;
+  // Faixa de staking aplicada à odd digitada na Calculadora EV+/Kelly de mercado único
+  // (só recalcula quando a odd muda -- mesma política usada no Scanner Multi-Mercado).
+  const faixaBookieOdd = useMemo(() => encontrarFaixaStaking(toNumber(bookieOdd)), [bookieOdd]);
+
+  const evPlusCount = marketScan ? marketScan.filter(m => calcularStakeKellyPorFaixa(m.p, m.odd).apostar).length : 0;
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-2 md:p-6 font-sans">
@@ -2296,7 +2305,7 @@ export default function AnaliseEvento() {
 
                       <p className="text-xs text-slate-400 mb-4">
                         Cada linha compara a <strong className="text-slate-200">odd da casa</strong> com a <strong className="text-slate-200">odd justa do modelo</strong>.
-                        EV = (probabilidade × odd) − 1. A stake segue Kelly Fracionado ({(kellyFraction * 100).toFixed(0)}%) sobre a banca de R$ {toNumber(bankroll).toFixed(2)} definida abaixo.
+                        EV = (probabilidade × odd) − 1. A fração de Kelly, o corte mínimo de EV e o teto de stake vêm da política de risco por faixa de odd — automática, sobre a banca de R$ {toNumber(bankroll).toFixed(2)} definida abaixo.
                       </p>
 
                       <div className="overflow-x-auto rounded-xl border border-slate-700">
@@ -2309,15 +2318,18 @@ export default function AnaliseEvento() {
                               <th className="p-3 text-right">Odd Justa</th>
                               <th className="p-3 text-right">Odd Casa</th>
                               <th className="p-3 text-right">EV</th>
+                              <th className="p-3 hidden md:table-cell text-right">Faixa (Kelly / corte EV)</th>
                               <th className="p-3 text-right">Stake Kelly</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-700/50">
                             {marketScan
-                              .filter(m => !showOnlyEvPlus || m.ev > 0)
+                              .map(m => ({ ...m, politica: calcularStakeKellyPorFaixa(m.p, m.odd) }))
+                              .filter(m => !showOnlyEvPlus || m.politica.apostar)
                               .map((m, idx) => {
-                                const isEvPlus = m.ev > 0;
-                                const stake = isEvPlus ? (toNumber(bankroll) * m.kellyFull * kellyFraction) : 0;
+                                const isEvPlus = m.politica.apostar;
+                                const stake = isEvPlus ? (toNumber(bankroll) * m.politica.stakeFracaoBanca) : 0;
+                                const faixa = m.politica.faixa;
                                 return (
                                   <tr key={idx} className={`${isEvPlus ? 'bg-emerald-950/20 hover:bg-emerald-950/40' : 'hover:bg-slate-700/20'} transition-colors`}>
                                     <td className="p-3 font-semibold text-slate-200">{m.label}</td>
@@ -2327,6 +2339,9 @@ export default function AnaliseEvento() {
                                     <td className={`p-3 text-right font-mono font-bold ${isEvPlus ? 'text-emerald-400' : 'text-slate-400'}`}>@ {m.odd.toFixed(2)}</td>
                                     <td className={`p-3 text-right font-mono font-bold ${isEvPlus ? 'text-emerald-400' : 'text-red-400'}`}>
                                       {m.ev > 0 ? '+' : ''}{(m.ev * 100).toFixed(1)}%
+                                    </td>
+                                    <td className="p-3 hidden md:table-cell text-right text-xs text-slate-500 font-mono">
+                                      {faixa ? `${faixa.fracaoKelly ? `1/${Math.round(1 / faixa.fracaoKelly)} Kelly` : 'Stake fixa'} · ≥${(faixa.evMinimo * 100).toFixed(1)}%` : 'fora da política'}
                                     </td>
                                     <td className="p-3 text-right font-mono">
                                       {isEvPlus
@@ -2354,7 +2369,7 @@ export default function AnaliseEvento() {
                   <p className="text-xs text-slate-400 mt-3 mb-5">
                     Simula o jogo {SIMULATIONS.toLocaleString('pt-BR')} vezes usando os λ do modelo
                     (<span className="text-emerald-400 font-mono">{results.lambda1.toFixed(2)}</span> vs <span className="text-orange-400 font-mono">{results.lambda2.toFixed(2)}</span>).
-                    A banca e a fração de Kelly definidas aqui também alimentam o Scanner acima.
+                    A banca definida aqui também alimenta o Scanner acima. A fração de Kelly é automática, por faixa de odd.
                   </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -2375,13 +2390,15 @@ export default function AnaliseEvento() {
                       <input type="number" step="0.01" min="1.01" value={bookieOdd} onChange={e => setBookieOdd(e.target.value)} className="w-full bg-slate-800 text-blue-400 p-2 mt-1 rounded font-mono font-bold" />
                     </div>
                     <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                      <label className="text-xs text-slate-500 uppercase font-bold">Risco (Fração Kelly)</label>
-                      <select value={kellyFraction} onChange={e => setKellyFraction(Number(e.target.value))} className="w-full bg-slate-800 text-slate-300 p-2 mt-1 rounded">
-                        <option value={0.10}>10% (Ultra Seguro)</option>
-                        <option value={0.25}>25% (Profissional)</option>
-                        <option value={0.50}>50% (Agressivo)</option>
-                        <option value={1.00}>100% (Risco de Ruína)</option>
-                      </select>
+                      <label className="text-xs text-slate-500 uppercase font-bold">Risco (Faixa de Odd)</label>
+                      {faixaBookieOdd ? (
+                        <div className="mt-1 p-2 rounded bg-slate-800 text-xs text-slate-300 font-mono leading-relaxed">
+                          {faixaBookieOdd.fracaoKelly ? `1/${Math.round(1 / faixaBookieOdd.fracaoKelly)} Kelly` : 'Stake fixa plana'} · teto {(faixaBookieOdd.tetoStakeBanca * 100).toFixed(2)}% da banca
+                          <div className="text-[10px] text-slate-500 mt-1">{faixaBookieOdd.regime}</div>
+                        </div>
+                      ) : (
+                        <div className="mt-1 p-2 rounded bg-slate-800 text-xs text-red-400">Odd fora da política (mínimo 1.30)</div>
+                      )}
                     </div>
                   </div>
 
@@ -2429,8 +2446,9 @@ export default function AnaliseEvento() {
                           </div>
                           <div className="flex flex-wrap gap-4 mt-3 text-xs text-slate-400 font-mono">
                             <span>Odd justa do modelo: <span className="text-slate-200">@ {kellyRecommendation.fairOdd}</span></span>
-                            <span>Kelly cheio: <span className="text-slate-200">{kellyRecommendation.fullKelly}%</span></span>
-                            <span>Fração aplicada: <span className="text-slate-200">{(kellyFraction * 100).toFixed(0)}%</span></span>
+                            {kellyRecommendation.fullKelly != null && <span>Kelly cheio: <span className="text-slate-200">{kellyRecommendation.fullKelly}%</span></span>}
+                            <span>Fração aplicada: <span className="text-slate-200">{kellyRecommendation.faixa.fracaoKelly ? `1/${Math.round(1 / kellyRecommendation.faixa.fracaoKelly)}` : 'stake fixa'}</span></span>
+                            <span>EV: <span className="text-slate-200">+{kellyRecommendation.ev}%</span></span>
                           </div>
                         </div>
                       ) : (

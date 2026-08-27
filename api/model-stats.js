@@ -29,6 +29,14 @@
 //
 // Agrupa por liga (matches.league_id) — filtros opcionais na URL.
 //
+// Também anexa (quando existe) o IC95% por bootstrap de log_loss/accuracy de
+// `model_stats_ic` (migration 20260827063903), populada sob demanda por
+// `scripts/avaliar_ic_modelos_por_liga.py` — responde "essa diferença entre
+// modelos no ranking por liga é real ou é ruído de amostra pequena?" (achado
+// #27, CONTEXTO_PROJETO.md). Ausente (amostra <30 partidas, ou script nunca
+// rodado pra esse combo) vira `null` nos 4 campos `log_loss_ic_*`/
+// `accuracy_ic_*`, tratado como "IC não calculado" pelo front.
+//
 // COMO CHAMAR:
 //   /api/model-stats                                  (tudo)
 //   /api/model-stats?modelo=dixon_coles_v1&mercado=1X2&liga_id=4
@@ -63,8 +71,13 @@ function aplicarIsotonic(p, xs, ys) {
   return p;
 }
 
-// Resultado real de cada partida, por mercado — mesma lógica usada na
-// avaliação de log-loss feita manualmente antes (ver CONTEXTO_PROJETO.md).
+// Resultado real de cada partida, por mercado — indexado pela MESMA
+// string usada em odds_market.market/model_predictions.market. Antes
+// disso era um ternário de 3 opções (chaveMercado) que jogava QUALQUER
+// mercado desconhecido (btts, dupla_chance, handicap etc) no bucket de
+// escanteios O/U 9,5 -- corrigido aqui e em api/backtest-betting.js
+// (mesma duplicação, mesmo bug). Mercado sem entrada aqui agora fica
+// undefined em vez de comparar contra o resultado errado.
 function calcularResultadosReais(matches, corners) {
   const porMatch = {};
   for (const m of matches) {
@@ -73,11 +86,12 @@ function calcularResultadosReais(matches, corners) {
     porMatch[m.id] = {
       league_id: m.league_id,
       '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      over_under_2_5: total > 2.5 ? 'over' : 'under',
+      'over_under_2.5': total > 2.5 ? 'over' : 'under',
+      btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
     };
   }
   for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9_5'] = totalCorners > 9.5 ? 'over' : 'under';
+    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
   }
   return porMatch;
 }
@@ -154,6 +168,7 @@ function devigar(oddsPorSelecao, metodo = 'odds_ratio') {
 const MERCADO_SELECOES_PINNACLE = {
   '1X2': ['home', 'draw', 'away'],
   'over_under_2.5': ['over', 'under'],
+  btts: ['yes', 'no'],
 };
 
 function normalizarPinnacleDevigada(oddsRows) {
@@ -176,11 +191,10 @@ function normalizarPinnacleDevigada(oddsRows) {
   return linhas;
 }
 
-function chaveMercado(m) {
-  // v9 gravou '1x2' (minúscula) — normaliza antes do switch
-  if (m === '1X2' || m === '1x2') return '1X2';
-  if (m === 'over_under_2.5') return 'over_under_2_5';
-  return 'corners_over_under_9_5';
+// v9 gravou '1x2' (minúscula) em alguns pontos — normaliza pro mesmo
+// mercado antes de indexar `resultadosReais`.
+function normalizarMercado(m) {
+  return m === '1x2' ? '1X2' : m;
 }
 
 // O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
@@ -578,7 +592,18 @@ export default async function handler(req, res) {
     // etc.) continuam no cálculo ao vivo -- não têm alternativa
     // pré-calculada, e sozinhos (um `market` só, não o `model_name` inteiro)
     // costumam ter bem menos linhas que corners_over_under_9.5.
-    const precisaResumoPreCalculado = !modelo || (mercado && MERCADOS_COM_RESUMO_PRECALCULADO.includes(mercado));
+    // `forcar_ao_vivo=true` -- botão "Calcular calibração ao vivo" do
+    // frontend (ModelosStats.jsx), só aparece quando modelo+mercado JÁ
+    // estão filtrados pro usuário (nunca automático, nunca sem os dois
+    // filtros -- senão reproduziria o mesmo timeout que motivou usar o
+    // resumo pré-calculado pra esses 3 mercados). Pedido do usuário:
+    // restaurar "Calibração por seleção (previsto vs. real, em quintis)"
+    // pra 1X2/over_under_2.5/corners_over_under_9.5 sem mexer na tabela
+    // pré-calculada nem na function SQL (que já foi afinada recentemente
+    // pra evitar o mesmo timeout) -- o risco de estourar os 3s fica
+    // restrito a um clique explícito, não à carga normal da página.
+    const forcarAoVivo = req.query.forcar_ao_vivo === 'true' && !!modelo && !!mercado;
+    const precisaResumoPreCalculado = !forcarAoVivo && (!modelo || (mercado && MERCADOS_COM_RESUMO_PRECALCULADO.includes(mercado)));
 
     // As duas levas de consultas abaixo (predições/pinnacle/resumo E as
     // tabelas "fixas" matches/odds_market/market_odds/match_stats/
@@ -648,6 +673,22 @@ export default async function handler(req, res) {
         // model_stats_resumo.id does not exist" -- passar a PK real.
         }, ['model_name', 'market', 'league_id'])
       : Promise.resolve([]);
+    // `model_stats_ic` (migration 20260827063903) -- IC95% por bootstrap do
+    // log-loss/acurácia (achado #27, CONTEXTO_PROJETO.md: o ranking "melhor
+    // por liga" sem intervalo de confiança confunde edge real com ruído de
+    // amostra pequena). Populada por `scripts/avaliar_ic_modelos_por_liga.py`
+    // (fora do Vercel -- bootstrap não cabe no orçamento de uma function),
+    // não pelo mesmo mecanismo de `model_stats_resumo`. Tabela pequena (uma
+    // linha por model_name+market+league_id com amostra suficiente) -- busca
+    // sempre, sem o gate de `precisaResumoPreCalculado`, já que é uma tabela
+    // independente e não sofre do mesmo risco de timeout.
+    const promiseStatsIcRows = buscarTudoPaginado(() => {
+      let q = supabase.from('model_stats_ic').select('model_name, market, league_id, log_loss_ic_inf, log_loss_ic_sup, accuracy_ic_inf, accuracy_ic_sup');
+      if (modelo) q = q.eq('model_name', modelo);
+      if (mercado) q = q.eq('market', mercado);
+      if (liga_id) q = q.eq('league_id', Number(liga_id));
+      return q;
+    }, ['model_name', 'market', 'league_id']);
 
     // Busca as tabelas inteiras já filtradas pelos critérios FIXOS (bem menores
     // que o universo de match_ids das previsões) e filtra em JS — bem menos
@@ -658,11 +699,28 @@ export default async function handler(req, res) {
     const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
 
-    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows] = await Promise.all([
-      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows,
+    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows] = await Promise.all([
+      promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows, promiseStatsIcRows,
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
     if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
+
+    // IC95% por bootstrap (ver comentário de `promiseStatsIcRows`) -- indexado
+    // por model_name+market+league_id pra anexar em QUALQUER grupo de saída
+    // (pré-calculado ou ao vivo) que bater a mesma chave; ausente (amostra
+    // menor que 30, ver AMOSTRA_MINIMA do script) vira `null`, tratado como
+    // "IC não calculado" pelo front, nunca um erro.
+    const icPorChave = {};
+    statsIcRows.forEach(r => { icPorChave[`${r.model_name}__${r.market}__${r.league_id}`] = r; });
+    function anexarIc(modelName, market, leagueId) {
+      const ic = icPorChave[`${modelName}__${market}__${leagueId}`];
+      return {
+        log_loss_ic_inf: ic ? Number(ic.log_loss_ic_inf) : null,
+        log_loss_ic_sup: ic ? Number(ic.log_loss_ic_sup) : null,
+        accuracy_ic_inf: ic ? Number(ic.accuracy_ic_inf) : null,
+        accuracy_ic_sup: ic ? Number(ic.accuracy_ic_sup) : null,
+      };
+    }
 
     // Grupos pré-calculados (ver comentário acima sobre `model_stats_resumo`)
     // -- não tem comparação com mercado nem calibração em quintis, só a
@@ -682,6 +740,7 @@ export default async function handler(req, res) {
       log_loss_platt: null, brier_platt: null, accuracy_platt: null,
       log_loss_isotonic: null, brier_isotonic: null, accuracy_isotonic: null,
       por_selecao: [],
+      ...anexarIc(r.model_name, r.market, r.league_id),
     }));
 
     // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
@@ -809,7 +868,7 @@ export default async function handler(req, res) {
       const partidas = matchIdsRelatorio.map(matchId => {
         const match = matchesValidos.find(m => m.id === matchId);
         const selecoes = porMatch[matchId];
-        const mercadoChave = chaveMercado(mercado);
+        const mercadoChave = normalizarMercado(mercado);
         const resultado = resultadosReais[matchId];
         const chaveOdds = `${matchId}__${mercado}`;
         const oddsSel = oddsPorMatchMercado[chaveOdds] || {};
@@ -871,7 +930,7 @@ export default async function handler(req, res) {
         };
       }
 
-      const mercadoChave = chaveMercado(p.market);
+      const mercadoChave = normalizarMercado(p.market);
       const y = resultado[mercadoChave] === p.selection ? 1 : 0;
       const chaveOdds = `${p.match_id}__${p.market}`;
       const pMercado = probMercado[chaveOdds]?.[p.selection] ?? null;
@@ -1014,6 +1073,7 @@ export default async function handler(req, res) {
         log_loss_platt: calibPlatt.logLoss, brier_platt: calibPlatt.brier, accuracy_platt: accuracyPlatt,
         log_loss_isotonic: calibIsotonic.logLoss, brier_isotonic: calibIsotonic.brier, accuracy_isotonic: accuracyIsotonic,
         por_selecao: selecoes,
+        ...anexarIc(g.model_name, g.market, g.league_id),
       };
     });
 

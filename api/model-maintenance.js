@@ -18,8 +18,17 @@
 //                                   ano mod 7) — ciclo completo fecha em ~1 semana. Existe
 //                                   porque processar tudo numa chamada só já deu timeout
 //                                   antes (testado, ver CONTEXTO_PROJETO.md).
-//   ?tarefa=calibracao          -> reajusta Platt Scaling + Isotonic Regression (todos os combos)
-//   ?tarefa=calibracao&minimo=N -> idem, exigindo N amostras de treino mínimas (padrão 80)
+//   ?tarefa=calibracao&modelo=X                  -> reajusta Platt Scaling + Isotonic Regression pro model_name X (todos os mercados/seleções dele)
+//   ?tarefa=calibracao&modelo=X&mercado=Y         -> idem, restrito a UM mercado (necessário pro modelo misto, ver abaixo)
+//   ?tarefa=calibracao&modelo=X&minimo=N          -> idem, exigindo N amostras de treino mínimas (padrão 80)
+//   `modelo` é OBRIGATÓRIO -- sem filtro de model_name a consulta em
+//   model_predictions (2,5M+ linhas/81 model_name) estoura o maxDuration de
+//   60s (medido em produção). Pros classificadores do Model Benchmarking
+//   (~45k linhas por model_name) `modelo` sozinho já cabe no orçamento; pro
+//   modelo misto (`hibrido_*`, 37 mercados/104 seleções por partida -- só
+//   hibrido_gols_v1 tem 1,6M+ linhas) também estoura só com `modelo`,
+//   precisa de `&mercado=` também (medido em produção). Chamar uma vez por
+//   (model_name, mercado relevante).
 //   ?tarefa=odds-descobrir      -> FASE 1 do sync de odds (OddsPapi): resolve torneios/mercados/
 //                                   casas uma vez só (precisa de ODDSPAPI_KEY) — ver comentário
 //                                   detalhado na função abaixo antes de rodar (cota é 250 req/mês)
@@ -1783,8 +1792,33 @@ async function tarefaJogadorPerfil(supabase, playerIdInterno) {
 // 70/30. Platt via gradiente descendente, Isotonic via PAVA.
 // ============================================================
 
+// Mercados que `resultadoReal` sabe calcular o desfecho de verdade.
+// BUG REAL CORRIGIDO: antes disso, qualquer mercado que não fosse '1X2' nem
+// 'over_under_2.5' caía num fallback pra 'corners_over_under_9_5' -- inclusive
+// 'btts', que nunca teve branch próprio. Como a seleção do BTTS é 'yes'/'no'
+// e o resultado calculado pelo fallback era 'over'/'under' (escanteios), a
+// comparação `real === selection` NUNCA batia, então TODA calibração de BTTS
+// já gravada em `model_calibration` foi ajustada contra um alvo sempre-0
+// (falso), não o resultado real de BTTS. Mercados fora dos 4 reconhecidos
+// aqui agora retornam `null` (não calibra) em vez de cair nesse fallback
+// errado em silêncio.
+// BUG REAL CORRIGIDO: `market` não tem casing consistente entre origens --
+// os classificadores do Model Benchmarking (rodar_predicoes.py) gravam
+// '1x2' minúsculo, o modelo misto (treinar_modelo_hibrido.py) grava '1X2'
+// maiúsculo (mesma partida, mesmo mercado, string diferente). Comparação
+// case-SENSITIVE aqui fazia essa função nunca reconhecer 1X2 dos
+// classificadores -- caía no fallback errado (mesma classe de bug do BTTS
+// acima) ou, com o fallback já corrigido pra `null`, simplesmente nunca
+// calibrava 1X2 pra nenhum catboost/xgboost/lightgbm/mlp (medido em
+// produção: recalibrar catboost_v9 sem esse fix devolvia só btts/
+// over_under_2.5, nunca 1X2). Normaliza pra minúsculo antes de comparar.
 function chaveMercadoCalib(m) {
-  return m === '1X2' ? '1X2' : m === 'over_under_2.5' ? 'over_under_2_5' : 'corners_over_under_9_5';
+  const norm = (m || '').toLowerCase();
+  if (norm === '1x2') return '1X2';
+  if (norm === 'over_under_2.5') return 'over_under_2_5';
+  if (norm === 'btts') return 'btts';
+  if (norm === 'corners_over_under_9.5') return 'corners_over_under_9_5';
+  return null;
 }
 
 function ajustarPlatt(xs, ys) {
@@ -1869,8 +1903,28 @@ async function tarefaRecalcularModelStats(supabase, mercado) {
   return { resultado };
 }
 
-async function tarefaCalibracao(supabase, minimo) {
-  const predicoes = await buscarTudoPaginado(() => supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id'));
+// `modelo` é OBRIGATÓRIO -- puxar `model_predictions` sem filtro de
+// model_name estoura o maxDuration=60s desta function (tabela com 2,5M+
+// linhas/81 model_name distintos, achado #19 do CONTEXTO_PROJETO.md; medido
+// em produção: FUNCTION_INVOCATION_TIMEOUT em 60s puxando tudo). Filtrar por
+// `model_name` usa o índice `idx_model_predictions_model_market_match` (já
+// existe, criado especificamente pra esse padrão de acesso) e reduz o volume
+// o bastante pra caber no orçamento -- mesmo padrão de chunking já usado em
+// `tarefaRecalcularModelStats` (`?mercado=X`, ver comentário acima).
+async function tarefaCalibracao(supabase, minimo, modelo, mercado) {
+  if (!modelo) {
+    return { error: 'Especifique ?modelo=X (nome exato de model_predictions.model_name) -- sem filtro, a consulta estoura o maxDuration de 60s.' };
+  }
+  // `mercado` é opcional pros classificadores do Model Benchmarking (poucas
+  // dezenas de milhares de linhas por model_name, cabe tranquilo em 60s),
+  // mas é NECESSÁRIO pro modelo misto (`hibrido_*`, 37 mercados/104 seleções
+  // por partida -- só `hibrido_gols_v1` sozinho tem 1,6M+ linhas, estourava
+  // o timeout mesmo já filtrado por model_name, medido em produção).
+  const predicoes = await buscarTudoPaginado(() => {
+    let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id').eq('model_name', modelo);
+    if (mercado) q = q.eq('market', mercado);
+    return q;
+  });
   const matches = await buscarTudoPaginado(() => supabase.from('matches').select('id, status, home_goals, away_goals, match_date').eq('status', 'finished').not('home_goals', 'is', null));
   const corneragens = await buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null));
 
@@ -1896,9 +1950,16 @@ async function tarefaCalibracao(supabase, minimo) {
       const real = total > 2.5 ? 'over' : 'under';
       return real === selection ? 1 : 0;
     }
-    if (cornersPorJogo[matchId] == null) return null;
-    const real = cornersPorJogo[matchId] > 9.5 ? 'over' : 'under';
-    return real === selection ? 1 : 0;
+    if (chave === 'btts') {
+      const real = (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no';
+      return real === selection ? 1 : 0;
+    }
+    if (chave === 'corners_over_under_9_5') {
+      if (cornersPorJogo[matchId] == null) return null;
+      const real = cornersPorJogo[matchId] > 9.5 ? 'over' : 'under';
+      return real === selection ? 1 : 0;
+    }
+    return null; // mercado sem lógica de resultado real aqui -- não calibra
   }
 
   const grupos = {};
@@ -2917,7 +2978,7 @@ function extrairLinhasOddsGenericas(marketsFixture, mercadosPorId) {
 // vários valores separados por vírgula, custo NÃO escala com o número de
 // ligas). ligaIds sem torneio resolvido em liga_oddspapi_tournament são
 // ignoradas silenciosamente (reportadas em `ligas_sem_torneio`).
-async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
+async function tarefaOddsSyncLote(supabase, apiKey, ligaIds, bookmakerFiltro) {
   const { data: mapas } = await supabase.from('liga_oddspapi_tournament').select('league_id, tournament_id, tournament_name').in('league_id', ligaIds);
   const ligasSemTorneio = ligaIds.filter((id) => !(mapas || []).some((m) => m.league_id === id));
   if (!mapas || mapas.length === 0) {
@@ -2973,8 +3034,17 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
     linhas_inseridas: 0,
   };
 
+  // `bookmakerFiltro` (opcional): restringe a UMA casa só -- usado pelo
+  // workflow do GitHub Actions (sync_odds_todas.yml), que chama esta tarefa
+  // 1x por bookmaker em vez de 1x pras 3 juntas, pra cada invocação da
+  // Vercel caber dentro do maxDuration=60s (achado real: com as 16 ligas/322
+  // candidatos de hoje, as 3 casas juntas passam de 60s e a function mata a
+  // 3ª no meio -- ver CONTEXTO_PROJETO.md). Não muda o número de chamadas
+  // reais à OddsPapi (continua bookmaker × lote) nem a cadência do cron, só
+  // como elas são agrupadas em invocações da Vercel.
+  const bookmakers = bookmakerFiltro ? [bookmakerFiltro] : BOOKMAKERS_ALVO;
   let primeiraChamada = true;
-  for (const bookmaker of BOOKMAKERS_ALVO) {
+  for (const bookmaker of bookmakers) {
     let casados = 0, semCasar = 0, mercadosExtraidos = 0, fixturesRecebidos = 0;
     const linhas = [];
     const errosLotes = [];
@@ -3058,14 +3128,15 @@ async function tarefaOddsSync(supabase, apiKey, ligaId) {
 // Roda o sync batched pra TODAS as ligas com torneio da OddsPapi resolvido
 // (não só as 6 domésticas mais -- qualquer linha em liga_oddspapi_tournament,
 // fonte de verdade dinâmica, sem precisar mexer em código pra adicionar liga
-// nova) — usado pelo cron (vercel.json). Custo FIXO: 3 chamadas (1 por
-// bookmaker), qualquer que seja o número de ligas incluídas (ver comentário
-// de tarefaOddsSyncLote).
-async function tarefaOddsTodas(supabase, apiKey) {
+// nova) — usado pelo workflow do GitHub Actions (sync_odds_todas.yml, que
+// substitui o cron antigo da Vercel: ver `bookmakerFiltro`). Custo FIXO por
+// bookmaker: 1 chamada por lote de até 5 torneios, qualquer que seja o
+// número de ligas incluídas (ver comentário de tarefaOddsSyncLote).
+async function tarefaOddsTodas(supabase, apiKey, bookmakerFiltro) {
   const { data: mapas } = await supabase.from('liga_oddspapi_tournament').select('league_id');
   const ligaIds = (mapas || []).map((m) => m.league_id);
   if (ligaIds.length === 0) return { error: 'Nenhuma liga com torneio da OddsPapi resolvido em liga_oddspapi_tournament.' };
-  return tarefaOddsSyncLote(supabase, apiKey, ligaIds);
+  return tarefaOddsSyncLote(supabase, apiKey, ligaIds, bookmakerFiltro);
 }
 
 const FOOTBALL_DATA_BASE_URL = 'https://api.football-data.org/v4';
@@ -5340,7 +5411,11 @@ export default async function handler(req, res) {
     if (tarefa === 'odds-todas') {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
-      return res.status(200).json(await tarefaOddsTodas(supabase, apiKey));
+      const bookmaker = req.query.bookmaker;
+      if (bookmaker && !BOOKMAKERS_ALVO.includes(bookmaker)) {
+        return res.status(400).json({ error: { message: `?bookmaker=${bookmaker} inválido -- use um de: ${BOOKMAKERS_ALVO.join(', ')} (ou omita pra rodar as 3).` } });
+      }
+      return res.status(200).json(await tarefaOddsTodas(supabase, apiKey, bookmaker || undefined));
     }
 
     if (tarefa === 'odds-historico-descobrir') {
@@ -5417,7 +5492,9 @@ export default async function handler(req, res) {
     }
 
     if (tarefa === 'calibracao') {
-      return res.status(200).json(await tarefaCalibracao(supabase, Number(minimo) || 80));
+      const resultadoCalib = await tarefaCalibracao(supabase, Number(minimo) || 80, req.query.modelo || null, req.query.mercado || null);
+      if (resultadoCalib.error) return res.status(400).json({ error: { message: resultadoCalib.error } });
+      return res.status(200).json(resultadoCalib);
     }
 
     if (tarefa === 'recalcular-model-stats') {

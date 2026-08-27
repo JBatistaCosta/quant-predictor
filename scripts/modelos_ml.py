@@ -31,8 +31,12 @@ from dados_historicos import (
     CAT_FEATURES,
     FEATURES,
     FEATURES_V9,
+    FEATURES_V9_XG_CORRIGIDO,
     FEATURES_V10,
+    FEATURES_V10_XG_CORRIGIDO,
     FEATURES_V11,
+    FEATURES_V11_XG_CORRIGIDO,
+    FEATURES_V12_MESMA_LIGA,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
@@ -169,36 +173,52 @@ FEATURES_POR_MODELO = {
     # titular_valor_mercado home/away + diferenciais), ver FEATURES_XG_XI_V2.
     "catboost_xg_regressor_v2": FEATURES_XG_XI_V2,
     "catboost_xgot_regressor_v2": FEATURES_XG_XI_V2,
-    # Modelo misto -- feature set mais completo disponível (v10), já que o
-    # ponto do híbrido é justamente levar pro λ todo o contexto pré-jogo que
-    # o Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
+    # Modelo misto -- feature set mais completo disponível, já que o ponto
+    # do híbrido é justamente levar pro λ todo o contexto pré-jogo que o
+    # Dixon-Coles clássico ignora (elo, forma, XI titular, fadiga, árbitro,
     # classificação), em vez de só força de ataque/defesa por time.
-    "hibrido_gols_v1": FEATURES_V10,
-    "hibrido_gols_xg_v1": FEATURES_V10,
-    "hibrido_corners_v1": FEATURES_V10,
-    "hibrido_gols_lgbm_v1": FEATURES_V10,
+    #
+    # FEATURES_V12_MESMA_LIGA em vez de FEATURES_V10_XG_CORRIGIDO -- teste
+    # (dry-run, `treinar_modelo_hibrido.py --sem-gravar`) da forma "mesma
+    # liga" em paralelo à pooled (ver comentário de FEATURES_NUMERICAS_V12_
+    # MESMA_LIGA em dados_historicos.py): a janela pooled mistura competição
+    # doméstica e continental pro mesmo time, achado real via investigação
+    # (28,8% das previsões com pelo menos 1 jogo de outra competição na
+    # janela, chegando a 61,5%/quase metade da janela nas previsões
+    # continentais). Testado isolado nos 4 `hibrido_*` primeiro (mesmo
+    # padrão do achado #15/PR #366) antes de decidir se estende aos
+    # classificadores v9/v10/v11.
+    "hibrido_gols_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_gols_xg_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_corners_v1": FEATURES_V12_MESMA_LIGA,
+    "hibrido_gols_lgbm_v1": FEATURES_V12_MESMA_LIGA,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
-    "catboost_v9": FEATURES_V9,
-    "xgboost_v9": FEATURES_V9,
-    "lightgbm_v9": FEATURES_V9,
-    "mlp_v9": FEATURES_V9,
+    # FEATURES_V9_XG_CORRIGIDO em vez de FEATURES_V9 -- achado #15
+    # (CONTEXTO_PROJETO.md), mesmo fix já testado isolado nos 4 `hibrido_*`
+    # (PR #366) e agora estendido pra cá: validar via `backtest_kelly.py`
+    # antes de mergear, já que `predict.yml` (cron diário) não tem flag de
+    # dry-run.
+    "catboost_v9": FEATURES_V9_XG_CORRIGIDO,
+    "xgboost_v9": FEATURES_V9_XG_CORRIGIDO,
+    "lightgbm_v9": FEATURES_V9_XG_CORRIGIDO,
+    "mlp_v9": FEATURES_V9_XG_CORRIGIDO,
     # v10 — v9 + idade/altura do XI titular (na data da partida) + venue_capacity_home.
     # Cobertura depende do backfill de birth_date/height (ingestao_perfil_jogador_local)
     # e de stadium_capacity (ingestao_equipes_local). Features ficam NaN onde sem dado,
     # mesma tolerância de titular_rating/valor_mercado (v3B).
-    "catboost_v10": FEATURES_V10,
-    "xgboost_v10": FEATURES_V10,
-    "lightgbm_v10": FEATURES_V10,
-    "mlp_v10": FEATURES_V10,
+    "catboost_v10": FEATURES_V10_XG_CORRIGIDO,
+    "xgboost_v10": FEATURES_V10_XG_CORRIGIDO,
+    "lightgbm_v10": FEATURES_V10_XG_CORRIGIDO,
+    "mlp_v10": FEATURES_V10_XG_CORRIGIDO,
     # v11 — v10 + força do XI titular com abertura (previsto) e fechamento
     # (real) como features paralelas -- ver comentário de FEATURES_V11 em
     # dados_historicos.py. NÃO estende a cadeia v9/v10 automaticamente --
     # versão opcional/selecionável, validada via walkforward_cv_v11.py
     # antes de entrar no loop diário (rodar_predicoes.py).
-    "catboost_v11": FEATURES_V11,
-    "xgboost_v11": FEATURES_V11,
-    "lightgbm_v11": FEATURES_V11,
-    "mlp_v11": FEATURES_V11,
+    "catboost_v11": FEATURES_V11_XG_CORRIGIDO,
+    "xgboost_v11": FEATURES_V11_XG_CORRIGIDO,
+    "lightgbm_v11": FEATURES_V11_XG_CORRIGIDO,
+    "mlp_v11": FEATURES_V11_XG_CORRIGIDO,
 }
 
 
