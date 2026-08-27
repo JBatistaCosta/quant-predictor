@@ -1,0 +1,72 @@
+name: Sync de Odds ao Vivo (OddsPapi)
+
+# Substitui o cron `odds-todas` que rodava na Vercel (removido de
+# vercel.json) -- achado real em produção: com as 16 ligas/~320 candidatos
+# de hoje, tarefaOddsSyncLote rodando as 3 casas (pinnacle/bet365/betano)
+# numa invocação só passa dos 60s de maxDuration da Vercel, e a function é
+# morta no meio da 3ª casa (FUNCTION_INVOCATION_TIMEOUT) -- pinnacle e
+# bet365 chegavam a inserir, betano nunca terminava. Corrigido dividindo em
+# 3 chamadas HTTP separadas (uma por bookmaker via ?bookmaker=X, api/
+# model-maintenance.js), cada uma pequena o bastante pra caber em 60s --
+# mesmo padrão já usado em backfill_odds_historico.yml (loop de curl no
+# runner do GitHub Actions, que não tem esse limite de 60s por chamada).
+#
+# NÃO aumenta o consumo de cota da OddsPapi nem a frequência do sync: o
+# custo real é bookmaker × lote de torneios (hoje 3 × 4 = 12 chamadas por
+# rodada, igual a antes) -- só muda quantas invocações da Vercel agrupam
+# essas chamadas. `sleep` entre as 3 chamadas evita rate-limit (429) por
+# chamadas emendadas rápido demais, mesmo espírito do cooldown de 800ms já
+# existente dentro de tarefaOddsSyncLote pra chamadas dentro da MESMA
+# invocação.
+
+on:
+  schedule:
+    - cron: '0 16 */3 * *'   # mesmo horário/cadência do cron antigo da Vercel
+  workflow_dispatch:
+    inputs:
+      bookmakers:
+        description: 'Bookmakers a sincronizar, separados por espaço (vazio = pinnacle bet365 betano)'
+        required: false
+        type: string
+
+concurrency:
+  group: sync-odds-todas
+  cancel-in-progress: true
+
+jobs:
+  sync-odds-todas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Sincronizar odds (1 chamada por bookmaker)
+        run: |
+          set -uo pipefail
+          BOOKMAKERS="${{ inputs.bookmakers }}"
+          if [ -z "$BOOKMAKERS" ]; then BOOKMAKERS="pinnacle bet365 betano"; fi
+
+          echo "=== INICIO $(date -u +%FT%TZ) -- bookmakers: $BOOKMAKERS ==="
+
+          PRIMEIRA=1
+          for BK in $BOOKMAKERS; do
+            if [ "$PRIMEIRA" != "1" ]; then sleep 3; fi
+            PRIMEIRA=0
+
+            echo "$(date -u +%FT%TZ) bookmaker=$BK -- chamando..."
+            RESP=$(curl -sS "https://quant-predictor.vercel.app/api/model-maintenance?tarefa=odds-todas&bookmaker=$BK" --max-time 90 2>&1)
+            echo "$(date -u +%FT%TZ) bookmaker=$BK resposta: $RESP"
+
+            ERRO=$(echo "$RESP" | python3 -c "
+          import json,sys
+          try:
+              d=json.load(sys.stdin)
+              print(d.get('error',{}).get('message','') if isinstance(d.get('error'), dict) else '')
+          except Exception as e:
+              print(f'resposta invalida: {e}')
+          " 2>/dev/null) || ERRO="resposta invalida"
+            if [ -n "$ERRO" ]; then
+              echo "$(date -u +%FT%TZ) bookmaker=$BK AVISO: $ERRO"
+            fi
+          done
+
+          echo "=== FIM DA EXECUCAO $(date -u +%FT%TZ) ==="
