@@ -1,46 +1,59 @@
 #!/usr/bin/env python3
-"""IC95% por bootstrap do log-loss/acurácia de cada modelo, por liga -- responde
-"essa diferença entre modelos é real ou é ruído de amostra pequena?" pro
-ranking "melhor modelo por liga" que `api/model-stats.js`/`ModelosStats.jsx`
-já mostram (log-loss/Brier/acurácia puros, sem intervalo de confiança).
+"""IC95% por bootstrap E teste de McNemar pareado, por liga -- responde duas
+perguntas que o ranking puro do painel `/modelos` (log-loss/Brier/acurácia,
+sem teste nenhum) não responde: "esse modelo é bom o bastante sozinho?" (IC95%
+marginal) e "esse modelo é REALMENTE diferente do líder da liga, ou só ficou
+por trás por ruído de amostra pequena?" (McNemar pareado, qui-quadrado).
 
-Motivação (CONTEXTO_PROJETO.md, achado #27): investigando por que o modelo
-misto (`hibrido_gols_v1`/`hibrido_gols_xg_v1`) aparecia como "melhor" em
-Bundesliga/Champions League/Copa Libertadores no mercado Over/Under 2.5,
+Motivação do IC95% (CONTEXTO_PROJETO.md, achado #27): investigando por que o
+modelo misto (`hibrido_gols_v1`/`hibrido_gols_xg_v1`) aparecia como "melhor"
+em Bundesliga/Champions League/Copa Libertadores no mercado Over/Under 2.5,
 um bootstrap ad-hoc (2000 reamostragens, mesmo espírito de
 `backtest_kelly.comparar_pareado_com_mercado` -- só que comparando MODELOS
 entre si, não modelo-vs-mercado) mostrou que a "vitória" na Bundesliga não
-resiste ao IC95% (sobreposição quase total com os classificadores) e que as
-duas variantes do próprio híbrido trocam de posição entre ligas (sinal de
-ruído, não de edge estrutural). Este script generaliza aquele bootstrap
-ad-hoc pra QUALQUER (model_name, market, league_id) com amostra suficiente,
-persistindo o resultado em `model_stats_ic` (migration
-<TIMESTAMP>_model_stats_ic.sql) -- mesmo padrão de tabela pré-calculada já
-usado por `model_stats_resumo` (migration 20260825001000), só que aqui o
-bootstrap não cabe numa agregação SQL/plpgsql (precisa reamostrar linha a
-linha com reposição), por isso um script Python em vez de uma função
-`recalcular_*` chamada via RPC.
+resiste ao IC95% (sobreposição quase total com os classificadores). Esse
+script generalizou aquele bootstrap ad-hoc (achado #28).
+
+Motivação do McNemar (achado #29, pedido explícito do usuário): duas IC95%
+marginais que se sobrepõem não PROVAM que os modelos empatam -- é uma leitura
+conservadora, informal. McNemar é o teste certo pra "modelo A bate modelo B
+na MESMA amostra pareada de partidas": usa só os jogos onde os dois
+DISCORDAM (um acerta, o outro erra) -- b = A acerta/líder erra, c = A
+erra/líder acerta -- estatística qui-quadrado com correção de continuidade
+de Yates, `qui2 = (|b-c|-1)² / (b+c)`, p-valor pela cauda superior da
+qui-quadrado com 1 grau de liberdade (`scipy.stats.chi2.sf`). Comparar contra
+TODOS os pares (C(n,2) por grupo) explodiria combinatoriamente e a maioria
+das comparações não interessa -- em vez disso, cada modelo não-líder de um
+grupo (model_name, market, league_id) é comparado só contra o LÍDER do grupo
+(menor log-loss médio, mesmo critério de ranking já usado no painel) --
+responde diretamente "o líder bate esse modelo de verdade?", que é a pergunta
+prática de quem está decidindo qual modelo usar.
 
 Descoberta dos combos a avaliar: reaproveita `model_stats_resumo` (já lista
 todo model_name presente em cada mercado, tabela pequena) em vez de fazer
-`SELECT DISTINCT` em `model_predictions` (5,2M+ linhas) -- mesma
-combinação que o painel `/modelos` já trata como "existe dado suficiente
-pra mostrar". Puxa as previsões de UM (model_name, market) por vez (só
-~102 combinações no total hoje, bem menos que as ~730 linhas de
-model_stats_resumo, que já é por LIGA) e agrupa por liga em memória --
-evita repetir a mesma busca de `model_predictions` uma vez por liga.
+`SELECT DISTINCT` em `model_predictions` (5,2M+ linhas) -- mesma combinação
+que o painel `/modelos` já trata como "existe dado suficiente pra mostrar".
+
+Diferente da primeira versão deste script (achado #28), agora carrega TODOS
+os modelos de um mercado ANTES de agrupar por liga -- precisa ter todo mundo
+em memória ao mesmo tempo pra identificar o líder de cada liga e casar
+partida a partida com ele (McNemar é pareado por match_id, não dá pra
+processar um modelo por vez e descartar como a versão anterior fazia).
 
 Resultado real: gols reais (`matches.home_goals/away_goals`) pra 1X2/
 Over-Under 2.5, total de escanteios (`match_stats_fotmob`, mesma fonte de
-`avaliar_modelo_misto_vs_mercado._carregar_resultados_reais`) pro mercado
-de escanteios.
+`avaliar_modelo_misto_vs_mercado._carregar_resultados_reais`) pro mercado de
+escanteios.
 
-Amostra mínima de 30 partidas por grupo (mesmo corte de
-`avaliar_modelo_misto_vs_mercado.py`) -- abaixo disso nem tenta, o IC seria
-tão largo que não diria nada.
+Amostra mínima de 30 partidas por grupo pro IC95% (mesmo corte de
+`avaliar_modelo_misto_vs_mercado.py`); McNemar exige a INTERSECÇÃO de
+partidas entre o modelo e o líder, com o mesmo mínimo de 30 -- calculado e
+persistido mesmo quando poucos pares são discordantes (chi-quadrado fica
+menos confiável com poucos pares discordantes, sinalizado via `confiavel`
+quando b+c < 10, não omitido).
 
 Não grava nada em `model_predictions`/`matches` -- só leitura desses,
-escrita em `model_stats_ic`.
+escrita em `model_stats_ic`/`model_stats_mcnemar`.
 
 Uso:
     set SUPABASE_URL=...
@@ -59,6 +72,8 @@ import sys
 
 import numpy as np
 import pandas as pd
+from postgrest.exceptions import APIError
+from scipy.stats import chi2
 from supabase import create_client
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -78,6 +93,13 @@ MERCADOS = {
 }
 
 AMOSTRA_MINIMA = 30
+# Abaixo desse total de pares DISCORDANTES (b+c), a aproximação qui-quadrado
+# de McNemar (mesmo com correção de continuidade) é pouco confiável -- regra
+# prática clássica (equivalente ao "célula esperada < 5" do qui-quadrado
+# comum). Não descarta a linha, só marca `confiavel=false` -- mesmo espírito
+# de `AMOSTRA_MINIMA_CONFIAVEL` em `avaliar_modelo_misto_vs_mercado.py`
+# (avisar em vez de omitir).
+MINIMO_DISCORDANTES_CONFIAVEL = 10
 N_REAMOSTRAGENS = 2000
 SEED = 42
 LOTE_UPSERT = 500
@@ -119,7 +141,22 @@ def _paginar_predicoes(supabase, model_name: str, mercado: str) -> dict[int, dic
         if cursor is not None:
             cursor_match_id, cursor_selecao = cursor
             query = query.or_(f"match_id.gt.{cursor_match_id},and(match_id.eq.{cursor_match_id},selection.gt.{cursor_selecao})")
-        pagina = query.execute().data or []
+        try:
+            pagina = query.execute().data or []
+        except APIError as e:
+            # Mesmo padrão de `avaliar_modelo_misto_vs_mercado._carregar_
+            # predicoes` -- `statement_timeout` (role `anon`=3s, acha real
+            # documentado no achado #19) é tratado como "para com o que já
+            # tem" em vez de derrubar o script inteiro; rodando com
+            # `SUPABASE_SERVICE_ROLE_KEY` (uso normal via GitHub Actions)
+            # isso não costuma disparar.
+            if e.code == "57014":
+                logger.warning(
+                    "%s [%s]: timeout paginando model_predictions (cursor=%s) -- seguindo com %d partida(s) já lida(s).",
+                    model_name, mercado, cursor, len(predicoes),
+                )
+                break
+            raise
         for linha in pagina:
             predicoes.setdefault(linha["match_id"], {})[linha["selection"]] = float(linha["probability"])
         if len(pagina) < 1000:
@@ -182,14 +219,40 @@ def _clamp(p: float, eps: float = 1e-4) -> float:
     return min(max(p, eps), 1 - eps)
 
 
-def _log_loss_e_acertos(linhas: list[tuple[dict, str]]) -> tuple[np.ndarray, np.ndarray]:
-    log_losses = np.empty(len(linhas))
-    acertos = np.empty(len(linhas))
-    for i, (probs, real) in enumerate(linhas):
+def carregar_dados_mercado(supabase, mercado: str, modelos: list[str]) -> dict[int, dict[str, dict[int, tuple[dict, str]]]]:
+    """`league_id -> model_name -> match_id -> (probs, seleção_real)`.
+
+    Um `model_name` por vez na BUSCA (mesma paginação de antes), mas o
+    resultado fica todo residente em memória por mercado -- diferente da
+    primeira versão (achado #28), que processava e descartava um modelo por
+    vez. Necessário aqui: McNemar casa partida a partida entre dois modelos,
+    então precisa dos dois num lugar só ao mesmo tempo. Custo de memória é o
+    mesmo total de linhas já buscadas antes, só residente por mais tempo."""
+    selecoes_esperadas = MERCADOS[mercado]
+    dados: dict[int, dict[str, dict[int, tuple[dict, str]]]] = {}
+    for model_name in modelos:
+        predicoes = _paginar_predicoes(supabase, model_name, mercado)
+        if not predicoes:
+            continue
+        resultados = _carregar_resultados_reais(supabase, list(predicoes.keys()), mercado)
+        for match_id, (league_id, real) in resultados.items():
+            probs = predicoes.get(match_id)
+            if not probs or not all(s in probs for s in selecoes_esperadas):
+                continue
+            dados.setdefault(league_id, {}).setdefault(model_name, {})[match_id] = (probs, real)
+    return dados
+
+
+def _log_loss_e_acertos(por_match: dict[int, tuple[dict, str]]) -> tuple[list[int], np.ndarray, np.ndarray]:
+    match_ids = list(por_match.keys())
+    log_losses = np.empty(len(match_ids))
+    acertos = np.empty(len(match_ids))
+    for i, match_id in enumerate(match_ids):
+        probs, real = por_match[match_id]
         log_losses[i] = -np.log(_clamp(probs[real]))
         favorito = max(probs, key=probs.get)
         acertos[i] = 1.0 if favorito == real else 0.0
-    return log_losses, acertos
+    return match_ids, log_losses, acertos
 
 
 def _bootstrap_ic95(log_losses: np.ndarray, acertos: np.ndarray, rng: np.random.Generator, n_reamostragens: int = N_REAMOSTRAGENS) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -210,49 +273,98 @@ def _bootstrap_ic95(log_losses: np.ndarray, acertos: np.ndarray, rng: np.random.
     return (float(ll_lo), float(ll_hi)), (float(acc_lo), float(acc_hi))
 
 
-def avaliar_modelo_mercado(supabase, model_name: str, mercado: str, rng: np.random.Generator) -> list[dict]:
-    predicoes = _paginar_predicoes(supabase, model_name, mercado)
-    if not predicoes:
-        return []
+def mcnemar(b: int, c: int) -> tuple[float, float]:
+    """Qui-quadrado de McNemar com correção de continuidade de Yates --
+    fórmula clássica `(|b-c|-1)² / (b+c)`, p-valor pela cauda superior da
+    qui-quadrado com 1 grau de liberdade. `b`/`c` são os pares DISCORDANTES
+    (um modelo acerta, o outro erra) -- concordâncias (os dois acertam ou os
+    dois erram) não entram na estatística, não carregam informação sobre
+    QUAL dos dois é melhor."""
+    total_discordantes = b + c
+    if total_discordantes == 0:
+        return 0.0, 1.0
+    estatistica = (abs(b - c) - 1) ** 2 / total_discordantes
+    p_valor = float(chi2.sf(estatistica, df=1))
+    return float(estatistica), p_valor
 
-    resultados = _carregar_resultados_reais(supabase, list(predicoes.keys()), mercado)
-    selecoes_esperadas = MERCADOS[mercado]
 
-    por_liga: dict[int, list[tuple[dict, str]]] = {}
-    for match_id, (league_id, real) in resultados.items():
-        probs = predicoes.get(match_id)
-        if not probs or not all(s in probs for s in selecoes_esperadas):
+def avaliar_mercado(dados: dict, mercado: str, rng: np.random.Generator) -> tuple[list[dict], list[dict]]:
+    linhas_ic: list[dict] = []
+    linhas_mcnemar: list[dict] = []
+
+    for league_id, por_modelo in dados.items():
+        stats_modelo = {}
+        for model_name, por_match in por_modelo.items():
+            if len(por_match) < AMOSTRA_MINIMA:
+                continue
+            match_ids, log_losses, acertos = _log_loss_e_acertos(por_match)
+            stats_modelo[model_name] = {
+                "match_ids": match_ids, "log_losses": log_losses, "acertos": acertos,
+                "log_loss_medio": float(log_losses.mean()),
+            }
+        if not stats_modelo:
             continue
-        por_liga.setdefault(league_id, []).append((probs, real))
 
-    saidas = []
-    for league_id, linhas in por_liga.items():
-        if len(linhas) < AMOSTRA_MINIMA:
-            continue
-        log_losses, acertos = _log_loss_e_acertos(linhas)
-        (ll_lo, ll_hi), (acc_lo, acc_hi) = _bootstrap_ic95(log_losses, acertos, rng)
-        saidas.append({
-            "model_name": model_name, "market": mercado, "league_id": league_id,
-            "n_jogos": len(linhas),
-            "log_loss": round(float(log_losses.mean()), 4),
-            "log_loss_ic_inf": round(ll_lo, 4), "log_loss_ic_sup": round(ll_hi, 4),
-            "accuracy": round(float(acertos.mean()), 4),
-            "accuracy_ic_inf": round(acc_lo, 4), "accuracy_ic_sup": round(acc_hi, 4),
-        })
-    return saidas
+        for model_name, st in stats_modelo.items():
+            (ll_lo, ll_hi), (acc_lo, acc_hi) = _bootstrap_ic95(st["log_losses"], st["acertos"], rng)
+            linhas_ic.append({
+                "model_name": model_name, "market": mercado, "league_id": league_id,
+                "n_jogos": len(st["match_ids"]),
+                "log_loss": round(st["log_loss_medio"], 4),
+                "log_loss_ic_inf": round(ll_lo, 4), "log_loss_ic_sup": round(ll_hi, 4),
+                "accuracy": round(float(st["acertos"].mean()), 4),
+                "accuracy_ic_inf": round(acc_lo, 4), "accuracy_ic_sup": round(acc_hi, 4),
+            })
+
+        # Líder = menor log-loss médio do grupo (mesmo critério de ranking já
+        # usado pelo painel `/modelos`) -- todo outro modelo é comparado só
+        # contra ele via McNemar, não contra todos os pares possíveis.
+        lider = min(stats_modelo, key=lambda m: stats_modelo[m]["log_loss_medio"])
+        acertos_lider = dict(zip(stats_modelo[lider]["match_ids"], stats_modelo[lider]["acertos"]))
+        match_ids_lider = set(stats_modelo[lider]["match_ids"])
+
+        for model_name, st in stats_modelo.items():
+            if model_name == lider:
+                continue
+            match_ids_comuns = match_ids_lider & set(st["match_ids"])
+            if len(match_ids_comuns) < AMOSTRA_MINIMA:
+                continue
+            acertos_modelo = dict(zip(st["match_ids"], st["acertos"]))
+            b = c = concordantes = 0
+            for match_id in match_ids_comuns:
+                a_ok = acertos_modelo[match_id] == 1.0
+                l_ok = acertos_lider[match_id] == 1.0
+                if a_ok and not l_ok:
+                    b += 1
+                elif l_ok and not a_ok:
+                    c += 1
+                else:
+                    concordantes += 1
+            estatistica, p_valor = mcnemar(b, c)
+            linhas_mcnemar.append({
+                "market": mercado, "league_id": league_id,
+                "model_name": model_name, "model_lider": lider,
+                "n_pareado": len(match_ids_comuns), "n_concordantes": concordantes,
+                "n_favorece_model": b, "n_favorece_lider": c,
+                "qui2": round(estatistica, 4), "p_valor": round(p_valor, 6),
+                "significativo": p_valor < 0.05,
+                "confiavel": (b + c) >= MINIMO_DISCORDANTES_CONFIAVEL,
+            })
+
+    return linhas_ic, linhas_mcnemar
 
 
-def upsert_em_lotes(supabase, linhas: list[dict]) -> int:
+def upsert_em_lotes(supabase, tabela: str, linhas: list[dict], on_conflict: str) -> int:
     for i in range(0, len(linhas), LOTE_UPSERT):
-        supabase.table("model_stats_ic").upsert(linhas[i : i + LOTE_UPSERT], on_conflict="model_name,market,league_id").execute()
+        supabase.table(tabela).upsert(linhas[i : i + LOTE_UPSERT], on_conflict=on_conflict).execute()
     return len(linhas)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="IC95% por bootstrap do log-loss/acurácia de cada modelo, por liga.")
+    parser = argparse.ArgumentParser(description="IC95% por bootstrap e McNemar pareado (log-loss/acurácia), por liga.")
     parser.add_argument("--mercados", default="", help="Subconjunto separado por vírgula (vazio = todos os 3 de model_stats_resumo).")
     parser.add_argument("--modelos", default="", help="Subconjunto de model_name separado por vírgula (vazio = todos os de model_stats_resumo pro mercado). Útil pra teste rápido.")
-    parser.add_argument("--sem-gravar", action="store_true", help="Só imprime, não escreve em model_stats_ic.")
+    parser.add_argument("--sem-gravar", action="store_true", help="Só imprime, não escreve em model_stats_ic/model_stats_mcnemar.")
     args = parser.parse_args()
     filtro_modelos = {m.strip() for m in args.modelos.split(",") if m.strip()} or None
 
@@ -264,33 +376,45 @@ def main() -> None:
         if m not in MERCADOS:
             sys.exit(f"Mercado desconhecido: {m!r} (válidos: {list(MERCADOS.keys())})")
 
-    todas_as_linhas: list[dict] = []
+    todas_ic: list[dict] = []
+    todas_mcnemar: list[dict] = []
     for mercado in mercados:
         modelos = _modelos_por_mercado(supabase, mercado)
         if filtro_modelos is not None:
             modelos = [m for m in modelos if m in filtro_modelos]
-        logger.info("[%s] %d modelo(s) a avaliar.", mercado, len(modelos))
-        for model_name in modelos:
-            linhas = avaliar_modelo_mercado(supabase, model_name, mercado, rng)
-            if linhas:
-                logger.info("[%s/%s] IC95%% calculado em %d liga(s).", model_name, mercado, len(linhas))
-            todas_as_linhas.extend(linhas)
+        logger.info("[%s] carregando %d modelo(s)...", mercado, len(modelos))
+        dados = carregar_dados_mercado(supabase, mercado, modelos)
+        linhas_ic, linhas_mcnemar = avaliar_mercado(dados, mercado, rng)
+        logger.info("[%s] IC95%% em %d grupo(s), McNemar em %d comparação(ões) contra o líder.", mercado, len(linhas_ic), len(linhas_mcnemar))
+        todas_ic.extend(linhas_ic)
+        todas_mcnemar.extend(linhas_mcnemar)
 
-    todas_as_linhas.sort(key=lambda r: (r["market"], r["league_id"], r["log_loss"]))
-    for r in todas_as_linhas:
+    todas_ic.sort(key=lambda r: (r["market"], r["league_id"], r["log_loss"]))
+    for r in todas_ic:
         logger.info(
-            "%-30s %-22s liga=%-3d n=%-5d log-loss=%.4f IC95%%=[%.4f,%.4f]  acc=%.1f%% IC95%%=[%.1f%%,%.1f%%]",
+            "[IC]      %-30s %-22s liga=%-3d n=%-5d log-loss=%.4f IC95%%=[%.4f,%.4f]  acc=%.1f%% IC95%%=[%.1f%%,%.1f%%]",
             r["market"], r["model_name"], r["league_id"], r["n_jogos"],
             r["log_loss"], r["log_loss_ic_inf"], r["log_loss_ic_sup"],
             r["accuracy"] * 100, r["accuracy_ic_inf"] * 100, r["accuracy_ic_sup"] * 100,
         )
 
+    todas_mcnemar.sort(key=lambda r: (r["market"], r["league_id"], r["p_valor"]))
+    for r in todas_mcnemar:
+        veredito = "SIGNIFICATIVO" if r["significativo"] else "não significativo"
+        aviso = "" if r["confiavel"] else " (poucos pares discordantes, pouco confiável)"
+        logger.info(
+            "[McNemar] %-30s vs líder %-30s liga=%-3d n_pareado=%-5d b=%-4d c=%-4d qui2=%.3f p=%.4f -- %s%s",
+            r["model_name"], r["model_lider"], r["league_id"], r["n_pareado"],
+            r["n_favorece_model"], r["n_favorece_lider"], r["qui2"], r["p_valor"], veredito, aviso,
+        )
+
     if args.sem_gravar:
-        print(f"\n(--sem-gravar: {len(todas_as_linhas)} linha(s) NÃO escritas em model_stats_ic.)")
+        print(f"\n(--sem-gravar: {len(todas_ic)} linha(s) de IC e {len(todas_mcnemar)} de McNemar NÃO escritas.)")
         return
 
-    n_gravadas = upsert_em_lotes(supabase, todas_as_linhas) if todas_as_linhas else 0
-    logger.info("Gravadas %d linha(s) em model_stats_ic.", n_gravadas)
+    n_ic = upsert_em_lotes(supabase, "model_stats_ic", todas_ic, "model_name,market,league_id") if todas_ic else 0
+    n_mc = upsert_em_lotes(supabase, "model_stats_mcnemar", todas_mcnemar, "market,league_id,model_name") if todas_mcnemar else 0
+    logger.info("Gravadas %d linha(s) em model_stats_ic e %d em model_stats_mcnemar.", n_ic, n_mc)
 
 
 if __name__ == "__main__":

@@ -72,6 +72,24 @@ function Metrica({ label, modelo, mercado, ic, menorMelhor = true, formato = 'nu
   );
 }
 
+// McNemar pareado (qui-quadrado, achado #29) -- cada modelo contra o LÍDER
+// (menor log-loss) do mesmo grupo, populado por model_stats_mcnemar. Uma IC95%
+// sobreposta (achado #27/#28) não prova empate técnico; isso testa direto.
+function McNemarBadge({ g }) {
+  if (g.mcnemar_eh_lider) {
+    return <div className="text-xs text-amber-400/90 mb-4">★ Líder do grupo (menor log-loss) — outros modelos são comparados contra este via McNemar.</div>;
+  }
+  if (g.mcnemar_p_valor == null) return null;
+  const cor = g.mcnemar_significativo ? 'text-red-400' : 'text-slate-400';
+  const veredito = g.mcnemar_significativo ? 'diferença real (significativo)' : 'não significativo';
+  return (
+    <div className={`text-xs mb-4 ${cor}`}>
+      McNemar vs. líder ({rotuloModelo(g.mcnemar_lider)}): p={g.mcnemar_p_valor.toFixed(4)} — {veredito}
+      {!g.mcnemar_confiavel && <span className="text-slate-600"> (poucos pares discordantes, pouco confiável — n={g.mcnemar_n_pareado})</span>}
+    </div>
+  );
+}
+
 function Calibracao({ quintis }) {
   if (!quintis || quintis.length === 0) return <p className="text-xs text-slate-600">Sem dado suficiente.</p>;
   const temMercado = quintis.some(q => q.mercado_medio != null);
@@ -671,7 +689,14 @@ function gerarMarkdown(grupos, ligasPorId) {
     md += `- Jogos avaliados: ${g.n_jogos}\n`;
     md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}${g.log_loss_ic_inf != null ? ` — IC95% [${g.log_loss_ic_inf.toFixed(4)}, ${g.log_loss_ic_sup.toFixed(4)}]` : ''}\n`;
     md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
-    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}${g.accuracy_ic_inf != null ? ` — IC95% [${(g.accuracy_ic_inf * 100).toFixed(1)}%, ${(g.accuracy_ic_sup * 100).toFixed(1)}%]` : ''}\n\n`;
+    md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}${g.accuracy_ic_inf != null ? ` — IC95% [${(g.accuracy_ic_inf * 100).toFixed(1)}%, ${(g.accuracy_ic_sup * 100).toFixed(1)}%]` : ''}\n`;
+    if (g.mcnemar_eh_lider) {
+      md += `- McNemar: líder do grupo (menor log-loss)\n\n`;
+    } else if (g.mcnemar_p_valor != null) {
+      md += `- McNemar vs. líder (${g.mcnemar_lider}): p=${g.mcnemar_p_valor.toFixed(4)} — ${g.mcnemar_significativo ? 'diferença real (significativo)' : 'não significativo'}${!g.mcnemar_confiavel ? ' (poucos pares discordantes, pouco confiável)' : ''}\n\n`;
+    } else {
+      md += `\n`;
+    }
     if (g.calibracao_disponivel) {
       md += `**Ajuste de calibração (com e sem)**\n\n`;
       md += `| Método | Log-loss | Brier | Acurácia |\n|---|---|---|---|\n`;
@@ -852,6 +877,8 @@ export default function ModelosStats() {
                 <Metrica label="Brier Score" modelo={g.brier_modelo} mercado={g.brier_mercado} />
                 <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" ic={[g.accuracy_ic_inf, g.accuracy_ic_sup]} />
               </div>
+
+              <McNemarBadge g={g} />
 
               <AjusteCalibracao g={g} />
 
