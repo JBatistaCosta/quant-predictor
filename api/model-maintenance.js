@@ -2978,7 +2978,7 @@ function extrairLinhasOddsGenericas(marketsFixture, mercadosPorId) {
 // vários valores separados por vírgula, custo NÃO escala com o número de
 // ligas). ligaIds sem torneio resolvido em liga_oddspapi_tournament são
 // ignoradas silenciosamente (reportadas em `ligas_sem_torneio`).
-async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
+async function tarefaOddsSyncLote(supabase, apiKey, ligaIds, bookmakerFiltro) {
   const { data: mapas } = await supabase.from('liga_oddspapi_tournament').select('league_id, tournament_id, tournament_name').in('league_id', ligaIds);
   const ligasSemTorneio = ligaIds.filter((id) => !(mapas || []).some((m) => m.league_id === id));
   if (!mapas || mapas.length === 0) {
@@ -3034,8 +3034,17 @@ async function tarefaOddsSyncLote(supabase, apiKey, ligaIds) {
     linhas_inseridas: 0,
   };
 
+  // `bookmakerFiltro` (opcional): restringe a UMA casa só -- usado pelo
+  // workflow do GitHub Actions (sync_odds_todas.yml), que chama esta tarefa
+  // 1x por bookmaker em vez de 1x pras 3 juntas, pra cada invocação da
+  // Vercel caber dentro do maxDuration=60s (achado real: com as 16 ligas/322
+  // candidatos de hoje, as 3 casas juntas passam de 60s e a function mata a
+  // 3ª no meio -- ver CONTEXTO_PROJETO.md). Não muda o número de chamadas
+  // reais à OddsPapi (continua bookmaker × lote) nem a cadência do cron, só
+  // como elas são agrupadas em invocações da Vercel.
+  const bookmakers = bookmakerFiltro ? [bookmakerFiltro] : BOOKMAKERS_ALVO;
   let primeiraChamada = true;
-  for (const bookmaker of BOOKMAKERS_ALVO) {
+  for (const bookmaker of bookmakers) {
     let casados = 0, semCasar = 0, mercadosExtraidos = 0, fixturesRecebidos = 0;
     const linhas = [];
     const errosLotes = [];
@@ -3119,14 +3128,15 @@ async function tarefaOddsSync(supabase, apiKey, ligaId) {
 // Roda o sync batched pra TODAS as ligas com torneio da OddsPapi resolvido
 // (não só as 6 domésticas mais -- qualquer linha em liga_oddspapi_tournament,
 // fonte de verdade dinâmica, sem precisar mexer em código pra adicionar liga
-// nova) — usado pelo cron (vercel.json). Custo FIXO: 3 chamadas (1 por
-// bookmaker), qualquer que seja o número de ligas incluídas (ver comentário
-// de tarefaOddsSyncLote).
-async function tarefaOddsTodas(supabase, apiKey) {
+// nova) — usado pelo workflow do GitHub Actions (sync_odds_todas.yml, que
+// substitui o cron antigo da Vercel: ver `bookmakerFiltro`). Custo FIXO por
+// bookmaker: 1 chamada por lote de até 5 torneios, qualquer que seja o
+// número de ligas incluídas (ver comentário de tarefaOddsSyncLote).
+async function tarefaOddsTodas(supabase, apiKey, bookmakerFiltro) {
   const { data: mapas } = await supabase.from('liga_oddspapi_tournament').select('league_id');
   const ligaIds = (mapas || []).map((m) => m.league_id);
   if (ligaIds.length === 0) return { error: 'Nenhuma liga com torneio da OddsPapi resolvido em liga_oddspapi_tournament.' };
-  return tarefaOddsSyncLote(supabase, apiKey, ligaIds);
+  return tarefaOddsSyncLote(supabase, apiKey, ligaIds, bookmakerFiltro);
 }
 
 const FOOTBALL_DATA_BASE_URL = 'https://api.football-data.org/v4';
@@ -5401,7 +5411,11 @@ export default async function handler(req, res) {
     if (tarefa === 'odds-todas') {
       const apiKey = process.env.ODDSPAPI_KEY;
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
-      return res.status(200).json(await tarefaOddsTodas(supabase, apiKey));
+      const bookmaker = req.query.bookmaker;
+      if (bookmaker && !BOOKMAKERS_ALVO.includes(bookmaker)) {
+        return res.status(400).json({ error: { message: `?bookmaker=${bookmaker} inválido -- use um de: ${BOOKMAKERS_ALVO.join(', ')} (ou omita pra rodar as 3).` } });
+      }
+      return res.status(200).json(await tarefaOddsTodas(supabase, apiKey, bookmaker || undefined));
     }
 
     if (tarefa === 'odds-historico-descobrir') {

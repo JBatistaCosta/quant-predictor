@@ -8,10 +8,6 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/model-maintenance?tarefa=odds-todas",
-      "schedule": "0 16 */3 * *"
-    },
-    {
       "path": "/api/model-maintenance?tarefa=elo-rotativo",
       "schedule": "0 7 * * *"
     },
