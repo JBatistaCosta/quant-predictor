@@ -23,8 +23,8 @@ Passo a passo:
      de árvore), mas com o mesmo esquema de calibração.
   3. No Test Set (out-of-sample de verdade): busca a melhor odd real
      fechada (`odds_market`, snapshot pré-fechamento, exclui a média
-     sintética) e simula banca jogo a jogo com Kelly fracionário 25%
-     (capado em 25% da banca por aposta, não-composta), pra CRUA e pras 2
+     sintética) e simula banca jogo a jogo com Kelly fracionário por faixa
+     de odd (FAIXAS_STAKING, não-composta), pra CRUA e pras 2
      CALIBRADAS de cada modelo -- 12 linhas no relatório principal (4
      modelos x {cru, calibrado_platt, calibrado_isotonic}). Só entra em
      campo quando o edge (prob. modelo - prob. implícita da odd) passa de
@@ -58,9 +58,25 @@ import rodar_predicoes as rp
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("backtest_kelly")
 
-FRACAO_KELLY = 0.25  # quarter-Kelly
-TETO_FRACAO_BANCA = 0.25  # nunca aposta mais que 25% da banca numa única partida
 EDGE_MINIMO = 0.02  # 2pp -- mesmo padrão de api/backtest-betting.js
+
+# Política de staking por faixa de odd (gestão de risco global do projeto,
+# pedida explicitamente pelo usuário) -- substitui a fração de Kelly/teto de
+# stake fixos usados antes (FRACAO_KELLY=0.25/TETO_FRACAO_BANCA=0.25 únicos
+# pra qualquer odd). Odd mais alta = mais variância de cauda e mais incerteza
+# do modelo, então a fração de Kelly cai e o corte mínimo de EV sobe conforme
+# a odd sobe. Duplicado (não importado) de api/_lib/stakingPolicy.js e
+# src/utils/stakingPolicy.js -- runtimes diferentes (Python vs JS), mesmo
+# padrão de duplicação já usado pro devig entre api/*.js e src/utils/devig.js.
+# Faixas [min, max) -- a odd exatamente no limite superior cai na próxima
+# faixa (só a última faixa é aberta, >= 8.00). fracao_kelly=None == stake
+# fixa plana (sempre o teto, sem cálculo de Kelly nessa faixa).
+FAIXAS_STAKING = [
+    {"odd_min": 1.30, "odd_max": 2.50, "fracao_kelly": 0.25, "ev_minimo": 0.025, "teto_stake_banca": 0.02},
+    {"odd_min": 2.50, "odd_max": 4.00, "fracao_kelly": 0.20, "ev_minimo": 0.04, "teto_stake_banca": 0.01},
+    {"odd_min": 4.00, "odd_max": 8.00, "fracao_kelly": 0.125, "ev_minimo": 0.07, "teto_stake_banca": 0.005},
+    {"odd_min": 8.00, "odd_max": float("inf"), "fracao_kelly": None, "ev_minimo": 0.10, "teto_stake_banca": 0.0025},
+]
 N_REAMOSTRAGENS_BOOTSTRAP = 2000
 SEED = 42
 
@@ -549,19 +565,42 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: s
 
 
 # =============================================================================
-# Simulação de banca -- Kelly fracionário 25%, não-composta
+# Simulação de banca -- Kelly fracionário por faixa de odd, não-composta
 # =============================================================================
-def kelly_fracionario(prob: float, odd: float, fracao: float = FRACAO_KELLY, teto: float = TETO_FRACAO_BANCA) -> float:
-    """Fração da banca a apostar: fração de Kelly completo (`f* = (bp - q) / b`,
-    b = odd líquida), capada em `teto` -- mesmo padrão de
-    `api/backtest-betting.js`."""
+def faixa_staking(odd: float) -> dict | None:
+    """Faixa da política de staking (fração de Kelly/corte de EV/teto de
+    stake) que cobre essa odd, ou None se a odd for menor que a faixa mínima
+    (1.30) -- nesse caso a política não recomenda apostar."""
+    if odd < FAIXAS_STAKING[0]["odd_min"]:
+        return None
+    for faixa in FAIXAS_STAKING:
+        if faixa["odd_min"] <= odd < faixa["odd_max"]:
+            return faixa
+    return None
+
+
+def kelly_fracionario(prob: float, odd: float) -> float:
+    """Fração da banca a apostar, pela política de staking por faixa de odd:
+    fração de Kelly completo (`f* = (bp - q) / b`, b = odd líquida) escalada
+    pela fração da faixa e capada no teto da faixa -- ou o próprio teto,
+    direto, na faixa >= 8.00 (stake fixa plana, sem Kelly). Também aplica o
+    corte mínimo de EV da faixa (`p*odd - 1 >= ev_minimo`) -- distinto do
+    `EDGE_MINIMO` (pp de probabilidade) já filtrado em `montar_apostas`."""
+    faixa = faixa_staking(odd)
+    if faixa is None:
+        return 0.0
+    ev = prob * odd - 1
+    if ev < faixa["ev_minimo"]:
+        return 0.0
+    if faixa["fracao_kelly"] is None:
+        return faixa["teto_stake_banca"]
     b = odd - 1
     if b <= 0:
         return 0.0
     kelly_completo = (prob * (b + 1) - 1) / b
     if kelly_completo <= 0:
         return 0.0
-    return min(kelly_completo * fracao, teto)
+    return min(kelly_completo * faixa["fracao_kelly"], faixa["teto_stake_banca"])
 
 
 def montar_apostas(
@@ -654,7 +693,7 @@ def resumir_backtest(nome_modelo: str, apostas: list[dict], melhor_params: dict 
 def imprimir_relatorio(relatorio: list[dict]) -> None:
     relatorio_ordenado = sorted(relatorio, key=lambda r: r["roi_ic95_inferior"], reverse=True)
     logger.info("=" * 86)
-    logger.info("BACKTEST OUT-OF-SAMPLE (Test Set) -- Kelly fracionário 25%%, edge mínimo %.0fpp", EDGE_MINIMO * 100)
+    logger.info("BACKTEST OUT-OF-SAMPLE (Test Set) -- Kelly fracionário por faixa de odd, edge mínimo %.0fpp", EDGE_MINIMO * 100)
     logger.info("=" * 86)
     for r in relatorio_ordenado:
         flag = "SIGNIFICATIVO (IC95% > 0)" if r["significativo"] else "sem evidência de edge positivo"

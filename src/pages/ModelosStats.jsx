@@ -317,7 +317,6 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   const [resultado, setResultado] = useState(null);
   const [edgeMinimo, setEdgeMinimo] = useState(0.02);
   const [staking, setStaking] = useState('flat');
-  const [fracaoKelly, setFracaoKelly] = useState(0.25);
   // Default 'platt' (não 'nenhuma') -- Platt Scaling melhorou o log-loss
   // calibrado na maioria das combinações modelo×mercado medidas (achado
   // #6/CONTEXTO_PROJETO.md); Isotonic piorou em ~metade dos casos com o
@@ -330,7 +329,6 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
     setErro('');
     try {
       const params = new URLSearchParams({ edge_minimo: edgeMinimo, staking, usar_calibracao: usarCalibracao });
-      if (staking === 'kelly') params.set('fracao_kelly', fracaoKelly);
       if (filtroModelo) params.set('modelo', filtroModelo);
       if (filtroMercado) params.set('mercado', filtroMercado);
       if (filtroLiga) params.set('liga_id', filtroLiga);
@@ -369,10 +367,11 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
           </select>
         </div>
         {staking === 'kelly' && (
-          <div>
+          <div className="max-w-xs">
             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fração Kelly</label>
-            <input type="number" step="0.05" min="0.05" max="1" value={fracaoKelly} onChange={(e) => setFracaoKelly(e.target.value)}
-              className="w-24 bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100" />
+            <p className="text-xs text-slate-400 py-2">
+              Automática por faixa de odd (política de risco): 1/4 até @2.50, 1/5 até @4.00, 1/8 até @8.00, stake fixa acima disso — cada faixa também tem seu próprio corte mínimo de EV e teto de stake.
+            </p>
           </div>
         )}
         <div>
