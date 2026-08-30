@@ -306,7 +306,20 @@ def obter_squad_rating_atual(supabase: Client, team_ids: list[int], top_n: int =
         return {}
     ids = [int(t) for t in team_ids]
 
-    jogadores = supabase.table("players").select("id, last_team_id").in_("last_team_id", ids).execute().data or []
+    # Achado real (2026-08-30): faltava paginação de verdade aqui -- pra uma
+    # janela de fixtures grande (ex. 143 partidas -> ~286 times), `players`
+    # filtrado por `last_team_id` facilmente passa de 1000 linhas (13.228
+    # num caso real observado em produção), e o corte silencioso do
+    # PostgREST derrubava times INTEIROS da amostra (não parcialmente -- o
+    # time inteiro, se seus jogadores caíssem depois do corte), gerando
+    # feature NaN e derrubando a partida inteira do dropna a jusante,
+    # silenciosamente.
+    jogadores = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("players").select("id, last_team_id").in_("last_team_id", lote).order("id").range(inicio, fim)
+        ),
+        ids,
+    )
     if not jogadores:
         return {}
     player_ids = [j["id"] for j in jogadores]
@@ -1169,7 +1182,20 @@ def obter_cartoes_atuais(supabase: Client, team_ids: list[int], nome_da_liga: di
         return {}
     ids = [int(t) for t in team_ids]
 
-    jogadores = supabase.table("players").select("id, last_team_id").in_("last_team_id", ids).execute().data or []
+    # Achado real (2026-08-30): faltava paginação de verdade aqui -- pra uma
+    # janela de fixtures grande (ex. 143 partidas -> ~286 times), `players`
+    # filtrado por `last_team_id` facilmente passa de 1000 linhas (13.228
+    # num caso real observado em produção), e o corte silencioso do
+    # PostgREST derrubava times INTEIROS da amostra (não parcialmente -- o
+    # time inteiro, se seus jogadores caíssem depois do corte), gerando
+    # feature NaN e derrubando a partida inteira do dropna a jusante,
+    # silenciosamente.
+    jogadores = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("players").select("id, last_team_id").in_("last_team_id", lote).order("id").range(inicio, fim)
+        ),
+        ids,
+    )
     if not jogadores:
         return {}
     player_ids = [j["id"] for j in jogadores]
