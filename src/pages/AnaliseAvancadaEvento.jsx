@@ -241,36 +241,70 @@ function LinhaBinaria({ rotulo, over, under, rotuloOver = 'Over', rotuloUnder = 
 function probMarcar(lambdaGols) { return lambdaGols == null ? null : 1 - Math.exp(-Math.max(lambdaGols, 0)); }
 
 const ROTULO_FONTE_TITULAR = {
-  real: { texto: 'Escalação real', classe: 'bg-emerald-500/20 text-emerald-400' },
-  previsto: { texto: 'XI previsto', classe: 'bg-amber-500/20 text-amber-400' },
+  real: { texto: 'Escalação real', descricao: 'Titularidade oficial confirmada perto do apito (match_lineup_fotmob) — minutos esperados determinísticos por papel.' },
+  previsto: { texto: 'XI previsto', descricao: 'Titularidade estimada dias/horas antes (xi_previsto) — minutos esperados misturam prob. de titularidade, carrega mais incerteza.' },
 };
 
-// Chutes/gols por jogador (player_match_estimates) -- guarda as duas
+// Posição grossa (players.usual_position_id: 0=goleiro/1=defesa/2=meio/
+//3=ataque) -- mesmo bucket já usado em AnaliseEstatisticaJogo.jsx
+// (POSICAO_LABEL). Não temos posição fina (ZAG/VOL/LD/LE/etc.) de forma
+// confiável -- exigiria decodificar match_lineup_fotmob.position_id (grade
+// de formação do FotMob, não documentada), fora de escopo por ora.
+const POSICAO_CURTA = { 0: 'GOL', 1: 'DEF', 2: 'MEI', 3: 'ATA' };
+
+// Chutes/gols/xG por jogador (player_match_estimates) -- guarda as duas
 // previsões lado a lado quando existem (fonte_titular='previsto', gerada
 // dias/horas antes usando o XI previsto, e 'real', gerada perto do apito
 // assim que a escalação oficial é capturada -- ver
 // scripts/rodar_jogador_mercados_previsto.py). Nenhuma sobrescreve a
-// outra no banco, então aqui é só questão de agrupar e mostrar as duas.
+// outra no banco -- aqui vira uma aba por fonte, não linhas duplicadas.
 function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
+  const fontesDisponiveis = useMemo(
+    () => new Set((estimativas || []).map((e) => e.fonte_titular)),
+    [estimativas]
+  );
+  // Prioriza 'real' quando existe (escalação já confirmada, menos incerteza
+  // que 'previsto' -- ver ROTULO_FONTE_TITULAR.descricao).
+  const [fonteSelecionada, setFonteSelecionada] = useState(null);
+  const fonteAtiva = fonteSelecionada && fontesDisponiveis.has(fonteSelecionada)
+    ? fonteSelecionada
+    : (fontesDisponiveis.has('real') ? 'real' : 'previsto');
+
   if (!estimativas?.length) return null;
 
+  const linhasDaFonte = estimativas.filter((e) => e.fonte_titular === fonteAtiva);
   const porTime = {
-    [homeTeamId]: estimativas.filter((e) => e.team_id === homeTeamId),
-    outro: estimativas.filter((e) => e.team_id !== homeTeamId),
+    [homeTeamId]: linhasDaFonte.filter((e) => e.team_id === homeTeamId),
+    outro: linhasDaFonte.filter((e) => e.team_id !== homeTeamId),
   };
 
   const linhasOrdenadas = (lista) =>
     [...lista].sort((a, b) => (b.lambda_chutes_jogo ?? 0) - (a.lambda_chutes_jogo ?? 0));
 
+  // Célula com valor principal + histórico do próprio jogador (EWMA com
+  // shrinkage bayesiano, mesmo valor usado como feature de entrada do
+  // modelo) numa linha menor abaixo -- deixa visível se a previsão está
+  // alinhada com o que o jogador costuma fazer, sem inflar a tabela com
+  // colunas extras pra cada estatística histórica.
+  const CelulaComHistorico = ({ valor, historico, sufixoHistorico, classe }) => (
+    <td className={`py-1.5 px-2 text-right font-mono ${classe}`}>
+      <div>{valor}</div>
+      {historico != null && <div className="text-[9px] text-slate-500 font-normal">hist. {fmtNum(historico, 2)}{sufixoHistorico}</div>}
+    </td>
+  );
+
   const Tabela = ({ titulo, linhas }) => (
     <div className="mb-4 last:mb-0">
       <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">{titulo}</p>
+      {linhas.length === 0 ? (
+        <p className="text-[11px] text-slate-600 italic">Sem previsão para esta fonte.</p>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500 text-left">
               <th className="py-1 pr-2 font-normal">Jogador</th>
-              <th className="py-1 px-2 font-normal">Fonte</th>
+              <th className="py-1 px-2 font-normal">Pos.</th>
               <th className="py-1 px-2 font-normal text-right">Min. esp.</th>
               <th className="py-1 px-2 font-normal text-right">Chutes (λ)</th>
               <th className="py-1 px-2 font-normal text-right">P(&gt;1.5 chutes)</th>
@@ -281,35 +315,69 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
           </thead>
           <tbody>
             {linhas.map((l) => {
-              const fonte = ROTULO_FONTE_TITULAR[l.fonte_titular] || { texto: l.fonte_titular, classe: 'bg-slate-700 text-slate-300' };
+              const posicao = POSICAO_CURTA[l.players?.usual_position_id] || '—';
               return (
-                <tr key={`${l.player_id}-${l.fonte_titular}`} className="border-t border-slate-800">
+                <tr key={l.player_id} className="border-t border-slate-800">
                   <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
-                  <td className="py-1.5 px-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${fonte.classe}`}>{fonte.texto}</span>
-                  </td>
+                  <td className="py-1.5 px-2 text-slate-400 font-mono text-[10px]">{posicao}</td>
                   <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.minutos_esperados, 0)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.lambda_chutes_jogo, 2)}</td>
+                  <CelulaComHistorico
+                    classe="text-slate-300" valor={fmtNum(l.lambda_chutes_jogo, 2)}
+                    historico={l.chutes_90_bayesiano} sufixoHistorico="/90"
+                  />
                   <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1))}</td>
-                  <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}</td>
+                  <CelulaComHistorico
+                    classe="text-emerald-400" valor={fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}
+                    historico={l.gols_90_bayesiano} sufixoHistorico=" gols/90"
+                  />
                   <td className="py-1.5 px-2 text-right font-mono text-slate-400">{fmtPct(probMarcar(l.lambda_gols_jogo_direto))}</td>
-                  <td className="py-1.5 pl-2 text-right font-mono text-slate-300">{fmtNum(l.lambda_xg_jogo, 2)}</td>
+                  <CelulaComHistorico
+                    classe="text-slate-300" valor={fmtNum(l.lambda_xg_jogo, 2)}
+                    historico={l.xg_90_bayesiano} sufixoHistorico="/90"
+                  />
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 
   return (
     <Secao titulo="Chutes & gols por jogador" icone={Target}>
+      <div className="flex items-center gap-2 mb-3">
+        {['real', 'previsto'].map((fonte) => {
+          const disponivel = fontesDisponiveis.has(fonte);
+          const ativo = fonte === fonteAtiva;
+          return (
+            <button
+              key={fonte}
+              type="button"
+              disabled={!disponivel}
+              onClick={() => setFonteSelecionada(fonte)}
+              title={ROTULO_FONTE_TITULAR[fonte].descricao}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                ativo
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : disponivel
+                    ? 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    : 'bg-slate-900 text-slate-700 cursor-not-allowed'
+              }`}
+            >
+              {ROTULO_FONTE_TITULAR[fonte].texto}
+            </button>
+          );
+        })}
+      </div>
       <p className="text-[11px] text-slate-500 mb-3">
         λ de Poisson por jogador (<code className="text-slate-400">player_match_estimates</code>). "Marcar (thinning)" deriva do λ de chutes
         × taxa de conversão do próprio jogador; "Marcar (direto)" é um regressor treinado direto no alvo gols — as duas ficam lado a lado
         de propósito, sem vencedor fixo. "xG esp." é o xG esperado do jogador na partida (regressor CatBoost RMSE, não vira probabilidade
-        derivada). "XI previsto" carrega mais incerteza de escalação que "Escalação real" (capturada perto do apito).
+        derivada). "hist." é a média por 90min do próprio jogador (com shrinkage bayesiano) — mesma feature usada como entrada do modelo,
+        pra comparar a previsão com o que ele costuma fazer. "Pos." é a posição predominante (GOL/DEF/MEI/ATA); não temos lateral/volante
+        etc. de forma confiável ainda.
       </p>
       <Tabela titulo={homeNome || 'Mandante'} linhas={linhasOrdenadas(porTime[homeTeamId] || [])} />
       <Tabela titulo={awayNome || 'Visitante'} linhas={linhasOrdenadas(porTime.outro || [])} />
@@ -415,7 +483,7 @@ export default function AnaliseAvancadaEvento() {
           j.status === 'scheduled'
             ? supabase
                 .from('player_match_estimates')
-                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, players(name, photo_url)')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, players(name, photo_url, usual_position_id)')
                 .eq('match_id', matchId)
             : Promise.resolve({ data: [] }),
         ]);
