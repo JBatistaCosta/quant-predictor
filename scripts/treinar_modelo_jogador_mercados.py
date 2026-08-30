@@ -3,12 +3,20 @@ contagem, perda de Poisson) -- primeira peça da feature "predição de
 chutes/gols por jogador" (pedido do usuário, ver CONTEXTO_PROJETO.md e o
 plano da sessão que criou este arquivo).
 
-Escopo confirmado com o usuário: só as 6 ligas já usadas em todo treino de
-ML do projeto (`dados_historicos.LIGAS_MODEL_BENCHMARKING`), com corte
-temporal por liga em `CORTE_TEMPORADA_MINIMA` -- 2020+ nas 5 europeias e
-2023+ no Brasileirão, onde `match_shots_fotmob` (chute a chute, com xG/xGOT/
-coordenadas) tem cobertura ~100% confirmada por query real contra produção
-antes de escrever este script (não presumida).
+Escopo original confirmado com o usuário: as 6 ligas já usadas em todo
+treino de ML do projeto (`dados_historicos.LIGAS_MODEL_BENCHMARKING`), com
+corte temporal por liga em `CORTE_TEMPORADA_MINIMA` -- 2020+ nas 5
+europeias e 2023+ no Brasileirão, onde `match_shots_fotmob` (chute a chute,
+com xG/xGOT/coordenadas) tem cobertura ~100% confirmada por query real
+contra produção antes de escrever este script (não presumida).
+
+Expandido depois (pedido do usuário: "as ligas que tiverem boa cobertura
+recente de estatísticas e xG") pra `dados_historicos.LIGAS_JOGADOR_
+MERCADOS` -- constante SEPARADA de LIGAS_MODEL_BENCHMARKING (que também é
+usada pelo modelo híbrido de gols de time, fora de escopo desse pedido), 6
+ligas a mais escolhidas por cobertura real medida temporada a temporada
+(ver comentário de `CORTE_TEMPORADA_MINIMA`): MLS, Brasileirão Série B,
+Championship, Eredivisie, Primeira Liga, Copa Libertadores.
 
 Rótulo (`chutes_partida`): agregado de `match_shots_fotmob` por
 `(match_id, team_id, player_id)`, NÃO de `match_player_stats_fotmob.
@@ -65,6 +73,15 @@ BUCKET_ARTEFATOS = "custom-model-artifacts"
 # Primeira temporada (inclusive) com cobertura confiável de match_shots_fotmob
 # por liga -- validado por query real contra produção antes de fixar aqui
 # (ver docstring do módulo). Não alargar sem revalidar cobertura de verdade.
+# As 6 ligas novas (expansão pedida pelo usuário, ver dh.LIGAS_JOGADOR_
+# MERCADOS) tiveram corte decidido por cobertura real medida temporada a
+# temporada: MLS já é 100% em toda a história disponível (corte na 1a
+# temporada da base); Brasileirão Série B tem salto abrupto de 0% pra 100%
+# exatamente em 2025; Championship/Eredivisie/Primeira Liga melhoram
+# gradualmente (~51-83% nas temporadas mais antigas) sem salto abrupto --
+# corte em 2024 mantém as temporadas mais fortes sem descartar amostra
+# demais; Copa Libertadores tem histórico 2019-2022 errático (backfill
+# pontual, não cobertura orgânica) que estabiliza a partir de 2023.
 CORTE_TEMPORADA_MINIMA = {
     "Premier League": 2020,
     "La Liga": 2020,
@@ -72,6 +89,12 @@ CORTE_TEMPORADA_MINIMA = {
     "Serie A (Itália)": 2020,
     "Ligue 1": 2020,
     "Brasileirão Série A": 2023,
+    "MLS": 2022,
+    "Brasileirão Série B": 2025,
+    "Championship": 2024,
+    "Eredivisie": 2024,
+    "Primeira Liga": 2024,
+    "Copa Libertadores": 2023,
 }
 
 # Janela de shrinkage bayesiano (mesmo espírito de `w` em
@@ -125,14 +148,14 @@ MODEL_NAMES_XG = {
 
 
 def carregar_dados(supabase: Client) -> pd.DataFrame:
-    logger.info("Resolvendo IDs das 6 ligas do escopo confirmado...")
-    ids_por_liga = dh.obter_ids_ligas(supabase, dh.LIGAS_MODEL_BENCHMARKING)
+    logger.info(f"Resolvendo IDs das {len(dh.LIGAS_JOGADOR_MERCADOS)} ligas do escopo confirmado...")
+    ids_por_liga = dh.obter_ids_ligas(supabase, dh.LIGAS_JOGADOR_MERCADOS)
     if not ids_por_liga:
         return pd.DataFrame()
     league_ids = list(ids_por_liga.values())
     nome_da_liga = {v: k for k, v in ids_por_liga.items()}
 
-    logger.info("Carregando partidas finalizadas das 6 ligas...")
+    logger.info(f"Carregando partidas finalizadas das {len(league_ids)} ligas...")
     matches = dh.carregar_partidas_finalizadas(supabase, league_ids)
     if matches.empty:
         return pd.DataFrame()
@@ -506,6 +529,6 @@ if __name__ == "__main__":
 
     df_bruto = carregar_dados(sb)
     if df_bruto.empty:
-        logger.warning("Sem dados no escopo (6 ligas, corte temporal, shotmap confirmado) -- nada para treinar.")
+        logger.warning("Sem dados no escopo (ligas, corte temporal, shotmap confirmado) -- nada para treinar.")
     else:
         treinar(engenharia_features(df_bruto), sb)

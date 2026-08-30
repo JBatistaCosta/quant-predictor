@@ -118,6 +118,30 @@ XI_DECAIMENTO = 0.0018
 # fica mais fraco especificamente nessas duas features pro Brasileirão.
 LIGAS_MODEL_BENCHMARKING = ["Premier League", "La Liga", "Serie A (Itália)", "Bundesliga", "Ligue 1", "Brasileirão Série A"]
 
+# Escopo de ligas do modelo de chutes/gols/xG por JOGADOR (treinar_modelo_
+# jogador_mercados.py, backtest_jogador_mercados_walkforward.py, rodar_
+# jogador_mercados_previsto.py) -- deliberadamente SEPARADO de
+# LIGAS_MODEL_BENCHMARKING, que também é usado por treinar_modelo_hibrido.py/
+# rodar_predicoes.py/prever_partidas_futuras_custom.py/predict.yml (mudar
+# aquela constante mudaria o escopo do modelo híbrido de gols de time
+# também, que o usuário não pediu). As 6 ligas novas foram escolhidas por
+# cobertura real de match_shots_fotmob medida via SQL (não presumida):
+# Championship/Eredivisie/Primeira Liga têm cobertura em melhora gradual
+# (~51-83% nas temporadas mais antigas, chegando a ~100% em 2026) sem salto
+# abrupto -- corte em 2024 pra manter as 2-3 temporadas mais fortes;
+# Brasileirão Série B só passa a ter shotmap a partir de 2025 (0% antes,
+# salto abrupto pra 100%); MLS tem 100% em toda a história disponível
+# (2022+); Copa Libertadores tem histórico 2019-2022 errático (0-100%,
+# claramente backfill pontual, não cobertura orgânica) que estabiliza em
+# ~73-77% a partir de 2023, chegando a 99,3% em 2026 -- corte em 2023 pra
+# não perder amostra (torneio menor, ~125-155 partidas/temporada). UEFA
+# Champions League ficou de fora (cobertura fraca mesmo na temporada mais
+# recente completa, 55,6% em 2025) e Copa Sudamericana/Copa do Brasil
+# nunca tiveram shotmap nenhum -- nenhuma das duas entra.
+LIGAS_JOGADOR_MERCADOS = LIGAS_MODEL_BENCHMARKING + [
+    "Championship", "Brasileirão Série B", "MLS", "Eredivisie", "Primeira Liga", "Copa Libertadores",
+]
+
 # Últimos N jogos usados na média móvel pré-jogo de gols marcados/sofridos
 # dos modelos de árvore.
 JANELA_ROLLING_ML = 5
