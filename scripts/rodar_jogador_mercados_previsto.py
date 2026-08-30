@@ -117,11 +117,23 @@ def buscar_fixtures(supabase: Client, dias: int, match_ids: list[int] | None) ->
         return pd.DataFrame(resp.data or [])
     hoje = dt.datetime.now(dt.timezone.utc)
     limite = hoje + dt.timedelta(days=dias)
+    # Piso de match_date usa uma janela de graça pro passado (não `hoje` em
+    # ponto) -- achado real (2026-08-30): `sync-matches.js` pode demorar pra
+    # virar o status de uma partida de 'scheduled' pra 'live'/'finished'
+    # depois do apito, e enquanto isso não acontece um piso estrito em
+    # `hoje` exclui a partida de QUALQUER rodada futura -- inclusive da
+    # passada 'real', que é justamente a que mais precisa rodar perto/logo
+    # depois do apito (é quando a escalação oficial acabou de sair). Sem
+    # essa graça, uma partida que já começou mas ainda está 'scheduled' no
+    # banco nunca mais recebe previsão nova (nem "real" nem "previsto"),
+    # mesmo rodando o script de novo depois -- 4 partidas travadas assim
+    # confirmadas via SQL direto antes deste fix.
+    piso = hoje - dt.timedelta(hours=6)
     resp = (
         supabase.table("matches")
         .select("id, match_date, home_team_id, away_team_id, league_id")
         .eq("status", "scheduled")
-        .gte("match_date", hoje.isoformat())
+        .gte("match_date", piso.isoformat())
         .lte("match_date", limite.isoformat())
         .execute()
     )
@@ -246,6 +258,13 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
         )
     df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["player_id", "minutes_played"])
     minutos_totais = df_stats.groupby("player_id")["minutes_played"].sum().to_dict()
+    # Jogos disputados (linhas de match_player_stats_fotmob já filtradas em
+    # minutes_played > 0 na query acima) -- denominador da média "por jogo",
+    # separada da média "por 90" (normalizada por minutos, não por partida:
+    # um jogador que sempre entra aos 70' tem médias bem diferentes nas duas
+    # visões, e as duas têm valor -- "por jogo" é mais intuitivo, "por 90"
+    # controla por tempo em campo).
+    n_jogos_totais = df_stats.groupby("player_id").size().to_dict()
 
     df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["player_id", "event_type", "is_own_goal", "xg"])
     if not df_shots.empty:
@@ -267,6 +286,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     linhas = []
     for player_id in player_ids:
         minutos = minutos_totais.get(player_id, 0)
+        jogos = n_jogos_totais.get(player_id, 0)
         chutes = chutes_totais.get(player_id, 0)
         gols = gols_totais.get(player_id, 0)
         xg = xg_totais.get(player_id, 0.0) or 0.0
@@ -277,6 +297,14 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
         linhas.append({
             "player_id": player_id, "_chutes_90_bruto": chutes_90, "_gols_90_bruto": gols_90, "_xg_90_bruto": xg_90,
             "n_hist": n_hist, "posicao_num": int(posicao_por_jogador.get(player_id, 0) or 0),
+            # Média CRUA por jogo (sem shrinkage bayesiano, diferente das
+            # colunas "_90_bruto" acima que ainda passam por prior/shrinkage
+            # mais abaixo) -- é só o total histórico dividido por jogos
+            # disputados, pensado pra leitura direta ("quantos chutes ele dá
+            # por jogo"), não como feature de modelo.
+            "chutes_por_jogo": (chutes / jogos) if jogos > 0 else 0.0,
+            "gols_por_jogo": (gols / jogos) if jogos > 0 else 0.0,
+            "xg_por_jogo": (xg / jogos) if jogos > 0 else 0.0,
         })
     df = pd.DataFrame(linhas)
     if df.empty:
@@ -298,7 +326,10 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     df["taxa_conversao_bayesiana"] = np.where(
         df["chutes_90_bayesiano"] > 0.01, df["gols_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
     ).clip(0, 1)
-    return df[["player_id", "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "taxa_conversao_bayesiana", "posicao_num"]]
+    return df[[
+        "player_id", "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "taxa_conversao_bayesiana",
+        "chutes_por_jogo", "gols_por_jogo", "xg_por_jogo", "posicao_num",
+    ]]
 
 
 def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int] | None = None) -> int:
@@ -391,6 +422,9 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "chutes_90_bayesiano": float(row["chutes_90_bayesiano"]),
                 "gols_90_bayesiano": float(row["gols_90_bayesiano"]),
                 "xg_90_bayesiano": float(row["xg_90_bayesiano"]),
+                "chutes_por_jogo": float(row["chutes_por_jogo"]),
+                "gols_por_jogo": float(row["gols_por_jogo"]),
+                "xg_por_jogo": float(row["xg_por_jogo"]),
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
                 "lambda_gols_jogo_thinning": float(lambda_gols_thinning[i]),
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
