@@ -18,7 +18,7 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import {
   matrizPlacares, mercadosDeGols, mercadosDeEscanteios, distribuicaoConjuntaEscanteios, lerParametrosPartida, rotuloLinha,
@@ -159,6 +159,51 @@ function Escudo({ url, tamanho = 20 }) {
 function fmtPct(v) { return v == null ? '—' : `${(v * 100).toFixed(1)}%`; }
 function fmtNum(v, casas = 3) { return v == null ? '—' : Number(v).toFixed(casas); }
 
+// Número pra célula de CSV -- diferente de fmtNum (que usa '—' pra tela),
+// aqui vazio (célula em branco) é a convenção certa pra dado ausente numa
+// planilha, não o traço.
+function numCSV(v, casas = 3) { return v == null ? '' : Number(v).toFixed(casas); }
+
+// Nome de arquivo seguro (sem acento/espaço/caractere especial) -- nomes de
+// time entram direto no nome do CSV exportado.
+function sanitizarNomeArquivo(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'jogo';
+}
+
+// Exportação CSV client-side -- mesmo padrão já usado em XiModeloStats.jsx
+// (Blob + BOM UTF-8 + <a download>, sem lib externa), reaproveitado aqui
+// pra exportar chutes/gols/xG por jogador e a verificação de EV/stake, pro
+// usuário cruzar os números fora do app (pedido explícito).
+function exportarCSV(linhas, colunas, nomeArquivo) {
+  const csvEscape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const cabecalho = colunas.map((c) => csvEscape(c.header)).join(',');
+  const corpo = linhas.map((l) => colunas.map((c) => csvEscape(c.get(l))).join(','));
+  const csv = [cabecalho, ...corpo].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nomeArquivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function BotaoExportarCSV({ onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 hover:text-white transition-colors shrink-0"
+    >
+      <Download size={12} /> Exportar CSV
+    </button>
+  );
+}
+
 function CardParametro({ label, valor }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
@@ -292,7 +337,35 @@ const COLUNAS_JOGADOR_MERCADOS = [
 // assim que a escalação oficial é capturada -- ver
 // scripts/rodar_jogador_mercados_previsto.py). Nenhuma sobrescreve a
 // outra no banco -- aqui vira uma aba por fonte, não linhas duplicadas.
-function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
+// Colunas de export ficam fora do componente (menos a 1a, "Time", que
+// depende de qual time é mandante -- resolvida via closure dentro do
+// componente, ver `colunasExportJogador` abaixo) pra não recriar toda a
+// lista de getters a cada render.
+const COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE = [
+  { header: 'Jogador', get: (l) => l.players?.name || `Jogador #${l.player_id}` },
+  { header: 'Posição (fina)', get: (l) => POSICAO_FINA_CURTA[l.posicao_detalhe] || '' },
+  { header: 'Posição (grossa)', get: (l) => POSICAO_CURTA[l.players?.usual_position_id] || '' },
+  { header: 'Fonte', get: (l) => ROTULO_FONTE_TITULAR[l.fonte_titular]?.texto || l.fonte_titular || '' },
+  { header: 'Papel', get: (l) => ((l.prob_titular_usada ?? 0) >= LIMIAR_TITULAR ? 'Titular' : 'Banco') },
+  { header: 'Prob. titular usada', get: (l) => numCSV(l.prob_titular_usada) },
+  { header: 'Min. esperados', get: (l) => numCSV(l.minutos_esperados, 1) },
+  { header: 'Chutes (λ)', get: (l) => numCSV(l.lambda_chutes_jogo) },
+  { header: 'Chutes/90 hist.', get: (l) => numCSV(l.chutes_90_bayesiano) },
+  { header: 'Chutes/jogo hist.', get: (l) => numCSV(l.chutes_por_jogo) },
+  { header: 'Chutes ao gol (λ)', get: (l) => numCSV(l.lambda_chutes_no_alvo_jogo) },
+  { header: 'Chutes ao gol/90 hist.', get: (l) => numCSV(l.chutes_no_alvo_90_bayesiano) },
+  { header: 'Chutes ao gol/jogo hist.', get: (l) => numCSV(l.chutes_no_alvo_por_jogo) },
+  { header: 'Gols thinning (λ)', get: (l) => numCSV(l.lambda_gols_jogo_thinning) },
+  { header: 'Gols direto (λ)', get: (l) => numCSV(l.lambda_gols_jogo_direto) },
+  { header: 'Taxa conversão bayesiana', get: (l) => numCSV(l.taxa_conversao_bayesiana) },
+  { header: 'Gols/90 hist.', get: (l) => numCSV(l.gols_90_bayesiano) },
+  { header: 'Gols/jogo hist.', get: (l) => numCSV(l.gols_por_jogo) },
+  { header: 'xG esp. (λ)', get: (l) => numCSV(l.lambda_xg_jogo) },
+  { header: 'xG/90 hist.', get: (l) => numCSV(l.xg_90_bayesiano) },
+  { header: 'xG/jogo hist.', get: (l) => numCSV(l.xg_por_jogo) },
+];
+
+function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, matchDate }) {
   const fontesDisponiveis = useMemo(
     () => new Set((estimativas || []).map((e) => e.fonte_titular)),
     [estimativas]
@@ -314,6 +387,17 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
   }));
 
   if (!estimativas?.length) return null;
+
+  // Export cobre TODAS as linhas (as duas fontes, os dois times,
+  // titular+banco) -- não só a aba/filtro ativo no momento -- pra deixar o
+  // usuário fatiar livremente na planilha (pedido explícito: "avaliações
+  // pessoais de cada jogo").
+  const colunasExportJogador = [
+    { header: 'Time', get: (l) => (l.team_id === homeTeamId ? homeNome : awayNome) || '' },
+    ...COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE,
+  ];
+  const nomeArquivoJogador = `chutes_gols_xg_${sanitizarNomeArquivo(homeNome)}_x_${sanitizarNomeArquivo(awayNome)}_${matchDate ? matchDate.slice(0, 10) : sanitizarNomeArquivo('')}.csv`;
+  const exportarJogadorMercados = () => exportarCSV(estimativas, colunasExportJogador, nomeArquivoJogador);
 
   const linhasDaFonte = estimativas.filter((e) => e.fonte_titular === fonteAtiva);
   const porTime = {
@@ -429,29 +513,32 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
 
   return (
     <Secao titulo="Chutes & gols por jogador" icone={Target}>
-      <div className="flex items-center gap-2 mb-3">
-        {['real', 'previsto'].map((fonte) => {
-          const disponivel = fontesDisponiveis.has(fonte);
-          const ativo = fonte === fonteAtiva;
-          return (
-            <button
-              key={fonte}
-              type="button"
-              disabled={!disponivel}
-              onClick={() => setFonteSelecionada(fonte)}
-              title={ROTULO_FONTE_TITULAR[fonte].descricao}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
-                ativo
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : disponivel
-                    ? 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                    : 'bg-slate-900 text-slate-700 cursor-not-allowed'
-              }`}
-            >
-              {ROTULO_FONTE_TITULAR[fonte].texto}
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          {['real', 'previsto'].map((fonte) => {
+            const disponivel = fontesDisponiveis.has(fonte);
+            const ativo = fonte === fonteAtiva;
+            return (
+              <button
+                key={fonte}
+                type="button"
+                disabled={!disponivel}
+                onClick={() => setFonteSelecionada(fonte)}
+                title={ROTULO_FONTE_TITULAR[fonte].descricao}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
+                  ativo
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : disponivel
+                      ? 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      : 'bg-slate-900 text-slate-700 cursor-not-allowed'
+                }`}
+              >
+                {ROTULO_FONTE_TITULAR[fonte].texto}
+              </button>
+            );
+          })}
+        </div>
+        <BotaoExportarCSV onClick={exportarJogadorMercados} disabled={estimativas.length === 0} />
       </div>
       <p className="text-[11px] text-slate-500 mb-3">
         λ de Poisson por jogador (<code className="text-slate-400">player_match_estimates</code>). "Marcar (thinning)" deriva do λ de chutes
@@ -509,6 +596,25 @@ async function buscarOddsPaginado(matchId) {
   }
   return resultado;
 }
+
+// Colunas de export da verificação de EV/stake -- "Modelo" fica de fora
+// daqui (é `modelSelecionado`, estado do componente) e é prependada no
+// clique, mesmo padrão da coluna "Time" em COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE.
+const COLUNAS_EXPORT_EV_BASE = [
+  { header: 'Casa de apostas', get: (l) => l.bookmaker },
+  { header: 'Mercado', get: (l) => rotuloMercado(l.mercado) },
+  { header: 'Seleção', get: (l) => l.selecao },
+  { header: 'Odd real', get: (l) => numCSV(l.oddReal, 2) },
+  { header: 'Prob. modelo (crua)', get: (l) => numCSV(l.pModelo, 4) },
+  { header: 'Prob. modelo (calibrada)', get: (l) => (l.pCalibrado != null ? numCSV(l.pCalibrado, 4) : '') },
+  { header: 'Método calibração', get: (l) => l.metodoCalibracao || '' },
+  { header: 'Prob. mercado (devig)', get: (l) => numCSV(l.pMercado, 4) },
+  { header: 'Edge (pp)', get: (l) => numCSV(l.edge * 100, 2) },
+  { header: 'EV (%)', get: (l) => numCSV(l.ev * 100, 2) },
+  { header: 'Stake Kelly 25% (%)', get: (l) => numCSV(l.kelly25 * 100, 2) },
+  { header: 'Acertou', get: (l) => (l.acertou == null ? '' : l.acertou ? 'Sim' : 'Não') },
+  { header: 'Retorno (% banca)', get: (l) => (l.retorno == null ? '' : numCSV(l.retorno * 100, 2)) },
+];
 
 export default function AnaliseAvancadaEvento() {
   const { matchId } = useParams();
@@ -720,6 +826,15 @@ export default function AnaliseAvancadaEvento() {
     return linhas.sort((a, b) => b.edge - a.edge);
   }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, oddsPorBookmaker, resultadoReal, modelSelecionado, indiceCalibracao]);
 
+  // Export cobre TODAS as linhas de verificacaoEV (todas as casas/mercados/
+  // seleções, não só edge positivo) -- pedido explícito do usuário: "quero
+  // ... todas as posições dos modelos para o jogo".
+  const nomeArquivoEV = `ev_stake_${sanitizarNomeArquivo(jogo?.home?.name)}_x_${sanitizarNomeArquivo(jogo?.away?.name)}_${jogo?.match_date ? jogo.match_date.slice(0, 10) : ''}_${sanitizarNomeArquivo(modelSelecionado)}.csv`;
+  const exportarVerificacaoEV = () => {
+    const colunasExportEV = [{ header: 'Modelo', get: () => modelSelecionado || '' }, ...COLUNAS_EXPORT_EV_BASE];
+    exportarCSV(verificacaoEV, colunasExportEV, nomeArquivoEV);
+  };
+
   // Mesma matriz que já alimenta 1X2/placar exato acima, só que truncada
   // pra uma grade menor (0-7) que cabe na tela célula a célula.
   const gradePlacar = useMemo(() => {
@@ -882,6 +997,9 @@ export default function AnaliseAvancadaEvento() {
                     titulo={finalizada ? 'Verificação de EV vs. mercado — erros e acertos' : 'Verificação de EV vs. mercado'}
                     icone={Scale}
                   >
+                    <div className="flex justify-end mb-3">
+                      <BotaoExportarCSV onClick={exportarVerificacaoEV} disabled={verificacaoEV.length === 0} />
+                    </div>
                     {finalizada && (
                       <p className="text-[11px] text-slate-500 mb-3">
                         Comparação contra o resultado real da partida — não é mais uma decisão de aposta, é
@@ -1143,6 +1261,7 @@ export default function AnaliseAvancadaEvento() {
             homeTeamId={jogo.home?.id}
             homeNome={jogo.home?.name}
             awayNome={jogo.away?.name}
+            matchDate={jogo.match_date}
           />
         </div>
       )}

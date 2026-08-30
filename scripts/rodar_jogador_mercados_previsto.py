@@ -146,17 +146,28 @@ def _buscar_candidatos_por_fonte(supabase: Client, match_ids: list[int]) -> tupl
     quando existe pra aquele match_id, senão XI previsto (xi_previsto).
     Mesma lógica de cutover de `dados_historicos.obter_titular_atual`,
     replicada aqui na granularidade de jogador (aquela função só devolve
-    agregado por time)."""
-    lineup_rows = []
-    for lote in _dividir_em_lotes(match_ids):
-        lineup_rows.extend(
+    agregado por time).
+
+    Paginação de verdade (`dh._paginar_por_lotes_de_id`, `tamanho_lote`
+    reduzido): `match_lineup_fotmob` tem ~42 linhas/partida e `xi_previsto`
+    ~54 linhas/partida (medido via SQL) -- o lote default de 500 `match_id`
+    somaria dezenas de milhares de linhas, muito acima do corte silencioso
+    de 1000 do PostgREST (mesmo bug já confirmado em `_bayesiano_atual`
+    nesta sessão, aqui na seleção de CANDIDATOS -- partidas no fim de um
+    lote grande perderiam jogadores inteiros da escalação, não só a taxa
+    bayesiana)."""
+    TAMANHO_LOTE_JOGADORES_POR_PARTIDA = 100
+    lineup_rows = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
             supabase.table("match_lineup_fotmob")
             .select("match_id, team_id, player_id, is_starter")
             .in_("match_id", lote)
-            .execute()
-            .data
-            or []
-        )
+            .order("match_id")
+            .range(inicio, fim)
+        ),
+        match_ids,
+        tamanho_lote=TAMANHO_LOTE_JOGADORES_POR_PARTIDA,
+    )
     df_real = pd.DataFrame(lineup_rows)
     if not df_real.empty:
         df_real = df_real[df_real["player_id"].notna()].copy()
@@ -166,16 +177,17 @@ def _buscar_candidatos_por_fonte(supabase: Client, match_ids: list[int]) -> tupl
 
     df_previsto = pd.DataFrame()
     if match_ids_pendentes:
-        previsto_rows = []
-        for lote in _dividir_em_lotes(match_ids_pendentes):
-            previsto_rows.extend(
+        previsto_rows = dh._paginar_por_lotes_de_id(
+            lambda lote, inicio, fim: (
                 supabase.table("xi_previsto")
                 .select("match_id, team_id, player_id, prob_titular")
                 .in_("match_id", lote)
-                .execute()
-                .data
-                or []
-            )
+                .order("match_id")
+                .range(inicio, fim)
+            ),
+            match_ids_pendentes,
+            tamanho_lote=TAMANHO_LOTE_JOGADORES_POR_PARTIDA,
+        )
         df_previsto = pd.DataFrame(previsto_rows)
         if not df_previsto.empty:
             df_previsto = df_previsto[df_previsto["player_id"].notna()].copy()
@@ -224,25 +236,36 @@ def _minutos_medios_titular_reserva(supabase: Client, player_ids: list[int]) -> 
     if not player_ids:
         return {}, {}
 
-    stats_rows, lineup_rows = [], []
-    for lote in _dividir_em_lotes(player_ids, 100):
-        stats_rows.extend(
+    # Paginação de verdade (`dh._paginar_por_lotes_de_id`) -- achado real
+    # nesta sessão (ver plano): um lote de 100 `player_id` soma ~4.610
+    # linhas em média (46,1 jogos/jogador, medido via SQL) contra jogadores
+    # de amostra maior, muito acima do corte silencioso de 1000 linhas do
+    # PostgREST. Sem isso, a maioria dos jogadores de cada lote perdia
+    # silenciosamente o histórico e caía no fallback default, mesmo tendo
+    # dado real na base.
+    stats_rows = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
             supabase.table("match_player_stats_fotmob")
             .select("match_id, player_id, minutes_played")
             .in_("player_id", lote)
             .gt("minutes_played", 0)
-            .execute()
-            .data
-            or []
-        )
-        lineup_rows.extend(
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        player_ids,
+        tamanho_lote=100,
+    )
+    lineup_rows = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
             supabase.table("match_lineup_fotmob")
             .select("match_id, player_id, is_starter")
             .in_("player_id", lote)
-            .execute()
-            .data
-            or []
-        )
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        player_ids,
+        tamanho_lote=100,
+    )
     if not stats_rows:
         return {}, {}
 
@@ -265,27 +288,39 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     "temporada anterior" no prior -- não há vazamento a evitar numa
     predição pro futuro, então o prior usa TODO o histórico disponível."""
     player_ids = candidatos["player_id"].astype(int).unique().tolist()
-    shots_rows = []
-    for lote in _dividir_em_lotes(player_ids, 200):
-        shots_rows.extend(
+    # Paginação de verdade (`dh._paginar_por_lotes_de_id`) -- mesmo achado
+    # real de `_minutos_medios_titular_reserva` acima: um lote de 200
+    # `player_id` soma ~9.220 linhas em média (46,1 jogos/jogador), muito
+    # acima do corte silencioso de 1000 linhas do PostgREST. Confirmado em
+    # produção via SQL: Amine Gouiri (209 jogos reais na base) e outros
+    # titulares consolidados vinham com `n_hist=0` aqui e colapsavam pro
+    # prior de posição×liga, mesmo tendo histórico real extenso -- não era
+    # falta de regularização bayesiana (que já existe e está correta), era
+    # esse truncamento silencioso descartando o histórico deles antes de
+    # chegar no shrinkage.
+    shots_rows = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
             supabase.table("match_shots_fotmob")
             .select("player_id, event_type, is_own_goal, xg, is_on_target, is_blocked")
             .in_("player_id", lote)
-            .execute()
-            .data
-            or []
-        )
-    stats_rows = []
-    for lote in _dividir_em_lotes(player_ids, 200):
-        stats_rows.extend(
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        player_ids,
+        tamanho_lote=200,
+    )
+    stats_rows = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
             supabase.table("match_player_stats_fotmob")
             .select("player_id, minutes_played")
             .in_("player_id", lote)
             .gt("minutes_played", 0)
-            .execute()
-            .data
-            or []
-        )
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        player_ids,
+        tamanho_lote=200,
+    )
     df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["player_id", "minutes_played"])
     minutos_totais = df_stats.groupby("player_id")["minutes_played"].sum().to_dict()
     # Jogos disputados (linhas de match_player_stats_fotmob já filtradas em
