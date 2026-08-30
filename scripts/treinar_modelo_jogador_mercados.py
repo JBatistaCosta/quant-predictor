@@ -102,6 +102,7 @@ FEATURES_XG = [f if f != "chutes_90_bayesiano" else "xg_90_bayesiano" for f in F
 TARGET_CHUTES = "chutes_partida"
 TARGET_GOLS = "gols_partida"
 TARGET_XG = "xg_partida"
+TARGET_CHUTES_NO_ALVO = "chutes_no_alvo_partida"
 FRACAO_TESTE = 0.2
 
 MODEL_NAMES = {
@@ -151,7 +152,7 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Verificando quais partidas têm shotmap capturado (match_shots_fotmob)...")
     shots_meta_rows = _paginar_keyset(
         lambda cursor: supabase.table("match_shots_fotmob").select(
-            "id, match_id, team_id, player_id, event_type, is_own_goal, xg"
+            "id, match_id, team_id, player_id, event_type, is_own_goal, xg, is_on_target, is_blocked"
         )
     )
     df_shots = pd.DataFrame(shots_meta_rows)
@@ -189,16 +190,31 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     # Gol contra não conta como gol do PRÓPRIO atirador (é o time adversário
     # que se beneficia, não a produção ofensiva desse jogador).
     df_shots["_e_gol_proprio"] = (df_shots["event_type"] == "Goal") & (~df_shots["is_own_goal"].fillna(False))
+    # "Chute ao gol" (pedido do usuário: "chutes ao gol, que se transforma em
+    # gol ou defesa do goleiro") -- NÃO é o mesmo que is_on_target sozinho:
+    # confirmado por query real que is_on_target=true inclui chute bloqueado
+    # por um defensor ANTES de chegar ao gol (event_type='AttemptSaved' com
+    # is_blocked=true, ~26% dos chutes "no alvo" pelo flag bruto do FotMob)
+    # -- isso nunca chega ao goleiro, não é "defesa do goleiro" no sentido
+    # que o usuário pediu. Exclui explicitamente is_blocked=true. Com esse
+    # corte a taxa geral bate com o padrão real de futebol (~35% dos chutes
+    # totais), contra ~61% se usasse só is_on_target (validado antes de
+    # escrever este código).
+    df_shots["_e_chute_no_alvo"] = df_shots["is_on_target"].fillna(False) & (~df_shots["is_blocked"].fillna(False))
     rotulos = (
         df_shots[df_shots["player_id"].notna()]
         .groupby(["match_id", "team_id", "player_id"])
-        .agg(chutes_partida=("id", "count"), gols_partida=("_e_gol_proprio", "sum"), xg_partida=("xg", "sum"))
+        .agg(
+            chutes_partida=("id", "count"), gols_partida=("_e_gol_proprio", "sum"), xg_partida=("xg", "sum"),
+            chutes_no_alvo_partida=("_e_chute_no_alvo", "sum"),
+        )
         .reset_index()
     )
 
     df = df_stats.merge(rotulos, on=["match_id", "team_id", "player_id"], how="left")
     df["chutes_partida"] = df["chutes_partida"].fillna(0).astype(int)
     df["gols_partida"] = df["gols_partida"].fillna(0).astype(int)
+    df["chutes_no_alvo_partida"] = df["chutes_no_alvo_partida"].fillna(0).astype(int)
     # xg_partida fica NaN (não 0) pro raríssimo caso de todo chute do
     # jogador naquela partida ter xg nulo (~0,3% de match_shots_fotmob no
     # escopo, confirmado por query real) -- 0 chutes vira 0.0 legitimamente
@@ -301,7 +317,10 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
         ewma = g[col_bruto].ewm(halflife="120 days", times=g["match_date"]).mean()
         return ewma.shift(1)
 
-    for nome, coluna_alvo in (("chutes", "chutes_partida"), ("gols", "gols_partida"), ("xg", "xg_partida")):
+    for nome, coluna_alvo in (
+        ("chutes", "chutes_partida"), ("gols", "gols_partida"), ("xg", "xg_partida"),
+        ("chutes_no_alvo", "chutes_no_alvo_partida"),
+    ):
         col_bruto = f"_{nome}_90_bruto"
         col_ewma = f"ewma_{nome}_90"
         col_prior = f"_prior_{nome}_90"
@@ -349,6 +368,14 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     # jogo específico.
     df["taxa_conversao_bayesiana"] = np.where(
         df["chutes_90_bayesiano"] > 0.01, df["gols_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
+    ).clip(0, 1)
+    # Taxa de "chute ao gol" (chute_no_alvo por chute) -- mesmo raciocínio de
+    # razão de somas estabilizadas da taxa de conversão acima. Usada pro
+    # afinamento de Poisson de chutes_no_alvo em rodar_jogador_mercados_
+    # previsto.py/backtest_jogador_mercados_walkforward.py (mesma técnica de
+    # thinning já validada pra gols, sem treinar modelo novo).
+    df["taxa_no_alvo_bayesiana"] = np.where(
+        df["chutes_90_bayesiano"] > 0.01, df["chutes_no_alvo_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
     ).clip(0, 1)
 
     df["elo_diff"] = df["elo_proprio"] - df["elo_oponente"]

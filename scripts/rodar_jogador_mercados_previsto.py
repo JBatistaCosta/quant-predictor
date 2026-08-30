@@ -183,6 +183,36 @@ def _buscar_candidatos_por_fonte(supabase: Client, match_ids: list[int]) -> tupl
     return df_real, df_previsto
 
 
+def _posicao_detalhe_atual(supabase: Client, player_ids: list[int]) -> dict[int, str]:
+    """Posição fina (código FotMob: GK/CB/RB/LB/RWB/LWB/CDM/CM/CAM/RM/LM/RW/
+    LW/ST) por jogador -- mesma fonte e mesmo cuidado de dedup de
+    `rodar_xi_previsto.py` (`player_availability_fotmob` pode ter mais de 1
+    linha de snapshot pro mesmo jogador, achado real em produção lá).
+    Ausente pra jogador ainda não capturado com essa granularidade (~15-20%
+    do elenco, ver PR #395) -- fica None, frontend cai pro bucket grosso."""
+    if not player_ids:
+        return {}
+    rows = []
+    for lote in _dividir_em_lotes(player_ids, 200):
+        rows.extend(
+            supabase.table("player_availability_fotmob")
+            .select("player_id, posicao_detalhe")
+            .in_("player_id", lote)
+            .execute()
+            .data
+            or []
+        )
+    if not rows:
+        return {}
+    df = pd.DataFrame(rows)
+    df = df[df["player_id"].notna() & df["posicao_detalhe"].notna()].copy()
+    if df.empty:
+        return {}
+    df["player_id"] = df["player_id"].astype(int)
+    df = df.drop_duplicates(subset=["player_id"])
+    return dict(zip(df["player_id"], df["posicao_detalhe"], strict=True))
+
+
 def _minutos_medios_titular_reserva(supabase: Client, player_ids: list[int]) -> tuple[dict[int, float], dict[int, float]]:
     """Média histórica de minutos jogados, separada por papel (titular vs.
     reserva) -- fonte pra `minutos_esperados` das duas passadas (ver
@@ -226,10 +256,10 @@ def _minutos_medios_titular_reserva(supabase: Client, player_ids: list[int]) -> 
 
 
 def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_team_id: dict[int, str]) -> pd.DataFrame:
-    """chutes_90_bayesiano/gols_90_bayesiano/xg_90_bayesiano/taxa_conversao_
-    bayesiana "hoje" (sem corte de data -- toda a história disponível) pros
-    jogadores em `candidatos` (colunas match_id, team_id, player_id no
-    mínimo). Mesma
+    """chutes_90_bayesiano/gols_90_bayesiano/xg_90_bayesiano/chutes_no_alvo_
+    90_bayesiano/taxa_conversao_bayesiana/taxa_no_alvo_bayesiana "hoje" (sem
+    corte de data -- toda a história disponível) pros jogadores em
+    `candidatos` (colunas match_id, team_id, player_id no mínimo). Mesma
     fórmula de `treinar_modelo_jogador_mercados.engenharia_features`
     (reaproveitada via `tmj._shrinkage_bayesiano`), mas sem o cuidado de
     "temporada anterior" no prior -- não há vazamento a evitar numa
@@ -239,7 +269,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     for lote in _dividir_em_lotes(player_ids, 200):
         shots_rows.extend(
             supabase.table("match_shots_fotmob")
-            .select("player_id, event_type, is_own_goal, xg")
+            .select("player_id, event_type, is_own_goal, xg, is_on_target, is_blocked")
             .in_("player_id", lote)
             .execute()
             .data
@@ -266,17 +296,23 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     # controla por tempo em campo).
     n_jogos_totais = df_stats.groupby("player_id").size().to_dict()
 
-    df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["player_id", "event_type", "is_own_goal", "xg"])
+    df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["player_id", "event_type", "is_own_goal", "xg", "is_on_target", "is_blocked"])
     if not df_shots.empty:
         df_shots["_e_gol_proprio"] = (df_shots["event_type"] == "Goal") & (~df_shots["is_own_goal"].fillna(False))
+        # Mesma definição de "chute ao gol" de treinar_modelo_jogador_
+        # mercados.carregar_dados -- is_on_target sozinho inclui chute
+        # bloqueado por defensor (nunca chega ao goleiro), então exclui
+        # is_blocked explicitamente.
+        df_shots["_e_chute_no_alvo"] = df_shots["is_on_target"].fillna(False) & (~df_shots["is_blocked"].fillna(False))
         chutes_totais = df_shots.groupby("player_id").size().to_dict()
         gols_totais = df_shots.groupby("player_id")["_e_gol_proprio"].sum().to_dict()
+        chutes_no_alvo_totais = df_shots.groupby("player_id")["_e_chute_no_alvo"].sum().to_dict()
         # xg pode ser nulo por chute (~0,3% no escopo, ver docstring de
         # treinar_modelo_jogador_mercados) -- soma ignora NaN naturalmente
         # (pandas .sum() pula NaN por padrão).
         xg_totais = df_shots.groupby("player_id")["xg"].sum().to_dict()
     else:
-        chutes_totais, gols_totais, xg_totais = {}, {}, {}
+        chutes_totais, gols_totais, xg_totais, chutes_no_alvo_totais = {}, {}, {}, {}
 
     players_rows = []
     for lote in _dividir_em_lotes(player_ids, 500):
@@ -290,12 +326,15 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
         chutes = chutes_totais.get(player_id, 0)
         gols = gols_totais.get(player_id, 0)
         xg = xg_totais.get(player_id, 0.0) or 0.0
+        chutes_no_alvo = chutes_no_alvo_totais.get(player_id, 0)
         chutes_90 = (chutes / (minutos / 90.0)) if minutos > 0 else 0.0
         gols_90 = (gols / (minutos / 90.0)) if minutos > 0 else 0.0
         xg_90 = (xg / (minutos / 90.0)) if minutos > 0 else 0.0
+        chutes_no_alvo_90 = (chutes_no_alvo / (minutos / 90.0)) if minutos > 0 else 0.0
         n_hist = int(minutos / 90.0)
         linhas.append({
             "player_id": player_id, "_chutes_90_bruto": chutes_90, "_gols_90_bruto": gols_90, "_xg_90_bruto": xg_90,
+            "_chutes_no_alvo_90_bruto": chutes_no_alvo_90,
             "n_hist": n_hist, "posicao_num": int(posicao_por_jogador.get(player_id, 0) or 0),
             # Média CRUA por jogo (sem shrinkage bayesiano, diferente das
             # colunas "_90_bruto" acima que ainda passam por prior/shrinkage
@@ -305,6 +344,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
             "chutes_por_jogo": (chutes / jogos) if jogos > 0 else 0.0,
             "gols_por_jogo": (gols / jogos) if jogos > 0 else 0.0,
             "xg_por_jogo": (xg / jogos) if jogos > 0 else 0.0,
+            "chutes_no_alvo_por_jogo": (chutes_no_alvo / jogos) if jogos > 0 else 0.0,
         })
     df = pd.DataFrame(linhas)
     if df.empty:
@@ -316,19 +356,33 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     prior_chutes = df.groupby(["posicao_num", "liga"])["_chutes_90_bruto"].mean()
     prior_gols = df.groupby(["posicao_num", "liga"])["_gols_90_bruto"].mean()
     prior_xg = df.groupby(["posicao_num", "liga"])["_xg_90_bruto"].mean()
+    prior_no_alvo = df.groupby(["posicao_num", "liga"])["_chutes_no_alvo_90_bruto"].mean()
     df["_prior_chutes_90"] = df.apply(lambda r: prior_chutes.get((r["posicao_num"], r["liga"]), df["_chutes_90_bruto"].mean()), axis=1)
     df["_prior_gols_90"] = df.apply(lambda r: prior_gols.get((r["posicao_num"], r["liga"]), df["_gols_90_bruto"].mean()), axis=1)
     df["_prior_xg_90"] = df.apply(lambda r: prior_xg.get((r["posicao_num"], r["liga"]), df["_xg_90_bruto"].mean()), axis=1)
+    df["_prior_chutes_no_alvo_90"] = df.apply(
+        lambda r: prior_no_alvo.get((r["posicao_num"], r["liga"]), df["_chutes_no_alvo_90_bruto"].mean()), axis=1
+    )
 
     df["chutes_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_chutes_90_bruto"], df["_prior_chutes_90"], tmj.W_SHRINKAGE)
     df["gols_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_gols_90_bruto"], df["_prior_gols_90"], tmj.W_SHRINKAGE)
     df["xg_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_xg_90_bruto"], df["_prior_xg_90"], tmj.W_SHRINKAGE)
+    df["chutes_no_alvo_90_bayesiano"] = tmj._shrinkage_bayesiano(
+        df["n_hist"], df["_chutes_no_alvo_90_bruto"], df["_prior_chutes_no_alvo_90"], tmj.W_SHRINKAGE
+    )
     df["taxa_conversao_bayesiana"] = np.where(
         df["chutes_90_bayesiano"] > 0.01, df["gols_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
     ).clip(0, 1)
+    # Taxa de "chute ao gol" (por chute) -- mesmo afinamento de Poisson já
+    # usado pra gols, aplicado um passo antes (chutes -> chutes_no_alvo, em
+    # vez de chutes -> gols direto). Ver docstring do módulo.
+    df["taxa_no_alvo_bayesiana"] = np.where(
+        df["chutes_90_bayesiano"] > 0.01, df["chutes_no_alvo_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
+    ).clip(0, 1)
     return df[[
-        "player_id", "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "taxa_conversao_bayesiana",
-        "chutes_por_jogo", "gols_por_jogo", "xg_por_jogo", "posicao_num",
+        "player_id", "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "chutes_no_alvo_90_bayesiano",
+        "taxa_conversao_bayesiana", "taxa_no_alvo_bayesiana",
+        "chutes_por_jogo", "gols_por_jogo", "xg_por_jogo", "chutes_no_alvo_por_jogo", "posicao_num",
     ]]
 
 
@@ -366,6 +420,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         + (df_previsto["player_id"].astype(int).tolist() if not df_previsto.empty else [])
     ))
     media_titular, media_reserva = _minutos_medios_titular_reserva(supabase, todos_player_ids)
+    posicao_detalhe_por_jogador = _posicao_detalhe_atual(supabase, todos_player_ids)
 
     team_ids = sorted(set(fixtures["home_team_id"]).union(fixtures["away_team_id"]))
     elo_por_time = dh.obter_elo_atual(supabase, team_ids)
@@ -412,6 +467,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         lambda_gols_thinning = lambda_chutes * df["taxa_conversao_bayesiana"].to_numpy()
         lambda_gols_direto = modelos_ml_predict(modelo_gols_direto, df) if modelo_gols_direto is not None else None
         lambda_xg = modelos_ml_predict_regressor(modelo_xg, df, tmj.FEATURES_XG) if modelo_xg is not None else None
+        lambda_chutes_no_alvo = lambda_chutes * df["taxa_no_alvo_bayesiana"].to_numpy()
 
         for i, (_, row) in enumerate(df.iterrows()):
             linhas_saida.append({
@@ -419,16 +475,21 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "fonte_titular": fonte, "prob_titular_usada": float(row["prob_titular_usada"]),
                 "minutos_esperados": float(row["minutos_esperados"]),
                 "taxa_conversao_bayesiana": float(row["taxa_conversao_bayesiana"]),
+                "taxa_no_alvo_bayesiana": float(row["taxa_no_alvo_bayesiana"]),
                 "chutes_90_bayesiano": float(row["chutes_90_bayesiano"]),
                 "gols_90_bayesiano": float(row["gols_90_bayesiano"]),
                 "xg_90_bayesiano": float(row["xg_90_bayesiano"]),
+                "chutes_no_alvo_90_bayesiano": float(row["chutes_no_alvo_90_bayesiano"]),
                 "chutes_por_jogo": float(row["chutes_por_jogo"]),
                 "gols_por_jogo": float(row["gols_por_jogo"]),
                 "xg_por_jogo": float(row["xg_por_jogo"]),
+                "chutes_no_alvo_por_jogo": float(row["chutes_no_alvo_por_jogo"]),
+                "posicao_detalhe": posicao_detalhe_por_jogador.get(int(row["player_id"])),
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
                 "lambda_gols_jogo_thinning": float(lambda_gols_thinning[i]),
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
                 "lambda_xg_jogo": float(lambda_xg[i]) if lambda_xg is not None else None,
+                "lambda_chutes_no_alvo_jogo": float(lambda_chutes_no_alvo[i]),
                 "model_version": MODEL_VERSION, "gerado_em": agora,
             })
 
