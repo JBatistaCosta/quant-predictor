@@ -252,6 +252,28 @@ const ROTULO_FONTE_TITULAR = {
 // de formação do FotMob, não documentada), fora de escopo por ora.
 const POSICAO_CURTA = { 0: 'GOL', 1: 'DEF', 2: 'MEI', 3: 'ATA' };
 
+// Limiar pra separar Titular/Banco -- pra fonte_titular='real',
+// prob_titular_usada já vem exatamente 1.0/0.0 (is_starter confirmado, ver
+// rodar_jogador_mercados_previsto.py); pra 'previsto', é uma probabilidade
+// contínua de xi_previsto, então o corte em 0.5 é uma aproximação ("mais
+// provável titular que reserva"), não uma confirmação.
+const LIMIAR_TITULAR = 0.5;
+
+// Config de colunas: cada uma sabe extrair seu próprio valor de ordenação
+// (`valorSort`) -- evita o header de sort e a lógica de sort divergirem.
+// Colunas numéricas ordenam desc por padrão (pedido do usuário: "maior ->
+// menor"); a coluna Jogador (texto) ordena A→Z por padrão.
+const COLUNAS_JOGADOR_MERCADOS = [
+  { chave: 'jogador', rotulo: 'Jogador', tipo: 'texto', valorSort: (l) => l.players?.name || '' },
+  { chave: 'posicao', rotulo: 'Pos.', tipo: 'texto', valorSort: (l) => POSICAO_CURTA[l.players?.usual_position_id] || '' },
+  { chave: 'minutos', rotulo: 'Min. esp.', tipo: 'numero', valorSort: (l) => l.minutos_esperados ?? -1 },
+  { chave: 'chutes', rotulo: 'Chutes (λ)', tipo: 'numero', valorSort: (l) => l.lambda_chutes_jogo ?? -1 },
+  { chave: 'p15chutes', rotulo: 'P(>1.5 chutes)', tipo: 'numero', valorSort: (l) => 1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1) },
+  { chave: 'thinning', rotulo: 'Marcar (thinning)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_thinning) ?? -1 },
+  { chave: 'direto', rotulo: 'Marcar (direto)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_direto) ?? -1 },
+  { chave: 'xg', rotulo: 'xG esp.', tipo: 'numero', valorSort: (l) => l.lambda_xg_jogo ?? -1 },
+];
+
 // Chutes/gols/xG por jogador (player_match_estimates) -- guarda as duas
 // previsões lado a lado quando existem (fonte_titular='previsto', gerada
 // dias/horas antes usando o XI previsto, e 'real', gerada perto do apito
@@ -270,6 +292,15 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
     ? fonteSelecionada
     : (fontesDisponiveis.has('real') ? 'real' : 'previsto');
 
+  // Ordenação clicável nos headers -- default Chutes(λ) desc (mesmo
+  // critério que já era o default fixo antes desta mudança).
+  const [sort, setSort] = useState({ chave: 'chutes', direcao: 'desc' });
+  const colunaSort = COLUNAS_JOGADOR_MERCADOS.find((c) => c.chave === sort.chave) || COLUNAS_JOGADOR_MERCADOS[3];
+  const alternarSort = (chave) => setSort((atual) => ({
+    chave,
+    direcao: atual.chave === chave && atual.direcao === 'desc' ? 'asc' : 'desc',
+  }));
+
   if (!estimativas?.length) return null;
 
   const linhasDaFonte = estimativas.filter((e) => e.fonte_titular === fonteAtiva);
@@ -278,72 +309,106 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
     outro: linhasDaFonte.filter((e) => e.team_id !== homeTeamId),
   };
 
-  const linhasOrdenadas = (lista) =>
-    [...lista].sort((a, b) => (b.lambda_chutes_jogo ?? 0) - (a.lambda_chutes_jogo ?? 0));
+  const linhasOrdenadas = (lista) => {
+    const copia = [...lista];
+    copia.sort((a, b) => {
+      const va = colunaSort.valorSort(a);
+      const vb = colunaSort.valorSort(b);
+      const cmp = colunaSort.tipo === 'texto' ? String(va).localeCompare(String(vb)) : va - vb;
+      return sort.direcao === 'desc' ? -cmp : cmp;
+    });
+    return copia;
+  };
 
-  // Célula com valor principal + histórico do próprio jogador (EWMA com
-  // shrinkage bayesiano, mesmo valor usado como feature de entrada do
-  // modelo) numa linha menor abaixo -- deixa visível se a previsão está
+  // Célula com valor principal + histórico do próprio jogador em duas
+  // visões (por 90min, com shrinkage bayesiano -- mesma feature usada como
+  // entrada do modelo -- e por jogo, média crua sem normalizar por
+  // minutos) numa linha menor abaixo -- deixa visível se a previsão está
   // alinhada com o que o jogador costuma fazer, sem inflar a tabela com
   // colunas extras pra cada estatística histórica.
-  const CelulaComHistorico = ({ valor, historico, sufixoHistorico, classe }) => (
+  const CelulaComHistorico = ({ valor, historico90, sufixo90, historicoJogo, sufixoJogo, classe }) => (
     <td className={`py-1.5 px-2 text-right font-mono ${classe}`}>
       <div>{valor}</div>
-      {historico != null && <div className="text-[9px] text-slate-500 font-normal">hist. {fmtNum(historico, 2)}{sufixoHistorico}</div>}
+      {(historico90 != null || historicoJogo != null) && (
+        <div className="text-[9px] text-slate-500 font-normal whitespace-nowrap">
+          {historico90 != null && <>{fmtNum(historico90, 2)}{sufixo90}</>}
+          {historico90 != null && historicoJogo != null && ' · '}
+          {historicoJogo != null && <>{fmtNum(historicoJogo, 2)}{sufixoJogo}</>}
+        </div>
+      )}
     </td>
   );
 
-  const Tabela = ({ titulo, linhas }) => (
-    <div className="mb-4 last:mb-0">
-      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">{titulo}</p>
-      {linhas.length === 0 ? (
-        <p className="text-[11px] text-slate-600 italic">Sem previsão para esta fonte.</p>
-      ) : (
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-slate-500 text-left">
-              <th className="py-1 pr-2 font-normal">Jogador</th>
-              <th className="py-1 px-2 font-normal">Pos.</th>
-              <th className="py-1 px-2 font-normal text-right">Min. esp.</th>
-              <th className="py-1 px-2 font-normal text-right">Chutes (λ)</th>
-              <th className="py-1 px-2 font-normal text-right">P(&gt;1.5 chutes)</th>
-              <th className="py-1 px-2 font-normal text-right">Marcar (thinning)</th>
-              <th className="py-1 px-2 font-normal text-right">Marcar (direto)</th>
-              <th className="py-1 pl-2 font-normal text-right">xG esp.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {linhas.map((l) => {
-              const posicao = POSICAO_CURTA[l.players?.usual_position_id] || '—';
-              return (
-                <tr key={l.player_id} className="border-t border-slate-800">
-                  <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
-                  <td className="py-1.5 px-2 text-slate-400 font-mono text-[10px]">{posicao}</td>
-                  <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.minutos_esperados, 0)}</td>
-                  <CelulaComHistorico
-                    classe="text-slate-300" valor={fmtNum(l.lambda_chutes_jogo, 2)}
-                    historico={l.chutes_90_bayesiano} sufixoHistorico="/90"
-                  />
-                  <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1))}</td>
-                  <CelulaComHistorico
-                    classe="text-emerald-400" valor={fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}
-                    historico={l.gols_90_bayesiano} sufixoHistorico=" gols/90"
-                  />
-                  <td className="py-1.5 px-2 text-right font-mono text-slate-400">{fmtPct(probMarcar(l.lambda_gols_jogo_direto))}</td>
-                  <CelulaComHistorico
-                    classe="text-slate-300" valor={fmtNum(l.lambda_xg_jogo, 2)}
-                    historico={l.xg_90_bayesiano} sufixoHistorico="/90"
-                  />
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      )}
-    </div>
+  const LinhaJogador = ({ l }) => {
+    const posicao = POSICAO_CURTA[l.players?.usual_position_id] || '—';
+    return (
+      <tr className="border-t border-slate-800">
+        <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
+        <td className="py-1.5 px-2 text-slate-400 font-mono text-[10px]">{posicao}</td>
+        <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.minutos_esperados, 0)}</td>
+        <CelulaComHistorico
+          classe="text-slate-300" valor={fmtNum(l.lambda_chutes_jogo, 2)}
+          historico90={l.chutes_90_bayesiano} sufixo90="/90" historicoJogo={l.chutes_por_jogo} sufixoJogo="/jogo"
+        />
+        <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1))}</td>
+        <CelulaComHistorico
+          classe="text-emerald-400" valor={fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}
+          historico90={l.gols_90_bayesiano} sufixo90=" g/90" historicoJogo={l.gols_por_jogo} sufixoJogo=" g/jogo"
+        />
+        <td className="py-1.5 px-2 text-right font-mono text-slate-400">{fmtPct(probMarcar(l.lambda_gols_jogo_direto))}</td>
+        <CelulaComHistorico
+          classe="text-slate-300" valor={fmtNum(l.lambda_xg_jogo, 2)}
+          historico90={l.xg_90_bayesiano} sufixo90="/90" historicoJogo={l.xg_por_jogo} sufixoJogo="/jogo"
+        />
+      </tr>
+    );
+  };
+
+  const CabecalhoColunas = () => (
+    <tr className="text-slate-500 text-left">
+      {COLUNAS_JOGADOR_MERCADOS.map((col) => (
+        <th
+          key={col.chave}
+          onClick={() => alternarSort(col.chave)}
+          title="Clique pra ordenar"
+          className={`py-1 px-2 font-normal cursor-pointer select-none hover:text-slate-300 whitespace-nowrap ${col.tipo === 'numero' ? 'text-right' : 'text-left'}`}
+        >
+          {col.rotulo}{sort.chave === col.chave && (sort.direcao === 'desc' ? ' ▼' : ' ▲')}
+        </th>
+      ))}
+    </tr>
   );
+
+  const Tabela = ({ titulo, linhas }) => {
+    const titulares = linhasOrdenadas(linhas.filter((l) => (l.prob_titular_usada ?? 0) >= LIMIAR_TITULAR));
+    const banco = linhasOrdenadas(linhas.filter((l) => (l.prob_titular_usada ?? 0) < LIMIAR_TITULAR));
+    return (
+      <div className="mb-4 last:mb-0">
+        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">{titulo}</p>
+        {linhas.length === 0 ? (
+          <p className="text-[11px] text-slate-600 italic">Sem previsão para esta fonte.</p>
+        ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><CabecalhoColunas /></thead>
+            {titulares.length > 0 && (
+              <tbody>
+                <tr><td colSpan={COLUNAS_JOGADOR_MERCADOS.length} className="pt-2 pb-1 text-[10px] text-emerald-500 font-bold uppercase tracking-wider">Titular</td></tr>
+                {titulares.map((l) => <LinhaJogador key={l.player_id} l={l} />)}
+              </tbody>
+            )}
+            {banco.length > 0 && (
+              <tbody>
+                <tr><td colSpan={COLUNAS_JOGADOR_MERCADOS.length} className="pt-2 pb-1 text-[10px] text-slate-500 font-bold uppercase tracking-wider">Banco</td></tr>
+                {banco.map((l) => <LinhaJogador key={l.player_id} l={l} />)}
+              </tbody>
+            )}
+          </table>
+        </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <Secao titulo="Chutes & gols por jogador" icone={Target}>
@@ -375,12 +440,13 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
         λ de Poisson por jogador (<code className="text-slate-400">player_match_estimates</code>). "Marcar (thinning)" deriva do λ de chutes
         × taxa de conversão do próprio jogador; "Marcar (direto)" é um regressor treinado direto no alvo gols — as duas ficam lado a lado
         de propósito, sem vencedor fixo. "xG esp." é o xG esperado do jogador na partida (regressor CatBoost RMSE, não vira probabilidade
-        derivada). "hist." é a média por 90min do próprio jogador (com shrinkage bayesiano) — mesma feature usada como entrada do modelo,
-        pra comparar a previsão com o que ele costuma fazer. "Pos." é a posição predominante (GOL/DEF/MEI/ATA); não temos lateral/volante
-        etc. de forma confiável ainda.
+        derivada). Abaixo de cada λ: histórico do próprio jogador por 90min (com shrinkage bayesiano, mesma feature de entrada do modelo)
+        e por jogo (média crua, sem normalizar por minutos). "Pos." é a posição predominante (GOL/DEF/MEI/ATA); não temos lateral/volante
+        etc. de forma confiável ainda. Clique num cabeçalho de coluna pra ordenar; "Titular"/"Banco" usa a titularidade confirmada (aba
+        "Escalação real") ou a mais provável (aba "XI previsto", corte em 50%).
       </p>
-      <Tabela titulo={homeNome || 'Mandante'} linhas={linhasOrdenadas(porTime[homeTeamId] || [])} />
-      <Tabela titulo={awayNome || 'Visitante'} linhas={linhasOrdenadas(porTime.outro || [])} />
+      <Tabela titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} />
+      <Tabela titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} />
     </Secao>
   );
 }
@@ -483,7 +549,7 @@ export default function AnaliseAvancadaEvento() {
           j.status === 'scheduled'
             ? supabase
                 .from('player_match_estimates')
-                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, players(name, photo_url, usual_position_id)')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, players(name, photo_url, usual_position_id)')
                 .eq('match_id', matchId)
             : Promise.resolve({ data: [] }),
         ]);
