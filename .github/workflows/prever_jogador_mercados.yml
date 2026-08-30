@@ -1,0 +1,48 @@
+name: Predição de Chutes/Gols por Jogador (fixtures futuras)
+
+# Roda scripts/rodar_jogador_mercados_previsto.py -- pra cada partida
+# `scheduled` nos próximos 7 dias, calcula lambda de chutes/gols (Poisson)
+# por jogador, gravando em player_match_estimates com fonte_titular='real'
+# quando a escalação oficial já saiu (match_lineup_fotmob) ou 'previsto'
+# quando cai pro XI previsto (xi_previsto).
+#
+# Roda depois de prever_xi.yml (05:30 UTC) -- depende do XI previsto do dia
+# já estar fresco pra partidas sem escalação oficial ainda.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # 06:00 UTC diário
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Janela de dias à frente para prever (default 7)"
+        required: false
+        type: string
+
+jobs:
+  prever-jogador-mercados:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Prever chutes/gols por jogador
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+          python scripts/rodar_jogador_mercados_previsto.py $ARGS

@@ -12,6 +12,15 @@ name: Ingestão de Escalação Real Pré-Jogo (FotMob)
 # só acontece quando tem jogo por perto de verdade. Escopo restrito: só
 # escreve players/match_lineup_fotmob, nunca stats/placar (isso continua
 # sendo do atualizar_partidas_finalizadas.py, depois que a partida termina).
+#
+# Segundo step (pedido do usuário: guardar previsão "previsto" E "real" de
+# chutes/gols por jogador, pra comparação): logo depois da escalação real
+# ser capturada (se foi), roda rodar_jogador_mercados_previsto.py numa
+# janela curta (--dias 1) -- ele mesmo decide por partida se já existe
+# escalação real (match_lineup_fotmob) ou se ainda cai pro XI previsto, sem
+# precisar passar os match_id explicitamente. Idempotente (upsert por
+# fonte_titular): reprocessar uma partida que ainda não tem escalação real
+# só atualiza a linha 'previsto', nunca cria uma 'real' precoce.
 
 on:
   workflow_dispatch: {}
@@ -21,7 +30,7 @@ on:
 jobs:
   ingerir-escalacao-pre-jogo:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout do repositório
@@ -42,3 +51,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python scripts/ingerir_escalacao_pre_jogo.py
+
+      - name: Atualizar previsão de chutes/gols por jogador (passada 'real' quando já houver escalação)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/rodar_jogador_mercados_previsto.py --dias 1
