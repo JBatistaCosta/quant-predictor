@@ -162,6 +162,14 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
         logger.warning("Nenhuma linha de match_player_stats_fotmob no escopo -- nada pra fazer.")
         return pd.DataFrame()
     df_stats = df_stats[df_stats["player_id"].notna() & df_stats["minutes_played"].notna() & (df_stats["minutes_played"] > 0)].copy()
+    # player_id vem de JSON com linhas nulas misturadas (~99,9% preenchido,
+    # não 100%) -- pandas promove a coluna inteira pra float64 pra caber o
+    # NaN, e o filtro .notna() acima remove as linhas mas NÃO desfaz a
+    # promoção de tipo. Sem este cast, `player_ids.tolist()` mais abaixo
+    # produz floats (1711.0) que o postgrest serializa como "1711.0" --
+    # Postgres rejeita isso pra coluna bigint (`invalid input syntax for
+    # type bigint`, achado real rodando o treino em produção pela 1a vez).
+    df_stats["player_id"] = df_stats["player_id"].astype(int)
 
     # Rótulos: chutes/gols agregados por jogador-partida a partir do chute a
     # chute (não do agregado de match_player_stats_fotmob -- ver docstring).
@@ -187,6 +195,12 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     df["opponent_team_id"] = np.where(df["team_id"] == df["home_team_id"], df["away_team_id"], df["home_team_id"])
     df["mando"] = (df["team_id"] == df["home_team_id"]).astype(int)
 
+    # Defesa em profundidade: o merge com `rotulos` (linha acima) pode
+    # repolular `player_id` pra float64 mesmo já tendo sido casteado em
+    # df_stats -- `rotulos` vem de `df_shots.groupby("player_id")`, e
+    # `match_shots_fotmob.player_id` também é nullable (mesma causa raiz do
+    # cast em df_stats). Casteia de novo bem antes de usar em `.in_()`.
+    df["player_id"] = df["player_id"].astype(int)
     player_ids = df["player_id"].unique().tolist()
     players_rows = _buscar_por_lotes(supabase, "players", "id", player_ids, "id, usual_position_id")
     df_players = pd.DataFrame(players_rows).rename(columns={"id": "player_id"})
