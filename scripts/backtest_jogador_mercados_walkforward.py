@@ -130,21 +130,31 @@ def _metricas_probabilidade_marcar(lambda_gols: np.ndarray, real_marcou: np.ndar
 
 def _persistir_previsao_bruta(
     supabase: Client, teste: pd.DataFrame, previsto_chutes: np.ndarray, lambda_gols_thinning: np.ndarray,
-    lambda_gols_direto: np.ndarray, temporada: str,
+    lambda_gols_direto: np.ndarray, temporada: str, lambda_xg: dict[int, float] | None = None,
 ) -> int:
     """Grava a previsão bruta (1 linha por jogador x partida x fonte_titular)
     em `player_match_walkforward` -- `fonte_titular` sempre 'previsto' aqui
-    (ver docstring do módulo sobre o que este backtest cobre)."""
+    (ver docstring do módulo sobre o que este backtest cobre).
+
+    `lambda_xg` é um dict indexado por posição em `teste` (não um array
+    alinhado 1:1 como os demais) porque o subconjunto de xG é filtrado por
+    `dropna(subset=[TARGET_XG])` separadamente de `teste` -- linhas
+    diferentes podem ter xg_partida nulo (ver docstring do módulo). Ausente
+    do dict = xG não avaliado pra essa linha (fica None, não 0.0 -- não
+    inventar previsão pra linha que não passou pelo modelo)."""
+    lambda_xg = lambda_xg or {}
     linhas = []
-    for match_id, team_id, player_id, league_id, minutos_esp, taxa_conv, prev_chutes, lam_gols_thin, lam_gols_dir in zip(
-        teste["match_id"], teste["team_id"], teste["player_id"], teste["league_id"], teste["minutos_esperados"],
+    for idx, match_id, team_id, player_id, league_id, minutos_esp, taxa_conv, prev_chutes, lam_gols_thin, lam_gols_dir in zip(
+        teste.index, teste["match_id"], teste["team_id"], teste["player_id"], teste["league_id"], teste["minutos_esperados"],
         teste["taxa_conversao_bayesiana"], previsto_chutes, lambda_gols_thinning, lambda_gols_direto, strict=True,
     ):
+        lam_xg = lambda_xg.get(idx)
         linhas.append({
             "match_id": int(match_id), "team_id": int(team_id), "player_id": int(player_id),
             "fonte_titular": "previsto", "prob_titular_usada": None, "minutos_esperados": float(minutos_esp),
             "taxa_conversao_bayesiana": float(taxa_conv), "lambda_chutes_jogo": float(prev_chutes),
             "lambda_gols_jogo_thinning": float(lam_gols_thin), "lambda_gols_jogo_direto": float(lam_gols_dir),
+            "lambda_xg_jogo": float(lam_xg) if lam_xg is not None else None,
             "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
         })
     total = 0
@@ -210,8 +220,30 @@ def rodar(supabase: Client) -> int:
             f"-- {'thinning melhor' if metricas_gols_thinning['log_loss_modelo'] < metricas_gols_direto['log_loss_modelo'] else 'direto melhor'}"
         )
 
+        # xG por jogador -- alvo CONTÍNUO, mesmo tratamento de NaN de
+        # treinar_modelo_jogador_mercados.treinar() (dropna ANTES do split
+        # baseline/modelo, treino/teste próprios pra manter os arrays
+        # alinhados). Subconjunto de índices diferente de teste_temporada
+        # inteiro -- lambda_xg fica indexado por posição em teste_temporada
+        # (dict), não array 1:1, pra _persistir_previsao_bruta saber quais
+        # linhas têm previsão de xG e quais não têm.
+        treino_xg = treino.dropna(subset=[tmj.TARGET_XG])
+        teste_xg = teste_temporada.dropna(subset=[tmj.TARGET_XG])
+        modelo_xg, _, _ = modelos_ml.treinar_catboost_regressor(params, treino_xg, tmj.TARGET_XG, features=tmj.FEATURES_XG)
+        previsto_xg = np.maximum(modelos_ml.prever_catboost_regressor(modelo_xg, None, teste_xg, features=tmj.FEATURES_XG), 0.0)
+        baseline_xg = (teste_xg["ewma_xg_90"] * teste_xg["minutos_esperados"] / 90.0).clip(lower=0.0).to_numpy()
+        real_xg = teste_xg[tmj.TARGET_XG].to_numpy()
+        metricas_xg = _metricas_regressao_com_ic(previsto_xg, baseline_xg, real_xg)
+        logger.info(
+            f"  xg: RMSE modelo={metricas_xg['rmse_modelo']:.4f} baseline={metricas_xg['rmse_baseline']:.4f} "
+            f"IC95%(dif)=[{metricas_xg['ic95_inf']:.4f},{metricas_xg['ic95_sup']:.4f}] "
+            f"sustentado={metricas_xg['modelo_melhor_sustentado']}"
+        )
+        lambda_xg_por_indice = dict(zip(teste_xg.index, previsto_xg, strict=True))
+
         n_gravado = _persistir_previsao_bruta(
-            supabase, teste_temporada, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada
+            supabase, teste_temporada, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada,
+            lambda_xg=lambda_xg_por_indice,
         )
         logger.info(f"  {n_gravado} previsões por jogador gravadas em player_match_walkforward.")
 
@@ -223,11 +255,21 @@ def rodar(supabase: Client) -> int:
             m_chutes = _metricas_regressao_com_ic(previsto_chutes[mask], baseline_chutes[mask], real_chutes[mask])
             m_gols_thin = _metricas_probabilidade_marcar(lambda_gols_thinning[mask], real_marcou[mask], baseline_lambda_gols[mask])
             m_gols_dir = _metricas_probabilidade_marcar(previsto_gols_direto[mask], real_marcou[mask], baseline_lambda_gols[mask])
-            for mercado, metricas in (
+
+            mask_xg = (teste_xg["league_id"] == league_id).to_numpy()
+            m_xg = (
+                _metricas_regressao_com_ic(previsto_xg[mask_xg], baseline_xg[mask_xg], real_xg[mask_xg])
+                if mask_xg.sum() >= 30 else None
+            )
+
+            mercados_da_liga = [
                 ("chutes", m_chutes),
                 ("gols_thinning", m_gols_thin),
                 ("gols_direto", m_gols_dir),
-            ):
+            ]
+            if m_xg is not None:
+                mercados_da_liga.append(("xg", m_xg))
+            for mercado, metricas in mercados_da_liga:
                 linhas_agregado.append({
                     "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
                     "mercado": mercado, "n_partidas": int(g["match_id"].nunique()), "n_previsoes": metricas["n"],

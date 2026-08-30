@@ -94,8 +94,14 @@ FEATURES_CHUTES = [
     "dias_desde_ultimo_jogo",
     "liga",
 ]
+# Mesma base de chutes, só troca o sinal de volume primário (chutes_90 ->
+# xg_90) -- xG por jogador é dominado pela mesma força ofensiva/oponente,
+# não precisa de feature set próprio.
+FEATURES_XG = [f if f != "chutes_90_bayesiano" else "xg_90_bayesiano" for f in FEATURES_CHUTES]
+
 TARGET_CHUTES = "chutes_partida"
 TARGET_GOLS = "gols_partida"
+TARGET_XG = "xg_partida"
 FRACAO_TESTE = 0.2
 
 MODEL_NAMES = {
@@ -107,6 +113,13 @@ MODEL_NAMES = {
 MODEL_NAMES_GOLS = {
     "catboost": "jogador_gols_direto_catboost_poisson_v1",
     "lightgbm": "jogador_gols_direto_lightgbm_poisson_v1",
+}
+# xG por jogador é CONTÍNUO (soma de match_shots_fotmob.xg), não uma
+# contagem -- regressor RMSE comum, mesmo padrão de
+# scripts/treinar_regressor_xgot.py em nível de time (só CatBoost, sem par
+# LightGBM -- mesma simplicidade do precedente de time).
+MODEL_NAMES_XG = {
+    "catboost": "jogador_xg_catboost_rmse_v1",
 }
 
 
@@ -138,7 +151,7 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Verificando quais partidas têm shotmap capturado (match_shots_fotmob)...")
     shots_meta_rows = _paginar_keyset(
         lambda cursor: supabase.table("match_shots_fotmob").select(
-            "id, match_id, team_id, player_id, event_type, is_own_goal"
+            "id, match_id, team_id, player_id, event_type, is_own_goal, xg"
         )
     )
     df_shots = pd.DataFrame(shots_meta_rows)
@@ -179,13 +192,20 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     rotulos = (
         df_shots[df_shots["player_id"].notna()]
         .groupby(["match_id", "team_id", "player_id"])
-        .agg(chutes_partida=("id", "count"), gols_partida=("_e_gol_proprio", "sum"))
+        .agg(chutes_partida=("id", "count"), gols_partida=("_e_gol_proprio", "sum"), xg_partida=("xg", "sum"))
         .reset_index()
     )
 
     df = df_stats.merge(rotulos, on=["match_id", "team_id", "player_id"], how="left")
     df["chutes_partida"] = df["chutes_partida"].fillna(0).astype(int)
     df["gols_partida"] = df["gols_partida"].fillna(0).astype(int)
+    # xg_partida fica NaN (não 0) pro raríssimo caso de todo chute do
+    # jogador naquela partida ter xg nulo (~0,3% de match_shots_fotmob no
+    # escopo, confirmado por query real) -- 0 chutes vira 0.0 legitimamente
+    # (soma de conjunto vazio), mas chute(s) sem nenhum xg não deveria virar
+    # 0 por acaso do fillna, senão o modelo aprenderia "sem chute" e "chute
+    # sem xg registrado" como o mesmo sinal.
+    df["xg_partida"] = np.where(df["chutes_partida"] == 0, df["xg_partida"].fillna(0.0), df["xg_partida"])
 
     df = df.rename(columns={"match_id": "id_match"}).merge(
         matches[["id", "match_date", "home_team_id", "away_team_id", "league_id", "season", "liga"]].rename(columns={"id": "id_match"}),
@@ -266,64 +286,62 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["minutos_esperados"] = df["minutos_esperados"].fillna(45.0)
 
-    # chutes/90 minutos por aparição, denominador com piso (evita explosão
-    # pra cameo de 1-2 minutos com 1 chute = "180 chutes/90").
+    # chutes/gols/xG por 90 minutos por aparição, denominador com piso (evita
+    # explosão pra cameo de 1-2 minutos com 1 chute = "180 chutes/90"). Mesmo
+    # tratamento pras 3 estatísticas -- generalizado num loop (extraído
+    # depois de perceber que copiar o bloco pela 3a vez, pra xG, ia triplicar
+    # a mesma lógica de EWMA/prior/shrinkage já usada em chutes/gols).
     minutos_piso = df["minutes_played"].clip(lower=10)
-    df["_chutes_90_bruto"] = df["chutes_partida"] / (minutos_piso / 90.0)
-    df["_gols_90_bruto"] = df["gols_partida"] / (minutos_piso / 90.0)
+    df["n_hist"] = df.groupby("player_id").cumcount()
+    df["_season_year"] = df["season"].astype(str).str[:4].astype(int)
 
-    # EWMA temporal por jogador, shift(1) -- nunca inclui a própria partida
-    # sendo featurizada (mesmo cuidado de vazamento de `_anexar_bayesiano_
-    # por_partida`, adaptado pra chave de jogador em vez de time). O
-    # shift(1) acontece DENTRO do cálculo por grupo, de propósito -- shiftar
-    # depois via um groupby separado arrisca (re)referenciar a coluna
-    # bruta errada por engano.
     def _ewma_shift_grupo(g: pd.DataFrame, col_bruto: str) -> pd.Series:
         if g[col_bruto].isna().all():
             return pd.Series(np.nan, index=g.index)
         ewma = g[col_bruto].ewm(halflife="120 days", times=g["match_date"]).mean()
         return ewma.shift(1)
 
-    df["n_hist"] = df.groupby("player_id").cumcount()
-    for col_bruto, destino in (("_chutes_90_bruto", "ewma_chutes_90"), ("_gols_90_bruto", "ewma_gols_90")):
+    for nome, coluna_alvo in (("chutes", "chutes_partida"), ("gols", "gols_partida"), ("xg", "xg_partida")):
+        col_bruto = f"_{nome}_90_bruto"
+        col_ewma = f"ewma_{nome}_90"
+        col_prior = f"_prior_{nome}_90"
+        col_bayesiano = f"{nome}_90_bayesiano"
+
+        df[col_bruto] = df[coluna_alvo] / (minutos_piso / 90.0)
+
+        # EWMA temporal por jogador, shift(1) -- nunca inclui a própria
+        # partida sendo featurizada (mesmo cuidado de vazamento de
+        # `_anexar_bayesiano_por_partida`, adaptado pra chave de jogador em
+        # vez de time). O shift(1) acontece DENTRO do cálculo por grupo, de
+        # propósito -- shiftar depois via um groupby separado arrisca
+        # (re)referenciar a coluna bruta errada por engano.
         resultado = df.groupby("player_id", group_keys=False).apply(lambda g, c=col_bruto: _ewma_shift_grupo(g, c))
-        df[destino] = resultado.fillna(0)
+        df[col_ewma] = resultado.fillna(0)
+
+        # Prior de posição x liga -- SEMPRE a partir da TEMPORADA ANTERIOR
+        # (nunca a própria temporada da partida sendo featurizada), mesmo
+        # cuidado ponto-no-tempo de `_anexar_bayesiano_por_partida`: uma
+        # média "hoje" incluiria jogos futuros do mesmo jogador/posição,
+        # vazando informação.
+        posicao_num_provisorio = df["usual_position_id"].fillna(0).astype(int)
+        prior_temporada = df.groupby([posicao_num_provisorio, "liga", "_season_year"])[col_bruto].mean()
+        prior_liga_geral = df.groupby([posicao_num_provisorio, "liga"])[col_bruto].mean()
+        media_geral = df[col_bruto].mean()
+
+        def _prior(row, prior_temporada=prior_temporada, prior_liga_geral=prior_liga_geral, media_geral=media_geral):
+            posicao = int(row["usual_position_id"]) if pd.notna(row["usual_position_id"]) else 0
+            chave_ano_anterior = (posicao, row["liga"], row["_season_year"] - 1)
+            if chave_ano_anterior in prior_temporada.index:
+                return prior_temporada.loc[chave_ano_anterior]
+            chave_liga = (posicao, row["liga"])
+            if chave_liga in prior_liga_geral.index:
+                return prior_liga_geral.loc[chave_liga]
+            return media_geral
+
+        df[col_prior] = df.apply(_prior, axis=1)
+        df[col_bayesiano] = _shrinkage_bayesiano(df["n_hist"], df[col_ewma], df[col_prior], W_SHRINKAGE)
 
     df["posicao_num"] = df["usual_position_id"].fillna(0).astype(int)
-
-    # Prior de posição x liga -- SEMPRE a partir da TEMPORADA ANTERIOR (nunca
-    # a própria temporada da partida sendo featurizada), mesmo cuidado
-    # ponto-no-tempo de `_anexar_bayesiano_por_partida`: uma média "hoje"
-    # incluiria jogos futuros do mesmo jogador/posição, vazando informação.
-    df["_season_year"] = df["season"].astype(str).str[:4].astype(int)
-    prior_temporada = df.groupby(["posicao_num", "liga", "_season_year"])["_chutes_90_bruto"].mean()
-    prior_gols_temporada = df.groupby(["posicao_num", "liga", "_season_year"])["_gols_90_bruto"].mean()
-    prior_liga_geral = df.groupby(["posicao_num", "liga"])["_chutes_90_bruto"].mean()
-    prior_gols_liga_geral = df.groupby(["posicao_num", "liga"])["_gols_90_bruto"].mean()
-
-    def _prior_chutes(row):
-        chave_ano_anterior = (row["posicao_num"], row["liga"], row["_season_year"] - 1)
-        if chave_ano_anterior in prior_temporada.index:
-            return prior_temporada.loc[chave_ano_anterior]
-        chave_liga = (row["posicao_num"], row["liga"])
-        if chave_liga in prior_liga_geral.index:
-            return prior_liga_geral.loc[chave_liga]
-        return df["_chutes_90_bruto"].mean()
-
-    def _prior_gols(row):
-        chave_ano_anterior = (row["posicao_num"], row["liga"], row["_season_year"] - 1)
-        if chave_ano_anterior in prior_gols_temporada.index:
-            return prior_gols_temporada.loc[chave_ano_anterior]
-        chave_liga = (row["posicao_num"], row["liga"])
-        if chave_liga in prior_gols_liga_geral.index:
-            return prior_gols_liga_geral.loc[chave_liga]
-        return df["_gols_90_bruto"].mean()
-
-    df["_prior_chutes_90"] = df.apply(_prior_chutes, axis=1)
-    df["_prior_gols_90"] = df.apply(_prior_gols, axis=1)
-
-    df["chutes_90_bayesiano"] = _shrinkage_bayesiano(df["n_hist"], df["ewma_chutes_90"], df["_prior_chutes_90"], W_SHRINKAGE)
-    df["gols_90_bayesiano"] = _shrinkage_bayesiano(df["n_hist"], df["ewma_gols_90"], df["_prior_gols_90"], W_SHRINKAGE)
 
     # Taxa de conversão (gol por chute), como razão de somas estabilizadas
     # (gols_90/chutes_90), não média de razões por partida -- razão por
@@ -359,22 +377,34 @@ ALGORITMOS_POISSON = (
 )
 
 
-def _treinar_regressor_poisson(
+def _prever_catboost_regressor_nao_negativo(modelo, extra, df: pd.DataFrame, features: list[str]) -> np.ndarray:
+    """`modelos_ml.prever_catboost_regressor` é RMSE puro -- ao contrário do
+    Poisson (que exponencia e nunca sai negativo por construção), nada
+    impede a previsão de cair abaixo de 0. xG não pode ser negativo, então
+    aplica o mesmo piso já usado no restante do pipeline (ver
+    `prever_catboost_poisson`)."""
+    return np.maximum(modelos_ml.prever_catboost_regressor(modelo, extra, df, features=features), 0.0)
+
+
+ALGORITMOS_REGRESSAO_XG = (
+    ("catboost", modelos_ml.treinar_catboost_regressor, _prever_catboost_regressor_nao_negativo, {"depth": 6, "learning_rate": 0.05}),
+)
+
+
+def _treinar_regressor(
     treino: pd.DataFrame, teste: pd.DataFrame, supabase: Client, *, target: str, features: list[str],
-    market: str, model_names: dict[str, str], baseline_previsto: np.ndarray,
+    market: str, model_names: dict[str, str], baseline_previsto: np.ndarray, algoritmos=ALGORITMOS_POISSON,
 ) -> dict:
-    """Núcleo de treino compartilhado entre o regressor de chutes e o
-    regressor de gols DIRETO (candidato alternativo ao afinamento de
-    Poisson -- ver `rodar_jogador_mercados_previsto.py` e a docstring do
-    módulo) -- mesmos 2 algoritmos, mesmo baseline-vs-modelo, só muda o
-    alvo/feature set/nome de mercado registrado."""
+    """Núcleo de treino compartilhado entre chutes/gols DIRETO (Poisson) e xG
+    (RMSE puro, ver `ALGORITMOS_REGRESSAO_XG`) -- mesmo baseline-vs-modelo,
+    só muda o alvo/feature set/algoritmo(s)/nome de mercado registrado."""
     real = teste[target].to_numpy()
     baseline_rmse = _rmse(baseline_previsto, real)
     logger.info(f"[{market}] Baseline: RMSE={baseline_rmse:.4f}")
 
     resultado: dict[str, dict] = {"baseline": {"rmse": baseline_rmse, "n_teste": len(teste)}}
-    for algoritmo, treinar_fn, prever_fn, params in ALGORITMOS_POISSON:
-        logger.info(f"[{market}] Treinando {algoritmo} (Poisson, alvo={target})...")
+    for algoritmo, treinar_fn, prever_fn, params in algoritmos:
+        logger.info(f"[{market}] Treinando {algoritmo} (alvo={target})...")
         extra_treino = treinar_fn(params, treino, target, features=features)
         modelo = extra_treino[0]
         extra = extra_treino[1] if len(extra_treino) > 1 else None
@@ -407,7 +437,7 @@ def treinar(df: pd.DataFrame, supabase: Client) -> dict:
     # shrinkados -- o baseline usa a EWMA sem shrinkage nenhum, senão
     # competiria contra uma versão de si mesmo).
     baseline_chutes = (teste["ewma_chutes_90"] * teste["minutos_esperados"] / 90.0).clip(lower=0.01).to_numpy()
-    resultado_chutes = _treinar_regressor_poisson(
+    resultado_chutes = _treinar_regressor(
         treino, teste, supabase, target=TARGET_CHUTES, features=FEATURES_CHUTES,
         market="jogador_chutes", model_names=MODEL_NAMES, baseline_previsto=baseline_chutes,
     )
@@ -419,12 +449,25 @@ def treinar(df: pd.DataFrame, supabase: Client) -> dict:
     # empiricamente qual dos dois bate o baseline com mais folga (ver plano:
     # "não declarar vencedor sem medir").
     baseline_gols = (teste["ewma_gols_90"] * teste["minutos_esperados"] / 90.0).clip(lower=0.001).to_numpy()
-    resultado_gols = _treinar_regressor_poisson(
+    resultado_gols = _treinar_regressor(
         treino, teste, supabase, target=TARGET_GOLS, features=FEATURES_CHUTES,
         market="jogador_gols_direto", model_names=MODEL_NAMES_GOLS, baseline_previsto=baseline_gols,
     )
 
-    return {"chutes": resultado_chutes, "gols_direto": resultado_gols}
+    # xG por jogador -- alvo CONTÍNUO (soma de match_shots_fotmob.xg), não
+    # passa pelo dropna final de engenharia_features() de propósito (ver
+    # docstring do módulo), então filtra NaN aqui, ANTES do baseline, pra
+    # manter treino/teste/baseline com o mesmo comprimento.
+    treino_xg = treino.dropna(subset=[TARGET_XG])
+    teste_xg = teste.dropna(subset=[TARGET_XG])
+    baseline_xg = (teste_xg["ewma_xg_90"] * teste_xg["minutos_esperados"] / 90.0).clip(lower=0.0).to_numpy()
+    resultado_xg = _treinar_regressor(
+        treino_xg, teste_xg, supabase, target=TARGET_XG, features=FEATURES_XG,
+        market="jogador_xg", model_names=MODEL_NAMES_XG, baseline_previsto=baseline_xg,
+        algoritmos=ALGORITMOS_REGRESSAO_XG,
+    )
+
+    return {"chutes": resultado_chutes, "gols_direto": resultado_gols, "xg": resultado_xg}
 
 
 if __name__ == "__main__":
