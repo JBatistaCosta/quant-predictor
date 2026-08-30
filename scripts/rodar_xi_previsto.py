@@ -753,6 +753,11 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT) -> int:
                         "prob_titular": float(jogador["prob_titular"]),
                         "is_titular_previsto": jogador["player_id"] in titulares_previstos,
                         "posicao_bucket": int(jogador["usual_position_id"]) if pd.notna(jogador["usual_position_id"]) else None,
+                        # Posição fina (pedido do usuário, ver migration
+                        # add_posicao_detalhe_xi_previsto) -- mesma fonte já usada
+                        # em MAPA_DETALHE_DEFESA acima, só que persistida agora em
+                        # vez de usada só internamente pra escolher zag/lat.
+                        "posicao_detalhe": jogador["posicao_detalhe"] if pd.notna(jogador["posicao_detalhe"]) else None,
                         "model_version": "xi_titular_stacking",
                         # Explícito -- `default now()` só se aplica a INSERT novo;
                         # sem isso aqui, upsert em cima de linha já existente
