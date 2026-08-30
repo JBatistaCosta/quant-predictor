@@ -66,7 +66,11 @@ VANTAGEM_CASA = 65
 def _paginar(montar_query, order="id"):
     """Busca todas as linhas com paginação explícita (evita corte silencioso de 1000).
     `montar_query` recebe o client-base já com .select()/.eq() aplicados e devolve a
-    query pronta pra encadear .order()/.range()."""
+    query pronta pra encadear .order()/.range(). `order` PRECISA ser uma coluna única
+    (`id` por padrão) -- sem isso a paginação por `.range()` não garante o mesmo
+    conjunto de linhas entre chamadas separadas (linha duplicada ou pulada entre
+    páginas -- achado real desta sessão em `carregar_seeds_externas`, que usava
+    `valido_ate`, coluna repetida pra vários times/janelas históricas)."""
     result = []
     page = 0
     while True:
@@ -107,9 +111,12 @@ def carregar_partidas_finalizadas(supabase):
 
 
 def carregar_seeds_externas(supabase):
+    # Paginação por `id` (default de _paginar) -- correta e suficiente aqui:
+    # o "mais recente por time" é decidido pelo sort em memória logo abaixo
+    # (sobre TODAS as linhas já buscadas), não pela ordem em que a paginação
+    # as trouxe da base.
     seeds_externas = _paginar(
-        lambda: supabase.table("team_elo_external").select("team_id, elo, valido_ate"),
-        order="valido_ate",
+        lambda: supabase.table("team_elo_external").select("team_id, elo, valido_ate")
     )
     seed_por_time = {}
     for s in sorted(seeds_externas, key=lambda s: s["valido_ate"] or "", reverse=True):

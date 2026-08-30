@@ -31,6 +31,25 @@ function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+// Corta em 1000 linhas sem `.range()` explícito (PostgREST) -- mesmo padrão
+// já usado em api/model-maintenance.js (buscarTudoPaginado). `teams` já
+// está em ~700 linhas hoje (sem national teams), perto o bastante do corte
+// pra valer a pena paginar de verdade em vez de confiar que nunca passa de
+// 1000.
+async function buscarTudoPaginado(criarQuery) {
+  const TAMANHO_PAGINA = 1000;
+  const resultado = [];
+  let pagina = 0;
+  while (true) {
+    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    if (error) throw error;
+    resultado.push(...(data || []));
+    if (!data || data.length < TAMANHO_PAGINA) break;
+    pagina++;
+  }
+  return resultado;
+}
+
 const SUFIXOS_IGNORADOS = new Set([
   'fc', 'cf', 'afc', 'sc', 'ac', 'as', 'ss', 'ssc', 'cfc', 'kv', 'sk', 'bc', 'acf', 'rc', 'rcd',
   'ud', 'cd', 'ca', 'ec', 'se', 'aj', 'ogc', 'ol', 'sv', 'tsg', 'vfb', 'vfl', 'fk', 'sfp', 'pae',
@@ -148,9 +167,13 @@ export default async function handler(req, res) {
     const limite = Math.min(Number(req.query.limite) || 15, 50);
     const forcar = req.query.forcar === 'true';
 
-    const { data: times, error: erroTimes } = await supabase
-      .from('teams').select('id, name').or('is_national_team.is.null,is_national_team.eq.false').order('name');
-    if (erroTimes) throw erroTimes;
+    const times = await buscarTudoPaginado(() =>
+      // `.order('id')` como desempate depois de `name` -- nome sozinho não é
+      // garantidamente único, e sem uma chave 100% estável a paginação por
+      // `.range()` pode intercalar/pular linhas entre páginas de forma
+      // inconsistente (mesma classe de bug já documentada no projeto).
+      supabase.from('teams').select('id, name').or('is_national_team.is.null,is_national_team.eq.false').order('name').order('id')
+    );
 
     let timesParaProcessar = times;
     if (!forcar) {
@@ -159,9 +182,12 @@ export default async function handler(req, res) {
       // (PostgREST) corta em 1000 linhas por chamada sem paginação explícita —
       // consultar direto pegava só uma fatia arbitrária da tabela, fazendo o
       // "já sincronizado" ficar incompleto e reprocessar os mesmos times à toa.
-      const { data: jaSincronizados, error: erroSinc } = await supabase.from('vw_team_elo_status').select('team_id');
-      if (erroSinc) throw erroSinc;
-      const idsSincronizados = new Set((jaSincronizados || []).map(r => r.team_id));
+      // A própria view precisa da mesma paginação de verdade: hoje tem só 33
+      // linhas (bem abaixo do corte), mas cresce 1:1 com `teams` conforme mais
+      // times são sincronizados, então sem `.range()` ela quebraria do mesmo
+      // jeito assim que passasse de 1000.
+      const jaSincronizados = await buscarTudoPaginado(() => supabase.from('vw_team_elo_status').select('team_id').order('team_id'));
+      const idsSincronizados = new Set(jaSincronizados.map(r => r.team_id));
       timesParaProcessar = times.filter(t => !idsSincronizados.has(t.id));
     }
     timesParaProcessar = timesParaProcessar.slice(0, limite);
