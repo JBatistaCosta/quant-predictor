@@ -26,6 +26,7 @@ import {
 import { devigarOddsRatio, stakeKelly25 } from '../utils/devig';
 import { toPct } from '../utils/format';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
+import { poissonCDF } from '../utils/poisson';
 
 // Mercados em que o modelo misto (gols/escanteios) tem probabilidade
 // calculada E que aparecem salvos em odds_market — únicos candidatos pra
@@ -234,6 +235,85 @@ function LinhaBinaria({ rotulo, over, under, rotuloOver = 'Over', rotuloUnder = 
   );
 }
 
+// "Marcar a qualquer momento" a partir de um lambda de Poisson --
+// P(gols>=1) = 1 - e^(-lambda), mesma fórmula já usada pra 1X2/O-U de time
+// (poissonCDF cobre P(X<=k), aqui é o caso degenerado P(X=0) invertido).
+function probMarcar(lambdaGols) { return lambdaGols == null ? null : 1 - Math.exp(-Math.max(lambdaGols, 0)); }
+
+const ROTULO_FONTE_TITULAR = {
+  real: { texto: 'Escalação real', classe: 'bg-emerald-500/20 text-emerald-400' },
+  previsto: { texto: 'XI previsto', classe: 'bg-amber-500/20 text-amber-400' },
+};
+
+// Chutes/gols por jogador (player_match_estimates) -- guarda as duas
+// previsões lado a lado quando existem (fonte_titular='previsto', gerada
+// dias/horas antes usando o XI previsto, e 'real', gerada perto do apito
+// assim que a escalação oficial é capturada -- ver
+// scripts/rodar_jogador_mercados_previsto.py). Nenhuma sobrescreve a
+// outra no banco, então aqui é só questão de agrupar e mostrar as duas.
+function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
+  if (!estimativas?.length) return null;
+
+  const porTime = {
+    [homeTeamId]: estimativas.filter((e) => e.team_id === homeTeamId),
+    outro: estimativas.filter((e) => e.team_id !== homeTeamId),
+  };
+
+  const linhasOrdenadas = (lista) =>
+    [...lista].sort((a, b) => (b.lambda_chutes_jogo ?? 0) - (a.lambda_chutes_jogo ?? 0));
+
+  const Tabela = ({ titulo, linhas }) => (
+    <div className="mb-4 last:mb-0">
+      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">{titulo}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 text-left">
+              <th className="py-1 pr-2 font-normal">Jogador</th>
+              <th className="py-1 px-2 font-normal">Fonte</th>
+              <th className="py-1 px-2 font-normal text-right">Min. esp.</th>
+              <th className="py-1 px-2 font-normal text-right">Chutes (λ)</th>
+              <th className="py-1 px-2 font-normal text-right">P(&gt;1.5 chutes)</th>
+              <th className="py-1 px-2 font-normal text-right">Marcar (thinning)</th>
+              <th className="py-1 pl-2 font-normal text-right">Marcar (direto)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => {
+              const fonte = ROTULO_FONTE_TITULAR[l.fonte_titular] || { texto: l.fonte_titular, classe: 'bg-slate-700 text-slate-300' };
+              return (
+                <tr key={`${l.player_id}-${l.fonte_titular}`} className="border-t border-slate-800">
+                  <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
+                  <td className="py-1.5 px-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${fonte.classe}`}>{fonte.texto}</span>
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.minutos_esperados, 0)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.lambda_chutes_jogo, 2)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1))}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}</td>
+                  <td className="py-1.5 pl-2 text-right font-mono text-slate-400">{fmtPct(probMarcar(l.lambda_gols_jogo_direto))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <Secao titulo="Chutes & gols por jogador" icone={Target}>
+      <p className="text-[11px] text-slate-500 mb-3">
+        λ de Poisson por jogador (<code className="text-slate-400">player_match_estimates</code>). "Marcar (thinning)" deriva do λ de chutes
+        × taxa de conversão do próprio jogador; "Marcar (direto)" é um regressor treinado direto no alvo gols — as duas ficam lado a lado
+        de propósito, sem vencedor fixo. "XI previsto" carrega mais incerteza de escalação que "Escalação real" (capturada perto do apito).
+      </p>
+      <Tabela titulo={homeNome || 'Mandante'} linhas={linhasOrdenadas(porTime[homeTeamId] || [])} />
+      <Tabela titulo={awayNome || 'Visitante'} linhas={linhasOrdenadas(porTime.outro || [])} />
+    </Secao>
+  );
+}
+
 // Busca TODAS as linhas de odds_market da partida nos mercados em escopo,
 // paginado de verdade (loop de `.range()` até vir página incompleta) -- não
 // é frescura: uma partida negociada por muito tempo/muitos bookmakers pode
@@ -278,6 +358,7 @@ export default function AnaliseAvancadaEvento() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [calibracaoRows, setCalibracaoRows] = useState([]);
+  const [jogadorEstimativas, setJogadorEstimativas] = useState([]);
 
   useEffect(() => {
     if (!supabaseAtivo) return;
@@ -299,7 +380,7 @@ export default function AnaliseAvancadaEvento() {
         // seletor de snapshot -- fechamento (quando existe) aparece como
         // mais uma opção na lista, não é exigido. Qualquer outro status (ao
         // vivo/adiado/cancelado): não busca odds.
-        const [{ data: est, error: erroEst }, odds, corners, { data: calib }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -320,6 +401,20 @@ export default function AnaliseAvancadaEvento() {
           (j.status === 'scheduled' || finalizada)
             ? supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_bruto, log_loss_calibrado, n_teste')
             : Promise.resolve({ data: [] }),
+          // Chutes/gols por jogador (player_match_estimates) -- só existe pra
+          // partida ainda AGENDADA (rodar_jogador_mercados_previsto.py só
+          // pontua fixtures scheduled, nunca reprocessa o passado). Traz as
+          // DUAS fontes quando existirem (fonte_titular='previsto'/'real',
+          // nunca uma sobrescrevendo a outra no banco -- ver migration) pra
+          // comparação lado a lado. RLS de leitura pública, mesma consulta
+          // direta via supabase-js de todo o resto desta página (sem função
+          // serverless nova).
+          j.status === 'scheduled'
+            ? supabase
+                .from('player_match_estimates')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, players(name, photo_url)')
+                .eq('match_id', matchId)
+            : Promise.resolve({ data: [] }),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -329,6 +424,7 @@ export default function AnaliseAvancadaEvento() {
         setSnapshotSelecionado('');
         setResultadoReal(finalizada ? { golsHome: j.home_goals, golsAway: j.away_goals, ...corners } : null);
         setCalibracaoRows(calib || []);
+        setJogadorEstimativas(jogadorEst || []);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -875,6 +971,17 @@ export default function AnaliseAvancadaEvento() {
             </>
           )}
         </>
+      )}
+
+      {jogadorEstimativas.length > 0 && (
+        <div className="mt-4">
+          <SecaoJogadorMercados
+            estimativas={jogadorEstimativas}
+            homeTeamId={jogo.home?.id}
+            homeNome={jogo.home?.name}
+            awayNome={jogo.away?.name}
+          />
+        </div>
       )}
     </div>
   );

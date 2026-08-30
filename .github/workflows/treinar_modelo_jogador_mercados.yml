@@ -1,0 +1,41 @@
+name: Treino do Modelo de Chutes/Gols por Jogador
+
+# Roda scripts/treinar_modelo_jogador_mercados.py -- treina o regressor
+# Poisson de chutes por jogador (CatBoost + LightGBM, 6 ligas do escopo
+# confirmado: dados_historicos.LIGAS_MODEL_BENCHMARKING) e o regressor
+# Poisson direto de gols (candidato alternativo ao afinamento de Poisson
+# usado em produção), persiste os 4 artefatos no bucket privado
+# custom-model-artifacts (jogador_mercados/*.joblib) e registra métricas em
+# models_registry (market=jogador_chutes / jogador_gols_direto).
+#
+# Só workflow_dispatch (retreino é ação manual nesse repo, mesmo padrão de
+# treinar_modelo_xi.yml) -- rodar de novo quando match_shots_fotmob crescer
+# o suficiente pra valer a pena, ou depois de mudança no script.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  treinar-modelo-jogador-mercados:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Treinar modelo de chutes/gols por jogador
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/treinar_modelo_jogador_mercados.py
