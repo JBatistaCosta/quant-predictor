@@ -298,7 +298,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     df["taxa_conversao_bayesiana"] = np.where(
         df["chutes_90_bayesiano"] > 0.01, df["gols_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
     ).clip(0, 1)
-    return df[["player_id", "chutes_90_bayesiano", "xg_90_bayesiano", "taxa_conversao_bayesiana", "posicao_num"]]
+    return df[["player_id", "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "taxa_conversao_bayesiana", "posicao_num"]]
 
 
 def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int] | None = None) -> int:
@@ -388,6 +388,9 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "fonte_titular": fonte, "prob_titular_usada": float(row["prob_titular_usada"]),
                 "minutos_esperados": float(row["minutos_esperados"]),
                 "taxa_conversao_bayesiana": float(row["taxa_conversao_bayesiana"]),
+                "chutes_90_bayesiano": float(row["chutes_90_bayesiano"]),
+                "gols_90_bayesiano": float(row["gols_90_bayesiano"]),
+                "xg_90_bayesiano": float(row["xg_90_bayesiano"]),
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
                 "lambda_gols_jogo_thinning": float(lambda_gols_thinning[i]),
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
