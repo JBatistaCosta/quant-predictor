@@ -259,9 +259,15 @@ async function regravarElo(supabase, linhasElo, linhasHistorico, filtroDelete) {
 }
 
 async function eloProcessarLiga(supabase, ligaId) {
+  // `.order('id')` -- toda liga doméstica já passa de 1000 partidas
+  // finalizadas (`buscarTudoPaginado` sempre pagina de verdade aqui), e sem
+  // uma chave de ordenação a paginação por `.range()` não garante o mesmo
+  // conjunto de linhas entre chamadas separadas -- mesma classe de bug já
+  // documentada no projeto.
   const partidas = await buscarTudoPaginado(() =>
     supabase.from('matches').select('id, round, match_date, home_team_id, away_team_id, home_goals, away_goals')
       .eq('league_id', ligaId).eq('status', 'finished').not('home_goals', 'is', null).not('away_goals', 'is', null)
+      .order('id')
   );
   partidas.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
 
@@ -296,9 +302,17 @@ async function eloProcessarGeral(supabase) {
     buscarTudoPaginado(() =>
       supabase.from('matches').select('id, round, match_date, home_team_id, away_team_id, home_goals, away_goals')
         .eq('league_id', LIGA_CHAMPIONS_ID).eq('status', 'finished').not('home_goals', 'is', null).not('away_goals', 'is', null)
+        .order('id')
     ),
-    buscarTudoPaginado(() => supabase.from('team_elo_external').select('team_id, elo, valido_ate').order('valido_ate', { ascending: false })),
-    buscarTudoPaginado(() => supabase.from('matches').select('home_team_id, away_team_id').in('league_id', LIGAS_DOMESTICAS).eq('status', 'finished')),
+    // `.order('id')` como desempate de `valido_ate` -- essa coluna não é
+    // única (várias janelas históricas por time), então sem uma chave 100%
+    // estável a paginação por `.range()` não garante o mesmo conjunto de
+    // linhas entre chamadas separadas (mesma classe de bug já documentada
+    // no projeto, aqui na semente externa do Elo "geral").
+    buscarTudoPaginado(() => supabase.from('team_elo_external').select('team_id, elo, valido_ate').order('valido_ate', { ascending: false }).order('id', { ascending: false })),
+    // Sempre > 1000 linhas somando as 6 ligas domésticas -- precisa de
+    // .order() pelo mesmo motivo.
+    buscarTudoPaginado(() => supabase.from('matches').select('home_team_id, away_team_id').in('league_id', LIGAS_DOMESTICAS).eq('status', 'finished').order('id')),
   ]);
   partidasChampions.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
 
@@ -388,7 +402,13 @@ const PLAYER_ELO_CONFIG_PADRAO = {
 const clampNum = (v, min, max) => Math.max(min, Math.min(max, v));
 
 async function lerConfigModelo(supabase, modelName, padrao) {
-  const { data } = await supabase.from('model_config').select('config').eq('model_name', modelName).maybeSingle();
+  // Erro não checado aqui antes caía silenciosamente pro default -- num
+  // endpoint que só LÊ config isso seria só um detalhe, mas `tarefa=
+  // player-elo` chama isso a cada lote e GRAVA rating com o resultado: uma
+  // falha transiente processaria o lote inteiro com pesos errados (não os
+  // configurados pelo operador) sem nenhum sinal.
+  const { data, error } = await supabase.from('model_config').select('config').eq('model_name', modelName).maybeSingle();
+  if (error) throw error;
   return { ...padrao, ...(data?.config || {}) };
 }
 
@@ -431,10 +451,18 @@ async function tarefaPlayerElo(supabase, limite) {
   // partida ANTIGA for sincronizada no FotMob depois do cursor já ter
   // passado por ela, ela não entra sozinha — reprocesso completo = truncar
   // player_ratings/player_rating_history e re-rodar do zero.
+  // `.order('id')`/`.order('player_id')` -- as duas somam bem mais de 1000
+  // linhas hoje (match_source_ids ~26 mil, player_ratings ~7,9 mil), então
+  // sem uma chave de ordenação a paginação por `.range()` não garante o
+  // mesmo conjunto de linhas entre chamadas separadas. O caso de
+  // `player_ratings` é o mais sério: uma linha perdida aqui zera
+  // silenciosamente o rating acumulado daquele jogador de volta pro
+  // baseline (`?? PLAYER_RATING_INICIAL` mais abaixo), quebrando o
+  // invariante "acumulativo" que é a premissa central desta feature.
   const [{ data: ultimaLinha }, partidasFotmob, ratingsAtuais, cfg] = await Promise.all([
     supabase.from('player_rating_history').select('match_id').order('id', { ascending: false }).limit(1).maybeSingle(),
-    buscarTudoPaginado(() => supabase.from('match_source_ids').select('match_id').eq('source', 'fotmob')),
-    buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas')),
+    buscarTudoPaginado(() => supabase.from('match_source_ids').select('match_id').eq('source', 'fotmob').order('id')),
+    buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas').order('player_id')),
     lerConfigModelo(supabase, 'player_elo_v1', PLAYER_ELO_CONFIG_PADRAO),
   ]);
 
@@ -464,10 +492,15 @@ async function tarefaPlayerElo(supabase, limite) {
 
   const stats = [];
   for (const loteIds of fatiar(idsLote, 100)) {
+    // ~42 linhas/match_id em média (medido via SQL) -- um lote de 100
+    // match_id soma ~4.200 linhas, sempre multi-página. `.order('id')`
+    // garante paginação estável (mesma classe de bug já documentada no
+    // projeto); sem isso, uma linha duplicada entre páginas aplicaria o
+    // delta de rating daquele jogador-partida DUAS vezes.
     const linhas = await buscarTudoPaginado(() =>
       supabase.from('match_player_stats_fotmob')
         .select('match_id, player_id, rating, minutes_played, goals, assists, xg, xa, chances_created')
-        .in('match_id', loteIds).not('player_id', 'is', null)
+        .in('match_id', loteIds).not('player_id', 'is', null).order('id')
     );
     stats.push(...linhas);
   }
