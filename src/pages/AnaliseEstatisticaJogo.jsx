@@ -420,7 +420,7 @@ async function buscarContextoJogo(matchId) {
 async function buscarXiPrevisto(matchId) {
   const { data } = await supabase
     .from('xi_previsto')
-    .select('team_id, player_id, prob_titular, is_titular_previsto, posicao_bucket, players(name)')
+    .select('team_id, player_id, prob_titular, is_titular_previsto, posicao_bucket, posicao_detalhe, players(name)')
     .eq('match_id', matchId)
     .order('prob_titular', { ascending: false });
   return data || [];
@@ -432,7 +432,7 @@ async function buscarXiPrevisto(matchId) {
 async function buscarDesfalques(homeTeamId, awayTeamId) {
   const { data } = await supabase
     .from('player_availability_fotmob')
-    .select('team_id, player_name, role, expected_return')
+    .select('team_id, player_name, role, posicao_detalhe, expected_return')
     .in('team_id', [homeTeamId, awayTeamId])
     .eq('injured', true)
     .order('player_name');
@@ -578,13 +578,42 @@ function PainelContextoJogo({ contexto }) {
 
 const POSICAO_LABEL = { 0: 'Goleiro', 1: 'Defesa', 2: 'Meio-campo', 3: 'Ataque' };
 const ORDEM_POSICAO = [0, 1, 2, 3];
+// role (player_availability_fotmob, texto cru em inglês) traduzido pra
+// fallback quando posicao_detalhe (mais fino) não está disponível.
+const ROLE_LABEL = { Keeper: 'Goleiro', Defender: 'Defesa', Midfielder: 'Meio-campo', Attacker: 'Ataque' };
+// Posição fina (pedido do usuário: identificar substituto direto na mesma
+// posição, ajustar esquema tático) -- código bruto do FotMob
+// (posicao_detalhe, ver migration add_posicao_detalhe_xi_previsto), único
+// nível de granularidade que a fonte expõe. Limitação real da fonte: não
+// distingue lado do zagueiro (só "CB" genérico, sem "zagueiro direito/
+// esquerdo") -- os demais setores (lateral, ala, ponta, meia) têm lado.
+const POSICAO_FINA_LABEL = {
+  GK: 'Goleiro',
+  CB: 'Zagueiro',
+  RB: 'Lateral-direito',
+  LB: 'Lateral-esquerdo',
+  RWB: 'Ala-direito',
+  LWB: 'Ala-esquerdo',
+  CDM: 'Volante',
+  CM: 'Meio-campo',
+  CAM: 'Meia-ofensivo',
+  RM: 'Meia-direita',
+  LM: 'Meia-esquerda',
+  RW: 'Ponta-direita',
+  LW: 'Ponta-esquerda',
+  ST: 'Centroavante',
+};
 
 function ListaJogadoresXi({ jogadores }) {
   return (
     <ul className="space-y-0.5">
       {jogadores.map(j => (
         <li key={j.player_id} className="text-xs text-slate-300 flex items-center justify-between gap-2">
-          <span>{j.players?.name || `Jogador #${j.player_id}`}</span>
+          <span>
+            {j.players?.name || `Jogador #${j.player_id}`}
+            {' '}
+            <span className="text-slate-600">({POSICAO_FINA_LABEL[j.posicao_detalhe] || POSICAO_LABEL[j.posicao_bucket] || '—'})</span>
+          </span>
           <span className="text-[10px] text-slate-500 shrink-0">{Math.round(j.prob_titular * 100)}%</span>
         </li>
       ))}
@@ -690,7 +719,7 @@ function PainelImportanciaDesfalques({ importancia, desfalques, jogo }) {
                 <ul className="space-y-1">
                   {lado.lista.map((d, i) => (
                     <li key={i} className="text-xs text-slate-300 flex items-center justify-between gap-2">
-                      <span>{d.player_name} <span className="text-slate-600">({d.role})</span></span>
+                      <span>{d.player_name} <span className="text-slate-600">({POSICAO_FINA_LABEL[d.posicao_detalhe] || ROLE_LABEL[d.role] || d.role})</span></span>
                       {d.expected_return && <span className="text-[10px] text-slate-500 shrink-0">retorno: {d.expected_return}</span>}
                     </li>
                   ))}
