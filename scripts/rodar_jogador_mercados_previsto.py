@@ -63,6 +63,7 @@ BUCKET_ARTEFATOS = "custom-model-artifacts"
 DIAS_JANELA_DEFAULT = 7
 MODEL_VERSION = "jogador_chutes_catboost_poisson_v1"
 MODEL_VERSION_GOLS_DIRETO = "jogador_gols_direto_catboost_poisson_v1"
+MODEL_VERSION_XG = "jogador_xg_catboost_rmse_v1"
 
 
 def _dividir_em_lotes(itens: list, tamanho: int = 500):
@@ -89,6 +90,18 @@ def carregar_modelo_gols_direto(supabase: Client):
         return joblib.load(io.BytesIO(conteudo))
     except Exception as e:
         logger.warning(f"Sem artefato de gols direto ({path}): {e} -- seguindo só com thinning.")
+        return None
+
+
+def carregar_modelo_xg(supabase: Client):
+    """Opcional -- se ausente, o script segue sem lambda_xg_jogo (não
+    bloqueia chutes/gols, mesmo espírito de `carregar_modelo_gols_direto`)."""
+    path = f"jogador_mercados/{MODEL_VERSION_XG}.joblib"
+    try:
+        conteudo = supabase.storage.from_(BUCKET_ARTEFATOS).download(path)
+        return joblib.load(io.BytesIO(conteudo))
+    except Exception as e:
+        logger.warning(f"Sem artefato de xG ({path}): {e} -- seguindo sem lambda_xg_jogo.")
         return None
 
 
@@ -201,9 +214,10 @@ def _minutos_medios_titular_reserva(supabase: Client, player_ids: list[int]) -> 
 
 
 def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_team_id: dict[int, str]) -> pd.DataFrame:
-    """chutes_90_bayesiano/gols_90_bayesiano/taxa_conversao_bayesiana "hoje"
-    (sem corte de data -- toda a história disponível) pros jogadores em
-    `candidatos` (colunas match_id, team_id, player_id no mínimo). Mesma
+    """chutes_90_bayesiano/gols_90_bayesiano/xg_90_bayesiano/taxa_conversao_
+    bayesiana "hoje" (sem corte de data -- toda a história disponível) pros
+    jogadores em `candidatos` (colunas match_id, team_id, player_id no
+    mínimo). Mesma
     fórmula de `treinar_modelo_jogador_mercados.engenharia_features`
     (reaproveitada via `tmj._shrinkage_bayesiano`), mas sem o cuidado de
     "temporada anterior" no prior -- não há vazamento a evitar numa
@@ -213,7 +227,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     for lote in _dividir_em_lotes(player_ids, 200):
         shots_rows.extend(
             supabase.table("match_shots_fotmob")
-            .select("player_id, event_type, is_own_goal")
+            .select("player_id, event_type, is_own_goal, xg")
             .in_("player_id", lote)
             .execute()
             .data
@@ -233,13 +247,17 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["player_id", "minutes_played"])
     minutos_totais = df_stats.groupby("player_id")["minutes_played"].sum().to_dict()
 
-    df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["player_id", "event_type", "is_own_goal"])
+    df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["player_id", "event_type", "is_own_goal", "xg"])
     if not df_shots.empty:
         df_shots["_e_gol_proprio"] = (df_shots["event_type"] == "Goal") & (~df_shots["is_own_goal"].fillna(False))
         chutes_totais = df_shots.groupby("player_id").size().to_dict()
         gols_totais = df_shots.groupby("player_id")["_e_gol_proprio"].sum().to_dict()
+        # xg pode ser nulo por chute (~0,3% no escopo, ver docstring de
+        # treinar_modelo_jogador_mercados) -- soma ignora NaN naturalmente
+        # (pandas .sum() pula NaN por padrão).
+        xg_totais = df_shots.groupby("player_id")["xg"].sum().to_dict()
     else:
-        chutes_totais, gols_totais = {}, {}
+        chutes_totais, gols_totais, xg_totais = {}, {}, {}
 
     players_rows = []
     for lote in _dividir_em_lotes(player_ids, 500):
@@ -251,12 +269,14 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
         minutos = minutos_totais.get(player_id, 0)
         chutes = chutes_totais.get(player_id, 0)
         gols = gols_totais.get(player_id, 0)
+        xg = xg_totais.get(player_id, 0.0) or 0.0
         chutes_90 = (chutes / (minutos / 90.0)) if minutos > 0 else 0.0
         gols_90 = (gols / (minutos / 90.0)) if minutos > 0 else 0.0
+        xg_90 = (xg / (minutos / 90.0)) if minutos > 0 else 0.0
         n_hist = int(minutos / 90.0)
         linhas.append({
-            "player_id": player_id, "_chutes_90_bruto": chutes_90, "_gols_90_bruto": gols_90, "n_hist": n_hist,
-            "posicao_num": int(posicao_por_jogador.get(player_id, 0) or 0),
+            "player_id": player_id, "_chutes_90_bruto": chutes_90, "_gols_90_bruto": gols_90, "_xg_90_bruto": xg_90,
+            "n_hist": n_hist, "posicao_num": int(posicao_por_jogador.get(player_id, 0) or 0),
         })
     df = pd.DataFrame(linhas)
     if df.empty:
@@ -267,15 +287,18 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
 
     prior_chutes = df.groupby(["posicao_num", "liga"])["_chutes_90_bruto"].mean()
     prior_gols = df.groupby(["posicao_num", "liga"])["_gols_90_bruto"].mean()
+    prior_xg = df.groupby(["posicao_num", "liga"])["_xg_90_bruto"].mean()
     df["_prior_chutes_90"] = df.apply(lambda r: prior_chutes.get((r["posicao_num"], r["liga"]), df["_chutes_90_bruto"].mean()), axis=1)
     df["_prior_gols_90"] = df.apply(lambda r: prior_gols.get((r["posicao_num"], r["liga"]), df["_gols_90_bruto"].mean()), axis=1)
+    df["_prior_xg_90"] = df.apply(lambda r: prior_xg.get((r["posicao_num"], r["liga"]), df["_xg_90_bruto"].mean()), axis=1)
 
     df["chutes_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_chutes_90_bruto"], df["_prior_chutes_90"], tmj.W_SHRINKAGE)
     df["gols_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_gols_90_bruto"], df["_prior_gols_90"], tmj.W_SHRINKAGE)
+    df["xg_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_xg_90_bruto"], df["_prior_xg_90"], tmj.W_SHRINKAGE)
     df["taxa_conversao_bayesiana"] = np.where(
         df["chutes_90_bayesiano"] > 0.01, df["gols_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
     ).clip(0, 1)
-    return df[["player_id", "chutes_90_bayesiano", "taxa_conversao_bayesiana", "posicao_num"]]
+    return df[["player_id", "chutes_90_bayesiano", "xg_90_bayesiano", "taxa_conversao_bayesiana", "posicao_num"]]
 
 
 def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int] | None = None) -> int:
@@ -288,6 +311,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
     if modelo_chutes is None:
         return 0
     modelo_gols_direto = carregar_modelo_gols_direto(supabase)
+    modelo_xg = carregar_modelo_xg(supabase)
 
     fixture_ids = [int(m) for m in fixtures["id"].tolist()]
     df_real, df_previsto = _buscar_candidatos_por_fonte(supabase, fixture_ids)
@@ -356,6 +380,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         lambda_chutes = modelos_ml_predict(modelo_chutes, df)
         lambda_gols_thinning = lambda_chutes * df["taxa_conversao_bayesiana"].to_numpy()
         lambda_gols_direto = modelos_ml_predict(modelo_gols_direto, df) if modelo_gols_direto is not None else None
+        lambda_xg = modelos_ml_predict_regressor(modelo_xg, df, tmj.FEATURES_XG) if modelo_xg is not None else None
 
         for i, (_, row) in enumerate(df.iterrows()):
             linhas_saida.append({
@@ -366,6 +391,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
                 "lambda_gols_jogo_thinning": float(lambda_gols_thinning[i]),
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
+                "lambda_xg_jogo": float(lambda_xg[i]) if lambda_xg is not None else None,
                 "model_version": MODEL_VERSION, "gerado_em": agora,
             })
 
@@ -389,6 +415,19 @@ def modelos_ml_predict(modelo, df: pd.DataFrame) -> np.ndarray:
     df_prep = df.copy()
     df_prep["liga"] = df_prep["liga"].fillna("desconhecida").astype(str)
     return np.maximum(modelo.predict(df_prep[tmj.FEATURES_CHUTES]), 0.01)
+
+
+def modelos_ml_predict_regressor(modelo, df: pd.DataFrame, features: list[str]) -> np.ndarray:
+    """Mesma preparação de `modelos_ml_predict`, mas pra regressor RMSE puro
+    (xG) -- piso 0.0, não 0.01: xG=0.0 é um valor legítimo (jogador sem
+    nenhum chute esperado), diferente do λ de Poisson (que nunca deveria
+    ser exatamente 0 como "chute inicial"). Mesmo cuidado de
+    `_prever_catboost_regressor_nao_negativo` em
+    treinar_modelo_jogador_mercados.py -- RMSE não garante não-negatividade
+    por construção como o Poisson garante."""
+    df_prep = df.copy()
+    df_prep["liga"] = df_prep["liga"].fillna("desconhecida").astype(str)
+    return np.maximum(modelo.predict(df_prep[features]), 0.0)
 
 
 if __name__ == "__main__":

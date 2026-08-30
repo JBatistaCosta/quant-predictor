@@ -275,7 +275,8 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
               <th className="py-1 px-2 font-normal text-right">Chutes (λ)</th>
               <th className="py-1 px-2 font-normal text-right">P(&gt;1.5 chutes)</th>
               <th className="py-1 px-2 font-normal text-right">Marcar (thinning)</th>
-              <th className="py-1 pl-2 font-normal text-right">Marcar (direto)</th>
+              <th className="py-1 px-2 font-normal text-right">Marcar (direto)</th>
+              <th className="py-1 pl-2 font-normal text-right">xG esp.</th>
             </tr>
           </thead>
           <tbody>
@@ -291,7 +292,8 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
                   <td className="py-1.5 px-2 text-right font-mono text-slate-300">{fmtNum(l.lambda_chutes_jogo, 2)}</td>
                   <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1))}</td>
                   <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}</td>
-                  <td className="py-1.5 pl-2 text-right font-mono text-slate-400">{fmtPct(probMarcar(l.lambda_gols_jogo_direto))}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-slate-400">{fmtPct(probMarcar(l.lambda_gols_jogo_direto))}</td>
+                  <td className="py-1.5 pl-2 text-right font-mono text-slate-300">{fmtNum(l.lambda_xg_jogo, 2)}</td>
                 </tr>
               );
             })}
@@ -306,7 +308,8 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
       <p className="text-[11px] text-slate-500 mb-3">
         λ de Poisson por jogador (<code className="text-slate-400">player_match_estimates</code>). "Marcar (thinning)" deriva do λ de chutes
         × taxa de conversão do próprio jogador; "Marcar (direto)" é um regressor treinado direto no alvo gols — as duas ficam lado a lado
-        de propósito, sem vencedor fixo. "XI previsto" carrega mais incerteza de escalação que "Escalação real" (capturada perto do apito).
+        de propósito, sem vencedor fixo. "xG esp." é o xG esperado do jogador na partida (regressor CatBoost RMSE, não vira probabilidade
+        derivada). "XI previsto" carrega mais incerteza de escalação que "Escalação real" (capturada perto do apito).
       </p>
       <Tabela titulo={homeNome || 'Mandante'} linhas={linhasOrdenadas(porTime[homeTeamId] || [])} />
       <Tabela titulo={awayNome || 'Visitante'} linhas={linhasOrdenadas(porTime.outro || [])} />
@@ -412,7 +415,7 @@ export default function AnaliseAvancadaEvento() {
           j.status === 'scheduled'
             ? supabase
                 .from('player_match_estimates')
-                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, players(name, photo_url)')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, players(name, photo_url)')
                 .eq('match_id', matchId)
             : Promise.resolve({ data: [] }),
         ]);
