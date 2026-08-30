@@ -11,11 +11,12 @@
 // então fundir é seguro (só muda a URL de chamada).
 //
 // COMO CHAMAR:
-//   ?tarefa=elo&liga_id=X       -> recalcula o Elo interno de UMA liga doméstica (1,4,7,10,13,16)
+//   ?tarefa=elo&liga_id=X       -> recalcula o Elo interno de UMA liga (ver LIGAS_DOMESTICAS)
 //   ?tarefa=elo&escopo=geral    -> recalcula o Elo geral (cross-liga, Champions League)
 //   ?tarefa=elo-rotativo        -> versão pro cron diário: processa só 1 escopo por dia,
-//                                   revezando entre as 6 ligas domésticas + geral (dia do
-//                                   ano mod 7) — ciclo completo fecha em ~1 semana. Existe
+//                                   revezando entre as ligas de LIGAS_DOMESTICAS + geral (dia
+//                                   do ano mod tamanho da lista) — ciclo completo fecha em
+//                                   ~1 semana com 6 ligas, ~13 dias agora com 12. Existe
 //                                   porque processar tudo numa chamada só já deu timeout
 //                                   antes (testado, ver CONTEXTO_PROJETO.md).
 //   ?tarefa=calibracao&modelo=X                  -> reajusta Platt Scaling + Isotonic Regression pro model_name X (todos os mercados/seleções dele)
@@ -226,7 +227,18 @@ const RATING_INICIAL = 1500;
 const K_ELO = 20;
 const VANTAGEM_CASA = 65;
 const LIGA_CHAMPIONS_ID = 19;
-const LIGAS_DOMESTICAS = [1, 4, 7, 10, 13, 16];
+// Nome histórico "domésticas" mantido (usado em várias strings/comentários
+// espalhados no arquivo) mesmo depois de crescer com Copa Libertadores (23,
+// continental) -- ligas/competições que ganham Elo próprio via
+// eloProcessarLiga, não uma classificação estrita de "só campeonato
+// nacional". Championship=24, Brasileirão Série B=34, MLS=29,
+// Eredivisie=25, Primeira Liga=26, Copa Libertadores=23 adicionadas junto
+// da expansão do modelo de chutes/gols/xG por jogador (LIGAS_JOGADOR_
+// MERCADOS em dados_historicos.py) -- esse modelo usa elo_diff como
+// feature, então precisa que essas ligas também tenham team_elo escopo=
+// 'liga' calculado, senão a feature fica NaN e as linhas somem
+// silenciosamente do treino/produção (dropna).
+const LIGAS_DOMESTICAS = [1, 4, 7, 10, 13, 16, 24, 34, 29, 25, 26, 23];
 
 function multiplicadorDiferenca(diferenca) {
   const d = Math.abs(diferenca);
