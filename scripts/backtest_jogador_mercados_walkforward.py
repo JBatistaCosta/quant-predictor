@@ -131,6 +131,7 @@ def _metricas_probabilidade_marcar(lambda_gols: np.ndarray, real_marcou: np.ndar
 def _persistir_previsao_bruta(
     supabase: Client, teste: pd.DataFrame, previsto_chutes: np.ndarray, lambda_gols_thinning: np.ndarray,
     lambda_gols_direto: np.ndarray, temporada: str, lambda_xg: dict[int, float] | None = None,
+    lambda_chutes_no_alvo: np.ndarray | None = None,
 ) -> int:
     """Grava a previsão bruta (1 linha por jogador x partida x fonte_titular)
     em `player_match_walkforward` -- `fonte_titular` sempre 'previsto' aqui
@@ -141,12 +142,16 @@ def _persistir_previsao_bruta(
     `dropna(subset=[TARGET_XG])` separadamente de `teste` -- linhas
     diferentes podem ter xg_partida nulo (ver docstring do módulo). Ausente
     do dict = xG não avaliado pra essa linha (fica None, não 0.0 -- não
-    inventar previsão pra linha que não passou pelo modelo)."""
+    inventar previsão pra linha que não passou pelo modelo). `lambda_chutes_
+    no_alvo` já vem alinhado 1:1 com `teste` (chutes_no_alvo_partida nunca é
+    nulo, mesmo tratamento de chutes_partida -- não precisa do dict)."""
     lambda_xg = lambda_xg or {}
+    if lambda_chutes_no_alvo is None:
+        lambda_chutes_no_alvo = [None] * len(teste)
     linhas = []
-    for idx, match_id, team_id, player_id, league_id, minutos_esp, taxa_conv, prev_chutes, lam_gols_thin, lam_gols_dir in zip(
+    for idx, match_id, team_id, player_id, league_id, minutos_esp, taxa_conv, prev_chutes, lam_gols_thin, lam_gols_dir, lam_no_alvo in zip(
         teste.index, teste["match_id"], teste["team_id"], teste["player_id"], teste["league_id"], teste["minutos_esperados"],
-        teste["taxa_conversao_bayesiana"], previsto_chutes, lambda_gols_thinning, lambda_gols_direto, strict=True,
+        teste["taxa_conversao_bayesiana"], previsto_chutes, lambda_gols_thinning, lambda_gols_direto, lambda_chutes_no_alvo, strict=True,
     ):
         lam_xg = lambda_xg.get(idx)
         linhas.append({
@@ -155,6 +160,7 @@ def _persistir_previsao_bruta(
             "taxa_conversao_bayesiana": float(taxa_conv), "lambda_chutes_jogo": float(prev_chutes),
             "lambda_gols_jogo_thinning": float(lam_gols_thin), "lambda_gols_jogo_direto": float(lam_gols_dir),
             "lambda_xg_jogo": float(lam_xg) if lam_xg is not None else None,
+            "lambda_chutes_no_alvo_jogo": float(lam_no_alvo) if lam_no_alvo is not None else None,
             "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
         })
     total = 0
@@ -220,6 +226,27 @@ def rodar(supabase: Client) -> int:
             f"-- {'thinning melhor' if metricas_gols_thinning['log_loss_modelo'] < metricas_gols_direto['log_loss_modelo'] else 'direto melhor'}"
         )
 
+        # Chutes ao gol (on target, excluindo bloqueado -- ver docstring de
+        # treinar_modelo_jogador_mercados.carregar_dados) -- mesmo afinamento
+        # de Poisson de gols_thinning (lambda_chutes x taxa_no_alvo_
+        # bayesiana), mas avaliado como CONTAGEM (RMSE, mesmo tratamento de
+        # "chutes") já que não é evento raro binário como "marcou" -- é a
+        # mesma família de mercado que "Chutes (λ)"/"P(>1.5 chutes)" no
+        # frontend, só filtrado pro subconjunto que foi na direção do gol.
+        taxa_no_alvo = teste_temporada["taxa_no_alvo_bayesiana"].to_numpy()
+        lambda_chutes_no_alvo_thinning = previsto_chutes * taxa_no_alvo
+        real_chutes_no_alvo = teste_temporada[tmj.TARGET_CHUTES_NO_ALVO].to_numpy()
+        baseline_chutes_no_alvo = (
+            teste_temporada["ewma_chutes_no_alvo_90"] * teste_temporada["minutos_esperados"] / 90.0
+        ).clip(lower=0.01).to_numpy()
+        metricas_chutes_no_alvo = _metricas_regressao_com_ic(lambda_chutes_no_alvo_thinning, baseline_chutes_no_alvo, real_chutes_no_alvo)
+        logger.info(
+            f"  chutes_no_alvo (thinning): RMSE modelo={metricas_chutes_no_alvo['rmse_modelo']:.4f} "
+            f"baseline={metricas_chutes_no_alvo['rmse_baseline']:.4f} "
+            f"IC95%(dif)=[{metricas_chutes_no_alvo['ic95_inf']:.4f},{metricas_chutes_no_alvo['ic95_sup']:.4f}] "
+            f"sustentado={metricas_chutes_no_alvo['modelo_melhor_sustentado']}"
+        )
+
         # xG por jogador -- alvo CONTÍNUO, mesmo tratamento de NaN de
         # treinar_modelo_jogador_mercados.treinar() (dropna ANTES do split
         # baseline/modelo, treino/teste próprios pra manter os arrays
@@ -243,7 +270,7 @@ def rodar(supabase: Client) -> int:
 
         n_gravado = _persistir_previsao_bruta(
             supabase, teste_temporada, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada,
-            lambda_xg=lambda_xg_por_indice,
+            lambda_xg=lambda_xg_por_indice, lambda_chutes_no_alvo=lambda_chutes_no_alvo_thinning,
         )
         logger.info(f"  {n_gravado} previsões por jogador gravadas em player_match_walkforward.")
 
@@ -255,6 +282,9 @@ def rodar(supabase: Client) -> int:
             m_chutes = _metricas_regressao_com_ic(previsto_chutes[mask], baseline_chutes[mask], real_chutes[mask])
             m_gols_thin = _metricas_probabilidade_marcar(lambda_gols_thinning[mask], real_marcou[mask], baseline_lambda_gols[mask])
             m_gols_dir = _metricas_probabilidade_marcar(previsto_gols_direto[mask], real_marcou[mask], baseline_lambda_gols[mask])
+            m_chutes_no_alvo = _metricas_regressao_com_ic(
+                lambda_chutes_no_alvo_thinning[mask], baseline_chutes_no_alvo[mask], real_chutes_no_alvo[mask]
+            )
 
             mask_xg = (teste_xg["league_id"] == league_id).to_numpy()
             m_xg = (
@@ -266,6 +296,7 @@ def rodar(supabase: Client) -> int:
                 ("chutes", m_chutes),
                 ("gols_thinning", m_gols_thin),
                 ("gols_direto", m_gols_dir),
+                ("chutes_no_alvo_thinning", m_chutes_no_alvo),
             ]
             if m_xg is not None:
                 mercados_da_liga.append(("xg", m_xg))

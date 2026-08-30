@@ -252,6 +252,16 @@ const ROTULO_FONTE_TITULAR = {
 // de formação do FotMob, não documentada), fora de escopo por ora.
 const POSICAO_CURTA = { 0: 'GOL', 1: 'DEF', 2: 'MEI', 3: 'ATA' };
 
+// Posição fina (código FotMob, fonte player_availability_fotmob.
+// posicao_detalhe -- mesmo dado já exposto em AnaliseEstatisticaJogo.jsx
+// pro XI previsto, PR #395) -- usada quando disponível (~80-85% do elenco,
+// ver PR #395), cai pro bucket grosso (POSICAO_CURTA) senão. Limitação real
+// da fonte: não distingue lado do zagueiro (só "CB" genérico).
+const POSICAO_FINA_CURTA = {
+  GK: 'GOL', CB: 'ZAG', RB: 'LD', LB: 'LE', RWB: 'AD', LWB: 'AE',
+  CDM: 'VOL', CM: 'MC', CAM: 'MEIA', RM: 'MD', LM: 'ME', RW: 'PD', LW: 'PE', ST: 'CA',
+};
+
 // Limiar pra separar Titular/Banco -- pra fonte_titular='real',
 // prob_titular_usada já vem exatamente 1.0/0.0 (is_starter confirmado, ver
 // rodar_jogador_mercados_previsto.py); pra 'previsto', é uma probabilidade
@@ -265,10 +275,12 @@ const LIMIAR_TITULAR = 0.5;
 // menor"); a coluna Jogador (texto) ordena A→Z por padrão.
 const COLUNAS_JOGADOR_MERCADOS = [
   { chave: 'jogador', rotulo: 'Jogador', tipo: 'texto', valorSort: (l) => l.players?.name || '' },
-  { chave: 'posicao', rotulo: 'Pos.', tipo: 'texto', valorSort: (l) => POSICAO_CURTA[l.players?.usual_position_id] || '' },
+  { chave: 'posicao', rotulo: 'Pos.', tipo: 'texto', valorSort: (l) => POSICAO_FINA_CURTA[l.posicao_detalhe] || POSICAO_CURTA[l.players?.usual_position_id] || '' },
   { chave: 'minutos', rotulo: 'Min. esp.', tipo: 'numero', valorSort: (l) => l.minutos_esperados ?? -1 },
   { chave: 'chutes', rotulo: 'Chutes (λ)', tipo: 'numero', valorSort: (l) => l.lambda_chutes_jogo ?? -1 },
   { chave: 'p15chutes', rotulo: 'P(>1.5 chutes)', tipo: 'numero', valorSort: (l) => 1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1) },
+  { chave: 'chutesnoalvo', rotulo: 'Chutes ao gol (λ)', tipo: 'numero', valorSort: (l) => l.lambda_chutes_no_alvo_jogo ?? -1 },
+  { chave: 'pchutenoalvo', rotulo: 'P(≥1 no alvo)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_chutes_no_alvo_jogo) ?? -1 },
   { chave: 'thinning', rotulo: 'Marcar (thinning)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_thinning) ?? -1 },
   { chave: 'direto', rotulo: 'Marcar (direto)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_direto) ?? -1 },
   { chave: 'xg', rotulo: 'xG esp.', tipo: 'numero', valorSort: (l) => l.lambda_xg_jogo ?? -1 },
@@ -340,7 +352,7 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
   );
 
   const LinhaJogador = ({ l }) => {
-    const posicao = POSICAO_CURTA[l.players?.usual_position_id] || '—';
+    const posicao = POSICAO_FINA_CURTA[l.posicao_detalhe] || POSICAO_CURTA[l.players?.usual_position_id] || '—';
     return (
       <tr className="border-t border-slate-800">
         <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
@@ -351,6 +363,11 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
           historico90={l.chutes_90_bayesiano} sufixo90="/90" historicoJogo={l.chutes_por_jogo} sufixoJogo="/jogo"
         />
         <td className="py-1.5 px-2 text-right font-mono text-emerald-400">{fmtPct(1 - poissonCDF(l.lambda_chutes_jogo ?? 0, 1))}</td>
+        <CelulaComHistorico
+          classe="text-sky-400" valor={fmtNum(l.lambda_chutes_no_alvo_jogo, 2)}
+          historico90={l.chutes_no_alvo_90_bayesiano} sufixo90="/90" historicoJogo={l.chutes_no_alvo_por_jogo} sufixoJogo="/jogo"
+        />
+        <td className="py-1.5 px-2 text-right font-mono text-sky-400">{fmtPct(probMarcar(l.lambda_chutes_no_alvo_jogo))}</td>
         <CelulaComHistorico
           classe="text-emerald-400" valor={fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}
           historico90={l.gols_90_bayesiano} sufixo90=" g/90" historicoJogo={l.gols_por_jogo} sufixoJogo=" g/jogo"
@@ -441,9 +458,18 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome }) {
         × taxa de conversão do próprio jogador; "Marcar (direto)" é um regressor treinado direto no alvo gols — as duas ficam lado a lado
         de propósito, sem vencedor fixo. "xG esp." é o xG esperado do jogador na partida (regressor CatBoost RMSE, não vira probabilidade
         derivada). Abaixo de cada λ: histórico do próprio jogador por 90min (com shrinkage bayesiano, mesma feature de entrada do modelo)
-        e por jogo (média crua, sem normalizar por minutos). "Pos." é a posição predominante (GOL/DEF/MEI/ATA); não temos lateral/volante
-        etc. de forma confiável ainda. Clique num cabeçalho de coluna pra ordenar; "Titular"/"Banco" usa a titularidade confirmada (aba
-        "Escalação real") ou a mais provável (aba "XI previsto", corte em 50%).
+        e por jogo (média crua, sem normalizar por minutos). "Pos." usa a posição fina (lateral/volante/ponta/etc.) quando disponível,
+        senão o bucket grosso (GOL/DEF/MEI/ATA). Clique num cabeçalho de coluna pra ordenar; "Titular"/"Banco" usa a titularidade
+        confirmada (aba "Escalação real") ou a mais provável (aba "XI previsto", corte em 50%).
+      </p>
+      <p className="text-[11px] text-slate-500 mb-3">
+        <strong className="text-slate-400">Tradução chutes → chutes ao gol → gols:</strong> "Chutes (λ)" conta{' '}
+        <em>toda</em> finalização (fora, bloqueada, na trave, no alvo). "Chutes ao gol (λ)" é o subconjunto que segue em direção ao gol e
+        termina em gol <em>ou</em> defesa do goleiro (exclui chute bloqueado por um defensor antes de chegar lá — não conta como "chute
+        ao gol" porque não é o goleiro quem impede) — é o número que responde "qual a chance dele finalizar no alvo até o fim do jogo"
+        (via "P(≥1 no alvo)", mesma lógica de "P(&gt;1.5 chutes)"). "Marcar" é o subconjunto final que vira gol de fato. Cada etapa é um
+        afinamento de Poisson sobre a anterior (λ_chutes × taxa histórica do jogador naquela etapa) — não são 3 modelos treinados
+        separados, é o mesmo λ de chutes "filtrado" estatisticamente.
       </p>
       <Tabela titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} />
       <Tabela titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} />
@@ -549,7 +575,7 @@ export default function AnaliseAvancadaEvento() {
           j.status === 'scheduled'
             ? supabase
                 .from('player_match_estimates')
-                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, players(name, photo_url, usual_position_id)')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, taxa_no_alvo_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, chutes_no_alvo_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, chutes_no_alvo_por_jogo, posicao_detalhe, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, lambda_chutes_no_alvo_jogo, players(name, photo_url, usual_position_id)')
                 .eq('match_id', matchId)
             : Promise.resolve({ data: [] }),
         ]);
