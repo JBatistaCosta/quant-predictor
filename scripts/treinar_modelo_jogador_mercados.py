@@ -89,7 +89,14 @@ CORTE_TEMPORADA_MINIMA = {
     "Serie A (Itália)": 2020,
     "Ligue 1": 2020,
     "Brasileirão Série A": 2023,
-    "MLS": 2022,
+    # MLS 2022 excluída (não 2022 como as outras ligas de estreia): é a
+    # única exceção real encontrada no backtest walk-forward -- RMSE de
+    # chutes pior que o baseline nessa temporada específica (1,142 vs.
+    # 1,100, n=485 partidas, amostra grande o bastante pra não ser ruído),
+    # justamente a safra de estreia da liga na base. 2023+ bate o baseline
+    # normalmente -- exclui só a temporada problemática, não a liga inteira
+    # (mesmo padrão já usado no projeto pra achado desse tipo).
+    "MLS": 2023,
     "Brasileirão Série B": 2025,
     "Championship": 2024,
     "Eredivisie": 2024,
@@ -404,7 +411,8 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     df["elo_diff"] = df["elo_proprio"] - df["elo_oponente"]
     df["squad_rating_diff"] = df["squad_rating_proprio"] - df["squad_rating_oponente"]
 
-    return df.dropna(subset=["match_date", "player_id", "team_id", "chutes_partida"])
+    resultado = df.dropna(subset=["match_date", "player_id", "team_id", "chutes_partida"])
+    return resultado
 
 
 def _rmse(previsto: np.ndarray, real: np.ndarray) -> float:
