@@ -4224,7 +4224,7 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
   const todosCandidatos = [];
   for (const lid of ligasAlvo) {
     let q = supabase.from('matches')
-      .select('id, match_date, home_team_id, away_team_id, league_id, season, home_goals')
+      .select('id, match_date, home_team_id, away_team_id, league_id, season, home_goals, status')
       .eq('league_id', lid).neq('status', 'cancelled');
     if (temporada) q = q.eq('season', temporada);
     if (modoValido === 'encerradas') {
@@ -4257,13 +4257,19 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
     (ja || []).forEach(r => fotmobIdConhecido.set(r.match_id, r.source_id));
   }
 
-  // Pendente = sem source_id (nunca importado) OU com source_id mas sem placar ainda
+  // Pendente = sem source_id (nunca importado) OU com source_id mas sem placar
+  // ainda OU com status desatualizado (jogo já com placar/stats mas `status`
+  // nunca virou 'finished' -- achado real rodando o botão "Atualizar" de
+  // Eventos: o placar já estava preenchido por outra fonte então a checagem
+  // antiga, baseada só em `home_goals === null`, nunca via esses jogos como
+  // pendentes e o `status` ficava preso pra sempre em 'scheduled'/'live').
   const pendentesTotal = todosCandidatos.filter(j =>
-    !fotmobIdConhecido.has(j.id) || j.home_goals === null
+    !fotmobIdConhecido.has(j.id) || j.home_goals === null || j.status !== 'finished'
   );
-  // Conjunto dos que já têm stats mas faltam apenas o placar
-  const apenasPlaycar = new Set(
-    todosCandidatos.filter(j => fotmobIdConhecido.has(j.id) && j.home_goals === null).map(j => j.id)
+  // Jogos com source_id já conhecido (detalhe completo já importado antes) --
+  // só precisam de placar/status corrigido, não vale reimportar tudo de novo.
+  const naoReimportarStats = new Set(
+    todosCandidatos.filter(j => fotmobIdConhecido.has(j.id)).map(j => j.id)
   );
 
   const loteProcessar = pendentesTotal.slice(0, limiteJogos);
@@ -4344,22 +4350,32 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
       const payload = await resp.json();
       const content = payload.content || {};
 
-      // Atualiza placar se ausente na tabela matches (independente de ter stats ou não).
-      // FotMob usa header.teams[].score como placar definitivo; general.homeScore.current
-      // é o placar ao vivo e pode ser null em partidas já encerradas.
+      // Atualiza placar (se ausente) e status (se desatualizado) — as duas
+      // checagens são INDEPENDENTES uma da outra: um jogo pode já ter placar
+      // preenchido (por outra fonte, ex. sync-matches.js) e mesmo assim
+      // continuar com `status` preso em 'scheduled'/'live' há dias (achado
+      // real: Vasco x Cruzeiro e outros ficavam assim mesmo depois de clicar
+      // "Atualizar", porque a checagem antiga só entrava aqui quando faltava
+      // o placar). FotMob usa header.teams[].score como placar definitivo;
+      // general.homeScore.current é o placar ao vivo e pode ser null em
+      // partidas já encerradas.
+      const updateData = {};
       if (jogo.home_goals === null) {
         const headerTeams = payload.header?.teams || [];
         const homeG = headerTeams[0]?.score ?? payload.general?.homeScore?.current ?? null;
         const awayG = headerTeams[1]?.score ?? payload.general?.awayScore?.current ?? null;
-        if (homeG !== null) {
-          const updateData = { home_goals: homeG, away_goals: awayG };
-          if (payload.general?.finished) updateData.status = 'finished';
-          await supabase.from('matches').update(updateData).eq('id', jogo.id);
-        }
+        if (homeG !== null) { updateData.home_goals = homeG; updateData.away_goals = awayG; }
+      }
+      if (jogo.status !== 'finished' && payload.general?.finished) {
+        updateData.status = 'finished';
+      }
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('matches').update(updateData).eq('id', jogo.id);
       }
 
-      // Jogo que já tem stats mas só precisava do placar — não re-importa tudo
-      if (!apenasPlaycar.has(jogo.id)) {
+      // Jogo que já tinha o detalhe completo importado antes — não reimporta
+      // tudo de novo, só corrige placar/status (acima).
+      if (!naoReimportarStats.has(jogo.id)) {
         await supabase.from('match_stats_fotmob').upsert(
           montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
           { onConflict: 'match_id,team_id' }
