@@ -111,6 +111,16 @@
 //   ?tarefa=disparar-backtest (POST) -> mesmo mecanismo de disparar-predicoes, dispara
 //                                   backtest_kelly.yml (grid search + tuning + ROI simulado Kelly
 //                                   dos 4 modelos) em vez de predict.yml. Também exige autenticação.
+//   ?tarefa=github-workflows-listar -> devolve WORKFLOWS_DISPONIVEIS (allow-list de todo workflow
+//                                   disparável pelo painel de Automação em /configuracoes). Exige
+//                                   autenticação.
+//   ?tarefa=disparar-workflow-generico (POST, corpo { arquivo, inputs }) -> generaliza
+//                                   disparar-predicoes/disparar-backtest pra qualquer arquivo do
+//                                   allow-list acima (nunca aceita `arquivo` fora da lista). Exige
+//                                   autenticação.
+//   ?tarefa=github-runs-listar[&arquivo=X.yml] -> últimas 30 execuções (status/conclusão/link) de
+//                                   um workflow específico ou do repositório inteiro. Exige
+//                                   autenticação.
 //   ?tarefa=jogador-perfil&player_id=X -> sync sob demanda de 1 jogador (valor de mercado
 //                                   histórico, carreira, títulos, altura/pé/contrato/traits) via
 //                                   /api/data/playerData do FotMob (endpoint POR JOGADOR, 1 chamada
@@ -635,6 +645,151 @@ const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO_WF = 'treinar_modelo_custom_wf.yml';
 const GITHUB_WORKFLOW_FILE_ESTIMAR_PARTIDA_CUSTOM = 'estimar_partida_custom.yml';
 const GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS = 'atualizar_stats.yml';
 
+// Fonte única de verdade dos workflows disparáveis pelo painel de
+// Automação em Configurações (src/components/PainelGithubActions.jsx) --
+// espelha .github/workflows/*.yml (mantido manualmente em sincronia; um
+// workflow novo só aparece no painel depois de ganhar uma entrada aqui).
+// NUNCA aceitar um `arquivo` de fora desta lista em
+// disparar-workflow-generico (allow-list server-side obrigatório: sem
+// isso, qualquer chamador autenticado poderia disparar QUALQUER workflow
+// do repo, incluindo deploy-aws.yml). `risco: true` marca workflows que
+// não são curadoria de dado (hoje só o deploy) -- o frontend deve pedir
+// confirmação extra antes de disparar esses.
+const WORKFLOWS_DISPONIVEIS = [
+  // --- Treino ---
+  { arquivo: 'treinar_modelo_jogador_mercados.yml', label: 'Treino: Chutes/Gols/xG por Jogador', categoria: 'treino', inputs: [] },
+  { arquivo: 'treinar_modelo_xi.yml', label: 'Treino: XI Titular Previsto', categoria: 'treino', inputs: [] },
+  { arquivo: 'treinar_modelo_hibrido.yml', label: 'Treino: Modelo Misto (paramétrico)', categoria: 'treino', inputs: [
+    { id: 'ligas', tipo: 'string', descricao: 'Override manual, nomes separados por vírgula (vazio = leagues.modelo_misto_escopo=treino)' },
+    { id: 'ligas_extra', tipo: 'string', descricao: 'Override manual -- ligas só de inferência (vazio = leagues.modelo_misto_escopo=extra)' },
+    { id: 'sem_gravar', tipo: 'boolean', default: false, descricao: 'Só avaliar, sem escrever no Supabase' },
+  ] },
+  { arquivo: 'treinar_modelo_custom.yml', label: 'Treino: Modelo Customizado', categoria: 'treino', inputs: [
+    { id: 'config_id', tipo: 'string', obrigatorio: true, descricao: 'UUID da linha em custom_model_configs' },
+  ] },
+  { arquivo: 'treinar_modelo_custom_wf.yml', label: 'Treino: Modelo Customizado (Walk-Forward CV)', categoria: 'treino', inputs: [
+    { id: 'config_id', tipo: 'string', obrigatorio: true, descricao: 'UUID da linha em custom_model_configs' },
+  ] },
+  { arquivo: 'backtest_jogador_mercados_walkforward.yml', label: 'Backtest Walk-Forward: Chutes/Gols por Jogador', categoria: 'treino', inputs: [] },
+  { arquivo: 'backtest_xi_walkforward.yml', label: 'Backtest Walk-Forward: XI Titular', categoria: 'treino', inputs: [] },
+  { arquivo: 'backtest_kelly.yml', label: 'Backtest: ROI/Kelly/EV+ (Model Benchmarking)', categoria: 'treino', inputs: [] },
+  { arquivo: 'walkforward_cv_v9.yml', label: 'Walk-forward CV v9', categoria: 'treino', inputs: [] },
+  { arquivo: 'walkforward_cv_v11.yml', label: 'Walk-forward CV v11 (XI titular)', categoria: 'treino', inputs: [] },
+
+  // --- Importação ---
+  { arquivo: 'atualizar_odds_footballdata.yml', label: 'Odds football-data.co.uk (8 ligas europeias)', categoria: 'importacao', inputs: [
+    { id: 'temporada', tipo: 'string', obrigatorio: true, default: '2025', descricao: 'Temporada no formato de matches.season' },
+    { id: 'ligas', tipo: 'string', default: 'todas', descricao: 'Códigos separados por vírgula (PL,PD,SA,BL1,FL1,ELC,DED,PPL) ou "todas"' },
+  ] },
+  { arquivo: 'atualizar_stats.yml', label: 'Atualizar Placares e Estatísticas', categoria: 'importacao', inputs: [
+    { id: 'limite', tipo: 'string', descricao: 'Processa só as N primeiras partidas pendentes (vazio = todas)' },
+    { id: 'league_id', tipo: 'string', descricao: 'Restringe a uma liga interna (vazio = todas com cobertura FotMob)' },
+    { id: 'modo', tipo: 'choice', opcoes: ['tudo', 'placar', 'stats'], default: 'tudo', descricao: 'tudo=placar+stats | placar=só placares | stats=só estatísticas' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo partidas que já têm dados parciais' },
+    { id: 'ao_vivo', tipo: 'boolean', default: false, descricao: 'Processa partidas dos últimos 120min (em andamento/recém-encerradas)' },
+  ] },
+  { arquivo: 'backfill_odds_historico.yml', label: 'Backfill de Odds Históricas (OddsPapi)', categoria: 'importacao', inputs: [
+    { id: 'ligas', tipo: 'string', descricao: 'league_ids separados por espaço (vazio = todas as 14 mapeadas)' },
+  ] },
+  { arquivo: 'capturar_odds.yml', label: 'Capturar Odds Snapshot', categoria: 'importacao', inputs: [
+    { id: 'snapshot_type', tipo: 'choice', opcoes: ['abertura', 'pre_fechamento', 'fechamento'], obrigatorio: true, default: 'pre_fechamento', descricao: 'Tipo de snapshot a capturar' },
+  ] },
+  { arquivo: 'cartoes_backfill.yml', label: 'Backfill de Cartões (FotMob)', categoria: 'importacao', inputs: [
+    { id: 'liga_id', tipo: 'string', obrigatorio: true, descricao: 'league_id interno (1=Brasileirão, 4=Premier League, 7=La Liga, 10=Serie A Itália, 13=Bundesliga, 16=Ligue 1)' },
+    { id: 'limite', tipo: 'string', descricao: 'Processa só as N primeiras partidas pendentes (vazio = todas)' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo partidas que já têm linhas em match_events' },
+  ] },
+  { arquivo: 'elenco_desfalques_sync.yml', label: 'Desfalques e Transferências do Elenco', categoria: 'importacao', inputs: [
+    { id: 'limite', tipo: 'string', descricao: 'Processa só os N primeiros times (vazio = todos com crosswalk)' },
+    { id: 'team_id', tipo: 'string', descricao: 'Um time só, id interno (vazio = todos)' },
+  ] },
+  { arquivo: 'importar_odds_oddsportal.yml', label: 'Importar Odds OddsPortal', categoria: 'importacao', inputs: [
+    { id: 'liga', tipo: 'choice', opcoes: ['libertadores', 'sudamericana', 'brasileirao-serie-b', 'champions-league', 'copa-do-mundo', 'outro (slug custom)'], obrigatorio: true, default: 'libertadores', descricao: 'Liga (slug já confirmado no OddsHarvester)' },
+    { id: 'liga_slug_custom', tipo: 'string', descricao: 'Só se liga=outro: slug real do OddsPortal' },
+    { id: 'liga_nome_custom', tipo: 'string', descricao: 'Só se liga=outro: nome curto pro arquivo CSV' },
+    { id: 'season', tipo: 'string', obrigatorio: true, descricao: "Temporada: '2024', '2023-2024' ou 'current'" },
+    { id: 'liga_id_supabase', tipo: 'string', obrigatorio: true, descricao: 'id de public.leagues no Supabase' },
+    { id: 'markets', tipo: 'string', default: '1x2,btts,over_under_2_5', descricao: 'Mercados OddsHarvester, separados por vírgula' },
+    { id: 'bookmaker_alvo', tipo: 'string', descricao: 'Só captura odds dessa casa (ex.: Pinnacle). Vazio = todas as casas' },
+    { id: 'modo', tipo: 'choice', opcoes: ['capturar-e-importar', 'so-capturar', 'so-importar-de-csv-existente'], obrigatorio: true, default: 'capturar-e-importar', descricao: 'O que rodar' },
+    { id: 'csv_existente', tipo: 'string', descricao: 'Só se modo=so-importar-de-csv-existente: caminho do CSV já commitado' },
+  ] },
+  { arquivo: 'ingerir_equipes_local.yml', label: 'Ingestão de Dados de Equipe (repository-fotmob local)', categoria: 'importacao', inputs: [
+    { id: 'limite', tipo: 'string', descricao: 'Processa só os N primeiros arquivos (vazio = todos)' },
+  ] },
+  { arquivo: 'ingerir_escalacao_pre_jogo.yml', label: 'Ingestão de Escalação Real Pré-Jogo', categoria: 'importacao', inputs: [] },
+  { arquivo: 'ingerir_fotmob_dumps_locais.yml', label: 'Ingestão dos Dumps Locais do FotMob', categoria: 'importacao', inputs: [
+    { id: 'limite', tipo: 'string', descricao: 'Processa só as N primeiras partidas pendentes (vazio = todas ~15,7k)' },
+    { id: 'lote', tipo: 'string', descricao: 'Tamanho do lote em memória antes de gravar (default 200)' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo partidas já em match_source_ids (source=fotmob)' },
+  ] },
+  { arquivo: 'ingerir_perfis_jogadores_local.yml', label: 'Ingestão de Perfis de Jogador (repository-fotmob local)', categoria: 'importacao', inputs: [
+    { id: 'so_birth_date', tipo: 'boolean', default: false, descricao: 'Só atualiza players.birth_date (ignora perfis completos)' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa perfis completos mesmo já existentes' },
+    { id: 'limite', tipo: 'string', descricao: 'Processa só os N primeiros arquivos (vazio = todos)' },
+  ] },
+  { arquivo: 'lineup_backfill.yml', label: 'Backfill de Escalação (FotMob)', categoria: 'importacao', inputs: [
+    { id: 'liga_id', tipo: 'string', descricao: 'league_id interno (vazio = todas as 5 ligas de elite europeias)' },
+    { id: 'temporadas', tipo: 'string', descricao: 'N temporadas mais recentes de cada liga (default 2)' },
+    { id: 'limite', tipo: 'string', descricao: 'Processa só as N primeiras partidas pendentes (vazio = todas)' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo partidas que já têm linha em match_lineup_fotmob' },
+  ] },
+  { arquivo: 'perfil_jogador_backfill.yml', label: 'Backfill de Perfil Avançado de Jogador', categoria: 'importacao', inputs: [
+    { id: 'limite', tipo: 'string', descricao: 'Processa só os N primeiros jogadores pendentes (vazio = todos, CUIDADO ~11 mil chamadas)' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo quem já tem player_details_fotmob' },
+  ] },
+  { arquivo: 'predictions_api_football.yml', label: 'Ingestão de Previsões (API-Football)', categoria: 'importacao', inputs: [
+    { id: 'league', tipo: 'string', default: '71', descricao: 'id da liga na API-Football (71 = Brasileirão Série A)' },
+    { id: 'season', tipo: 'string', descricao: 'Temporada (ex.: 2026)' },
+    { id: 'date', tipo: 'string', descricao: 'Data das fixtures YYYY-MM-DD (alternativa a league+season)' },
+    { id: 'status', tipo: 'string', descricao: 'Filtro de status de fixture (ex.: NS = não iniciados)' },
+    { id: 'limite', tipo: 'string', default: '50', descricao: 'Máximo de fixtures a processar' },
+    { id: 'daily_safety_buffer', tipo: 'string', default: '3', descricao: 'Interrompe quando o saldo diário chegar a este valor' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Rebusca fixtures já cacheadas' },
+    { id: 'dry_run', tipo: 'boolean', default: false, descricao: 'Não grava no Supabase, só mostra o que faria' },
+  ] },
+  { arquivo: 'sync_odds_todas.yml', label: 'Sync de Odds ao Vivo (OddsPapi)', categoria: 'importacao', inputs: [
+    { id: 'bookmakers', tipo: 'string', descricao: 'Bookmakers separados por espaço (vazio = pinnacle bet365 betano)' },
+  ] },
+  { arquivo: 'temporadas_fotmob_backfill.yml', label: 'Backfill de Temporadas Antigas (FotMob)', categoria: 'importacao', inputs: [
+    { id: 'liga_id', tipo: 'string', obrigatorio: true, descricao: 'league_id interno (1=Brasileirão, 23=Libertadores)' },
+    { id: 'fotmob_league_id', tipo: 'string', obrigatorio: true, descricao: 'id da liga no FotMob (268=Brasileirão, 45=Libertadores)' },
+    { id: 'temporadas', tipo: 'string', obrigatorio: true, descricao: 'Temporadas separadas por espaço (ex: 2019 2020 2021)' },
+    { id: 'limite', tipo: 'string', descricao: 'Processa só as N primeiras partidas pendentes POR TEMPORADA (vazio = todas)' },
+    { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo partidas já em match_source_ids' },
+  ] },
+
+  // --- Duplicatas ---
+  { arquivo: 'limpar_partidas_duplicadas.yml', label: 'Limpeza de Partidas Duplicadas', categoria: 'duplicatas', inputs: [
+    { id: 'liga_id', tipo: 'string', descricao: 'Restringe a uma liga (vazio = todas)' },
+    { id: 'confirmar', tipo: 'boolean', default: false, descricao: 'Aplica as remoções de verdade (sem isso, roda em dry-run só-leitura)' },
+  ] },
+
+  // --- Outros (diagnóstico/avaliação/produção contínua/deploy) ---
+  { arquivo: 'avaliar_ic_modelos_por_liga.yml', label: 'IC95% por Bootstrap dos Modelos por Liga', categoria: 'outros', inputs: [
+    { id: 'mercados', tipo: 'string', descricao: 'Subconjunto separado por vírgula (vazio = 1X2, over_under_2.5, corners_over_under_9.5)' },
+    { id: 'sem_gravar', tipo: 'boolean', default: false, descricao: 'Só avaliar e imprimir, sem escrever em model_stats_ic' },
+  ] },
+  { arquivo: 'avaliar_modelo_misto_vs_mercado.yml', label: 'Avaliação Pareada do Modelo Misto vs. Mercado', categoria: 'outros', inputs: [] },
+  { arquivo: 'backfill_predicoes_historicas.yml', label: 'Backfill de Previsões Históricas (1X2 + O/U 2.5)', categoria: 'outros', inputs: [] },
+  { arquivo: 'deploy-aws.yml', label: 'Deploy AWS (Elastic Beanstalk)', categoria: 'outros', risco: true, inputs: [] },
+  { arquivo: 'elo_global.yml', label: 'Recalcular Elo Global (todas as competições)', categoria: 'outros', inputs: [
+    { id: 'modo', tipo: 'choice', opcoes: ['incremental', 'completo'], default: 'incremental', descricao: 'completo = recalcula tudo (usar ao adicionar liga/temporada nova)' },
+  ] },
+  { arquivo: 'estimar_partida_custom.yml', label: 'Estimativa Sob Demanda (Modelo Customizado)', categoria: 'outros', inputs: [
+    { id: 'request_id', tipo: 'string', obrigatorio: true, descricao: 'UUID da linha em custom_model_ondemand_predictions' },
+  ] },
+  { arquivo: 'predict.yml', label: 'Rodar Predições (Model Benchmarking)', categoria: 'outros', inputs: [] },
+  { arquivo: 'prever_jogador_mercados.yml', label: 'Prever Chutes/Gols por Jogador (fixtures futuras)', categoria: 'outros', inputs: [
+    { id: 'dias', tipo: 'string', descricao: 'Janela de dias à frente para prever (default 7)' },
+  ] },
+  { arquivo: 'prever_partidas_futuras_custom.yml', label: 'Prever Partidas Futuras (Modelos Customizados)', categoria: 'outros', inputs: [] },
+  { arquivo: 'prever_xi.yml', label: 'Prever XI Titular Provável (fixtures futuras)', categoria: 'outros', inputs: [
+    { id: 'dias', tipo: 'string', descricao: 'Janela de dias à frente para prever (default 7)' },
+  ] },
+  { arquivo: 'testar_covariaveis_corners.yml', label: 'Teste de Ablação: Chutes/Posse no Regressor de Escanteios', categoria: 'outros', inputs: [] },
+];
+
 async function verificarUsuarioLogado(supabase, authHeader) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
   if (!token) return null;
@@ -700,6 +855,84 @@ async function tarefaDispararAtualizarStats(supabase, authHeader, { liga_id, lim
   if (modo && modo !== 'tudo') inputs.modo = modo;
   if (forcar === 'true' || forcar === true) inputs.forcar = 'true';
   return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS, inputs);
+}
+
+// ============================================================
+// TAREFAS: Painel de Automação (GitHub Actions) — Configurações
+// Centraliza disparo + acompanhamento dos workflows de
+// .github/workflows/* num painel só (src/components/PainelGithubActions.jsx),
+// reaproveitando o mesmo dispararWorkflow()/GITHUB_ACTIONS_PAT já usados
+// acima. Exige autenticação nas 3 tarefas (mesmo mecanismo de
+// disparar-predicoes/disparar-backtest) -- é um painel de curadoria/admin,
+// não algo pra ficar acessível sem sessão.
+// ============================================================
+
+function tarefaGithubWorkflowsListar(usuario) {
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de consultar os workflows disponíveis.' };
+  return { status: 200, workflows: WORKFLOWS_DISPONIVEIS };
+}
+
+// Disparo genérico -- vale pra qualquer arquivo do allow-list acima. Só
+// repassa pro GitHub os campos de `inputs` que o workflow de fato declara
+// (evita a API do GitHub recusar o corpo por causa de um campo extra que
+// o frontend tenha mandado por engano).
+async function tarefaDispararWorkflowGenerico(supabase, authHeader, body) {
+  const { arquivo, inputs } = body || {};
+  const config = WORKFLOWS_DISPONIVEIS.find((w) => w.arquivo === arquivo);
+  if (!config) return { status: 400, error: `Workflow "${arquivo}" não está no allow-list de WORKFLOWS_DISPONIVEIS.` };
+
+  const idsValidos = new Set(config.inputs.map((i) => i.id));
+  const inputsFiltrados = {};
+  for (const [chave, valor] of Object.entries(inputs || {})) {
+    if (idsValidos.has(chave) && valor !== '' && valor !== undefined && valor !== null) {
+      inputsFiltrados[chave] = String(valor);
+    }
+  }
+  for (const campo of config.inputs) {
+    if (campo.obrigatorio && !(campo.id in inputsFiltrados)) {
+      return { status: 400, error: `Campo obrigatório faltando: ${campo.id}` };
+    }
+  }
+
+  return dispararWorkflow(supabase, authHeader, arquivo, inputsFiltrados);
+}
+
+// Execuções recentes -- de um workflow específico (`arquivo`) ou do
+// repositório inteiro (sem filtro). Mesmo Bearer GITHUB_ACTIONS_PAT já
+// usado em dispararWorkflow(), só GET em vez de POST. É a peça de
+// "acompanhamento" que não existia antes deste painel (disparo até aqui
+// sempre foi fire-and-forget, sem run_id devolvido pela API do GitHub).
+async function tarefaGithubRunsListar(supabase, authHeader, arquivo) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de consultar execuções.' };
+
+  const pat = process.env.GITHUB_ACTIONS_PAT;
+  if (!pat) return { status: 500, error: 'GITHUB_ACTIONS_PAT não configurada -- ver comentário no topo deste arquivo.' };
+
+  if (arquivo && !WORKFLOWS_DISPONIVEIS.some((w) => w.arquivo === arquivo)) {
+    return { status: 400, error: `Workflow "${arquivo}" não está no allow-list de WORKFLOWS_DISPONIVEIS.` };
+  }
+
+  const caminho = arquivo ? `actions/workflows/${arquivo}/runs?per_page=30` : 'actions/runs?per_page=30';
+  const resposta = await fetch(`https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/${caminho}`, {
+    headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json' },
+  });
+  if (!resposta.ok) {
+    const corpo = await resposta.text();
+    return { status: 502, error: `GitHub Actions recusou a consulta (HTTP ${resposta.status}): ${corpo.slice(0, 300)}` };
+  }
+  const dados = await resposta.json();
+  const execucoes = (dados.workflow_runs || []).map((r) => ({
+    id: r.id,
+    arquivo: r.path ? r.path.split('/').pop() : null,
+    nome: r.name,
+    status: r.status,
+    conclusao: r.conclusion,
+    iniciado_em: r.run_started_at,
+    atualizado_em: r.updated_at,
+    url: r.html_url,
+  }));
+  return { status: 200, execucoes };
 }
 
 // ============================================================
@@ -5609,6 +5842,29 @@ export default async function handler(req, res) {
 
     if (tarefa === 'disparar-backtest') {
       const resultado = await tarefaDispararBacktest(supabase, req.headers.authorization);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    // ------------------------------------------------------------------
+    // Painel de Automação (GitHub Actions) — Configurações
+    // ------------------------------------------------------------------
+
+    if (tarefa === 'github-workflows-listar') {
+      const usuario = await verificarUsuarioLogado(supabase, req.headers.authorization);
+      const resultado = tarefaGithubWorkflowsListar(usuario);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'disparar-workflow-generico') {
+      const resultado = await tarefaDispararWorkflowGenerico(supabase, req.headers.authorization, req.body);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'github-runs-listar') {
+      const resultado = await tarefaGithubRunsListar(supabase, req.headers.authorization, req.query.arquivo);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
