@@ -670,15 +670,21 @@ export default function AnaliseAvancadaEvento() {
           (j.status === 'scheduled' || finalizada)
             ? supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y, log_loss_bruto, log_loss_calibrado, n_teste')
             : Promise.resolve({ data: [] }),
-          // Chutes/gols por jogador (player_match_estimates) -- só existe pra
-          // partida ainda AGENDADA (rodar_jogador_mercados_previsto.py só
-          // pontua fixtures scheduled, nunca reprocessa o passado). Traz as
-          // DUAS fontes quando existirem (fonte_titular='previsto'/'real',
-          // nunca uma sobrescrevendo a outra no banco -- ver migration) pra
-          // comparação lado a lado. RLS de leitura pública, mesma consulta
-          // direta via supabase-js de todo o resto desta página (sem função
-          // serverless nova).
-          j.status === 'scheduled'
+          // Chutes/gols por jogador (player_match_estimates) -- as linhas só
+          // são GERADAS enquanto a partida está AGENDADA
+          // (rodar_jogador_mercados_previsto.py só pontua fixtures
+          // scheduled, nunca reprocessa o passado), mas ficam no banco pra
+          // sempre depois disso -- nada as apaga quando a partida termina.
+          // Buscar só em `scheduled` (sem o `|| finalizada` que as outras
+          // consultas desta página já usam, ver acima) escondia a seção
+          // inteira assim que a partida virava `finished`, mesmo com dado
+          // real já persistido (achado real, partida 14987 e outras já
+          // finalizadas). Traz as DUAS fontes quando existirem
+          // (fonte_titular='previsto'/'real', nunca uma sobrescrevendo a
+          // outra no banco -- ver migration) pra comparação lado a lado.
+          // RLS de leitura pública, mesma consulta direta via supabase-js
+          // de todo o resto desta página (sem função serverless nova).
+          (j.status === 'scheduled' || finalizada)
             ? supabase
                 .from('player_match_estimates')
                 .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, taxa_no_alvo_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, chutes_no_alvo_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, chutes_no_alvo_por_jogo, posicao_detalhe, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, lambda_chutes_no_alvo_jogo, players(name, photo_url, usual_position_id)')
