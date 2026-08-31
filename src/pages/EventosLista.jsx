@@ -8,11 +8,14 @@
 //
 // OBS: `matches` não tem campo de "campo neutro" — só dá pra indicar
 // mandante/visitante (a ordem já deixa isso claro: mandante à esquerda).
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, AlertTriangle, Shield, Loader2, ArrowRight, FlaskConical } from 'lucide-react';
+import { Calendar, AlertTriangle, Shield, Loader2, ArrowRight, FlaskConical, RefreshCw } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 import TimelineDatas from '../components/TimelineDatas';
+
+const MAX_RODADAS_POR_PAR = 5; // rede de segurança contra loop preso por par liga/temporada
 
 const STATUS_ROTULO = { scheduled: 'A confirmar', finished: 'Encerrado', in_play: 'Ao vivo', postponed: 'Adiado', cancelled: 'Cancelado' };
 
@@ -31,7 +34,14 @@ function LinhaJogo({ jogo }) {
   return (
     <div className="flex items-center hover:bg-slate-700/20 transition-colors">
       <Link to={`/historico/${jogo.id}`} className="flex-1 flex items-center gap-3 px-4 py-2.5 text-sm min-w-0">
-        <span className="text-slate-500 text-xs w-12 shrink-0">{jogado ? STATUS_ROTULO.finished : horario}</span>
+        <span className="w-12 shrink-0 flex flex-col items-start gap-0.5">
+          <span className="text-slate-500 text-xs">{horario}</span>
+          {jogado && (
+            <span className="text-[9px] font-bold text-emerald-500/80 bg-emerald-500/10 rounded px-1 leading-tight">
+              {STATUS_ROTULO.finished.toUpperCase()}
+            </span>
+          )}
+        </span>
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
           <span className="truncate text-slate-200">{jogo.home?.name || '?'}</span>
           {jogo.home?.crest_url ? <img src={jogo.home.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
@@ -56,38 +66,89 @@ function LinhaJogo({ jogo }) {
   );
 }
 
+const SELECT_PADRAO_JOGOS = 'id, match_date, home_goals, away_goals, status, round, season, home:teams!matches_home_team_id_fkey(id, name, crest_url), away:teams!matches_away_team_id_fkey(id, name, crest_url), leagues(id, name)';
+
 export default function EventosLista() {
   const [dataSelecionada, setDataSelecionada] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [jogosDoDia, setJogosDoDia] = useState([]);
   const [proximosJogos, setProximosJogos] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+  const [atualizando, setAtualizando] = useState(false);
+  const [msgAtualizacao, setMsgAtualizacao] = useState('');
 
-  useEffect(() => {
+  const carregarJogos = useCallback(async () => {
     if (!supabaseAtivo) return;
-    (async () => {
-      setCarregando(true);
-      setErro('');
-      const selectPadrao = 'id, match_date, home_goals, away_goals, status, round, home:teams!matches_home_team_id_fkey(id, name, crest_url), away:teams!matches_away_team_id_fkey(id, name, crest_url), leagues(id, name)';
+    setCarregando(true);
+    setErro('');
 
-      const [{ data: doDia, error: erroDia }, { data: proximos, error: erroProximos }] = await Promise.all([
-        supabase.from('matches').select(selectPadrao)
-          .gte('match_date', inicioDia(dataSelecionada).toISOString())
-          .lte('match_date', fimDia(dataSelecionada).toISOString())
-          .order('match_date', { ascending: true }),
-        supabase.from('matches').select(selectPadrao)
-          .gt('match_date', fimDia(dataSelecionada).toISOString())
-          .eq('status', 'scheduled')
-          .order('match_date', { ascending: true })
-          .limit(8),
-      ]);
+    const [{ data: doDia, error: erroDia }, { data: proximos, error: erroProximos }] = await Promise.all([
+      supabase.from('matches').select(SELECT_PADRAO_JOGOS)
+        .gte('match_date', inicioDia(dataSelecionada).toISOString())
+        .lte('match_date', fimDia(dataSelecionada).toISOString())
+        .order('match_date', { ascending: true }),
+      supabase.from('matches').select(SELECT_PADRAO_JOGOS)
+        .gt('match_date', fimDia(dataSelecionada).toISOString())
+        .eq('status', 'scheduled')
+        .order('match_date', { ascending: true })
+        .limit(8),
+    ]);
 
-      if (erroDia || erroProximos) setErro((erroDia || erroProximos).message);
-      setJogosDoDia(doDia || []);
-      setProximosJogos(proximos || []);
-      setCarregando(false);
-    })();
+    if (erroDia || erroProximos) setErro((erroDia || erroProximos).message);
+    setJogosDoDia(doDia || []);
+    setProximosJogos(proximos || []);
+    setCarregando(false);
   }, [dataSelecionada]);
+
+  useEffect(() => { carregarJogos(); }, [carregarJogos]);
+
+  // Atualiza placar/status/estatísticas (via FotMob) dos jogos do dia
+  // selecionado que ainda estão pendentes -- mesma tarefa já usada em
+  // LigaDetalhe.jsx (`tarefa=partidas-fotmob`), só que escopada aqui pelas
+  // combinações liga/temporada dos jogos JÁ CARREGADOS na tela em vez de
+  // pedir liga/temporada num formulário -- evita gastar o lote em jogos
+  // antigos de outras temporadas (a tarefa processa em ordem cronológica
+  // ascendente, então sem esse recorte o backlog histórico de ligas com
+  // backfill incompleto sempre venceria a frente dos jogos recentes).
+  const atualizarJogosDoDia = async () => {
+    const pares = [...new Map(
+      jogosDoDia
+        .filter(j => j.leagues?.id && j.season)
+        .map(j => [`${j.leagues.id}|${j.season}`, { ligaId: j.leagues.id, temporada: j.season }])
+    ).values()];
+
+    if (pares.length === 0) { setMsgAtualizacao('Nenhum jogo com liga/temporada reconhecida nesta data.'); return; }
+
+    setAtualizando(true); setMsgAtualizacao(''); setErro('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirou -- faça login de novo e clique em Atualizar.');
+
+      let totalProcessado = 0;
+      for (const { ligaId, temporada } of pares) {
+        let rodada = 0;
+        let restantes = 1;
+        while (restantes > 0 && rodada < MAX_RODADAS_POR_PAR) {
+          rodada++;
+          const resp = await fetch(apiUrl(
+            `/api/model-maintenance?tarefa=partidas-fotmob&liga_id=${ligaId}&temporada=${encodeURIComponent(temporada)}&modo=encerradas&limite=40`
+          ), { headers: { Authorization: `Bearer ${session.access_token}` } });
+          const dados = await resp.json();
+          if (!resp.ok) throw new Error(dados.error?.message || 'Falha ao atualizar.');
+          totalProcessado += dados.processados_agora || 0;
+          restantes = dados.restantes || 0;
+        }
+      }
+      setMsgAtualizacao(totalProcessado > 0
+        ? `${totalProcessado} jogo(s) atualizado(s).`
+        : 'Nenhum jogo pendente -- já estava tudo atualizado.');
+      await carregarJogos();
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setAtualizando(false);
+    }
+  };
 
   const porLiga = useMemo(() => {
     const mapa = new Map();
@@ -111,10 +172,21 @@ export default function EventosLista() {
   return (
     <div className="max-w-5xl mx-auto">
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
-        <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
-          <Calendar className="text-emerald-400" size={28} /> Eventos
-        </h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
+            <Calendar className="text-emerald-400" size={28} /> Eventos
+          </h1>
+          <button
+            onClick={atualizarJogosDoDia}
+            disabled={atualizando || jogosDoDia.length === 0}
+            title="Atualizar placar e estatísticas dos jogos desta data"
+            className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-lg px-3 py-1.5 mt-1"
+          >
+            <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} /> Atualizar
+          </button>
+        </div>
         <p className="text-slate-400 mt-1 text-sm">Linha do tempo de todos os jogos — navegue por data ou veja os próximos.</p>
+        {msgAtualizacao && <p className="text-emerald-400/90 text-xs mt-2">{msgAtualizacao}</p>}
       </div>
 
       <TimelineDatas dataSelecionada={dataSelecionada} onSelecionar={setDataSelecionada} />
