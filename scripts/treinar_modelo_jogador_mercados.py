@@ -220,17 +220,23 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     # Gol contra não conta como gol do PRÓPRIO atirador (é o time adversário
     # que se beneficia, não a produção ofensiva desse jogador).
     df_shots["_e_gol_proprio"] = (df_shots["event_type"] == "Goal") & (~df_shots["is_own_goal"].fillna(False))
-    # "Chute ao gol" (pedido do usuário: "chutes ao gol, que se transforma em
-    # gol ou defesa do goleiro") -- NÃO é o mesmo que is_on_target sozinho:
-    # confirmado por query real que is_on_target=true inclui chute bloqueado
-    # por um defensor ANTES de chegar ao gol (event_type='AttemptSaved' com
-    # is_blocked=true, ~26% dos chutes "no alvo" pelo flag bruto do FotMob)
-    # -- isso nunca chega ao goleiro, não é "defesa do goleiro" no sentido
-    # que o usuário pediu. Exclui explicitamente is_blocked=true. Com esse
-    # corte a taxa geral bate com o padrão real de futebol (~35% dos chutes
-    # totais), contra ~61% se usasse só is_on_target (validado antes de
-    # escrever este código).
-    df_shots["_e_chute_no_alvo"] = df_shots["is_on_target"].fillna(False) & (~df_shots["is_blocked"].fillna(False))
+    # "Chute ao gol" (definição do usuário: "resulta em gol OU é defendido
+    # pelo goleiro OU é bloqueado por um jogador na linha do gol") -- decisão
+    # revisada nesta sessão. Um corte anterior excluía TODO chute bloqueado
+    # (is_blocked=true), mas isso também descontava bloqueio na linha do gol,
+    # que a definição pedida quer incluir. Investigado se dava pra isolar
+    # "bloqueado na linha do gol" especificamente: não dá -- `match_shots_
+    # fotmob` não tem a posição do bloqueio (só x/y do CHUTE), a coluna
+    # `on_goal` que poderia ajudar está 100% NULL (nunca populada pela
+    # ingestão), e todo chute bloqueado (defesa do goleiro OU corte de
+    # defensor, seja onde for) cai no mesmo `event_type='AttemptSaved'`. Sem
+    # como distinguir bloqueio-na-linha de bloqueio-em-qualquer-lugar, a
+    # aproximação mais próxima do pedido é usar `is_on_target` sozinho (a
+    # própria FotMob já julga a trajetória como "de gol" antes do bloqueio) --
+    # mais abrangente que "só linha do gol" (pode incluir corte de um
+    # defensor mais recuado), mas mais fiel à definição nova que a anterior
+    # (que descontava TODO bloqueio, linha do gol incluso).
+    df_shots["_e_chute_no_alvo"] = df_shots["is_on_target"].fillna(False)
     rotulos = (
         df_shots[df_shots["player_id"].notna()]
         .groupby(["match_id", "team_id", "player_id"])
