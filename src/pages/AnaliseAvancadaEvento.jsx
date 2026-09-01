@@ -18,7 +18,7 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import {
   matrizPlacares, mercadosDeGols, mercadosDeEscanteios, distribuicaoConjuntaEscanteios, lerParametrosPartida, rotuloLinha,
@@ -27,6 +27,7 @@ import { devigarOddsRatio, stakeKelly25 } from '../utils/devig';
 import { toPct } from '../utils/format';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 import { poissonCDF } from '../utils/poisson';
+import { extractJsonFromImage } from '../utils/ocr';
 
 // Mercados em que o modelo misto (gols/escanteios) tem probabilidade
 // calculada E que aparecem salvos em odds_market — únicos candidatos pra
@@ -285,6 +286,163 @@ function LinhaBinaria({ rotulo, over, under, rotuloOver = 'Over', rotuloUnder = 
 // (poissonCDF cobre P(X<=k), aqui é o caso degenerado P(X=0) invertido).
 function probMarcar(lambdaGols) { return lambdaGols == null ? null : 1 - Math.exp(-Math.max(lambdaGols, 0)); }
 
+// ---------------------------------------------------------------------------
+// Odds justas individuais (chutes ao gol / gols, linhas +1/+2/+3) + import
+// via OCR de odds reais de casa de apostas pra comparação lado a lado.
+// ---------------------------------------------------------------------------
+
+// P(X >= k) via Poisson -- generaliza probMarcar (P(X>=1)) pras linhas +2/+3.
+function probPeloMenos(lambdaPoisson, k) {
+  return lambdaPoisson == null ? null : 1 - poissonCDF(Math.max(lambdaPoisson, 0), k - 1);
+}
+// Odds justa = 1/probabilidade, SEM margem -- mesma convenção de
+// `model_predictions.fair_odds` (coluna gerada no banco), só replicada aqui
+// pro lado do cliente porque esses λ de jogador nunca passam por essa tabela
+// (ver plano da sessão: "sem persistir 1 linha por linha de aposta").
+function oddsJusta(p) { return p != null && p > 1e-9 ? 1 / p : null; }
+function fmtOdds(v) { return v == null ? '—' : v.toFixed(2); }
+
+// Prompt de OCR pra mercados de JOGADOR (chutes no alvo + marcador de gol) --
+// deliberadamente separado de OCR_ODDS_PROMPT em AnaliseEvento.jsx, que é
+// só de mercados de TIME e explicitamente ignora mercado de jogador.
+const OCR_ODDS_JOGADOR_PROMPT = `Você é um extrator de odds de mercados de JOGADOR (chutes ao gol / marcador de gol) de screenshots de casas de apostas (Betano, Bet365, etc.) de uma partida de futebol.
+A imagem mostra mercados de jogador individual -- "Chutes no alvo" (mais/menos de X por jogador) e/ou "Marcador de gol" (a qualquer momento / 2 ou mais / hat-trick). Extraia TODOS os jogadores visíveis e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
+{
+  "casa_de_apostas": "NomeDaCasa",
+  "jogadores": [
+    {
+      "nome": "Nome do jogador exatamente como aparece na imagem",
+      "chutes_no_alvo_mais_0_5": null,
+      "chutes_no_alvo_mais_1_5": null,
+      "chutes_no_alvo_mais_2_5": null,
+      "marcar_1_mais": null,
+      "marcar_2_mais": null,
+      "marcar_3_mais": null
+    }
+  ]
+}
+
+Regras:
+- "chutes_no_alvo_mais_X": odd de "mais de X chutes no alvo" (ignore a odd de "menos de"/"under"). Só preencha as linhas realmente visíveis, deixe null as que não aparecerem pra aquele jogador.
+- "marcar_1_mais": odd de "marca a qualquer momento" / "marcador de gol" / "to score" (1 ou mais gols).
+- "marcar_2_mais": odd de "marca 2 ou mais gols" / "dobradinha" / "brace".
+- "marcar_3_mais": odd de "hat-trick" / "marca 3 ou mais gols".
+- Se um mercado não estiver visível pra um jogador, deixe null -- não invente valor.
+- Odds são números decimais como 1.87, 3.30, 5.25.
+- Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
+
+function normalizarNomeJogador(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+}
+
+// Casa o nome livre extraído pela OCR com um jogador de `estimativas` --
+// exato primeiro; senão por substring nos dois sentidos (bookmaker às vezes
+// mostra só o sobrenome, ou só o primeiro nome). Mais de um candidato por
+// substring é ambiguidade real (dois jogadores com sobrenome parecido) --
+// fica sem match, é preferível a arriscar atribuir a odd ao jogador errado.
+function casarJogadorPorNome(nomeImportado, jogadores) {
+  const alvo = normalizarNomeJogador(nomeImportado);
+  if (!alvo) return null;
+  const exato = jogadores.find((j) => normalizarNomeJogador(j.players?.name) === alvo);
+  if (exato) return exato;
+  const candidatos = jogadores.filter((j) => {
+    const nome = normalizarNomeJogador(j.players?.name);
+    return nome && (nome.includes(alvo) || alvo.includes(nome));
+  });
+  return candidatos.length === 1 ? candidatos[0] : null;
+}
+
+// Odds justa (principal) + odds real importada por OCR (secundária, menor,
+// embaixo) -- mesmo padrão visual de CelulaComHistorico (valor principal +
+// linha auxiliar), aqui colorindo verde/vermelho conforme a odd real do
+// mercado está acima (valor pro apostador) ou abaixo (sem valor) da odds
+// justa do modelo.
+function CelulaOdds({ fair, real }) {
+  // `fair == null` (λ ausente pra esse jogador/mercado) precisa ficar neutro
+  // -- sem essa guarda, `real >= null` coage null pra 0 e qualquer odd real
+  // positiva compararia como "acima da justa" (verde), o que é falso.
+  const cor = real == null || fair == null ? 'text-slate-300' : real >= fair ? 'text-emerald-400' : 'text-red-400';
+  return (
+    <td className="py-1.5 px-2 text-right font-mono">
+      <div className={cor}>{fmtOdds(fair)}</div>
+      {real != null && <div className="text-[9px] text-slate-500 font-normal whitespace-nowrap">real: {fmtOdds(real)}</div>}
+    </td>
+  );
+}
+
+const N_PADRAO_ODDS_JUSTAS_JOGADOR = 4;
+
+// Tabela separada da principal (pedido explícito do usuário) -- linhas
+// +1/+2/+3 de chutes ao gol e de gols, só odds justas (e a real importada
+// quando existir), sem os λ/históricos que já estão na tabela principal.
+// Top 4 por time por padrão (ranqueado por lambda_gols_jogo_direto, mesmo λ
+// usado como "principal" nas próprias odds de marcar desta tabela), com
+// botão pra expandir e ver o elenco inteiro.
+function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas }) {
+  const [expandido, setExpandido] = useState(false);
+  if (linhas.length === 0) return null;
+
+  const ordenados = [...linhas].sort((a, b) => (b.lambda_gols_jogo_direto ?? -1) - (a.lambda_gols_jogo_direto ?? -1));
+  const visiveis = expandido ? ordenados : ordenados.slice(0, N_PADRAO_ODDS_JUSTAS_JOGADOR);
+
+  return (
+    <div className="mb-4 last:mb-0">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] text-slate-500 uppercase tracking-wider">{titulo}</p>
+        {ordenados.length > N_PADRAO_ODDS_JUSTAS_JOGADOR && (
+          <button
+            type="button"
+            onClick={() => setExpandido((v) => !v)}
+            className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold"
+          >
+            {expandido ? 'Mostrar menos' : `Ver todos (${ordenados.length})`}
+          </button>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 text-left">
+              <th className="py-1 px-2 font-normal text-left" rowSpan={2}>Jogador</th>
+              <th className="py-1 px-2 font-normal text-left" rowSpan={2}>Pos.</th>
+              <th colSpan={3} className="py-1 px-2 font-normal text-center border-l border-slate-800">Chutes ao gol</th>
+              <th colSpan={3} className="py-1 px-2 font-normal text-center border-l border-slate-800">Gols</th>
+            </tr>
+            <tr className="text-slate-600 text-[10px]">
+              <th className="py-0.5 px-2 text-right border-l border-slate-800">+1</th>
+              <th className="py-0.5 px-2 text-right">+2</th>
+              <th className="py-0.5 px-2 text-right">+3</th>
+              <th className="py-0.5 px-2 text-right border-l border-slate-800">+1</th>
+              <th className="py-0.5 px-2 text-right">+2</th>
+              <th className="py-0.5 px-2 text-right">+3</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visiveis.map((l) => {
+              const posicao = POSICAO_FINA_CURTA[l.posicao_detalhe] || POSICAO_CURTA[l.players?.usual_position_id] || '—';
+              const importado = oddsImportadas[l.player_id] || {};
+              return (
+                <tr key={l.player_id} className="border-t border-slate-800">
+                  <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
+                  <td className="py-1.5 px-2 text-slate-400 font-mono text-[10px]">{posicao}</td>
+                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 1))} real={importado.chutes_no_alvo_mais_0_5} />
+                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 2))} real={importado.chutes_no_alvo_mais_1_5} />
+                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 3))} real={importado.chutes_no_alvo_mais_2_5} />
+                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_gols_jogo_direto, 1))} real={importado.marcar_1_mais} />
+                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_gols_jogo_direto, 2))} real={importado.marcar_2_mais} />
+                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_gols_jogo_direto, 3))} real={importado.marcar_3_mais} />
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const ROTULO_FONTE_TITULAR = {
   real: { texto: 'Escalação real', descricao: 'Titularidade oficial confirmada perto do apito (match_lineup_fotmob) — minutos esperados determinísticos por papel.' },
   previsto: { texto: 'XI previsto', descricao: 'Titularidade estimada dias/horas antes (xi_previsto) — minutos esperados misturam prob. de titularidade, carrega mais incerteza.' },
@@ -385,6 +543,15 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
     chave,
     direcao: atual.chave === chave && atual.direcao === 'desc' ? 'asc' : 'desc',
   }));
+
+  // Odds reais de jogador importadas via OCR (local, não persistido -- mesmo
+  // espírito de "sem persistir 1 linha por linha de aposta" já usado pros λ
+  // derivados). Chave = player_id, casado por nome contra `estimativas` no
+  // momento da importação (ver `casarJogadorPorNome`).
+  const [oddsImportadas, setOddsImportadas] = useState({});
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrMsg, setOcrMsg] = useState('');
+  const [ocrErro, setOcrErro] = useState('');
 
   if (!estimativas?.length) return null;
 
@@ -511,7 +678,48 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
     );
   };
 
+  // Lê a imagem, extrai jogadores+odds via OCR, casa cada um por nome contra
+  // `estimativas` (as duas fontes/times, então funciona pra qualquer
+  // screenshot) e funde no estado local -- não substitui importações
+  // anteriores de outros jogadores, só atualiza quem apareceu nesta imagem.
+  const handleOcrOddsJogador = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setOcrLoading(true); setOcrErro(''); setOcrMsg('');
+    try {
+      const parsed = await extractJsonFromImage(file, OCR_ODDS_JOGADOR_PROMPT);
+      const jogadoresImagem = parsed?.jogadores || [];
+      const novos = {};
+      let naoCasados = 0;
+      for (const j of jogadoresImagem) {
+        const match = casarJogadorPorNome(j.nome, estimativas);
+        if (!match) { naoCasados += 1; continue; }
+        novos[match.player_id] = {
+          chutes_no_alvo_mais_0_5: j.chutes_no_alvo_mais_0_5 ?? null,
+          chutes_no_alvo_mais_1_5: j.chutes_no_alvo_mais_1_5 ?? null,
+          chutes_no_alvo_mais_2_5: j.chutes_no_alvo_mais_2_5 ?? null,
+          marcar_1_mais: j.marcar_1_mais ?? null,
+          marcar_2_mais: j.marcar_2_mais ?? null,
+          marcar_3_mais: j.marcar_3_mais ?? null,
+        };
+      }
+      setOddsImportadas((atual) => ({ ...atual, ...novos }));
+      const nCasados = Object.keys(novos).length;
+      if (nCasados === 0 && naoCasados === 0) {
+        setOcrErro('Nenhum jogador com odds reconhecido nessa imagem.');
+      } else {
+        setOcrMsg(`${nCasados} jogador(es) importado(s)${naoCasados ? `, ${naoCasados} não reconhecido(s) (nome não bateu com o elenco)` : ''}.`);
+      }
+    } catch (err) {
+      setOcrErro(err.message || 'Falha ao ler a imagem.');
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
   return (
+    <>
     <Secao titulo="Chutes & gols por jogador" icone={Target}>
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
@@ -561,6 +769,38 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
       <Tabela titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} />
       <Tabela titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} />
     </Secao>
+
+    <Secao titulo="Odds justas individuais (chutes ao gol / gols)" icone={Percent}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-[11px] text-slate-500">
+          Odds justas (1/probabilidade, sem margem) nas linhas +1/+2/+3 de cada mercado, derivadas do mesmo λ já mostrado acima
+          ("Chutes ao gol" via <code className="text-slate-400">lambda_chutes_no_alvo_jogo</code>; "Gols" via{' '}
+          <code className="text-slate-400">lambda_gols_jogo_direto</code>, a variante com melhor log-loss no backtest real).
+          Importe uma imagem de odds reais da casa (mercado "Chutes no alvo"/"Marcador de gol") pra comparar lado a lado — verde quando a
+          odd real está acima da justa (valor pro apostador), vermelho quando abaixo.
+        </p>
+        <label
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
+            ocrLoading ? 'bg-slate-700 text-slate-400 cursor-wait' : 'bg-purple-600 hover:bg-purple-500 text-white'
+          }`}
+        >
+          {ocrLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+          Importar odds (OCR)
+          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={ocrLoading} onChange={handleOcrOddsJogador} />
+        </label>
+      </div>
+      {(ocrErro || ocrMsg) && (
+        <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          ocrErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {ocrErro ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{ocrErro || ocrMsg}</span>
+        </div>
+      )}
+      <TabelaOddsJustasIndividual titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} oddsImportadas={oddsImportadas} />
+      <TabelaOddsJustasIndividual titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas} />
+    </Secao>
+    </>
   );
 }
 
