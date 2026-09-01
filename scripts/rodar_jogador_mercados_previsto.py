@@ -343,10 +343,10 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     if not df_shots.empty:
         df_shots["_e_gol_proprio"] = (df_shots["event_type"] == "Goal") & (~df_shots["is_own_goal"].fillna(False))
         # Mesma definição de "chute ao gol" de treinar_modelo_jogador_
-        # mercados.carregar_dados -- is_on_target sozinho inclui chute
-        # bloqueado por defensor (nunca chega ao goleiro), então exclui
-        # is_blocked explicitamente.
-        df_shots["_e_chute_no_alvo"] = df_shots["is_on_target"].fillna(False) & (~df_shots["is_blocked"].fillna(False))
+        # mercados.carregar_dados (ver comentário lá pro porquê: dado da
+        # FotMob não distingue bloqueio na linha do gol de bloqueio em
+        # qualquer outro lugar, então usa is_on_target sozinho).
+        df_shots["_e_chute_no_alvo"] = df_shots["is_on_target"].fillna(False)
         chutes_totais = df_shots.groupby("player_id").size().to_dict()
         gols_totais = df_shots.groupby("player_id")["_e_gol_proprio"].sum().to_dict()
         chutes_no_alvo_totais = df_shots.groupby("player_id")["_e_chute_no_alvo"].sum().to_dict()
