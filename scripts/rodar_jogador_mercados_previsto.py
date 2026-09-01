@@ -307,8 +307,16 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
             .range(inicio, fim)
         ),
         player_ids,
-        tamanho_lote=200,
+        tamanho_lote=100,
     )
+    # tamanho_lote reduzido de 200 pra 100 (mesmo valor já usado em
+    # _minutos_medios_titular_reserva acima, pra match_player_stats_fotmob) --
+    # achado real: a expansão de 6 pra 12 ligas do modelo de jogador (ver
+    # dh.LIGAS_JOGADOR_MERCADOS) engordou o volume médio de linhas/jogador
+    # o bastante pra um lote de 200 IDs estourar `statement_timeout` bem
+    # dentro da paginação por OFFSET (run agendada de 2026-08-31 13:27,
+    # timeout na página offset=20000 de um único lote) -- mesma classe de
+    # custo quadrático já documentada em `_paginar_por_lotes_de_id`.
     stats_rows = dh._paginar_por_lotes_de_id(
         lambda lote, inicio, fim: (
             supabase.table("match_player_stats_fotmob")
@@ -319,7 +327,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
             .range(inicio, fim)
         ),
         player_ids,
-        tamanho_lote=200,
+        tamanho_lote=100,
     )
     df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["player_id", "minutes_played"])
     minutos_totais = df_stats.groupby("player_id")["minutes_played"].sum().to_dict()
