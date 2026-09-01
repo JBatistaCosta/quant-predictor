@@ -331,6 +331,54 @@ Regras:
 - Odds são números decimais como 1.87, 3.30, 5.25.
 - Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
 
+// Prompt separado (não reusa OCR_ODDS_JOGADOR_PROMPT) porque bookmakers
+// normalmente mostram "Total de chutes" (qualquer chute, não só no alvo) numa
+// página de mercado própria, separada de "Chutes no alvo"/"Marcador de gol".
+const OCR_ODDS_CHUTES_PROMPT = `Você é um extrator de odds do mercado de TOTAL DE CHUTES por jogador (qualquer chute, não só no alvo) de screenshots de casas de apostas (Betano, Bet365, etc.) de uma partida de futebol.
+A imagem mostra o mercado "Total de chutes" (mais/menos de X chutes) por jogador -- pode ter várias linhas por jogador (mais de 0.5, 1.5, 2.5, ..., até 9.5 ou mais). Extraia TODOS os jogadores e linhas visíveis e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
+{
+  "casa_de_apostas": "NomeDaCasa",
+  "jogadores": [
+    {
+      "nome": "Nome do jogador exatamente como aparece na imagem",
+      "chutes_mais_0_5": null,
+      "chutes_mais_1_5": null,
+      "chutes_mais_2_5": null,
+      "chutes_mais_3_5": null,
+      "chutes_mais_4_5": null,
+      "chutes_mais_5_5": null,
+      "chutes_mais_6_5": null,
+      "chutes_mais_7_5": null,
+      "chutes_mais_8_5": null,
+      "chutes_mais_9_5": null
+    }
+  ]
+}
+
+Regras:
+- "chutes_mais_X": odd de "mais de X chutes" TOTAL (qualquer chute, no alvo ou não -- ignore a odd de "menos de"/"under"). Só preencha as linhas realmente visíveis, deixe null as que não aparecerem pra aquele jogador.
+- Se um jogador não tiver nenhuma linha visível, não inclua ele no array.
+- Odds são números decimais como 1.87, 3.30, 5.25.
+- Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
+
+// Funde odds importadas por OCR campo a campo (não substitui o objeto do
+// jogador inteiro) -- necessário porque agora duas fontes independentes
+// (chutes-ao-gol/gols e chutes totais, prompts/botões separados) escrevem no
+// MESMO player_id sem colidir em nome de campo; um merge raso (`{...atual,
+// ...novos}`) apagaria os campos da outra fonte sempre que uma nova imagem
+// fosse importada. Também nunca escreve `null` por cima de um valor já
+// importado -- uma imagem que não mostra uma linha não deve apagar a leitura
+// anterior dessa linha noutra imagem.
+function mesclarOddsImportadas(atual, novos) {
+  const fundido = { ...atual };
+  for (const [playerId, campos] of Object.entries(novos)) {
+    const existente = fundido[playerId] || {};
+    const limpos = Object.fromEntries(Object.entries(campos).filter(([, v]) => v != null));
+    fundido[playerId] = { ...existente, ...limpos };
+  }
+  return fundido;
+}
+
 function normalizarNomeJogador(s) {
   return String(s || '')
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -374,17 +422,38 @@ function CelulaOdds({ fair, real }) {
 
 const N_PADRAO_ODDS_JUSTAS_JOGADOR = 4;
 
-// Tabela separada da principal (pedido explícito do usuário) -- linhas
-// +1/+2/+3 de chutes ao gol e de gols, só odds justas (e a real importada
-// quando existir), sem os λ/históricos que já estão na tabela principal.
-// Top 4 por time por padrão (ranqueado por lambda_gols_jogo_direto, mesmo λ
-// usado como "principal" nas próprias odds de marcar desta tabela), com
-// botão pra expandir e ver o elenco inteiro.
-function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas }) {
+// Config de mercados pra TabelaOddsJustasIndividual -- cada mercado sabe seu
+// próprio título, de qual λ deriva (via probPeloMenos), quantas linhas
+// mostrar e como mapear uma linha pra chave de `oddsImportadas` (os nomes
+// de campo vêm dos prompts de OCR, ver OCR_ODDS_JOGADOR_PROMPT/
+// OCR_ODDS_CHUTES_PROMPT -- não seguem uma fórmula única entre mercados,
+// "chutes ao gol"/"chutes" usam a convenção "mais de X.5", "gols" usa
+// "marcar N ou mais").
+const MERCADOS_CHUTES_GOLS = [
+  { titulo: 'Chutes ao gol', lambdaKey: 'lambda_chutes_no_alvo_jogo', linhas: [1, 2, 3], chaveReal: (linha) => `chutes_no_alvo_mais_${linha - 1}_5` },
+  { titulo: 'Gols', lambdaKey: 'lambda_gols_jogo_direto', linhas: [1, 2, 3], chaveReal: (linha) => `marcar_${linha}_mais` },
+];
+
+// Chutes totais (não só no alvo) -- linhas +1 até +10, pedido explícito do
+// usuário ("é extensa, por tomar uma tabela à parte"): fica em Secao/tabela
+// separada da de chutes-ao-gol/gols, mesmo componente generalizado.
+const LINHAS_CHUTES_TOTAIS = Array.from({ length: 10 }, (_, i) => i + 1);
+const MERCADOS_CHUTES_TOTAIS = [
+  { titulo: 'Chutes (total)', lambdaKey: 'lambda_chutes_jogo', linhas: LINHAS_CHUTES_TOTAIS, chaveReal: (linha) => `chutes_mais_${linha - 1}_5` },
+];
+
+// Tabela separada da principal (pedido explícito do usuário) -- só odds
+// justas (e a real importada quando existir) pros mercados passados em
+// `mercados`, sem os λ/históricos que já estão na tabela principal. Top 4
+// por time por padrão (ranqueado por `chaveOrdenacao`), com botão pra
+// expandir e ver o elenco inteiro. Generalizado (não hardcoded pra 2
+// mercados de 3 linhas) pra reusar entre "chutes ao gol/gols" (+1/+2/+3) e
+// "chutes total" (+1..+10), sem duplicar a lógica de ranking/expandir/render.
+function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, chaveOrdenacao = 'lambda_gols_jogo_direto' }) {
   const [expandido, setExpandido] = useState(false);
   if (linhas.length === 0) return null;
 
-  const ordenados = [...linhas].sort((a, b) => (b.lambda_gols_jogo_direto ?? -1) - (a.lambda_gols_jogo_direto ?? -1));
+  const ordenados = [...linhas].sort((a, b) => (b[chaveOrdenacao] ?? -1) - (a[chaveOrdenacao] ?? -1));
   const visiveis = expandido ? ordenados : ordenados.slice(0, N_PADRAO_ODDS_JUSTAS_JOGADOR);
 
   return (
@@ -407,16 +476,14 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas }) {
             <tr className="text-slate-500 text-left">
               <th className="py-1 px-2 font-normal text-left" rowSpan={2}>Jogador</th>
               <th className="py-1 px-2 font-normal text-left" rowSpan={2}>Pos.</th>
-              <th colSpan={3} className="py-1 px-2 font-normal text-center border-l border-slate-800">Chutes ao gol</th>
-              <th colSpan={3} className="py-1 px-2 font-normal text-center border-l border-slate-800">Gols</th>
+              {mercados.map((m) => (
+                <th key={m.titulo} colSpan={m.linhas.length} className="py-1 px-2 font-normal text-center border-l border-slate-800">{m.titulo}</th>
+              ))}
             </tr>
             <tr className="text-slate-600 text-[10px]">
-              <th className="py-0.5 px-2 text-right border-l border-slate-800">+1</th>
-              <th className="py-0.5 px-2 text-right">+2</th>
-              <th className="py-0.5 px-2 text-right">+3</th>
-              <th className="py-0.5 px-2 text-right border-l border-slate-800">+1</th>
-              <th className="py-0.5 px-2 text-right">+2</th>
-              <th className="py-0.5 px-2 text-right">+3</th>
+              {mercados.map((m) => m.linhas.map((linha, i) => (
+                <th key={`${m.titulo}-${linha}`} className={`py-0.5 px-2 text-right ${i === 0 ? 'border-l border-slate-800' : ''}`}>+{linha}</th>
+              )))}
             </tr>
           </thead>
           <tbody>
@@ -427,12 +494,13 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas }) {
                 <tr key={l.player_id} className="border-t border-slate-800">
                   <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
                   <td className="py-1.5 px-2 text-slate-400 font-mono text-[10px]">{posicao}</td>
-                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 1))} real={importado.chutes_no_alvo_mais_0_5} />
-                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 2))} real={importado.chutes_no_alvo_mais_1_5} />
-                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 3))} real={importado.chutes_no_alvo_mais_2_5} />
-                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_gols_jogo_direto, 1))} real={importado.marcar_1_mais} />
-                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_gols_jogo_direto, 2))} real={importado.marcar_2_mais} />
-                  <CelulaOdds fair={oddsJusta(probPeloMenos(l.lambda_gols_jogo_direto, 3))} real={importado.marcar_3_mais} />
+                  {mercados.map((m) => m.linhas.map((linha) => (
+                    <CelulaOdds
+                      key={`${m.titulo}-${linha}`}
+                      fair={oddsJusta(probPeloMenos(l[m.lambdaKey], linha))}
+                      real={importado[m.chaveReal(linha)]}
+                    />
+                  )))}
                 </tr>
               );
             })}
@@ -552,6 +620,12 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrMsg, setOcrMsg] = useState('');
   const [ocrErro, setOcrErro] = useState('');
+  // Estado próprio pro import de chutes totais (botão/prompt separado) --
+  // escreve no MESMO `oddsImportadas` (mesclarOddsImportadas evita colisão),
+  // só o loading/mensagem de cada botão fica independente.
+  const [ocrChutesLoading, setOcrChutesLoading] = useState(false);
+  const [ocrChutesMsg, setOcrChutesMsg] = useState('');
+  const [ocrChutesErro, setOcrChutesErro] = useState('');
 
   if (!estimativas?.length) return null;
 
@@ -704,7 +778,7 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
           marcar_3_mais: j.marcar_3_mais ?? null,
         };
       }
-      setOddsImportadas((atual) => ({ ...atual, ...novos }));
+      setOddsImportadas((atual) => mesclarOddsImportadas(atual, novos));
       const nCasados = Object.keys(novos).length;
       if (nCasados === 0 && naoCasados === 0) {
         setOcrErro('Nenhum jogador com odds reconhecido nessa imagem.');
@@ -715,6 +789,44 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
       setOcrErro(err.message || 'Falha ao ler a imagem.');
     } finally {
       setOcrLoading(false);
+    }
+  };
+
+  // Mesmo padrão de handleOcrOddsJogador, prompt/estado próprios (mercado
+  // separado: chutes TOTAIS, não só no alvo) -- funde no mesmo
+  // `oddsImportadas` via mesclarOddsImportadas, sem apagar o que a outra
+  // fonte já importou pro mesmo jogador.
+  const handleOcrOddsChutes = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setOcrChutesLoading(true); setOcrChutesErro(''); setOcrChutesMsg('');
+    try {
+      const parsed = await extractJsonFromImage(file, OCR_ODDS_CHUTES_PROMPT);
+      const jogadoresImagem = parsed?.jogadores || [];
+      const novos = {};
+      let naoCasados = 0;
+      for (const j of jogadoresImagem) {
+        const match = casarJogadorPorNome(j.nome, estimativas);
+        if (!match) { naoCasados += 1; continue; }
+        const campos = {};
+        for (const linha of LINHAS_CHUTES_TOTAIS) {
+          const chave = `chutes_mais_${linha - 1}_5`;
+          campos[chave] = j[chave] ?? null;
+        }
+        novos[match.player_id] = campos;
+      }
+      setOddsImportadas((atual) => mesclarOddsImportadas(atual, novos));
+      const nCasados = Object.keys(novos).length;
+      if (nCasados === 0 && naoCasados === 0) {
+        setOcrChutesErro('Nenhum jogador com odds reconhecido nessa imagem.');
+      } else {
+        setOcrChutesMsg(`${nCasados} jogador(es) importado(s)${naoCasados ? `, ${naoCasados} não reconhecido(s) (nome não bateu com o elenco)` : ''}.`);
+      }
+    } catch (err) {
+      setOcrChutesErro(err.message || 'Falha ao ler a imagem.');
+    } finally {
+      setOcrChutesLoading(false);
     }
   };
 
@@ -797,8 +909,48 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
           <span>{ocrErro || ocrMsg}</span>
         </div>
       )}
-      <TabelaOddsJustasIndividual titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} oddsImportadas={oddsImportadas} />
-      <TabelaOddsJustasIndividual titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas} />
+      <TabelaOddsJustasIndividual
+        titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} oddsImportadas={oddsImportadas} mercados={MERCADOS_CHUTES_GOLS}
+      />
+      <TabelaOddsJustasIndividual
+        titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas} mercados={MERCADOS_CHUTES_GOLS}
+      />
+    </Secao>
+
+    <Secao titulo="Odds justas — chutes (total)" icone={Target}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-[11px] text-slate-500">
+          Mesma lógica da tabela acima, agora pro total de chutes do jogador (qualquer chute, não só no alvo — via{' '}
+          <code className="text-slate-400">lambda_chutes_jogo</code>), linhas +1 até +10 — por ser um mercado bem mais extenso (10 linhas
+          em vez de 3), fica numa tabela separada da de chutes-ao-gol/gols. Importe uma imagem do mercado "Total de chutes" da casa pra
+          comparar lado a lado, mesma coloração (verde = valor, vermelho = sem valor).
+        </p>
+        <label
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
+            ocrChutesLoading ? 'bg-slate-700 text-slate-400 cursor-wait' : 'bg-purple-600 hover:bg-purple-500 text-white'
+          }`}
+        >
+          {ocrChutesLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+          Importar odds (OCR)
+          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={ocrChutesLoading} onChange={handleOcrOddsChutes} />
+        </label>
+      </div>
+      {(ocrChutesErro || ocrChutesMsg) && (
+        <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          ocrChutesErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {ocrChutesErro ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{ocrChutesErro || ocrChutesMsg}</span>
+        </div>
+      )}
+      <TabelaOddsJustasIndividual
+        titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} oddsImportadas={oddsImportadas}
+        mercados={MERCADOS_CHUTES_TOTAIS} chaveOrdenacao="lambda_chutes_jogo"
+      />
+      <TabelaOddsJustasIndividual
+        titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas}
+        mercados={MERCADOS_CHUTES_TOTAIS} chaveOrdenacao="lambda_chutes_jogo"
+      />
     </Secao>
     </>
   );
