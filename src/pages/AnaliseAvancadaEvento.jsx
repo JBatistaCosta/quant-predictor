@@ -1211,7 +1211,11 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
         </div>
       </div>
       {comparacaoEVVisivel.length === 0 ? (
-        <p className="text-[11px] text-slate-600 italic">Nenhuma odd de jogador importada ainda (OCR ou JSON colado acima).</p>
+        <p className="text-[11px] text-slate-600 italic">
+          {comparacaoEVLinhas.length === 0
+            ? 'Nenhuma odd de jogador importada ainda (OCR ou JSON colado acima).'
+            : 'Nenhuma linha com EV positivo entre as odds importadas — desmarque "Só EV positivo" pra ver todas.'}
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
