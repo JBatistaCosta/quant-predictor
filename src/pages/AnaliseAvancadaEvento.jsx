@@ -302,6 +302,20 @@ function probPeloMenos(lambdaPoisson, k) {
 function oddsJusta(p) { return p != null && p > 1e-9 ? 1 / p : null; }
 function fmtOdds(v) { return v == null ? '—' : v.toFixed(2); }
 
+// Melhor (maior) odd entre as casas importadas pra um campo -- mesmo
+// critério já estabelecido no projeto pra "melhor odd entre casas" (ver
+// melhorOddPorChave em api/model-maintenance.js, usado na carteira, e o
+// reduce equivalente em ModelBenchmarking.jsx): é a odd que de fato dá
+// mais valor pro apostador, não a mais recente nem a de uma casa fixa.
+function melhorOddDoCampo(porCasa) {
+  if (!porCasa) return null;
+  let melhor = null;
+  for (const [casa, odd] of Object.entries(porCasa)) {
+    if (odd != null && (!melhor || odd > melhor.odd)) melhor = { odd, casa };
+  }
+  return melhor;
+}
+
 // Prompt de OCR pra mercados de JOGADOR (chutes no alvo + marcador de gol) --
 // deliberadamente separado de OCR_ODDS_PROMPT em AnaliseEvento.jsx, que é
 // só de mercados de TIME e explicitamente ignora mercado de jogador.
@@ -361,20 +375,26 @@ Regras:
 - Odds são números decimais como 1.87, 3.30, 5.25.
 - Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
 
-// Funde odds importadas por OCR campo a campo (não substitui o objeto do
-// jogador inteiro) -- necessário porque agora duas fontes independentes
-// (chutes-ao-gol/gols e chutes totais, prompts/botões separados) escrevem no
-// MESMO player_id sem colidir em nome de campo; um merge raso (`{...atual,
-// ...novos}`) apagaria os campos da outra fonte sempre que uma nova imagem
-// fosse importada. Também nunca escreve `null` por cima de um valor já
-// importado -- uma imagem que não mostra uma linha não deve apagar a leitura
-// anterior dessa linha noutra imagem.
+// oddsImportadas[player_id][campo] guarda um MAPA por casa de apostas
+// ({ casa: odd }), não um valor único -- é o que permite importar a mesma
+// partida várias vezes (OCR de casas diferentes, ou JSON colado) sem uma
+// sobrescrever a outra; `melhorOddDoCampo` escolhe a melhor entre elas na
+// hora de renderizar. Funde nível a nível (jogador -> campo -> casa) --
+// nunca substitui o objeto do jogador nem o do campo inteiro, senão
+// importar uma imagem/fonte apagaria as casas que outra já tinha
+// importado pro mesmo jogador/linha. Também nunca escreve `null` por cima
+// de uma casa já importada -- uma imagem que não mostra uma linha não deve
+// apagar a leitura anterior dessa linha/casa noutra imagem.
 function mesclarOddsImportadas(atual, novos) {
   const fundido = { ...atual };
   for (const [playerId, campos] of Object.entries(novos)) {
     const existente = fundido[playerId] || {};
-    const limpos = Object.fromEntries(Object.entries(campos).filter(([, v]) => v != null));
-    fundido[playerId] = { ...existente, ...limpos };
+    const mesclado = { ...existente };
+    for (const [campo, porCasa] of Object.entries(campos)) {
+      const limpas = Object.fromEntries(Object.entries(porCasa).filter(([, v]) => v != null));
+      mesclado[campo] = { ...(existente[campo] || {}), ...limpas };
+    }
+    fundido[playerId] = mesclado;
   }
   return fundido;
 }
@@ -402,12 +422,13 @@ function casarJogadorPorNome(nomeImportado, jogadores) {
   return candidatos.length === 1 ? candidatos[0] : null;
 }
 
-// Odds justa (principal) + odds real importada por OCR (secundária, menor,
-// embaixo) -- mesmo padrão visual de CelulaComHistorico (valor principal +
-// linha auxiliar), aqui colorindo verde/vermelho conforme a odd real do
-// mercado está acima (valor pro apostador) ou abaixo (sem valor) da odds
-// justa do modelo.
-function CelulaOdds({ fair, real }) {
+// Odds justa (principal) + MELHOR odds real importada entre as casas
+// disponíveis pra essa linha (secundária, menor, embaixo, com o nome da
+// casa -- ver melhorOddDoCampo) -- mesmo padrão visual de
+// CelulaComHistorico (valor principal + linha auxiliar), aqui colorindo
+// verde/vermelho conforme a odd real do mercado está acima (valor pro
+// apostador) ou abaixo (sem valor) da odds justa do modelo.
+function CelulaOdds({ fair, real, casa }) {
   // `fair == null` (λ ausente pra esse jogador/mercado) precisa ficar neutro
   // -- sem essa guarda, `real >= null` coage null pra 0 e qualquer odd real
   // positiva compararia como "acima da justa" (verde), o que é falso.
@@ -415,7 +436,11 @@ function CelulaOdds({ fair, real }) {
   return (
     <td className="py-1.5 px-2 text-right font-mono">
       <div className={cor}>{fmtOdds(fair)}</div>
-      {real != null && <div className="text-[9px] text-slate-500 font-normal whitespace-nowrap">real: {fmtOdds(real)}</div>}
+      {real != null && (
+        <div className="text-[9px] text-slate-500 font-normal whitespace-nowrap">
+          real: {fmtOdds(real)}{casa ? ` (${casa})` : ''}
+        </div>
+      )}
     </td>
   );
 }
@@ -440,6 +465,89 @@ const MERCADOS_CHUTES_GOLS = [
 const LINHAS_CHUTES_TOTAIS = Array.from({ length: 10 }, (_, i) => i + 1);
 const MERCADOS_CHUTES_TOTAIS = [
   { titulo: 'Chutes (total)', lambdaKey: 'lambda_chutes_jogo', linhas: LINHAS_CHUTES_TOTAIS, chaveReal: (linha) => `chutes_mais_${linha - 1}_5` },
+];
+
+// Todos os mercados de jogador com odds justas derivadas de um λ (chutes ao
+// gol, gols, chutes total) -- reusado tanto pelo import de JSON colado
+// (mapeia o "mercado" do JSON pro config certo) quanto pela comparação de
+// EV multi-casas (itera os 3 juntos numa lista só).
+const MERCADOS_EV_JOGADOR = [...MERCADOS_CHUTES_GOLS, ...MERCADOS_CHUTES_TOTAIS];
+
+// Mapa "mercado" (string livre, como vem no JSON colado pelo usuário) ->
+// config já usado pelas tabelas de odds justas -- normaliza antes de
+// comparar (case/espaços) pra não exigir que o usuário digite exatamente
+// igual ao título mostrado na UI.
+const MAPA_MERCADO_JSON = {
+  chutes: MERCADOS_CHUTES_TOTAIS[0],
+  'chutes total': MERCADOS_CHUTES_TOTAIS[0],
+  'chutes (total)': MERCADOS_CHUTES_TOTAIS[0],
+  'chutes ao gol': MERCADOS_CHUTES_GOLS[0],
+  gols: MERCADOS_CHUTES_GOLS[1],
+};
+function normalizarMercadoJson(s) {
+  return String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+// Importa odds coladas em JSON estruturado -- caminho alternativo ao OCR de
+// imagem, pro formato { mercado, partida, equipes: { nomeTime: [{ jogador,
+// odds: { "N+": odd } }] } } (pedido do usuário). Função pura (testável
+// isolada) -- não precisa casar o nome do time (só usado como agrupamento
+// de origem no JSON), casa cada jogador direto contra a lista completa de
+// `jogadores` (os dois times), mesmo critério de casarJogadorPorNome.
+function parseOddsJson(jsonTexto, casa, jogadores) {
+  let payload;
+  try {
+    payload = JSON.parse(jsonTexto);
+  } catch {
+    return { erro: 'JSON inválido — confira a formatação.' };
+  }
+  if (!casa?.trim()) {
+    return { erro: 'Informe a casa de apostas antes de importar.' };
+  }
+  const config = MAPA_MERCADO_JSON[normalizarMercadoJson(payload?.mercado)];
+  if (!config) {
+    const aceitos = [...new Set(Object.values(MAPA_MERCADO_JSON).map((c) => c.titulo))].join(', ');
+    return { erro: `Mercado "${payload?.mercado ?? ''}" não reconhecido. Use um de: ${aceitos}.` };
+  }
+  const equipes = payload?.equipes || {};
+  const jogadoresJson = Object.values(equipes).flat().filter(Boolean);
+  const novos = {};
+  let naoCasados = 0;
+  for (const j of jogadoresJson) {
+    const match = casarJogadorPorNome(j.jogador, jogadores);
+    if (!match) { naoCasados += 1; continue; }
+    const campos = {};
+    for (const [linhaTexto, odd] of Object.entries(j.odds || {})) {
+      const linha = parseInt(linhaTexto, 10);
+      if (!Number.isFinite(linha) || !config.linhas.includes(linha) || odd == null) continue;
+      campos[config.chaveReal(linha)] = { [casa]: odd };
+    }
+    if (Object.keys(campos).length > 0) novos[match.player_id] = campos;
+  }
+  const nCasados = Object.keys(novos).length;
+  if (nCasados === 0 && naoCasados === 0) {
+    return { erro: 'Nenhum jogador com odds encontrado nesse JSON.' };
+  }
+  return {
+    novos,
+    mensagem: `${nCasados} jogador(es) importado(s)${naoCasados ? `, ${naoCasados} não reconhecido(s) (nome não bateu com o elenco)` : ''}.`,
+  };
+}
+
+// Colunas de export CSV da comparação de EV multi-casas -- não depende de
+// closure nenhuma (linhas já vêm com todos os campos prontos), fica em
+// escopo de módulo como as outras listas de colunas de export do arquivo.
+const COLUNAS_EXPORT_EV_JOGADOR = [
+  { header: 'Jogador', get: (l) => l.jogador },
+  { header: 'Time', get: (l) => l.time },
+  { header: 'Mercado', get: (l) => l.mercado },
+  { header: 'Linha', get: (l) => `+${l.linha}` },
+  { header: 'Casa de apostas', get: (l) => l.casa },
+  { header: 'Odd real', get: (l) => numCSV(l.oddReal, 2) },
+  { header: 'Odd justa (modelo)', get: (l) => numCSV(l.oddJusta, 2) },
+  { header: 'Prob. modelo', get: (l) => numCSV(l.pModelo, 4) },
+  { header: 'Edge (pp)', get: (l) => numCSV(l.edge * 100, 2) },
+  { header: 'EV (%)', get: (l) => numCSV(l.ev * 100, 2) },
 ];
 
 // Tabela separada da principal (pedido explícito do usuário) -- só odds
@@ -494,13 +602,17 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
                 <tr key={l.player_id} className="border-t border-slate-800">
                   <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.players?.name || `Jogador #${l.player_id}`}</td>
                   <td className="py-1.5 px-2 text-slate-400 font-mono text-[10px]">{posicao}</td>
-                  {mercados.map((m) => m.linhas.map((linha) => (
-                    <CelulaOdds
-                      key={`${m.titulo}-${linha}`}
-                      fair={oddsJusta(probPeloMenos(l[m.lambdaKey], linha))}
-                      real={importado[m.chaveReal(linha)]}
-                    />
-                  )))}
+                  {mercados.map((m) => m.linhas.map((linha) => {
+                    const melhor = melhorOddDoCampo(importado[m.chaveReal(linha)]);
+                    return (
+                      <CelulaOdds
+                        key={`${m.titulo}-${linha}`}
+                        fair={oddsJusta(probPeloMenos(l[m.lambdaKey], linha))}
+                        real={melhor?.odd}
+                        casa={melhor?.casa}
+                      />
+                    );
+                  }))}
                 </tr>
               );
             })}
@@ -626,6 +738,18 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
   const [ocrChutesLoading, setOcrChutesLoading] = useState(false);
   const [ocrChutesMsg, setOcrChutesMsg] = useState('');
   const [ocrChutesErro, setOcrChutesErro] = useState('');
+
+  // Casa de apostas compartilhada entre os 3 caminhos de import (2 OCR + 1
+  // JSON colado) -- pro OCR é só o fallback quando a imagem não mostra a
+  // marca (o prompt já pede casa_de_apostas pra IA extrair, ver
+  // OCR_ODDS_JOGADOR_PROMPT/OCR_ODDS_CHUTES_PROMPT); pro JSON colado é
+  // obrigatório (o formato do exemplo do usuário não carrega esse campo).
+  const [casaAtual, setCasaAtual] = useState('');
+  const [pasteAberto, setPasteAberto] = useState(false);
+  const [pasteTexto, setPasteTexto] = useState('');
+  const [pasteMsg, setPasteMsg] = useState('');
+  const [pasteErro, setPasteErro] = useState('');
+  const [soEvPositivo, setSoEvPositivo] = useState(false);
 
   if (!estimativas?.length) return null;
 
@@ -763,13 +887,14 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
     setOcrLoading(true); setOcrErro(''); setOcrMsg('');
     try {
       const parsed = await extractJsonFromImage(file, OCR_ODDS_JOGADOR_PROMPT);
+      const casa = (parsed?.casa_de_apostas || casaAtual || 'Casa (OCR)').trim() || 'Casa (OCR)';
       const jogadoresImagem = parsed?.jogadores || [];
       const novos = {};
       let naoCasados = 0;
       for (const j of jogadoresImagem) {
         const match = casarJogadorPorNome(j.nome, estimativas);
         if (!match) { naoCasados += 1; continue; }
-        novos[match.player_id] = {
+        const camposValor = {
           chutes_no_alvo_mais_0_5: j.chutes_no_alvo_mais_0_5 ?? null,
           chutes_no_alvo_mais_1_5: j.chutes_no_alvo_mais_1_5 ?? null,
           chutes_no_alvo_mais_2_5: j.chutes_no_alvo_mais_2_5 ?? null,
@@ -777,6 +902,9 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
           marcar_2_mais: j.marcar_2_mais ?? null,
           marcar_3_mais: j.marcar_3_mais ?? null,
         };
+        novos[match.player_id] = Object.fromEntries(
+          Object.entries(camposValor).map(([campo, valor]) => [campo, { [casa]: valor }])
+        );
       }
       setOddsImportadas((atual) => mesclarOddsImportadas(atual, novos));
       const nCasados = Object.keys(novos).length;
@@ -803,6 +931,7 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
     setOcrChutesLoading(true); setOcrChutesErro(''); setOcrChutesMsg('');
     try {
       const parsed = await extractJsonFromImage(file, OCR_ODDS_CHUTES_PROMPT);
+      const casa = (parsed?.casa_de_apostas || casaAtual || 'Casa (OCR)').trim() || 'Casa (OCR)';
       const jogadoresImagem = parsed?.jogadores || [];
       const novos = {};
       let naoCasados = 0;
@@ -812,7 +941,7 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
         const campos = {};
         for (const linha of LINHAS_CHUTES_TOTAIS) {
           const chave = `chutes_mais_${linha - 1}_5`;
-          campos[chave] = j[chave] ?? null;
+          campos[chave] = { [casa]: j[chave] ?? null };
         }
         novos[match.player_id] = campos;
       }
@@ -829,6 +958,61 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
       setOcrChutesLoading(false);
     }
   };
+
+  // Import por JSON colado -- síncrono (parseOddsJson é função pura, sem
+  // I/O), mesmo destino (oddsImportadas) e mesma UX de sucesso/erro dos
+  // handlers de OCR acima.
+  const handleImportarJson = () => {
+    setPasteErro(''); setPasteMsg('');
+    const resultado = parseOddsJson(pasteTexto, casaAtual, estimativas);
+    if (resultado.erro) { setPasteErro(resultado.erro); return; }
+    setOddsImportadas((atual) => mesclarOddsImportadas(atual, resultado.novos));
+    setPasteMsg(resultado.mensagem);
+    setPasteTexto('');
+  };
+
+  // Comparação de EV multi-casas: uma linha por (jogador, mercado, linha,
+  // casa) que tem odd importada -- diferente das 3 tabelas acima (que só
+  // mostram a MELHOR odd por célula), aqui cada casa vira sua própria linha
+  // pra comparação/ranking, mesmo espírito da verificação de EV de TIME
+  // (verificacaoEV, no componente pai) mas sem devig: mercados de jogador
+  // hoje só trazem o lado "N+" (nunca o complementar "menos de"), então não
+  // dá pra devigar por Odds Ratio como no nível de time (exige as duas
+  // pernas do mercado) -- edge aqui é probabilidade implícita simples
+  // (1/odd), com a margem da casa embutida, não a probabilidade "limpa".
+  const comparacaoEVLinhas = [];
+  for (const l of linhasDaFonte) {
+    const nomeTime = l.team_id === homeTeamId ? homeNome : awayNome;
+    const importado = oddsImportadas[l.player_id];
+    if (!importado) continue;
+    for (const mercado of MERCADOS_EV_JOGADOR) {
+      for (const linha of mercado.linhas) {
+        const pModelo = probPeloMenos(l[mercado.lambdaKey], linha);
+        if (pModelo == null) continue;
+        const porCasa = importado[mercado.chaveReal(linha)];
+        if (!porCasa) continue;
+        for (const [casa, oddReal] of Object.entries(porCasa)) {
+          if (oddReal == null) continue;
+          comparacaoEVLinhas.push({
+            jogador: l.players?.name || `Jogador #${l.player_id}`,
+            time: nomeTime || '',
+            mercado: mercado.titulo,
+            linha,
+            casa,
+            oddReal,
+            oddJusta: oddsJusta(pModelo),
+            pModelo,
+            edge: pModelo - 1 / oddReal,
+            ev: pModelo * oddReal - 1,
+          });
+        }
+      }
+    }
+  }
+  comparacaoEVLinhas.sort((a, b) => b.edge - a.edge);
+  const comparacaoEVVisivel = soEvPositivo ? comparacaoEVLinhas.filter((l) => l.edge > 0) : comparacaoEVLinhas;
+  const nomeArquivoEVJogador = `ev_multicasas_jogador_${sanitizarNomeArquivo(homeNome)}_x_${sanitizarNomeArquivo(awayNome)}_${matchDate ? matchDate.slice(0, 10) : sanitizarNomeArquivo('')}.csv`;
+  const exportarComparacaoEV = () => exportarCSV(comparacaoEVVisivel, COLUNAS_EXPORT_EV_JOGADOR, nomeArquivoEVJogador);
 
   return (
     <>
@@ -882,14 +1066,70 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
       <Tabela titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} />
     </Secao>
 
+    <Secao titulo="Importar odds de casas de apostas" icone={Camera}>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Casa de apostas usada como rótulo nas odds importadas abaixo (pelo OCR nas 2 seções seguintes ou pelo JSON colado aqui) — permite
+        importar a mesma partida várias vezes, uma por casa, sem uma apagar a outra. As 3 tabelas de odds justas mostram sempre a{' '}
+        <em>melhor</em> odd entre as casas importadas pra cada célula; a seção "Comparação de EV multi-casas" no fim lista cada casa
+        separadamente, ordenada por edge. O OCR detecta a casa automaticamente quando o print mostra a marca; este campo é o
+        repique/fallback pra quando não detecta, e é obrigatório pro JSON colado (o formato de import não carrega esse dado).
+      </p>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <input
+          type="text"
+          value={casaAtual}
+          onChange={(e) => setCasaAtual(e.target.value)}
+          placeholder="Casa de apostas (Bet365, Betano, Pinnacle...)"
+          className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] text-slate-200 placeholder:text-slate-600 w-72"
+        />
+        <button
+          type="button"
+          onClick={() => setPasteAberto((v) => !v)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+        >
+          {pasteAberto ? 'Fechar' : 'Colar odds (JSON)'}
+        </button>
+      </div>
+      {pasteAberto && (
+        <div className="mb-3 p-3 rounded-lg bg-slate-900 border border-slate-700">
+          <textarea
+            value={pasteTexto}
+            onChange={(e) => setPasteTexto(e.target.value)}
+            placeholder='{"mercado": "Chutes", "partida": "...", "equipes": {"Time A": [{"jogador": "...", "odds": {"3+": 1.5}}]}}'
+            rows={6}
+            className="w-full px-2.5 py-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 placeholder:text-slate-700"
+          />
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-[10px] text-slate-600">Mercados aceitos: Chutes, Chutes ao gol, Gols.</p>
+            <button
+              type="button"
+              onClick={handleImportarJson}
+              disabled={!pasteTexto.trim()}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-bold bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              Importar
+            </button>
+          </div>
+        </div>
+      )}
+      {(pasteErro || pasteMsg) && (
+        <div className={`px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          pasteErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {pasteErro ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{pasteErro || pasteMsg}</span>
+        </div>
+      )}
+    </Secao>
+
     <Secao titulo="Odds justas individuais (chutes ao gol / gols)" icone={Percent}>
       <div className="flex items-center justify-between gap-2 mb-3">
         <p className="text-[11px] text-slate-500">
           Odds justas (1/probabilidade, sem margem) nas linhas +1/+2/+3 de cada mercado, derivadas do mesmo λ já mostrado acima
           ("Chutes ao gol" via <code className="text-slate-400">lambda_chutes_no_alvo_jogo</code>; "Gols" via{' '}
           <code className="text-slate-400">lambda_gols_jogo_direto</code>, a variante com melhor log-loss no backtest real).
-          Importe uma imagem de odds reais da casa (mercado "Chutes no alvo"/"Marcador de gol") pra comparar lado a lado — verde quando a
-          odd real está acima da justa (valor pro apostador), vermelho quando abaixo.
+          Importe uma imagem de odds reais da casa (mercado "Chutes no alvo"/"Marcador de gol") pra comparar lado a lado — mostra a melhor
+          odd entre as casas já importadas, verde quando está acima da justa (valor pro apostador), vermelho quando abaixo.
         </p>
         <label
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
@@ -922,8 +1162,8 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
         <p className="text-[11px] text-slate-500">
           Mesma lógica da tabela acima, agora pro total de chutes do jogador (qualquer chute, não só no alvo — via{' '}
           <code className="text-slate-400">lambda_chutes_jogo</code>), linhas +1 até +10 — por ser um mercado bem mais extenso (10 linhas
-          em vez de 3), fica numa tabela separada da de chutes-ao-gol/gols. Importe uma imagem do mercado "Total de chutes" da casa pra
-          comparar lado a lado, mesma coloração (verde = valor, vermelho = sem valor).
+          em vez de 3), fica numa tabela separada da de chutes-ao-gol/gols. Importe uma imagem do mercado "Total de chutes" da casa (ou
+          cole um JSON com mercado "Chutes" na seção acima) pra comparar lado a lado, mesma coloração (verde = valor, vermelho = sem valor).
         </p>
         <label
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
@@ -951,6 +1191,67 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
         titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas}
         mercados={MERCADOS_CHUTES_TOTAIS} chaveOrdenacao="lambda_chutes_jogo"
       />
+    </Secao>
+
+    <Secao titulo="Comparação de EV multi-casas (jogador)" icone={Scale}>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <p className="text-[11px] text-slate-500 max-w-2xl">
+          Uma linha por (jogador, mercado, linha, casa) com odd importada — diferente das tabelas acima (que só mostram a melhor odd por
+          célula), aqui cada casa aparece separada, ordenado por edge decrescente. Edge é probabilidade implícita simples (1/odd real) sem
+          devig — mercados de "N+" só trazem o lado "mais de" (não a perna complementar "menos de"), então não dá pra devigar por Odds
+          Ratio como na verificação de EV de time acima; é uma aproximação com a margem da casa embutida, não a probabilidade "limpa" de
+          mercado.
+        </p>
+        <div className="flex items-center gap-3 shrink-0">
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+            <input type="checkbox" checked={soEvPositivo} onChange={(e) => setSoEvPositivo(e.target.checked)} />
+            Só EV positivo
+          </label>
+          <BotaoExportarCSV onClick={exportarComparacaoEV} disabled={comparacaoEVVisivel.length === 0} />
+        </div>
+      </div>
+      {comparacaoEVVisivel.length === 0 ? (
+        <p className="text-[11px] text-slate-600 italic">Nenhuma odd de jogador importada ainda (OCR ou JSON colado acima).</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 text-left">
+                <th className="py-1 px-2 font-normal text-left">Jogador</th>
+                <th className="py-1 px-2 font-normal text-left">Time</th>
+                <th className="py-1 px-2 font-normal text-left">Mercado</th>
+                <th className="py-1 px-2 font-normal text-right">Linha</th>
+                <th className="py-1 px-2 font-normal text-left">Casa</th>
+                <th className="py-1 px-2 font-normal text-right">Odd real</th>
+                <th className="py-1 px-2 font-normal text-right">Odd justa</th>
+                <th className="py-1 px-2 font-normal text-right">Prob. modelo</th>
+                <th className="py-1 px-2 font-normal text-right">Edge (pp)</th>
+                <th className="py-1 px-2 font-normal text-right">EV (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparacaoEVVisivel.map((l, i) => {
+                const edgePct = l.edge * 100;
+                const corEdge = edgePct > 2 ? 'text-emerald-400' : edgePct < -2 ? 'text-red-400' : 'text-slate-300';
+                return (
+                  <tr key={`${l.jogador}-${l.mercado}-${l.linha}-${l.casa}-${i}`} className="border-t border-slate-800">
+                    <td className="py-1.5 pr-2 text-slate-200 font-semibold whitespace-nowrap">{l.jogador}</td>
+                    <td className="py-1.5 px-2 text-slate-400 whitespace-nowrap">{l.time}</td>
+                    <td className="py-1.5 px-2 text-slate-400 whitespace-nowrap">{l.mercado}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-slate-300">+{l.linha}</td>
+                    <td className="py-1.5 px-2 text-slate-400 whitespace-nowrap">{l.casa}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-slate-200">{fmtOdds(l.oddReal)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-slate-400">{fmtOdds(l.oddJusta)}</td>
+                    <td className="py-1.5 px-2 text-right font-mono text-slate-400">{fmtPct(l.pModelo)}</td>
+                    <td className={`py-1.5 px-2 text-right font-mono ${corEdge}`}>{edgePct.toFixed(1)}</td>
+                    <td className={`py-1.5 px-2 text-right font-mono ${corEdge}`}>{(l.ev * 100).toFixed(1)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Secao>
     </>
   );
