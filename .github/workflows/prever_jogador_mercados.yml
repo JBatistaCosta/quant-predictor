@@ -46,3 +46,15 @@ jobs:
           ARGS=""
           if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
           python scripts/rodar_jogador_mercados_previsto.py $ARGS
+
+      # Depende de player_match_estimates já populada pelo step acima --
+      # agrega lambda_xg_jogo por time e deriva odds (1X2/over-under) via
+      # scripts/distribuicoes.py. Ver scripts/rodar_xg_agregado_previsto.py.
+      - name: Prever odds via xG agregado por jogador
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+          python scripts/rodar_xg_agregado_previsto.py $ARGS
