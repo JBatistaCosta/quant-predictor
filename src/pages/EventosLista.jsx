@@ -10,7 +10,7 @@
 // mandante/visitante (a ordem já deixa isso claro: mandante à esquerda).
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, AlertTriangle, Shield, Loader2, ArrowRight, FlaskConical, RefreshCw } from 'lucide-react';
+import { Calendar, AlertTriangle, Shield, Loader2, ArrowRight, FlaskConical, RefreshCw, Users } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import TimelineDatas from '../components/TimelineDatas';
@@ -76,6 +76,8 @@ export default function EventosLista() {
   const [erro, setErro] = useState('');
   const [atualizando, setAtualizando] = useState(false);
   const [msgAtualizacao, setMsgAtualizacao] = useState('');
+  const [sincronizandoEscalacoes, setSincronizandoEscalacoes] = useState(false);
+  const [msgSincEscalacoes, setMsgSincEscalacoes] = useState('');
 
   const carregarJogos = useCallback(async () => {
     if (!supabaseAtivo) return;
@@ -150,6 +152,39 @@ export default function EventosLista() {
     }
   };
 
+  // Sincroniza a escalação real (match_lineup_fotmob) de TODAS as partidas
+  // encerradas recentes que "escaparam" da janela pré-jogo de 90min -- o
+  // cron de 15min (ingerir_escalacao_pre_jogo.yml) só busca escalação pra
+  // jogo ainda 'scheduled', então um jogo cujo lineup nunca foi capturado
+  // antes do apito fica pendente pra sempre sem essa varredura. Mesma
+  // tarefa usada pelos botões de partida individual em
+  // AnaliseAvancadaEvento.jsx, aqui em modo descoberta automática (acha os
+  // pendentes numa janela recente no backend e dispara todos de uma vez,
+  // num único workflow_dispatch) -- não é escopado pela data selecionada
+  // na tela (`jogosDoDia`), é uma varredura própria.
+  const sincronizarEscalacoesPendentes = async () => {
+    setSincronizandoEscalacoes(true); setMsgSincEscalacoes(''); setErro('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirou -- faça login de novo e clique em Sincronizar escalações.');
+      const resp = await fetch(
+        apiUrl('/api/model-maintenance?tarefa=sincronizar-escalacao-pendentes'),
+        { headers: { Authorization: `Bearer ${session.access_token}` } },
+      );
+      const dados = await resp.json();
+      if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);
+      setMsgSincEscalacoes(
+        dados.disparado
+          ? `${dados.n_pendentes} partida(s) pendente(s) encontrada(s) (de ${dados.n_verificadas} verificadas) -- sincronização disparada, normalmente 1-5min.`
+          : (dados.mensagem || 'Nenhuma partida pendente.')
+      );
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setSincronizandoEscalacoes(false);
+    }
+  };
+
   const porLiga = useMemo(() => {
     const mapa = new Map();
     for (const j of jogosDoDia) {
@@ -176,17 +211,28 @@ export default function EventosLista() {
           <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
             <Calendar className="text-emerald-400" size={28} /> Eventos
           </h1>
-          <button
-            onClick={atualizarJogosDoDia}
-            disabled={atualizando || jogosDoDia.length === 0}
-            title="Atualizar placar e estatísticas dos jogos desta data"
-            className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-lg px-3 py-1.5 mt-1"
-          >
-            <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} /> Atualizar
-          </button>
+          <div className="flex items-center gap-2 shrink-0 mt-1">
+            <button
+              onClick={atualizarJogosDoDia}
+              disabled={atualizando || jogosDoDia.length === 0}
+              title="Atualizar placar e estatísticas dos jogos desta data"
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-lg px-3 py-1.5"
+            >
+              <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} /> Atualizar
+            </button>
+            <button
+              onClick={sincronizarEscalacoesPendentes}
+              disabled={sincronizandoEscalacoes}
+              title="Busca a escalação oficial (FotMob) das partidas encerradas recentes que ainda não têm -- inclusive as que perderam a janela pré-jogo de 90min do cron."
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-lg px-3 py-1.5"
+            >
+              <Users size={13} className={sincronizandoEscalacoes ? 'animate-pulse' : ''} /> Sincronizar escalações pendentes
+            </button>
+          </div>
         </div>
         <p className="text-slate-400 mt-1 text-sm">Linha do tempo de todos os jogos — navegue por data ou veja os próximos.</p>
         {msgAtualizacao && <p className="text-emerald-400/90 text-xs mt-2">{msgAtualizacao}</p>}
+        {msgSincEscalacoes && <p className="text-emerald-400/90 text-xs mt-2">{msgSincEscalacoes}</p>}
       </div>
 
       <TimelineDatas dataSelecionada={dataSelecionada} onSelecionar={setDataSelecionada} />

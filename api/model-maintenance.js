@@ -879,6 +879,67 @@ async function tarefaSincronizarEscalacaoReal(supabase, authHeader, { match_id }
   return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_INGERIR_ESCALACAO, { match_ids: String(matchId) });
 }
 
+const DIAS_ESCALACAO_PENDENTES_PADRAO = 30;
+const LIMITE_ESCALACAO_PENDENTES_PADRAO = 100;
+const LIMITE_ESCALACAO_PENDENTES_MAXIMO = 150; // teto de segurança: string de match_ids no input do workflow_dispatch + tempo de pacing (1.3s/partida) dentro do timeout de 15min
+
+// Acha partidas ENCERRADAS numa janela recente que ainda não têm
+// match_lineup_fotmob -- mesmo critério de "pendente" que
+// scripts/ingerir_escalacao_pre_jogo.py já usa pra pular partida já
+// capturada (linha "Pula partida que já tem escalação real capturada"),
+// só que aqui pro caso oposto (jogo que JÁ terminou e nunca teve a
+// escalação buscada, porque perdeu a janela pré-jogo de 90min do cron).
+// Dispara 1 workflow_dispatch só, com todos os IDs pendentes de uma vez
+// (--match-ids é CSV) -- não é backfill de histórico profundo (esse
+// caso já é coberto por atualizar_partidas_finalizadas.py em lote); o
+// escopo aqui é o "escapou da janela recentemente", por isso a janela de
+// dias e o teto de partidas por disparo.
+async function tarefaSincronizarEscalacaoPendentes(supabase, authHeader, { dias, limite } = {}) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar.' };
+
+  const janelaDias = Number(dias) || DIAS_ESCALACAO_PENDENTES_PADRAO;
+  const limiteFinal = Math.min(Number(limite) || LIMITE_ESCALACAO_PENDENTES_PADRAO, LIMITE_ESCALACAO_PENDENTES_MAXIMO);
+  const desde = new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: finalizadas, error: erroFinalizadas } = await supabase
+    .from('matches')
+    .select('id')
+    .eq('status', 'finished')
+    .gte('match_date', desde)
+    .order('match_date', { ascending: false })
+    .limit(500);
+  if (erroFinalizadas) return { status: 500, error: `Falha ao buscar partidas finalizadas: ${erroFinalizadas.message}` };
+  if (!finalizadas?.length) {
+    return { status: 200, disparado: false, mensagem: `Nenhuma partida finalizada nos últimos ${janelaDias} dias.`, n_pendentes: 0, n_verificadas: 0 };
+  }
+
+  const idsFinalizadas = finalizadas.map((m) => m.id);
+  const idsCapturados = new Set();
+  for (let i = 0; i < idsFinalizadas.length; i += 200) {
+    const lote = idsFinalizadas.slice(i, i + 200);
+    const { data: jaCapturadas, error: erroCapturadas } = await supabase
+      .from('match_lineup_fotmob')
+      .select('match_id')
+      .in('match_id', lote);
+    if (erroCapturadas) return { status: 500, error: `Falha ao checar escalações já capturadas: ${erroCapturadas.message}` };
+    for (const r of jaCapturadas || []) idsCapturados.add(r.match_id);
+  }
+
+  const pendentes = idsFinalizadas.filter((id) => !idsCapturados.has(id)).slice(0, limiteFinal);
+  if (pendentes.length === 0) {
+    return {
+      status: 200, disparado: false,
+      mensagem: `Nenhuma partida pendente -- todas as ${idsFinalizadas.length} finalizadas dos últimos ${janelaDias} dias já têm escalação capturada.`,
+      n_pendentes: 0, n_verificadas: idsFinalizadas.length,
+    };
+  }
+
+  const resultado = await dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_INGERIR_ESCALACAO, { match_ids: pendentes.join(',') });
+  if (resultado.status !== 200) return resultado;
+  return { ...resultado, disparado: true, n_pendentes: pendentes.length, n_verificadas: idsFinalizadas.length };
+}
+
 // ============================================================
 // TAREFAS: Painel de Automação (GitHub Actions) — Configurações
 // Centraliza disparo + acompanhamento dos workflows de
@@ -5851,6 +5912,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'sincronizar-escalacao-real') {
       const resultado = await tarefaSincronizarEscalacaoReal(supabase, req.headers.authorization, { match_id: req.query.match_id });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'sincronizar-escalacao-pendentes') {
+      const resultado = await tarefaSincronizarEscalacaoPendentes(supabase, req.headers.authorization, { dias: req.query.dias, limite: req.query.limite });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
