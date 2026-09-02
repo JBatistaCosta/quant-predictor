@@ -47,6 +47,18 @@ reaproveitada), este modelo PRECISA ser recarregável depois por
 `rodar_jogador_mercados_previsto.py` pra pontuar fixtures futuras que ainda
 nem existiam no momento do treino.
 
+`is_starter_real`/`minutos_esperados_titular`/`minutos_esperados_reserva`/
+`minutos_esperados_real` (ver `carregar_dados`/`engenharia_features`) --
+escalação oficial confirmada (`match_lineup_fotmob`) já cobre boa parte do
+histórico (backfill dedicado, não só o cron ao vivo), então dá pra saber
+ponto-no-tempo se cada aparição passada foi como titular ou reserva, e
+computar `minutos_esperados` de forma determinística por papel confirmado em
+vez da média incondicional. Essas colunas alimentam a passada `fonte_titular
+='real'` de `backtest_jogador_mercados_walkforward.py` (comparação real vs.
+previsto no histórico, não só em produção) -- este script não as usa
+diretamente pro treino em si (`FEATURES_CHUTES`/`FEATURES_XG` continuam
+usando só `minutos_esperados`, a versão incondicional).
+
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 treinar_modelo_jogador_mercados.py
 """
@@ -278,6 +290,28 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     df_players = pd.DataFrame(players_rows).rename(columns={"id": "player_id"})
     df = df.merge(df_players, on="player_id", how="left")
 
+    # Escalação oficial confirmada (match_lineup_fotmob) -- histórica, cobre
+    # ~18 mil partidas nas 12 ligas do escopo (backfill dedicado, ver
+    # arquivos_do_claude/ingestao_fotmob_lineup_backfill.py, não só o cron ao
+    # vivo). Habilita a passada 'real' do backtest walk-forward (ver
+    # backtest_jogador_mercados_walkforward.py). `is_starter_real` fica NaN
+    # pra partida sem escalação oficial capturada -- não vira False por
+    # acaso do merge, é a distinção que decide elegibilidade pra passada
+    # 'real' (ver engenharia_features abaixo).
+    logger.info("Carregando escalação oficial confirmada (match_lineup_fotmob)...")
+    lineup_rows = _buscar_por_lotes(supabase, "match_lineup_fotmob", "match_id", match_ids, "match_id, team_id, player_id, is_starter")
+    df_lineup = pd.DataFrame(lineup_rows)
+    if not df_lineup.empty:
+        df_lineup = df_lineup[df_lineup["player_id"].notna()].copy()
+        df_lineup["player_id"] = df_lineup["player_id"].astype(int)
+        df_lineup["team_id"] = df_lineup["team_id"].astype(int)
+        df_lineup = df_lineup.rename(columns={"is_starter": "is_starter_real"})
+        df_lineup = df_lineup.drop_duplicates(subset=["match_id", "team_id", "player_id"])
+        df = df.merge(df_lineup, on=["match_id", "team_id", "player_id"], how="left")
+    else:
+        df["is_starter_real"] = np.nan
+    logger.info(f"{df['is_starter_real'].notna().sum()} de {len(df)} linhas têm escalação oficial confirmada.")
+
     # Força do próprio time e do adversário na data da partida -- mesmas
     # funções ponto-no-tempo já usadas por treinar_modelo_xi.py, reaproveitadas
     # aqui em vez de reimplementar Elo/rating de elenco do zero.
@@ -337,6 +371,36 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda s: s.shift(1).expanding().mean()
     )
     df["minutos_esperados"] = df["minutos_esperados"].fillna(45.0)
+
+    # Minutos esperados CONDICIONAIS ao papel confirmado (titular/reserva) --
+    # alimenta a passada 'real' do backtest walk-forward, espelhando
+    # `rodar_jogador_mercados_previsto.py::_minutos_medios_titular_reserva`
+    # de produção, só que ponto-no-tempo (shift(1).expanding(), nunca inclui
+    # a própria partida sendo featurizada -- mesmo cuidado do bloco acima) em
+    # vez de "toda a história disponível hoje" (correto em produção, onde não
+    # há vazamento a evitar pra uma predição do futuro, mas vazaria aqui).
+    # Uma aparição anterior só entra na média de um papel quando o próprio
+    # is_starter_real DAQUELA aparição é conhecido -- aparição sem escalação
+    # oficial capturada não conta pra nenhum dos dois buckets (expanding().
+    # mean() já ignora NaN por padrão, mesmo comportamento do rolling).
+    df["_min_se_titular"] = df["minutes_played"].where(df["is_starter_real"] == True)  # noqa: E712
+    df["_min_se_reserva"] = df["minutes_played"].where(df["is_starter_real"] == False)  # noqa: E712
+    df["minutos_esperados_titular"] = df.groupby("player_id")["_min_se_titular"].transform(
+        lambda s: s.shift(1).expanding().mean()
+    )
+    df["minutos_esperados_reserva"] = df.groupby("player_id")["_min_se_reserva"].transform(
+        lambda s: s.shift(1).expanding().mean()
+    )
+    # Mesmo fallback ("chute inicial documentado") já usado em produção pra
+    # jogador sem nenhuma aparição histórica confirmada nesse papel específico.
+    df["minutos_esperados_titular"] = df["minutos_esperados_titular"].fillna(70.0)
+    df["minutos_esperados_reserva"] = df["minutos_esperados_reserva"].fillna(15.0)
+    df["minutos_esperados_real"] = np.select(
+        [df["is_starter_real"] == True, df["is_starter_real"] == False],  # noqa: E712
+        [df["minutos_esperados_titular"], df["minutos_esperados_reserva"]],
+        default=np.nan,
+    )
+    df = df.drop(columns=["_min_se_titular", "_min_se_reserva"])
 
     # chutes/gols/xG por 90 minutos por aparição, denominador com piso (evita
     # explosão pra cameo de 1-2 minutos com 1 chute = "180 chutes/90"). Mesmo
