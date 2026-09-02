@@ -10,7 +10,7 @@
 // (tarefa=github-runs-listar), já que o disparo em si é "fire and forget"
 // (a API do GitHub não devolve run_id de forma síncrona).
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Search, PlayCircle, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock, RefreshCw, ChevronDown, ChevronRight, ExternalLink, ShieldAlert } from 'lucide-react';
+import { Search, PlayCircle, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock, RefreshCw, ChevronDown, ChevronRight, ExternalLink, ShieldAlert, Users } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiUrl } from '../utils/apiUrl';
 
@@ -132,6 +132,8 @@ export default function PainelGithubActions() {
   const [abertas, setAbertas] = useState(() => Object.fromEntries(CATEGORIAS.map((c) => [c.id, c.aberta])));
   const [disparandoArquivo, setDisparandoArquivo] = useState(null);
   const [mensagens, setMensagens] = useState({});
+  const [sincronizandoPendentes, setSincronizandoPendentes] = useState(false);
+  const [mensagemPendentes, setMensagemPendentes] = useState(null);
 
   const [execucoes, setExecucoes] = useState([]);
   const [carregandoExecucoes, setCarregandoExecucoes] = useState(false);
@@ -202,6 +204,35 @@ export default function PainelGithubActions() {
     }
   };
 
+  // Ação dedicada (não passa pelo dispatch genérico de LinhaWorkflow) --
+  // acha as partidas pendentes no backend (tarefa=sincronizar-escalacao-
+  // pendentes, mesma lógica de "descoberta" usada em EventosLista.jsx) e já
+  // dispara todas de uma vez, num único workflow_dispatch de
+  // ingerir_escalacao_pre_jogo.yml com --match-ids em lote. Não precisa que
+  // o usuário saiba os IDs -- diferente de disparar esse mesmo workflow
+  // pela lista genérica abaixo, que exigiria colar os match_ids à mão.
+  const sincronizarEscalacoesPendentes = async () => {
+    if (!window.confirm('Buscar partidas encerradas dos últimos 30 dias sem escalação real capturada e disparar a sincronização de todas de uma vez?')) return;
+    setSincronizandoPendentes(true);
+    setMensagemPendentes(null);
+    try {
+      const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=sincronizar-escalacao-pendentes'), { headers: authHeaders() });
+      const corpo = await resp.json();
+      if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
+      setMensagemPendentes({
+        tipo: 'ok',
+        texto: corpo.disparado
+          ? `${corpo.n_pendentes} partida(s) pendente(s) (de ${corpo.n_verificadas} verificadas) -- sincronização disparada, acompanhe abaixo em "Execuções recentes".`
+          : (corpo.mensagem || 'Nenhuma partida pendente.'),
+      });
+      if (corpo.disparado) setTimeout(carregarExecucoes, 5000);
+    } catch (e) {
+      setMensagemPendentes({ tipo: 'erro', texto: e.message });
+    } finally {
+      setSincronizandoPendentes(false);
+    }
+  };
+
   if (!session) {
     return (
       <div className="text-center py-10 text-slate-500 text-sm flex flex-col items-center gap-2">
@@ -223,6 +254,27 @@ export default function PainelGithubActions() {
         mostra as execuções recentes abaixo. O disparo é assíncrono -- o GitHub não devolve o resultado na hora, então
         acompanhe pela lista de execuções (atualiza sozinha a cada 30s enquanto esta aba estiver aberta).
       </p>
+
+      <div className="border border-emerald-700/40 bg-emerald-950/10 rounded-xl p-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users size={14} className="text-emerald-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm text-slate-200 font-medium">Sincronizar escalações pendentes</p>
+              <p className="text-[11px] text-slate-500">
+                Acha partidas encerradas dos últimos 30 dias sem escalação real capturada (perderam a janela pré-jogo de 90min do cron) e dispara a sincronização de todas de uma vez — sem precisar saber os IDs.
+              </p>
+            </div>
+          </div>
+          <button onClick={sincronizarEscalacoesPendentes} disabled={sincronizandoPendentes}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium shrink-0">
+            {sincronizandoPendentes ? <Loader2 size={13} className="animate-spin" /> : <PlayCircle size={13} />} Sincronizar pendentes
+          </button>
+        </div>
+        {mensagemPendentes && (
+          <p className={`mt-2 text-[11px] ${mensagemPendentes.tipo === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{mensagemPendentes.texto}</p>
+        )}
+      </div>
 
       <div className="relative max-w-sm">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
