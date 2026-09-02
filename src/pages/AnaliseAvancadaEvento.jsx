@@ -18,8 +18,9 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { apiUrl } from '../utils/apiUrl';
 import {
   matrizPlacares, mercadosDeGols, mercadosDeEscanteios, distribuicaoConjuntaEscanteios, lerParametrosPartida, rotuloLinha,
 } from '../utils/distribuicoesMercados';
@@ -703,7 +704,10 @@ const COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE = [
   { header: 'xG/jogo hist.', get: (l) => numCSV(l.xg_por_jogo) },
 ];
 
-function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, matchDate }) {
+function SecaoJogadorMercados({
+  estimativas, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
+  onSincronizarEscalacao, sincronizandoEscalacao, msgSincEscalacao, erroSincEscalacao,
+}) {
   const fontesDisponiveis = useMemo(
     () => new Set((estimativas || []).map((e) => e.fonte_titular)),
     [estimativas]
@@ -1042,8 +1046,31 @@ function SecaoJogadorMercados({ estimativas, homeTeamId, homeNome, awayNome, mat
             );
           })}
         </div>
-        <BotaoExportarCSV onClick={exportarJogadorMercados} disabled={estimativas.length === 0} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onSincronizarEscalacao}
+            disabled={sincronizandoEscalacao}
+            title={
+              matchStatus === 'finished'
+                ? 'Corrige a escalação registrada no banco (útil pra treino/backtest futuro) -- não recalcula os valores desta tabela pra jogo já encerrado.'
+                : "Busca a escalação oficial (FotMob) agora -- se já estiver publicada, esta tabela pode virar 'real' em alguns minutos."
+            }
+            className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 hover:text-white bg-slate-700/40 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-2.5 py-1.5 transition-colors"
+          >
+            <RefreshCw size={13} className={sincronizandoEscalacao ? 'animate-spin' : ''} /> Sincronizar escalação real
+          </button>
+          <BotaoExportarCSV onClick={exportarJogadorMercados} disabled={estimativas.length === 0} />
+        </div>
       </div>
+      {(msgSincEscalacao || erroSincEscalacao) && (
+        <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          erroSincEscalacao ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {erroSincEscalacao ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{erroSincEscalacao || msgSincEscalacao}</span>
+        </div>
+      )}
       <p className="text-[11px] text-slate-500 mb-3">
         λ de Poisson por jogador (<code className="text-slate-400">player_match_estimates</code>). "Marcar (thinning)" deriva do λ de chutes
         × taxa de conversão do próprio jogador; "Marcar (direto)" é um regressor treinado direto no alvo gols — as duas ficam lado a lado
@@ -1326,6 +1353,41 @@ export default function AnaliseAvancadaEvento() {
   const [calibracaoRows, setCalibracaoRows] = useState([]);
   const [jogadorEstimativas, setJogadorEstimativas] = useState([]);
 
+  // Sincronização manual da escalação real (match_lineup_fotmob) via
+  // scripts/ingerir_escalacao_pre_jogo.py --match-ids -- diferente do cron
+  // (só partida 'scheduled' na janela de 90min pré-jogo), esse disparo
+  // funciona pra QUALQUER status, inclusive partida já encerrada (só não
+  // gera previsão nova em player_match_estimates pra jogo decidido -- ver
+  // mensagem abaixo). Estado compartilhado entre os 2 botões (header e
+  // dentro de SecaoJogadorMercados) -- clicar de qualquer um reflete no outro.
+  const [sincronizandoEscalacao, setSincronizandoEscalacao] = useState(false);
+  const [msgSincEscalacao, setMsgSincEscalacao] = useState('');
+  const [erroSincEscalacao, setErroSincEscalacao] = useState('');
+
+  const sincronizarEscalacaoReal = async () => {
+    if (!jogo?.id) return;
+    setSincronizandoEscalacao(true); setMsgSincEscalacao(''); setErroSincEscalacao('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirou -- faça login de novo e clique em Sincronizar.');
+      const resp = await fetch(
+        apiUrl(`/api/model-maintenance?tarefa=sincronizar-escalacao-real&match_id=${jogo.id}`),
+        { headers: { Authorization: `Bearer ${session.access_token}` } },
+      );
+      const corpo = await resp.json();
+      if (!resp.ok) throw new Error(corpo?.error?.message || `HTTP ${resp.status}`);
+      setMsgSincEscalacao(
+        jogo.status === 'finished'
+          ? 'Sincronização disparada -- corrige a escalação registrada no banco (útil pra treino/backtest futuro), mas não recalcula os valores desta tabela pra jogos já encerrados. Normalmente 1-5min.'
+          : "Sincronização disparada -- se a escalação já estiver publicada, a tabela abaixo deve virar 'real' em alguns minutos (normalmente 1-5min). Recarregue a página pra conferir."
+      );
+    } catch (err) {
+      setErroSincEscalacao(err.message || 'Falha ao disparar a sincronização.');
+    } finally {
+      setSincronizandoEscalacao(false);
+    }
+  };
+
   useEffect(() => {
     if (!supabaseAtivo) return;
     let cancelado = false;
@@ -1589,17 +1651,36 @@ export default function AnaliseAvancadaEvento() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <Link to="/eventos" className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm w-fit">
           <ArrowLeft size={16} /> Voltar
         </Link>
-        <Link
-          to={`/historico/${jogo.id}`}
-          className="flex items-center gap-1.5 bg-slate-700/40 hover:bg-slate-700 text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
-        >
-          Forma recente & confronto direto
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={sincronizarEscalacaoReal}
+            disabled={sincronizandoEscalacao}
+            title="Busca a escalação oficial (FotMob) agora pra esta partida -- funciona mesmo se o jogo já encerrou. Se o FotMob ainda não publicou (jogo muito no futuro), a escalação continua vazia."
+            className="flex items-center gap-1.5 bg-slate-700/40 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <RefreshCw size={13} className={sincronizandoEscalacao ? 'animate-spin' : ''} /> Sincronizar escalação real
+          </button>
+          <Link
+            to={`/historico/${jogo.id}`}
+            className="flex items-center gap-1.5 bg-slate-700/40 hover:bg-slate-700 text-slate-300 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Forma recente & confronto direto
+          </Link>
+        </div>
       </div>
+      {(msgSincEscalacao || erroSincEscalacao) && (
+        <div className={`mb-4 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          erroSincEscalacao ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {erroSincEscalacao ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{erroSincEscalacao || msgSincEscalacao}</span>
+        </div>
+      )}
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
         <p className="text-center text-xs text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-center gap-1.5">
@@ -1965,6 +2046,11 @@ export default function AnaliseAvancadaEvento() {
             homeNome={jogo.home?.name}
             awayNome={jogo.away?.name}
             matchDate={jogo.match_date}
+            matchStatus={jogo.status}
+            onSincronizarEscalacao={sincronizarEscalacaoReal}
+            sincronizandoEscalacao={sincronizandoEscalacao}
+            msgSincEscalacao={msgSincEscalacao}
+            erroSincEscalacao={erroSincEscalacao}
           />
         </div>
       )}
