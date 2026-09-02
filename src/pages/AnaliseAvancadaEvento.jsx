@@ -295,21 +295,33 @@ function probMarcar(lambdaGols) { return lambdaGols == null ? null : 1 - Math.ex
 
 // P(X >= k) -- generaliza probMarcar (P(X>=1)) pras linhas +2/+3/etc.
 // Poisson por padrão; passa `dispR` (parâmetro de forma "r" da Binomial
-// Negativa) pra usar NB em vez de Poisson -- só o mercado de CHUTES TOTAIS
-// precisa disso (achado real, verificação de calibração desta sessão:
-// chutes são superdispersos, sobretudo pra jogador de baixo volume -- Poisson
-// subestima a cauda em 30-70% nos decis de lambda baixo). "Chutes ao gol" e
-// "gols" continuam com boa calibração via Poisson puro (mesma verificação),
-// então continuam sem `dispR` nos call-sites -- mesmo padrão de NB por liga
-// já em produção pra escanteios (`api/corners-model.js`, `disp_r` calibrado
-// via resíduo de Pearson e persistido em `league_model_params`; aqui é
-// `model_name='jogador_chutes_negbin_v1'`, ver
-// arquivos_do_claude/calibrar_disp_r_chutes.py).
+// Negativa) pra usar NB em vez de Poisson -- achado real, verificação de
+// calibração desta sessão: chutes (total) são superdispersos, sobretudo pra
+// jogador de baixo volume (Poisson subestimava a cauda em 30-70% nos decis
+// de lambda baixo). Reverificado no escopo de 12 ligas depois da troca:
+// "chutes ao gol" mostrou a MESMA assinatura (erro médio 2,2x maior que o
+// de chutes já corrigido, real 50% acima do previsto no decil mais baixo) --
+// também trocado pra NB. "Gols" (thinning/direto) segue bem calibrado em
+// Poisson puro nas duas verificações, sem `dispR` nos call-sites. Mesmo
+// padrão de NB por liga já em produção pra escanteios (`api/corners-model.
+// js`, `disp_r` calibrado via resíduo de Pearson e persistido em
+// `league_model_params`; aqui `model_name='jogador_chutes_negbin_v1'` e
+// `'jogador_chutes_no_alvo_negbin_v1'`, ver
+// arquivos_do_claude/calibrar_disp_r_chutes.py e
+// calibrar_disp_r_chutes_no_alvo.py).
 function probPeloMenos(lambda, k, dispR) {
   if (lambda == null) return null;
   const lam = Math.max(lambda, 0);
   if (dispR != null && dispR > 0) return 1 - negBinomialCDF(lam, dispR, k - 1);
   return 1 - poissonCDF(lam, k - 1);
+}
+// Devolve o disp_r certo (já anexado à linha, ver estimativasComDispR) pro
+// λ de um mercado -- só chutes (total) e chutes ao gol têm calibração NB;
+// gols (thinning/direto) devolve null e probPeloMenos cai pra Poisson.
+function dispRParaMercado(l, lambdaKey) {
+  if (lambdaKey === 'lambda_chutes_jogo') return l._dispRChutes;
+  if (lambdaKey === 'lambda_chutes_no_alvo_jogo') return l._dispRChutesNoAlvo;
+  return null;
 }
 // Odds justa = 1/probabilidade, SEM margem -- mesma convenção de
 // `model_predictions.fair_odds` (coluna gerada no banco), só replicada aqui
@@ -623,7 +635,7 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
                     return (
                       <CelulaOdds
                         key={`${m.titulo}-${linha}`}
-                        fair={oddsJusta(probPeloMenos(l[m.lambdaKey], linha, m.lambdaKey === 'lambda_chutes_jogo' ? l._dispRChutes : null))}
+                        fair={oddsJusta(probPeloMenos(l[m.lambdaKey], linha, dispRParaMercado(l, m.lambdaKey)))}
                         real={melhor?.odd}
                         casa={melhor?.casa}
                       />
@@ -679,7 +691,7 @@ const COLUNAS_JOGADOR_MERCADOS = [
   { chave: 'chutes', rotulo: 'Chutes (λ)', tipo: 'numero', valorSort: (l) => l.lambda_chutes_jogo ?? -1 },
   { chave: 'p15chutes', rotulo: 'P(>1.5 chutes)', tipo: 'numero', valorSort: (l) => probPeloMenos(l.lambda_chutes_jogo, 2, l._dispRChutes) ?? -1 },
   { chave: 'chutesnoalvo', rotulo: 'Chutes ao gol (λ)', tipo: 'numero', valorSort: (l) => l.lambda_chutes_no_alvo_jogo ?? -1 },
-  { chave: 'pchutenoalvo', rotulo: 'P(≥1 no alvo)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_chutes_no_alvo_jogo) ?? -1 },
+  { chave: 'pchutenoalvo', rotulo: 'P(≥1 no alvo)', tipo: 'numero', valorSort: (l) => probPeloMenos(l.lambda_chutes_no_alvo_jogo, 1, l._dispRChutesNoAlvo) ?? -1 },
   { chave: 'thinning', rotulo: 'Marcar (thinning)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_thinning) ?? -1 },
   { chave: 'direto', rotulo: 'Marcar (direto)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_direto) ?? -1 },
   { chave: 'xg', rotulo: 'xG esp.', tipo: 'numero', valorSort: (l) => l.lambda_xg_jogo ?? -1 },
@@ -720,17 +732,18 @@ const COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE = [
 ];
 
 function SecaoJogadorMercados({
-  estimativas, dispRChutes, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
+  estimativas, dispRChutes, dispRChutesNoAlvo, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
   onSincronizarEscalacao, sincronizandoEscalacao, msgSincEscalacao, erroSincEscalacao,
 }) {
-  // Anexa disp_r (NB de chutes totais, calibrado por liga) em cada linha --
-  // mais simples que roteá-lo por prop separada até cada consumidor
-  // (COLUNAS_JOGADOR_MERCADOS é config de módulo, TabelaOddsJustasIndividual/
-  // comparacaoEVLinhas já iteram `l` linha a linha). `null` quando a liga
-  // ainda não tem calibração própria -- probPeloMenos cai pra Poisson.
+  // Anexa disp_r (NB de chutes totais e chutes ao gol, calibrados por liga)
+  // em cada linha -- mais simples que rotear por prop separada até cada
+  // consumidor (COLUNAS_JOGADOR_MERCADOS é config de módulo,
+  // TabelaOddsJustasIndividual/comparacaoEVLinhas já iteram `l` linha a
+  // linha). `null` quando a liga ainda não tem calibração própria --
+  // probPeloMenos cai pra Poisson (ver dispRParaMercado).
   const estimativasComDispR = useMemo(
-    () => (estimativas || []).map((e) => ({ ...e, _dispRChutes: dispRChutes })),
-    [estimativas, dispRChutes]
+    () => (estimativas || []).map((e) => ({ ...e, _dispRChutes: dispRChutes, _dispRChutesNoAlvo: dispRChutesNoAlvo })),
+    [estimativas, dispRChutes, dispRChutesNoAlvo]
   );
   const fontesDisponiveis = useMemo(
     () => new Set((estimativasComDispR || []).map((e) => e.fonte_titular)),
@@ -844,7 +857,7 @@ function SecaoJogadorMercados({
           classe="text-sky-400" valor={fmtNum(l.lambda_chutes_no_alvo_jogo, 2)}
           historico90={l.chutes_no_alvo_90_bayesiano} sufixo90="/90" historicoJogo={l.chutes_no_alvo_por_jogo} sufixoJogo="/jogo"
         />
-        <td className="py-1.5 px-2 text-right font-mono text-sky-400">{fmtPct(probMarcar(l.lambda_chutes_no_alvo_jogo))}</td>
+        <td className="py-1.5 px-2 text-right font-mono text-sky-400">{fmtPct(probPeloMenos(l.lambda_chutes_no_alvo_jogo, 1, l._dispRChutesNoAlvo))}</td>
         <CelulaComHistorico
           classe="text-emerald-400" valor={fmtPct(probMarcar(l.lambda_gols_jogo_thinning))}
           historico90={l.gols_90_bayesiano} sufixo90=" g/90" historicoJogo={l.gols_por_jogo} sufixoJogo=" g/jogo"
@@ -1015,7 +1028,7 @@ function SecaoJogadorMercados({
     if (!importado) continue;
     for (const mercado of MERCADOS_EV_JOGADOR) {
       for (const linha of mercado.linhas) {
-        const pModelo = probPeloMenos(l[mercado.lambdaKey], linha, mercado.lambdaKey === 'lambda_chutes_jogo' ? l._dispRChutes : null);
+        const pModelo = probPeloMenos(l[mercado.lambdaKey], linha, dispRParaMercado(l, mercado.lambdaKey));
         if (pModelo == null) continue;
         const porCasa = importado[mercado.chaveReal(linha)];
         if (!porCasa) continue;
@@ -1181,6 +1194,9 @@ function SecaoJogadorMercados({
           <code className="text-slate-400">lambda_gols_jogo_direto</code>, a variante com melhor log-loss no backtest real).
           Importe uma imagem de odds reais da casa (mercado "Chutes no alvo"/"Marcador de gol") pra comparar lado a lado — mostra a melhor
           odd entre as casas já importadas, verde quando está acima da justa (valor pro apostador), vermelho quando abaixo.
+          {' '}<strong className="text-slate-400">"Chutes ao gol" usa Binomial Negativa</strong> (não Poisson) quando a liga já tem
+          calibração própria — mesma assinatura de superdispersão de "chutes (total)" (abaixo), reverificada nesta seção depois da
+          expansão de liga; "gols" continua em Poisson puro, que já calibra bem.
         </p>
         <label
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
@@ -1215,10 +1231,10 @@ function SecaoJogadorMercados({
           <code className="text-slate-400">lambda_chutes_jogo</code>), linhas +1 até +10 — por ser um mercado bem mais extenso (10 linhas
           em vez de 3), fica numa tabela separada da de chutes-ao-gol/gols. Importe uma imagem do mercado "Total de chutes" da casa (ou
           cole um JSON com mercado "Chutes" na seção acima) pra comparar lado a lado, mesma coloração (verde = valor, vermelho = sem valor).
-          {' '}<strong className="text-slate-400">Só este mercado usa Binomial Negativa</strong> (não Poisson) quando a liga já tem
+          {' '}<strong className="text-slate-400">Este mercado usa Binomial Negativa</strong> (não Poisson) quando a liga já tem
           calibração própria — achado real da verificação de calibração: chutes são superdispersos, sobretudo pra jogador de banco/pouco
-          volume (Poisson subestimava a chance de um "jogo grande" surpresa em até 70%); chutes-ao-gol e gols continuam em Poisson puro,
-          que já calibra bem.
+          volume (Poisson subestimava a chance de um "jogo grande" surpresa em até 70%). "Chutes ao gol" (acima) usa a mesma correção;
+          só "gols" continua em Poisson puro, que já calibra bem.
         </p>
         <label
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
@@ -1380,12 +1396,13 @@ export default function AnaliseAvancadaEvento() {
   const [erro, setErro] = useState('');
   const [calibracaoRows, setCalibracaoRows] = useState([]);
   const [jogadorEstimativas, setJogadorEstimativas] = useState([]);
-  // disp_r (Binomial Negativa) do mercado de chutes totais, calibrado por
-  // liga -- ver probPeloMenos/arquivos_do_claude/calibrar_disp_r_chutes.py.
-  // `null` (liga sem calibração própria ainda) faz probPeloMenos cair pra
-  // Poisson puro automaticamente -- sem precisar de um valor "padrão
-  // genérico" aqui.
+  // disp_r (Binomial Negativa) dos mercados de chutes (total) e chutes ao
+  // gol, calibrados por liga -- ver probPeloMenos/arquivos_do_claude/
+  // calibrar_disp_r_chutes.py e calibrar_disp_r_chutes_no_alvo.py. `null`
+  // (liga sem calibração própria ainda) faz probPeloMenos cair pra Poisson
+  // puro automaticamente -- sem precisar de um valor "padrão genérico" aqui.
   const [dispRChutes, setDispRChutes] = useState(null);
+  const [dispRChutesNoAlvo, setDispRChutesNoAlvo] = useState(null);
 
   // Sincronização manual da escalação real (match_lineup_fotmob) via
   // scripts/ingerir_escalacao_pre_jogo.py --match-ids -- diferente do cron
@@ -1442,7 +1459,7 @@ export default function AnaliseAvancadaEvento() {
         // seletor de snapshot -- fechamento (quando existe) aparece como
         // mais uma opção na lista, não é exigido. Qualquer outro status (ao
         // vivo/adiado/cancelado): não busca odds.
-        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -1497,6 +1514,20 @@ export default function AnaliseAvancadaEvento() {
                 .eq('param_name', 'disp_r')
                 .maybeSingle()
             : Promise.resolve({ data: null }),
+          // Mesma coisa pro mercado de chutes AO GOL -- calibração separada
+          // (arquivos_do_claude/calibrar_disp_r_chutes_no_alvo.py), achado
+          // real da verificação de calibração desta sessão: mesma assinatura
+          // de subdispersão que motivou a troca de "chutes (total)".
+          j.league_id
+            ? supabase
+                .from('league_model_params')
+                .select('param_value')
+                .eq('league_id', j.league_id)
+                .eq('model_name', 'jogador_chutes_no_alvo_negbin_v1')
+                .eq('stat', 'chutes_no_alvo')
+                .eq('param_name', 'disp_r')
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -1508,6 +1539,7 @@ export default function AnaliseAvancadaEvento() {
         setCalibracaoRows(calib || []);
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
+        setDispRChutesNoAlvo(dispRNoAlvoRow?.param_value != null ? Number(dispRNoAlvoRow.param_value) : null);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -2092,6 +2124,7 @@ export default function AnaliseAvancadaEvento() {
           <SecaoJogadorMercados
             estimativas={jogadorEstimativas}
             dispRChutes={dispRChutes}
+            dispRChutesNoAlvo={dispRChutesNoAlvo}
             homeTeamId={jogo.home?.id}
             homeNome={jogo.home?.name}
             awayNome={jogo.away?.name}
