@@ -156,8 +156,35 @@ def processar_partidas(partidas, rating, contagem, seed_por_time):
     return historico
 
 
-def gravar_elo(supabase, rating, contagem, times_para_gravar=None):
-    """Upsert em team_elo pros times informados (ou todos em `rating`, se omitido)."""
+TAMANHO_LOTE_HISTORICO_RPC = 5000  # ~30 mil partidas x 2 linhas de histórico
+# num --modo completo passariam de 10MB num payload único -- fatiado em
+# lotes pra ficar bem abaixo de qualquer limite de tamanho de requisição do
+# PostgREST. O delete + as linhas de team_elo (sempre pequenas, no máximo
+# uma por time) vão só no PRIMEIRO lote; os demais só acrescentam
+# histórico. Cada lote continua sendo UMA transação Postgres (a chamada RPC
+# inteira), então fatiar aqui não reintroduz o bug original: no --modo
+# completo o rating já foi computado no fim, na memória, ANTES de gravar
+# qualquer coisa (não depende do que já está no banco), e o --modo
+# incremental nunca gera histórico grande o bastante pra precisar de mais
+# de um lote (só processa o que ainda não foi processado desde a última
+# vez).
+def registrar_elo_lote(supabase, rating, contagem, historico, times_para_gravar=None, apagar_escopo_global=False):
+    """Grava team_elo + team_elo_history (escopo=global) via RPC
+    (registrar_team_elo_lote, ver migration
+    20260902220000_atomicidade_elo_e_chave_team_elo_external.sql) --
+    plpgsql roda como transação implícita, então as duas tabelas saem
+    consistentes juntas ou nenhuma muda a cada chamada. Antes disso,
+    `gravar_elo` escrevia team_elo primeiro e `gravar_historico` escrevia
+    team_elo_history depois, em requisições HTTP separadas (a de histórico
+    ainda em lotes de 500) -- como o cursor do modo incremental
+    (`ids_processados`, abaixo) é derivado da ÚLTIMA linha de
+    team_elo_history, um crash/timeout entre as duas escritas deixava
+    team_elo já com o rating novo mas o histórico incompleto: a próxima
+    chamada via --modo incremental reprocessava as mesmas partidas por cima
+    de um rating que já as tinha aplicado -- double-counting silencioso,
+    sem erro visível. `apagar_escopo_global` reproduz o delete-e-regrava do
+    --modo completo dentro da MESMA transação da escrita (antes era um
+    delete solto antes dos dois upserts)."""
     agora = datetime.now(timezone.utc).isoformat()
     alvo = times_para_gravar if times_para_gravar is not None else rating.keys()
     linhas_elo = [
@@ -165,16 +192,15 @@ def gravar_elo(supabase, rating, contagem, times_para_gravar=None):
          "partidas": contagem[team_id], "atualizado_em": agora}
         for team_id in alvo
     ]
-    for i in range(0, len(linhas_elo), 500):
-        supabase.table("team_elo").upsert(
-            linhas_elo[i:i + 500], on_conflict="team_id,escopo,league_id"
-        ).execute()
+    lotes_historico = [historico[i:i + TAMANHO_LOTE_HISTORICO_RPC] for i in range(0, len(historico), TAMANHO_LOTE_HISTORICO_RPC)] or [[]]
+    for i, lote in enumerate(lotes_historico):
+        supabase.rpc("registrar_team_elo_lote", {
+            "p_elo": linhas_elo if i == 0 else [],
+            "p_historico": lote,
+            "p_delete_escopo": ("global" if apagar_escopo_global else None) if i == 0 else None,
+            "p_delete_league_id": None,
+        }).execute()
     return len(linhas_elo)
-
-
-def gravar_historico(supabase, historico):
-    for i in range(0, len(historico), 500):
-        supabase.table("team_elo_history").insert(historico[i:i + 500]).execute()
 
 
 def processar_completo(supabase):
@@ -190,11 +216,7 @@ def processar_completo(supabase):
     historico = processar_partidas(partidas, rating, contagem, seed_por_time)
 
     print(f"Regravando team_elo/team_elo_history (escopo=global): {len(rating)} times, {len(historico)} linhas de histórico...")
-    supabase.table("team_elo_history").delete().eq("escopo", "global").execute()
-    supabase.table("team_elo").delete().eq("escopo", "global").execute()
-
-    n_times = gravar_elo(supabase, rating, contagem)
-    gravar_historico(supabase, historico)
+    n_times = registrar_elo_lote(supabase, rating, contagem, historico, apagar_escopo_global=True)
 
     print(f"OK (completo): {n_times} times atualizados, {len(partidas)} partidas processadas.")
 
@@ -243,8 +265,7 @@ def processar_incremental(supabase):
     historico = processar_partidas(partidas_novas, rating, contagem, seed_por_time)
 
     times_tocados = {p["home_team_id"] for p in partidas_novas} | {p["away_team_id"] for p in partidas_novas}
-    n_times = gravar_elo(supabase, rating, contagem, times_para_gravar=times_tocados)
-    gravar_historico(supabase, historico)
+    n_times = registrar_elo_lote(supabase, rating, contagem, historico, times_para_gravar=times_tocados)
 
     print(f"OK (incremental): {n_times} times atualizados, {len(partidas_novas)} partidas novas processadas.")
 

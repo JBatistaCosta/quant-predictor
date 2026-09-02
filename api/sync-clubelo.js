@@ -133,9 +133,17 @@ async function sincronizarTime(supabase, time, snapshot, nomeClubeloForcado) {
     }));
 
   if (linhas.length > 0) {
+    // onConflict inclui team_id (migration
+    // 20260902220000_atomicidade_elo_e_chave_team_elo_external.sql) --
+    // sem isso, dois times NOSSOS diferentes que casassem com o mesmo nome
+    // externo do ClubElo na mesma janela fariam o upsert do segundo
+    // SOBRESCREVER a linha do primeiro (mesma chave de conflito, team_id
+    // vira só mais um campo atualizado) em vez de gravar uma linha própria
+    // -- achado real, não hipotético: há hoje 2 times distintos (129 e
+    // 964) cadastrados com o nome idêntico "Athletic Club".
     const { error: erroUpsert } = await supabase
       .from('team_elo_external')
-      .upsert(linhas, { onConflict: 'fonte,clube_nome_externo,valido_de' });
+      .upsert(linhas, { onConflict: 'team_id,fonte,clube_nome_externo,valido_de' });
     if (erroUpsert) throw erroUpsert;
   }
 
