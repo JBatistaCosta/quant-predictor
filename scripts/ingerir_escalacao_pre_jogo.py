@@ -32,8 +32,24 @@ margem pra capturar o anúncio pouco depois de sair.
 
 Pacing: 1.3s entre chamadas de API (mesmo padrão de ingestao_fotmob.py).
 
+Modo `--match-ids` (sincronização manual, inclusive partida já ENCERRADA):
+bypassa por completo a seleção por status='scheduled'/janela E o filtro de
+"já capturada" -- busca as partidas pelos IDs internos direto, sem olhar
+status/data, e força upsert mesmo que match_lineup_fotmob já tenha linha
+pra elas. É seguro reprocessar: o upsert é por (match_id, team_id,
+fotmob_player_id), então rodar de novo só atualiza as mesmas linhas. O
+resto do pipeline (busca de fixture FotMob, casamento, extração do
+payload, upsert) já era agnóstico de status/data -- só a seleção de
+candidatas tinha essa restrição, então habilitar isso pra jogo encerrado é
+puramente sobre relaxar QUAIS partidas entram na lista, não sobre mudar
+como cada uma é processada. Usado pelo botão "Sincronizar escalação real"
+em /analise-avancada/:matchId (via tarefa=sincronizar-escalacao-real em
+api/model-maintenance.js) -- inclusive pra corrigir partida que perdeu a
+janela pré-jogo de 90min (ex. lineup nunca foi capturada a tempo).
+
 Uso:
     python scripts/ingerir_escalacao_pre_jogo.py [--janela-min 90] [--league-id ID]
+    python scripts/ingerir_escalacao_pre_jogo.py --match-ids 123,456
 """
 
 import argparse
@@ -132,7 +148,13 @@ def main():
                      help=f"Janela de minutos à frente pra considerar 'pré-jogo' (default {JANELA_MIN_DEFAULT})")
     ap.add_argument("--league-id", type=int, default=None,
                      help="Restringe a uma liga interna específica")
+    ap.add_argument("--match-ids", type=str, default=None,
+                     help="CSV de match_id -- ignora status/janela/'já capturada' e força resync "
+                          "(sincronização manual, funciona inclusive pra partida já encerrada)")
     args = ap.parse_args()
+    match_ids_explicitos = (
+        [int(x) for x in args.match_ids.split(",") if x.strip()] if args.match_ids else None
+    )
 
     if not SUPABASE_URL or not SUPABASE_KEY:
         sys.exit("Defina SUPABASE_URL e SUPABASE_KEY (service_role) como variáveis de ambiente.")
@@ -151,40 +173,56 @@ def main():
         .data
     )
     fotmob_league_map = {row["league_id"]: row["identificador"] for row in lfe_rows}
-    ligas_alvo = [args.league_id] if args.league_id else list(fotmob_league_map.keys())
-    if args.league_id and args.league_id not in fotmob_league_map:
-        sys.exit(f"Liga {args.league_id} não tem FotMob ID em liga_fonte_externa.")
 
-    # ── Partidas na janela pré-jogo, status scheduled ───────────────────────
-    candidatas = []
-    for lid in ligas_alvo:
-        chunk = (
+    if match_ids_explicitos:
+        # ── Modo sincronização manual: IDs explícitos, ignora status/janela ──
+        candidatas = (
             supabase.table("matches")
             .select("id, home_team_id, away_team_id, match_date, league_id, season")
-            .eq("league_id", lid)
-            .eq("status", "scheduled")
-            .gte("match_date", agora.isoformat())
-            .lte("match_date", limite.isoformat())
+            .in_("id", match_ids_explicitos)
             .execute()
             .data
         )
-        candidatas.extend(chunk)
+        if not candidatas:
+            print(f"Nenhuma partida encontrada pros IDs informados: {match_ids_explicitos}.")
+            return
+        print(f"Modo sincronização manual: {len(candidatas)} partida(s) especificada(s) "
+              f"(ignora status/janela e recaptura mesmo se já tinha escalação).")
+    else:
+        ligas_alvo = [args.league_id] if args.league_id else list(fotmob_league_map.keys())
+        if args.league_id and args.league_id not in fotmob_league_map:
+            sys.exit(f"Liga {args.league_id} não tem FotMob ID em liga_fonte_externa.")
 
-    if not candidatas:
-        print(f"Nenhuma partida na janela pré-jogo ({args.janela_min}min) -- nada a fazer.")
-        return
+        # ── Partidas na janela pré-jogo, status scheduled ───────────────────
+        candidatas = []
+        for lid in ligas_alvo:
+            chunk = (
+                supabase.table("matches")
+                .select("id, home_team_id, away_team_id, match_date, league_id, season")
+                .eq("league_id", lid)
+                .eq("status", "scheduled")
+                .gte("match_date", agora.isoformat())
+                .lte("match_date", limite.isoformat())
+                .execute()
+                .data
+            )
+            candidatas.extend(chunk)
 
-    # Pula partida que já tem escalação real capturada (evita recheck a cada 15min).
-    match_ids = [m["id"] for m in candidatas]
-    ja_capturadas = _paginar(supabase, "match_lineup_fotmob", "match_id", in_filters={"match_id": match_ids}, order="match_id")
-    ids_capturados = {row["match_id"] for row in ja_capturadas}
-    candidatas = [m for m in candidatas if m["id"] not in ids_capturados]
+        if not candidatas:
+            print(f"Nenhuma partida na janela pré-jogo ({args.janela_min}min) -- nada a fazer.")
+            return
 
-    if not candidatas:
-        print("Todas as partidas da janela já têm escalação capturada -- nada a fazer.")
-        return
+        # Pula partida que já tem escalação real capturada (evita recheck a cada 15min).
+        match_ids = [m["id"] for m in candidatas]
+        ja_capturadas = _paginar(supabase, "match_lineup_fotmob", "match_id", in_filters={"match_id": match_ids}, order="match_id")
+        ids_capturados = {row["match_id"] for row in ja_capturadas}
+        candidatas = [m for m in candidatas if m["id"] not in ids_capturados]
 
-    print(f"{len(candidatas)} partida(s) na janela pré-jogo sem escalação ainda.")
+        if not candidatas:
+            print("Todas as partidas da janela já têm escalação capturada -- nada a fazer.")
+            return
+
+        print(f"{len(candidatas)} partida(s) na janela pré-jogo sem escalação ainda.")
 
     # ── Crosswalk times e match_source_ids já conhecidos ────────────────────
     cw_rows = _paginar(supabase, "team_source_ids", "team_id, source_id", eq_filters={"source": "fotmob"}, order="source_id")
@@ -253,11 +291,15 @@ def main():
                 menor_delta, melhor = delta, fx
         return melhor
 
-    n_capturadas, n_ainda_sem_escalacao, n_sem_id, n_falha = 0, 0, 0, 0
+    n_capturadas, n_ainda_sem_escalacao, n_sem_id, n_falha, n_sem_liga_fotmob = 0, 0, 0, 0, 0
 
     for m in candidatas:
         match_id = m["id"]
         league_id = m["league_id"]
+        if league_id not in fotmob_league_map:
+            print(f"  match_id={match_id}: liga {league_id} sem FotMob ID em liga_fonte_externa -- pulando.")
+            n_sem_liga_fotmob += 1
+            continue
         fotmob_league_id = fotmob_league_map[league_id]
 
         fotmob_match_id = match_to_fotmob_id.get(match_id)
@@ -313,7 +355,8 @@ def main():
 
         time.sleep(PACING_SEGUNDOS)
 
-    print(f"\nOK: {n_capturadas} escalação(ões) capturada(s), {n_ainda_sem_escalacao} ainda sem escalação oficial publicada, {n_sem_id} sem ID FotMob identificado, {n_falha} falhas.")
+    print(f"\nOK: {n_capturadas} escalação(ões) capturada(s), {n_ainda_sem_escalacao} ainda sem escalação oficial publicada, "
+          f"{n_sem_id} sem ID FotMob identificado, {n_sem_liga_fotmob} sem liga mapeada no FotMob, {n_falha} falhas.")
 
 
 if __name__ == "__main__":

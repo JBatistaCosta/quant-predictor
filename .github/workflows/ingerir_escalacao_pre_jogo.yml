@@ -21,9 +21,25 @@ name: Ingestão de Escalação Real Pré-Jogo (FotMob)
 # precisar passar os match_id explicitamente. Idempotente (upsert por
 # fonte_titular): reprocessar uma partida que ainda não tem escalação real
 # só atualiza a linha 'previsto', nunca cria uma 'real' precoce.
+#
+# Disparo manual com `match_ids` (botão "Sincronizar escalação real" em
+# /analise-avancada/:matchId, via tarefa=sincronizar-escalacao-real):
+# repassa o mesmo CSV de IDs pros dois steps. No 1º step, ingerir_escalacao_
+# pre_jogo.py --match-ids ignora status/janela (funciona pra partida já
+# ENCERRADA). No 2º, rodar_jogador_mercados_previsto.py --match-ids também
+# aceita IDs explícitos, mas só grava algo novo se a partida ainda for
+# 'scheduled' (o próprio script filtra por isso) -- pra partida encerrada
+# esse 2º step é um no-op seguro (não faz sentido prever aposta pra jogo
+# que já aconteceu). Deixado vazio, os dois steps rodam exatamente como no
+# cron (sem --match-ids).
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      match_ids:
+        description: "CSV de match_id pra sincronizar direto (ignora janela/status/'já capturada'; funciona inclusive em jogo já encerrado). Vazio = varredura normal (mesma do cron)."
+        required: false
+        type: string
   schedule:
     - cron: "*/15 * * * *"
 
@@ -50,10 +66,16 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python scripts/ingerir_escalacao_pre_jogo.py
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.match_ids }}" ]; then ARGS="$ARGS --match-ids ${{ inputs.match_ids }}"; fi
+          python scripts/ingerir_escalacao_pre_jogo.py $ARGS
 
       - name: Atualizar previsão de chutes/gols por jogador (passada 'real' quando já houver escalação)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python scripts/rodar_jogador_mercados_previsto.py --dias 1
+        run: |
+          ARGS="--dias 1"
+          if [ -n "${{ inputs.match_ids }}" ]; then ARGS="--match-ids ${{ inputs.match_ids }}"; fi
+          python scripts/rodar_jogador_mercados_previsto.py $ARGS

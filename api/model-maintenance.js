@@ -644,6 +644,7 @@ const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO = 'treinar_modelo_custom.yml';
 const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO_WF = 'treinar_modelo_custom_wf.yml';
 const GITHUB_WORKFLOW_FILE_ESTIMAR_PARTIDA_CUSTOM = 'estimar_partida_custom.yml';
 const GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS = 'atualizar_stats.yml';
+const GITHUB_WORKFLOW_FILE_INGERIR_ESCALACAO = 'ingerir_escalacao_pre_jogo.yml';
 
 // Fonte única de verdade dos workflows disparáveis pelo painel de
 // Automação em Configurações (src/components/PainelGithubActions.jsx) --
@@ -717,7 +718,9 @@ const WORKFLOWS_DISPONIVEIS = [
   { arquivo: 'ingerir_equipes_local.yml', label: 'Ingestão de Dados de Equipe (repository-fotmob local)', categoria: 'importacao', inputs: [
     { id: 'limite', tipo: 'string', descricao: 'Processa só os N primeiros arquivos (vazio = todos)' },
   ] },
-  { arquivo: 'ingerir_escalacao_pre_jogo.yml', label: 'Ingestão de Escalação Real Pré-Jogo', categoria: 'importacao', inputs: [] },
+  { arquivo: 'ingerir_escalacao_pre_jogo.yml', label: 'Ingestão de Escalação Real Pré-Jogo', categoria: 'importacao', inputs: [
+    { id: 'match_ids', tipo: 'string', descricao: 'CSV de match_id pra sincronizar direto (ignora janela/status/"já capturada", funciona em jogo já encerrado). Vazio = varredura normal (mesma do cron)' },
+  ] },
   { arquivo: 'ingerir_fotmob_dumps_locais.yml', label: 'Ingestão dos Dumps Locais do FotMob', categoria: 'importacao', inputs: [
     { id: 'limite', tipo: 'string', descricao: 'Processa só as N primeiras partidas pendentes (vazio = todas ~15,7k)' },
     { id: 'lote', tipo: 'string', descricao: 'Tamanho do lote em memória antes de gravar (default 200)' },
@@ -855,6 +858,25 @@ async function tarefaDispararAtualizarStats(supabase, authHeader, { liga_id, lim
   if (modo && modo !== 'tudo') inputs.modo = modo;
   if (forcar === 'true' || forcar === true) inputs.forcar = 'true';
   return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS, inputs);
+}
+
+// Dispara ingerir_escalacao_pre_jogo.yml pra 1 partida específica, via
+// --match-ids -- diferente do cron (que só olha partida 'scheduled' na
+// janela de 90min pré-jogo), esse modo ignora status/data e força resync,
+// funcionando inclusive em jogo já ENCERRADO (ver docstring do script:
+// escopo continua restrito a match_lineup_fotmob, nunca placar/stats).
+// Usado pelos botões "Sincronizar escalação real" em
+// /analise-avancada/:matchId (header e tabela de mercados por jogador).
+async function tarefaSincronizarEscalacaoReal(supabase, authHeader, { match_id } = {}) {
+  const matchId = Number(match_id);
+  if (!Number.isInteger(matchId) || matchId <= 0) {
+    return { status: 400, error: 'match_id inválido.' };
+  }
+  const { data: partida } = await supabase.from('matches').select('id').eq('id', matchId).maybeSingle();
+  if (!partida) {
+    return { status: 404, error: `Partida ${matchId} não encontrada.` };
+  }
+  return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_INGERIR_ESCALACAO, { match_ids: String(matchId) });
 }
 
 // ============================================================
@@ -5823,6 +5845,12 @@ export default async function handler(req, res) {
     if (tarefa === 'disparar-atualizar-stats') {
       const { liga_id: _lid, limite: _lim, modo: _modo, forcar } = req.query;
       const resultado = await tarefaDispararAtualizarStats(supabase, req.headers.authorization, { liga_id: _lid, limite: _lim, modo: _modo, forcar });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'sincronizar-escalacao-real') {
+      const resultado = await tarefaSincronizarEscalacaoReal(supabase, req.headers.authorization, { match_id: req.query.match_id });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
