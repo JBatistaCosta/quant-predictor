@@ -389,6 +389,35 @@ async function eloProcessarGeral(supabase) {
 // achar a combinação que melhor prevê o resultado real de partidas quando
 // usado como ajuste de força de time) é um passo futuro, não feito ainda.
 //
+// ACHADO C (investigado e corrigido nesta versão) — o rating comparava o
+// índice de desempenho de CADA partida contra uma constante fixa
+// (`nota_neutra`), nunca contra o próprio rating atual do jogador. Isso não
+// é um Elo de verdade (compare com `atualizar_elo` em `elo_global.py`, que
+// usa a diferença de rating ENTRE os dois lados pra gerar a expectativa —
+// autocorretivo por construção): sem esse termo relativo, um jogador que
+// performa consistentemente acima da nota neutra nunca converge, só
+// acumula rating linearmente enquanto joga — n_partidas vira um proxy de
+// rating tão forte quanto a própria qualidade. Confirmado com dado real de
+// produção: corr(rating, n_partidas) = 0,549 sobre 9.724 jogadores (medido
+// via SQL antes desta correção), e os 10 jogadores de maior rating tinham
+// TODOS n_partidas muito alto (195-236), inclusive nomes que não são
+// obviamente os 10 melhores do mundo — assinatura clássica de acumulação
+// sem decaimento, não de habilidade.
+//
+// Fix: a "nota esperada" agora também é função do rating ATUAL do jogador
+// (`notaEsperadaDoRating`), não só da constante — o rating passa a ser sua
+// própria previsão de desempenho futuro, no mesmo espírito do Elo de time.
+// Um jogador cujo rating já subiu precisa manter desempenho cada vez
+// melhor pra continuar subindo; performance abaixo do que o rating atual
+// já implica agora PUXA o rating de volta, não só resultados "ruins" em
+// termos absolutos. `escala_convergencia` (pontos de rating por ponto de
+// nota) é, como os pesos acima, um chute inicial não calibrado — dá
+// convergência real em vez de crescimento ilimitado, mas o valor exato do
+// equilíbrio pra cada nível de desempenho ainda não foi validado contra
+// nada externo. `ativo_convergencia` permite desligar (volta ao
+// comportamento antigo) só pra comparação lado a lado — desligado por
+// padrão reintroduz o bug, não usar em produção.
+//
 // Diferente do Elo de TIME (que reprocessa a liga inteira do zero a cada
 // chamada, delete-e-regrava por escopo): rating de jogador é GLOBAL
 // (cross-competição — um jogador pode jogar liga doméstica e Libertadores
@@ -419,6 +448,11 @@ const PLAYER_ELO_CONFIG_PADRAO = {
   ativo_assistencias: true,
   ativo_finalizacao: true,
   ativo_criacao: true,
+  // Achado C: quantos pontos de rating equivalem a 1 ponto de nota na
+  // "nota esperada" (ver `notaEsperadaDoRating` abaixo) — quanto menor,
+  // mais rápido o rating satura pra um desempenho médio sustentado.
+  escala_convergencia: 500,
+  ativo_convergencia: true,
 };
 
 const clampNum = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -455,8 +489,22 @@ function indicePartidaJogador(s, cfg) {
   return nota + bonusGols + bonusAssistencias + bonusFinalizacao + bonusCriacao;
 }
 
+// Nota que o rating ATUAL do jogador já "prevê" pra próxima partida — é o
+// termo que falta pro rating convergir em vez de só acumular (Achado C, ver
+// comentário no topo da tarefa). Linear em torno de nota_neutra/
+// PLAYER_RATING_INICIAL: sobe `1/escala_convergencia` de nota esperada pra
+// cada ponto de rating acima do inicial, e desce do mesmo jeito abaixo dele
+// — mesmo papel que a diferença de rating faz em `atualizar_elo` (elo_global.py),
+// só que aqui é o próprio rating do jogador contra o índice da partida, não
+// rating-vs-rating de dois lados. `ativo_convergencia=false` reproduz o
+// comportamento antigo (nota esperada = constante) só pra comparação.
+function notaEsperadaDoRating(ratingAtual, cfg) {
+  if (!cfg.ativo_convergencia || !(cfg.escala_convergencia > 0)) return cfg.nota_neutra;
+  return cfg.nota_neutra + (ratingAtual - PLAYER_RATING_INICIAL) / cfg.escala_convergencia;
+}
+
 function atualizarRatingJogador(ratingAtual, indice, cfg) {
-  return ratingAtual + cfg.k * ((indice - cfg.nota_neutra) / 3);
+  return ratingAtual + cfg.k * ((indice - notaEsperadaDoRating(ratingAtual, cfg)) / 3);
 }
 
 async function tarefaPlayerElo(supabase, limite) {
