@@ -17,15 +17,21 @@ empírica, não assumida:
    declarar vencedor fixo no código -- cabe a quem for usar em produção
    olhar `player_market_backtest` e decidir.
 
-Escopo do que este backtest NÃO cobre (decisão consciente, não omissão):
-compara `fonte_titular='previsto'` contra ele mesmo em todas as linhas
-(minutos_esperados aqui é sempre a média histórica do jogador, o único
-sinal disponível uniformemente pro passado inteiro) -- a comparação real
-`'previsto'` vs. `'real'` (escalação oficial confirmada) só existe pra
-partidas FUTURAS que passam pelas duas passadas de
-`rodar_jogador_mercados_previsto.py` (ver plano da sessão); esse dado
-acumula em produção, não é replicável retroativamente sem re-simular
-qual escalação "teria saído" pra cada jogo antigo.
+Também roda uma segunda passada `fonte_titular='real'` (além da `'previsto'`
+de sempre) nas partidas onde `match_lineup_fotmob` (escalação oficial
+confirmada) já existe -- decisão revista nesta sessão: um comentário anterior
+achava que essa comparação "não é replicável retroativamente sem re-simular
+qual escalação teria saído", mas isso estava desatualizado -- a escalação
+oficial de ~18 mil partidas históricas já está na base (backfill dedicado,
+ver `arquivos_do_claude/ingestao_fotmob_lineup_backfill.py`, não só o cron ao
+vivo), então não precisa simular nada: só reusa o mesmo modelo já treinado
+pra temporada (nunca retreina) e troca `minutos_esperados` pela versão
+determinística por papel confirmado (`minutos_esperados_real`, calculada em
+`treinar_modelo_jogador_mercados.engenharia_features`), mesmo padrão de
+produção (`rodar_jogador_mercados_previsto.py`). Só roda a passada 'real'
+numa temporada quando há pelo menos 30 linhas elegíveis (mesmo piso mínimo já
+usado nas agregações por liga) -- temporada/liga sem escalação histórica
+capturada ainda simplesmente não gera essa passada, sem erro.
 
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 backtest_jogador_mercados_walkforward.py
@@ -131,11 +137,15 @@ def _metricas_probabilidade_marcar(lambda_gols: np.ndarray, real_marcou: np.ndar
 def _persistir_previsao_bruta(
     supabase: Client, teste: pd.DataFrame, previsto_chutes: np.ndarray, lambda_gols_thinning: np.ndarray,
     lambda_gols_direto: np.ndarray, temporada: str, lambda_xg: dict[int, float] | None = None,
-    lambda_chutes_no_alvo: np.ndarray | None = None,
+    lambda_chutes_no_alvo: np.ndarray | None = None, fonte_titular: str = "previsto",
 ) -> int:
     """Grava a previsão bruta (1 linha por jogador x partida x fonte_titular)
-    em `player_match_walkforward` -- `fonte_titular` sempre 'previsto' aqui
-    (ver docstring do módulo sobre o que este backtest cobre).
+    em `player_match_walkforward`. `fonte_titular` é 'previsto' (minutos_
+    esperados = média histórica incondicional) ou 'real' (minutos_esperados
+    determinístico por papel confirmado em `match_lineup_fotmob` -- ver
+    docstring do módulo); em ambos os casos `teste["minutos_esperados"]` já
+    vem com o valor certo pra essa passada (o CALLER decide qual coluna usar,
+    esta função só grava).
 
     `lambda_xg` é um dict indexado por posição em `teste` (não um array
     alinhado 1:1 como os demais) porque o subconjunto de xG é filtrado por
@@ -156,7 +166,7 @@ def _persistir_previsao_bruta(
         lam_xg = lambda_xg.get(idx)
         linhas.append({
             "match_id": int(match_id), "team_id": int(team_id), "player_id": int(player_id),
-            "fonte_titular": "previsto", "prob_titular_usada": None, "minutos_esperados": float(minutos_esp),
+            "fonte_titular": fonte_titular, "prob_titular_usada": None, "minutos_esperados": float(minutos_esp),
             "taxa_conversao_bayesiana": float(taxa_conv), "lambda_chutes_jogo": float(prev_chutes),
             "lambda_gols_jogo_thinning": float(lam_gols_thin), "lambda_gols_jogo_direto": float(lam_gols_dir),
             "lambda_xg_jogo": float(lam_xg) if lam_xg is not None else None,
@@ -172,8 +182,128 @@ def _persistir_previsao_bruta(
     return total
 
 
+def _avaliar_e_persistir_passada(
+    supabase: Client, teste_pass: pd.DataFrame, temporada: str,
+    modelo_chutes, modelo_gols_direto, modelo_xg, fonte_titular: str,
+) -> list[dict]:
+    """Pontua `teste_pass` com os modelos JÁ TREINADOS pra essa temporada
+    (nunca retreina -- treino/teste dependem só de `match_date`, não de
+    `fonte_titular`) e persiste em `player_match_walkforward`/agrega pra
+    `player_market_backtest`. `teste_pass["minutos_esperados"]` já deve vir
+    com o valor certo pra essa passada (o CALLER decide: incondicional pra
+    'previsto', `minutos_esperados_real` pra 'real' -- ver `rodar`).
+
+    Mesma lógica/ordem de cálculo já usada antes desta função existir (ver
+    histórico do módulo) -- só extraída pra rodar 2x (previsto e real) sem
+    duplicar ~80 linhas."""
+    previsto_chutes = modelos_ml.prever_catboost_poisson(modelo_chutes, None, teste_pass, features=tmj.FEATURES_CHUTES)
+    baseline_chutes = (teste_pass["ewma_chutes_90"] * teste_pass["minutos_esperados"] / 90.0).clip(lower=0.01).to_numpy()
+    real_chutes = teste_pass[tmj.TARGET_CHUTES].to_numpy()
+    metricas_chutes = _metricas_regressao_com_ic(previsto_chutes, baseline_chutes, real_chutes)
+    logger.info(
+        f"  [{fonte_titular}] chutes: RMSE modelo={metricas_chutes['rmse_modelo']:.4f} baseline={metricas_chutes['rmse_baseline']:.4f} "
+        f"IC95%(dif)=[{metricas_chutes['ic95_inf']:.4f},{metricas_chutes['ic95_sup']:.4f}] "
+        f"sustentado={metricas_chutes['modelo_melhor_sustentado']} n={metricas_chutes['n']}"
+    )
+
+    previsto_gols_direto = modelos_ml.prever_catboost_poisson(modelo_gols_direto, None, teste_pass, features=tmj.FEATURES_CHUTES)
+
+    taxa_conversao = teste_pass["taxa_conversao_bayesiana"].to_numpy()
+    lambda_gols_thinning = previsto_chutes * taxa_conversao
+    real_marcou = (teste_pass[tmj.TARGET_GOLS].to_numpy() > 0).astype(int)
+    baseline_lambda_gols = (teste_pass["ewma_gols_90"] * teste_pass["minutos_esperados"] / 90.0).clip(lower=0.001).to_numpy()
+
+    metricas_gols_thinning = _metricas_probabilidade_marcar(lambda_gols_thinning, real_marcou, baseline_lambda_gols)
+    metricas_gols_direto = _metricas_probabilidade_marcar(previsto_gols_direto, real_marcou, baseline_lambda_gols)
+    logger.info(
+        f"  [{fonte_titular}] gols (marcar>=1): thinning log-loss={metricas_gols_thinning['log_loss_modelo']:.4f} vs. "
+        f"direto log-loss={metricas_gols_direto['log_loss_modelo']:.4f} vs. baseline={metricas_gols_thinning['log_loss_baseline']:.4f} "
+        f"-- {'thinning melhor' if metricas_gols_thinning['log_loss_modelo'] < metricas_gols_direto['log_loss_modelo'] else 'direto melhor'}"
+    )
+
+    # Chutes ao gol (on target -- ver docstring de treinar_modelo_jogador_
+    # mercados.carregar_dados) -- mesmo afinamento de Poisson de gols_
+    # thinning (lambda_chutes x taxa_no_alvo_bayesiana), mas avaliado como
+    # CONTAGEM (RMSE, mesmo tratamento de "chutes") já que não é evento raro
+    # binário como "marcou".
+    taxa_no_alvo = teste_pass["taxa_no_alvo_bayesiana"].to_numpy()
+    lambda_chutes_no_alvo_thinning = previsto_chutes * taxa_no_alvo
+    real_chutes_no_alvo = teste_pass[tmj.TARGET_CHUTES_NO_ALVO].to_numpy()
+    baseline_chutes_no_alvo = (
+        teste_pass["ewma_chutes_no_alvo_90"] * teste_pass["minutos_esperados"] / 90.0
+    ).clip(lower=0.01).to_numpy()
+    metricas_chutes_no_alvo = _metricas_regressao_com_ic(lambda_chutes_no_alvo_thinning, baseline_chutes_no_alvo, real_chutes_no_alvo)
+    logger.info(
+        f"  [{fonte_titular}] chutes_no_alvo (thinning): RMSE modelo={metricas_chutes_no_alvo['rmse_modelo']:.4f} "
+        f"baseline={metricas_chutes_no_alvo['rmse_baseline']:.4f} "
+        f"IC95%(dif)=[{metricas_chutes_no_alvo['ic95_inf']:.4f},{metricas_chutes_no_alvo['ic95_sup']:.4f}] "
+        f"sustentado={metricas_chutes_no_alvo['modelo_melhor_sustentado']}"
+    )
+
+    # xG por jogador -- alvo CONTÍNUO. `teste_xg` pode ficar vazio (sobretudo
+    # na passada 'real', que já é um subconjunto menor de teste_pass) --
+    # nesse caso pula xG pra essa passada/temporada sem erro, em vez de
+    # chamar o modelo com um dataframe vazio.
+    teste_xg = teste_pass.dropna(subset=[tmj.TARGET_XG])
+    lambda_xg_por_indice: dict[int, float] = {}
+    metricas_xg = None
+    previsto_xg = baseline_xg = real_xg = None
+    if not teste_xg.empty:
+        previsto_xg = np.maximum(modelos_ml.prever_catboost_regressor(modelo_xg, None, teste_xg, features=tmj.FEATURES_XG), 0.0)
+        baseline_xg = (teste_xg["ewma_xg_90"] * teste_xg["minutos_esperados"] / 90.0).clip(lower=0.0).to_numpy()
+        real_xg = teste_xg[tmj.TARGET_XG].to_numpy()
+        metricas_xg = _metricas_regressao_com_ic(previsto_xg, baseline_xg, real_xg)
+        logger.info(
+            f"  [{fonte_titular}] xg: RMSE modelo={metricas_xg['rmse_modelo']:.4f} baseline={metricas_xg['rmse_baseline']:.4f} "
+            f"IC95%(dif)=[{metricas_xg['ic95_inf']:.4f},{metricas_xg['ic95_sup']:.4f}] "
+            f"sustentado={metricas_xg['modelo_melhor_sustentado']}"
+        )
+        lambda_xg_por_indice = dict(zip(teste_xg.index, previsto_xg, strict=True))
+
+    n_gravado = _persistir_previsao_bruta(
+        supabase, teste_pass, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada,
+        lambda_xg=lambda_xg_por_indice, lambda_chutes_no_alvo=lambda_chutes_no_alvo_thinning, fonte_titular=fonte_titular,
+    )
+    logger.info(f"  [{fonte_titular}] {n_gravado} previsões por jogador gravadas em player_match_walkforward.")
+
+    linhas_agregado = []
+    for league_id, g in teste_pass.groupby("league_id"):
+        mask = (teste_pass["league_id"] == league_id).to_numpy()
+        if mask.sum() < 30:
+            continue
+        m_chutes = _metricas_regressao_com_ic(previsto_chutes[mask], baseline_chutes[mask], real_chutes[mask])
+        m_gols_thin = _metricas_probabilidade_marcar(lambda_gols_thinning[mask], real_marcou[mask], baseline_lambda_gols[mask])
+        m_gols_dir = _metricas_probabilidade_marcar(previsto_gols_direto[mask], real_marcou[mask], baseline_lambda_gols[mask])
+        m_chutes_no_alvo = _metricas_regressao_com_ic(
+            lambda_chutes_no_alvo_thinning[mask], baseline_chutes_no_alvo[mask], real_chutes_no_alvo[mask]
+        )
+
+        mercados_da_liga = [
+            ("chutes", m_chutes),
+            ("gols_thinning", m_gols_thin),
+            ("gols_direto", m_gols_dir),
+            ("chutes_no_alvo_thinning", m_chutes_no_alvo),
+        ]
+        if metricas_xg is not None:
+            mask_xg = (teste_xg["league_id"] == league_id).to_numpy()
+            if mask_xg.sum() >= 30:
+                m_xg = _metricas_regressao_com_ic(previsto_xg[mask_xg], baseline_xg[mask_xg], real_xg[mask_xg])
+                mercados_da_liga.append(("xg", m_xg))
+        for mercado, metricas in mercados_da_liga:
+            linhas_agregado.append({
+                "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
+                "mercado": mercado, "fonte_titular": fonte_titular,
+                "n_partidas": int(g["match_id"].nunique()), "n_previsoes": metricas["n"],
+                "rmse_modelo": metricas.get("rmse_modelo"), "rmse_baseline": metricas.get("rmse_baseline"),
+                "log_loss": metricas.get("log_loss_modelo"), "brier": metricas.get("brier_modelo"),
+                "calibracao": metricas.get("calibracao"),
+            })
+
+    return linhas_agregado
+
+
 def rodar(supabase: Client) -> int:
-    logger.info("Carregando dataset (6 ligas, corte temporal por liga, shotmap confirmado)...")
+    logger.info("Carregando dataset (12 ligas, corte temporal por liga, shotmap confirmado)...")
     df_bruto = tmj.carregar_dados(supabase)
     if df_bruto.empty:
         logger.warning("Dataset vazio -- nada pra fazer backtest.")
@@ -182,6 +312,12 @@ def rodar(supabase: Client) -> int:
     if df.empty:
         logger.warning("Nenhuma linha após engenharia de features -- nada pra fazer backtest.")
         return 0
+
+    n_com_lineup_real = int(df["is_starter_real"].notna().sum())
+    logger.info(
+        f"{n_com_lineup_real} de {len(df)} linhas têm escalação oficial confirmada "
+        f"(match_lineup_fotmob) -- essas também rodam a passada 'real'."
+    )
 
     temporadas = sorted(df["season"].unique())
     logger.info(f"Temporadas encontradas: {temporadas}")
@@ -200,121 +336,39 @@ def rodar(supabase: Client) -> int:
 
         params = {"depth": 6, "learning_rate": 0.05}
         modelo_chutes, _, _ = modelos_ml.treinar_catboost_poisson(params, treino, tmj.TARGET_CHUTES, features=tmj.FEATURES_CHUTES)
-        previsto_chutes = modelos_ml.prever_catboost_poisson(modelo_chutes, None, teste_temporada, features=tmj.FEATURES_CHUTES)
-        baseline_chutes = (teste_temporada["ewma_chutes_90"] * teste_temporada["minutos_esperados"] / 90.0).clip(lower=0.01).to_numpy()
-        real_chutes = teste_temporada[tmj.TARGET_CHUTES].to_numpy()
-        metricas_chutes = _metricas_regressao_com_ic(previsto_chutes, baseline_chutes, real_chutes)
-        logger.info(
-            f"  chutes: RMSE modelo={metricas_chutes['rmse_modelo']:.4f} baseline={metricas_chutes['rmse_baseline']:.4f} "
-            f"IC95%(dif)=[{metricas_chutes['ic95_inf']:.4f},{metricas_chutes['ic95_sup']:.4f}] "
-            f"sustentado={metricas_chutes['modelo_melhor_sustentado']}"
-        )
-
         modelo_gols_direto, _, _ = modelos_ml.treinar_catboost_poisson(params, treino, tmj.TARGET_GOLS, features=tmj.FEATURES_CHUTES)
-        previsto_gols_direto = modelos_ml.prever_catboost_poisson(modelo_gols_direto, None, teste_temporada, features=tmj.FEATURES_CHUTES)
-
-        taxa_conversao = teste_temporada["taxa_conversao_bayesiana"].to_numpy()
-        lambda_gols_thinning = previsto_chutes * taxa_conversao
-        real_marcou = (teste_temporada[tmj.TARGET_GOLS].to_numpy() > 0).astype(int)
-        baseline_lambda_gols = (teste_temporada["ewma_gols_90"] * teste_temporada["minutos_esperados"] / 90.0).clip(lower=0.001).to_numpy()
-
-        metricas_gols_thinning = _metricas_probabilidade_marcar(lambda_gols_thinning, real_marcou, baseline_lambda_gols)
-        metricas_gols_direto = _metricas_probabilidade_marcar(previsto_gols_direto, real_marcou, baseline_lambda_gols)
-        logger.info(
-            f"  gols (marcar>=1): thinning log-loss={metricas_gols_thinning['log_loss_modelo']:.4f} vs. "
-            f"direto log-loss={metricas_gols_direto['log_loss_modelo']:.4f} vs. baseline={metricas_gols_thinning['log_loss_baseline']:.4f} "
-            f"-- {'thinning melhor' if metricas_gols_thinning['log_loss_modelo'] < metricas_gols_direto['log_loss_modelo'] else 'direto melhor'}"
-        )
-
-        # Chutes ao gol (on target, excluindo bloqueado -- ver docstring de
-        # treinar_modelo_jogador_mercados.carregar_dados) -- mesmo afinamento
-        # de Poisson de gols_thinning (lambda_chutes x taxa_no_alvo_
-        # bayesiana), mas avaliado como CONTAGEM (RMSE, mesmo tratamento de
-        # "chutes") já que não é evento raro binário como "marcou" -- é a
-        # mesma família de mercado que "Chutes (λ)"/"P(>1.5 chutes)" no
-        # frontend, só filtrado pro subconjunto que foi na direção do gol.
-        taxa_no_alvo = teste_temporada["taxa_no_alvo_bayesiana"].to_numpy()
-        lambda_chutes_no_alvo_thinning = previsto_chutes * taxa_no_alvo
-        real_chutes_no_alvo = teste_temporada[tmj.TARGET_CHUTES_NO_ALVO].to_numpy()
-        baseline_chutes_no_alvo = (
-            teste_temporada["ewma_chutes_no_alvo_90"] * teste_temporada["minutos_esperados"] / 90.0
-        ).clip(lower=0.01).to_numpy()
-        metricas_chutes_no_alvo = _metricas_regressao_com_ic(lambda_chutes_no_alvo_thinning, baseline_chutes_no_alvo, real_chutes_no_alvo)
-        logger.info(
-            f"  chutes_no_alvo (thinning): RMSE modelo={metricas_chutes_no_alvo['rmse_modelo']:.4f} "
-            f"baseline={metricas_chutes_no_alvo['rmse_baseline']:.4f} "
-            f"IC95%(dif)=[{metricas_chutes_no_alvo['ic95_inf']:.4f},{metricas_chutes_no_alvo['ic95_sup']:.4f}] "
-            f"sustentado={metricas_chutes_no_alvo['modelo_melhor_sustentado']}"
-        )
-
-        # xG por jogador -- alvo CONTÍNUO, mesmo tratamento de NaN de
-        # treinar_modelo_jogador_mercados.treinar() (dropna ANTES do split
-        # baseline/modelo, treino/teste próprios pra manter os arrays
-        # alinhados). Subconjunto de índices diferente de teste_temporada
-        # inteiro -- lambda_xg fica indexado por posição em teste_temporada
-        # (dict), não array 1:1, pra _persistir_previsao_bruta saber quais
-        # linhas têm previsão de xG e quais não têm.
         treino_xg = treino.dropna(subset=[tmj.TARGET_XG])
-        teste_xg = teste_temporada.dropna(subset=[tmj.TARGET_XG])
         modelo_xg, _, _ = modelos_ml.treinar_catboost_regressor(params, treino_xg, tmj.TARGET_XG, features=tmj.FEATURES_XG)
-        previsto_xg = np.maximum(modelos_ml.prever_catboost_regressor(modelo_xg, None, teste_xg, features=tmj.FEATURES_XG), 0.0)
-        baseline_xg = (teste_xg["ewma_xg_90"] * teste_xg["minutos_esperados"] / 90.0).clip(lower=0.0).to_numpy()
-        real_xg = teste_xg[tmj.TARGET_XG].to_numpy()
-        metricas_xg = _metricas_regressao_com_ic(previsto_xg, baseline_xg, real_xg)
-        logger.info(
-            f"  xg: RMSE modelo={metricas_xg['rmse_modelo']:.4f} baseline={metricas_xg['rmse_baseline']:.4f} "
-            f"IC95%(dif)=[{metricas_xg['ic95_inf']:.4f},{metricas_xg['ic95_sup']:.4f}] "
-            f"sustentado={metricas_xg['modelo_melhor_sustentado']}"
+
+        linhas_agregado = _avaliar_e_persistir_passada(
+            supabase, teste_temporada, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, "previsto",
         )
-        lambda_xg_por_indice = dict(zip(teste_xg.index, previsto_xg, strict=True))
 
-        n_gravado = _persistir_previsao_bruta(
-            supabase, teste_temporada, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada,
-            lambda_xg=lambda_xg_por_indice, lambda_chutes_no_alvo=lambda_chutes_no_alvo_thinning,
-        )
-        logger.info(f"  {n_gravado} previsões por jogador gravadas em player_match_walkforward.")
-
-        linhas_agregado = []
-        for league_id, g in teste_temporada.groupby("league_id"):
-            mask = (teste_temporada["league_id"] == league_id).to_numpy()
-            if mask.sum() < 30:
-                continue
-            m_chutes = _metricas_regressao_com_ic(previsto_chutes[mask], baseline_chutes[mask], real_chutes[mask])
-            m_gols_thin = _metricas_probabilidade_marcar(lambda_gols_thinning[mask], real_marcou[mask], baseline_lambda_gols[mask])
-            m_gols_dir = _metricas_probabilidade_marcar(previsto_gols_direto[mask], real_marcou[mask], baseline_lambda_gols[mask])
-            m_chutes_no_alvo = _metricas_regressao_com_ic(
-                lambda_chutes_no_alvo_thinning[mask], baseline_chutes_no_alvo[mask], real_chutes_no_alvo[mask]
+        # Passada 'real' -- só nas linhas onde a escalação oficial daquela
+        # partida específica já é conhecida (ver docstring do módulo), com
+        # minutos_esperados trocado pela versão determinística por papel
+        # confirmado. Reusa os MESMOS modelos já treinados acima (não
+        # retreina -- treino não depende de fonte_titular). Piso de 30 linhas
+        # (mesmo mínimo já usado nas agregações por liga) evita gravar uma
+        # passada 'real' com amostra irrelevante numa temporada onde a
+        # escalação histórica ainda não foi capturada.
+        teste_real = teste_temporada[teste_temporada["is_starter_real"].notna()].copy()
+        if len(teste_real) >= 30:
+            teste_real["minutos_esperados"] = teste_real["minutos_esperados_real"]
+            linhas_agregado += _avaliar_e_persistir_passada(
+                supabase, teste_real, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, "real",
             )
-
-            mask_xg = (teste_xg["league_id"] == league_id).to_numpy()
-            m_xg = (
-                _metricas_regressao_com_ic(previsto_xg[mask_xg], baseline_xg[mask_xg], real_xg[mask_xg])
-                if mask_xg.sum() >= 30 else None
+        else:
+            logger.info(
+                f"Temporada {temporada}: só {len(teste_real)} linhas com escalação real confirmada (<30) -- pulando passada 'real'."
             )
-
-            mercados_da_liga = [
-                ("chutes", m_chutes),
-                ("gols_thinning", m_gols_thin),
-                ("gols_direto", m_gols_dir),
-                ("chutes_no_alvo_thinning", m_chutes_no_alvo),
-            ]
-            if m_xg is not None:
-                mercados_da_liga.append(("xg", m_xg))
-            for mercado, metricas in mercados_da_liga:
-                linhas_agregado.append({
-                    "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
-                    "mercado": mercado, "n_partidas": int(g["match_id"].nunique()), "n_previsoes": metricas["n"],
-                    "rmse_modelo": metricas.get("rmse_modelo"), "rmse_baseline": metricas.get("rmse_baseline"),
-                    "log_loss": metricas.get("log_loss_modelo"), "brier": metricas.get("brier_modelo"),
-                    "calibracao": metricas.get("calibracao"),
-                })
 
         if linhas_agregado:
             supabase.table("player_market_backtest").upsert(
-                linhas_agregado, on_conflict="season,league_id,model_version,mercado"
+                linhas_agregado, on_conflict="season,league_id,model_version,mercado,fonte_titular"
             ).execute()
             total_gravado += len(linhas_agregado)
-            logger.info(f"  {len(linhas_agregado)} grupos (liga x mercado) gravados em player_market_backtest.")
+            logger.info(f"  {len(linhas_agregado)} grupos (liga x mercado x fonte) gravados em player_market_backtest.")
 
     logger.info(f"Backtest concluído: {total_gravado} grupos gravados em player_market_backtest.")
     return total_gravado
