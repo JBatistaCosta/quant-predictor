@@ -265,19 +265,20 @@ function atualizarElo(ratingMandante, ratingVisitante, golsMandante, golsVisitan
   return { novoMandante: ratingMandante + delta, novoVisitante: ratingVisitante - delta };
 }
 
+// RPC única (registrar_team_elo_lote, ver migration
+// 20260902220000_atomicidade_elo_e_chave_team_elo_external.sql) em vez de
+// delete + dois upserts HTTP separados -- mesmo motivo de
+// registrar_player_elo_lote em tarefaPlayerElo: delete+regrava sempre
+// recalcula do zero (self-healing num crash antes do delete terminar), mas
+// um crash ENTRE os dois upserts deixava team_elo já com o rating novo e
+// team_elo_history incompleto pra aquele escopo -- inconsistência real
+// dentro da própria escrita, não só entre chamadas.
 async function regravarElo(supabase, linhasElo, linhasHistorico, filtroDelete) {
-  const filtro = filtroDelete.league_id === null ? { escopo: filtroDelete.escopo } : filtroDelete;
-  await supabase.from('team_elo_history').delete().match(filtro);
-  await supabase.from('team_elo').delete().match(filtro);
-
-  for (const lote of fatiar(linhasElo, 500)) {
-    const { error } = await supabase.from('team_elo').upsert(lote, { onConflict: 'team_id,escopo,league_id' });
-    if (error) throw error;
-  }
-  for (const lote of fatiar(linhasHistorico, 500)) {
-    const { error } = await supabase.from('team_elo_history').insert(lote);
-    if (error) throw error;
-  }
+  const { error } = await supabase.rpc('registrar_team_elo_lote', {
+    p_elo: linhasElo, p_historico: linhasHistorico,
+    p_delete_escopo: filtroDelete.escopo, p_delete_league_id: filtroDelete.league_id,
+  });
+  if (error) throw error;
 }
 
 async function eloProcessarLiga(supabase, ligaId) {
@@ -611,14 +612,20 @@ async function tarefaPlayerElo(supabase, limite) {
     player_id: pid, rating: ratingPorJogador[pid], n_partidas: contagemPorJogador[pid], updated_at: new Date().toISOString(),
   }));
 
-  for (const l of fatiar(linhasRating, 500)) {
-    const { error } = await supabase.from('player_ratings').upsert(l, { onConflict: 'player_id' });
-    if (error) throw error;
-  }
-  for (const l of fatiar(historico, 500)) {
-    const { error } = await supabase.from('player_rating_history').upsert(l, { onConflict: 'player_id,match_id' });
-    if (error) throw error;
-  }
+  // RPC única (registrar_player_elo_lote, ver migration
+  // 20260902220000_atomicidade_elo_e_chave_team_elo_external.sql) em vez de
+  // dois upserts HTTP separados -- o cursor de retomada desta tarefa é a
+  // ÚLTIMA linha de player_rating_history, então gravar player_ratings
+  // primeiro e o histórico depois (round-trips separados) deixava uma
+  // janela real de double-counting: um crash/timeout entre as duas
+  // escritas fazia a chamada seguinte reprocessar partidas já aplicadas no
+  // rating (aconteceu de fato 2x nesta sessão, via FUNCTION_INVOCATION_
+  // TIMEOUT, durante o reprocesso pós-fix do Achado C). plpgsql roda como
+  // transação implícita -- ou as duas tabelas saem consistentes, ou nenhuma muda.
+  const { error: erroRpc } = await supabase.rpc('registrar_player_elo_lote', {
+    p_ratings: linhasRating, p_historico: historico,
+  });
+  if (erroRpc) throw erroRpc;
 
   return {
     partidas_processadas: idsLote.length,
