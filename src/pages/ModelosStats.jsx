@@ -626,6 +626,22 @@ function ConfigPlayerElo() {
             Usar nota do FotMob como âncora (desligado = só os bônus abaixo movem o rating)
           </label>
 
+          <label className={`flex items-center gap-2 text-xs text-slate-300 bg-slate-900 rounded-lg p-3 ${config.ativo_convergencia ? '' : 'opacity-50'}`}>
+            <input type="checkbox" checked={!!config.ativo_convergencia} onChange={e => setCampo('ativo_convergencia', e.target.checked)} />
+            <span>
+              <span className="font-semibold text-slate-200">Convergência (correção do Achado C)</span>
+              <span className="block text-[10px] text-slate-500 mt-0.5">Nota esperada passa a subir com o próprio rating do jogador, não só a nota neutra fixa — sem isso o rating cresce sem limite conforme o jogador acumula partidas (corr(rating, n_partidas) medida em 0,55 antes desta correção). Desligar só pra comparar lado a lado; não usar em produção.</span>
+            </span>
+          </label>
+          {config.ativo_convergencia && (
+            <div className="w-40">
+              <label className="text-[10px] uppercase text-slate-500 block mb-1">Escala de convergência</label>
+              <input type="number" step="10" min="10" max="5000" value={config.escala_convergencia ?? ''} onChange={e => setCampo('escala_convergencia', parseFloat(e.target.value) || 500)}
+                className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100" />
+              <p className="text-[10px] text-slate-500 mt-1">Pontos de rating por ponto de nota — menor satura mais rápido.</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {PARAMETROS_PLAYER_ELO.map(p => (
               <div key={p.chavePeso} className={`bg-slate-900 rounded-lg p-3 ${config[p.chaveAtivo] ? '' : 'opacity-50'}`}>
