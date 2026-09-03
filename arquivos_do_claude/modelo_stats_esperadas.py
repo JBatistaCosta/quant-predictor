@@ -26,7 +26,7 @@ import sys
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
-from scipy.stats import poisson
+from scipy.stats import nbinom, poisson
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -51,6 +51,22 @@ STATS = ["xg", "shots", "shots_on_target", "corners"]
 
 # Linha de escanteios para o mercado over/under derivado
 LINHA_ESCANTEIOS = 9.5
+
+# Linhas de chutes/chutes no gol (TOTAL da partida, mandante+visitante) --
+# medianas reais medidas via SQL nesta sessão (~25 chutes, ~9 no gol por
+# partida), mesmas linhas de `LINHAS_PADRAO_POR_STAT` em `api/corners-
+# model.js` (JS, duplicado aqui de propósito -- Python e JS já não
+# compartilham módulo neste projeto, mesmo padrão do resto do código).
+LINHAS_POR_STAT = {
+    "shots": [20.5, 22.5, 24.5, 26.5],
+    "shots_on_target": [7.5, 8.5, 9.5, 10.5],
+}
+
+# Tradução do nome da stat (inglês, usado aqui e em `model_stat_estimates`)
+# pro nome usado em `league_model_params.stat` (português, calibrado por
+# `arquivos_do_claude/calibrar_disp_r_chutes*.py`) -- mesma convenção
+# divergente já documentada em `api/corners-model.js`.
+STAT_LEAGUE_PARAMS_LABEL = {"shots": "chutes", "shots_on_target": "chutes_no_alvo"}
 
 
 # ---------------------------------------------------------------
@@ -108,14 +124,54 @@ def prob_over(total_esperado: float, linha: float) -> float:
     return float(1 - poisson.cdf(int(np.floor(linha)), total_esperado))
 
 
+def prob_over_nb(total_esperado: float, disp_r: float, linha: float) -> float:
+    """P(total > linha) via Binomial Negativa (NB2: var = média + média²/r) --
+    diferente de `prob_over` (Poisson), usada pra chutes/chutes no gol
+    (superdispersos, mesmo raciocínio já validado pra escanteios em
+    `api/corners-model.js`). `disp_r` None/não-finito degenera pra Poisson
+    (r->infinito), mesmo comportamento de `scripts/distribuicoes.py::
+    _nb_pmf_vetor`.
+
+    Escanteios (`prob_over`, Poisson) É uma inconsistência conhecida com o
+    resto do projeto (o endpoint ao vivo `api/corners-model.js` já usa NB
+    pra escanteios há mais tempo) -- deliberadamente NÃO corrigida aqui
+    (fora do escopo desta extensão de chutes, documentar sem misturar)."""
+    if disp_r is None or not np.isfinite(disp_r) or disp_r <= 0:
+        return prob_over(total_esperado, linha)
+    p = disp_r / (disp_r + total_esperado)
+    return float(1 - nbinom.cdf(int(np.floor(linha)), disp_r, p))
+
+
+def disp_r_da_liga(supabase, liga_id, stat_label: str) -> float | None:
+    """`league_model_params.param_value` (disp_r) pra essa liga+stat, ou
+    None se a liga não tem calibração própria (cai pro Poisson via
+    `prob_over_nb`, mesmo fallback documentado ali). `.limit(1)` + checar a
+    lista (não `.maybe_single()`) -- mesmo estilo já usado no resto deste
+    arquivo (`carregar_dados`), sem depender de um método do client não
+    usado em nenhum outro lugar do projeto."""
+    if liga_id is None:
+        return None
+    linhas = (
+        supabase.table("league_model_params")
+        .select("param_value")
+        .eq("league_id", liga_id).eq("stat", stat_label).eq("param_name", "disp_r")
+        .limit(1).execute().data
+    )
+    if not linhas or linhas[0].get("param_value") is None:
+        return None
+    return float(linhas[0]["param_value"])
+
+
 # ---------------------------------------------------------------
 # Pipeline com o banco
 # ---------------------------------------------------------------
 def carregar_dados(supabase, liga_ext_id):
-    """Partidas + stats por time, no formato largo (val_home / val_away)."""
+    """Partidas + stats por time, no formato largo (val_home / val_away).
+    Devolve (df, liga_id) -- `liga_id` exposto pra `rodar_liga` poder buscar
+    `disp_r` calibrado por liga (chutes/chutes no gol)."""
     liga = supabase.table("leagues").select("id").eq("external_id", liga_ext_id).execute().data
     if not liga:
-        return pd.DataFrame()
+        return pd.DataFrame(), None
     liga_id = liga[0]["id"]
 
     jogos, inicio = [], 0
@@ -129,7 +185,7 @@ def carregar_dados(supabase, liga_ext_id):
             break
         inicio += 1000
     if not jogos:
-        return pd.DataFrame()
+        return pd.DataFrame(), liga_id
     dfj = pd.DataFrame(jogos).rename(columns={"home_team_id": "home", "away_team_id": "away"})
 
     stats, inicio = [], 0
@@ -140,7 +196,7 @@ def carregar_dados(supabase, liga_ext_id):
                 .in_("match_id", ids[k : k + 200]).execute().data)
         stats.extend(lote)
     if not stats:
-        return pd.DataFrame()
+        return pd.DataFrame(), liga_id
     dfs = pd.DataFrame(stats)
     # match_stats pode ter linha duplicada pro mesmo (match_id, team_id) --
     # sem isso o merge many-to-one abaixo multiplica linhas e desalinha o
@@ -155,11 +211,11 @@ def carregar_dados(supabase, liga_ext_id):
             df[f"{s}_{lado}"] = m[s].to_numpy()
 
     df["match_date"] = pd.to_datetime(df["match_date"], utc=True)
-    return df
+    return df, liga_id
 
 
 def rodar_liga(supabase, liga_ext_id):
-    df = carregar_dados(supabase, liga_ext_id)
+    df, liga_id = carregar_dados(supabase, liga_ext_id)
     if df.empty:
         print(f"\n[{liga_ext_id}] sem estatísticas em match_stats — rode a ingestão do FBref antes.")
         return
@@ -187,6 +243,16 @@ def rodar_liga(supabase, liga_ext_id):
         print(f"  {s}: ajustado ({len(sub)} jogos, mando {m['mando']:+.3f}, "
               f"{'ok' if m['convergiu'] else 'NÃO CONVERGIU'})")
 
+    # disp_r por liga pra chutes/chutes no gol -- buscado UMA vez (não por
+    # jogo), mesmo padrão de `dispRDaLiga` em `api/corners-model.js`. `None`
+    # quando a liga não tem calibração própria (`arquivos_do_claude/
+    # calibrar_disp_r_chutes*.py` cobre 12 ligas hoje) -- `prob_over_nb`
+    # degenera pra Poisson nesse caso, nunca quebra.
+    disp_r_por_stat = {
+        s: disp_r_da_liga(supabase, liga_id, STAT_LEAGUE_PARAMS_LABEL[s])
+        for s in ("shots", "shots_on_target")
+    }
+
     estimativas, previsoes = [], []
     for _, jogo in teste.iterrows():
         for s, m in modelos.items():
@@ -211,6 +277,26 @@ def rodar_liga(supabase, liga_ext_id):
                         "selection": sel,
                         "probability": round(float(p), 5),
                     })
+            elif s in LINHAS_POR_STAT:
+                # Over/under de chutes/chutes no gol (TOTAL da partida, mesmo
+                # padrão de corners acima) -- via Binomial Negativa
+                # (`prob_over_nb`, disp_r calibrado por liga), não Poisson.
+                # Sem odds reais pra comparar (mercado não existe agregado
+                # por time na OddsPapi, só player prop) -- essas previsões
+                # habilitam log-loss/Brier/calibração/lift em `api/model-
+                # stats.js` contra o resultado real (`api/_lib/
+                # resultadosReais.js`), nunca ROI/edge.
+                for linha in LINHAS_POR_STAT[s]:
+                    p_over = prob_over_nb(lam + mu, disp_r_por_stat[s], linha)
+                    p_over = min(max(p_over, 1e-5), 1 - 1e-5)
+                    for sel, p in [("over", p_over), ("under", 1 - p_over)]:
+                        previsoes.append({
+                            "match_id": int(jogo["id"]),
+                            "model_name": MODEL_NAME,
+                            "market": f"{s}_over_under_{linha}",
+                            "selection": sel,
+                            "probability": round(float(p), 5),
+                        })
 
     # Dedup por chave de conflito antes de gravar -- ver mesmo comentário em
     # modelo_dixon_coles.py (fixture duplicada pro mesmo match_id quebra o
@@ -226,7 +312,7 @@ def rodar_liga(supabase, liga_ext_id):
             previsoes[i : i + 500], on_conflict="match_id,model_name,market,selection").execute()
 
     print(f"  {len(estimativas)} estimativas de stats gravadas | "
-          f"{len(previsoes)} previsões de escanteios gravadas")
+          f"{len(previsoes)} previsões (escanteios + chutes + chutes no gol) gravadas")
 
 
 def main():

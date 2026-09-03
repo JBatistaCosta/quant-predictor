@@ -151,8 +151,22 @@ def main() -> None:
             for metodo, coef in coeficientes_por_metodo_ou25.items()
         }
         rp._persistir_cru_e_calibrados_over_under25("dixon_coles_v1", preds_raw_ou25, preds_calibradas_por_metodo_ou25, todas_as_linhas)
+
+        # Gols por time (over_under_team_1/2_X.X) -- `preds_raw_ou25` já tem
+        # essas chaves (mesma chamada de `_prever_probs_dixon_coles` que
+        # calcula 1X2/over_under_2.5/faixa_gols/gols por time de uma vez só,
+        # sem custo extra), então não precisa reprever nada. Só a variante
+        # CRUA (`{}` no lugar do dict de calibração): `preds_calibradas_
+        # por_metodo_ou25` foi calibrado com `selecoes=("under","over")`
+        # (ver `calibracao.aplicar_calibracao`), que reconstrói o dict só
+        # com essas 2 chaves -- reusar aqui daria KeyError em
+        # `prob_team_1_over_X.X`. Calibrar de verdade esses mercados fica
+        # pra quando/se justificar (mesmo raciocínio do cron diário, ver
+        # `rodar_predicoes.main()`).
+        logger.info("Backfillando dixon_coles_v1 [gols por time] (%d partidas)...", len(partidas_teste))
+        rp._persistir_cru_e_calibrados_gols_time("dixon_coles_v1", preds_raw_ou25, {}, todas_as_linhas)
     except Exception:
-        logger.exception("Falha no backfill do dixon_coles_v1 [over_under_2.5] -- pulando, os outros modelos continuam.")
+        logger.exception("Falha no backfill do dixon_coles_v1 [over_under_2.5 / gols por time] -- pulando, os outros modelos continuam.")
 
     for nome_modelo in modelos_ml.TREINADORES:
         try:

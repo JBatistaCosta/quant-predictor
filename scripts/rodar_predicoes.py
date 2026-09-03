@@ -245,6 +245,28 @@ MANDO_CASA = 1.15  # multiplicador de vantagem de jogar em casa
 RHO_DIXON_COLES = -0.05  # correção de baixo placar (0x0, 1x0, 0x1, 1x1)
 MAX_GOLS_SIMULADOS = 8
 
+# Linhas de over/under de GOLS POR TIME (mandante/visitante separados) --
+# marginal da MESMA grade (gc, gf) já simulada pro 1X2/over_under_2.5/faixa
+# de gols, sem simulação nem retreino extra (mesmo espírito da nota em
+# `_prever_probs_dixon_coles` sobre over/under total). Nomeado
+# `team_1`/`team_2` (não `home`/`away`) pra bater com a convenção real do
+# mercado de gols por time já em produção em `odds_market` (OddsPapi) --
+# confirmado empiricamente nesta sessão (odds-sync-diagnostico, tournament
+# 325, + teste por-partida contra `team_1_to_score`/`team_2_to_score`:
+# team_1 prevê o mandante marcar em 78,0% das partidas vs. 68,8% pro
+# visitante, N=1248 finalizadas): team_1 = mandante, team_2 = visitante.
+# Gêmeo do bloco em `src/utils/distribuicoesMercados.js`/`scripts/
+# distribuicoes.py::mercados_de_gols` (que fazem a mesma extração de
+# marginal a partir de uma matriz de placares completa, pro uso do modelo
+# misto -- essa função aqui é a implementação PRÓPRIA do dixon_coles_v1,
+# independente e não compartilhada com `distribuicoes.py`, mesmo padrão já
+# existente no arquivo pro resto do Dixon-Coles).
+LINHAS_GOLS_TIME = (0.5, 1.5, 2.5, 3.5, 4.5)
+
+
+def _rotulo_linha_time(linha: float) -> str:
+    return f"{linha:.1f}"
+
 
 def tau_dixon_coles(gols_casa: int, gols_fora: int, lambda_casa: float, lambda_fora: float, rho: float) -> float:
     """Fator de correção do artigo original de Dixon & Coles (1997) para os
@@ -285,6 +307,8 @@ def _prever_probs_dixon_coles(forca_casa: dict[str, float], forca_fora: dict[str
         dados_historicos.RESULTADO_FAIXA_4_6: 0.0,
         dados_historicos.RESULTADO_FAIXA_7MAIS: 0.0,
     }
+    prob_over_team1 = {linha: 0.0 for linha in LINHAS_GOLS_TIME}
+    prob_over_team2 = {linha: 0.0 for linha in LINHAS_GOLS_TIME}
     for gc in range(MAX_GOLS_SIMULADOS):
         for gf in range(MAX_GOLS_SIMULADOS):
             p = (
@@ -306,8 +330,14 @@ def _prever_probs_dixon_coles(forca_casa: dict[str, float], forca_fora: dict[str
 
             prob_por_faixa[dados_historicos.codigo_faixa_gols(gc + gf)] += p
 
+            for linha in LINHAS_GOLS_TIME:
+                if gc > linha:
+                    prob_over_team1[linha] += p
+                if gf > linha:
+                    prob_over_team2[linha] += p
+
     total = prob_home + prob_draw + prob_away  # normaliza o corte da soma infinita (mesmo total das duas partições)
-    return {
+    resultado = {
         "prob_home": prob_home / total,
         "prob_draw": prob_draw / total,
         "prob_away": prob_away / total,
@@ -318,6 +348,15 @@ def _prever_probs_dixon_coles(forca_casa: dict[str, float], forca_fora: dict[str
         "prob_faixa_4_6": prob_por_faixa[dados_historicos.RESULTADO_FAIXA_4_6] / total,
         "prob_faixa_7mais": prob_por_faixa[dados_historicos.RESULTADO_FAIXA_7MAIS] / total,
     }
+    for linha in LINHAS_GOLS_TIME:
+        rot = _rotulo_linha_time(linha)
+        over_t1 = prob_over_team1[linha] / total
+        over_t2 = prob_over_team2[linha] / total
+        resultado[f"prob_team_1_over_{rot}"] = over_t1
+        resultado[f"prob_team_1_under_{rot}"] = 1.0 - over_t1
+        resultado[f"prob_team_2_over_{rot}"] = over_t2
+        resultado[f"prob_team_2_under_{rot}"] = 1.0 - over_t2
+    return resultado
 
 
 def _resultado_codigo(home_goals: int, away_goals: int) -> int:
@@ -740,27 +779,48 @@ def montar_linhas_predicoes(
     return linhas
 
 
-def montar_linhas_predicoes_over_under25(nome_modelo: str, predicoes_modelo: dict[int, dict[str, float]]) -> list[dict]:
-    """Mesma ideia de `montar_linhas_predicoes`, mas pro mercado Over/Under
-    2.5 gols (`prob_under`/`prob_over`, ver migração `add_mercado_
-    predicoes`) -- usado só pelo backfill histórico
-    (`backfill_predicoes_historicas.py`), nunca pelo cron diário (o
-    `market_odds` que alimenta as fixtures do dia só tem odds de 1X2, não
-    dá pra calcular edge nem faz sentido prever esse mercado ao vivo)."""
+def montar_linhas_predicoes_over_under(
+    nome_modelo: str,
+    predicoes_modelo: dict[int, dict[str, float]],
+    mercado: str,
+    chave_prob_over: str = "prob_over",
+    chave_prob_under: str = "prob_under",
+) -> list[dict]:
+    """Genérico pra qualquer mercado de 2 seleções (over/under), gravado nas
+    MESMAS colunas `prob_over`/`prob_under` de `predicoes` (não precisa de
+    schema novo -- `mercado` é texto livre, ver migração `add_mercado_
+    predicoes`) -- `chave_prob_over`/`chave_prob_under` deixam escolher DE
+    QUAL chave do dict de probabilidades (`_prever_probs_dixon_coles` ou o
+    output de `modelos_ml.empacotar_predicoes`) puxar o valor, pra
+    reaproveitar com over_under_2.5 (chaves default) e com os mercados de
+    gols por time (`prob_team_1_over_X.X`/`prob_team_1_under_X.X`, etc.)."""
     linhas = []
     for match_id, probs in predicoes_modelo.items():
-        normalizadas = renormalizar_arredondado({"prob_under": probs["prob_under"], "prob_over": probs["prob_over"]})
+        normalizadas = renormalizar_arredondado({"prob_under": probs[chave_prob_under], "prob_over": probs[chave_prob_over]})
         linhas.append(
             {
                 "match_id": int(match_id),
                 "model_name": nome_modelo,
-                "mercado": "over_under_2.5",
+                "mercado": mercado,
                 "prob_under": normalizadas["prob_under"],
                 "prob_over": normalizadas["prob_over"],
                 "edge_detectado": None,
             }
         )
     return linhas
+
+
+def montar_linhas_predicoes_over_under25(nome_modelo: str, predicoes_modelo: dict[int, dict[str, float]]) -> list[dict]:
+    """Mesma ideia de `montar_linhas_predicoes`, mas pro mercado Over/Under
+    2.5 gols (`prob_under`/`prob_over`, ver migração `add_mercado_
+    predicoes`) -- usado pelo backfill histórico
+    (`backfill_predicoes_historicas.py`, dixon_coles_v1 E os 18 modelos de
+    árvore, esses últimos com classificador próprio pro alvo
+    `resultado_over25`) e, desde a correção do achado de cron congelado
+    (ver `main()`), também pelo cron diário pro dixon_coles_v1. Mantido como
+    wrapper fino sobre `montar_linhas_predicoes_over_under` (mercado/chaves
+    fixos) pra não mudar a assinatura dos call-sites já existentes."""
+    return montar_linhas_predicoes_over_under(nome_modelo, predicoes_modelo, "over_under_2.5")
 
 
 TAMANHO_LOTE_UPSERT_PREDICOES = 500  # um upsert só com dezenas de milhares de
@@ -812,9 +872,10 @@ def _persistir_cru_e_calibrados_over_under25(
     todas_as_linhas: list[dict],
 ) -> None:
     """Mesma ideia de `_persistir_cru_e_calibrados`, pro mercado Over/Under
-    2.5 -- usado só pelo backfill histórico (`backfill_predicoes_
-    historicas.py`), sem edge (não há odd de over/under em `market_odds`,
-    a fonte usada pro edge ao vivo)."""
+    2.5 -- usado pelo backfill histórico (`backfill_predicoes_historicas.
+    py`) e, desde a correção do achado de cron congelado, também pelo cron
+    diário pro dixon_coles_v1 (ver `main()`). Sem edge (não há odd de
+    over/under em `market_odds`, a fonte usada pro edge ao vivo)."""
     linhas_raw = montar_linhas_predicoes_over_under25(nome_modelo, predicoes_raw)
     todas_as_linhas.extend(linhas_raw)
 
@@ -827,6 +888,47 @@ def _persistir_cru_e_calibrados_over_under25(
     logger.info(
         "%s [over_under_2.5]: %d predição(ões) cruas + %d calibradas (%s).",
         nome_modelo, len(linhas_raw), total_calibradas, ", ".join(predicoes_calibradas_por_metodo),
+    )
+
+
+def _persistir_cru_e_calibrados_gols_time(
+    nome_modelo: str,
+    predicoes_raw: dict[int, dict[str, float]],
+    predicoes_calibradas_por_metodo: dict[str, dict[int, dict[str, float]]],
+    todas_as_linhas: list[dict],
+) -> None:
+    """Mesma ideia de `_persistir_cru_e_calibrados_over_under25`, pros
+    mercados de gols por time (`over_under_team_1_X.X`/`over_under_team_2_
+    X.X`, `LINHAS_GOLS_TIME`) -- só dixon_coles_v1 tem essas chaves
+    (`_prever_probs_dixon_coles`); os modelos de árvore não são chamados
+    aqui (previam um alvo binário treinado à parte, e treinar um alvo novo
+    por linha/time pra cada um dos 18 modelos é um escopo maior, fora desta
+    extensão). Sem edge -- mesma razão do over_under_2.5 (sem odd de gols
+    por time em `market_odds`, só em `odds_market`, fonte separada que
+    `api/backtest-betting.js`/`api/model-stats.js` consultam direto)."""
+    total_linhas_raw = 0
+    total_linhas_calibradas = 0
+    for linha in LINHAS_GOLS_TIME:
+        rot = _rotulo_linha_time(linha)
+        for time_slug, chave_over, chave_under in (
+            ("team_1", f"prob_team_1_over_{rot}", f"prob_team_1_under_{rot}"),
+            ("team_2", f"prob_team_2_over_{rot}", f"prob_team_2_under_{rot}"),
+        ):
+            mercado = f"over_under_{time_slug}_{rot}"
+            linhas_raw = montar_linhas_predicoes_over_under(nome_modelo, predicoes_raw, mercado, chave_over, chave_under)
+            todas_as_linhas.extend(linhas_raw)
+            total_linhas_raw += len(linhas_raw)
+
+            for metodo, predicoes_calibradas in predicoes_calibradas_por_metodo.items():
+                linhas_calibradas = montar_linhas_predicoes_over_under(
+                    f"{nome_modelo}_calibrado_{metodo}", predicoes_calibradas, mercado, chave_over, chave_under
+                )
+                todas_as_linhas.extend(linhas_calibradas)
+                total_linhas_calibradas += len(linhas_calibradas)
+
+    logger.info(
+        "%s [gols por time, %d linhas x 2 times]: %d predição(ões) cruas + %d calibradas.",
+        nome_modelo, len(LINHAS_GOLS_TIME), total_linhas_raw, total_linhas_calibradas,
     )
 
 
@@ -861,6 +963,31 @@ def main() -> None:
         logger.info("Rodando modelo dixon_coles_v1 (janela de %d temporadas + decaimento temporal)...", JANELA_DIXON_COLES_TEMPORADAS)
         preds_raw, preds_calibradas = prever_dixon_coles_v1(fixtures, supabase)
         _persistir_cru_e_calibrados("dixon_coles_v1", preds_raw, preds_calibradas, melhor_odd_por_partida, todas_as_linhas)
+        # Achado real corrigido nesta sessão: até aqui, over_under_2.5 só era
+        # persistido pelo backfill histórico (`backfill_predicoes_
+        # historicas.py`) -- o cron diário nunca escrevia essa previsão pra
+        # fixtures FUTURAS, então o mercado ficava congelado na data do
+        # último backfill manual. `_prever_probs_dixon_coles` já calculava
+        # `prob_over`/`prob_under` de qualquer forma (mesmo grid do 1X2,
+        # sem custo adicional) -- só faltava persistir aqui também. Os
+        # mercados novos de gols por time (`over_under_team_1/2_X.X`)
+        # herdariam o mesmo problema se só entrassem no backfill, por isso
+        # os dois entram juntos.
+        #
+        # Só a variante CRUA (dict de calibração vazio, `{}`) -- `preds_
+        # calibradas` é o resultado de `calibracao.aplicar_calibracao` já
+        # aplicado pro 1X2 (`selecoes=("home","draw","away")` implícito em
+        # `prever_dixon_coles_v1`), que devolve um dict com SÓ essas 3
+        # chaves (`aplicar_calibracao` reconstrói o dict do zero a partir de
+        # `quais_selecoes`, não preserva as demais). Reusar esse dict aqui
+        # daria KeyError em `probs[chave_prob_over]`. Calibrar de verdade
+        # esses mercados exigiria ajustar um calibrador PRÓPRIO (Validation
+        # Set com o alvo certo por mercado, mesmo padrão de `_calibrar_
+        # dixon_coles`) -- fora do escopo desta correção; o backfill
+        # histórico já faz isso certo pro over_under_2.5 (`codigo_por_
+        # selecao_ou25` dedicado, ver `backfill_predicoes_historicas.py`).
+        _persistir_cru_e_calibrados_over_under25("dixon_coles_v1", preds_raw, {}, todas_as_linhas)
+        _persistir_cru_e_calibrados_gols_time("dixon_coles_v1", preds_raw, {}, todas_as_linhas)
     except Exception:
         logger.exception("Falha ao rodar dixon_coles_v1 -- pulando, os outros modelos continuam.")
 

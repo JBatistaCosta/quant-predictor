@@ -120,6 +120,43 @@ function Calibracao({ quintis }) {
   );
 }
 
+// Curva de lift + ganho acumulado (api/model-stats.js, mesmo bloco que
+// calcula a calibração em quintis acima, só reordenado descendente por
+// p_modelo e rebinado em decis — "quão melhor que a média cada faixa de
+// confiança do modelo acerta" (lift) e "se eu só olhasse os N% mais
+// confiantes, quanto do total de acertos eu já capturaria" (ganho
+// acumulado, comparado contra a diagonal de referência aleatória).
+// Generaliza pra qualquer mercado (novo ou existente) sem código
+// condicionado -- vem pronto de `s.lift` sempre que a seleção tem amostra
+// suficiente (K=10 decis, cai pra K=5, `null` explícito abaixo disso).
+function CurvaLift({ lift }) {
+  if (!lift || !lift.bins || lift.bins.length === 0) return <p className="text-xs text-slate-600">Sem dado suficiente (amostra pequena demais pra decis).</p>;
+  const { k, baseline, bins } = lift;
+  const liftMax = Math.max(1, ...bins.map(b => b.lift ?? 0));
+  return (
+    <div className="space-y-1">
+      {bins.map((b) => (
+        <div key={b.decil} className="flex items-center gap-2 text-xs">
+          <span className="text-slate-500 w-16 shrink-0">decil {b.decil}/{k}</span>
+          <div className="flex-1 bg-slate-800 rounded h-3 relative overflow-hidden">
+            <div
+              className={`absolute inset-y-0 left-0 ${(b.lift ?? 0) >= 1 ? 'bg-emerald-500/70' : 'bg-red-500/70'}`}
+              style={{ width: `${Math.min(100, ((b.lift ?? 0) / liftMax) * 100)}%` }}
+            />
+          </div>
+          <span className="text-slate-400 w-56 shrink-0 text-right">
+            lift {b.lift != null ? b.lift.toFixed(2) : '—'}× · real {(b.taxa_real * 100).toFixed(0)}% (n={b.n}) · ganho acum. {b.ganho_acumulado_pct != null ? `${(b.ganho_acumulado_pct * 100).toFixed(0)}%` : '—'}
+          </span>
+        </div>
+      ))}
+      <p className="text-[10px] text-slate-600 mt-1">
+        Lift = taxa de acerto real da faixa ÷ taxa média do grupo ({baseline != null ? (baseline * 100).toFixed(1) : '—'}%) — 1,00× é o esperado de um modelo aleatório, acima disso a faixa concentra mais acerto.
+        Ganho acumulado = fração de todos os acertos capturada apostando só nos decis mais confiantes até aqui, comparado contra a diagonal aleatória (decil N/{k} → {`${(100/k).toFixed(0)}% × N`} de ganho esperado).
+      </p>
+    </div>
+  );
+}
+
 function AjusteCalibracao({ g }) {
   if (!g.calibracao_disponivel) return null;
   const linhas = [
@@ -954,6 +991,18 @@ export default function ModelosStats() {
                   <p className="text-[11px] text-red-400">{erroAoVivo[`${g.model_name}|${g.market}`]}</p>
                 )}
               </div>
+
+              {g.por_selecao.length > 0 && (
+                <div className="space-y-3 mt-4">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Curva de lift + ganho acumulado (decis de confiança)</span>
+                  {g.por_selecao.map((s, j) => (
+                    <div key={j}>
+                      <span className="text-xs text-slate-400 font-semibold">{SELECAO_ROTULO[s.selecao] || s.selecao}</span>
+                      <CurvaLift lift={s.lift} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
