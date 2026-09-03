@@ -16,6 +16,7 @@ const TABELAS = [
   { nome: 'match_player_stats_fotmob',     desc: 'Stats individuais por jogador/partida',  grupo: 'Partidas',   linhas: 672166 },
   { nome: 'match_shots_fotmob',            desc: 'Mapa de chutes (xG individual)',         grupo: 'Partidas',   linhas: 315429 },
   { nome: 'match_lineup_fotmob',           desc: 'Escalações históricas FotMob',           grupo: 'Partidas',   linhas: 251203 },
+  { nome: 'match_formation_fotmob',        desc: 'Esquema tático por partida/time',        grupo: 'Partidas',   linhas: 37951  },
   { nome: 'match_events',                  desc: 'Eventos de partida (gols/cartões)',       grupo: 'Partidas',   linhas: 61190  },
   { nome: 'match_context_fotmob',          desc: 'Estádio e clima por partida',            grupo: 'Partidas',   linhas: 15956  },
   { nome: 'match_features_contexto',       desc: 'Features de contexto (fadiga/H2H)',      grupo: 'Partidas',   linhas: 37782  },

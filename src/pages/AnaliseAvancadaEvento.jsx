@@ -18,7 +18,7 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import {
@@ -647,6 +647,136 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Esquema tático (match_formation_fotmob)
+// ============================================================
+// A formação NÃO vem pronta do FotMob: ela é derivada da grade de posições
+// dos 11 titulares (verticalLayout), pela função SQL
+// derivar_formacoes_fotmob() -- ver migration
+// 20260903120000_create_match_formation_fotmob.sql. Consequência prática pro
+// que este painel pode mostrar: a formação DESTA partida só existe depois
+// que a escalação oficial é capturada (~1h antes do apito). Antes disso o
+// painel cai no histórico recente de cada time, que é justamente o que serve
+// pra ANTECIPAR o desenho do jogo -- por isso as duas coisas aparecem juntas
+// e rotuladas, nunca uma passando pela outra.
+
+const N_FORMACOES_RECENTES = 10;
+
+// Conta as formações de um time na janela, mais recentes primeiro.
+function resumirFormacoes(linhas, teamId) {
+  const doTime = linhas
+    .filter((r) => r.team_id === teamId && r.matches?.match_date)
+    .sort((a, b) => new Date(b.matches.match_date) - new Date(a.matches.match_date))
+    .slice(0, N_FORMACOES_RECENTES);
+  const contagem = {};
+  for (const r of doTime) contagem[r.formation] = (contagem[r.formation] || 0) + 1;
+  const ranking = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
+  return {
+    n: doTime.length,
+    ultima: doTime[0]?.formation ?? null,
+    ranking,
+    // "Variedade" = quantas formações distintas em N jogos. Técnico que
+    // repete a mesma é mais previsível; muitas formações distintas é sinal
+    // de rodízio (ou de time em crise trocando de desenho).
+    distintas: ranking.length,
+  };
+}
+
+function ColunaTatica({ nome, formacaoJogo, resumo }) {
+  return (
+    <div className="flex-1 min-w-[150px]">
+      <p className="text-xs text-slate-400 font-bold truncate mb-1">{nome}</p>
+      {formacaoJogo ? (
+        <>
+          <p className="text-2xl font-mono font-bold text-emerald-400 leading-none">{formacaoJogo.formation}</p>
+          <p className="text-[10px] text-slate-500 mt-1">escalação oficial desta partida</p>
+        </>
+      ) : resumo.ultima ? (
+        <>
+          <p className="text-2xl font-mono font-bold text-slate-300 leading-none">{resumo.ultima}</p>
+          <p className="text-[10px] text-amber-500/80 mt-1">último jogo — escalação desta partida ainda não saiu</p>
+        </>
+      ) : (
+        <>
+          <p className="text-2xl font-mono font-bold text-slate-600 leading-none">—</p>
+          <p className="text-[10px] text-slate-600 mt-1">sem formação capturada</p>
+        </>
+      )}
+      {resumo.n > 0 && (
+        <div className="mt-2 space-y-0.5">
+          <p className="text-[10px] text-slate-500 uppercase tracking-wide">
+            Últimos {resumo.n} jogos · {resumo.distintas} desenho{resumo.distintas > 1 ? 's' : ''}
+          </p>
+          {resumo.ranking.slice(0, 3).map(([f, c]) => (
+            <div key={f} className="flex items-center gap-1.5">
+              <div className="h-1.5 bg-slate-600 rounded-sm" style={{ width: `${(c / resumo.n) * 60}px` }} />
+              <span className="text-[11px] font-mono text-slate-400">{f}</span>
+              <span className="text-[10px] text-slate-600">{c}x</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PainelEsquemaTatico({ jogo, formacaoPartida, formacoesRecentes }) {
+  const homeId = jogo.home?.id;
+  const awayId = jogo.away?.id;
+
+  const fCasa = formacaoPartida.find((r) => r.team_id === homeId) || null;
+  const fFora = formacaoPartida.find((r) => r.team_id === awayId) || null;
+  const rCasa = useMemo(() => resumirFormacoes(formacoesRecentes, homeId), [formacoesRecentes, homeId]);
+  const rFora = useMemo(() => resumirFormacoes(formacoesRecentes, awayId), [formacoesRecentes, awayId]);
+
+  // Nada capturado dos dois lados: some em vez de mostrar um card vazio.
+  if (!fCasa && !fFora && rCasa.n === 0 && rFora.n === 0) return null;
+
+  // Saldo de meio-campo só é honesto quando os DOIS lados vêm da escalação
+  // real desta partida. Misturar "formação real de um" com "formação do
+  // último jogo do outro" produziria um número que parece medido e não é.
+  const saldoMeio = fCasa && fFora ? fCasa.n_mid - fFora.n_mid : null;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+      <p className="text-xs text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <LayoutGrid size={12} className="text-emerald-400" /> Esquema tático
+      </p>
+      <div className="flex gap-4 flex-wrap">
+        <ColunaTatica nome={jogo.home?.name} formacaoJogo={fCasa} resumo={rCasa} />
+        <div className="w-px bg-slate-700 self-stretch hidden sm:block" />
+        <ColunaTatica nome={jogo.away?.name} formacaoJogo={fFora} resumo={rFora} />
+      </div>
+
+      {saldoMeio !== null && (
+        <div className="mt-4 pt-3 border-t border-slate-700/60 text-[11px] text-slate-400">
+          <span className="font-mono text-slate-300">
+            {fCasa.n_def}-{fCasa.n_mid}-{fCasa.n_atk}
+          </span>
+          <span className="text-slate-600 mx-1.5">contra</span>
+          <span className="font-mono text-slate-300">
+            {fFora.n_def}-{fFora.n_mid}-{fFora.n_atk}
+          </span>
+          <span className="text-slate-600 mx-1.5">·</span>
+          {saldoMeio === 0
+            ? <span>meio-campo numericamente equilibrado</span>
+            : <span>
+                {Math.abs(saldoMeio)} homem{Math.abs(saldoMeio) > 1 ? 's' : ''} a mais no meio para{' '}
+                <span className="text-slate-200 font-bold">{saldoMeio > 0 ? jogo.home?.name : jogo.away?.name}</span>
+              </span>}
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] text-slate-600 leading-relaxed">
+        Formação derivada da grade de posições do FotMob (<span className="font-mono">match_formation_fotmob</span>).
+        É a estrutura de <em>entrada</em> em campo: não captura mudanças durante o jogo nem a diferença entre o
+        desenho anunciado e o comportamento real com a bola. Vantagem numérica setorial é uma leitura descritiva,
+        não uma previsão — não está incorporada a nenhum modelo.
+      </p>
     </div>
   );
 }
@@ -1403,6 +1533,11 @@ export default function AnaliseAvancadaEvento() {
   // puro automaticamente -- sem precisar de um valor "padrão genérico" aqui.
   const [dispRChutes, setDispRChutes] = useState(null);
   const [dispRChutesNoAlvo, setDispRChutesNoAlvo] = useState(null);
+  // Esquema tático: formação DESTA partida (só existe depois da escalação
+  // oficial sair) + formações recentes dos dois times (existe sempre que
+  // eles já jogaram, então é o que serve pra ANTECIPAR o desenho do jogo).
+  const [formacaoPartida, setFormacaoPartida] = useState([]);
+  const [formacoesRecentes, setFormacoesRecentes] = useState([]);
 
   // Sincronização manual da escalação real (match_lineup_fotmob) via
   // scripts/ingerir_escalacao_pre_jogo.py --match-ids -- diferente do cron
@@ -1459,7 +1594,13 @@ export default function AnaliseAvancadaEvento() {
         // seletor de snapshot -- fechamento (quando existe) aparece como
         // mais uma opção na lista, não é exigido. Qualquer outro status (ao
         // vivo/adiado/cancelado): não busca odds.
-        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }] = await Promise.all([
+        // Janela de histórico tático: ~2 temporadas antes desta partida.
+        // Limita a consulta a algo bem abaixo do corte silencioso de 1000
+        // linhas do PostgREST (2 times x ~2 temporadas ~= 150 linhas), então
+        // não precisa de paginação.
+        const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
+
+        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -1528,6 +1669,26 @@ export default function AnaliseAvancadaEvento() {
                 .eq('param_name', 'disp_r')
                 .maybeSingle()
             : Promise.resolve({ data: null }),
+          // Esquema tático desta partida -- derivado da grade de posições do
+          // FotMob (match_formation_fotmob), só existe depois da escalação
+          // oficial ser capturada. Antes disso a seção cai no histórico.
+          supabase
+            .from('match_formation_fotmob')
+            .select('team_id, formation, formation_grade, n_def, n_mid, n_atk')
+            .eq('match_id', matchId),
+          // Formações recentes dos dois times ANTES desta partida -- é o que
+          // permite antecipar o desenho do jogo enquanto a escalação oficial
+          // não saiu. `matches!inner` para poder filtrar/ordenar por data da
+          // partida; ordenação e corte dos N últimos ficam no cliente (o
+          // `limit` do PostgREST valeria pro conjunto todo, não por time).
+          (j.home?.id && j.away?.id)
+            ? supabase
+                .from('match_formation_fotmob')
+                .select('team_id, formation, n_def, n_mid, n_atk, matches!inner(match_date)')
+                .in('team_id', [j.home.id, j.away.id])
+                .lt('matches.match_date', j.match_date)
+                .gte('matches.match_date', inicioJanelaTatica)
+            : Promise.resolve({ data: [] }),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -1540,6 +1701,8 @@ export default function AnaliseAvancadaEvento() {
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
         setDispRChutesNoAlvo(dispRNoAlvoRow?.param_value != null ? Number(dispRNoAlvoRow.param_value) : null);
+        setFormacaoPartida(formPartida || []);
+        setFormacoesRecentes(formRecentes || []);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -1785,6 +1948,8 @@ export default function AnaliseAvancadaEvento() {
           </div>
         </div>
       </div>
+
+      <PainelEsquemaTatico jogo={jogo} formacaoPartida={formacaoPartida} formacoesRecentes={formacoesRecentes} />
 
       {estimativas.length === 0 ? (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center">
