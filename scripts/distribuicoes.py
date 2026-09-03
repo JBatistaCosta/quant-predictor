@@ -136,6 +136,7 @@ def rotulo_linha(linha: float) -> str:
 def mercados_de_gols(
     matriz: np.ndarray,
     linhas_over_under: tuple[float, ...] = (0.5, 1.5, 2.5, 3.5, 4.5),
+    linhas_over_under_time: tuple[float, ...] = (0.5, 1.5, 2.5, 3.5, 4.5),
     linhas_handicap: tuple[float, ...] = (-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5),
     max_placares_exatos: int = 20,
 ) -> dict[tuple[str, str], float]:
@@ -173,6 +174,25 @@ def mercados_de_gols(
         p_over = float(matriz[total > linha].sum())
         saida[(f"over_under_{rotulo_linha(linha)}", "over")] = p_over
         saida[(f"over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over
+
+    # --- Over/Under por time (marginais da MESMA matriz, sem λ/modelo
+    # novo) -- nomeado `team_1`/`team_2` (não `home`/`away`) porque é a
+    # convenção real do mercado de gols por time já em produção em
+    # `odds_market` (OddsPapi): confirmado empiricamente (odds-sync-
+    # diagnostico + teste por-partida, team_1_to_score prevê o mandante
+    # marcar em 78,0% das partidas vs. 68,8% pro visitante, N=1248) que
+    # team_1 = mandante, team_2 = visitante. Gêmeo do bloco em
+    # `src/utils/distribuicoesMercados.js::mercadosDeGols`.
+    gols = np.arange(n + 1)
+    p_mandante = matriz.sum(axis=1)  # soma em j -> P(gols_mandante = i)
+    p_visitante = matriz.sum(axis=0)  # soma em i -> P(gols_visitante = j)
+    for linha in linhas_over_under_time:
+        p_over_mandante = float(p_mandante[gols > linha].sum())
+        p_over_visitante = float(p_visitante[gols > linha].sum())
+        saida[(f"over_under_team_1_{rotulo_linha(linha)}", "over")] = p_over_mandante
+        saida[(f"over_under_team_1_{rotulo_linha(linha)}", "under")] = 1.0 - p_over_mandante
+        saida[(f"over_under_team_2_{rotulo_linha(linha)}", "over")] = p_over_visitante
+        saida[(f"over_under_team_2_{rotulo_linha(linha)}", "under")] = 1.0 - p_over_visitante
 
     # --- BTTS -------------------------------------------------------------
     p_btts = float(matriz[1:, 1:].sum())

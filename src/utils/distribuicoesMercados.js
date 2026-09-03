@@ -80,6 +80,7 @@ export const matrizPlacares = (lam, mu, rho = 0, maxGols = MAX_GOLS) => {
 // tudo é integral da MESMA matriz.
 export const mercadosDeGols = (matriz, {
   linhasOverUnder = [0.5, 1.5, 2.5, 3.5, 4.5],
+  linhasOverUnderTime = [0.5, 1.5, 2.5, 3.5, 4.5],
   linhasHandicap = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5],
   maxPlacaresExatos = 20,
 } = {}) => {
@@ -89,6 +90,15 @@ export const mercadosDeGols = (matriz, {
   let pHome = 0, pDraw = 0, pAway = 0, pBtts = 0;
   const porTotal = new Array(2 * n + 1).fill(0);
   const porMargem = new Array(2 * n + 1).fill(0); // índice = (i-j) + n
+  // Marginais por time — soma da matriz conjunta ao longo de um eixo só,
+  // não um λ/modelo novo. Nomeados `team_1`/`team_2` (não `home`/`away`)
+  // porque essa é a convenção real do mercado de gols por time já em
+  // produção em `odds_market` (OddsPapi) — confirmado empiricamente nesta
+  // sessão via odds-sync-diagnostico + teste por-partida (team_1_to_score
+  // prevê o mandante marcar em 78,0% das partidas vs. 68,8% pro visitante,
+  // N=1248 partidas finalizadas): team_1 = mandante, team_2 = visitante.
+  const porMandante = new Array(n + 1).fill(0);
+  const porVisitante = new Array(n + 1).fill(0);
   const celulas = [];
 
   for (let i = 0; i <= n; i++) {
@@ -98,6 +108,8 @@ export const mercadosDeGols = (matriz, {
       if (i > 0 && j > 0) pBtts += p;
       porTotal[i + j] += p;
       porMargem[i - j + n] += p;
+      porMandante[i] += p;
+      porVisitante[j] += p;
       celulas.push({ placar: `${i}-${j}`, prob: p });
     }
   }
@@ -110,6 +122,15 @@ export const mercadosDeGols = (matriz, {
     let over = 0;
     for (let t = 0; t < porTotal.length; t++) if (t > linha) over += porTotal[t];
     saida[`over_under_${rotuloLinha(linha)}`] = { over, under: 1 - over };
+  }
+
+  for (const linha of linhasOverUnderTime) {
+    let overMandante = 0, overVisitante = 0;
+    for (let g = 0; g <= n; g++) {
+      if (g > linha) { overMandante += porMandante[g]; overVisitante += porVisitante[g]; }
+    }
+    saida[`over_under_team_1_${rotuloLinha(linha)}`] = { over: overMandante, under: 1 - overMandante };
+    saida[`over_under_team_2_${rotuloLinha(linha)}`] = { over: overVisitante, under: 1 - overVisitante };
   }
 
   const faixas = [['0-1', 0, 1], ['2-3', 2, 3], ['4-6', 4, 6], ['7+', 7, Infinity]];

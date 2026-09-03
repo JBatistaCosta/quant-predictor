@@ -43,6 +43,7 @@ import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { calcularCurvaPnlEv } from './_lib/curvaPnlEv.js';
 import { calcularStakeKellyPorFaixa } from './_lib/stakingPolicy.js';
+import { calcularResultadosReais } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -72,31 +73,10 @@ function normalizarMercado(m) {
   return m === '1x2' ? '1X2' : m;
 }
 
-// Resultado real por mercado, indexado pela MESMA string usada em
-// odds_market.market/model_predictions.market -- antes disso era um
-// ternário de 3 opções que jogava QUALQUER mercado desconhecido (btts,
-// dupla_chance, handicap etc) no bucket de escanteios O/U 9,5, com o
-// mesmo nome genérico (chaveMercado/calcularResultadosReais) duplicado em
-// api/model-stats.js -- corrigido nos dois arquivos: mercado sem entrada
-// aqui agora fica undefined (aposta não conta como vitória, não é
-// silenciosamente comparada contra o resultado errado).
-function calcularResultadosReais(matches, corners) {
-  const porMatch = {};
-  for (const m of matches) {
-    if (m.status !== 'finished' || m.home_goals == null || m.away_goals == null) continue;
-    const total = m.home_goals + m.away_goals;
-    porMatch[m.id] = {
-      league_id: m.league_id,
-      '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      'over_under_2.5': total > 2.5 ? 'over' : 'under',
-      btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
-    };
-  }
-  for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
-  }
-  return porMatch;
-}
+// `calcularResultadosReais` foi extraída pra api/_lib/resultadosReais.js
+// (compartilhada com api/model-stats.js, era código idêntico duplicado nos
+// dois arquivos) -- ver esse módulo pra explicação completa do porquê de
+// mercado sem entrada ficar `undefined` de propósito.
 
 // Devigging: remove a margem da casa das odds. Dois métodos, ambos derivados
 // da mesma família de fórmulas (ver true_odds_calculator.xlsm, planilha de
@@ -257,14 +237,36 @@ export default async function handler(req, res) {
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+      // Fallback pra `bookmaker='pinnacle'` -- `media_mercado` só existe pros
+      // 3 mercados do pipeline antigo (1X2/over_under_2.5/btts, ver
+      // `scripts/ingestar_felipe_kaggle_odds.py`, fonte histórica tipo
+      // football-data.co.uk que nunca vai ter coluna de gol por time). Os
+      // mercados novos de gols por time (`over_under_team_1/2_X.X`) só têm
+      // odds reais em `odds_market` por bookmaker individual (pinnacle
+      // incluída, ~20-25k linhas por linha desde 14/08/2026) -- sem esse
+      // fallback, `backtest-betting` nunca encontraria odds pra eles e
+      // `grupos` sairia sempre vazio. `pinnacle` aqui é odd de UMA casa
+      // (referência de mercado eficiente, menor margem), não a média de
+      // várias -- diferente de `media_mercado`, que já É uma média. Usado
+      // só quando `media_mercado` não cobre o match+mercado (ver o merge
+      // logo abaixo, `oddsRowsAntigas` tem prioridade).
+      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle')),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
-      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null)),
+      // Sem filtro `.not(...)` -- também precisamos de shots/shots_on_target
+      // (mercados novos), que nem sempre são preenchidos junto com corners
+      // (achado real: 2226 linhas têm shots sem corners, ou vice-versa).
+      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners, shots, shots_on_target')),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
-    const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
+    // Merge com prioridade pra media_mercado: só usa pinnacle pro par
+    // match_id+market que media_mercado NÃO cobre (evita duplicar/preferir
+    // 1 casa só quando já existe uma média melhor pros 3 mercados antigos).
+    const chavesComMediaMercado = new Set(oddsRowsAntigas.map((r) => `${r.match_id}__${r.market}`));
+    const oddsRowsPinnacleFallback = oddsRowsPinnacle.filter((r) => !chavesComMediaMercado.has(`${r.match_id}__${r.market}`));
+    const oddsRowsBrutas = [...oddsRowsAntigas, ...oddsRowsPinnacleFallback, ...normalizarOddsBenchmarking(marketOddsRaw)];
 
     const calibPorChave = {};
     calibracoes.forEach(c => {
@@ -283,15 +285,25 @@ export default async function handler(req, res) {
     const oddsRows = oddsRowsBrutas.filter(r => matchIdsValidos.has(r.match_id));
 
     const corners = {};
-    { const soma = {}, cont = {};
+    const shots = {};
+    const shotsOnTarget = {};
+    {
+      // Cada stat com sua própria soma/contagem -- cobertura difere entre
+      // elas (ver comentário na query acima), não dá pra reusar uma
+      // contagem só entre as 3.
+      const soma = { corners: {}, shots: {}, shots_on_target: {} };
+      const cont = { corners: {}, shots: {}, shots_on_target: {} };
       corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
-        soma[r.match_id] = (soma[r.match_id] || 0) + Number(r.corners);
-        cont[r.match_id] = (cont[r.match_id] || 0) + 1;
+        if (r.corners != null) { soma.corners[r.match_id] = (soma.corners[r.match_id] || 0) + Number(r.corners); cont.corners[r.match_id] = (cont.corners[r.match_id] || 0) + 1; }
+        if (r.shots != null) { soma.shots[r.match_id] = (soma.shots[r.match_id] || 0) + Number(r.shots); cont.shots[r.match_id] = (cont.shots[r.match_id] || 0) + 1; }
+        if (r.shots_on_target != null) { soma.shots_on_target[r.match_id] = (soma.shots_on_target[r.match_id] || 0) + Number(r.shots_on_target); cont.shots_on_target[r.match_id] = (cont.shots_on_target[r.match_id] || 0) + 1; }
       });
-      Object.keys(soma).forEach(id => { if (cont[id] === 2) corners[id] = soma[id]; });
+      Object.keys(soma.corners).forEach(id => { if (cont.corners[id] === 2) corners[id] = soma.corners[id]; });
+      Object.keys(soma.shots).forEach(id => { if (cont.shots[id] === 2) shots[id] = soma.shots[id]; });
+      Object.keys(soma.shots_on_target).forEach(id => { if (cont.shots_on_target[id] === 2) shotsOnTarget[id] = soma.shots_on_target[id]; });
     }
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, corners);
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget });
 
     // odds cruas (pra pagamento real) e devigadas (pra edge) por match+market
     const oddsPorMatchMercado = {};

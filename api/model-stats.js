@@ -50,6 +50,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
+import { calcularResultadosReais, LINHAS_GOLS_TIME } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -78,30 +79,10 @@ function aplicarIsotonic(p, xs, ys) {
   return p;
 }
 
-// Resultado real de cada partida, por mercado — indexado pela MESMA
-// string usada em odds_market.market/model_predictions.market. Antes
-// disso era um ternário de 3 opções (chaveMercado) que jogava QUALQUER
-// mercado desconhecido (btts, dupla_chance, handicap etc) no bucket de
-// escanteios O/U 9,5 -- corrigido aqui e em api/backtest-betting.js
-// (mesma duplicação, mesmo bug). Mercado sem entrada aqui agora fica
-// undefined em vez de comparar contra o resultado errado.
-function calcularResultadosReais(matches, corners) {
-  const porMatch = {};
-  for (const m of matches) {
-    if (m.status !== 'finished' || m.home_goals == null || m.away_goals == null) continue;
-    const total = m.home_goals + m.away_goals;
-    porMatch[m.id] = {
-      league_id: m.league_id,
-      '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      'over_under_2.5': total > 2.5 ? 'over' : 'under',
-      btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
-    };
-  }
-  for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
-  }
-  return porMatch;
-}
+// `calcularResultadosReais` foi extraída pra api/_lib/resultadosReais.js
+// (compartilhada com api/backtest-betting.js, era código idêntico
+// duplicado nos dois arquivos) -- ver esse módulo pra explicação completa
+// do porquê de mercado sem entrada ficar `undefined` de propósito.
 
 // Devigging: remove a margem da casa das odds. Dois métodos, ambos derivados
 // da mesma família de fórmulas (ver true_odds_calculator.xlsm, planilha de
@@ -177,6 +158,20 @@ const MERCADO_SELECOES_PINNACLE = {
   'over_under_2.5': ['over', 'under'],
   btts: ['yes', 'no'],
 };
+// Gols por time (mandante/visitante) -- a OddsPapi realmente oferece esse
+// mercado (`Over Under Team 1`/`Over Under Team 2`, confirmado via
+// odds-sync-diagnostico nesta sessão) e já está sendo ingerido em produção
+// desde 14/08/2026 (`odds_market.market='over_under_team_1/2_X.X'`,
+// dezenas de milhares de linhas por linha, pinnacle incluída) -- ao
+// contrário do que o comentário no topo deste arquivo dizia sobre
+// escanteios não terem odds ("desatualizado" -- não mexido aqui, fora do
+// escopo desta extensão). `team_1`=mandante/`team_2`=visitante confirmado
+// empiricamente (ver `api/_lib/resultadosReais.js`).
+for (const linha of LINHAS_GOLS_TIME) {
+  const l = linha.toFixed(1);
+  MERCADO_SELECOES_PINNACLE[`over_under_team_1_${l}`] = ['over', 'under'];
+  MERCADO_SELECOES_PINNACLE[`over_under_team_2_${l}`] = ['over', 'under'];
+}
 
 function normalizarPinnacleDevigada(oddsRows) {
   const porChave = {};
@@ -721,7 +716,10 @@ export default async function handler(req, res) {
     const promiseTodasMatches = buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id'));
     const promiseOddsRowsAntigas = buscarTudoPaginado(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'));
     const promiseMarketOddsRaw = buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away'));
-    const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats').select('id, match_id, team_id, corners').not('corners', 'is', null));
+    // Também traz shots/shots_on_target -- mesma tabela/linhas já buscadas
+    // pra escanteios, sem query nova (os mercados novos de chutes/chutes no
+    // gol de time reaproveitam essa mesma leitura).
+    const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats').select('id, match_id, team_id, corners, shots, shots_on_target'));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
 
     const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows, statsMcnemarRows] = await Promise.all([
@@ -828,16 +826,34 @@ export default async function handler(req, res) {
     const oddsRows = oddsRowsBrutas.filter(r => matchIdsValidos.has(r.match_id));
 
     const corners = {};
+    const shots = {};
+    const shotsOnTarget = {};
     const cornersDetalhado = {}; // { [match_id]: { home, away } } — usado no relatório partida a partida
     {
-      const somaPorJogo = {};
-      const contPorJogo = {};
+      // Mesmo padrão pra corners/shots/shots_on_target: soma por partida,
+      // só entra se os DOIS times tiverem linha em match_stats (senão o
+      // total ficaria subestimado silenciosamente). Cada stat tem sua
+      // própria contagem (`contPorJogo[stat]`) porque cobertura difere
+      // entre elas (achado real: 2226 linhas têm shots preenchido sem
+      // corners, ou vice-versa -- não dá pra reusar uma contagem só).
+      const somaPorJogo = { corners: {}, shots: {}, shots_on_target: {} };
+      const contPorJogo = { corners: {}, shots: {}, shots_on_target: {} };
       const homePorMatch = {};
       matchesValidos.forEach(m => { homePorMatch[m.id] = m.home_team_id; });
       corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
-        somaPorJogo[r.match_id] = (somaPorJogo[r.match_id] || 0) + Number(r.corners);
-        contPorJogo[r.match_id] = (contPorJogo[r.match_id] || 0) + 1;
-        if (homePorMatch[r.match_id] != null) {
+        if (r.corners != null) {
+          somaPorJogo.corners[r.match_id] = (somaPorJogo.corners[r.match_id] || 0) + Number(r.corners);
+          contPorJogo.corners[r.match_id] = (contPorJogo.corners[r.match_id] || 0) + 1;
+        }
+        if (r.shots != null) {
+          somaPorJogo.shots[r.match_id] = (somaPorJogo.shots[r.match_id] || 0) + Number(r.shots);
+          contPorJogo.shots[r.match_id] = (contPorJogo.shots[r.match_id] || 0) + 1;
+        }
+        if (r.shots_on_target != null) {
+          somaPorJogo.shots_on_target[r.match_id] = (somaPorJogo.shots_on_target[r.match_id] || 0) + Number(r.shots_on_target);
+          contPorJogo.shots_on_target[r.match_id] = (contPorJogo.shots_on_target[r.match_id] || 0) + 1;
+        }
+        if (homePorMatch[r.match_id] != null && r.corners != null) {
           if (!cornersDetalhado[r.match_id]) cornersDetalhado[r.match_id] = {};
           if (Number(r.team_id) === Number(homePorMatch[r.match_id])) {
             cornersDetalhado[r.match_id].home = Number(r.corners);
@@ -846,10 +862,12 @@ export default async function handler(req, res) {
           }
         }
       });
-      Object.keys(somaPorJogo).forEach(id => { if (contPorJogo[id] === 2) corners[id] = somaPorJogo[id]; });
+      Object.keys(somaPorJogo.corners).forEach(id => { if (contPorJogo.corners[id] === 2) corners[id] = somaPorJogo.corners[id]; });
+      Object.keys(somaPorJogo.shots).forEach(id => { if (contPorJogo.shots[id] === 2) shots[id] = somaPorJogo.shots[id]; });
+      Object.keys(somaPorJogo.shots_on_target).forEach(id => { if (contPorJogo.shots_on_target[id] === 2) shotsOnTarget[id] = somaPorJogo.shots_on_target[id]; });
     }
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, corners);
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget });
 
     // odds devigadas por match+market -> { selecao: prob }
     const oddsPorMatchMercado = {};
@@ -1089,6 +1107,53 @@ export default async function handler(req, res) {
         const comPlatt = ls.filter(l => l.p_platt != null);
         const comIsotonic = ls.filter(l => l.p_isotonic != null);
 
+        // Curva de lift + ganho acumulado -- reaproveita o MESMO array `ls`
+        // já usado pra calibração em quintis acima, só ordenado
+        // DESCENDENTE por p_modelo (mais confiante primeiro) e rebinado em
+        // decis. Generaliza de graça pra qualquer mercado (novo ou já
+        // existente), porque roda no mesmo loop genérico que já processa
+        // 1X2/over_under_2.5/etc -- nenhuma query nova, nenhum código
+        // condicionado a mercado específico.
+        //
+        // K=10 (decis) quando a amostra permite; cai pra K=5 (mesmo padrão
+        // de fallback adaptativo já usado na calibração em quintis, que
+        // pula bin quando `tamanho<=0`) quando não dá; `null` explícito
+        // (nunca um bin vazio inventado) abaixo disso.
+        const taxaBase = ls.length > 0 ? ls.reduce((s, l) => s + l.y, 0) / ls.length : null;
+        let lift = null;
+        const kAlvo = ls.length >= 10 ? 10 : ls.length >= 5 ? 5 : 0;
+        if (kAlvo > 0) {
+          const ordenadoDesc = [...ls].sort((a, b) => b.p_modelo - a.p_modelo);
+          const tamanhoBin = Math.floor(ordenadoDesc.length / kAlvo);
+          const totalAcertos = ordenadoDesc.reduce((s, l) => s + l.y, 0);
+          const bins = [];
+          let acumuladoAcertos = 0;
+          for (let i = 0; i < kAlvo; i++) {
+            const fatia = ordenadoDesc.slice(i * tamanhoBin, i === kAlvo - 1 ? ordenadoDesc.length : (i + 1) * tamanhoBin);
+            if (fatia.length === 0) continue;
+            const acertosFatia = fatia.reduce((s, l) => s + l.y, 0);
+            acumuladoAcertos += acertosFatia;
+            const taxaRealBin = acertosFatia / fatia.length;
+            bins.push({
+              decil: i + 1,
+              n: fatia.length,
+              previsto_medio: fatia.reduce((s, l) => s + l.p_modelo, 0) / fatia.length,
+              taxa_real: taxaRealBin,
+              // lift = quanto melhor que a taxa média do grupo essa faixa de
+              // confiança acerta (1.0 = igual à média, "aleatório"; >1 = a
+              // faixa concentra mais acerto do que a média geral).
+              lift: taxaBase > 0 ? taxaRealBin / taxaBase : null,
+              // ganho acumulado = fração de TODOS os acertos do grupo já
+              // capturada apostando só nos i+1 decis mais confiantes até
+              // aqui -- a referência "aleatória" é a diagonal
+              // amostra_acumulada_pct == ganho_acumulado_pct.
+              ganho_acumulado_pct: totalAcertos > 0 ? acumuladoAcertos / totalAcertos : null,
+              amostra_acumulada_pct: (i + 1) / kAlvo,
+            });
+          }
+          lift = { k: kAlvo, baseline: taxaBase, bins };
+        }
+
         return {
           selecao, n: ls.length,
           p_modelo_medio: ls.reduce((s, l) => s + l.p_modelo, 0) / ls.length,
@@ -1097,6 +1162,7 @@ export default async function handler(req, res) {
           p_isotonic_medio: comIsotonic.length > 0 ? comIsotonic.reduce((s, l) => s + l.p_isotonic, 0) / comIsotonic.length : null,
           edge_medio: edgeMedio,
           calibracao: quintis,
+          lift,
         };
       });
 
