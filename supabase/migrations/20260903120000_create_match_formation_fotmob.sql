@@ -70,8 +70,27 @@ comment on column public.match_formation_fotmob.n_atk is
 comment on column public.match_formation_fotmob.fonte is
   'Como a formação foi obtida. Hoje só "layout_fotmob" (derivada da grade). Reservado para o dia em que uma fonte declarar a formação explicitamente -- aí dá para preferir a declarada sem perder o histórico derivado.';
 
-comment on column public.match_lineup_fotmob.formation is
-  'OBSOLETA -- nunca foi preenchida (0 de 822 mil linhas). Formação é atributo de (partida, time), não de jogador: use public.match_formation_fotmob.';
+-- Marca a coluna morta `match_lineup_fotmob.formation` como obsoleta.
+-- DENTRO DE UM GUARD porque ela é DRIFT: existe em produção (adicionada fora
+-- do versionamento, junto com `team_rating`) mas NENHUM arquivo em
+-- supabase/migrations a cria -- 20260802100000 adicionou field_pos_x/y e
+-- is_captain, nunca esta. Sem o guard, um replay limpo do histórico de
+-- migrations (branch de preview do Supabase, ambiente novo) quebraria aqui
+-- com "column formation does not exist". Não corrigido de fora deste escopo:
+-- adicionar a coluna aqui só recriaria a coluna morta em ambiente novo.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'match_lineup_fotmob'
+      and column_name = 'formation'
+  ) then
+    comment on column public.match_lineup_fotmob.formation is
+      'OBSOLETA -- nunca foi preenchida (0 de 822 mil linhas). Formação é atributo de (partida, time), não de jogador: use public.match_formation_fotmob.';
+  end if;
+end
+$$;
 
 create index if not exists idx_match_formation_fotmob_match on public.match_formation_fotmob (match_id);
 create index if not exists idx_match_formation_fotmob_team  on public.match_formation_fotmob (team_id);
@@ -190,7 +209,7 @@ begin
     where g.linhas[1] = 1
       and array_length(g.linhas, 1) >= 3
   )
-  insert into public.match_formation_fotmob as f (
+  insert into public.match_formation_fotmob (
     match_id, team_id, is_home, formation, formation_grade,
     n_linhas, n_def, n_mid, n_atk, fonte, derivado_em
   )
@@ -238,7 +257,11 @@ grant execute on function public.derivar_formacoes_fotmob(bigint[]) to service_r
 -- View de confronto -- o "como interagem entre si" na sua forma mais simples:
 -- uma linha por partida com a formação dos dois lados lado a lado.
 -- =============================================================================
-create or replace view public.v_confronto_formacoes as
+-- security_invoker: a view herda o RLS de QUEM CONSULTA, não do criador.
+-- Sem isso o linter do Supabase acusa `security_definer_view` (ERROR) -- é o
+-- alerta que as views antigas deste projeto ainda carregam.
+create or replace view public.v_confronto_formacoes
+with (security_invoker = on) as
 select
   m.id                as match_id,
   m.league_id,
