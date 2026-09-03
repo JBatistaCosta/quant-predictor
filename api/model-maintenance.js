@@ -995,6 +995,66 @@ async function tarefaSincronizarEscalacaoPendentes(supabase, authHeader, { dias,
   return { ...resultado, disparado: true, n_pendentes: pendentes.length, n_verificadas: idsFinalizadas.length };
 }
 
+const DIAS_FORMACAO_PADRAO = 7;
+const LIMITE_FORMACAO_POR_CHAMADA = 400; // teto pra caber no timeout da function -- a derivação em si é rápida, o custo é ler os titulares de cada partida
+
+// Deriva match_formation_fotmob (esquema tático) das partidas que já têm
+// escalação capturada mas ainda não têm formação. Rede de segurança do
+// caminho automático: a ingestão FotMob já chama a mesma RPC partida a
+// partida, então em regime normal esta tarefa não acha nada -- ela existe
+// pra reparar partidas cuja escalação entrou por outro caminho (backfill
+// Python, resync manual) ou cuja RPC falhou na hora.
+//
+// NÃO faz o backfill histórico inteiro: `derivar_formacoes_fotmob(null)`
+// processa as ~38 mil escalações de uma vez e estoura o timeout da
+// function. O backfill completo é operação de migration/psql, não de
+// endpoint -- por isso a janela de dias e o teto por chamada.
+async function tarefaDerivarFormacoes(supabase, { match_id, dias, limite } = {}) {
+  if (match_id) {
+    const matchId = Number(match_id);
+    if (!Number.isInteger(matchId) || matchId <= 0) return { status: 400, error: 'match_id inválido.' };
+    const { data, error } = await supabase.rpc('derivar_formacoes_fotmob', { p_match_ids: [matchId] });
+    if (error) return { status: 500, error: `Falha ao derivar formação: ${error.message}` };
+    return { status: 200, escopo: `partida ${matchId}`, n_formacoes_gravadas: data ?? 0 };
+  }
+
+  const janelaDias = Number(dias) || DIAS_FORMACAO_PADRAO;
+  const teto = Math.min(Number(limite) || LIMITE_FORMACAO_POR_CHAMADA, LIMITE_FORMACAO_POR_CHAMADA);
+  const desde = new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: recentes, error: erroRecentes } = await supabase
+    .from('matches')
+    .select('id')
+    .gte('match_date', desde)
+    .order('match_date', { ascending: false })
+    .limit(1000);
+  if (erroRecentes) return { status: 500, error: `Falha ao buscar partidas recentes: ${erroRecentes.message}` };
+  if (!recentes?.length) return { status: 200, escopo: `últimos ${janelaDias} dias`, n_formacoes_gravadas: 0, n_pendentes: 0 };
+
+  const ids = recentes.map((m) => m.id);
+  // Só as que TÊM escalação e NÃO têm formação -- em lotes de 200 pra não
+  // estourar o tamanho do filtro `in` do PostgREST.
+  const comEscalacao = new Set();
+  const comFormacao = new Set();
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const [{ data: esc }, { data: fmt }] = await Promise.all([
+      supabase.from('match_lineup_fotmob').select('match_id').in('match_id', lote),
+      supabase.from('match_formation_fotmob').select('match_id').in('match_id', lote),
+    ]);
+    for (const r of esc || []) comEscalacao.add(r.match_id);
+    for (const r of fmt || []) comFormacao.add(r.match_id);
+  }
+  const pendentes = ids.filter((id) => comEscalacao.has(id) && !comFormacao.has(id)).slice(0, teto);
+  if (!pendentes.length) {
+    return { status: 200, escopo: `últimos ${janelaDias} dias`, n_formacoes_gravadas: 0, n_pendentes: 0, mensagem: 'Nenhuma partida com escalação e sem formação na janela.' };
+  }
+
+  const { data, error } = await supabase.rpc('derivar_formacoes_fotmob', { p_match_ids: pendentes });
+  if (error) return { status: 500, error: `Falha ao derivar formações: ${error.message}` };
+  return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_formacoes_gravadas: data ?? 0 };
+}
+
 // ============================================================
 // TAREFAS: Painel de Automação (GitHub Actions) — Configurações
 // Centraliza disparo + acompanhamento dos workflows de
@@ -4544,6 +4604,17 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
             ...r, player_id: mapaPlayerIdInterno[r.fotmob_player_id] || null,
           }));
           await supabase.from('match_lineup_fotmob').upsert(lineupComPlayerId, { onConflict: 'match_id,team_id,fotmob_player_id' });
+
+          // Esquema tático: deriva match_formation_fotmob a partir da grade
+          // de posições que acabou de entrar. A regra "grade -> formação"
+          // mora SÓ na função SQL (ver migration
+          // 20260903120000_create_match_formation_fotmob.sql) justamente pra
+          // não divergir entre este ingestor e o Python
+          // (scripts/ingerir_escalacao_pre_jogo.py). Falha aqui não aborta a
+          // ingestão -- formação é dado derivado, sempre regerável depois com
+          // ?tarefa=derivar-formacoes.
+          const { error: erroFormacao } = await supabase.rpc('derivar_formacoes_fotmob', { p_match_ids: [jogo.id] });
+          if (erroFormacao) console.warn(`[formacao] partida ${jogo.id}: ${erroFormacao.message}`);
         }
 
         const linhasShots = montarLinhasShots(jogo.id, content.shotmap, crosswalk, mapaPlayerIdInterno);
@@ -5967,6 +6038,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'sincronizar-escalacao-real') {
       const resultado = await tarefaSincronizarEscalacaoReal(supabase, req.headers.authorization, { match_id: req.query.match_id });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'derivar-formacoes') {
+      const resultado = await tarefaDerivarFormacoes(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }

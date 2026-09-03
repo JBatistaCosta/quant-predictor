@@ -292,6 +292,7 @@ def main():
         return melhor
 
     n_capturadas, n_ainda_sem_escalacao, n_sem_id, n_falha, n_sem_liga_fotmob = 0, 0, 0, 0, 0
+    n_formacoes = 0  # linhas gravadas em match_formation_fotmob (2 por partida quando os dois lados são deriváveis)
 
     for m in candidatas:
         match_id = m["id"]
@@ -341,6 +342,19 @@ def main():
         n_capturadas += 1
         print(f"  match_id={match_id}: escalação capturada ({len(lineup_rows)} jogadores).")
 
+        # Esquema tático: deriva match_formation_fotmob da grade de posições
+        # que acabou de entrar. A regra "grade -> formação" mora SÓ na função
+        # SQL (migration 20260903120000_create_match_formation_fotmob.sql),
+        # nunca reimplementada aqui -- é o mesmo RPC que o ingestor JS
+        # (api/model-maintenance.js) chama, então os dois caminhos não podem
+        # divergir. Formação é dado derivado e sempre regerável
+        # (?tarefa=derivar-formacoes), então falha aqui só avisa.
+        try:
+            resp_fmt = supabase.rpc("derivar_formacoes_fotmob", {"p_match_ids": [match_id]}).execute()
+            n_formacoes += resp_fmt.data or 0
+        except Exception as exc:
+            print(f"  Aviso: derivar_formacoes_fotmob match_id={match_id}: {exc}")
+
         if match_id not in match_to_fotmob_id:
             try:
                 general = d.get("general") or {}
@@ -356,7 +370,8 @@ def main():
         time.sleep(PACING_SEGUNDOS)
 
     print(f"\nOK: {n_capturadas} escalação(ões) capturada(s), {n_ainda_sem_escalacao} ainda sem escalação oficial publicada, "
-          f"{n_sem_id} sem ID FotMob identificado, {n_sem_liga_fotmob} sem liga mapeada no FotMob, {n_falha} falhas.")
+          f"{n_sem_id} sem ID FotMob identificado, {n_sem_liga_fotmob} sem liga mapeada no FotMob, {n_falha} falhas, "
+          f"{n_formacoes} formação(ões) derivada(s).")
 
 
 if __name__ == "__main__":
