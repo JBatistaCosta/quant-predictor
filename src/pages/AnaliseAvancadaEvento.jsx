@@ -803,12 +803,25 @@ const POSICAO_FINA_CURTA = {
   CDM: 'VOL', CM: 'MC', CAM: 'MEIA', RM: 'MD', LM: 'ME', RW: 'PD', LW: 'PE', ST: 'CA',
 };
 
-// Limiar pra separar Titular/Banco -- pra fonte_titular='real',
-// prob_titular_usada já vem exatamente 1.0/0.0 (is_starter confirmado, ver
-// rodar_jogador_mercados_previsto.py); pra 'previsto', é uma probabilidade
-// contínua de xi_previsto, então o corte em 0.5 é uma aproximação ("mais
-// provável titular que reserva"), não uma confirmação.
+// BUG REAL corrigido (visto em produção: até 24 jogadores no bucket
+// "Titular" do mesmo time) -- Titular/Banco usava um corte de 0.5 sobre
+// `prob_titular_usada`, que pra fonte_titular='previsto' é a probabilidade
+// CONTÍNUA e INDEPENDENTE por jogador do modelo de XI (cada jogador
+// pontuado isoladamente, sem restrição de somar 11 por time) -- nada
+// impede vários jogadores incertos de passarem de 0.5 ao mesmo tempo.
+// `is_titular_previsto` (nova coluna, ver migration
+// add_is_titular_previsto_jogador_mercados) é a seleção final de verdade
+// (`selecionar_titulares_por_posicao`, restrita por posição/formação,
+// sempre exatamente 11 -- mesma fonte que `dados_historicos.
+// obter_titular_atual` já usa corretamente noutro lugar do projeto) --
+// usar essa flag, não mais um corte sobre a probabilidade bruta.
+// Fallback pro corte antigo só pra linha antiga (gerada antes da
+// migration, is_titular_previsto ainda null) até o próximo ciclo de
+// prever_jogador_mercados.yml sobrescrever.
 const LIMIAR_TITULAR = 0.5;
+function ehTitular(l) {
+  return l.is_titular_previsto ?? ((l.prob_titular_usada ?? 0) >= LIMIAR_TITULAR);
+}
 
 // Config de colunas: cada uma sabe extrair seu próprio valor de ordenação
 // (`valorSort`) -- evita o header de sort e a lógica de sort divergirem.
@@ -842,7 +855,7 @@ const COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE = [
   { header: 'Posição (fina)', get: (l) => POSICAO_FINA_CURTA[l.posicao_detalhe] || '' },
   { header: 'Posição (grossa)', get: (l) => POSICAO_CURTA[l.players?.usual_position_id] || '' },
   { header: 'Fonte', get: (l) => ROTULO_FONTE_TITULAR[l.fonte_titular]?.texto || l.fonte_titular || '' },
-  { header: 'Papel', get: (l) => ((l.prob_titular_usada ?? 0) >= LIMIAR_TITULAR ? 'Titular' : 'Banco') },
+  { header: 'Papel', get: (l) => (ehTitular(l) ? 'Titular' : 'Banco') },
   { header: 'Prob. titular usada', get: (l) => numCSV(l.prob_titular_usada) },
   { header: 'Min. esperados', get: (l) => numCSV(l.minutos_esperados, 1) },
   { header: 'Chutes (λ)', get: (l) => numCSV(l.lambda_chutes_jogo) },
@@ -1017,8 +1030,8 @@ function SecaoJogadorMercados({
   );
 
   const Tabela = ({ titulo, linhas }) => {
-    const titulares = linhasOrdenadas(linhas.filter((l) => (l.prob_titular_usada ?? 0) >= LIMIAR_TITULAR));
-    const banco = linhasOrdenadas(linhas.filter((l) => (l.prob_titular_usada ?? 0) < LIMIAR_TITULAR));
+    const titulares = linhasOrdenadas(linhas.filter(ehTitular));
+    const banco = linhasOrdenadas(linhas.filter((l) => !ehTitular(l)));
     return (
       <div className="mb-4 last:mb-0">
         <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">{titulo}</p>
@@ -1638,7 +1651,7 @@ export default function AnaliseAvancadaEvento() {
           (j.status === 'scheduled' || finalizada)
             ? supabase
                 .from('player_match_estimates')
-                .select('team_id, player_id, fonte_titular, prob_titular_usada, minutos_esperados, taxa_conversao_bayesiana, taxa_no_alvo_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, chutes_no_alvo_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, chutes_no_alvo_por_jogo, posicao_detalhe, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, lambda_chutes_no_alvo_jogo, players(name, photo_url, usual_position_id)')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, is_titular_previsto, minutos_esperados, taxa_conversao_bayesiana, taxa_no_alvo_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, chutes_no_alvo_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, chutes_no_alvo_por_jogo, posicao_detalhe, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, lambda_chutes_no_alvo_jogo, players(name, photo_url, usual_position_id)')
                 .eq('match_id', matchId)
             : Promise.resolve({ data: [] }),
           // disp_r (Binomial Negativa) do mercado de chutes totais, se essa

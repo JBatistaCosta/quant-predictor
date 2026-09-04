@@ -180,7 +180,7 @@ def _buscar_candidatos_por_fonte(supabase: Client, match_ids: list[int]) -> tupl
         previsto_rows = dh._paginar_por_lotes_de_id(
             lambda lote, inicio, fim: (
                 supabase.table("xi_previsto")
-                .select("match_id, team_id, player_id, prob_titular")
+                .select("match_id, team_id, player_id, prob_titular, is_titular_previsto")
                 .in_("match_id", lote)
                 .order("match_id")
                 .range(inicio, fim)
@@ -486,6 +486,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 axis=1,
             )
             df["prob_titular_usada"] = df["is_starter"].astype(float)
+            df["is_titular_previsto"] = df["is_starter"].astype(bool)
         else:
             df["minutos_esperados"] = df.apply(
                 lambda r: r["prob_titular"] * media_titular.get(r["player_id"], 70.0)
@@ -493,6 +494,18 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 axis=1,
             )
             df["prob_titular_usada"] = df["prob_titular"]
+            # BUG REAL corrigido (ver migration add_is_titular_previsto_
+            # jogador_mercados): `prob_titular` é uma probabilidade
+            # CONTÍNUA e INDEPENDENTE por jogador (cada um pontuado
+            # isoladamente pelo modelo de XI, sem restrição de somar 11 por
+            # time) -- um corte de 0.5 sobre ela, como o frontend fazia
+            # antes, podia (e em produção chegava a) marcar até 24
+            # jogadores "titular" no mesmo time. `xi_previsto.
+            # is_titular_previsto` é a seleção final de verdade
+            # (`selecionar_titulares_por_posicao`, restrita por posição/
+            # formação, sempre exatamente 11) -- é essa que deve decidir o
+            # bucket Titular/Banco, não a probabilidade bruta.
+            df["is_titular_previsto"] = df["is_titular_previsto"].fillna(False).astype(bool)
 
         df = df.merge(fixtures.rename(columns={"id": "match_id"})[["match_id", "home_team_id", "away_team_id"]], on="match_id", how="left")
         df["mando"] = (df["team_id"] == df["home_team_id"]).astype(int)
@@ -516,6 +529,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
             linhas_saida.append({
                 "match_id": int(row["match_id"]), "team_id": int(row["team_id"]), "player_id": int(row["player_id"]),
                 "fonte_titular": fonte, "prob_titular_usada": float(row["prob_titular_usada"]),
+                "is_titular_previsto": bool(row["is_titular_previsto"]),
                 "minutos_esperados": float(row["minutos_esperados"]),
                 "taxa_conversao_bayesiana": float(row["taxa_conversao_bayesiana"]),
                 "taxa_no_alvo_bayesiana": float(row["taxa_no_alvo_bayesiana"]),
