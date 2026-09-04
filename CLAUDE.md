@@ -51,12 +51,22 @@ Cada arquivo é uma Vercel Function independente. Cada um documenta no cabeçalh
 ### Banco de dados (Supabase Postgres)
 Duas famílias de tabelas que **coexistem no mesmo banco, com propósitos diferentes**:
 - `equipes`/`instituicoes`/`eventos` — cadastro manual feito pelo usuário na UI (RLS autenticado, CRUD normal). Uso legado/complementar.
-- `teams`/`leagues`/`matches`/`match_stats`/`odds_market`/`model_predictions`/`team_strengths`/`league_model_params`/`team_elo`/`team_elo_history`/`players`/`match_formation_fotmob` e as demais tabelas `*_fotmob` — pipeline de dados reais ingerido automaticamente (RLS leitura pública, escrita só via `SUPABASE_SERVICE_ROLE_KEY`, nunca pela chave anon do frontend).
+- `teams`/`leagues`/`matches`/`match_stats`/`odds_market`/`model_predictions`/`team_strengths`/`league_model_params`/`team_elo`/`team_elo_history`/`players`/`match_formation_fotmob`/`match_goal_timeline`/`match_team_game_state` e as demais tabelas `*_fotmob` — pipeline de dados reais ingerido automaticamente (RLS leitura pública, escrita só via `SUPABASE_SERVICE_ROLE_KEY`, nunca pela chave anon do frontend).
 
 ### Esquema tático (`match_formation_fotmob`)
 A formação de cada time em cada partida ("4-2-3-1", "3-5-2") **não vem pronta de nenhuma fonte** — é derivada da grade de posições dos 11 titulares que o FotMob usa pra desenhar o campinho (`verticalLayout.y`, guardado em `match_lineup_fotmob.raw`/`field_pos_y`). A regra "grade → formação" mora **só** na função SQL `derivar_formacoes_fotmob(p_match_ids)` (migration `20260903120000_create_match_formation_fotmob.sql`); os dois caminhos de ingestão de escalação (`api/model-maintenance.js` e `scripts/ingerir_escalacao_pre_jogo.py`) chamam essa RPC depois do upsert em vez de reimplementar a lógica. `?tarefa=derivar-formacoes` em `model-maintenance.js` é a rede de segurança (janela de dias, escopo limitado — o backfill histórico completo é operação de migration, estoura o timeout da function). A view `v_confronto_formacoes` dá uma linha por partida com os dois lados e os saldos setoriais.
 
 Duas ressalvas que o código documenta e que não devem ser reintroduzidas como "sinal novo": (1) a grade do FotMob é **esquemática**, então métricas geométricas dela (altura do bloco, largura) são função determinística da própria formação, não medida de comportamento; (2) a formação é a estrutura de **entrada** em campo — não captura mudanças ao longo do jogo. `match_lineup_fotmob.formation` é coluna morta (nunca preenchida): use a tabela nova.
+
+### Estado do jogo (`match_goal_timeline` / `match_team_game_state`)
+Fase 2 da mesma frente. `match_shots_fotmob` (477 mil chutes, todos com minuto e xG) permite reconstruir o placar a cada instante, e daí quanto tempo cada time passou **perdendo/empatando/ganhando** e o que criou e sofreu nesse tempo. Regra derivada só em `derivar_game_state(p_match_ids)` (migration `20260904100000_create_game_state.sql`), chamada por RPC pelo ingestor depois do upsert do shotmap; `?tarefa=derivar-game-state` é a rede de segurança (backfill completo é operação de migration).
+
+Três coisas que **precisam** ser respeitadas por quem usar essas tabelas:
+- **Sempre normalize por `minutos`.** Somar `xg_pro` por estado mede quanto tempo o time passou naquela situação, não como ele joga — é exatamente o viés que a fase 2 existe pra remover. A view `v_time_game_state` já entrega tudo por 90 minutos naquele estado.
+- **Gol contra: `match_shots_fotmob.team_id` é quem CHUTOU, não quem foi beneficiado** — o gol conta pro adversário. Ler errado derruba a reconstrução do placar de 99,8% para 91,5%. `match_goal_timeline.para_casa` já resolve isso.
+- **`period='PenaltyShootout'` não conta pro placar** (454 "gols" de disputa) e **filtre por `placar_confere`** antes de treinar qualquer coisa.
+
+`match_events` **não** é uma tabela de eventos gerais: só tem cartões (amarelo/vermelho/segundo amarelo), sem gols e sem substituições. Gols vêm do shotmap.
 
 `equipes.pipeline_team_id` faz a ponte entre as duas famílias quando existe vínculo confirmado. Múltiplas tabelas de crosswalk (`team_source_ids`, `match_source_ids`, `liga_fonte_externa`) mapeiam os IDs internos para os de cada fonte externa (fbref, understat, API-Football, FotMob, football-data.org, OddsPapi, football-data.co.uk) — **nunca resolver esses mapeamentos por heurística de nome sem supervisão manual**: um mapeamento errado corrompe todo sync futuro (já aconteceu, ver `CONTEXTO_PROJETO.md`).
 
