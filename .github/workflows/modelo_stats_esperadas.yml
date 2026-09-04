@@ -1,0 +1,49 @@
+name: Modelo de estatísticas esperadas (xG/chutes/chutes no gol/escanteios)
+
+# Roda arquivos_do_claude/modelo_stats_esperadas.py -- ajusta um modelo
+# multiplicativo (ataque/defesa por time + mando + decaimento temporal, no
+# mesmo espírito do Dixon-Coles) para xG/chutes/chutes no gol/escanteios,
+# nas 6 ligas de TEMPORADAS_TREINO_POR_LIGA (temporada de teste fixa:
+# 2025). Grava valores esperados por jogo em `model_stat_estimates`
+# (model_name='stats_glm_v1') e os mercados over/under derivados
+# (escanteios via Poisson, chutes/chutes no gol via Binomial Negativa
+# calibrada por liga) em `model_predictions` -- é o que alimenta
+# log-loss/Brier/calibração/curva de lift desses 2 mercados novos em
+# api/model-stats.js (sem odds reais agregadas por time pra ROI/edge,
+# só disponíveis como player prop na OddsPapi).
+#
+# PRÉ-REQUISITO: match_stats populada (xG/chutes/chutes no gol/escanteios
+# por time-partida) -- já é o caso em produção via ingestão FBref/FotMob.
+#
+# Idempotente (upsert por match_id+model_name+stat / +market+selection) --
+# workflow_dispatch manual, sem cron: refit é barato mas não precisa rodar
+# toda vez que uma partida nova termina (mesmo espírito de
+# backfill_predicoes_historicas.yml).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  rodar-modelo-stats-esperadas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar modelo de estatísticas esperadas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python arquivos_do_claude/modelo_stats_esperadas.py
