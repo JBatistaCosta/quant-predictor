@@ -351,12 +351,25 @@ async function buscarTudoPaginadoKeyset(criarQuery, colunasOrdem) {
 // `model_name` PRÓPRIO (a probabilidade na linha já É a calibrada), por
 // isso não passam pelo mesmo cruzamento com `model_calibration` que os
 // modelos do pipeline antigo passam mais abaixo.
+// BUG REAL corrigido nesta sessão (mesma classe do fix em api/backtest-
+// betting.js): só existia o ramo `1X2` -- `predicoes.mercado` também grava
+// `over_under_2.5` e os novos mercados de gols por time (`over_under_
+// team_1/2_X.X`, via `prob_over`/`prob_under`), mas a query abaixo filtrava
+// `mercado='1X2'` incondicionalmente, então `dixon_coles_v1` nunca aparecia
+// em `/api/model-stats` pra nenhum desses mercados, mesmo com odds reais
+// (over_under_2.5/gols por time) ou sem elas (calibração/log-loss/lift
+// ainda funcionariam). Generalizado pra ler `r.mercado` e branch pelo tipo.
 function normalizarPredicoesBenchmarking(rows) {
   const linhas = [];
   for (const r of rows) {
-    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
-    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
-    linhas.push({ model_name: r.model_name, market: '1X2', selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+    if (r.mercado === '1X2') {
+      linhas.push({ model_name: r.model_name, market: '1X2', selection: 'home', probability: Number(r.prob_home), match_id: r.match_id });
+      linhas.push({ model_name: r.model_name, market: '1X2', selection: 'draw', probability: Number(r.prob_draw), match_id: r.match_id });
+      linhas.push({ model_name: r.model_name, market: '1X2', selection: 'away', probability: Number(r.prob_away), match_id: r.match_id });
+    } else if (r.prob_over != null && r.prob_under != null) {
+      linhas.push({ model_name: r.model_name, market: r.mercado, selection: 'over', probability: Number(r.prob_over), match_id: r.match_id });
+      linhas.push({ model_name: r.model_name, market: r.mercado, selection: 'under', probability: Number(r.prob_under), match_id: r.match_id });
+    }
   }
   return linhas;
 }
@@ -631,13 +644,17 @@ export default async function handler(req, res) {
         }, ['match_id', 'id']);
     // `predicoes` (Model Benchmarking) só tem 1X2 -- pedir outro mercado
     // já filtra tudo fora, sem precisar de query condicional separada.
-    const promisePredicoesBenchmarking = mercado && mercado !== '1X2'
-      ? Promise.resolve([])
-      : buscarTudoPaginado(() => {
-          let q = supabase.from('predicoes').select('match_id, model_name, prob_home, prob_draw, prob_away').eq('mercado', '1X2');
-          if (modelo) q = q.eq('model_name', modelo);
-          return q;
-        });
+    const promisePredicoesBenchmarking = buscarTudoPaginado(() => {
+      let q = supabase.from('predicoes').select('match_id, model_name, mercado, prob_home, prob_draw, prob_away, prob_over, prob_under');
+      if (modelo) q = q.eq('model_name', modelo);
+      // Sem `?mercado=` na URL, mantém o filtro em '1X2' (mesmo custo/
+      // volume de antes do fix -- `predicoes` já tem 192k+ linhas, e um
+      // scan sem filtro nenhum arrisca o maxDuration de 60s deste endpoint,
+      // ver vercel.json). Um `mercado` específico (over_under_2.5,
+      // over_under_team_1/2_X.X etc.) filtra pra só essa fatia.
+      q = q.eq('mercado', mercado || '1X2');
+      return q;
+    });
     // `odds_market` tem DEZENAS de outros mercados da Pinnacle (handicap
     // asiático/europeu em várias linhas, placar exato, cartões, 1º/2º tempo
     // etc. -- ver api/model-maintenance.js `tarefaOddsHistorico`), então
