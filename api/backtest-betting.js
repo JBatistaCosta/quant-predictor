@@ -276,7 +276,21 @@ export default async function handler(req, res) {
       // várias -- diferente de `media_mercado`, que já É uma média. Usado
       // só quando `media_mercado` não cobre o match+mercado (ver o merge
       // logo abaixo, `oddsRowsAntigas` tem prioridade).
-      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle')),
+      //
+      // BUG REAL corrigido nesta sessão (achado testando em produção): sem
+      // `.eq('market', mercado)`, essa consulta pagina TODA a Pinnacle
+      // fechamento (664 MIL linhas -- handicap asiático/europeu em várias
+      // linhas, placar exato, cartões, 1º/2º tempo etc., ver mesmo alerta
+      // já documentado em api/model-stats.js sobre esse volume), estourando
+      // o maxDuration de 30s deste endpoint (FUNCTION_INVOCATION_TIMEOUT
+      // confirmado em produção). Só faz sentido buscar pinnacle quando um
+      // `mercado` específico foi pedido (é exatamente o caso de uso do
+      // fallback -- a chamada sem filtro nenhum já não lia nada além de
+      // 1X2 de `predicoes`/`media_mercado` antes desta extensão, então não
+      // perde cobertura real).
+      mercado
+        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', mercado))
+        : Promise.resolve([]),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
       // Sem filtro `.not(...)` -- também precisamos de shots/shots_on_target
       // (mercados novos), que nem sempre são preenchidos junto com corners
