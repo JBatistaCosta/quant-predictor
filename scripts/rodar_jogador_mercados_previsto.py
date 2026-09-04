@@ -513,7 +513,20 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 axis=1,
             )
             df["prob_titular_usada"] = df["is_starter"].astype(float)
-            df["is_titular_previsto"] = df["is_starter"].astype(bool)
+            # DADO DE ORIGEM CORROMPIDO (achado real 04/09): match_lineup_
+            # fotmob pode ter mais (ou menos) de 11 is_starter=true por
+            # match_id+team_id -- confirmado via SQL em produção (95 grupos
+            # com >11, a maioria com múltiplos captured_at distintos --
+            # captura duplicada nunca limpa a flag is_starter antiga do
+            # jogador que não está mais na escalação nova). Confiar
+            # cegamente nisso reintroduziria o mesmo bug de >11 titulares
+            # que motivou toda essa correção, só que pela fonte 'real' em
+            # vez de 'previsto'. Só marca titular quando o grupo bate
+            # exatamente 11 -- senão ninguém é titular nesse grupo
+            # específico (mesma garantia incondicional já aplicada no
+            # frontend ehTitular(), agora replicada aqui na origem).
+            n_starters_por_grupo = df.groupby(["match_id", "team_id"])["is_starter"].transform("sum")
+            df["is_titular_previsto"] = df["is_starter"].astype(bool) & (n_starters_por_grupo == 11)
         else:
             df["minutos_esperados"] = df.apply(
                 lambda r: r["prob_titular"] * media_titular.get(r["player_id"], 70.0)
