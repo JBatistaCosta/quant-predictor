@@ -815,12 +815,23 @@ const POSICAO_FINA_CURTA = {
 // sempre exatamente 11 -- mesma fonte que `dados_historicos.
 // obter_titular_atual` já usa corretamente noutro lugar do projeto) --
 // usar essa flag, não mais um corte sobre a probabilidade bruta.
-// Fallback pro corte antigo só pra linha antiga (gerada antes da
-// migration, is_titular_previsto ainda null) até o próximo ciclo de
-// prever_jogador_mercados.yml sobrescrever.
-const LIMIAR_TITULAR = 0.5;
+//
+// SEGUNDO BUG REAL corrigido (mesma classe, achado em produção de novo
+// depois do fix acima): o fallback original ("linha antiga sem
+// is_titular_previsto ainda, cai pro corte de 0.5") reintroduzia o MESMO
+// bug pra linhas ÓRFÃS -- jogador que saiu do elenco atual (xi_previsto
+// já não o lista mais, ex. transferência) nunca mais recebe
+// is_titular_previsto novo, mas a linha antiga (com prob_titular_usada
+// alta de quando ainda estava no elenco) nunca é apagada de
+// player_match_estimates -- confirmado em produção (Malick Fofana,
+// partida 16055, prob_titular_usada=0.83 de uma linha de 3 dias atrás,
+// somando com os 11 corretos do resto do elenco recém-atualizado).
+// Removido o fallback: `is_titular_previsto` não-true (null incluído)
+// agora É sempre Banco -- garante que o bucket Titular nunca passe de 11,
+// não importa quantas linhas órfãs se acumulem. Ver limpeza da causa raiz
+// (delete de linha órfã) em rodar_jogador_mercados_previsto.py.
 function ehTitular(l) {
-  return l.is_titular_previsto ?? ((l.prob_titular_usada ?? 0) >= LIMIAR_TITULAR);
+  return l.is_titular_previsto === true;
 }
 
 // Config de colunas: cada uma sabe extrair seu próprio valor de ordenação
