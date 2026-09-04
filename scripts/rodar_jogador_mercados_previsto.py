@@ -486,6 +486,28 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
     for fonte, df_candidatos in (("real", df_real), ("previsto", df_previsto)):
         if df_candidatos.empty:
             continue
+
+        # Limpa linha órfã (jogador que não é mais candidato pra este
+        # match/team nesta fonte -- saiu do elenco atual/xi_previsto, ex.
+        # transferência) ANTES de qualquer filtro de feature (dropna
+        # abaixo), pra não confundir "sem dado bayesiano ainda" com "não é
+        # mais candidato" -- mesmo padrão já usado em
+        # scripts/rodar_xi_previsto.py pra xi_previsto (`ids_atuais`/
+        # `not_.in_`, delete explícito em vez de só resetar flag). Achado
+        # real em produção (ver migration add_is_titular_previsto_
+        # jogador_mercados): sem isso, jogador que sai do elenco atual
+        # (Malick Fofana, Ainsley Maitland-Niles, partida 16055) ficava com
+        # linha órfã em player_match_estimates pra sempre, com
+        # is_titular_previsto nunca atualizado -- o frontend já trata isso
+        # como Banco (nunca mais reintroduz o bug de >11 titulares), mas a
+        # linha em si seguia suja (chutes/gols/xG de dias atrás exibidos
+        # como se fossem do elenco atual).
+        for (match_id, team_id), grupo in df_candidatos.groupby(["match_id", "team_id"]):
+            ids_atuais = grupo["player_id"].astype(int).tolist()
+            supabase.table("player_match_estimates").delete().eq("match_id", int(match_id)).eq(
+                "team_id", int(team_id)
+            ).eq("fonte_titular", fonte).not_.in_("player_id", ids_atuais).execute()
+
         bayesiano = _bayesiano_atual(supabase, df_candidatos, nome_liga_por_team_id)
         if bayesiano.empty:
             continue
