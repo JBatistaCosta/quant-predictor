@@ -253,7 +253,7 @@ def _minutos_medios_titular_reserva(supabase: Client, player_ids: list[int]) -> 
             .range(inicio, fim)
         ),
         player_ids,
-        tamanho_lote=100,
+        tamanho_lote=50,
     )
     lineup_rows = dh._paginar_por_lotes_de_id(
         lambda lote, inicio, fim: (
@@ -264,7 +264,7 @@ def _minutos_medios_titular_reserva(supabase: Client, player_ids: list[int]) -> 
             .range(inicio, fim)
         ),
         player_ids,
-        tamanho_lote=100,
+        tamanho_lote=50,
     )
     if not stats_rows:
         return {}, {}
@@ -307,7 +307,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
             .range(inicio, fim)
         ),
         player_ids,
-        tamanho_lote=100,
+        tamanho_lote=50,
     )
     # tamanho_lote reduzido de 200 pra 100 (mesmo valor já usado em
     # _minutos_medios_titular_reserva acima, pra match_player_stats_fotmob) --
@@ -317,6 +317,17 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     # dentro da paginação por OFFSET (run agendada de 2026-08-31 13:27,
     # timeout na página offset=20000 de um único lote) -- mesma classe de
     # custo quadrático já documentada em `_paginar_por_lotes_de_id`.
+    # REDUZIDO DE NOVO 100->50 (04/09): recorreu -- run de 04/09 14:18
+    # (id 33882916790) estourou `statement_timeout` de novo, dessa vez na
+    # página offset=5000 de um lote de 100 (o lote anterior, também de
+    # 100, tinha chegado até offset=9000 sem erro -- o volume por lote
+    # varia bastante conforme a composição de jogadores, não é um número
+    # fixo). Média global medida via SQL agora: 41,7 linhas/jogador em
+    # match_player_stats_fotmob (777.631 linhas / 18.647 jogadores) --
+    # segue subindo com o tempo (mais partidas ingeridas), então o mesmo
+    # lote que era seguro em 30/08 deixou de ser. `tentado keyset antes,
+    # revertido` (ver `_paginar_por_lotes_de_id`) -- reduzir o lote segue
+    # sendo o remédio real disponível pra essa tabela especificamente.
     stats_rows = dh._paginar_por_lotes_de_id(
         lambda lote, inicio, fim: (
             supabase.table("match_player_stats_fotmob")
@@ -327,7 +338,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
             .range(inicio, fim)
         ),
         player_ids,
-        tamanho_lote=100,
+        tamanho_lote=50,
     )
     df_stats = pd.DataFrame(stats_rows) if stats_rows else pd.DataFrame(columns=["player_id", "minutes_played"])
     minutos_totais = df_stats.groupby("player_id")["minutes_played"].sum().to_dict()
