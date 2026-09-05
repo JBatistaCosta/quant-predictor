@@ -429,16 +429,216 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 11 — StatsBomb Open Data: seis temporadas completas existem (não só La Liga 2015/16), e elas preenchem a lacuna de escanteio/falta por minuto
+
+O Achado 9 registrou que não existe timeline de escanteio nem de falta no banco do projeto — só total por partida. O usuário indicou o **StatsBomb Open Data** (`github.com/statsbomb/open-data`, gratuito, evento a evento com minuto exato) como possível fonte.
+
+**Correção de um erro meu na primeira verificação.** Checando só 2 das 18 "temporadas" de La Liga do dataset (2018/19 e 2020/21, ambas coincidentemente só com jogos do Barcelona), eu generalizei errado que **nenhuma** liga tinha temporada completa. Contando partida por partida das 18 temporadas de La Liga (não só 2), achei uma exceção real:
+
+| Temporada de La Liga | Partidas | O que é |
+|---|---|---|
+| **2015/2016** | **380** | **Liga inteira** — 20 times, cada um com exatamente 38 jogos |
+| As outras 17 (2004/05–2020/21, exceto 2015/16) | 7 a 38 cada | Jogos do Barcelona, e **nem sempre completos** (2004/05 só tem 7 dos 38 jogos do Barcelona daquele ano) |
+
+Bundesliga, Ligue 1, Serie A e Premier League **masculinas** continuam sem nenhuma temporada completa (mesmo levantamento do que ficou registrado antes desta correção — um time notável cobrindo a temporada inteira, ou uma amostra de ~20-26% da liga espalhada pelos times).
+
+**Varredura completa nas outras ~15 ligas domésticas do dataset (pedido de acompanhamento): mais 5 temporadas completas, todas em ligas femininas + uma masculina fora do "top 5" europeu.** Confirmado por contagem de jogos por time (completo = todos os times com o mesmo número de jogos):
+
+| Liga | Temporada | Partidas | Times | Jogos/time |
+|---|---|---|---|---|
+| FA Women's Super League (Inglaterra) | 2023/24 | 132 | 12 | 22 — todos iguais |
+| Frauen Bundesliga (Alemanha) | 2023/24 | 132 | 12 | 22 — todos iguais |
+| Liga F (Espanha) | 2023/24 | 240 | 16 | 30 — todos iguais |
+| Serie A Feminino (Itália) | 2023/24 | 130 | 10 | 26 — todos iguais |
+| Indian Super League (masculina) | 2021/22 | 115 | 11 | 20-23 — pontos corridos completo (20 = todos contra todos ida/volta) + mata-mata dos classificados |
+
+Ficaram de fora por estarem genuinamente incompletas (contagem desigual entre times): FA WSL 2020/21 (falta 1 jogo), FA WSL 2018/19, NWSL 2023/2018, MLS 2023 (só 6 jogos). FA WSL 2019/20 é caso especial — a temporada real foi encurtada pela pandemia, então a "incompletude" ali é do futebol de verdade, não do dataset.
+
+**Total revisado:** das ~15 ligas domésticas de clubes no dataset, **6 temporadas são completas** — La Liga 2015/16 e as 5 acima. Nenhuma delas é uma liga que o projeto acompanha hoje (Brasileirão, La Liga atual, Bundesliga, Ligue 1, Serie A, Premier League) — a única sobreposição é La Liga, e só naquela temporada específica de 2015/16.
+
+### Escanteio e falta por minuto, La Liga 2015/16 completa (380 partidas, evento a evento)
+
+Baixei o evento de cada uma das 380 partidas (`events/{match_id}.json`), contei `type.name='Foul Committed'` e `type.name='Pass'` com `pass.type.name='Corner'`, por minuto. **12.136 faltas e 3.841 escanteios no total** — 31,9 faltas/jogo e 10,1 escanteios/jogo (o escanteio bate bem com a faixa que já tínhamos visto no Achado 9 pras ligas europeias via `match_stats`, 9,25–10,57/jogo — boa validação cruzada entre fontes independentes).
+
+**Bug do relógio (2ª vez nesta frente, mesma classe do Achado 5) — pego antes de publicar, por pergunta direta do usuário.** A primeira versão desta tabela usava o campo `minute` do StatsBomb puro e mostrava um pico isolado enorme no bloco 45-50 (falta 200,3/100, escanteio 64,5/100), que eu descrevi como "o mesmo salto no intervalo do gol/chute/cartão". **Estava errado.** O StatsBomb usa `period` (1 ou 2) + `minute`, e o minuto do 2º tempo **também começa contando do 45** em vez de continuar de onde o 1º tempo parou (1º tempo termina em 46 nesta base, incluindo acréscimo; 2º tempo começa em 45) — exatamente o mesmo defeito que o Achado 5 já tinha achado e corrigido no `match_shots_fotmob`. O bloco "45-50" estava somando o fim dos acréscimos do 1º tempo com o começo do 2º tempo como se fossem contínuos, quando têm o intervalo inteiro (~15 min reais) entre os dois.
+
+**Corrigido com relógio monótono** (`clock = minute` no 1º tempo; `clock = minute + fh_over` no 2º, `fh_over` = quanto o 1º tempo passou de 45 — mesma fórmula do Achado 5), o quadro muda:
+
+| Bloco (15 min) | Faltas /jogo | Escanteios /jogo |
+|---|---|---|
+| 0-15 | 4,68 | 1,47 |
+| 15-30 | 5,05 | 1,56 |
+| 30-45 | 5,36 | 1,52 |
+| 45-60 | 5,23 | 1,78 |
+| 60-75 | 5,02 | 1,68 |
+| 75-90 | 5,06 | 1,64 |
+| 90+ | 1,55 | 0,45 |
+
+**Conclusão revisada, mais modesta que a primeira versão:**
+- **Falta não sobe no 2º tempo.** Fica achatada o jogo inteiro (4,68 a 5,36, sem padrão claro) — o "salto" que eu tinha reportado era, na maior parte, o artefato do relógio.
+- **Escanteio ainda mostra uma diferença real, mas bem menor que o "salto" original.** 2º tempo (1,64-1,78) consistentemente acima do 1º tempo (1,47-1,56) — um efeito real, só que suave, não um pico isolado dramático.
+
+**Não dá mais pra contar escanteio/falta como "quinto e sexto sinal" do mesmo salto de intervalo que gol/chute/cartão mostram (Achados 8/9)** — só o escanteio sustenta uma versão fraca dessa história; falta não sustenta nenhuma.
+
+### Cartão amarelo e vermelho — mesma fonte, relógio corrigido desde o início, confirma o Achado 9 sem precisar de ajuste
+
+Cartão sai de dois lugares no StatsBomb: dentro do evento `Foul Committed` (`foul_committed.card.name`) ou como evento próprio `Bad Behaviour` (`bad_behaviour.card.name`, ex.: reclamação sem falta). Contei os dois, já com o relógio monótono corrigido (aprendendo do erro do escanteio/falta acima).
+
+**5,48 cartões amarelos/jogo e 0,287 vermelhos/jogo** (soma ~5,77 — um pouco acima do 4,91 que o Achado 9 achou pra La Liga 2023-2025 via FotMob; temporadas diferentes, plausível).
+
+| Bloco (15 min) | Amarelo /jogo | Vermelho /jogo |
+|---|---|---|
+| 0-15 | 0,32 | 0,016 |
+| 15-30 | 0,69 | 0,013 |
+| 30-45 | 0,92 | 0,029 |
+| 45-60 | 0,87 | 0,037 |
+| 60-75 | 1,09 | 0,061 |
+| 75-90 | 1,17 | 0,084 |
+| 90+ | 0,44 | 0,047 |
+
+**Isso bate exatamente com o Achado 9 (via FotMob), sem precisar de correção nenhuma desta vez:**
+- **Amarelo sobe de forma constante o jogo inteiro**, sem salto no intervalo nem platô — igual ao formato já visto.
+- **Vermelho se concentra muito mais no fim**: a taxa nos últimos 15 minutos (0,084/jogo) é mais de 5x a dos primeiros 15 (0,016/jogo) — bate com o Achado 6 (minuto mediano do vermelho: 72').
+
+É uma validação cruzada genuína: mesma conclusão, fonte de dado totalmente diferente (StatsBomb vs FotMob), liga e temporada diferentes das que geraram o Achado 9. Ao contrário de escanteio/falta (que precisaram de correção), aqui o padrão já saiu certo na primeira tentativa — porque desta vez o relógio foi corrigido antes de calcular, não depois.
+
+**O que isso NÃO prova:** é uma temporada, de uma liga, com o dado de outro fornecedor (StatsBomb, não FotMob) — não dá pra fundir com `match_shots_fotmob`/`match_events` pra virar coluna nova no banco sem decidir antes se vale a pena manter uma segunda fonte só pra essas métricas. Fica registrado como confirmação descritiva do padrão, não como pipeline novo.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 12 — falta e cartão por zona do campo: a hipótese do "último homem" se sustenta com força
+
+Pergunta: como se distribui falta/cartão pelas zonas do campo, e dá pra usar isso como indício de jogador predisposto a cometer falta/cartão — em particular, a hipótese de que o **último homem cometendo falta pra impedir contra-ataque** puxa o cartão pra cima? StatsBomb guarda a posição exata (x,y) e o `play_pattern` (como a jogada começou — inclui `From Counter`) de cada evento, então dá pra testar direto. Mesma base: La Liga 2015/16, 380 partidas, 12.136 faltas com localização.
+
+### Por zona do campo
+
+| Terço (da perspectiva de quem faz a falta) | % das faltas | Taxa de cartão na zona |
+|---|---|---|
+| Defensivo (perto do próprio gol) | 19,2% | **24,2%** |
+| Meio-campo | 56,1% | 13,0% |
+| Ofensivo | 24,7% | 9,2% |
+
+Só 1 em cada 5 faltas sai no terço defensivo, mas é lá que o cartão sai com mais frequência — quase o dobro da taxa do meio-campo. (Lateralmente, falta se distribui 37,1% direita / 34,2% esquerda / 28,7% centro — mais nos corredores que no meio, efeito menor e não perseguido a fundo aqui.)
+
+### Por situação de jogo (`play_pattern`)
+
+| Situação | % das faltas | Taxa de cartão |
+|---|---|---|
+| Jogo normal | 49,4% | 14,8% |
+| **Contra-ataque** | 3,3% | **31,4%** |
+| Bola parada (lançamento/lateral/tiro de meta/escanteio) | ~42% | 11-16% |
+
+Falta em contra-ataque é rara mas converte em cartão quase o dobro da média geral.
+
+### O teste direto da hipótese: zagueiro/lateral + contra-ataque + terço defensivo
+
+| Cenário | Faltas | % com cartão | % vira cartão vermelho |
+|---|---|---|---|
+| Base geral | 12.136 | 14,2% | 0,75% |
+| Zagueiro/lateral, fora de contra-ataque | 3.705 | 18,9% | — |
+| Zagueiro/lateral + contra-ataque, qualquer zona | 174 | 37,4% | — |
+| **Zagueiro/lateral + contra-ataque + terço defensivo ("último homem" clássico)** | **48** | **52,1%** | **2,08%** |
+| Volante + contra-ataque (segunda linha de contenção) | 119 | 30,3% | — |
+
+**A hipótese se sustenta com força.** Quando um zagueiro/lateral comete falta durante um contra-ataque, no próprio terço defensivo, **mais da metade dessas faltas vira cartão** — 3,7x a taxa média geral — e a chance de virar vermelho é quase 3x maior que a média (falta que impede uma chance clara de gol tende a ser punida mais duro, como as regras preveem). Volante em contra-ataque (a segunda linha de contenção antes do zagueiro) mostra o mesmo efeito, um pouco mais fraco.
+
+### Ressalvas
+
+- **Amostra pequena no cenário mais específico** (48 faltas) — real e direcional, mas não é uma estatística robusta o suficiente pra virar peso de modelo sem mais temporadas.
+- **Coordenadas dependem de `location` estar presente e o terço ser calculado do lado de quem comete a falta** — StatsBomb registra o evento na perspectiva de ataque de cada time, então terço "defensivo" aqui já é "perto do próprio gol de quem fez a falta", não precisa de ajuste extra.
+- **Isso é StatsBomb (La Liga 2015/16), não a base do projeto** — mesma ressalva do resto do achado 11: confirma um padrão, não é pipeline pronto pro `match_events` (que nem guarda local do cartão hoje).
+
+**Sobre previsão de jogador:** isto aponta pra uma direção concreta — jogadores que atuam como último homem (zagueiro central, lateral em sistema de linha 4) e times que sofrem mais contra-ataques têm exposição estrutural maior a cartão, independente de "personalidade agressiva" do jogador. Pra virar um indicador de jogador específico (não só de posição), precisaria de amostra por jogador ao longo de várias temporadas — o que essa única temporada de La Liga não permite com confiança individual.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 13 — matriz de transição de bola entre zonas do campo, e como ela muda por força do time (base pra simulação de jogo)
+
+Pergunta: taxas de transição da bola entre zonas do campo, visando uso futuro em simulação. Mesma base StatsBomb (La Liga 2015/16, 380 partidas), usando passe completo + condução (`Pass`/`Carry`, com local de início e fim) — 552.934 ações mapeadas numa grade de 9 zonas (3 terços de comprimento × 3 corredores de largura, mesma grade do achado 12).
+
+### O que acontece quando o time tem a bola em cada zona (geral, todos os times)
+
+| Zona | % vira chute | % perde a posse | % continua (passe/condução) |
+|---|---|---|---|
+| Defensiva-esquerda | 0,00% | 15,7% | 84,3% |
+| Defensiva-centro | 0,00% | 18,0% | 82,0% |
+| Defensiva-direita | 0,00% | 16,9% | 83,1% |
+| Meio-esquerda | 0,01% | 12,8% | 87,2% |
+| Meio-centro | 0,04% | 10,9% | 89,1% |
+| Meio-direita | 0,01% | 13,8% | 86,2% |
+| Ataque-esquerda | 1,40% | 21,4% | 77,2% |
+| **Ataque-centro** | **19,94%** | 18,3% | 61,8% |
+| Ataque-direita | 1,26% | 22,0% | 76,7% |
+
+Ataque-centro é disparado a zona mais decisiva (quase 1 em cada 5 vezes que a bola chega lá vira chute). Perda de posse é maior nos corredores ofensivos (21-22%) que no meio da própria defesa (11-14%).
+
+### Matriz de transição (condicional a manter a posse)
+
+| De \ Para | Def-Esq | Def-Cen | Def-Dir | Meio-Esq | Meio-Cen | Meio-Dir | Atq-Esq | Atq-Cen | Atq-Dir |
+|---|---|---|---|---|---|---|---|---|---|
+| **Def-Esq** | 58,3% | 14,3% | 1,7% | 20,1% | 3,8% | 0,9% | 0,6% | 0,2% | 0,1% |
+| **Def-Cen** | 11,6% | 49,7% | 11,3% | 7,7% | 10,7% | 7,6% | 0,5% | 0,4% | 0,5% |
+| **Def-Dir** | 1,6% | 13,7% | 58,2% | 0,9% | 3,9% | 20,6% | 0,1% | 0,2% | 0,7% |
+| **Meio-Esq** | 3,9% | 1,8% | 0,2% | 70,2% | 10,3% | 1,4% | 10,3% | 1,3% | 0,7% |
+| **Meio-Cen** | 0,8% | 3,2% | 0,8% | 14,3% | 56,8% | 13,8% | 3,1% | 4,1% | 3,1% |
+| **Meio-Dir** | 0,2% | 1,8% | 3,6% | 1,4% | 10,9% | 70,0% | 0,6% | 1,4% | 10,2% |
+| **Atq-Esq** | 0,0% | 0,0% | 0,0% | 7,9% | 1,4% | 0,1% | 79,1% | 10,3% | 1,2% |
+| **Atq-Cen** | 0,0% | 0,0% | 0,0% | 1,2% | 5,0% | 1,2% | 12,0% | 67,7% | 12,9% |
+| **Atq-Dir** | 0,0% | 0,0% | 0,0% | 0,1% | 1,3% | 7,2% | 1,3% | 9,8% | 80,2% |
+
+Dois padrões pra guardar: **a bola tende a ficar no próprio corredor** (a diagonal é sempre o maior valor de cada linha, 58-80%) e **quase nunca pula direto de defesa pra ataque numa ação só** (todas as células defesa→ataque ≤0,7%) — a progressão passa quase sempre pelo meio-campo.
+
+### Segmentando por força do time — pedido de acompanhamento
+
+Times classificados em 3 grupos por saldo de gol na temporada (top 7 / meio 6 / bottom 7 dos 20 times) e, separadamente, por % de passe certo (controle técnico puro, independente de resultado):
+
+| Zona (média) | TOP 7 (saldo forte) — perda | MID 6 — perda | BOT 7 (saldo fraco) — perda |
+|---|---|---|---|
+| Defensiva | 14,2% | 17,6% | 19,1% |
+| Meio-campo | 10,9% | 12,6% | 14,2% |
+| Ataque-centro | 17,8% | 18,6% | 18,6% |
+| Ataque-lados | 20,1% | 21,2% | 24,3% |
+
+| Zona (média) | Melhor controle técnico — perda | Pior controle técnico — perda |
+|---|---|---|
+| Defensiva | 13,3% | 20,4% |
+| Meio-campo | 9,2% | 15,5% |
+| Ataque | 16,7% | 22,4% |
+
+**Gradiente limpo e consistente:** time forte (por saldo de gol ou por % de passe) perde a bola menos em praticamente toda zona do campo, não só no ataque — efeito mais forte ainda quando segmentado por controle técnico puro (30-45% menos perda em toda zona, comparando melhor com pior).
+
+**Achado que não é óbvio:** no ataque-centro, o time **fraco chuta mais** quando chega lá (23,3%) do que o forte (18,5%). Não é que ele cria mais — chega menos vezes na zona e, ao chegar, tende a "aproveitar logo" (situação mais desesperada/menos organizada), enquanto o time forte segura mais a posse procurando um chute melhor antes de finalizar.
+
+### Como usar numa simulação
+
+A matriz geral + a tabela de chute/perda por zona já dá pra montar uma cadeia de Markov simples: sorteia se a ação na zona atual vira chute, perde a posse (zona espelhada passa pro adversário) ou continua (sorteia a próxima zona pela matriz). A segmentação por força permite ajustar essas probabilidades por perfil de time em vez de usar a mesma matriz pra qualquer confronto.
+
+### Ressalvas
+
+- **Grade grossa (3×3 = 9 zonas).** Pra simulação mais realista, provavelmente compensa uma grade mais fina (ex.: 6×3 ou 5×3) — o código já está pronto pra isso, só trocar os limiares de `zone()`.
+- **"Perda de posse" é só passe incompleto/saiu/impedimento + desarme sofrido + erro de controle** — não captura falta cometida contra o time, nem todo motivo possível de a bola sair de jogo.
+- **Tiers de força têm amostra pequena** (6-7 times cada) — direção clara, mas não é uma curva suave, é um agrupamento grosso.
+- **Mesma ressalva de sempre:** é uma temporada, de uma liga (La Liga 2015/16, StatsBomb) — não é pipeline do projeto, não teve validação de IC 95%, e não necessariamente generaliza pras ligas que o projeto acompanha.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
 
-Aconteceu duas vezes nesta frente:
+Aconteceu três vezes nesta frente:
 
 - O **Achado 3** passou em todas as invariantes (espelhamento perfeito, minutos fechando) e mesmo assim a conclusão agregada estava confundida com força de equipe.
 - O **Achado 5** era um bug de ordenação que reconciliava perfeitamente em todos os totais, porque totais não têm ordem.
+- O **Achado 11** (escanteio/falta via StatsBomb) reproduziu **o mesmo bug do Achado 5** — 2º tempo com minuto reiniciando em vez de continuar — numa fonte de dado completamente diferente, meses depois de já saber exatamente que padrão procurar. Só não passou pro arquivo final porque o usuário perguntou "isso não pode ser artefato do intervalo?" antes de eu dar o achado por fechado.
 
-Em ambos os casos o que expôs o problema foi **procurar um confundidor específico**, não rodar mais verificações de consistência.
+Em todos os casos o que expôs o problema foi **procurar um confundidor específico**, não rodar mais verificações de consistência. E saber de um bug numa fonte não impede o mesmo bug de reaparecer despercebido numa fonte nova — vale a pena checar deliberadamente por ele toda vez que uma fonte externa nova trouxer relógio de partida.
 
 ---
 
@@ -470,4 +670,4 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 - **Formalizar o recorte de 5 em 5 minutos do Achado 6 na infraestrutura, se for usado de novo.** Hoje é uma consulta ad-hoc (cruza `match_shots_fotmob` com `match_events` na hora, calculando o relógio na mão) — não uma coluna ou função versionada como o resto da frente. Vale a pena virar função/view só se essa granularidade for reaproveitada; senão, reconstruir na hora quando precisar evita manter mais uma peça de infraestrutura.
 - ~~Perfil temporal por faixa de minuto~~ — **FEITO em 05/09 pro formato de gols, chutes, chutes ao gol e cartões entre ligas (Achados 8 e 9)**, e no processo apareceu um problema de cobertura de dado por liga-temporada não documentado antes (ver achado 8). Falta ainda o perfil temporal condicionado a estado de placar (achado 3/4) — essa parte específica foi começada e interrompida quando expôs o bug do Achado 5, e não foi refeita depois da correção do relógio.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.
-- **Timeline de escanteio e falta.** O achado 9 mostrou que não dá pra medir taxa por minuto de escanteio/falta hoje — só existe total por partida (`match_stats`). Precisaria de um ingestor novo (se o payload do FotMob já capturado tiver essa informação por minuto — não confirmado, exigiria 1-2 chamadas de descoberta antes de generalizar, regra padrão do projeto pra API externa).
+- **Timeline de escanteio e falta como coluna permanente no banco.** O achado 9 mostrou que não existe hoje — só total por partida (`match_stats`). O achado 11 confirma o padrão temporal (salto no intervalo) usando uma temporada completa do StatsBomb Open Data (La Liga 2015/16, fonte externa, evento a evento), mas isso foi uma consulta pontual, não virou pipeline: continua em aberto decidir se vale ingerir isso de verdade (StatsBomb só cobre essa temporada de La Liga por completo — não dá pra generalizar pras outras ligas do projeto) ou confirmar se o payload do FotMob já capturado tem escanteio/falta por minuto (não verificado).
