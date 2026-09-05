@@ -429,7 +429,7 @@ Descritivo, sem IC 95%.
 
 ---
 
-## Achado 11 — StatsBomb Open Data: uma liga completa existe (La Liga 2015/16), e ela preenche a lacuna de escanteio/falta por minuto
+## Achado 11 — StatsBomb Open Data: seis temporadas completas existem (não só La Liga 2015/16), e elas preenchem a lacuna de escanteio/falta por minuto
 
 O Achado 9 registrou que não existe timeline de escanteio nem de falta no banco do projeto — só total por partida. O usuário indicou o **StatsBomb Open Data** (`github.com/statsbomb/open-data`, gratuito, evento a evento com minuto exato) como possível fonte.
 
@@ -440,7 +440,21 @@ O Achado 9 registrou que não existe timeline de escanteio nem de falta no banco
 | **2015/2016** | **380** | **Liga inteira** — 20 times, cada um com exatamente 38 jogos |
 | As outras 17 (2004/05–2020/21, exceto 2015/16) | 7 a 38 cada | Jogos do Barcelona, e **nem sempre completos** (2004/05 só tem 7 dos 38 jogos do Barcelona daquele ano) |
 
-Bundesliga, Ligue 1, Serie A e Premier League continuam sem nenhuma temporada completa (mesmo levantamento do que ficou registrado antes desta correção — um time notável cobrindo a temporada inteira, ou uma amostra de ~20-26% da liga espalhada pelos times).
+Bundesliga, Ligue 1, Serie A e Premier League **masculinas** continuam sem nenhuma temporada completa (mesmo levantamento do que ficou registrado antes desta correção — um time notável cobrindo a temporada inteira, ou uma amostra de ~20-26% da liga espalhada pelos times).
+
+**Varredura completa nas outras ~15 ligas domésticas do dataset (pedido de acompanhamento): mais 5 temporadas completas, todas em ligas femininas + uma masculina fora do "top 5" europeu.** Confirmado por contagem de jogos por time (completo = todos os times com o mesmo número de jogos):
+
+| Liga | Temporada | Partidas | Times | Jogos/time |
+|---|---|---|---|---|
+| FA Women's Super League (Inglaterra) | 2023/24 | 132 | 12 | 22 — todos iguais |
+| Frauen Bundesliga (Alemanha) | 2023/24 | 132 | 12 | 22 — todos iguais |
+| Liga F (Espanha) | 2023/24 | 240 | 16 | 30 — todos iguais |
+| Serie A Feminino (Itália) | 2023/24 | 130 | 10 | 26 — todos iguais |
+| Indian Super League (masculina) | 2021/22 | 115 | 11 | 20-23 — pontos corridos completo (20 = todos contra todos ida/volta) + mata-mata dos classificados |
+
+Ficaram de fora por estarem genuinamente incompletas (contagem desigual entre times): FA WSL 2020/21 (falta 1 jogo), FA WSL 2018/19, NWSL 2023/2018, MLS 2023 (só 6 jogos). FA WSL 2019/20 é caso especial — a temporada real foi encurtada pela pandemia, então a "incompletude" ali é do futebol de verdade, não do dataset.
+
+**Total revisado:** das ~15 ligas domésticas de clubes no dataset, **6 temporadas são completas** — La Liga 2015/16 e as 5 acima. Nenhuma delas é uma liga que o projeto acompanha hoje (Brasileirão, La Liga atual, Bundesliga, Ligue 1, Serie A, Premier League) — a única sobreposição é La Liga, e só naquela temporada específica de 2015/16.
 
 ### Escanteio e falta por minuto, La Liga 2015/16 completa (380 partidas, evento a evento)
 
