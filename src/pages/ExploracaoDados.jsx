@@ -19,6 +19,7 @@ const TABELAS = [
   { nome: 'match_formation_fotmob',        desc: 'Esquema tático por partida/time',        grupo: 'Partidas',   linhas: 37951  },
   { nome: 'match_goal_timeline',           desc: 'Linha do tempo de gols',                 grupo: 'Partidas',   linhas: 51873  },
   { nome: 'match_team_game_state',         desc: 'Tempo e xG por estado do placar',        grupo: 'Partidas',   linhas: 78250  },
+  { nome: 'match_team_event_response',     desc: 'Reação nos minutos após gol/expulsão',   grupo: 'Partidas',   linhas: 197412 },
   { nome: 'match_events',                  desc: 'Cartões por partida (só cartões)',        grupo: 'Partidas',   linhas: 61181  },
   { nome: 'match_context_fotmob',          desc: 'Estádio e clima por partida',            grupo: 'Partidas',   linhas: 15956  },
   { nome: 'match_features_contexto',       desc: 'Features de contexto (fadiga/H2H)',      grupo: 'Partidas',   linhas: 37782  },

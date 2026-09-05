@@ -1,12 +1,12 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
-**Fase 2 (estado do jogo) entregue em 04/09** — ver seção "Estado do jogo (`match_team_game_state`) — fase 2" mais abaixo. Fase 1 (esquema tático) foi mergeada no PR #420 e está em produção.
+**Frente de comportamento/interação: 3 fases entregues.** Fase 1 (esquema tático, PR #420) e fase 2 (estado do jogo, PR #433) mergeadas e em produção. Fase 3 (resposta a eventos) documentada na seção **"Resposta a eventos (`match_team_event_response`) — fase 3"**, mais abaixo.
 
-**Continuações naturais, nenhuma decidida — não presuma escopo:**
-- **Resposta a eventos** (a terceira opção que ficou de fora quando o usuário escolheu estado do jogo): comportamento nos minutos após levar/marcar gol ou ficar com um a menos. `match_goal_timeline` foi criada justamente para viabilizar isso sem recomputar o shotmap.
-- **Perfil temporal de criação** (xG por faixa de minuto), que agora pode ser feito *condicionado ao estado* em vez de confundido com ele.
-- **Levar estado do jogo para dentro de algum modelo.** Hoje nada disso entra em predição — é camada de dado e exibição descritiva.
+**Continuações possíveis, nenhuma decidida — não presuma escopo:**
+- **Levar qualquer uma das três camadas para dentro de um modelo.** Hoje nada disso entra em predição: é camada de dado + exibição descritiva. Esse é o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `backtest-betting.js`.
+- **Controlar por força de equipe.** O achado da fase 2 (quem perde finaliza mais e pior) continua confundido com qualidade de elenco: quem está ganhando é, em média, o time melhor. O espelhamento controla o tempo, não a força.
+- **Perfil temporal por faixa de minuto**, agora que dá para condicionar ao estado em vez de confundir com ele.
 
 **BUG DE DADO REAL, NÃO CORRIGIDO — time duplicado (Troyes).** `teams` tem **id 498 "Troyes"** (76 partidas, crosswalk `fotmob:10242`, 794 chutes, 775 escalações) e **id 1019 "ES Troyes AC"** (34 partidas, **nenhum crosswalk, zero chutes, zero escalações**). São o mesmo clube. Consequência: as 34 partidas apontadas para 1019 nunca recebem dado do FotMob. Encontrado duas vezes de forma independente — na fase 1 pela `is_home` nula de uma escalação, e na fase 2 pela única partida (16034, Troyes x Paris FC, Ligue 1 2026) em que o xG criado por um lado não espelha o concedido pelo outro. **Não corrigido de propósito**: unificar time duplicado mexe em crosswalk e o `CLAUDE.md` proíbe resolver esses mapeamentos sem supervisão manual; o projeto já tem `scripts/unificar_times_duplicados.py` para isso. Vale rodar uma varredura do mesmo padrão (time sem crosswalk mas com partidas) para achar outros casos.
 
@@ -580,3 +580,38 @@ Quem está perdendo **finaliza mais e cria menos**: +20% de volume sobre quem ga
 **Caminho forward:** o ingestor FotMob (`api/model-maintenance.js`) chama `derivar_game_state` por RPC logo depois do upsert do shotmap (depende dos gols, por isso depois — não junto da formação). `?tarefa=derivar-game-state` é a rede de segurança, com janela de dias e teto de 300 partidas por chamada (menor que o de formações: varre todos os chutes, não só 11 titulares).
 
 **Frontend:** painel "Comportamento por placar" em `/analise-avancada/:matchId`, tudo por 90 minutos naquele estado, com corte de 180 minutos mínimos por estado (abaixo disso a taxa é ruído). Consulta validada via REST com chave anon: 309 linhas na janela de 2 temporadas para 2 times.
+
+
+---
+
+## Resposta a eventos (`match_team_event_response`) — fase 3 da frente de comportamento (05/09)
+
+Terceira das três opções apresentadas na fase 2 (o usuário havia escolhido "estado do jogo" primeiro). Mede o **transiente**: o que muda nos minutos logo após um gol ou expulsão, ACIMA da mudança de estado que o próprio evento causou.
+
+**`estado` faz parte da chave de propósito.** Sem ele a tabela responderia "times criam mais depois de sofrer gol", que é só "times criam mais quando estão perdendo" — o achado da fase 2 reembalado. A pergunta só existe dentro de um estado: entre dois trechos em que o time está igualmente perdendo, o logo-após-o-gol é diferente do resto?
+
+**Duas decisões de modelagem que evitam artefatos conhecidos:**
+1. **Atribuição pelo evento MAIS RECENTE**, não janelas sobrepostas. Dois gols em 3 minutos criariam janelas cruzadas e contariam o mesmo chute duas vezes.
+2. **O chute que é o próprio evento não conta como resposta a si mesmo**: um chute no minuto exato de um corte vai para o intervalo que TERMINA ali. Sem isso, cada janela "0-5 após marcar" ganharia de brinde o próprio gol (um chute de xG alto), fazendo parecer que times finalizam muito logo depois de marcar.
+
+**BUG REAL PEGO POR INVARIANTE, durante o desenvolvimento:** a primeira versão somava **101 minutos** por time numa partida onde a fase 2 dava 93. Causa exata: o último gol foi aos 86' e as janelas de +5/+15 criavam cortes em 91 e 101, **depois do fim da partida** (93) — inventando 8 minutos. Corrigido limitando os cortes a `fim`. Só apareceu porque a fase 2 existia para servir de referência; sem ela, passaria batido.
+
+**Estado final:** 197.412 linhas / 18.770 partidas. Reconciliação com a fase 2: **37.540 de 37.540 pares (partida, time)** com minutos, chutes E xG idênticos — zero divergências. Duas derivações independentes chegando ao mesmo total.
+
+**Custo de execução — a mais pesada das três.** O backfill só coube em lotes de ~500 partidas por transação (1.000 já estourava o timeout de 60s do MCP; a primeira versão, com `cross join lateral` correlacionado por intervalo, não passava nem de 400). A otimização que viabilizou: trocar os dois laterais por uma junção agregada (`tmp_int_score`) e um `distinct on` (`tmp_int_ev`). O endpoint usa teto de 150 partidas por chamada.
+
+**Achado descritivo — contraria a intuição comum:**
+
+| Estado | Momento | xG criado /90 | Chutes /90 |
+|---|---|---|---|
+| Perdendo | 0-5 min após sofrer | **0,974** | 10,16 |
+| Perdendo | 5-15 min após sofrer | 1,344 | 13,27 |
+| Perdendo | regime (>15 min) | **1,517** | 14,99 |
+| Ganhando | 0-5 min após marcar | **1,124** | 8,96 |
+| Ganhando | regime | 1,474 | 11,71 |
+
+Os 5 minutos seguintes a um gol são **os mais parados da partida, para os dois lados** — o oposto da narrativa de "pressão após levar o gol". A criação de quem sofreu só volta ao normal depois de ~15 minutos. O espelhamento valida sozinho de novo: 0,974 criado por quem sofreu == 0,974 sofrido por quem marcou.
+
+**RESSALVA IMPORTANTE:** parte dessa queda é **mecânica, não tática** — comemoração, reinício do meio e substituições consomem tempo real dentro da janela de 5 minutos, então há menos bola rolando. Separar "time recua" de "cronômetro corre sem jogo" exigiria tempo efetivo de jogo, que não temos. Nada disso foi validado com IC 95% nem entrou em modelo.
+
+**Frontend:** painel "Reação nos 5 minutos seguintes" em `/analise-avancada/:matchId`, sempre comparando contra o regime do mesmo estado. Consulta validada via REST anon: 294 linhas (era 705 antes de filtrar janela/estado — perto demais do corte de 1000).
