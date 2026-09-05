@@ -556,6 +556,78 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 13 — matriz de transição de bola entre zonas do campo, e como ela muda por força do time (base pra simulação de jogo)
+
+Pergunta: taxas de transição da bola entre zonas do campo, visando uso futuro em simulação. Mesma base StatsBomb (La Liga 2015/16, 380 partidas), usando passe completo + condução (`Pass`/`Carry`, com local de início e fim) — 552.934 ações mapeadas numa grade de 9 zonas (3 terços de comprimento × 3 corredores de largura, mesma grade do achado 12).
+
+### O que acontece quando o time tem a bola em cada zona (geral, todos os times)
+
+| Zona | % vira chute | % perde a posse | % continua (passe/condução) |
+|---|---|---|---|
+| Defensiva-esquerda | 0,00% | 15,7% | 84,3% |
+| Defensiva-centro | 0,00% | 18,0% | 82,0% |
+| Defensiva-direita | 0,00% | 16,9% | 83,1% |
+| Meio-esquerda | 0,01% | 12,8% | 87,2% |
+| Meio-centro | 0,04% | 10,9% | 89,1% |
+| Meio-direita | 0,01% | 13,8% | 86,2% |
+| Ataque-esquerda | 1,40% | 21,4% | 77,2% |
+| **Ataque-centro** | **19,94%** | 18,3% | 61,8% |
+| Ataque-direita | 1,26% | 22,0% | 76,7% |
+
+Ataque-centro é disparado a zona mais decisiva (quase 1 em cada 5 vezes que a bola chega lá vira chute). Perda de posse é maior nos corredores ofensivos (21-22%) que no meio da própria defesa (11-14%).
+
+### Matriz de transição (condicional a manter a posse)
+
+| De \ Para | Def-Esq | Def-Cen | Def-Dir | Meio-Esq | Meio-Cen | Meio-Dir | Atq-Esq | Atq-Cen | Atq-Dir |
+|---|---|---|---|---|---|---|---|---|---|
+| **Def-Esq** | 58,3% | 14,3% | 1,7% | 20,1% | 3,8% | 0,9% | 0,6% | 0,2% | 0,1% |
+| **Def-Cen** | 11,6% | 49,7% | 11,3% | 7,7% | 10,7% | 7,6% | 0,5% | 0,4% | 0,5% |
+| **Def-Dir** | 1,6% | 13,7% | 58,2% | 0,9% | 3,9% | 20,6% | 0,1% | 0,2% | 0,7% |
+| **Meio-Esq** | 3,9% | 1,8% | 0,2% | 70,2% | 10,3% | 1,4% | 10,3% | 1,3% | 0,7% |
+| **Meio-Cen** | 0,8% | 3,2% | 0,8% | 14,3% | 56,8% | 13,8% | 3,1% | 4,1% | 3,1% |
+| **Meio-Dir** | 0,2% | 1,8% | 3,6% | 1,4% | 10,9% | 70,0% | 0,6% | 1,4% | 10,2% |
+| **Atq-Esq** | 0,0% | 0,0% | 0,0% | 7,9% | 1,4% | 0,1% | 79,1% | 10,3% | 1,2% |
+| **Atq-Cen** | 0,0% | 0,0% | 0,0% | 1,2% | 5,0% | 1,2% | 12,0% | 67,7% | 12,9% |
+| **Atq-Dir** | 0,0% | 0,0% | 0,0% | 0,1% | 1,3% | 7,2% | 1,3% | 9,8% | 80,2% |
+
+Dois padrões pra guardar: **a bola tende a ficar no próprio corredor** (a diagonal é sempre o maior valor de cada linha, 58-80%) e **quase nunca pula direto de defesa pra ataque numa ação só** (todas as células defesa→ataque ≤0,7%) — a progressão passa quase sempre pelo meio-campo.
+
+### Segmentando por força do time — pedido de acompanhamento
+
+Times classificados em 3 grupos por saldo de gol na temporada (top 7 / meio 6 / bottom 7 dos 20 times) e, separadamente, por % de passe certo (controle técnico puro, independente de resultado):
+
+| Zona (média) | TOP 7 (saldo forte) — perda | MID 6 — perda | BOT 7 (saldo fraco) — perda |
+|---|---|---|---|
+| Defensiva | 14,2% | 17,6% | 19,1% |
+| Meio-campo | 10,9% | 12,6% | 14,2% |
+| Ataque-centro | 17,8% | 18,6% | 18,6% |
+| Ataque-lados | 20,1% | 21,2% | 24,3% |
+
+| Zona (média) | Melhor controle técnico — perda | Pior controle técnico — perda |
+|---|---|---|
+| Defensiva | 13,3% | 20,4% |
+| Meio-campo | 9,2% | 15,5% |
+| Ataque | 16,7% | 22,4% |
+
+**Gradiente limpo e consistente:** time forte (por saldo de gol ou por % de passe) perde a bola menos em praticamente toda zona do campo, não só no ataque — efeito mais forte ainda quando segmentado por controle técnico puro (30-45% menos perda em toda zona, comparando melhor com pior).
+
+**Achado que não é óbvio:** no ataque-centro, o time **fraco chuta mais** quando chega lá (23,3%) do que o forte (18,5%). Não é que ele cria mais — chega menos vezes na zona e, ao chegar, tende a "aproveitar logo" (situação mais desesperada/menos organizada), enquanto o time forte segura mais a posse procurando um chute melhor antes de finalizar.
+
+### Como usar numa simulação
+
+A matriz geral + a tabela de chute/perda por zona já dá pra montar uma cadeia de Markov simples: sorteia se a ação na zona atual vira chute, perde a posse (zona espelhada passa pro adversário) ou continua (sorteia a próxima zona pela matriz). A segmentação por força permite ajustar essas probabilidades por perfil de time em vez de usar a mesma matriz pra qualquer confronto.
+
+### Ressalvas
+
+- **Grade grossa (3×3 = 9 zonas).** Pra simulação mais realista, provavelmente compensa uma grade mais fina (ex.: 6×3 ou 5×3) — o código já está pronto pra isso, só trocar os limiares de `zone()`.
+- **"Perda de posse" é só passe incompleto/saiu/impedimento + desarme sofrido + erro de controle** — não captura falta cometida contra o time, nem todo motivo possível de a bola sair de jogo.
+- **Tiers de força têm amostra pequena** (6-7 times cada) — direção clara, mas não é uma curva suave, é um agrupamento grosso.
+- **Mesma ressalva de sempre:** é uma temporada, de uma liga (La Liga 2015/16, StatsBomb) — não é pipeline do projeto, não teve validação de IC 95%, e não necessariamente generaliza pras ligas que o projeto acompanha.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
