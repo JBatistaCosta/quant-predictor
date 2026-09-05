@@ -175,9 +175,69 @@ O relógio da partida estava definido como `minute + minute_added`. Isso não é
 
 O que **não muda** com o momento do cartão: o quanto o adversário passa a criar (2,84–3,08 xG/90 nos quatro recortes — praticamente constante). O que **muda bastante**: o apagão ofensivo de quem fica com 10 é muito mais severo quando o cartão sai antes dos 75' (cria menos de 0,4 xG/90) do que nos minutos finais (1,04 xG/90) — times atrás no placar parecem seguir arriscando pra frente mesmo com um a menos quando o jogo está acabando, e isso é visível mesmo já sabendo que o efeito global de cartão não muda por força de equipe. Achado descritivo, não decomposto por estado de placar dentro de cada faixa de minuto (a amostra já fica pequena: 178-754 ocorrências por célula).
 
+**O efeito não é um susto de 15 minutos que passa — é um platô que dura o resto do jogo.** Recorte de 5 em 5 minutos desde o cartão até o fim da partida (1.991 das 2.121 partidas com 1 cartão único, cálculo ad-hoc explicado na ressalva de metodologia abaixo), tempo desde o cartão no eixo, sempre pela perspectiva de quem fica com 10:
+
+| Minutos desde o cartão | Partidas ainda em jogo | Cria (xG/90) | Adversário cria (xG/90) |
+|---|---|---|---|
+| 0-5 | 1.991 | 0,42 | 2,16 |
+| 5-10 | 1.748 | 0,71 | 1,79 |
+| 10-15 | 1.462 | 0,63 | 1,60 |
+| 15-20 | 1.271 | 0,68 | 1,86 |
+| 20-30 | 992–1.125 | 0,65–0,68 | 1,62–1,86 |
+| 30-45 | 647–860 | 0,66–0,76 | 1,79–1,97 |
+| 45-60 | 378–549 | 0,33–0,65 | 1,76–2,01 |
+| 60'+ | < 300 (cai rápido) | instável — amostra pequena | instável — amostra pequena |
+
+*(regime sem cartão, referência: ~1,22–1,49 xG/90 pros dois lados)*
+
+O pico (0-5 min) é o já visto na tabela acima. Depois disso, o adversário **não volta ao normal**: ele segue criando 1,6–2,0 xG/90 (30-65% acima do regime) em praticamente todo bloco até os 55-60 minutos pós-cartão. A vantagem numérica pesa a partida inteira, não só o susto inicial. Os blocos depois de 60 minutos pós-cartão têm menos de 300 partidas contribuindo (só cartões muito cedo no jogo sobrevivem até lá) e não são confiáveis.
+
+**Ressalva de metodologia (só desta tabela de 5 em 5 min, diferente do resto do achado 6).** Ao contrário das linhas 0-5/5-15/regime acima — que vêm direto de `match_team_event_response`, já validada — esta tabela foi calculada ad-hoc cruzando `match_shots_fotmob` (relógio `clock` reconstruído na hora, mesma fórmula da migration `20260905160000`) com o minuto do cartão em `match_events`. Duas limitações que não afetam o resto do achado: (1) `match_events` não guarda acréscimo separado como os chutes guardam — uns 5% dos cartões perto do intervalo (minuto 45) podem estar levemente deslocados no relógio; (2) quanto mais longe do cartão, menos partidas sobram (só cartão cedo deixa muito tempo de jogo depois) — efeito de seleção que enfraquece a leitura dos últimos blocos, não um viés de conteúdo.
+
 **Ressalva importante, e diferente da do achado 4.** O baseline `nenhum/regime` não é limpo aqui: depois dos 15 minutos da janela de resposta, o tempo com um jogador a menos/mais **volta a ser contado como `regime`** (a tabela só distingue os primeiros 15 minutos após o evento, não o resto da partida em desvantagem numérica). Isso significa que o próprio regime já está um pouco contaminado por minutos jogados com um homem a menos/mais — o que **subestima**, não superestima, o efeito real de jogar com 10 pelo resto do jogo. Medir esse efeito completo exigiria cruzar `match_team_event_response` com quantos jogadores cada time tinha em campo minuto a minuto, o que a estrutura atual não guarda.
 
-**Sobre previsão.** Isto é o candidato mais forte da frente inteira pra entrar num modelo de in-play: o efeito é grande (2-3x, não os ~18% do achado 3), imediato, mirrado nos dois lados, e sobrevive ao controle de força. Mas **nada aqui foi validado com IC 95%** (regra do topo desta página) — e a janela de uso prático é estreita quando o cartão sai depois dos 75', que é quase metade dos casos.
+**Sobre previsão.** Isto é o candidato mais forte da frente inteira pra entrar num modelo de in-play: o efeito é grande (2-3x, não os ~18% do achado 3), imediato, mirrado nos dois lados, sustentado pelo resto do jogo (não só 15 min), e sobrevive ao controle de força. Mas **nada aqui foi validado com IC 95%** (regra do topo desta página) — e a janela de uso prático é estreita quando o cartão sai depois dos 75', que é quase metade dos casos.
+
+---
+
+## Achado 7 — quem resiste a um cartão vermelho antes dos 60': é quase todo qualidade de elenco, quase nada é o minuto
+
+Pergunta natural depois do achado 6: dado que o time reduzido cria muito menos e sofre muito mais, **quantas vezes ele segura o resultado mesmo assim — e o que diferencia quem segura de quem não segura?**
+
+**Recorte:** as 785 partidas (dentro das 2.121 com 1 cartão único) em que a expulsão saiu **antes dos 60 minutos**, cruzando o placar no momento do cartão (`match_goal_timeline`) com o placar final (`matches`) e a diferença de Elo (`team_elo_history`, escopo `global`, sem vazamento).
+
+### O estado do placar no momento do cartão já decide a maior parte
+
+| Estado do time punido, no momento do cartão | Resistiu (empatou ou venceu) | Empatou | Venceu |
+|---|---|---|---|
+| **Ganhando** (151 casos) | **76,2%** | 32,5% | 43,7% |
+| Empatando (425 casos) | 37,9% | 24,7% | 13,2% |
+| **Perdendo** (209 casos) | **11,0%** | 9,1% | 1,9% |
+
+Nada surpreendente em si — ganhar de 11 é mais fácil que ganhar de 10 — mas o tamanho da diferença é grande: um time que já está perdendo quando toma o cartão praticamente não volta (1,9% de chance de vencer).
+
+### Dentro do empate — o caso ambíguo — quem segura é quem já era melhor
+
+Cortando só os 425 casos empatados no momento do cartão (o cenário em que a resistência não está pré-decidida pelo placar) por diferença de Elo entre punido e adversário:
+
+| Força do time punido vs. adversário | Resistiu | Empatou | Venceu |
+|---|---|---|---|
+| **Bem melhor** (Elo ≥ +50) | **53,5%** | 33,3% | 20,1% |
+| Parelho (-50 a +50) | 34,3% | 22,9% | 11,4% |
+| **Bem pior** (Elo ≤ -50) | **27,3%** | 18,8% | 8,5% |
+
+Gradiente limpo e monotônico: **jogar melhor antes do cartão prevê melhor quem aguenta depois dele.** O time reduzido não "compensa" a desvantagem numérica com um esforço tático especial que apareça nos dados — quem segura é, na maioria, quem já teria vantagem de qualidade de qualquer forma.
+
+### Dois efeitos secundários, reais mas bem menores que o de força
+
+- **Mando de campo:** mandante empatado no momento do cartão resiste em 44,9% dos casos, visitante em 32,2% — vantagem de ~13 pontos percentuais, bem menor que a de força.
+- **Minuto do cartão dentro da janela 0-60':** resistência de 32,5% quando o cartão sai antes dos 30' contra 41,3% entre 30'-60' — direção esperada (menos tempo pra sofrer gol depois de um cartão mais cedo), mas o efeito é pequeno perto do de força.
+
+### O que isso quer dizer
+
+**Não há um padrão tático identificável de "como resistir"** nos dados — o achado 6 já mostrou que todo time reduzido cria menos e sofre mais, na mesma proporção, não importa a força. O que muda o resultado final não é comportamento diferente durante a desvantagem, é a distância de qualidade que já existia antes dela. Combinado com o achado 3 (mesma lição: controle de força muda a leitura), isso sugere que "seguraram o resultado com um a menos" é, na maior parte dos casos, a história de um time melhor absorvendo um choque, não a de uma tática de resistência que os dados consigam separar.
+
+Descritivo, sem IC 95%, mesma ressalva de sempre antes de virar sinal de modelo.
 
 ---
 
@@ -216,6 +276,7 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 ## Em aberto
 
 - **Levar qualquer uma das camadas para dentro de um modelo.** É o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `api/backtest-betting.js`. O candidato mais forte agora é o **Achado 6** (resposta a cartão vermelho) — efeito de 2-3x, não os ~18% do Achado 3, e também sobrevive ao controle de força; a limitação prática é a janela de uso (quase metade dos cartões sai depois dos 75').
-- **Medir o efeito completo do cartão vermelho, não só os 15 primeiros minutos.** O Achado 6 mostra o transiente, mas o `regime` usado como baseline já mistura minutos jogados em desvantagem numérica além da janela — exigiria saber quantos jogadores cada time tinha em campo minuto a minuto, o que não é guardado hoje.
+- **Medir o efeito completo do cartão vermelho, não só os 15 primeiros minutos.** O Achado 6 mostra o transiente (e o recorte de 5 em 5 min mostra que o platô dura o jogo inteiro), mas o `regime` usado como baseline já mistura minutos jogados em desvantagem numérica além da janela — exigiria saber quantos jogadores cada time tinha em campo minuto a minuto, o que não é guardado hoje.
+- **Formalizar o recorte de 5 em 5 minutos do Achado 6 na infraestrutura, se for usado de novo.** Hoje é uma consulta ad-hoc (cruza `match_shots_fotmob` com `match_events` na hora, calculando o relógio na mão) — não uma coluna ou função versionada como o resto da frente. Vale a pena virar função/view só se essa granularidade for reaproveitada; senão, reconstruir na hora quando precisar evita manter mais uma peça de infraestrutura.
 - **Perfil temporal por faixa de minuto.** Começado e interrompido: a exposição por faixa mostra o confundidor com clareza (aos 0-15 min há 3.876 horas de "empatando" contra 298 de cada outro estado; aos 75+ são 1.588 contra 2.045 de cada), mas a análise completa foi o que expôs o bug do Achado 5 e não foi refeita depois da correção.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.
