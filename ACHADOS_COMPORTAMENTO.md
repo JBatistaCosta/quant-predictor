@@ -460,17 +460,25 @@ Ficaram de fora por estarem genuinamente incompletas (contagem desigual entre ti
 
 Baixei o evento de cada uma das 380 partidas (`events/{match_id}.json`), contei `type.name='Foul Committed'` e `type.name='Pass'` com `pass.type.name='Corner'`, por minuto. **12.136 faltas e 3.841 escanteios no total** — 31,9 faltas/jogo e 10,1 escanteios/jogo (o escanteio bate bem com a faixa que já tínhamos visto no Achado 9 pras ligas europeias via `match_stats`, 9,25–10,57/jogo — boa validação cruzada entre fontes independentes).
 
-| Bloco (min) | Faltas /100 partidas | Escanteios /100 partidas |
-|---|---|---|
-| 0-15 | 151,6–161,3 | 42,4–53,2 |
-| 15-30 | 157,6–177,6 | 51,6–54,2 |
-| 30-45 | 169,5–182,6 | 48,2–50,8 |
-| **45-50** | **200,3** (salto na volta do intervalo) | **64,5** (salto na volta do intervalo) |
-| 50-75 | 162,1–172,4 (patamar alto) | 52,6–62,9 |
-| 75-90 | 154,7–179,2 | 50,0–57,9 |
-| 90+ (bucket mais largo) | 130,0 | 37,1 |
+**Bug do relógio (2ª vez nesta frente, mesma classe do Achado 5) — pego antes de publicar, por pergunta direta do usuário.** A primeira versão desta tabela usava o campo `minute` do StatsBomb puro e mostrava um pico isolado enorme no bloco 45-50 (falta 200,3/100, escanteio 64,5/100), que eu descrevi como "o mesmo salto no intervalo do gol/chute/cartão". **Estava errado.** O StatsBomb usa `period` (1 ou 2) + `minute`, e o minuto do 2º tempo **também começa contando do 45** em vez de continuar de onde o 1º tempo parou (1º tempo termina em 46 nesta base, incluindo acréscimo; 2º tempo começa em 45) — exatamente o mesmo defeito que o Achado 5 já tinha achado e corrigido no `match_shots_fotmob`. O bloco "45-50" estava somando o fim dos acréscimos do 1º tempo com o começo do 2º tempo como se fossem contínuos, quando têm o intervalo inteiro (~15 min reais) entre os dois.
 
-**O mesmo "salto no intervalo" dos Achados 8/9 (gol, chute, cartão) aparece de novo aqui, em escanteio e falta.** O pico de falta (45-50) é o maior bloco de toda a partida, e o de escanteio também. Depois do salto, os dois ficam num patamar elevado até perto do fim — outro sinal (o quinto, contando gol/chute/cartão/agora escanteio+falta) de que times jogam de um jeito mensuravelmente diferente logo depois do intervalo, e não é ruído de uma estatística só.
+**Corrigido com relógio monótono** (`clock = minute` no 1º tempo; `clock = minute + fh_over` no 2º, `fh_over` = quanto o 1º tempo passou de 45 — mesma fórmula do Achado 5), o quadro muda:
+
+| Bloco (15 min) | Faltas /jogo | Escanteios /jogo |
+|---|---|---|
+| 0-15 | 4,68 | 1,47 |
+| 15-30 | 5,05 | 1,56 |
+| 30-45 | 5,36 | 1,52 |
+| 45-60 | 5,23 | 1,78 |
+| 60-75 | 5,02 | 1,68 |
+| 75-90 | 5,06 | 1,64 |
+| 90+ | 1,55 | 0,45 |
+
+**Conclusão revisada, mais modesta que a primeira versão:**
+- **Falta não sobe no 2º tempo.** Fica achatada o jogo inteiro (4,68 a 5,36, sem padrão claro) — o "salto" que eu tinha reportado era, na maior parte, o artefato do relógio.
+- **Escanteio ainda mostra uma diferença real, mas bem menor que o "salto" original.** 2º tempo (1,64-1,78) consistentemente acima do 1º tempo (1,47-1,56) — um efeito real, só que suave, não um pico isolado dramático.
+
+**Não dá mais pra contar escanteio/falta como "quinto e sexto sinal" do mesmo salto de intervalo que gol/chute/cartão mostram (Achados 8/9)** — só o escanteio sustenta uma versão fraca dessa história; falta não sustenta nenhuma.
 
 **O que isso NÃO prova:** é uma temporada, de uma liga, com o dado de outro fornecedor (StatsBomb, não FotMob) — não dá pra fundir com `match_shots_fotmob`/`match_events` pra virar coluna nova no banco sem decidir antes se vale a pena manter uma segunda fonte só pra essas duas métricas. Fica registrado como confirmação descritiva do padrão, não como pipeline novo.
 
@@ -482,12 +490,13 @@ Descritivo, sem IC 95%.
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
 
-Aconteceu duas vezes nesta frente:
+Aconteceu três vezes nesta frente:
 
 - O **Achado 3** passou em todas as invariantes (espelhamento perfeito, minutos fechando) e mesmo assim a conclusão agregada estava confundida com força de equipe.
 - O **Achado 5** era um bug de ordenação que reconciliava perfeitamente em todos os totais, porque totais não têm ordem.
+- O **Achado 11** (escanteio/falta via StatsBomb) reproduziu **o mesmo bug do Achado 5** — 2º tempo com minuto reiniciando em vez de continuar — numa fonte de dado completamente diferente, meses depois de já saber exatamente que padrão procurar. Só não passou pro arquivo final porque o usuário perguntou "isso não pode ser artefato do intervalo?" antes de eu dar o achado por fechado.
 
-Em ambos os casos o que expôs o problema foi **procurar um confundidor específico**, não rodar mais verificações de consistência.
+Em todos os casos o que expôs o problema foi **procurar um confundidor específico**, não rodar mais verificações de consistência. E saber de um bug numa fonte não impede o mesmo bug de reaparecer despercebido numa fonte nova — vale a pena checar deliberadamente por ele toda vez que uma fonte externa nova trouxer relógio de partida.
 
 ---
 
