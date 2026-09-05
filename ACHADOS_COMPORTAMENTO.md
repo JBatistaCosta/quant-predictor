@@ -295,6 +295,80 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 9 — o mesmo estudo pra chutes, chutes ao gol, escanteios, faltas e cartões
+
+Continuação natural do achado 8: repetir "taxa ao longo do jogo + diferença entre ligas" pras outras estatísticas de partida. **Duas delas não deram pra fazer da mesma forma** — registrado abaixo por quê.
+
+### Chutes e chutes ao gol — dá pra fazer, mesmo método do achado 8 (`match_shots_fotmob`, relógio `clock`)
+
+Formato geral (todas as partidas com shotmap, 18.780 partidas):
+
+| Bloco | Chutes /100 partidas | Chutes ao gol /100 partidas | % ao gol |
+|---|---|---|---|
+| 0-15 | 310,0 | 189,0 | 61,0% |
+| 15-30 | 367,2 | 223,7 | 60,9% |
+| 30-45 | 380,9 | 231,2 | 60,7% |
+| 45-60 | 446,6 | 270,7 | 60,6% |
+| 60-75 | 403,5 | 247,3 | 61,4% |
+| 75-90 | 395,9 | 241,3 | 61,0% |
+| 90+ (bucket mais estreito, ver ressalva do achado 8) | 235,9 | 143,2 | 60,7% |
+
+Mesmo formato do gol (sobe ao longo do jogo, pico logo depois do intervalo) — esperado, já que gol é numerador de chute. **A proporção que vai ao alvo é notavelmente constante (~61%) em toda a partida** — a taxa de conversão em chute-no-alvo não parece depender de quando no jogo o chute acontece.
+
+Comparação entre ligas (2023-2025, mesma correção de cobertura do achado 8): 40-42% dos chutes no 1º tempo e 24-26% nos 15 min finais em **todas as seis ligas** — de novo, formato praticamente igual. `% ao gol` por liga varia um pouco mais (59,8% Brasileirão a 63,8% Premier League) — a única diferença de formato encontrada aqui, pequena.
+
+### Cartões (amarelo + vermelho) — dá pra fazer com `match_events`, mas o formato entre ligas varia mais que gol/chute
+
+Formato geral (13.439 partidas com evento registrado):
+
+| Bloco | Amarelos /100 partidas | Vermelhos+2º amarelo /100 partidas |
+|---|---|---|
+| 0-15 | 20,6 | 0,71 |
+| 15-30 | 44,2 | 1,53 |
+| 30-45 | 65,3 | 2,08 |
+| 45-60 | 79,1 | 3,59 |
+| 60-75 | 76,1 | 3,85 |
+| 75-90 | 89,7 | 5,25 |
+| 90+ (bucket mais estreito) | 57,9 | 5,28 |
+
+Cartão sobe de forma quase monotônica com o tempo de jogo — nada de "pico no intervalo" como em gol/chute, é uma escalada constante até o fim (cansaço, faltas táticas, ânimos mais exaltados). O ritmo de vermelho nos acréscimos finais (bucket mais estreito que os outros) é o mais alto de todos — o que já era esperado pelo achado 6/7 (minuto mediano do cartão vermelho: 72').
+
+**Aqui, diferente de gol e chute, o formato entre ligas se parece mas não é igual, e o volume difere bastante:**
+
+| Liga | % cartões no 1º tempo | % nos 15 min finais+acréscimos | Cartões/jogo | Vermelhos/jogo |
+|---|---|---|---|---|
+| Brasileirão | 28,5% | 35,4% | **5,50** | **0,306** |
+| Bundesliga | 27,5% | 36,6% | 4,16 | 0,183 |
+| La Liga | 26,8% | 39,3% | 4,91 | 0,261 |
+| Ligue 1 | 30,5% | 32,9% | 4,12 | 0,252 |
+| Premier League | 27,5% | 36,4% | 4,33 | **0,141** |
+| Serie A (Itália) | 28,4% | 35,4% | 4,27 | 0,226 |
+
+Brasileirão tem **mais que o dobro** de cartões vermelhos por jogo da Premier League (0,306 vs 0,141) e o maior volume total de cartões das seis. Bate com o achado abaixo (mais faltas por jogo também).
+
+### Escanteios e faltas — NÃO dá pra fazer "ao longo do jogo" com o dado disponível hoje
+
+Diferente de gol, chute e cartão, **não existe timeline de escanteio nem de falta no banco** — só totais por partida em `match_stats`/`match_stats_fotmob` (colunas `corners`, `fouls`), sem minuto. `match_events` só guarda cartões (regra já registrada no topo deste arquivo); não existe uma tabela `match_corners_fotmob` ou equivalente com minuto de cada escanteio/falta. Não é uma limitação de método desta análise — é ausência real de dado no schema atual.
+
+O que dá pra responder com o que existe é só a diferença de **volume total** por liga (2023-2025, `match_stats`, cobertura completa nas 6 ligas):
+
+| Liga | Escanteios/jogo | Faltas/jogo |
+|---|---|---|
+| Brasileirão | **10,57** | **27,22** |
+| Bundesliga | 9,76 | 21,56 |
+| La Liga | 9,52 | 25,25 |
+| Ligue 1 | 9,45 | 24,35 |
+| Premier League | 10,38 | 21,93 |
+| Serie A (Itália) | 9,25 | 24,80 |
+
+Brasileirão de novo no topo em ambos — consistente com ter mais cartões e mais faltas: times fazem mais faltas, e mais faltas geram mais cartões. Um triângulo coerente (faltas → cartões, achado 9) que os dados sustentam, mas sem conseguir decompor por minuto.
+
+**Para ter a taxa de escanteio/falta por minuto no futuro**, seria preciso um ingestor novo com timeline de evento (o FotMob tem essa informação na tela ao vivo — não confirmado se o payload já capturado no projeto a carrega; precisaria de 1-2 chamadas de descoberta antes de generalizar, regra padrão do projeto pra APIs externas).
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
@@ -334,5 +408,6 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 - **Levar qualquer uma das camadas para dentro de um modelo.** É o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `api/backtest-betting.js`. O candidato mais forte agora é o **Achado 6** (resposta a cartão vermelho) — efeito de 2-3x, não os ~18% do Achado 3, e também sobrevive ao controle de força; a limitação prática é a janela de uso (quase metade dos cartões sai depois dos 75').
 - **Medir o efeito completo do cartão vermelho, não só os 15 primeiros minutos.** O Achado 6 mostra o transiente (e o recorte de 5 em 5 min mostra que o platô dura o jogo inteiro), mas o `regime` usado como baseline já mistura minutos jogados em desvantagem numérica além da janela — exigiria saber quantos jogadores cada time tinha em campo minuto a minuto, o que não é guardado hoje.
 - **Formalizar o recorte de 5 em 5 minutos do Achado 6 na infraestrutura, se for usado de novo.** Hoje é uma consulta ad-hoc (cruza `match_shots_fotmob` com `match_events` na hora, calculando o relógio na mão) — não uma coluna ou função versionada como o resto da frente. Vale a pena virar função/view só se essa granularidade for reaproveitada; senão, reconstruir na hora quando precisar evita manter mais uma peça de infraestrutura.
-- ~~Perfil temporal por faixa de minuto~~ — **FEITO em 05/09 pro formato de gols entre ligas (Achado 8)**, e no processo apareceu um problema de cobertura de dado por liga-temporada não documentado antes (ver achado 8). Falta ainda o perfil temporal condicionado a estado de placar (achado 3/4) — essa parte específica foi começada e interrompida quando expôs o bug do Achado 5, e não foi refeita depois da correção do relógio.
+- ~~Perfil temporal por faixa de minuto~~ — **FEITO em 05/09 pro formato de gols, chutes, chutes ao gol e cartões entre ligas (Achados 8 e 9)**, e no processo apareceu um problema de cobertura de dado por liga-temporada não documentado antes (ver achado 8). Falta ainda o perfil temporal condicionado a estado de placar (achado 3/4) — essa parte específica foi começada e interrompida quando expôs o bug do Achado 5, e não foi refeita depois da correção do relógio.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.
+- **Timeline de escanteio e falta.** O achado 9 mostrou que não dá pra medir taxa por minuto de escanteio/falta hoje — só existe total por partida (`match_stats`). Precisaria de um ingestor novo (se o payload do FotMob já capturado tiver essa informação por minuto — não confirmado, exigiria 1-2 chamadas de descoberta antes de generalizar, regra padrão do projeto pra API externa).
