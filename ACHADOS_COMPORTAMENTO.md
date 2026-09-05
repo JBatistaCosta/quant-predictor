@@ -429,26 +429,38 @@ Descritivo, sem IC 95%.
 
 ---
 
-## Nota — StatsBomb Open Data avaliado e descartado como fonte de escanteio/falta por minuto
+## Achado 11 — StatsBomb Open Data: uma liga completa existe (La Liga 2015/16), e ela preenche a lacuna de escanteio/falta por minuto
 
-O Achado 9 registrou que não existe timeline de escanteio nem de falta no banco do projeto — só total por partida. Cogitou-se o **StatsBomb Open Data** (`github.com/statsbomb/open-data`, gratuito, evento a evento com minuto exato, inclui escanteio e falta) como fonte pra preencher essa lacuna. Antes de generalizar (regra do `CLAUDE.md` pra fonte externa nova: gastar 1-2 chamadas de descoberta e inspecionar o JSON real primeiro), verifiquei o que o dataset realmente cobre pras 5 grandes ligas europeias + La Liga, contando partidas e times únicos em cada `matches/{competition_id}/{season_id}.json`.
+O Achado 9 registrou que não existe timeline de escanteio nem de falta no banco do projeto — só total por partida. O usuário indicou o **StatsBomb Open Data** (`github.com/statsbomb/open-data`, gratuito, evento a evento com minuto exato) como possível fonte.
 
-**Nenhuma liga tem uma temporada completa** (~380 jogos numa liga de 20 times, ~306 numa de 18). Só dois padrões aparecem:
+**Correção de um erro meu na primeira verificação.** Checando só 2 das 18 "temporadas" de La Liga do dataset (2018/19 e 2020/21, ambas coincidentemente só com jogos do Barcelona), eu generalizei errado que **nenhuma** liga tinha temporada completa. Contando partida por partida das 18 temporadas de La Liga (não só 2), achei uma exceção real:
 
-| Liga | Temporada(s) | Partidas | O que é de fato |
-|---|---|---|---|
-| La Liga | 2004/05–2020/21 (18 temporadas) | 38 cada | **Barcelona sozinho**, toda temporada — nunca a liga inteira |
-| Bundesliga | 2015/16, 2023/24 | 34 cada | **Bayer Leverkusen sozinho** (a de 2023/24 é a temporada invicta) |
-| Ligue 1 | 2021/22, 2022/23 | 35 e 40 | **PSG sozinho** |
-| Premier League | 2003/04 | 38 | **Arsenal "Invencível" sozinho** |
-| Ligue 1 | 2015/16 | 80 | Amostra espalhada pelos 20 times (~21% da liga, nenhum time domina) |
-| Serie A | 2015/16 | 100 | Amostra espalhada pelos 20 times (~26% da liga) |
-| Premier League | 2015/16 | 80 | Amostra espalhada pelos 20 times (~21% da liga) |
-| Serie A | 1986/87 | 1 | Um único jogo clássico (Juventus x Napoli) |
+| Temporada de La Liga | Partidas | O que é |
+|---|---|---|
+| **2015/2016** | **380** | **Liga inteira** — 20 times, cada um com exatamente 38 jogos |
+| As outras 17 (2004/05–2020/21, exceto 2015/16) | 7 a 38 cada | Jogos do Barcelona, e **nem sempre completos** (2004/05 só tem 7 dos 38 jogos do Barcelona daquele ano) |
 
-Em todo caso analisado, o recorte é **um time específico e notável cobrindo a temporada inteira**, ou **uma fração pequena (~20-26%) da liga espalhada entre os times** — nunca a liga completa. Não dá pra usar como substituto do `match_shots_fotmob`/`match_stats` pra comparação entre ligas (o que os achados 8/9 fizeram) — a amostra não é representativa da liga em nenhum dos dois padrões.
+Bundesliga, Ligue 1, Serie A e Premier League continuam sem nenhuma temporada completa (mesmo levantamento do que ficou registrado antes desta correção — um time notável cobrindo a temporada inteira, ou uma amostra de ~20-26% da liga espalhada pelos times).
 
-**Onde ainda poderia servir:** prototipar/validar um pipeline de escanteio/falta por minuto usando as ~600 partidas do Barcelona (única cobertura "profunda" — 18 temporadas de um time só) como conjunto de teste, antes de decidir se vale construir um ingestor de verdade contra outra fonte pra cobertura de liga real.
+### Escanteio e falta por minuto, La Liga 2015/16 completa (380 partidas, evento a evento)
+
+Baixei o evento de cada uma das 380 partidas (`events/{match_id}.json`), contei `type.name='Foul Committed'` e `type.name='Pass'` com `pass.type.name='Corner'`, por minuto. **12.136 faltas e 3.841 escanteios no total** — 31,9 faltas/jogo e 10,1 escanteios/jogo (o escanteio bate bem com a faixa que já tínhamos visto no Achado 9 pras ligas europeias via `match_stats`, 9,25–10,57/jogo — boa validação cruzada entre fontes independentes).
+
+| Bloco (min) | Faltas /100 partidas | Escanteios /100 partidas |
+|---|---|---|
+| 0-15 | 151,6–161,3 | 42,4–53,2 |
+| 15-30 | 157,6–177,6 | 51,6–54,2 |
+| 30-45 | 169,5–182,6 | 48,2–50,8 |
+| **45-50** | **200,3** (salto na volta do intervalo) | **64,5** (salto na volta do intervalo) |
+| 50-75 | 162,1–172,4 (patamar alto) | 52,6–62,9 |
+| 75-90 | 154,7–179,2 | 50,0–57,9 |
+| 90+ (bucket mais largo) | 130,0 | 37,1 |
+
+**O mesmo "salto no intervalo" dos Achados 8/9 (gol, chute, cartão) aparece de novo aqui, em escanteio e falta.** O pico de falta (45-50) é o maior bloco de toda a partida, e o de escanteio também. Depois do salto, os dois ficam num patamar elevado até perto do fim — outro sinal (o quinto, contando gol/chute/cartão/agora escanteio+falta) de que times jogam de um jeito mensuravelmente diferente logo depois do intervalo, e não é ruído de uma estatística só.
+
+**O que isso NÃO prova:** é uma temporada, de uma liga, com o dado de outro fornecedor (StatsBomb, não FotMob) — não dá pra fundir com `match_shots_fotmob`/`match_events` pra virar coluna nova no banco sem decidir antes se vale a pena manter uma segunda fonte só pra essas duas métricas. Fica registrado como confirmação descritiva do padrão, não como pipeline novo.
+
+Descritivo, sem IC 95%.
 
 ---
 
@@ -493,4 +505,4 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 - **Formalizar o recorte de 5 em 5 minutos do Achado 6 na infraestrutura, se for usado de novo.** Hoje é uma consulta ad-hoc (cruza `match_shots_fotmob` com `match_events` na hora, calculando o relógio na mão) — não uma coluna ou função versionada como o resto da frente. Vale a pena virar função/view só se essa granularidade for reaproveitada; senão, reconstruir na hora quando precisar evita manter mais uma peça de infraestrutura.
 - ~~Perfil temporal por faixa de minuto~~ — **FEITO em 05/09 pro formato de gols, chutes, chutes ao gol e cartões entre ligas (Achados 8 e 9)**, e no processo apareceu um problema de cobertura de dado por liga-temporada não documentado antes (ver achado 8). Falta ainda o perfil temporal condicionado a estado de placar (achado 3/4) — essa parte específica foi começada e interrompida quando expôs o bug do Achado 5, e não foi refeita depois da correção do relógio.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.
-- **Timeline de escanteio e falta.** O achado 9 mostrou que não dá pra medir taxa por minuto de escanteio/falta hoje — só existe total por partida (`match_stats`). **StatsBomb Open Data já foi avaliado e descartado** como fonte pra isso (ver nota logo após o achado 10) — nenhuma das grandes ligas tem cobertura de liga completa lá, só um time específico por temporada ou uma amostra pequena. Ainda em aberto: confirmar se o payload do FotMob já capturado tem escanteio/falta por minuto (não verificado — exigiria 1-2 chamadas de descoberta antes de generalizar um ingestor novo), ou achar outra fonte com cobertura de liga real.
+- **Timeline de escanteio e falta como coluna permanente no banco.** O achado 9 mostrou que não existe hoje — só total por partida (`match_stats`). O achado 11 confirma o padrão temporal (salto no intervalo) usando uma temporada completa do StatsBomb Open Data (La Liga 2015/16, fonte externa, evento a evento), mas isso foi uma consulta pontual, não virou pipeline: continua em aberto decidir se vale ingerir isso de verdade (StatsBomb só cobre essa temporada de La Liga por completo — não dá pra generalizar pras outras ligas do projeto) ou confirmar se o payload do FotMob já capturado tem escanteio/falta por minuto (não verificado).
