@@ -51,7 +51,7 @@ Cada arquivo é uma Vercel Function independente. Cada um documenta no cabeçalh
 ### Banco de dados (Supabase Postgres)
 Duas famílias de tabelas que **coexistem no mesmo banco, com propósitos diferentes**:
 - `equipes`/`instituicoes`/`eventos` — cadastro manual feito pelo usuário na UI (RLS autenticado, CRUD normal). Uso legado/complementar.
-- `teams`/`leagues`/`matches`/`match_stats`/`odds_market`/`model_predictions`/`team_strengths`/`league_model_params`/`team_elo`/`team_elo_history`/`players`/`match_formation_fotmob`/`match_goal_timeline`/`match_team_game_state` e as demais tabelas `*_fotmob` — pipeline de dados reais ingerido automaticamente (RLS leitura pública, escrita só via `SUPABASE_SERVICE_ROLE_KEY`, nunca pela chave anon do frontend).
+- `teams`/`leagues`/`matches`/`match_stats`/`odds_market`/`model_predictions`/`team_strengths`/`league_model_params`/`team_elo`/`team_elo_history`/`players`/`match_formation_fotmob`/`match_goal_timeline`/`match_team_game_state`/`match_team_event_response` e as demais tabelas `*_fotmob` — pipeline de dados reais ingerido automaticamente (RLS leitura pública, escrita só via `SUPABASE_SERVICE_ROLE_KEY`, nunca pela chave anon do frontend).
 
 ### Esquema tático (`match_formation_fotmob`)
 A formação de cada time em cada partida ("4-2-3-1", "3-5-2") **não vem pronta de nenhuma fonte** — é derivada da grade de posições dos 11 titulares que o FotMob usa pra desenhar o campinho (`verticalLayout.y`, guardado em `match_lineup_fotmob.raw`/`field_pos_y`). A regra "grade → formação" mora **só** na função SQL `derivar_formacoes_fotmob(p_match_ids)` (migration `20260903120000_create_match_formation_fotmob.sql`); os dois caminhos de ingestão de escalação (`api/model-maintenance.js` e `scripts/ingerir_escalacao_pre_jogo.py`) chamam essa RPC depois do upsert em vez de reimplementar a lógica. `?tarefa=derivar-formacoes` em `model-maintenance.js` é a rede de segurança (janela de dias, escopo limitado — o backfill histórico completo é operação de migration, estoura o timeout da function). A view `v_confronto_formacoes` dá uma linha por partida com os dois lados e os saldos setoriais.
@@ -65,6 +65,14 @@ Três coisas que **precisam** ser respeitadas por quem usar essas tabelas:
 - **Sempre normalize por `minutos`.** Somar `xg_pro` por estado mede quanto tempo o time passou naquela situação, não como ele joga — é exatamente o viés que a fase 2 existe pra remover. A view `v_time_game_state` já entrega tudo por 90 minutos naquele estado.
 - **Gol contra: `match_shots_fotmob.team_id` é quem CHUTOU, não quem foi beneficiado** — o gol conta pro adversário. Ler errado derruba a reconstrução do placar de 99,8% para 91,5%. `match_goal_timeline.para_casa` já resolve isso.
 - **`period='PenaltyShootout'` não conta pro placar** (454 "gols" de disputa) e **filtre por `placar_confere`** antes de treinar qualquer coisa.
+
+### Resposta a eventos (`match_team_event_response`)
+Fase 3. Mede o **transiente**: o que muda nos 5 e 15 minutos após um gol ou expulsão, *acima* da mudança de estado que o próprio evento causou. Derivada só em `derivar_resposta_evento(p_match_ids)` (migration `20260905100000_create_resposta_evento.sql`), chamada por RPC pelo ingestor depois de `derivar_game_state`; `?tarefa=derivar-resposta-evento` é a rede de segurança.
+
+- **`estado` faz parte da chave, e não é opcional.** Comparar "após sofrer gol" com o jogo inteiro só remede a mudança de placar. A comparação válida é contra a linha `(evento='nenhum', janela='regime')` do **mesmo estado** — a view `v_resposta_evento` existe para isso.
+- Cada instante pertence ao evento **mais recente** do time (janelas nunca se sobrepõem), e um chute no minuto exato do corte cai no intervalo que *termina* ali — senão o gol entraria como resposta à janela que ele mesmo abriu.
+- A derivação é a mais pesada das três: no backfill só coube em lotes de ~500 partidas por transação. O endpoint usa teto de 150.
+- Invariante que vale reconferir após qualquer mudança: somar `minutos`/`chutes_pro`/`xg_pro` por (partida, time) tem de bater **exatamente** com `match_team_game_state` — hoje bate em 37.540 de 37.540 pares.
 
 `match_events` **não** é uma tabela de eventos gerais: só tem cartões (amarelo/vermelho/segundo amarelo), sem gols e sem substituições. Gols vêm do shotmap.
 

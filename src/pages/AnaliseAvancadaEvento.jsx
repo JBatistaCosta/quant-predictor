@@ -18,7 +18,7 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid, Activity } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid, Activity, Zap } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import {
@@ -647,6 +647,114 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Resposta a eventos (match_team_event_response)
+// ============================================================
+// A comparação que dá sentido a esta seção é SEMPRE contra o regime do MESMO
+// estado. "Cria mais depois de sofrer gol" comparado com o jogo inteiro é só
+// "cria mais quando está perdendo" -- o achado da seção anterior reembalado.
+// Comparado com o resto do tempo em que já estava perdendo, aí sim é reação.
+
+const MIN_MINUTOS_JANELA = 120; // abaixo disso a taxa de uma janela de 5min é ruído
+
+function resumirResposta(linhas, teamId) {
+  const acc = {};
+  for (const r of linhas) {
+    if (r.team_id !== teamId) continue;
+    const chave = `${r.estado}|${r.evento}|${r.janela}`;
+    const a = (acc[chave] ||= { minutos: 0, xg: 0, chutes: 0 });
+    a.minutos += Number(r.minutos) || 0;
+    a.xg += Number(r.xg_pro) || 0;
+    a.chutes += Number(r.chutes_pro) || 0;
+  }
+  const taxa = (chave) => {
+    const a = acc[chave];
+    if (!a || a.minutos < MIN_MINUTOS_JANELA) return null;
+    return { xg90: (a.xg / a.minutos) * 90, minutos: a.minutos };
+  };
+  // Dois pares, cada um dentro do seu estado: depois de sofrer (perdendo) e
+  // depois de marcar (ganhando).
+  return [
+    { rotulo: 'Após sofrer gol', estado: 'perdendo',
+      transiente: taxa('perdendo|sofreu|0-5'), regime: taxa('perdendo|nenhum|regime') },
+    { rotulo: 'Após marcar', estado: 'ganhando',
+      transiente: taxa('ganhando|marcou|0-5'), regime: taxa('ganhando|nenhum|regime') },
+  ];
+}
+
+function LinhaResposta({ item }) {
+  if (!item.transiente || !item.regime) {
+    return (
+      <tr className="border-t border-slate-700/40">
+        <td className="py-1 text-slate-400">{item.rotulo}</td>
+        <td colSpan={3} className="text-right text-slate-600 text-[10px]">amostra insuficiente</td>
+      </tr>
+    );
+  }
+  const delta = item.transiente.xg90 - item.regime.xg90;
+  const pct = item.regime.xg90 > 0 ? (delta / item.regime.xg90) * 100 : 0;
+  return (
+    <tr className="border-t border-slate-700/40">
+      <td className="py-1 text-slate-300">{item.rotulo}</td>
+      <td className="text-right font-mono text-slate-200">{item.transiente.xg90.toFixed(2)}</td>
+      <td className="text-right font-mono text-slate-500">{item.regime.xg90.toFixed(2)}</td>
+      <td className={`text-right font-mono ${delta >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+        {delta >= 0 ? '+' : ''}{pct.toFixed(0)}%
+      </td>
+    </tr>
+  );
+}
+
+function ColunaResposta({ nome, itens }) {
+  return (
+    <div className="flex-1 min-w-[230px]">
+      <p className="text-xs text-slate-400 font-bold truncate mb-1.5">{nome}</p>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="text-slate-500">
+            <th className="text-left font-normal pb-1">Momento</th>
+            <th className="text-right font-normal pb-1">0-5min</th>
+            <th className="text-right font-normal pb-1">regime</th>
+            <th className="text-right font-normal pb-1">dif.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {itens.map((i) => <LinhaResposta key={i.rotulo} item={i} />)}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PainelRespostaEvento({ jogo, respostaEvento }) {
+  const homeId = jogo.home?.id;
+  const awayId = jogo.away?.id;
+  const rCasa = useMemo(() => resumirResposta(respostaEvento, homeId), [respostaEvento, homeId]);
+  const rFora = useMemo(() => resumirResposta(respostaEvento, awayId), [respostaEvento, awayId]);
+
+  if (!respostaEvento.length) return null;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+      <p className="text-xs text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <Zap size={12} className="text-emerald-400" /> Reação nos 5 minutos seguintes
+      </p>
+      <div className="flex gap-5 flex-wrap">
+        <ColunaResposta nome={jogo.home?.name} itens={rCasa} />
+        <div className="w-px bg-slate-700 self-stretch hidden sm:block" />
+        <ColunaResposta nome={jogo.away?.name} itens={rFora} />
+      </div>
+      <p className="mt-3 text-[10px] text-slate-600 leading-relaxed">
+        xG criado por 90 nos 5 minutos após o evento, contra o <em>regime</em> do MESMO estado do placar (o resto do
+        tempo em que o time já estava perdendo/ganhando). Comparar com o jogo inteiro em vez do mesmo estado só
+        mediria a mudança de placar de novo. Na média geral do banco esses 5 minutos são os mais parados da partida
+        para os dois lados — parte disso é comemoração e reinício, não só escolha tática. Descritivo, fora de
+        qualquer modelo.
+      </p>
     </div>
   );
 }
@@ -1679,6 +1787,9 @@ export default function AnaliseAvancadaEvento() {
   // Comportamento por placar (match_team_game_state) dos dois times, na mesma
   // janela de ~2 temporadas usada pelo histórico tático.
   const [gameStateRecente, setGameStateRecente] = useState([]);
+  // Resposta a eventos (match_team_event_response): transiente pós-gol dentro
+  // de cada estado, na mesma janela de ~2 temporadas.
+  const [respostaEvento, setRespostaEvento] = useState([]);
 
   // Sincronização manual da escalação real (match_lineup_fotmob) via
   // scripts/ingerir_escalacao_pre_jogo.py --match-ids -- diferente do cron
@@ -1741,7 +1852,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -1843,6 +1954,22 @@ export default function AnaliseAvancadaEvento() {
                 .lt('matches.match_date', j.match_date)
                 .gte('matches.match_date', inicioJanelaTatica)
             : Promise.resolve({ data: [] }),
+          // Resposta a eventos: só as 4 combinações que o painel compara
+          // (0-5 pós-gol e regime, em perdendo/ganhando). Sem esses filtros a
+          // consulta traz ~705 linhas para 2 times em 2 temporadas -- perto
+          // demais do corte silencioso de 1000 do PostgREST para um time com
+          // mais jogos; com eles cai para ~1/4 disso.
+          (j.home?.id && j.away?.id)
+            ? supabase
+                .from('match_team_event_response')
+                .select('team_id, evento, janela, estado, minutos, xg_pro, chutes_pro, matches!inner(match_date)')
+                .in('team_id', [j.home.id, j.away.id])
+                .in('evento', ['marcou', 'sofreu', 'nenhum'])
+                .in('janela', ['0-5', 'regime'])
+                .in('estado', ['perdendo', 'ganhando'])
+                .lt('matches.match_date', j.match_date)
+                .gte('matches.match_date', inicioJanelaTatica)
+            : Promise.resolve({ data: [] }),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -1858,6 +1985,7 @@ export default function AnaliseAvancadaEvento() {
         setFormacaoPartida(formPartida || []);
         setFormacoesRecentes(formRecentes || []);
         setGameStateRecente(estadoRecente || []);
+        setRespostaEvento(respEvento || []);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -2107,6 +2235,8 @@ export default function AnaliseAvancadaEvento() {
       <PainelEsquemaTatico jogo={jogo} formacaoPartida={formacaoPartida} formacoesRecentes={formacoesRecentes} />
 
       <PainelComportamentoPlacar jogo={jogo} gameStateRecente={gameStateRecente} />
+
+      <PainelRespostaEvento jogo={jogo} respostaEvento={respostaEvento} />
 
       {estimativas.length === 0 ? (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center">
