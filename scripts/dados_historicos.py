@@ -2598,10 +2598,21 @@ def _carregar_titular_abertura_pre_jogo(supabase: Client, partidas: pd.DataFrame
 def _agregar_forca_xi(supabase: Client, membros: list[dict]) -> dict[tuple[int, int], dict]:
     """Núcleo de cálculo compartilhado por `obter_titular_atual`: dado um
     conjunto de linhas `{match_id, team_id, player_id}` (venham de onde
-    vierem -- escalação real ou XI previsto), busca `player_ratings.rating`
-    e o valor de mercado mais recente de cada jogador e agrega por
+    vierem -- escalação real ou XI previsto), busca `player_ratings.rating`,
+    o valor de mercado mais recente, idade (`players.birth_date`) e altura
+    (`player_details_fotmob.height_cm`) de cada jogador e agrega por
     (match_id, team_id). Mesmo cálculo nos dois casos -- só muda a fonte
-    dos 11 jogadores antes de chamar isso."""
+    dos 11 jogadores antes de chamar isso.
+
+    Idade calculada em relação a "agora" (não à data exata da partida) --
+    mesma simplificação já aceita pra rating/valor de mercado aqui: "agora"
+    é a única referência que importa pra uma fixture futura próxima
+    (`LIMITE_FIXTURES` de `rodar_predicoes.py`), diferença de poucos dias
+    é irrelevante pra uma feature em anos. `titular_avg_age`/
+    `titular_avg_height` alimentam v10/v11 (`FEATURES_NUMERICAS_V10`) --
+    antes dessas duas chaves não existirem aqui, o cron diário quebrava com
+    `KeyError` pra catboost_v10/v11 e equivalentes (mesma classe de bug já
+    corrigida pra v9, ver `obter_situacao_chutes_por_mando`)."""
     membros = [m for m in membros if m.get("player_id") is not None]
     if not membros:
         return {}
@@ -2628,6 +2639,22 @@ def _agregar_forca_xi(supabase: Client, membros: list[dict]) -> dict[tuple[int, 
         if atual is None or v["value_date"] > atual[0]:
             valor_mais_recente[v["player_id"]] = (v["value_date"], float(v["value_eur"]))
 
+    nascimentos = (
+        supabase.table("players").select("id, birth_date").in_("id", player_ids).execute().data or []
+    )
+    agora = pd.Timestamp.now(tz="UTC")
+    idade_por_jogador: dict[int, float] = {}
+    for p in nascimentos:
+        if p.get("birth_date") is None:
+            continue
+        idade_por_jogador[p["id"]] = (agora - pd.Timestamp(p["birth_date"], tz="UTC")).days / 365.25
+
+    alturas = (
+        supabase.table("player_details_fotmob").select("player_id, height_cm").in_("player_id", player_ids).execute().data
+        or []
+    )
+    altura_por_jogador = {a["player_id"]: a["height_cm"] for a in alturas if a.get("height_cm") is not None}
+
     por_match_team: dict[tuple[int, int], list[dict]] = {}
     for m in membros:
         por_match_team.setdefault((m["match_id"], m["team_id"]), []).append(m)
@@ -2636,11 +2663,15 @@ def _agregar_forca_xi(supabase: Client, membros: list[dict]) -> dict[tuple[int, 
     for (match_id, team_id), jogadores in por_match_team.items():
         ratings_xi = [rating_por_jogador[j["player_id"]] for j in jogadores if j["player_id"] in rating_por_jogador]
         valores_xi = [valor_mais_recente[j["player_id"]][1] for j in jogadores if j["player_id"] in valor_mais_recente]
-        if not ratings_xi and not valores_xi:
+        idades_xi = [idade_por_jogador[j["player_id"]] for j in jogadores if j["player_id"] in idade_por_jogador]
+        alturas_xi = [altura_por_jogador[j["player_id"]] for j in jogadores if j["player_id"] in altura_por_jogador]
+        if not ratings_xi and not valores_xi and not idades_xi and not alturas_xi:
             continue
         saida[(match_id, team_id)] = {
             "titular_rating": float(np.mean(ratings_xi)) if ratings_xi else float("nan"),
             "titular_valor_mercado": float(np.sum(valores_xi)) if valores_xi else float("nan"),
+            "titular_avg_age": float(np.mean(idades_xi)) if idades_xi else float("nan"),
+            "titular_avg_height": float(np.mean(alturas_xi)) if alturas_xi else float("nan"),
         }
     return saida
 
@@ -2692,6 +2723,64 @@ def obter_titular_atual(supabase: Client, match_ids: list[int]) -> dict[int, dic
         )
         for (match_id, team_id), agregado in _agregar_forca_xi(supabase, previsto).items():
             resultado.setdefault(match_id, {})[team_id] = {**agregado, "fonte": "previsto"}
+
+    return resultado
+
+
+def obter_venue_capacity_atual(supabase: Client, team_ids: list[int]) -> dict[int, float]:
+    """v10 ao vivo: capacidade do estádio (`teams.stadium_capacity`) --
+    estático (não muda por partida), então "atual" aqui só significa "sem
+    depender de nenhuma partida específica". Wrapper fino sobre
+    `_carregar_venue_capacity` (usada no treino) pra manter a mesma
+    convenção de nome `obter_*_atual` dos demais provedores de feature ao
+    vivo deste módulo."""
+    return _carregar_venue_capacity(supabase, team_ids).to_dict()
+
+
+def obter_titular_abertura_fechamento_atual(supabase: Client, match_ids: list[int]) -> dict[int, dict[int, dict]]:
+    """v11 ao vivo: força do XI titular como DOIS sinais PARALELOS --
+    "abertura" (XI previsto, `xi_previsto`, disponível bem antes do apito)
+    e "fechamento" (XI real confirmado, `match_lineup_fotmob`, só perto do
+    apito) -- ao contrário de `obter_titular_atual` (v10, que faz fallback
+    entre as duas fontes e devolve só UM valor), aqui as duas nunca se
+    substituem: `FEATURES_NUMERICAS_V11` espera as duas colunas
+    (`titular_rating_abertura_home`/`titular_rating_fechamento_home` etc.)
+    ao mesmo tempo, tolerando NaN em cada uma independente da outra (mesmo
+    espírito do treino, ver `FEATURES_NUMERICAS_V11` em `modelos_ml.py`).
+
+    Devolve `{match_id: {team_id: {"abertura": {...} | None, "fechamento": {...} | None}}}`."""
+    resultado: dict[int, dict[int, dict]] = {}
+    if not match_ids:
+        return resultado
+
+    lineup_real = (
+        supabase.table("match_lineup_fotmob")
+        .select("match_id, team_id, player_id")
+        .eq("is_starter", True)
+        .in_("match_id", match_ids)
+        .execute()
+        .data
+        or []
+    )
+    fechamento_por_par = _agregar_forca_xi(supabase, lineup_real)
+
+    previsto = (
+        supabase.table("xi_previsto")
+        .select("match_id, team_id, player_id")
+        .eq("is_titular_previsto", True)
+        .in_("match_id", match_ids)
+        .execute()
+        .data
+        or []
+    )
+    abertura_por_par = _agregar_forca_xi(supabase, previsto)
+
+    for match_id in match_ids:
+        resultado[match_id] = {}
+    for (match_id, team_id), agregado in fechamento_por_par.items():
+        resultado.setdefault(match_id, {}).setdefault(team_id, {})["fechamento"] = agregado
+    for (match_id, team_id), agregado in abertura_por_par.items():
+        resultado.setdefault(match_id, {}).setdefault(team_id, {})["abertura"] = agregado
 
     return resultado
 

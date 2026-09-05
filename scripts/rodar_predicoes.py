@@ -485,6 +485,15 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     # TREINO, nunca no lado ao vivo).
     forma_extra_atual = dados_historicos.obter_forma_recente_extra_por_mando(supabase, ids_conhecidos)
     forma_fotmob_atual = dados_historicos.obter_forma_recente_fotmob_por_mando(supabase, ids_conhecidos)
+    # v9 ao vivo: situação de chute (% fast break, % bola parada, xG médio
+    # por chute, % gols no 2º tempo), mesmo espírito de forma_fotmob_atual
+    # acima -- sem isso, catboost_v9/v10/v11, xgboost_v9/v10/v11,
+    # lightgbm_v9/v10/v11 e mlp_v9/v10/v11 quebravam com KeyError na hora de
+    # prever (`media_pct_fast_break_fm_5j_home` e as demais 15 colunas de
+    # `COLUNAS_FORMA_SITUACAO_CHUTES` só existiam no dataset de TREINO,
+    # nunca no lado ao vivo -- achado real, confirmado no log do cron
+    # diário de 05/09: KeyError idêntico nos 12 modelos v9/v10/v11).
+    situacao_chutes_atual = dados_historicos.obter_situacao_chutes_por_mando(supabase, ids_conhecidos)
     squad_rating_atual = dados_historicos.obter_squad_rating_atual(supabase, ids_conhecidos)
     ultimo_jogo_por_time = dados_historicos.obter_fadiga_atual(supabase, ids_conhecidos)
     forma_padrao = {coluna: float("nan") for coluna in dados_historicos.FEATURES_NUMERICAS if coluna not in ("elo_home", "elo_away")}
@@ -516,7 +525,21 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
     arbitro_padrao = {"arbitro_cartoes_media": float("nan"), "arbitro_faltas_media": float("nan"), "arbitro_n_jogos": 0}
 
     titular_atual = dados_historicos.obter_titular_atual(supabase, match_ids)
-    titular_padrao = {"titular_rating": float("nan"), "titular_valor_mercado": float("nan")}
+    titular_padrao = {
+        "titular_rating": float("nan"),
+        "titular_valor_mercado": float("nan"),
+        "titular_avg_age": float("nan"),
+        "titular_avg_height": float("nan"),
+    }
+    # v10 ao vivo: capacidade do estádio (estático, não depende de partida).
+    venue_capacity_atual = dados_historicos.obter_venue_capacity_atual(supabase, ids_conhecidos)
+    # v11 ao vivo: abertura (XI previsto) e fechamento (XI real confirmado)
+    # como sinais PARALELOS -- ver docstring de
+    # `obter_titular_abertura_fechamento_atual` (não é o mesmo dado de
+    # `titular_atual` acima, que já faz fallback entre as duas fontes e
+    # devolve um valor só).
+    titular_abertura_fechamento_atual = dados_historicos.obter_titular_abertura_fechamento_atual(supabase, match_ids)
+    titular_abertura_padrao = {"titular_rating": float("nan"), "titular_valor_mercado": float("nan")}
 
     linhas = []
     for _, jogo in fixtures.iterrows():
@@ -528,6 +551,8 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         forma_extra_fora = forma_extra_atual.get(id_fora, {})
         forma_fotmob_casa = forma_fotmob_atual.get(id_casa, {})
         forma_fotmob_fora = forma_fotmob_atual.get(id_fora, {})
+        situacao_chutes_casa = situacao_chutes_atual.get(id_casa, {})
+        situacao_chutes_fora = situacao_chutes_atual.get(id_fora, {})
         cartoes_casa = cartoes_atuais.get(id_casa, cartoes_padrao)
         cartoes_fora = cartoes_atuais.get(id_fora, cartoes_padrao)
         data_jogo = pd.to_datetime(jogo["match_date"], utc=True)
@@ -542,6 +567,11 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
         titular_por_time = titular_atual.get(jogo["match_id"], {})
         titular_casa = titular_por_time.get(id_casa, titular_padrao)
         titular_fora = titular_por_time.get(id_fora, titular_padrao)
+        abertura_fechamento_por_time = titular_abertura_fechamento_atual.get(jogo["match_id"], {})
+        abertura_casa = abertura_fechamento_por_time.get(id_casa, {}).get("abertura", titular_abertura_padrao)
+        abertura_fora = abertura_fechamento_por_time.get(id_fora, {}).get("abertura", titular_abertura_padrao)
+        fechamento_casa = abertura_fechamento_por_time.get(id_casa, {}).get("fechamento", titular_abertura_padrao)
+        fechamento_fora = abertura_fechamento_por_time.get(id_fora, {}).get("fechamento", titular_abertura_padrao)
         bayes_casa = bayesiano_atual.get(id_casa, {})
         bayes_fora = bayesiano_atual.get(id_fora, {})
 
@@ -562,6 +592,15 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
             colunas_v7v8[mapa["sofrido_home"]] = forma_fotmob_casa.get(mapa["sofrido_home"])
             colunas_v7v8[mapa["marcado_away"]] = forma_fotmob_fora.get(mapa["marcado_away"])
             colunas_v7v8[mapa["sofrido_away"]] = forma_fotmob_fora.get(mapa["sofrido_away"])
+
+        # v9: mesmo padrão de colunas_v7v8 acima, pra COLUNAS_FORMA_SITUACAO_CHUTES.
+        colunas_v9_situacao = {}
+        for col in dados_historicos.COLUNAS_SITUACAO_CHUTES:
+            mapa = dados_historicos.COLUNAS_FORMA_SITUACAO_CHUTES[col]
+            colunas_v9_situacao[mapa["marcado_home"]] = situacao_chutes_casa.get(mapa["marcado_home"])
+            colunas_v9_situacao[mapa["sofrido_home"]] = situacao_chutes_casa.get(mapa["sofrido_home"])
+            colunas_v9_situacao[mapa["marcado_away"]] = situacao_chutes_fora.get(mapa["marcado_away"])
+            colunas_v9_situacao[mapa["sofrido_away"]] = situacao_chutes_fora.get(mapa["sofrido_away"])
 
         linhas.append(
             {
@@ -625,12 +664,49 @@ def montar_features_fixtures(fixtures: pd.DataFrame, supabase: Client) -> pd.Dat
                 "titular_rating_away": titular_fora.get("titular_rating"),
                 "titular_valor_mercado_home": titular_casa.get("titular_valor_mercado"),
                 "titular_valor_mercado_away": titular_fora.get("titular_valor_mercado"),
+                # v10: idade/altura média do XI titular + capacidade do
+                # estádio do mandante (ver `_agregar_forca_xi`/
+                # `obter_venue_capacity_atual`).
+                "titular_avg_age_home": titular_casa.get("titular_avg_age"),
+                "titular_avg_age_away": titular_fora.get("titular_avg_age"),
+                "titular_avg_height_home": titular_casa.get("titular_avg_height"),
+                "titular_avg_height_away": titular_fora.get("titular_avg_height"),
+                "venue_capacity_home": venue_capacity_atual.get(id_casa, float("nan")),
+                # v11: força do XI titular em dois pontos no tempo PARALELOS
+                # -- abertura (previsto) e fechamento (real confirmado, alias
+                # de titular_rating_home/away acima) -- ver docstring de
+                # `obter_titular_abertura_fechamento_atual`.
+                "titular_rating_abertura_home": abertura_casa.get("titular_rating"),
+                "titular_rating_abertura_away": abertura_fora.get("titular_rating"),
+                "titular_valor_mercado_abertura_home": abertura_casa.get("titular_valor_mercado"),
+                "titular_valor_mercado_abertura_away": abertura_fora.get("titular_valor_mercado"),
+                "titular_rating_fechamento_home": fechamento_casa.get("titular_rating"),
+                "titular_rating_fechamento_away": fechamento_fora.get("titular_rating"),
+                "titular_valor_mercado_fechamento_home": fechamento_casa.get("titular_valor_mercado"),
+                "titular_valor_mercado_fechamento_away": fechamento_fora.get("titular_valor_mercado"),
+                "rating_diff_xi_abertura": _diff_tolerante(abertura_casa.get("titular_rating"), abertura_fora.get("titular_rating")),
+                "valor_diff_xi_abertura": _diff_tolerante(abertura_casa.get("titular_valor_mercado"), abertura_fora.get("titular_valor_mercado")),
+                "rating_diff_xi_fechamento": _diff_tolerante(fechamento_casa.get("titular_rating"), fechamento_fora.get("titular_rating")),
+                "valor_diff_xi_fechamento": _diff_tolerante(fechamento_casa.get("titular_valor_mercado"), fechamento_fora.get("titular_valor_mercado")),
+                "elo_diff": elo_atual.get(id_casa, ELO_PADRAO) - elo_atual.get(id_fora, ELO_PADRAO),
                 "progresso_temporada": progresso_atual.get(jogo["match_id"]),
                 **colunas_v7v8,
+                **colunas_v9_situacao,
                 "liga": jogo["liga"],
             }
         )
     return pd.DataFrame(linhas)
+
+
+def _diff_tolerante(a: float | None, b: float | None) -> float:
+    """`a - b` tolerante a NaN/None -- usado nos diferenciais de força do XI
+    (`rating_diff_xi_abertura` etc.), onde abertura/fechamento costumam vir
+    ausentes ao vivo (cobertura esparsa por natureza, ver docstring de
+    `obter_titular_abertura_fechamento_atual`); `nan - nan` já daria NaN
+    sozinho, mas `None` (chave ausente) quebraria a subtração."""
+    if a is None or b is None or pd.isna(a) or pd.isna(b):
+        return float("nan")
+    return a - b
 
 
 def _fadiga_da_fixture(data_jogo: pd.Timestamp, data_ultimo_jogo: pd.Timestamp | None) -> tuple[float, int]:
@@ -1007,6 +1083,16 @@ def main() -> None:
         features_fixtures = montar_features_fixtures(fixtures, supabase)
 
         for nome_modelo in modelos_ml.TREINADORES:
+            # catboost_v1/xgboost_v1/lightgbm_v1 são registrados em
+            # TREINADORES só pro grid search de `backtest_kelly.py`
+            # (`MODELOS_SEM_FEATURE_SET_PADRAO` -- algoritmo puro, sem
+            # feature set/hiperparâmetro default): não têm entrada em
+            # `PARAMS_DEFAULT`/`FEATURES_POR_MODELO` de propósito, então
+            # sempre quebravam aqui com `KeyError` todo dia (achado real,
+            # confirmado no log do cron de 05/09) -- pular direto em vez de
+            # depender do `except` genérico abaixo pra descartar a falha.
+            if nome_modelo not in modelos_ml.PARAMS_DEFAULT or nome_modelo not in modelos_ml.FEATURES_POR_MODELO:
+                continue
             try:
                 logger.info("Rodando modelo %s (+ calibração conjugada)...", nome_modelo)
                 preds_raw, preds_calibradas = prever_ml_com_calibracao(nome_modelo, features_fixtures, dataset_treino)
