@@ -11,6 +11,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Trophy, ArrowLeft, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowRight, ListOrdered, CalendarRange, UploadCloud, Loader2 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import { useAuth } from '../AuthContext';
 import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
 import { apiUrl } from '../utils/apiUrl';
 
@@ -57,6 +58,7 @@ function calcularClassificacao(jogos) {
 
 export default function LigaDetalhe() {
   const { id } = useParams();
+  const { session } = useAuth();
   const [liga, setLiga] = useState(null);
   const [carregandoLiga, setCarregandoLiga] = useState(true);
   const [erro, setErro] = useState('');
@@ -173,7 +175,10 @@ export default function LigaDetalhe() {
       const maxRodadas = Math.ceil(loteImportacao / rodadaLimite) + 3; // rede de segurança contra loop preso
       while (totalProcessado < loteImportacao && rodada < maxRodadas) {
         rodada++;
-        const resp = await fetch(apiUrl(`${url}&limite=${rodadaLimite}`));
+        const opcoes = fonte === 'fotmob'
+          ? { headers: { Authorization: `Bearer ${session?.access_token || ''}` } }
+          : undefined;
+        const resp = await fetch(apiUrl(`${url}&limite=${rodadaLimite}`), opcoes);
         const dados = await resp.json();
         if (!resp.ok) throw new Error(dados.error?.message || 'Falha no lote.');
         if (dados.mensagem) { setMsgImportacao(dados.mensagem); break; }
@@ -363,18 +368,18 @@ export default function LigaDetalhe() {
               </button>
               <button
                 onClick={() => importarPartidas('fotmob', 'encerradas')}
-                disabled={!!importando}
+                disabled={!!importando || !session}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={`Importa stats de partidas encerradas (match_date < agora-2h) via FotMob da temporada ${temporada}`}
+                title={!session ? 'Faça login pra importar via FotMob.' : `Importa stats de partidas encerradas (match_date < agora-2h) via FotMob da temporada ${temporada}`}
               >
                 {importando === 'fotmob-encerradas' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
                 Encerradas (FotMob)
               </button>
               <button
                 onClick={() => importarPartidas('fotmob', 'ao_vivo')}
-                disabled={!!importando}
+                disabled={!!importando || !session}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-amber-600/60 text-amber-300 text-sm hover:bg-amber-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={`Importa stats de partidas com match_date nos últimos 120 min (em andamento ou recém-encerradas) via FotMob`}
+                title={!session ? 'Faça login pra importar via FotMob.' : `Importa stats de partidas com match_date nos últimos 120 min (em andamento ou recém-encerradas) via FotMob`}
               >
                 {importando === 'fotmob-ao_vivo' ? <Loader2 className="animate-spin" size={15} /> : <UploadCloud size={15} />}
                 Ao Vivo (FotMob)
