@@ -4,6 +4,7 @@
 **Frente de comportamento/interação: 3 fases entregues.** Fase 1 (esquema tático, PR #420) e fase 2 (estado do jogo, PR #433) mergeadas e em produção. Fase 3 (resposta a eventos) documentada na seção **"Resposta a eventos (`match_team_event_response`) — fase 3"**, mais abaixo.
 
 **Continuações possíveis, nenhuma decidida — não presuma escopo:**
+- ~~Controlar por força de equipe~~ — **FEITO em 05/09, e mudou a conclusão da fase 2.** Ver seção "Controle de força de equipe" mais abaixo.
 - **Levar qualquer uma das três camadas para dentro de um modelo.** Hoje nada disso entra em predição: é camada de dado + exibição descritiva. Esse é o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `backtest-betting.js`.
 - **Controlar por força de equipe.** O achado da fase 2 (quem perde finaliza mais e pior) continua confundido com qualidade de elenco: quem está ganhando é, em média, o time melhor. O espelhamento controla o tempo, não a força.
 - **Perfil temporal por faixa de minuto**, agora que dá para condicionar ao estado em vez de confundir com ele.
@@ -615,3 +616,40 @@ Os 5 minutos seguintes a um gol são **os mais parados da partida, para os dois 
 **RESSALVA IMPORTANTE:** parte dessa queda é **mecânica, não tática** — comemoração, reinício do meio e substituições consomem tempo real dentro da janela de 5 minutos, então há menos bola rolando. Separar "time recua" de "cronômetro corre sem jogo" exigiria tempo efetivo de jogo, que não temos. Nada disso foi validado com IC 95% nem entrou em modelo.
 
 **Frontend:** painel "Reação nos 5 minutos seguintes" em `/analise-avancada/:matchId`, sempre comparando contra o regime do mesmo estado. Consulta validada via REST anon: 294 linhas (era 705 antes de filtrar janela/estado — perto demais do corte de 1000).
+
+
+---
+
+## Controle de força de equipe — corrige a conclusão da fase 2 (05/09)
+
+**Uma leitura que este projeto chegou a registrar estava errada, e o erro era o que eu mesmo tinha sinalizado como risco.** A fase 2 produziu, na média global: *"quem está perdendo cria menos xG que quem está ganhando"* (1,370 contra 1,426 por 90). Esse número está confundido com força de equipe — quem está ganhando é, em média, o time melhor. O espelhamento da fase 2 controla o **tempo**, não a **força**.
+
+**Controle usado:** `team_elo_history.rating_antes`, escopo `global` — o Elo ANTES da partida, sem vazamento. Cobertura: 18.739 de 18.770 partidas (99,8%).
+
+**Controlando por Elo, o efeito de xG total INVERTE em jogos equilibrados:**
+
+| Faixa | Estado | xG criado /90 | Chutes /90 | xG por chute |
+|---|---|---|---|---|
+| \|dif Elo\| ≤ 25 | perdendo | **1,390** | 14,04 | 0,0990 |
+| \|dif Elo\| ≤ 25 | ganhando | 1,281 | 10,50 | 0,1220 |
+| \|dif Elo\| > 75 | perdendo | 1,335 | 13,21 | 0,1011 |
+| \|dif Elo\| > 75 | ganhando | **1,526** | 11,81 | 0,1292 |
+
+**Segurando também o mando de campo** (em jogo equilibrado por Elo o mandante ainda ganha mais, então "ganhando" vinha enriquecido de mandantes):
+
+| Lado | Estado | xG criado /90 | Chutes /90 | xG por chute |
+|---|---|---|---|---|
+| Mandante | perdendo | 1,617 | 16,05 | 0,1008 |
+| Mandante | ganhando | 1,388 | 11,38 | 0,1220 |
+| Visitante | perdendo | 1,232 | 12,63 | 0,0975 |
+| Visitante | ganhando | 1,127 | 9,25 | 0,1219 |
+
+**O que sobrevive a todos os controles:**
+1. **Qualidade por finalização** — xG por chute ~0,122 ganhando contra ~0,098-0,101 perdendo. Notavelmente estável: praticamente o mesmo valor nas TRÊS faixas de Elo e nos DOIS lados. Perseguir o jogo degrada a qualidade do chute em ~18%, independentemente de quem é o time e de onde joga.
+2. **Volume** — mais chutes perdendo, em toda faixa e dos dois lados.
+
+**O que NÃO sobrevive:** o xG total por 90. Ele é o produto do volume (comportamental) pela qualidade (comportamental) com a força de equipe por cima, e por isso troca de sinal conforme a faixa. **Era exatamente esse o número do resumo da fase 2.**
+
+**Entregue:** view `v_game_state_por_forca` (migration `20260905140000`), que expõe `elo_dif` e `faixa_forca` por (partida, time) para que o controle seja reproduzível em vez de uma consulta solta. Quem agregar `match_team_game_state` deve agregar por `faixa_forca` e de preferência também por `is_home`.
+
+**Lição de método que vale além deste caso:** invariantes internas (espelhamento, minutos que fecham) provam que a *derivação* está certa — não provam que a *interpretação* está. As três fases passaram em todas as invariantes e mesmo assim a conclusão agregada estava confundida.
