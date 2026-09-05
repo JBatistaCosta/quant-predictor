@@ -39,18 +39,22 @@ SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
 SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
 
 
-def _exec_retry(query, tentativas=5, espera_inicial=3):
-    """Executa uma query do supabase-py com retry exponencial. Erros de rede
-    (httpx.ReadTimeout) e de instabilidade do PostgREST (PGRST002 - schema
-    cache) são transitórios e já derrubaram execuções inteiras de ~50min no
-    meio do processamento -- perdendo todo o progresso desde o início."""
+def _exec_retry(query, tentativas=9, espera_inicial=3, espera_max=60):
+    """Executa uma query do supabase-py com retry exponencial (teto de 60s
+    entre tentativas). Erros de rede (httpx.ReadTimeout) e de instabilidade
+    do PostgREST (PGRST002 - schema cache) são transitórios e já derrubaram
+    execuções inteiras de ~50min no meio do processamento -- perdendo todo o
+    progresso desde o início. Um surto observado em produção (05/09) manteve
+    o PostgREST em crash-loop (PGRST002) por mais de 5min seguidos -- por
+    isso o orçamento total de espera aqui é de ~8min (3+6+12+24+48+60*4),
+    bem acima do budget anterior de 45s que não sobrevivia a esse cenário."""
     for tentativa in range(tentativas):
         try:
             return query.execute()
         except Exception as exc:
             if tentativa == tentativas - 1:
                 raise
-            espera = espera_inicial * (2 ** tentativa)
+            espera = min(espera_inicial * (2 ** tentativa), espera_max)
             print(f"    Aviso: erro Supabase ({exc}), tentativa {tentativa + 1}/{tentativas}, aguardando {espera}s...")
             time.sleep(espera)
 
