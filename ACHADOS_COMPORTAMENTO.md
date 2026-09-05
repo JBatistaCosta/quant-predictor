@@ -145,6 +145,31 @@ O relógio da partida estava definido como `minute + minute_added`. Isso não é
 
 ---
 
+## Achado 6 — cartão vermelho é o sinal mais forte da tabela, e sobrevive ao controle de força
+
+**Incidência.** 2.996 cartões vermelhos (1.813 diretos + 1.183 segundo amarelo) em 2.519 das 31.054 partidas — **8,1% dos jogos têm expulsão**. Minuto mediano: **72'**; quase metade (1.415 de 2.996) acontece depois dos 75', sobrando pouco jogo pra observar a resposta. `match_team_event_response` cobre 2.106 dessas 2.519 partidas (83,7%) — o resto fica fora do escopo da derivação (partidas sem `placar_confere`, ou sem chutes suficientes depois do cartão).
+
+**O efeito, nos primeiros 5 minutos, é o dobro/metade da produção — muito maior que o do gol (achado 4).**
+
+| Situação | Momento | xG criado /90 | xG concedido /90 |
+|---|---|---|---|
+| **Ficou com 10** (`expulsao_pro`) | regime (sem evento recente) | 1,22–1,49 (varia por estado) | mesmo valor, espelhado |
+| Ficou com 10 | **0-5 min após o cartão** | **0,56–0,74** (≈ metade do regime) | **2,67–3,10** (≈ o dobro/triplo) |
+| Ficou com 10 | 5-15 min após | 0,76–1,08 (recupera parcialmente) | 2,21–2,51 |
+| **Adversário ficou com 10** (`expulsao_contra`) | regime | 1,22–1,49 | mesmo valor, espelhado |
+| Adversário com 10 | **0-5 min após o cartão** | **2,69–3,13** (≈ o dobro/triplo) | **0,53–0,73** (≈ metade) |
+| Adversário com 10 | 5-15 min após | 2,21–2,43 | 0,76–1,00 |
+
+(comparação sempre dentro do mesmo estado de placar, contra `evento='nenhum', janela='regime'` — mesmo método do achado 4)
+
+**Controle de força de equipe (mesmo método do achado 3): o efeito não muda.** Cortando por `faixa_forca` (Elo), quem fica com 10 cria ~0,60–0,65 xG/90 contra ~1,26–1,34 no regime, e concede ~2,52–2,96 contra o mesmo regime — **estável nas três faixas** (equilibrado/leve/desigual). Ao contrário do achado 3, aqui não há confusão com qualidade de elenco: a vantagem numérica pesa igual em qualquer confronto.
+
+**Ressalva importante, e diferente da do achado 4.** O baseline `nenhum/regime` não é limpo aqui: depois dos 15 minutos da janela de resposta, o tempo com um jogador a menos/mais **volta a ser contado como `regime`** (a tabela só distingue os primeiros 15 minutos após o evento, não o resto da partida em desvantagem numérica). Isso significa que o próprio regime já está um pouco contaminado por minutos jogados com um homem a menos/mais — o que **subestima**, não superestima, o efeito real de jogar com 10 pelo resto do jogo. Medir esse efeito completo exigiria cruzar `match_team_event_response` com quantos jogadores cada time tinha em campo minuto a minuto, o que a estrutura atual não guarda.
+
+**Sobre previsão.** Isto é o candidato mais forte da frente inteira pra entrar num modelo de in-play: o efeito é grande (2-3x, não os ~18% do achado 3), imediato, mirrado nos dois lados, e sobrevive ao controle de força. Mas **nada aqui foi validado com IC 95%** (regra do topo desta página) — e a janela de uso prático é estreita quando o cartão sai depois dos 75', que é quase metade dos casos.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
@@ -179,6 +204,7 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 
 ## Em aberto
 
-- **Levar qualquer uma das camadas para dentro de um modelo.** É o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `api/backtest-betting.js`. O candidato mais forte é o Achado 3 (qualidade por chute condicionada ao estado), por ser o mais estável aos controles.
+- **Levar qualquer uma das camadas para dentro de um modelo.** É o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `api/backtest-betting.js`. O candidato mais forte agora é o **Achado 6** (resposta a cartão vermelho) — efeito de 2-3x, não os ~18% do Achado 3, e também sobrevive ao controle de força; a limitação prática é a janela de uso (quase metade dos cartões sai depois dos 75').
+- **Medir o efeito completo do cartão vermelho, não só os 15 primeiros minutos.** O Achado 6 mostra o transiente, mas o `regime` usado como baseline já mistura minutos jogados em desvantagem numérica além da janela — exigiria saber quantos jogadores cada time tinha em campo minuto a minuto, o que não é guardado hoje.
 - **Perfil temporal por faixa de minuto.** Começado e interrompido: a exposição por faixa mostra o confundidor com clareza (aos 0-15 min há 3.876 horas de "empatando" contra 298 de cada outro estado; aos 75+ são 1.588 contra 2.045 de cada), mas a análise completa foi o que expôs o bug do Achado 5 e não foi refeita depois da correção.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.

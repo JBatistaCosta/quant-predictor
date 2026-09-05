@@ -7,6 +7,7 @@
 
 **Continuações possíveis, nenhuma decidida — não presuma escopo:**
 - ~~Controlar por força de equipe~~ — **FEITO em 05/09, e mudou a conclusão da fase 2.** Ver seção "Controle de força de equipe" mais abaixo.
+- **Achado 6 (05/09, novo): resposta a cartão vermelho.** Efeito de longe o mais forte da frente — quem fica com 10 cria ~metade do xG/90 do próprio regime e concede o dobro/triplo nos 5 minutos após o cartão, mirrado pro lado que fica com 11; sobrevive ao controle de força (estável nas 3 faixas de Elo). Incidência: 8,1% das partidas (2.519/31.054), minuto mediano 72'. Ver `ACHADOS_COMPORTAMENTO.md`. Candidato mais forte pra virar sinal de modelo — ainda sem validação IC 95%.
 - **Levar qualquer uma das três camadas para dentro de um modelo.** Hoje nada disso entra em predição: é camada de dado + exibição descritiva. Esse é o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `backtest-betting.js`.
 - **Controlar por força de equipe.** O achado da fase 2 (quem perde finaliza mais e pior) continua confundido com qualidade de elenco: quem está ganhando é, em média, o time melhor. O espelhamento controla o tempo, não a força.
 - **Perfil temporal por faixa de minuto**, agora que dá para condicionar ao estado em vez de confundir com ele.
