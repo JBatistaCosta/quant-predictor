@@ -508,6 +508,54 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 12 — falta e cartão por zona do campo: a hipótese do "último homem" se sustenta com força
+
+Pergunta: como se distribui falta/cartão pelas zonas do campo, e dá pra usar isso como indício de jogador predisposto a cometer falta/cartão — em particular, a hipótese de que o **último homem cometendo falta pra impedir contra-ataque** puxa o cartão pra cima? StatsBomb guarda a posição exata (x,y) e o `play_pattern` (como a jogada começou — inclui `From Counter`) de cada evento, então dá pra testar direto. Mesma base: La Liga 2015/16, 380 partidas, 12.136 faltas com localização.
+
+### Por zona do campo
+
+| Terço (da perspectiva de quem faz a falta) | % das faltas | Taxa de cartão na zona |
+|---|---|---|
+| Defensivo (perto do próprio gol) | 19,2% | **24,2%** |
+| Meio-campo | 56,1% | 13,0% |
+| Ofensivo | 24,7% | 9,2% |
+
+Só 1 em cada 5 faltas sai no terço defensivo, mas é lá que o cartão sai com mais frequência — quase o dobro da taxa do meio-campo. (Lateralmente, falta se distribui 37,1% direita / 34,2% esquerda / 28,7% centro — mais nos corredores que no meio, efeito menor e não perseguido a fundo aqui.)
+
+### Por situação de jogo (`play_pattern`)
+
+| Situação | % das faltas | Taxa de cartão |
+|---|---|---|
+| Jogo normal | 49,4% | 14,8% |
+| **Contra-ataque** | 3,3% | **31,4%** |
+| Bola parada (lançamento/lateral/tiro de meta/escanteio) | ~42% | 11-16% |
+
+Falta em contra-ataque é rara mas converte em cartão quase o dobro da média geral.
+
+### O teste direto da hipótese: zagueiro/lateral + contra-ataque + terço defensivo
+
+| Cenário | Faltas | % com cartão | % vira cartão vermelho |
+|---|---|---|---|
+| Base geral | 12.136 | 14,2% | 0,75% |
+| Zagueiro/lateral, fora de contra-ataque | 3.705 | 18,9% | — |
+| Zagueiro/lateral + contra-ataque, qualquer zona | 174 | 37,4% | — |
+| **Zagueiro/lateral + contra-ataque + terço defensivo ("último homem" clássico)** | **48** | **52,1%** | **2,08%** |
+| Volante + contra-ataque (segunda linha de contenção) | 119 | 30,3% | — |
+
+**A hipótese se sustenta com força.** Quando um zagueiro/lateral comete falta durante um contra-ataque, no próprio terço defensivo, **mais da metade dessas faltas vira cartão** — 3,7x a taxa média geral — e a chance de virar vermelho é quase 3x maior que a média (falta que impede uma chance clara de gol tende a ser punida mais duro, como as regras preveem). Volante em contra-ataque (a segunda linha de contenção antes do zagueiro) mostra o mesmo efeito, um pouco mais fraco.
+
+### Ressalvas
+
+- **Amostra pequena no cenário mais específico** (48 faltas) — real e direcional, mas não é uma estatística robusta o suficiente pra virar peso de modelo sem mais temporadas.
+- **Coordenadas dependem de `location` estar presente e o terço ser calculado do lado de quem comete a falta** — StatsBomb registra o evento na perspectiva de ataque de cada time, então terço "defensivo" aqui já é "perto do próprio gol de quem fez a falta", não precisa de ajuste extra.
+- **Isso é StatsBomb (La Liga 2015/16), não a base do projeto** — mesma ressalva do resto do achado 11: confirma um padrão, não é pipeline pronto pro `match_events` (que nem guarda local do cartão hoje).
+
+**Sobre previsão de jogador:** isto aponta pra uma direção concreta — jogadores que atuam como último homem (zagueiro central, lateral em sistema de linha 4) e times que sofrem mais contra-ataques têm exposição estrutural maior a cartão, independente de "personalidade agressiva" do jogador. Pra virar um indicador de jogador específico (não só de posição), precisaria de amostra por jogador ao longo de várias temporadas — o que essa única temporada de La Liga não permite com confiança individual.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
