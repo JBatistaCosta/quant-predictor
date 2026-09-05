@@ -369,6 +369,62 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 10 — de que jeito o gol é feito: cabeça, pé, escanteio, falta ou jogada ensaiada
+
+`match_shots_fotmob` guarda `situation` (o tipo de jogada que originou o chute: `RegularPlay`, `FromCorner`, `SetPiece`, `FastBreak`, `FreeKick`, `Penalty`, `ThrowInSetPiece`, `IndividualPlay`) e `shot_type` (`RightFoot`, `LeftFoot`, `Header`, `OtherBodyParts`) — dá pra responder isso direto, sem precisar de nova tabela. **51.908 gols** (fora pênaltis batidos em disputa) analisados.
+
+### De onde vêm os gols
+
+| Origem da jogada | Gols | % do total | Conversão (gols/chutes) |
+|---|---|---|---|
+| Jogada normal (`RegularPlay`) | 32.590 | 62,8% | 10,4% |
+| Pênalti | 4.474 | 8,6% | **78,9%** |
+| Escanteio (`FromCorner`) | 6.435 | 12,4% | 8,4% |
+| Contra-ataque (`FastBreak`) | 4.190 | 8,1% | **15,9%** |
+| Jogada ensaiada de bola parada (`SetPiece`, não é escanteio nem falta direta) | 2.669 | 5,1% | 9,1% |
+| Falta direta (`FreeKick`) | 836 | 1,6% | 5,1% |
+| Lance de lateral ensaiado (`ThrowInSetPiece`) | 597 | 1,1% | 9,6% |
+| Jogada individual (`IndividualPlay`) | 117 | 0,2% | 4,2% |
+
+**A conversão de pênalti bate com o esperado do mundo real (76-80%)** — boa validação de que a categoria está bem populada. Contra-ataque é a situação mais eficiente depois do pênalti (quase 16% dos chutes viram gol, contra ~10% da jogada normal) — defesa desorganizada compensa menos volume. Falta direta e jogada individual são as menos eficientes (~4-5%) — times raramente treinam pra bater falta direto no gol com sucesso, e um chute solo geralmente sai sob pressão.
+
+### E de cabeça?
+
+| Tipo de finalização | Gols | Conversão | xG médio por chute |
+|---|---|---|---|
+| Pé direito | 23.407 | 10,0% | 0,099 |
+| Pé esquerdo | 14.940 | 9,8% | 0,097 |
+| **Cabeça** | 8.542 | **10,1%** | 0,109 |
+| Outra parte do corpo (peito etc., amostra pequena) | 545 | 28,7%\* | 0,184 |
+
+\*amostra pequena (1.902 chutes no total) — provavelmente sobrancelha, escoro no rebote a curta distância, não generalizar.
+
+**Achado contra a intuição comum:** cabeceio **não** é menos eficiente que chute de pé — é ligeiramente melhor (10,1% de conversão contra ~10% de pé). Faz sentido geometricamente: cabeçada normalmente acontece mais perto do gol (cruzamento, escanteio, rebote na área), e essa proximidade compensa a dificuldade técnica.
+
+### Mas cabeçada em escanteio é bem pior que cabeçada em jogo aberto
+
+| Cabeçada, por origem | Chutes | Gols | Conversão |
+|---|---|---|---|
+| Escanteio | 36.683 | 3.204 | **8,7%** |
+| Jogada normal (cruzamento, sobra) | 32.680 | 3.936 | **12,0%** |
+| Jogada ensaiada (não-escanteio) | 12.568 | 1.091 | 8,7% |
+| Contra-ataque | 647 | 143 | 22,1% |
+
+A cabeçada clássica de escanteio (a imagem que vem à cabeça quando se fala em "gol de cabeça") **converte pior** que a cabeçada de jogo aberto — 8,7% contra 12,0%. Faz sentido: escanteio é jogada ensaiada, o adversário sabe que vem cruzamento e organiza a área; no jogo aberto, o cruzamento pega a defesa de surpresa com mais frequência.
+
+### Juntando: quase metade dos gols de escanteio são de cabeça, mas menos da metade dos gols totais
+
+- Dos 6.435 gols de escanteio, **3.204 (49,8%) são de cabeça** — a outra metade é pé (sobra, voleio, primeiro toque) ou outra parte do corpo.
+- Do total de gols do banco, **16,5% são de cabeça** (qualquer origem), **12,4% saem de escanteio** (qualquer finalização), e só **6,2% são a combinação específica "cabeça + escanteio"**.
+
+### Ressalva
+
+Mesma base de dados do achado 8/9 — a cobertura de `match_shots_fotmob` não é uniforme por liga/temporada (Brasileirão só completa a partir de 2023, ver achado 8). Este achado é um agregado global de tudo que está na tabela, então está proporcionalmente mais pesado nas ligas/temporadas com mais cobertura (europeias, 2020+) — não foi refeito por liga aqui porque a pergunta original não pediu comparação entre ligas para este achado especificamente.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
