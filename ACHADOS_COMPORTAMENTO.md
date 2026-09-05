@@ -245,21 +245,25 @@ Descritivo, sem IC 95%, mesma ressalva de sempre antes de virar sinal de modelo.
 
 Pergunta: como é a taxa de gols ao longo dos 90 minutos, e existe diferença entre ligas? Achado técnico no meio do caminho: **a comparação honesta exigiu descobrir e contornar um problema de cobertura de dado que não estava documentado.**
 
-### O formato geral (visão de todas as ligas, `match_goal_timeline`, ordenado por `clock`)
+### O formato geral — tentativa (chute) e sucesso (gol) juntos, mesma tabela de origem
 
-| Bloco (min) | Gols por 100 partidas |
-|---|---|
-| 0-5 | 5,0 |
-| 5-30 | 8,5–8,8 (patamar) |
-| 30-45 | 9,0–9,1 |
-| **45-50** | **11,1** (salto na volta do intervalo) |
-| 50-75 | 10,0–10,8 (declina devagar) |
-| 75-90 | 9,8–9,9 |
-| 90+ (acréscimos/prorrogação) | 17,8\* |
+Chute e gol vêm da mesma linha em `match_shots_fotmob` (gol é só `event_type='Goal'`), então dá pra ter os dois juntos na mesma granularidade de 5 minutos, sem precisar de tabela nova:
+
+| Bloco (min) | Chutes /partida | Chutes ao gol /partida | Gols /100 partidas | Conversão (gol/chute) |
+|---|---|---|---|---|
+| 0-5 | 0,74 | 0,45 | 7,5 | 10,07% |
+| 5-30 | 1,16–1,23 | 0,71–0,75 | 12,6–13,1 | 10,35–10,85% |
+| 30-45 | 1,25–1,28 | 0,76–0,78 | 13,5 | 10,53–10,86% |
+| **45-50** | **1,57** | **0,95** | **16,5** (salto na volta do intervalo) | 10,50% |
+| 50-75 | 1,31–1,47 | 0,80–0,89 | 14,7–16,1 (declina devagar) | 11,06–11,27% |
+| 75-90 | 1,31–1,33 | 0,80–0,81 | 14,6–14,7 | 10,98–11,24% |
+| 90+ (acréscimos/prorrogação) | 2,36\* | 1,43\* | 26,4\* | 11,18% |
 
 \*bucket mais largo que 5 min (acréscimo médio de 2º tempo leva o relógio a ~95', só 65 gols em toda a base passam de 105') — não comparável célula a célula com as outras linhas, mas confirma o salto real na reta final.
 
 Formato clássico de futebol: começo mais frio, sobe ao longo da partida, um salto visível assim que o 2º tempo começa (times ajustados depois do intervalo), platô alto no meio do 2º tempo, e disparada nos minutos finais.
+
+**O que a junção mostra e a tabela só de gol não deixava ver:** o gol não sobe no 2º tempo só porque tem mais chute — **a própria conversão sobe um pouco**, de ~10,5-10,9% no 1º tempo pra ~11,0-11,3% no 2º tempo (quase todo bloco do 2º tempo fica acima de qualquer bloco do 1º). Efeito pequeno mas consistente — compatível com chutes de melhor qualidade perto do fim (defesa mais cansada, jogo mais aberto), não só mais numerosos.
 
 ### A comparação entre ligas só ficou confiável depois de eu achar isto:
 
