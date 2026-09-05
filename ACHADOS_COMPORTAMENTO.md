@@ -241,6 +241,60 @@ Descritivo, sem IC 95%, mesma ressalva de sempre antes de virar sinal de modelo.
 
 ---
 
+## Achado 8 — a taxa de gols sobe ao longo do jogo, quase igual em todas as ligas — mas a cobertura de dado NÃO é igual
+
+Pergunta: como é a taxa de gols ao longo dos 90 minutos, e existe diferença entre ligas? Achado técnico no meio do caminho: **a comparação honesta exigiu descobrir e contornar um problema de cobertura de dado que não estava documentado.**
+
+### O formato geral (visão de todas as ligas, `match_goal_timeline`, ordenado por `clock`)
+
+| Bloco (min) | Gols por 100 partidas |
+|---|---|
+| 0-5 | 5,0 |
+| 5-30 | 8,5–8,8 (patamar) |
+| 30-45 | 9,0–9,1 |
+| **45-50** | **11,1** (salto na volta do intervalo) |
+| 50-75 | 10,0–10,8 (declina devagar) |
+| 75-90 | 9,8–9,9 |
+| 90+ (acréscimos/prorrogação) | 17,8\* |
+
+\*bucket mais largo que 5 min (acréscimo médio de 2º tempo leva o relógio a ~95', só 65 gols em toda a base passam de 105') — não comparável célula a célula com as outras linhas, mas confirma o salto real na reta final.
+
+Formato clássico de futebol: começo mais frio, sobe ao longo da partida, um salto visível assim que o 2º tempo começa (times ajustados depois do intervalo), platô alto no meio do 2º tempo, e disparada nos minutos finais.
+
+### A comparação entre ligas só ficou confiável depois de eu achar isto:
+
+Fazendo o mesmo recorte por liga (Brasileirão, La Liga, Serie A, Premier League, Bundesliga, Ligue 1), a Brasileirão apareceu com uma taxa de gols **artificialmente baixa** (menos da metade das outras ligas em todo bloco). Investigando: `match_shots_fotmob` cobre só **42,5%** dos gols oficiais da Brasileirão Série A (8.827 gols oficiais em `matches`, 3.749 na timeline), contra 75-89% nas outras cinco ligas.
+
+**Causa raiz, confirmada por temporada:** cobertura de shotmap por liga não é uniforme no tempo. Brasileirão só tem cobertura completa (380/380 partidas) a partir de **2023** — 2017-2022 têm entre 0 e 68 partidas de 380 cobertas por temporada. As cinco ligas europeias têm o mesmo padrão, só que a virada pra cobertura completa é bem mais cedo, em **2020** (exceto poucas partidas de 2019 residuais em todas).
+
+| Liga | Temporadas sem cobertura (quase 0/380) | Primeira temporada 100% |
+|---|---|---|
+| Brasileirão Série A | 2017, 2018, 2019 (2), 2021, 2022 parciais | 2023 |
+| Bundesliga / La Liga / Ligue 1 / Premier League / Serie A | 2018-2019 (residual) | 2020 |
+
+**Correção aplicada nesta análise:** restringir a comparação às temporadas 2023-2025 (as únicas com as 6 ligas em cobertura completa). Com isso, os totais batem com o que se espera de cada liga (Bundesliga ~3,20 gols/jogo — liga mais ofensiva das seis, Brasileirão/Serie A ~2,5, Premier League ~3,0), validando que o recorte corrigiu o problema.
+
+### Com a cobertura corrigida: o formato é quase idêntico em todas as ligas
+
+| Liga | % dos gols no 1º tempo | % dos gols nos últimos 15min+acréscimos |
+|---|---|---|
+| Brasileirão Série A | 39,6% | 27,0% |
+| Bundesliga | 41,1% | 25,3% |
+| La Liga | 39,2% | 26,3% |
+| Ligue 1 | 39,8% | 26,0% |
+| Premier League | 39,4% | 27,0% |
+| Serie A (Itália) | 39,7% | 24,8% |
+
+**Praticamente igual nas seis** — ~39-41% dos gols saem no 1º tempo, ~25-27% saem nos 15 minutos finais + acréscimos, não importa a liga. **O que muda entre ligas é o volume total de gols por jogo (Bundesliga bem mais ofensiva, Brasileirão/Serie A mais defensivas), não o formato de quando eles saem.**
+
+### Bug de dado real, registrado (não é do escopo desta pergunta corrigir)
+
+A cobertura desigual de `match_shots_fotmob`/`match_goal_timeline` por liga-temporada não estava documentada em nenhum lugar do projeto antes desta análise. Qualquer análise futura que use essas tabelas **sem filtrar por temporada** e comparar entre ligas (ou entre temporadas de uma liga só) corre o risco de medir cobertura de dado, não comportamento de jogo — exatamente o que aconteceu aqui antes do filtro. Não é um bug pra corrigir agora (a cobertura tende a chegar sozinha conforme mais ligas/temporadas são ingeridas) mas é uma ressalva de uso: **sempre checar `count(*) filter (where exists (select 1 from match_shots_fotmob ...))` por liga+temporada antes de comparar ligas ou épocas usando o shotmap.**
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
@@ -271,6 +325,8 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 
 **`match_events` não é tabela de eventos gerais.** Só tem cartões (58.185 amarelos, 1.813 vermelhos, 1.183 segundos amarelos) — sem gols e sem substituições. Estava documentada de forma imprecisa; corrigido.
 
+**Cobertura de `match_shots_fotmob`/`match_goal_timeline` é muito desigual por liga-temporada (achado 8).** Não é um bug de lógica — é ingestão histórica incompleta: Brasileirão Série A só tem shotmap completo a partir de 2023 (2017-2022 têm entre 0 e 68 de 380 partidas cobertas por temporada); as cinco grandes ligas europeias viram completas em 2020. Cobertura agregada da Brasileirão nas temporadas disponíveis: 42,5% dos gols oficiais, contra 75-89% nas europeias. Não corrigido de propósito — a cobertura tende a completar sozinha com a ingestão de temporadas futuras, e preencher o histórico exigiria reingestão de temporadas antigas do FotMob, fora do escopo desta análise. **Regra de uso:** qualquer comparação entre ligas ou entre temporadas via shotmap precisa checar cobertura por liga+temporada antes — sem isso, o resultado mede completude de dado, não comportamento real.
+
 ---
 
 ## Em aberto
@@ -278,5 +334,5 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 - **Levar qualquer uma das camadas para dentro de um modelo.** É o salto que ainda não foi dado, e o que exigiria validação com IC 95% via `api/backtest-betting.js`. O candidato mais forte agora é o **Achado 6** (resposta a cartão vermelho) — efeito de 2-3x, não os ~18% do Achado 3, e também sobrevive ao controle de força; a limitação prática é a janela de uso (quase metade dos cartões sai depois dos 75').
 - **Medir o efeito completo do cartão vermelho, não só os 15 primeiros minutos.** O Achado 6 mostra o transiente (e o recorte de 5 em 5 min mostra que o platô dura o jogo inteiro), mas o `regime` usado como baseline já mistura minutos jogados em desvantagem numérica além da janela — exigiria saber quantos jogadores cada time tinha em campo minuto a minuto, o que não é guardado hoje.
 - **Formalizar o recorte de 5 em 5 minutos do Achado 6 na infraestrutura, se for usado de novo.** Hoje é uma consulta ad-hoc (cruza `match_shots_fotmob` com `match_events` na hora, calculando o relógio na mão) — não uma coluna ou função versionada como o resto da frente. Vale a pena virar função/view só se essa granularidade for reaproveitada; senão, reconstruir na hora quando precisar evita manter mais uma peça de infraestrutura.
-- **Perfil temporal por faixa de minuto.** Começado e interrompido: a exposição por faixa mostra o confundidor com clareza (aos 0-15 min há 3.876 horas de "empatando" contra 298 de cada outro estado; aos 75+ são 1.588 contra 2.045 de cada), mas a análise completa foi o que expôs o bug do Achado 5 e não foi refeita depois da correção.
+- ~~Perfil temporal por faixa de minuto~~ — **FEITO em 05/09 pro formato de gols entre ligas (Achado 8)**, e no processo apareceu um problema de cobertura de dado por liga-temporada não documentado antes (ver achado 8). Falta ainda o perfil temporal condicionado a estado de placar (achado 3/4) — essa parte específica foi começada e interrompida quando expôs o bug do Achado 5, e não foi refeita depois da correção do relógio.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.
