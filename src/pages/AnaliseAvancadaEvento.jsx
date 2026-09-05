@@ -18,7 +18,7 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid, Activity } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import {
@@ -647,6 +647,120 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Comportamento por placar (match_team_game_state)
+// ============================================================
+// O ponto desta seção é uma correção de leitura, não um número novo: "time que
+// ataca" e "time que estava perdendo e precisou atacar" produzem os MESMOS
+// totais e significam coisas opostas. Separar por estado do placar é o que
+// permite ler um do outro.
+//
+// TUDO AQUI É POR 90 MINUTOS NAQUELE ESTADO, nunca soma. Um time acumula muito
+// xG "perdendo" só por ter passado muito tempo perdendo; sem o denominador de
+// minutos o painel reintroduziria exatamente o viés que ele existe para
+// remover -- por isso `minutos` vem do banco junto e a divisão acontece aqui.
+
+const ORDEM_ESTADOS = ['perdendo', 'empatando', 'ganhando'];
+const ROTULO_ESTADO = { perdendo: 'Perdendo', empatando: 'Empatando', ganhando: 'Ganhando' };
+
+// Mínimo de minutos num estado para a taxa ser exibida. Um time que passou 4
+// minutos ganhando na janela inteira produz um "xG por 90" que é ruído puro.
+const MIN_MINUTOS_ESTADO = 180;
+
+function resumirGameState(linhas, teamId) {
+  const porEstado = {};
+  for (const r of linhas) {
+    if (r.team_id !== teamId) continue;
+    const e = (porEstado[r.estado] ||= { minutos: 0, xgPro: 0, xgContra: 0, chutes: 0 });
+    e.minutos += Number(r.minutos) || 0;
+    e.xgPro += Number(r.xg_pro) || 0;
+    e.xgContra += Number(r.xg_contra) || 0;
+    e.chutes += Number(r.chutes_pro) || 0;
+  }
+  return ORDEM_ESTADOS.map((estado) => {
+    const e = porEstado[estado];
+    if (!e || e.minutos < MIN_MINUTOS_ESTADO) return { estado, suficiente: false, minutos: e?.minutos ?? 0 };
+    return {
+      estado,
+      suficiente: true,
+      minutos: e.minutos,
+      xgPro90: (e.xgPro / e.minutos) * 90,
+      xgContra90: (e.xgContra / e.minutos) * 90,
+      xgPorChute: e.chutes > 0 ? e.xgPro / e.chutes : null,
+    };
+  });
+}
+
+function TabelaGameState({ nome, resumo }) {
+  const temAlgum = resumo.some((r) => r.suficiente);
+  return (
+    <div className="flex-1 min-w-[240px]">
+      <p className="text-xs text-slate-400 font-bold truncate mb-1.5">{nome}</p>
+      {!temAlgum ? (
+        <p className="text-[11px] text-slate-600">Sem minutos suficientes na janela.</p>
+      ) : (
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="text-slate-500">
+              <th className="text-left font-normal pb-1">Placar</th>
+              <th className="text-right font-normal pb-1">min</th>
+              <th className="text-right font-normal pb-1">xG/90</th>
+              <th className="text-right font-normal pb-1">sofr./90</th>
+              <th className="text-right font-normal pb-1">xG/chute</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumo.map((r) => (
+              <tr key={r.estado} className="border-t border-slate-700/40">
+                <td className="py-0.5 text-slate-300">{ROTULO_ESTADO[r.estado]}</td>
+                {r.suficiente ? (
+                  <>
+                    <td className="text-right text-slate-500 font-mono">{Math.round(r.minutos)}</td>
+                    <td className="text-right text-emerald-400 font-mono">{r.xgPro90.toFixed(2)}</td>
+                    <td className="text-right text-red-400/80 font-mono">{r.xgContra90.toFixed(2)}</td>
+                    <td className="text-right text-slate-400 font-mono">{r.xgPorChute != null ? r.xgPorChute.toFixed(3) : '—'}</td>
+                  </>
+                ) : (
+                  <td colSpan={4} className="text-right text-slate-600">
+                    {Math.round(r.minutos)} min — amostra insuficiente
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function PainelComportamentoPlacar({ jogo, gameStateRecente }) {
+  const homeId = jogo.home?.id;
+  const awayId = jogo.away?.id;
+  const rCasa = useMemo(() => resumirGameState(gameStateRecente, homeId), [gameStateRecente, homeId]);
+  const rFora = useMemo(() => resumirGameState(gameStateRecente, awayId), [gameStateRecente, awayId]);
+
+  if (!gameStateRecente.length) return null;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
+      <p className="text-xs text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+        <Activity size={12} className="text-emerald-400" /> Comportamento por placar
+      </p>
+      <div className="flex gap-5 flex-wrap">
+        <TabelaGameState nome={jogo.home?.name} resumo={rCasa} />
+        <div className="w-px bg-slate-700 self-stretch hidden sm:block" />
+        <TabelaGameState nome={jogo.away?.name} resumo={rFora} />
+      </div>
+      <p className="mt-3 text-[10px] text-slate-600 leading-relaxed">
+        Últimas ~2 temporadas, sempre por 90 minutos <em>naquele</em> estado — nunca soma, senão o número mede
+        quanto tempo o time passou perdendo, não como ele joga. Estados com menos de {MIN_MINUTOS_ESTADO} minutos
+        ficam de fora. Descritivo: nenhum modelo deste projeto usa isto ainda.
+      </p>
     </div>
   );
 }
@@ -1562,6 +1676,9 @@ export default function AnaliseAvancadaEvento() {
   // eles já jogaram, então é o que serve pra ANTECIPAR o desenho do jogo).
   const [formacaoPartida, setFormacaoPartida] = useState([]);
   const [formacoesRecentes, setFormacoesRecentes] = useState([]);
+  // Comportamento por placar (match_team_game_state) dos dois times, na mesma
+  // janela de ~2 temporadas usada pelo histórico tático.
+  const [gameStateRecente, setGameStateRecente] = useState([]);
 
   // Sincronização manual da escalação real (match_lineup_fotmob) via
   // scripts/ingerir_escalacao_pre_jogo.py --match-ids -- diferente do cron
@@ -1624,7 +1741,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -1713,6 +1830,19 @@ export default function AnaliseAvancadaEvento() {
                 .lt('matches.match_date', j.match_date)
                 .gte('matches.match_date', inicioJanelaTatica)
             : Promise.resolve({ data: [] }),
+          // Comportamento por placar: quanto tempo cada time passou perdendo/
+          // empatando/ganhando nas partidas anteriores, e o que criou e sofreu
+          // nesse tempo. `placar_confere` filtra as ~0,2% de partidas cujo
+          // placar reconstruído do shotmap não bate com o oficial.
+          (j.home?.id && j.away?.id)
+            ? supabase
+                .from('match_team_game_state')
+                .select('team_id, estado, minutos, xg_pro, xg_contra, chutes_pro, chutes_contra, matches!inner(match_date)')
+                .in('team_id', [j.home.id, j.away.id])
+                .eq('placar_confere', true)
+                .lt('matches.match_date', j.match_date)
+                .gte('matches.match_date', inicioJanelaTatica)
+            : Promise.resolve({ data: [] }),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -1727,6 +1857,7 @@ export default function AnaliseAvancadaEvento() {
         setDispRChutesNoAlvo(dispRNoAlvoRow?.param_value != null ? Number(dispRNoAlvoRow.param_value) : null);
         setFormacaoPartida(formPartida || []);
         setFormacoesRecentes(formRecentes || []);
+        setGameStateRecente(estadoRecente || []);
 
         const validas = (est || []).filter((e) => lerParametrosPartida(e.params) != null);
         setEstimativas(validas);
@@ -1974,6 +2105,8 @@ export default function AnaliseAvancadaEvento() {
       </div>
 
       <PainelEsquemaTatico jogo={jogo} formacaoPartida={formacaoPartida} formacoesRecentes={formacoesRecentes} />
+
+      <PainelComportamentoPlacar jogo={jogo} gameStateRecente={gameStateRecente} />
 
       {estimativas.length === 0 ? (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center">

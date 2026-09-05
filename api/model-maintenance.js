@@ -1055,6 +1055,60 @@ async function tarefaDerivarFormacoes(supabase, { match_id, dias, limite } = {})
   return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_formacoes_gravadas: data ?? 0 };
 }
 
+const DIAS_GAME_STATE_PADRAO = 7;
+const LIMITE_GAME_STATE_POR_CHAMADA = 300; // menor que o de formações: a derivação varre TODOS os chutes da partida, não só os 11 titulares
+
+// Deriva match_goal_timeline + match_team_game_state das partidas que já têm
+// shotmap mas ainda não têm estado do jogo. Mesma função de rede de segurança
+// de derivar-formacoes: o caminho automático já chama a RPC partida a partida
+// depois de gravar o shotmap, então em regime normal isto não acha nada.
+//
+// Igual à de formações, NÃO faz o backfill histórico (18,7 mil partidas de uma
+// vez estouram o timeout da function) -- isso é operação de migration.
+async function tarefaDerivarGameState(supabase, { match_id, dias, limite } = {}) {
+  if (match_id) {
+    const matchId = Number(match_id);
+    if (!Number.isInteger(matchId) || matchId <= 0) return { status: 400, error: 'match_id inválido.' };
+    const { data, error } = await supabase.rpc('derivar_game_state', { p_match_ids: [matchId] });
+    if (error) return { status: 500, error: `Falha ao derivar estado do jogo: ${error.message}` };
+    return { status: 200, escopo: `partida ${matchId}`, n_linhas_gravadas: data ?? 0 };
+  }
+
+  const janelaDias = Number(dias) || DIAS_GAME_STATE_PADRAO;
+  const teto = Math.min(Number(limite) || LIMITE_GAME_STATE_POR_CHAMADA, LIMITE_GAME_STATE_POR_CHAMADA);
+  const desde = new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: recentes, error: erroRecentes } = await supabase
+    .from('matches')
+    .select('id')
+    .gte('match_date', desde)
+    .order('match_date', { ascending: false })
+    .limit(1000);
+  if (erroRecentes) return { status: 500, error: `Falha ao buscar partidas recentes: ${erroRecentes.message}` };
+  if (!recentes?.length) return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0 };
+
+  const ids = recentes.map((m) => m.id);
+  const comShotmap = new Set();
+  const comEstado = new Set();
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const [{ data: sh }, { data: st }] = await Promise.all([
+      supabase.from('match_shots_fotmob').select('match_id').in('match_id', lote),
+      supabase.from('match_team_game_state').select('match_id').in('match_id', lote),
+    ]);
+    for (const r of sh || []) comShotmap.add(r.match_id);
+    for (const r of st || []) comEstado.add(r.match_id);
+  }
+  const pendentes = ids.filter((id) => comShotmap.has(id) && !comEstado.has(id)).slice(0, teto);
+  if (!pendentes.length) {
+    return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0, mensagem: 'Nenhuma partida com shotmap e sem estado do jogo na janela.' };
+  }
+
+  const { data, error } = await supabase.rpc('derivar_game_state', { p_match_ids: pendentes });
+  if (error) return { status: 500, error: `Falha ao derivar estado do jogo: ${error.message}` };
+  return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_linhas_gravadas: data ?? 0 };
+}
+
 // ============================================================
 // TAREFAS: Painel de Automação (GitHub Actions) — Configurações
 // Centraliza disparo + acompanhamento dos workflows de
@@ -4622,6 +4676,18 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
           await supabase.from('match_shots_fotmob').upsert(lote, { onConflict: 'fotmob_shot_id' });
         }
 
+        // Estado do jogo: reconstrói placar minuto a minuto e o tempo que cada
+        // time passou perdendo/empatando/ganhando. Depende do shotmap (os gols
+        // vêm de lá), por isso vem DEPOIS do upsert acima e não junto da
+        // formação. Mesma disciplina da fase 1: a regra mora só na função SQL
+        // (migration 20260904100000_create_game_state.sql), nunca reimplementada
+        // aqui. Falha só avisa -- é derivado, regerável por
+        // ?tarefa=derivar-game-state.
+        if (linhasShots.length) {
+          const { error: erroEstado } = await supabase.rpc('derivar_game_state', { p_match_ids: [jogo.id] });
+          if (erroEstado) console.warn(`[game-state] partida ${jogo.id}: ${erroEstado.message}`);
+        }
+
         await supabase.from('match_context_fotmob').upsert(
           montarContexto(jogo.id, fotmobMatchId, content.matchFacts, content.weather),
           { onConflict: 'match_id' }
@@ -6038,6 +6104,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'sincronizar-escalacao-real') {
       const resultado = await tarefaSincronizarEscalacaoReal(supabase, req.headers.authorization, { match_id: req.query.match_id });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'derivar-game-state') {
+      const resultado = await tarefaDerivarGameState(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }

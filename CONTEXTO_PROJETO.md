@@ -1,11 +1,18 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
-**Frente NOVA aberta em 03/09: "comportamento das equipes ao longo do jogo e como interagem entre si".** A fase 1 (esquema tático) está entregue e documentada na seção **"Esquema tático (`match_formation_fotmob`) — fase 1 da frente de comportamento/interação (03/09)"**, mais abaixo. Ponto de retomada natural: **fase 2 — comportamento AO LONGO do jogo**, que a formação inicial por definição não cobre. O dado bruto já existe (`match_events` com minuto, `match_shots_fotmob` com minuto e xG, `match_lineup_fotmob` para substituições) e nada disso foi modelado ainda. Nenhuma decisão foi tomada sobre isso — não presuma escopo, perguntar antes.
+**Fase 2 (estado do jogo) entregue em 04/09** — ver seção "Estado do jogo (`match_team_game_state`) — fase 2" mais abaixo. Fase 1 (esquema tático) foi mergeada no PR #420 e está em produção.
 
-**Achado de qualidade de dado, não corrigido (baixa prioridade, 1 linha):** `match_lineup_fotmob` tem escalação da partida 16034 para o time 498, que não é nem `home_team_id` (1019) nem `away_team_id` (346) daquela partida — provável crosswalk errado numa ingestão antiga. É a única ocorrência em 37.951 (a `match_formation_fotmob.is_home` dessa linha ficou NULL, que é como ela foi encontrada). Não investigado.
+**Continuações naturais, nenhuma decidida — não presuma escopo:**
+- **Resposta a eventos** (a terceira opção que ficou de fora quando o usuário escolheu estado do jogo): comportamento nos minutos após levar/marcar gol ou ficar com um a menos. `match_goal_timeline` foi criada justamente para viabilizar isso sem recomputar o shotmap.
+- **Perfil temporal de criação** (xG por faixa de minuto), que agora pode ser feito *condicionado ao estado* em vez de confundido com ele.
+- **Levar estado do jogo para dentro de algum modelo.** Hoje nada disso entra em predição — é camada de dado e exibição descritiva.
 
-**Drift de schema encontrado (não corrigido, fora do escopo):** as colunas `match_lineup_fotmob.formation` e `.team_rating` **existem em produção mas nenhum arquivo em `supabase/migrations/` as cria** — foram adicionadas fora do versionamento (`20260802100000` adicionou `field_pos_x`/`field_pos_y`/`is_captain`, nunca essas duas). Descoberto porque o `comment on column` da migration de formação teria quebrado num replay limpo do histórico (branch de preview do Supabase, ambiente novo) com "column formation does not exist"; a instrução ficou dentro de um guard `do $$ ... if exists (information_schema) ... $$`. **Não adicionei as colunas numa migration de propósito**: `formation` é coluna morta e recriá-la em ambiente novo seria propagar o problema. Vale uma varredura futura de `information_schema` vs. migrations para achar outros casos.
+**BUG DE DADO REAL, NÃO CORRIGIDO — time duplicado (Troyes).** `teams` tem **id 498 "Troyes"** (76 partidas, crosswalk `fotmob:10242`, 794 chutes, 775 escalações) e **id 1019 "ES Troyes AC"** (34 partidas, **nenhum crosswalk, zero chutes, zero escalações**). São o mesmo clube. Consequência: as 34 partidas apontadas para 1019 nunca recebem dado do FotMob. Encontrado duas vezes de forma independente — na fase 1 pela `is_home` nula de uma escalação, e na fase 2 pela única partida (16034, Troyes x Paris FC, Ligue 1 2026) em que o xG criado por um lado não espelha o concedido pelo outro. **Não corrigido de propósito**: unificar time duplicado mexe em crosswalk e o `CLAUDE.md` proíbe resolver esses mapeamentos sem supervisão manual; o projeto já tem `scripts/unificar_times_duplicados.py` para isso. Vale rodar uma varredura do mesmo padrão (time sem crosswalk mas com partidas) para achar outros casos.
+
+**Correção do que ficou registrado em 03/09:** eu havia anotado `match_events` como fonte de "eventos com minuto". Ela só tem **cartões** (58.185 amarelos, 1.813 vermelhos, 1.183 segundos amarelos) — sem gols e sem substituições. A linha do tempo real do jogo vem de `match_shots_fotmob`.
+
+**Drift de schema (03/09, ainda aberto):** `match_lineup_fotmob.formation` e `.team_rating` existem em produção mas nenhum arquivo em `supabase/migrations/` as cria. O `comment on column` da fase 1 ficou dentro de um guard `information_schema`. Vale uma varredura de `information_schema` vs. migrations para achar outros casos.
 
 **Chutes/gols/xG por jogador — concluída.** A sessão de chutes/gols/xG por jogador (aberta como "predição de chutes/gols por jogador v1, 6 ligas, Poisson" na versão anterior desta seção) evoluiu muito além do v1 inicial e foi concluída, validada em produção e documentada na íntegra na seção **"Chutes/gols/xG por jogador — do v1 (6 ligas, Poisson) à extensão de escopo e correções de qualidade de dado (jul-set)"**, mais abaixo neste arquivo. Nada em aberto relacionado a essa frente.
 
@@ -533,3 +540,43 @@ Outras pendências menores (não urgentes):
 2. **Nada disso entrou em nenhum modelo.** É camada de dado + exibição descritiva. Uma agregação exploratória feita nesta sessão (gols por confronto de nº de atacantes vs nº de defensores) mostra defesa de 5 sofrendo/marcando menos, mas isso está **totalmente confundido com força de equipe** — time que entra com 5 atrás fora de casa costuma ser o azarão. É exatamente o padrão de ruído contra o qual o `CLAUDE.md` avisa; nada aqui foi validado com IC 95% e nada deve ser tratado como edge até passar por `backtest-betting.js`.
 
 **O que a fase 1 explicitamente NÃO resolve** (é o gancho da fase 2): a formação é a estrutura de ENTRADA em campo. Não captura mudança de desenho durante o jogo, não captura a diferença entre o desenho anunciado e o comportamento real com a bola, e não diz nada sobre evolução temporal. O dado bruto pra isso já existe no banco (`match_events` com minuto, `match_shots_fotmob` com minuto e xG, substituições em `match_lineup_fotmob`) e não foi tocado.
+
+
+---
+
+## Estado do jogo (`match_team_game_state`) — fase 2 da frente de comportamento (04/09)
+
+Usuário escolheu esta entre três opções (as outras: perfil temporal de criação, resposta a eventos). Motivo da recomendação, aceito: as outras duas são **médias confundidas** enquanto o estado do placar não estiver separado — "time que ataca" e "time que estava perdendo e precisou atacar" produzem os mesmos totais e significam coisas opostas.
+
+**Fonte, de novo sem nenhuma chamada de API nova:** `match_shots_fotmob` — 477.686 chutes em 18.770 partidas, todos com minuto, xG, situação e coordenadas, e os gols como `event_type='Goal'`.
+
+**Duas armadilhas do shotmap, as duas confirmadas contra o placar oficial ANTES de escrever a migration:**
+1. `period='PenaltyShootout'` traz 454 "gols" de disputa de pênaltis, que não contam.
+2. **Gol contra: `team_id` é quem CHUTOU, não o beneficiado.** Creditar ao adversário reconstrói o placar oficial em **13.403 de 13.427 partidas (99,8%)**; ler `team_id` como beneficiado cai para 12.284 (91,5%). A diferença entre as hipóteses é exatamente o volume de gols contra (1.557). Não é detalhe cosmético — é a diferença entre reconstrução confiável e ruído.
+
+**O que foi criado** (migration `20260904100000_create_game_state.sql`, aplicada em produção, backfill feito em 3 lotes por faixa de `match_id`):
+- `match_goal_timeline` — 51.873 gols (= 52.327 − 454 de pênaltis, fecha exato), com minuto efetivo (`minute + minute_added`), `para_casa` já resolvendo gol contra, e o placar depois de cada gol. É o primitivo auditável e o que viabiliza "resposta a eventos" depois sem reprocessar o shotmap.
+- `match_team_game_state` — 78.250 linhas / 18.770 partidas: minutos + chutes/xG criados e sofridos por (partida, time, estado). **99,84% das partidas com placar reconciliado** (`placar_confere`); as que não fecham ficam gravadas com a flag em false, não descartadas em silêncio.
+- `derivar_game_state(p_match_ids)` — delete+insert no escopo, não upsert: reprocessar pode FAZER SUMIR um estado (gol corrigido → o time nunca esteve perdendo), e upsert deixaria a linha velha.
+- `v_time_game_state` — leitura já normalizada por 90 minutos naquele estado.
+
+**Invariantes verificadas depois do backfill** (é o que dá confiança de que a derivação não está inventando):
+- minutos dos dois times batem em **18.770 de 18.770** partidas;
+- xG criado por um == xG concedido pelo outro em **18.769 de 18.770** (a única exceção é a partida 16034, do bug do Troyes duplicado acima);
+- chutes espelham em 18.770 de 18.770.
+
+**Achado descritivo (médias globais, 58 mil horas de jogo):**
+
+| Estado | xG criado /90 | xG sofrido /90 | Chutes /90 | xG por chute |
+|---|---|---|---|---|
+| Perdendo | 1,370 | 1,426 | **13,59** | **0,1008** |
+| Empatando | 1,246 | 1,246 | 11,90 | 0,1048 |
+| Ganhando | 1,426 | 1,370 | 11,29 | **0,1263** |
+
+Quem está perdendo **finaliza mais e cria menos**: +20% de volume sobre quem ganha, com qualidade por chute 20% pior. Quem está ganhando finaliza menos e melhor (contra-ataque). A estrutura espelhada valida sozinha: "ganhando" e "perdendo" têm exatamente as mesmas 15.179 horas, e "empatando" tem xG criado idêntico ao concedido (1,246), como tem de ser quando os dois times estão no mesmo estado ao mesmo tempo.
+
+**RESSALVA QUE NÃO PODE SUMIR:** isso ainda é média entre times de força diferente — quem está ganhando é, em média, o time melhor, então parte do gap é qualidade de elenco e não reação ao placar. O espelhamento controla o TEMPO, não a força. Nada disso foi validado com IC 95% nem entrou em modelo nenhum.
+
+**Caminho forward:** o ingestor FotMob (`api/model-maintenance.js`) chama `derivar_game_state` por RPC logo depois do upsert do shotmap (depende dos gols, por isso depois — não junto da formação). `?tarefa=derivar-game-state` é a rede de segurança, com janela de dias e teto de 300 partidas por chamada (menor que o de formações: varre todos os chutes, não só 11 titulares).
+
+**Frontend:** painel "Comportamento por placar" em `/analise-avancada/:matchId`, tudo por 90 minutos naquele estado, com corte de 180 minutos mínimos por estado (abaixo disso a taxa é ruído). Consulta validada via REST com chave anon: 309 linhas na janela de 2 temporadas para 2 times.
