@@ -39,6 +39,22 @@ SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
 SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
 
 
+def _exec_retry(query, tentativas=5, espera_inicial=3):
+    """Executa uma query do supabase-py com retry exponencial. Erros de rede
+    (httpx.ReadTimeout) e de instabilidade do PostgREST (PGRST002 - schema
+    cache) são transitórios e já derrubaram execuções inteiras de ~50min no
+    meio do processamento -- perdendo todo o progresso desde o início."""
+    for tentativa in range(tentativas):
+        try:
+            return query.execute()
+        except Exception as exc:
+            if tentativa == tentativas - 1:
+                raise
+            espera = espera_inicial * (2 ** tentativa)
+            print(f"    Aviso: erro Supabase ({exc}), tentativa {tentativa + 1}/{tentativas}, aguardando {espera}s...")
+            time.sleep(espera)
+
+
 def _paginar(supabase, table, select, eq_filters=None, order="id"):
     """Busca todas as linhas com paginação explícita (evita corte silencioso de 1000)."""
     result = []
@@ -47,7 +63,7 @@ def _paginar(supabase, table, select, eq_filters=None, order="id"):
         q = supabase.table(table).select(select).order(order).range(page * 1000, page * 1000 + 999)
         for col, val in (eq_filters or {}).items():
             q = q.eq(col, val)
-        chunk = q.execute().data
+        chunk = _exec_retry(q).data
         result.extend(chunk)
         if len(chunk) < 1000:
             break
@@ -83,13 +99,11 @@ def main():
     print(f"  {len(fotmob_to_internal)} times mapeados.")
 
     # ── Liga -> FotMob league id ───────────────────────────────────────────────
-    lfe_rows = (
+    lfe_rows = _exec_retry(
         supabase.table("liga_fonte_externa")
         .select("league_id, identificador")
         .eq("sistema", "fotmob")
-        .execute()
-        .data
-    )
+    ).data
     fotmob_league_map = {row["league_id"]: row["identificador"] for row in lfe_rows}
     ligas_alvo = [args.league_id] if args.league_id else list(fotmob_league_map.keys())
     if args.league_id and args.league_id not in fotmob_league_map:
@@ -141,7 +155,7 @@ def main():
                 q = q.gte("match_date", corte_iso).lte("match_date", agora_iso)
             else:
                 q = q.lt("match_date", corte_iso).not_.in_("status", ["cancelled", "postponed"])
-            chunk = q.execute().data
+            chunk = _exec_retry(q).data
             for m in chunk:
                 if args.forcar:
                     pendentes.append(m)
@@ -305,7 +319,7 @@ def main():
                     update_data = {"home_goals": home_g, "away_goals": away_g}
                     if general.get("finished"):
                         update_data["status"] = "finished"
-                    supabase.table("matches").update(update_data).eq("id", match_id).execute()
+                    _exec_retry(supabase.table("matches").update(update_data).eq("id", match_id))
             except Exception as exc:
                 print(f"  [{i+1}/{len(pendentes)}] Aviso: placar match_id={match_id}: {exc}")
 
@@ -330,13 +344,13 @@ def main():
                     continue
 
                 if extraido["team_rows"]:
-                    supabase.table("match_stats_fotmob").upsert(
+                    _exec_retry(supabase.table("match_stats_fotmob").upsert(
                         extraido["team_rows"], on_conflict="match_id,team_id"
-                    ).execute()
+                    ))
 
-                supabase.table("match_context_fotmob").upsert(
+                _exec_retry(supabase.table("match_context_fotmob").upsert(
                     extraido["contexto_row"], on_conflict="match_id"
-                ).execute()
+                ))
 
                 player_dim_rows = extraido["player_dim_rows"]
                 lineup_rows = extraido["lineup_rows"]
@@ -345,9 +359,9 @@ def main():
                     player_dim_rows = list(
                         {row["fotmob_player_id"]: row for row in player_dim_rows}.values()
                     )
-                    resp = supabase.table("players").upsert(
+                    resp = _exec_retry(supabase.table("players").upsert(
                         player_dim_rows, on_conflict="fotmob_player_id"
-                    ).execute()
+                    ))
                     for row in resp.data:
                         fotmob_to_player_id[row["fotmob_player_id"]] = row["id"]
 
@@ -357,9 +371,9 @@ def main():
                     lineup_rows = list(
                         {(r["match_id"], r["team_id"], r["fotmob_player_id"]): r for r in lineup_rows}.values()
                     )
-                    supabase.table("match_lineup_fotmob").upsert(
+                    _exec_retry(supabase.table("match_lineup_fotmob").upsert(
                         lineup_rows, on_conflict="match_id,team_id,fotmob_player_id"
-                    ).execute()
+                    ))
 
                 player_rows = extraido["player_rows"]
                 if player_rows:
@@ -367,9 +381,9 @@ def main():
                     for row in player_rows:
                         row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"])
                         vistos[row["fotmob_player_id"]] = row
-                    supabase.table("match_player_stats_fotmob").upsert(
+                    _exec_retry(supabase.table("match_player_stats_fotmob").upsert(
                         list(vistos.values()), on_conflict="match_id,fotmob_player_id"
-                    ).execute()
+                    ))
 
                 shot_rows = extraido["shot_rows"]
                 if shot_rows:
@@ -379,9 +393,9 @@ def main():
                             if row["fotmob_player_id"]
                             else None
                         )
-                    supabase.table("match_shots_fotmob").upsert(
+                    _exec_retry(supabase.table("match_shots_fotmob").upsert(
                         shot_rows, on_conflict="fotmob_shot_id"
-                    ).execute()
+                    ))
 
                 has_stats.add(match_id)
 
@@ -391,7 +405,7 @@ def main():
                 general = d.get("general") or {}
                 home_name = (general.get("homeTeam") or {}).get("name", "")
                 away_name = (general.get("awayTeam") or {}).get("name", "")
-                supabase.table("match_source_ids").upsert(
+                _exec_retry(supabase.table("match_source_ids").upsert(
                     {
                         "match_id": match_id,
                         "source": "fotmob",
@@ -399,7 +413,7 @@ def main():
                         "source_name": f"{home_name} x {away_name}",
                     },
                     on_conflict="match_id,source",
-                ).execute()
+                ))
                 match_to_fotmob_id[match_id] = str(fotmob_match_id)
             except Exception as exc:
                 print(f"  Aviso: match_source_ids match_id={match_id}: {exc}")
