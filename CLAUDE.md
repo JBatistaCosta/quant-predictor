@@ -8,6 +8,8 @@ Quant System Predictor — app de análise quantitativa de apostas esportivas (f
 
 Stack: **frontend** React 18 + Vite + React Router + Tailwind, publicado no Vercel; **backend** funções serverless Node em `api/*.js` (mesmo projeto Vercel); **banco** Supabase Postgres (projeto `cgurxgfdmpmsnrshqycx`) com RLS.
 
+`ACHADOS_COMPORTAMENTO.md` registra os achados da frente de comportamento/interação entre equipes (formação, estado do jogo, resposta a eventos) — o que os dados dizem, o que foi refutado, e os dois casos em que uma conclusão agregada estava confundida apesar de todas as invariantes passarem. Leia antes de tirar qualquer conclusão dessas tabelas.
+
 **Leia `CONTEXTO_PROJETO.md` inteiro no início de qualquer sessão de trabalho** — é a fonte de verdade viva do projeto (arquitetura em mais detalhe, achados já testados, bugs corrigidos, pendências). A seção `⏸️ PENDÊNCIA IMEDIATA` no topo é o ponto de retomada mais recente. Este arquivo (`CLAUDE.md`) cobre estrutura de código e convenções estáveis; `CONTEXTO_PROJETO.md` cobre o estado do projeto, que muda a cada sessão.
 
 Convenções operacionais de fluxo de trabalho (PR/deploy, disciplina de cota com APIs pagas, limite de funções serverless, testagem em produção) estão na skill `workflow-quant-predictor` (`.claude/skills/workflow-quant-predictor/SKILL.md`) — os pontos mais críticos também estão resumidos abaixo.
@@ -61,11 +63,12 @@ Duas ressalvas que o código documenta e que não devem ser reintroduzidas como 
 ### Estado do jogo (`match_goal_timeline` / `match_team_game_state`)
 Fase 2 da mesma frente. `match_shots_fotmob` (477 mil chutes, todos com minuto e xG) permite reconstruir o placar a cada instante, e daí quanto tempo cada time passou **perdendo/empatando/ganhando** e o que criou e sofreu nesse tempo. Regra derivada só em `derivar_game_state(p_match_ids)` (migration `20260904100000_create_game_state.sql`), chamada por RPC pelo ingestor depois do upsert do shotmap; `?tarefa=derivar-game-state` é a rede de segurança (backfill completo é operação de migration).
 
-**CONTROLE FORÇA DE EQUIPE ANTES DE CONCLUIR QUALQUER COISA.** A média global desta tabela diz "quem está perdendo cria menos xG" — e isso está confundido: quem está ganhando é, em média, o time melhor. O espelhamento da fase 2 controla o TEMPO, não a FORÇA. Controlando por Elo (`v_game_state_por_forca`, migration `20260905140000`), o efeito de xG total **inverte** em jogos equilibrados. Sobrevivem aos controles a **qualidade por chute** (~0,122 ganhando contra ~0,098-0,101 perdendo, praticamente idêntico em toda faixa de Elo e nos dois lados) e o **volume** (mais chutes perdendo); o xG total, não. Agregue sempre por `faixa_forca` e de preferência também por `is_home`.
+**CONTROLE FORÇA DE EQUIPE ANTES DE CONCLUIR QUALQUER COISA.** A média global desta tabela diz "quem está perdendo cria menos xG" — e isso está confundido: quem está ganhando é, em média, o time melhor. O espelhamento da fase 2 controla o TEMPO, não a FORÇA. Controlando por Elo (`v_game_state_por_forca`, migration `20260905140000`), o efeito de xG total **inverte** em jogos equilibrados. Sobrevivem aos controles a **qualidade por chute** (0,1219 ganhando nos dois lados, contra 0,0976-0,1007 perdendo — praticamente idêntico em toda faixa de Elo e nos dois lados) e o **volume** (mais chutes perdendo); o xG total, não. Agregue sempre por `faixa_forca` e de preferência também por `is_home`.
 
 Três coisas que **precisam** ser respeitadas por quem usar essas tabelas:
 - **Sempre normalize por `minutos`.** Somar `xg_pro` por estado mede quanto tempo o time passou naquela situação, não como ele joga — é exatamente o viés que a fase 2 existe pra remover. A view `v_time_game_state` já entrega tudo por 90 minutos naquele estado.
 - **Gol contra: `match_shots_fotmob.team_id` é quem CHUTOU, não quem foi beneficiado** — o gol conta pro adversário. Ler errado derruba a reconstrução do placar de 99,8% para 91,5%. `match_goal_timeline.para_casa` já resolve isso.
+- **Ordene por `match_goal_timeline.clock`, nunca por `minuto`.** `minuto` é o valor exibível (45+3 = 48) e NÃO é monótono entre tempos; `clock` desloca o 2º tempo pelo excedente dos acréscimos do 1º. Usar `minuto` para ordenar foi um bug real que atribuiu estado errado a 1.102 chutes (migration `20260905160000`).
 - **`period='PenaltyShootout'` não conta pro placar** (454 "gols" de disputa) e **filtre por `placar_confere`** antes de treinar qualquer coisa.
 
 ### Resposta a eventos (`match_team_event_response`)

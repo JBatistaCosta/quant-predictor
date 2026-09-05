@@ -1,6 +1,8 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
+**Os achados desta frente foram consolidados em `ACHADOS_COMPORTAMENTO.md`** (arquivo novo, 05/09) — leia ele para o conteúdo; esta seção guarda só o estado.
+
 **Frente de comportamento/interação: 3 fases entregues.** Fase 1 (esquema tático, PR #420) e fase 2 (estado do jogo, PR #433) mergeadas e em produção. Fase 3 (resposta a eventos) documentada na seção **"Resposta a eventos (`match_team_event_response`) — fase 3"**, mais abaixo.
 
 **Continuações possíveis, nenhuma decidida — não presuma escopo:**
@@ -653,3 +655,18 @@ Os 5 minutos seguintes a um gol são **os mais parados da partida, para os dois 
 **Entregue:** view `v_game_state_por_forca` (migration `20260905140000`), que expõe `elo_dif` e `faixa_forca` por (partida, time) para que o controle seja reproduzível em vez de uma consulta solta. Quem agregar `match_team_game_state` deve agregar por `faixa_forca` e de preferência também por `is_home`.
 
 **Lição de método que vale além deste caso:** invariantes internas (espelhamento, minutos que fecham) provam que a *derivação* está certa — não provam que a *interpretação* está. As três fases passaram em todas as invariantes e mesmo assim a conclusão agregada estava confundida.
+
+
+---
+
+## Relógio monótono — bug real corrigido depois de estar em produção (05/09)
+
+Ver `ACHADOS_COMPORTAMENTO.md`, Achado 5, para o registro completo. Resumo do estado:
+
+As fases 2 e 3 usavam `minute + minute_added` como relógio, o que não é monótono entre tempos (o 2º tempo também começa em 45). **1.102 chutes (0,23%) recebiam estado do jogo errado**, em 1.601 partidas. As invariantes não pegaram porque totais por partida não têm ordem.
+
+Corrigido pela migration `20260905160000_corrige_relogio_monotono.sql`: coluna `clock` em `match_goal_timeline` (relógio monótono, desloca o 2º tempo por `fh_over`), `minuto` mantido como valor exibível. As duas tabelas foram **re-derivadas por inteiro** (78.250 e 197.728 linhas).
+
+Verificado após a re-derivação: 0 de 10.712 partidas com gol nos dois tempos ainda mal ordenadas; 37.542 de 37.542 pares (partida, time) reconciliando entre fase 2 e fase 3. Nenhuma conclusão dos achados mudou.
+
+**Regra que passou a valer:** ordene sempre por `match_goal_timeline.clock`, nunca por `minuto`.
