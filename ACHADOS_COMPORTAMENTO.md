@@ -480,7 +480,29 @@ Baixei o evento de cada uma das 380 partidas (`events/{match_id}.json`), contei 
 
 **Não dá mais pra contar escanteio/falta como "quinto e sexto sinal" do mesmo salto de intervalo que gol/chute/cartão mostram (Achados 8/9)** — só o escanteio sustenta uma versão fraca dessa história; falta não sustenta nenhuma.
 
-**O que isso NÃO prova:** é uma temporada, de uma liga, com o dado de outro fornecedor (StatsBomb, não FotMob) — não dá pra fundir com `match_shots_fotmob`/`match_events` pra virar coluna nova no banco sem decidir antes se vale a pena manter uma segunda fonte só pra essas duas métricas. Fica registrado como confirmação descritiva do padrão, não como pipeline novo.
+### Cartão amarelo e vermelho — mesma fonte, relógio corrigido desde o início, confirma o Achado 9 sem precisar de ajuste
+
+Cartão sai de dois lugares no StatsBomb: dentro do evento `Foul Committed` (`foul_committed.card.name`) ou como evento próprio `Bad Behaviour` (`bad_behaviour.card.name`, ex.: reclamação sem falta). Contei os dois, já com o relógio monótono corrigido (aprendendo do erro do escanteio/falta acima).
+
+**5,48 cartões amarelos/jogo e 0,287 vermelhos/jogo** (soma ~5,77 — um pouco acima do 4,91 que o Achado 9 achou pra La Liga 2023-2025 via FotMob; temporadas diferentes, plausível).
+
+| Bloco (15 min) | Amarelo /jogo | Vermelho /jogo |
+|---|---|---|
+| 0-15 | 0,32 | 0,016 |
+| 15-30 | 0,69 | 0,013 |
+| 30-45 | 0,92 | 0,029 |
+| 45-60 | 0,87 | 0,037 |
+| 60-75 | 1,09 | 0,061 |
+| 75-90 | 1,17 | 0,084 |
+| 90+ | 0,44 | 0,047 |
+
+**Isso bate exatamente com o Achado 9 (via FotMob), sem precisar de correção nenhuma desta vez:**
+- **Amarelo sobe de forma constante o jogo inteiro**, sem salto no intervalo nem platô — igual ao formato já visto.
+- **Vermelho se concentra muito mais no fim**: a taxa nos últimos 15 minutos (0,084/jogo) é mais de 5x a dos primeiros 15 (0,016/jogo) — bate com o Achado 6 (minuto mediano do vermelho: 72').
+
+É uma validação cruzada genuína: mesma conclusão, fonte de dado totalmente diferente (StatsBomb vs FotMob), liga e temporada diferentes das que geraram o Achado 9. Ao contrário de escanteio/falta (que precisaram de correção), aqui o padrão já saiu certo na primeira tentativa — porque desta vez o relógio foi corrigido antes de calcular, não depois.
+
+**O que isso NÃO prova:** é uma temporada, de uma liga, com o dado de outro fornecedor (StatsBomb, não FotMob) — não dá pra fundir com `match_shots_fotmob`/`match_events` pra virar coluna nova no banco sem decidir antes se vale a pena manter uma segunda fonte só pra essas métricas. Fica registrado como confirmação descritiva do padrão, não como pipeline novo.
 
 Descritivo, sem IC 95%.
 
