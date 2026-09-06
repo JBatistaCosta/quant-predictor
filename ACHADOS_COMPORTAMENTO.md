@@ -459,6 +459,65 @@ Testado só numa liga (La Liga) e numa janela de payload "antigo" (2014-2016). A
 
 ---
 
+## Achado 12 — índices de força por time (ataque, defesa, criação, embate, lateral, central), StatsBomb×FotMob (La Liga 2015/16)
+
+Continuação do Achado 11: construídos 6 índices de força por time-temporada (z-score composto, 20 times de La Liga 2015/16, 38 jogos cada) a partir dos eventos brutos do StatsBomb (não dos agregados `match_stats`, que não têm passe/duelo/zona) — `arquivos_do_claude`/scripts de scratchpad, não versionados por serem exploratórios.
+
+- **Ataque**: chutes + chutes na área + xG (por jogo).
+- **Defesa**: interceptações + bloqueios + desarmes ganhos + cortes.
+- **Criação**: passes-chave (`shot_assist`) + passes pra área + passes progressivos (≥15m à frente) + assistências.
+- **Embate**: duelos ganhos (total) + taxa de duelos ganhos + duelos aéreos ganhos (aproximado pelo `Aerial Lost` do adversário na mesma partida — StatsBomb Open Data só registra o evento do lado perdedor).
+- **Lateral / Central**: fração das ações com bola (passe+condução) nos corredores externos vs. central do campo (StatsBomb dá `location`/`end_location` em coordenadas x,y; lateral e central são espelho um do outro por construção, somam a mesma fração de ações).
+
+### Tentativa de comparar com FotMob: só ataque tem contraparte real
+
+Antes de tentar comparar índice a índice, testei o que o FotMob de 2015/16 realmente expõe: das 760 linhas time-partida (temporada completa), **758 têm `total_shots`/`corners` mas NULL em tudo mais** — `tackles`, `interceptions`, `blocks`, `clearances`, `duels_won`, `aerial_duels_won`, `accurate_passes`, `xg`, `big_chances` (só 2/760 preenchidos). Não é "menos granular" — para este payload antigo esses campos genuinemente não existem (mesma causa do Achado 11: só a seção `top_stats` chega, sem `defence`/`duels`/`passes`). Verifiquei também a única outra temporada masculina completa do StatsBomb (Indian Super League 2021/22, 11 times/115 jogos) como alternativa pra ter os dois lados granulares — não está no pipeline do projeto (sem liga cadastrada, sem crosswalk FotMob), então ficou fora do escopo desta rodada.
+
+Consequência: **defesa/criação/embate/lateral/central só existem no lado StatsBomb** nesta amostra — documentados como achado StatsBomb-only, sem pretensão de comparação. Só **ataque** teve um proxy FotMob genuíno (`total_shots` + `corners`, os únicos campos populados) pra correlacionar.
+
+| índice | StatsBomb | FotMob (proxy disponível) |
+|---|---|---|
+| ataque | chutes + chutes na área + xG | `total_shots` + `corners` (z-score composto) |
+| defesa | interceptações+bloqueios+desarmes+cortes | — (campos ausentes no payload) |
+| criação | passes-chave+passes p/área+progressivos+assist. | — (campos ausentes no payload) |
+| embate | duelos ganhos+taxa+aéreos | — (campos ausentes no payload) |
+| lateral/central | fração de ações por corredor (zona x,y) | — (FotMob não expõe zona de ação) |
+
+**Correlação do índice de ataque** (20 times, z-score composto StatsBomb vs. z-score composto FotMob): **r = 0,933**, `ataque_fm ≈ 0,909 · ataque_sb` (sem intercepto relevante — ambos já centrados em zero por construção). Bem mais forte que a correlação stat-a-stat do Achado 11 (chutes totais isolado: r=0,884) — plausível que compor várias medidas de ataque cancele parte do ruído de definição de cada fonte.
+
+### Ranking (StatsBomb, 20 times, ordenado por ataque)
+
+| time | ataque | defesa | criação | embate | lateral | central |
+|---|---|---|---|---|---|---|
+| Real Madrid | +2,78 | −0,90 | +1,83 | +0,10 | −0,53 | +0,53 |
+| Barcelona | +2,45 | −2,12 | +1,28 | −1,15 | −1,04 | +1,04 |
+| Sevilla | +0,69 | −1,00 | +0,39 | −0,13 | +0,02 | −0,02 |
+| Atlético Madrid | +0,34 | +1,04 | +0,01 | +0,86 | +1,23 | −1,23 |
+| Rayo Vallecano | +0,27 | −0,45 | +0,66 | −0,27 | +0,93 | −0,93 |
+| Athletic Club | +0,15 | +0,27 | +0,51 | +0,54 | −1,05 | +1,05 |
+| Real Sociedad | +0,03 | +0,15 | +0,31 | +0,37 | +1,83 | −1,83 |
+| Celta Vigo | −0,14 | +0,62 | +0,36 | +0,57 | −2,36 | +2,36 |
+| Eibar | −0,19 | +0,32 | +0,29 | +0,62 | +0,58 | −0,58 |
+| Málaga | −0,22 | −0,04 | +0,31 | −0,00 | +1,05 | −1,05 |
+| Espanyol | −0,39 | +0,25 | −0,69 | +0,31 | −0,13 | +0,13 |
+| Valencia | −0,43 | +0,32 | −0,48 | −0,50 | −0,17 | +0,17 |
+| RC Deportivo | −0,44 | +0,56 | −0,04 | +0,67 | +0,55 | −0,55 |
+| Levante UD | −0,48 | −0,39 | −0,23 | −0,27 | −0,73 | +0,73 |
+| Getafe | −0,49 | −0,22 | −0,73 | −0,16 | +0,86 | −0,86 |
+| Granada | −0,64 | +0,20 | −0,56 | −0,39 | +0,44 | −0,44 |
+| Real Betis | −0,66 | +0,75 | −1,07 | −0,21 | +0,76 | −0,76 |
+| Las Palmas | −0,72 | −0,24 | −0,66 | +0,39 | −1,40 | +1,40 |
+| Sporting Gijón | −0,77 | +0,43 | −0,68 | −0,42 | −0,25 | +0,25 |
+| Villarreal | −1,14 | +0,45 | −0,80 | −0,92 | −0,61 | +0,61 |
+
+Batem com a intuição futebolística da temporada: Real Madrid/Barcelona isolados no ataque; Atlético Madrid destacado em defesa+embate (identidade Simeone); Real Sociedad e Celta com os jogos mais abertos pelas pontas dessa liga.
+
+### Ressalva
+
+Amostra de uma liga/temporada só. `embate` (aéreos) usa uma aproximação (evento do adversário) porque o StatsBomb Open Data não marca o vencedor do duelo aéreo do lado que ganha. `lateral`/`central` são espelho perfeito por construção (fração de um total) — não são dois sinais independentes, é um eixo só.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
