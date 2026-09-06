@@ -429,6 +429,36 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 11 — bug de parsing FotMob em payload antigo, e correlação StatsBomb×FotMob (La Liga 2014/15-2015/16)
+
+Ao importar La Liga 2014/15 (38 jogos, só Barcelona) e 2015/16 (380 jogos, temporada completa) do StatsBomb Open Data para comparar contra as estatísticas já ingeridas via FotMob, `match_stats_fotmob` estava com `total_shots`/`shots_on_target` quase todo `NULL` para essas duas temporadas — só `corners` vinha preenchido.
+
+**Causa raiz**: o payload do FotMob para partidas antigas (pré-~2018) só traz a seção `top_stats`, sem as seções detalhadas (`shots`, `discipline`) que partidas recentes têm. `arquivos_do_claude/ingestao_fotmob.py` buscava `total_shots`/`shots_on_target` só em `shots`, que simplesmente não existe nesses payloads — mesmo `top_stats` já carregando os mesmos números (`total_shots`/`ShotsOnTarget` confirmados por inspeção direta do `stats_raw`). Corrigido com `pegar_com_fallback_top_stats()`: cai pra `top_stats` só quando `shots` está totalmente ausente do payload, nunca quando o valor individual é null (isso continua sendo lacuna real). `fouls_committed`/`yellow_cards`/`red_cards` não receberam esse fallback — `discipline` genuinamente não tem equivalente em `top_stats`.
+
+Depois do fix, reimportar as 3.454 partidas de La Liga (`forcar=true`) expôs que o PostgREST do próprio Supabase estava em crash-loop recorrente naquela noite (`PGRST002`/`ReadTimeout`, confirmado nos logs do projeto — não é nada que o código do projeto cause ou resolva); o script `scripts/atualizar_partidas_finalizadas.py` não tinha nenhum retry, então qualquer soluço matava a execução inteira depois de já ter rodado dezenas de minutos. Ganhou `_exec_retry()` (backoff exponencial, ~8min de orçamento) em toda chamada ao Supabase.
+
+### Correlação StatsBomb × FotMob (418 partidas, 834 linhas time-partida)
+
+Crosswalk StatsBomb↔interno construído por (data + placar exato) com desempate por interseção de tokens do nome do time — 418/418 partidas casadas, 0 ambíguas.
+
+| métrica | n | r (Pearson) | média SB | média FM | fm = a + b·sb |
+|---|---|---|---|---|---|
+| escanteios | 834 | 0,983 | 5,05 | 5,05 | fm = 0,08 + 0,984·sb |
+| chutes totais | 834 | 0,884 | 12,15 | 9,88 | fm = 0,75 + 0,751·sb |
+| chutes ao gol | 834 | 0,920 | 4,31 | 4,76 | fm = 0,52 + 0,984·sb |
+| faltas / cartões / xG | 0-2 | — | — | — | dados insuficientes (payload antigo não tem `discipline`, ver acima) |
+
+- **Escanteios**: quase 1:1 (97% de acerto exato) — as duas fontes contam a mesma coisa.
+- **Chutes totais**: FotMob conta sistematicamente **~19% menos** chutes que StatsBomb (só 12,1% de acerto exato) — provável diferença de critério do que conta como "chute" (ex. StatsBomb inclui mais desvios/bloqueios como tentativa).
+- **Chutes ao gol**: na direção oposta, FotMob conta **~10% mais** que StatsBomb.
+- Faltas/cartões/xG não puderam ser comparados nesta amostra porque o FotMob de partida antiga genuinamente não expõe esses campos (não é lacuna do fix, é ausência real na fonte).
+
+### Ressalva antes de usar como prior
+
+Testado só numa liga (La Liga) e numa janela de payload "antigo" (2014-2016). Antes de aplicar `fm ≈ 0,75 + 0,751·sb` (chutes) ou `fm ≈ 0,52 + 0,984·sb` (chutes ao gol) como calibração pra outra liga/temporada sem StatsBomb, valeria confirmar que o viés não muda por liga — o motivo mais provável (diferença de critério de contagem) é da fonte FotMob em si, não da liga, mas isso é hipótese, não verificado aqui.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
