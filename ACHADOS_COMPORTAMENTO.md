@@ -437,25 +437,27 @@ Ao importar La Liga 2014/15 (38 jogos, só Barcelona) e 2015/16 (380 jogos, temp
 
 Depois do fix, reimportar as 3.454 partidas de La Liga (`forcar=true`) expôs que o PostgREST do próprio Supabase estava em crash-loop recorrente naquela noite (`PGRST002`/`ReadTimeout`, confirmado nos logs do projeto — não é nada que o código do projeto cause ou resolva); o script `scripts/atualizar_partidas_finalizadas.py` não tinha nenhum retry, então qualquer soluço matava a execução inteira depois de já ter rodado dezenas de minutos. Ganhou `_exec_retry()` (backoff exponencial, ~8min de orçamento) em toda chamada ao Supabase.
 
-### Correlação StatsBomb × FotMob (418 partidas, 834 linhas time-partida)
+### Correlação StatsBomb × FotMob (417 partidas, 820 linhas time-partida)
 
 Crosswalk StatsBomb↔interno construído por (data + placar exato) com desempate por interseção de tokens do nome do time — 418/418 partidas casadas, 0 ambíguas.
 
+**Correção feita numa revisão posterior: bug de atribuição de lado (home/away) no script de correlação.** A primeira versão resolvia qual time StatsBomb correspondia a cada lado (casa/fora) time a time, pegando "o primeiro nome que bater" — mas nomes internos como "Rayo Vallecano **de Madrid**" ou "RCD Espanyol **de Barcelona**" compartilham token com o adversário da capital ("Real **Madrid**", "**Barcelona**"), e o time visitante acabava recebendo por engano as estatísticas do time da casa (achado ao investigar partidas com diferença suspeita entre as fontes, ex. Real Madrid 10-2 Rayo Vallecano aparecia com o visitante "chutando" as mesmas 30 vezes do Real Madrid). Corrigido pra atribuição exclusiva (só 2 candidatos por partida; time da casa resolvido por interseção de token, o de fora é sempre o outro; partida descartada da amostra se os dois lados baterem com o mesmo nome ou nenhum). 7 das 418 partidas (14 linhas) ficaram ambíguas e foram descartadas — sobraram 417 partidas, 820 linhas.
+
 | métrica | n | r (Pearson) | média SB | média FM | fm = a + b·sb |
 |---|---|---|---|---|---|
-| escanteios | 834 | 0,983 | 5,05 | 5,05 | fm = 0,08 + 0,984·sb |
-| chutes totais | 834 | 0,884 | 12,15 | 9,88 | fm = 0,75 + 0,751·sb |
-| chutes ao gol | 834 | 0,920 | 4,31 | 4,76 | fm = 0,52 + 0,984·sb |
+| escanteios | 820 | 0,999 | 5,05 | 5,05 | fm = 0,02 + 0,997·sb |
+| chutes totais | 820 | 0,904 | 12,10 | 9,90 | fm = 0,54 + 0,774·sb |
+| chutes ao gol | 820 | 0,939 | 4,30 | 4,78 | fm = 0,43 + 1,013·sb |
 | faltas / cartões / xG | 0-2 | — | — | — | dados insuficientes (payload antigo não tem `discipline`, ver acima) |
 
-- **Escanteios**: quase 1:1 (97% de acerto exato) — as duas fontes contam a mesma coisa.
-- **Chutes totais**: FotMob conta sistematicamente **~19% menos** chutes que StatsBomb (só 12,1% de acerto exato) — provável diferença de critério do que conta como "chute" (ex. StatsBomb inclui mais desvios/bloqueios como tentativa).
-- **Chutes ao gol**: na direção oposta, FotMob conta **~10% mais** que StatsBomb.
+- **Escanteios**: praticamente 1:1 (r=0,999, 97,8% de acerto exato) — as duas fontes contam a mesma coisa.
+- **Chutes totais**: FotMob conta sistematicamente **~18% menos** chutes que StatsBomb (só 12,3% de acerto exato) — provável diferença de critério do que conta como "chute" (ex. StatsBomb inclui mais desvios/bloqueios como tentativa).
+- **Chutes ao gol**: na direção oposta, FotMob conta **~11% mais** que StatsBomb (52,7% de acerto exato).
 - Faltas/cartões/xG não puderam ser comparados nesta amostra porque o FotMob de partida antiga genuinamente não expõe esses campos (não é lacuna do fix, é ausência real na fonte).
 
 ### Ressalva antes de usar como prior
 
-Testado só numa liga (La Liga) e numa janela de payload "antigo" (2014-2016). Antes de aplicar `fm ≈ 0,75 + 0,751·sb` (chutes) ou `fm ≈ 0,52 + 0,984·sb` (chutes ao gol) como calibração pra outra liga/temporada sem StatsBomb, valeria confirmar que o viés não muda por liga — o motivo mais provável (diferença de critério de contagem) é da fonte FotMob em si, não da liga, mas isso é hipótese, não verificado aqui.
+Testado só numa liga (La Liga) e numa janela de payload "antigo" (2014-2016). Antes de aplicar `fm ≈ 0,54 + 0,774·sb` (chutes) ou `fm ≈ 0,43 + 1,013·sb` (chutes ao gol) como calibração pra outra liga/temporada sem StatsBomb, valeria confirmar que o viés não muda por liga — o motivo mais provável (diferença de critério de contagem) é da fonte FotMob em si, não da liga, mas isso é hipótese, não verificado aqui.
 
 ---
 
@@ -483,7 +485,7 @@ Consequência: **defesa/criação/embate/lateral/central só existem no lado Sta
 | embate | duelos ganhos+taxa+aéreos | — (campos ausentes no payload) |
 | lateral/central | fração de ações por corredor (zona x,y) | — (FotMob não expõe zona de ação) |
 
-**Correlação do índice de ataque** (20 times, z-score composto StatsBomb vs. z-score composto FotMob): **r = 0,933**, `ataque_fm ≈ 0,909 · ataque_sb` (sem intercepto relevante — ambos já centrados em zero por construção). Bem mais forte que a correlação stat-a-stat do Achado 11 (chutes totais isolado: r=0,884) — plausível que compor várias medidas de ataque cancele parte do ruído de definição de cada fonte.
+**Correlação do índice de ataque** (20 times, z-score composto StatsBomb vs. z-score composto FotMob): **r = 0,933**, `ataque_fm ≈ 0,909 · ataque_sb` (sem intercepto relevante — ambos já centrados em zero por construção). Mais forte que chutes totais isolado (r=0,904, Achado 11) mas abaixo do escanteio isolado (r=0,999) — plausível que compor chutes+chutes na área+xG cancele parte do ruído de definição de "chute" entre as fontes, sem chegar ao nível de escanteio (que já é quase 1:1 por definição).
 
 ### Ranking (StatsBomb, 20 times, ordenado por ataque)
 
@@ -723,8 +725,9 @@ Aconteceu três vezes nesta frente:
 - O **Achado 3** passou em todas as invariantes (espelhamento perfeito, minutos fechando) e mesmo assim a conclusão agregada estava confundida com força de equipe.
 - O **Achado 5** era um bug de ordenação que reconciliava perfeitamente em todos os totais, porque totais não têm ordem.
 - O **Achado 13** (escanteio/falta via StatsBomb) reproduziu **o mesmo bug do Achado 5** — 2º tempo com minuto reiniciando em vez de continuar — numa fonte de dado completamente diferente, meses depois de já saber exatamente que padrão procurar. Só não passou pro arquivo final porque o usuário perguntou "isso não pode ser artefato do intervalo?" antes de eu dar o achado por fechado.
+- O **Achado 11** (correlação StatsBomb×FotMob) publicou um r=0,983 pra escanteio que já parecia bom — só numa revisão pedida depois é que apareceu um bug de atribuição casa/fora (nomes tipo "Rayo Vallecano **de Madrid**" casando por engano com "Real **Madrid**") que estava jogando o r pra baixo sem parecer errado: 834 linhas com ~14 mal-atribuídas ainda dão uma correlação "boa o suficiente" pra não levantar suspeita. Corrigido, o r subiu pra 0,999. **Um coeficiente agregado plausível não garante que cada linha está emparelhada certo** — o que expôs foi olhar os maiores resíduos individuais (a partida com a maior diferença SB-FotMob), não o r em si.
 
-Em todos os casos o que expôs o problema foi **procurar um confundidor específico**, não rodar mais verificações de consistência. E saber de um bug numa fonte não impede o mesmo bug de reaparecer despercebido numa fonte nova — vale a pena checar deliberadamente por ele toda vez que uma fonte externa nova trouxer relógio de partida.
+Em todos os casos o que expôs o problema foi **procurar um confundidor específico** (ou o maior outlier individual), não rodar mais verificações de consistência agregada. E saber de um bug numa fonte não impede o mesmo bug de reaparecer despercebido numa fonte nova — vale a pena checar deliberadamente por ele toda vez que uma fonte externa nova trouxer relógio de partida ou crosswalk de nome de time.
 
 ---
 
