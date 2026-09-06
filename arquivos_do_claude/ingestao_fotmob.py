@@ -121,6 +121,22 @@ def pegar(grupo_por_chave: dict, grupo_key: str, stat_key: str, idx_lado: int):
         return None
 
 
+def pegar_com_fallback_top_stats(grupo_por_chave: dict, grupo_key: str, stat_key: str, idx_lado: int, stat_key_top_stats: str):
+    """Como `pegar`, mas com fallback pra `top_stats` quando o grupo mais
+    detalhado (`grupo_key`) nem existe no payload -- partidas antigas (achado
+    confirmado em La Liga 2014/15-2015/16) só trazem a seção `top_stats`,
+    sem `shots`/`discipline` separados, mesmo quando `top_stats` já carrega o
+    número (`total_shots` e `ShotsOnTarget` confirmados por inspeção direta;
+    NÃO usar esse fallback pra cartão -- `top_stats.yellow_cards` vem null
+    até em partida moderna com `discipline` presente, ver docstring de
+    `pegar`). Só cai no fallback quando o grupo principal está totalmente
+    ausente, não quando só o valor individual é null (isso continua
+    None -- pode ser uma lacuna real, não confundir com formato antigo)."""
+    if grupo_key not in grupo_por_chave:
+        return pegar(grupo_por_chave, "top_stats", stat_key_top_stats, idx_lado)
+    return pegar(grupo_por_chave, grupo_key, stat_key, idx_lado)
+
+
 def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
     item = stats_dict.get(chave_titulo)
     if not item:
@@ -191,8 +207,8 @@ def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id:
                 "xg_set_play": pegar(grupo_por_chave, "expected_goals", "expected_goals_set_play", lado),
                 "xg_non_penalty": pegar(grupo_por_chave, "expected_goals", "expected_goals_non_penalty", lado),
                 "xgot": pegar(grupo_por_chave, "expected_goals", "expected_goals_on_target", lado),
-                "total_shots": pegar(grupo_por_chave, "shots", "total_shots", lado),
-                "shots_on_target": pegar(grupo_por_chave, "shots", "ShotsOnTarget", lado),
+                "total_shots": pegar_com_fallback_top_stats(grupo_por_chave, "shots", "total_shots", lado, "total_shots"),
+                "shots_on_target": pegar_com_fallback_top_stats(grupo_por_chave, "shots", "ShotsOnTarget", lado, "ShotsOnTarget"),
                 "shots_off_target": pegar(grupo_por_chave, "shots", "ShotsOffTarget", lado),
                 "shots_blocked": pegar(grupo_por_chave, "shots", "blocked_shots", lado),
                 "shots_inside_box": pegar(grupo_por_chave, "shots", "shots_inside_box", lado),
