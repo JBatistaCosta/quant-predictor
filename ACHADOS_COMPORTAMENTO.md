@@ -779,8 +779,10 @@ O Achado 12 (StatsBomb×FotMob, La Liga 2015/16) tinha achado que `tackles`/`int
 |---|---|---|
 | xG/valor por zona de chute | **Sim, já existe nativo** | FotMob tem xG próprio + x/y de chute em toda liga |
 | Índices de defesa/criação/embate (estilo Achado 12) | **Sim, com dado moderno** | `match_stats_fotmob` tem os campos desde ~2019+, qualquer liga |
-| Matriz de transição zona-a-zona (Achado 15) | **Não** | Precisa de evento de passe/condução com local — FotMob nunca capturou isso |
-| PPDA / deep completions (estilo Understat) | **Não** | Mesma razão — pressão/posicionamento exige stream de evento que o FotMob não tem |
+| Matriz de transição zona-a-zona (Achado 15) | **Não** | Precisa de evento de passe/condução com local — nem FotMob nem Understat expõem isso publicamente |
+| PPDA / deep completions (estilo Understat) | **Já existe, só nas 5 europeias** | Understat calcula internamente (precisa rastrear passe pra isso), mas só publica o agregado por partida — não o evento bruto. Mesmo se quiséssemos, não dá pra pedir mais granularidade dessa fonte |
+
+**Nota sobre o Understat especificamente**: pra calcular PPDA e deep completions o Understat precisa, por definição, rastrear cada passe com posição — a informação existe do lado deles. Mas a API pública só expõe o resultado agregado (`ppda`, `deep_completions` por time-partida, já ingerido em `match_stats`), nunca o evento passe-a-passe. Não é uma limitação de ingestão que dê pra contornar pedindo "mais dado" — é o que a fonte pública oferece. Do que o projeto tem acesso hoje, **só o StatsBomb Open Data expõe evento bruto com coordenada** o suficiente pra montar uma matriz de transição.
 
 Descritivo, sem IC 95%.
 
@@ -853,6 +855,49 @@ Pra uma simulação Monte Carlo baseada em zona (a aplicação que o Achado 15 j
 - **Dois times, uma temporada.** São os extremos da tabela (1º e 18º colocado por saldo de gol), não uma amostra de vários pares forte/fraco — a generalização "matriz é universal" é uma hipótese forte apoiada em 2 pontos, não testada estatisticamente.
 - **Barcelona 2015/16 é um caso extremo até pros padrões de "time forte"** (MSN no auge, título de liga+Champions) — o achado pode ser mais moderado comparando dois times de força mais parecida.
 - Mesma base de sempre (StatsBomb, La Liga 2015/16) — não é dado do projeto.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 18 — valor de elenco e Elo correlacionam com ataque/criação, mas "correlacionam negativo" com defesa é armadilha
+
+Pergunta: há indício de que valor de elenco ou um Elo por setor interfiram na qualidade de cada dimensão (ataque/defesa/criação/embate)? O projeto **não tem Elo por setor** — `team_elo`/`team_elo_history` guardam um rating único por time (escopo liga/global), nunca separado por ataque/meio/defesa. Mas duas fontes já existentes no banco permitem testar uma versão real da pergunta: o Elo geral do próprio sistema, e valor de mercado por jogador (`player_market_value_history`, fonte SciSports, cobre 2014-12-31 até hoje — inclui a temporada 2015/16 usada nos Achados 12/15/17).
+
+### Correlação nos 20 times de La Liga 2015/16
+
+| índice | r (log valor de elenco) | r (Elo interno, set/2015) |
+|---|---|---|
+| **Ataque** | **+0,70** | **+0,74** |
+| Criação | +0,51 | +0,54 |
+| Defesa | −0,36 | −0,40 |
+| Embate | −0,19 | −0,20 |
+
+Valor de elenco e Elo se correlacionam fortemente entre si (r=0,81) — as duas fontes concordam sobre quem é forte, o que valida usar qualquer uma das duas como proxy de força.
+
+### Ataque/criação: sinal real. Defesa/embate: confundido pela mesma armadilha do Achado 3
+
+Ataque e criação correlacionam positivo com força de elenco/Elo, na direção esperada. **Defesa e embate correlacionam negativo — mas isso não quer dizer "time caro defende pior".** É o mesmo confundidor do Achado 3 desta frente: o índice de defesa conta **ações defensivas brutas** (desarme, interceptação, bloqueio, corte), e um time mais forte **precisa defender menos vezes** porque passa mais tempo com a bola — então acumula menos ações defensivas por construção, não porque os zagueiros são piores. Confirmado num caso concreto: o Barcelona tinha **3× mais valor de elenco investido em defesa** que o Espanyol, mas um índice de defesa pior (−2,12 vs +0,25) — porque jogava a maior parte da partida atacando, não defendendo.
+
+### O teste que escapa da armadilha: valor por setor vs. retenção de posse
+
+Comparando o valor de elenco **por setor** entre os dois extremos da liga (Barcelona x Espanyol, ver Achado 17):
+
+| Setor | Barcelona | Espanyol | Razão |
+|---|---|---|---|
+| Ataque | €198,2M | €8,0M | 24,8× |
+| Meio-campo | €92,7M | €5,8M | 16,0× |
+| Defesa | €37,1M | €12,5M | 3,0× |
+| Goleiro | €21,5M | €5,7M | 3,8× |
+
+O gap de valor é **muito maior no ataque/meio do que na defesa** entre os dois — e isso bate com o Achado 17: a diferença de retenção de posse (perda de bola) entre eles também é proporcionalmente maior no meio-campo/defesa (onde o Espanyol perde a bola mais que o dobro) do que no ataque-centro (onde a diferença de conversão de chute, embora real, é menor em termos relativos). O padrão sugere que o dinheiro investido no setor se reflete mais em **não perder a bola** do que em **acumular ações defensivas** — a métrica de retenção de posse é a que escapa do confundidor de tempo de posse, a de ações defensivas brutas não.
+
+### Ressalvas
+
+- **n=20 times, uma liga, uma temporada** — direção clara e estatisticamente coerente (r consistente entre valor e Elo, duas fontes independentes concordando), mas não é validação com IC 95%.
+- **Cobertura do valor de mercado é parcial**: 5-17 jogadores por time (não o elenco completo de ~25), então é mais um proxy de "onde o time investe/tem os jogadores mais caros" do que o valor total do elenco.
+- **O teste "por setor" (Barcelona x Espanyol) é só 2 times** — mesma ressalva do Achado 17, hipótese com 2 pontos, não testada estatisticamente.
+- Sem Elo por setor no projeto, não dá pra isolar "Elo de defesa" de "Elo geral" — só o valor de elenco por setor permite esse corte, e só pra times com cobertura de jogadores suficiente.
 
 Descritivo, sem IC 95%.
 
