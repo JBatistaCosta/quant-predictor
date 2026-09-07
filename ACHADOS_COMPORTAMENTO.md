@@ -1069,6 +1069,65 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 23 — bug real de extração: `tackles` por jogador está zerado por um erro de string, não por falta de dado
+
+Pergunta de acompanhamento: por que `match_player_stats_fotmob.tackles` vem 100% `NULL` (1.082.777 linhas), enquanto o mesmo campo a nível de time (`match_stats_fotmob.tackles`) tem 99,9% de cobertura? E a cobertura de `minutes_played`/`rating` (66-72%) está concentrada nalguma liga ou é geral?
+
+### O bug: comparando com a lição já registrada do Achado 11/12 (`fouls`→`'Fouls committed'`)
+
+`arquivos_do_claude/ingestao_fotmob.py:340` busca o rótulo `"Tackles won"` dentro do grupo `"defense"` do JSON por jogador. Inspecionando uma linha real do `stats_raw` (já salvo no banco, sem precisar de nova raspagem):
+
+```json
+{"key": "defense", "stats": {
+  "Tackles": {"key": "matchstats.headers.tackles", "stat": {"type": "integer", "value": 0}},
+  "Interceptions": {"key": "interceptions", "stat": {"type": "integer", "value": 0}},
+  ...
+}}
+```
+
+O rótulo real é **`"Tackles"`**, não `"Tackles won"` — o código nunca encontra a chave, sempre cai no `None`. Mesma categoria de bug já documentada no projeto (rótulo em inglês que não bate com a chave interna do FotMob), só que dessa vez no extrator **por jogador**, não no de time.
+
+### Quantificado: quanto já está recuperável sem raspar nada de novo
+
+```sql
+-- linhas com bloco "defense" no stats_raw (jsonb já salvo) x valor na coluna hoje
+```
+
+| | Linhas |
+|---|---|
+| Linhas com bloco `defense` no `stats_raw` | 697.299 (64,4% da tabela) |
+| Dessas, com `"Tackles"` extraível do JSON | **697.299 (100%)** |
+| Dessas, com a coluna `tackles` preenchida hoje | **0** |
+
+Ou seja: **64,4% das linhas já têm o valor de desarme certinho guardado no `stats_raw`**, só não promovido pra coluna por causa do rótulo errado. Não é um gap de dado da fonte — é possível corrigir só reprocessando o JSON já armazenado (sem custo de API, sem nova raspagem).
+
+`interceptions` **não** tem o mesmo bug (rótulo `"Interceptions"` bate certo — testado e confirmado num caso real), mas também está sub-populado: 697.299 linhas têm o valor extraível do `stats_raw`, e só 334.180 (47,9% dessas) estão na coluna hoje. Causa não confirmada — provável reprocessamento parcial em algum ponto do histórico de ingestão (a tabela é alimentada desde 27/07/2026, catálogo do projeto já registrava isso como pendência de medição, não como bug identificado). Fica como suspeita a investigar, não como achado fechado.
+
+### Cobertura de `minutes_played`/`rating`: uniforme entre ligas, não é problema de payload
+
+| Liga | % com `minutes_played` | % com `rating` |
+|---|---|---|
+| Brasileirão Série A | 67,6% | 63,1% |
+| Serie A (Itália) | 67,2% | 62,3% |
+| La Liga | 71,0% | 65,8% |
+| Premier League | 73,9% | 68,3% |
+| Bundesliga | 77,0% | 70,8% |
+| MLS | 77,0% | 70,8% |
+| Championship | 76,4% | 70,4% |
+
+Faixa estreita (67-78%) em 15 competições diferentes — não é um problema de uma liga específica ou de payload antigo (o padrão do Achado 11/12). Hipótese mais provável (não confirmada): toda a lista de relacionados/banco de reservas ganha uma linha em `match_player_stats_fotmob`, inclusive quem não entrou em campo — esses ficam sem `minutes_played`/`rating` por não terem jogado, não por falha de captura.
+
+### Prático — o que isso destrava pra índice individual/setorial por jogo e presença/ausência
+
+- **Correção já aplicada** (`arquivos_do_claude/ingestao_fotmob.py`): troca `"Tackles won"` por `"Tackles"`. Vale pra ingestões novas a partir de agora.
+- **Não corrige retroativamente** as 1.082.777 linhas já gravadas — pra isso precisaria de um backfill que reprocessa o `stats_raw` já salvo (é só um `UPDATE` com `jsonb` parsing, não uma nova raspagem). **Não executado nesta investigação** — é escrita em massa em tabela de produção, fica pra confirmação antes de rodar.
+- Com o backfill, `match_player_stats_fotmob` passa a sustentar de verdade o que a resposta anterior propôs: índice individual por jogo (já pronto: `rating`, `xg`, `chances_created`, `touches`, `accurate_passes`), índice setorial por jogo (agrupando por posição, agora com desarme por jogador utilizável), e comparação de presença/ausência normalizada por `minutes_played` — sem precisar de nenhuma raspagem nova, o dado já está no banco.
+- Ressalva que continua valendo: nada disso tem localização em campo (zona) por jogador — só `match_shots_fotmob` tem x/y por jogador (chute). Desarme/interceptação por jogador dizem "quanto", não "onde".
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
