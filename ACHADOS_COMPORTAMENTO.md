@@ -459,6 +459,22 @@ Crosswalk StatsBomb↔interno construído por (data + placar exato) com desempat
 
 Testado só numa liga (La Liga) e numa janela de payload "antigo" (2014-2016). Antes de aplicar `fm ≈ 0,54 + 0,774·sb` (chutes) ou `fm ≈ 0,43 + 1,013·sb` (chutes ao gol) como calibração pra outra liga/temporada sem StatsBomb, valeria confirmar que o viés não muda por liga — o motivo mais provável (diferença de critério de contagem) é da fonte FotMob em si, não da liga, mas isso é hipótese, não verificado aqui.
 
+### Ressalva resolvida: a divergência é do payload antigo, não do FotMob atual
+
+A pergunta acima (o viés muda por liga/temporada?) tinha uma lacuna maior por trás: o teste inteiro foi feito com payload **antigo** do FotMob (pré-2018, só `top_stats`). Não dava pra saber se o desvio (~18% menos chute, ~11% mais chute-ao-gol) era um viés de critério que persiste hoje, ou um artefato específico daquele formato de payload — porque não existe temporada completa e recente do StatsBomb Open Data pra nenhuma liga que o projeto acompanha (só ligas femininas 2023/24 + Indian Super League 2021/22, nenhuma delas no pipeline).
+
+Solução: o projeto já tem uma fonte independente e **moderna** cobrindo as 5 grandes ligas europeias — `match_stats.xg_source='understat'` (via `arquivos_do_claude/backfill_xg_understat.py`), 10.510 linhas time-partida entre agosto/2023 e maio/2026, casando 1:1 com `match_stats_fotmob` (10.508/10.510, ambas com `total_shots` preenchido). Correlacionando Understat × FotMob nesse período:
+
+| métrica | n | r (Pearson) | média Understat | média FotMob |
+|---|---|---|---|---|
+| chutes totais | 10.508 | 0,996 | 12,67 | 12,70 |
+| chutes ao gol | 10.508 | 0,995 | 4,42 | 4,41 |
+| escanteios | 10.508 | 0,998 | 4,84 | 4,84 |
+
+**Sem viés em nenhuma métrica** — médias praticamente idênticas (diferença <1%) e correlação mais alta que a do StatsBomb×FotMob antigo (que tinha r=0,904/0,939 pra essas mesmas duas métricas). O desvio sistemático do Achado 11 era mesmo um artefato do payload antigo (`top_stats` sem os grupos detalhados), não um critério de contagem que persiste no FotMob atual.
+
+**Conclusão prática: não aplicar `fm ≈ 0,54 + 0,774·sb` (chutes) nem `fm ≈ 0,43 + 1,013·sb` (chutes ao gol) a nenhuma liga/temporada atual do projeto.** Nelas o FotMob já bate direto com uma fonte independente moderna — a calibração só faria sentido pra outro caso de payload antigo (outra liga histórica pré-2018), que é justamente o cenário raro que gerou o Achado 11 em primeiro lugar.
+
 ---
 
 ## Achado 12 — índices de força por time (ataque, defesa, criação, embate, lateral, central), StatsBomb×FotMob (La Liga 2015/16)
