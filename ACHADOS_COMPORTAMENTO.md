@@ -459,6 +459,22 @@ Crosswalk StatsBomb↔interno construído por (data + placar exato) com desempat
 
 Testado só numa liga (La Liga) e numa janela de payload "antigo" (2014-2016). Antes de aplicar `fm ≈ 0,54 + 0,774·sb` (chutes) ou `fm ≈ 0,43 + 1,013·sb` (chutes ao gol) como calibração pra outra liga/temporada sem StatsBomb, valeria confirmar que o viés não muda por liga — o motivo mais provável (diferença de critério de contagem) é da fonte FotMob em si, não da liga, mas isso é hipótese, não verificado aqui.
 
+### Ressalva resolvida: a divergência é do payload antigo, não do FotMob atual
+
+A pergunta acima (o viés muda por liga/temporada?) tinha uma lacuna maior por trás: o teste inteiro foi feito com payload **antigo** do FotMob (pré-2018, só `top_stats`). Não dava pra saber se o desvio (~18% menos chute, ~11% mais chute-ao-gol) era um viés de critério que persiste hoje, ou um artefato específico daquele formato de payload — porque não existe temporada completa e recente do StatsBomb Open Data pra nenhuma liga que o projeto acompanha (só ligas femininas 2023/24 + Indian Super League 2021/22, nenhuma delas no pipeline).
+
+Solução: o projeto já tem uma fonte independente e **moderna** cobrindo as 5 grandes ligas europeias — `match_stats.xg_source='understat'` (via `arquivos_do_claude/backfill_xg_understat.py`), 10.510 linhas time-partida entre agosto/2023 e maio/2026, casando 1:1 com `match_stats_fotmob` (10.508/10.510, ambas com `total_shots` preenchido). Correlacionando Understat × FotMob nesse período:
+
+| métrica | n | r (Pearson) | média Understat | média FotMob |
+|---|---|---|---|---|
+| chutes totais | 10.508 | 0,996 | 12,67 | 12,70 |
+| chutes ao gol | 10.508 | 0,995 | 4,42 | 4,41 |
+| escanteios | 10.508 | 0,998 | 4,84 | 4,84 |
+
+**Sem viés em nenhuma métrica** — médias praticamente idênticas (diferença <1%) e correlação mais alta que a do StatsBomb×FotMob antigo (que tinha r=0,904/0,939 pra essas mesmas duas métricas). O desvio sistemático do Achado 11 era mesmo um artefato do payload antigo (`top_stats` sem os grupos detalhados), não um critério de contagem que persiste no FotMob atual.
+
+**Conclusão prática: não aplicar `fm ≈ 0,54 + 0,774·sb` (chutes) nem `fm ≈ 0,43 + 1,013·sb` (chutes ao gol) a nenhuma liga/temporada atual do projeto.** Nelas o FotMob já bate direto com uma fonte independente moderna — a calibração só faria sentido pra outro caso de payload antigo (outra liga histórica pré-2018), que é justamente o cenário raro que gerou o Achado 11 em primeiro lugar.
+
 ---
 
 ## Achado 12 — índices de força por time (ataque, defesa, criação, embate, lateral, central), StatsBomb×FotMob (La Liga 2015/16)
@@ -711,6 +727,177 @@ A matriz geral + a tabela de chute/perda por zona já dá pra montar uma cadeia 
 - **"Perda de posse" é só passe incompleto/saiu/impedimento + desarme sofrido + erro de controle** — não captura falta cometida contra o time, nem todo motivo possível de a bola sair de jogo.
 - **Tiers de força têm amostra pequena** (6-7 times cada) — direção clara, mas não é uma curva suave, é um agrupamento grosso.
 - **Mesma ressalva de sempre:** é uma temporada, de uma liga (La Liga 2015/16, StatsBomb) — não é pipeline do projeto, não teve validação de IC 95%, e não necessariamente generaliza pras ligas que o projeto acompanha.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 16 — o que dá (e o que não dá) pra estimar via FotMob para ligas sem StatsBomb/Understat
+
+Pergunta de acompanhamento aos Achados 11/15: dá pra estender a matriz de transição (Achado 15) ou os índices de força (Achado 12) pras ligas que só têm FotMob, sem Understat nem StatsBomb — Brasileirão, MLS, Championship, Libertadores etc.?
+
+### O que **não dá**, e não é solução de calibração — é ausência de dado
+
+A matriz de transição do Achado 15 vem de eventos `Pass`/`Carry` com local de início e fim — StatsBomb registra **cada ação com bola**, com coordenada. **O FotMob não tem isso em nenhuma liga, nenhuma era** — o único stream de evento com coordenada que ele expõe é o de chute (`match_shots_fotmob`, x/y por chute). Não existe fator de transformação, calibração ou "transformador" que reconstrua uma rede de passes a partir de dados que nunca foram capturados. O mesmo vale pra PPDA e "deep completions" (métricas de pressão do Understat, Achado 11) — também dependem de evento com local que o FotMob não tem. **Isso é limite de dado, não de método.**
+
+### O que **dá**: o FotMob já tem o próprio xG por chute, em toda liga, e ele bate com o padrão do StatsBomb
+
+`match_shots_fotmob` guarda x/y **e um `xg` de modelo próprio do FotMob** pra 99,3-100% dos 479.202 chutes do banco (18.823 partidas, 17 competições — incluindo Brasileirão Série A/B, Libertadores, MLS, Championship, nenhuma delas com Understat). Não é preciso estimar nada: o dado já existe, nativo, pra qualquer liga que o projeto acompanha.
+
+Construí um mapa de valor por zona (distância ao gol × canal central/lateral) usando esse chute+resultado real (gol ou não), comparando La Liga (tem Understat) com Brasileirão Série A (não tem):
+
+| distância ao gol | canal | La Liga: conversão | Brasileirão: conversão |
+|---|---|---|---|
+| ≤11m (muito perto) | central | 23,0% | 22,4% |
+| 11-16,5m | central | 11,8% | 10,7% |
+| 16,5-25m (entrada da área) | central | 6,0% | 5,8% |
+| >25m (longe) | central | 5,2% | 4,0% |
+| ≤11m | lateral | 12,3% | 6,8% (n baixo: 133 chutes) |
+| 11-16,5m | lateral | 8,7% | 7,7% |
+| 16,5-25m | lateral | 4,0% | 3,6% |
+| >25m | lateral | 2,5% | 2,0% |
+
+**O padrão é praticamente idêntico entre as duas ligas** (diferença ≤1,3pp na maioria das faixas, com N na casa de milhares) — central sempre converte mais que lateral na mesma distância, e a conversão cai suavemente com a distância nas duas ligas. Isso é o geometria do gol se impondo (ângulo e distância), então é esperado que generalize — mas é uma validação real, não só uma suposição: o modelo de xG do FotMob (calibrado internamente, sem StatsBomb nem Understat envolvidos) já reproduz o mesmo formato de "zona de valor" que o Achado 15 descreveu qualitativamente a partir de outra fonte inteira.
+
+### Correção ao Achado 12: "defesa/criação/embate ausentes no FotMob" era do payload antigo, não da liga
+
+O Achado 12 (StatsBomb×FotMob, La Liga 2015/16) tinha achado que `tackles`/`interceptions`/`accurate_passes`/`duels_won` vinham quase todo `NULL` no FotMob e concluiu que esses índices "só existem no lado StatsBomb". **Isso vale só pro payload antigo** (mesma causa do bug do Achado 11: pré-2018 só tem `top_stats`). Conferindo `match_stats_fotmob` pra partidas modernas (2023+) em qualquer liga, incluindo as sem Understat:
+
+| liga | % linhas com `touches_opp_box` | % com `tackles` | % com `accurate_passes` |
+|---|---|---|---|
+| Brasileirão Série A | 94,4% | 99,9% | 99,9% |
+| Brasileirão Série B | 96,3% | 99,9% | 99,9% |
+| MLS | 93,2% | 100% | 100% |
+| Championship | 100% | 100% | 100% |
+| La Liga | 95,2% | 99,9% | 99,9% |
+
+**Os campos de defesa/passe/duelo do FotMob existem em toda liga moderna do projeto, não só nas 5 europeias do Understat.** O índice de defesa/criação/embate do Achado 12 (construído só com StatsBomb, La Liga 2015/16) já teria contraparte real no FotMob se refeito com partidas modernas de qualquer liga — não foi feito aqui porque exigiria repetir o levantamento de eventos brutos numa temporada atual, fora do escopo desta verificação.
+
+### Resumo prático
+
+| o que | dá pra estender sem Understat/StatsBomb? | por quê |
+|---|---|---|
+| xG/valor por zona de chute | **Sim, já existe nativo** | FotMob tem xG próprio + x/y de chute em toda liga |
+| Índices de defesa/criação/embate (estilo Achado 12) | **Sim, com dado moderno** | `match_stats_fotmob` tem os campos desde ~2019+, qualquer liga |
+| Matriz de transição zona-a-zona (Achado 15) | **Não** | Precisa de evento de passe/condução com local — nem FotMob nem Understat expõem isso publicamente |
+| PPDA / deep completions (estilo Understat) | **Já existe, só nas 5 europeias** | Understat calcula internamente (precisa rastrear passe pra isso), mas só publica o agregado por partida — não o evento bruto. Mesmo se quiséssemos, não dá pra pedir mais granularidade dessa fonte |
+
+**Nota sobre o Understat especificamente**: pra calcular PPDA e deep completions o Understat precisa, por definição, rastrear cada passe com posição — a informação existe do lado deles. Mas a API pública só expõe o resultado agregado (`ppda`, `deep_completions` por time-partida, já ingerido em `match_stats`), nunca o evento passe-a-passe. Não é uma limitação de ingestão que dê pra contornar pedindo "mais dado" — é o que a fonte pública oferece. Do que o projeto tem acesso hoje, **só o StatsBomb Open Data expõe evento bruto com coordenada** o suficiente pra montar uma matriz de transição.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 17 — a diferença entre time forte e fraco está em reter a posse, não em como a bola se move
+
+Pergunta de acompanhamento ao Achado 15: a matriz de transição inteira muda por time, ou só a taxa de perda de posse (que o Achado 15 já tinha segmentado por tercil de força)? Construídas as matrizes 9×9 completas dos dois extremos da liga por saldo de gol — **Barcelona** (campeão, saldo +83, 38 jogos) e **Espanyol** (18º colocado, saldo −34) — a partir dos eventos brutos das 74 partidas dos dois (mesma base StatsBomb, La Liga 2015/16).
+
+### Desfecho por zona (chute / perda de posse)
+
+| Zona | Barcelona: perda | Espanyol: perda |
+|---|---|---|
+| Def-Esq | 9,1% | 19,6% |
+| Def-Cen | 6,5% | 22,3% |
+| Def-Dir | 8,8% | 20,6% |
+| Meio-Esq | 6,2% | 13,5% |
+| Meio-Cen | 6,0% | 13,7% |
+| Meio-Dir | 6,4% | 15,4% |
+| Atq-Esq | 14,2% | 24,1% |
+| Atq-Cen | 16,2% | 19,3% |
+| Atq-Dir | 14,2% | 23,2% |
+
+| Zona | Barcelona: % vira chute | Espanyol: % vira chute |
+|---|---|---|
+| Atq-Esq | 0,78% | 1,45% |
+| **Atq-Cen** | **13,4%** | **20,0%** |
+| Atq-Dir | 0,82% | 1,25% |
+
+**A diferença na perda de posse é brutal e consistente** — Espanyol perde a bola mais que o dobro do Barcelona em quase toda zona defensiva e de meio-campo (ex. Def-Cen: 22,3% vs 6,5%). E no ataque-centro o Espanyol chuta ~50% mais vezes ao chegar lá (20,0% vs 13,4%) — o mesmo padrão do Achado 15 ("time fraco aproveita logo em vez de segurar a posse"), agora confirmado nos dois extremos individuais da liga, não só nos tercis agregados.
+
+### Matriz de transição (condicional a manter a posse) — Barcelona
+
+| De \ Para | Def-Esq | Def-Cen | Def-Dir | Meio-Esq | Meio-Cen | Meio-Dir | Atq-Esq | Atq-Cen | Atq-Dir |
+|---|---|---|---|---|---|---|---|---|---|
+| **Def-Esq** | 56,1% | 17,8% | 3,5% | 17,3% | 4,5% | 0,8% | 0,0% | 0,1% | 0,0% |
+| **Def-Cen** | 14,3% | 49,6% | 12,9% | 5,6% | 11,3% | 5,9% | 0,2% | 0,1% | 0,1% |
+| **Def-Dir** | 2,8% | 14,6% | 58,5% | 1,3% | 4,3% | 18,0% | 0,1% | 0,0% | 0,3% |
+| **Meio-Esq** | 3,5% | 1,7% | 0,3% | 68,3% | 12,5% | 2,0% | 9,5% | 1,5% | 0,8% |
+| **Meio-Cen** | 0,5% | 1,7% | 0,6% | 12,3% | 58,4% | 14,0% | 4,2% | 4,9% | 3,3% |
+| **Meio-Dir** | 0,2% | 1,3% | 3,5% | 1,7% | 13,6% | 68,6% | 0,9% | 1,5% | 8,7% |
+| **Atq-Esq** | 0,0% | 0,0% | 0,0% | 7,3% | 2,2% | 0,1% | 75,5% | 13,9% | 0,9% |
+| **Atq-Cen** | 0,0% | 0,0% | 0,0% | 0,9% | 4,7% | 1,2% | 12,3% | 70,4% | 10,4% |
+| **Atq-Dir** | 0,0% | 0,0% | 0,0% | 0,4% | 2,2% | 9,1% | 1,5% | 10,6% | 76,3% |
+
+### Matriz de transição — Espanyol
+
+| De \ Para | Def-Esq | Def-Cen | Def-Dir | Meio-Esq | Meio-Cen | Meio-Dir | Atq-Esq | Atq-Cen | Atq-Dir |
+|---|---|---|---|---|---|---|---|---|---|
+| **Def-Esq** | 56,9% | 12,6% | 2,1% | 21,2% | 5,1% | 1,2% | 0,7% | 0,2% | 0,1% |
+| **Def-Cen** | 11,0% | 49,5% | 11,1% | 7,6% | 10,5% | 8,9% | 0,3% | 0,6% | 0,6% |
+| **Def-Dir** | 1,4% | 10,4% | 58,5% | 0,5% | 3,7% | 24,2% | 0,1% | 0,2% | 1,0% |
+| **Meio-Esq** | 3,7% | 1,7% | 0,2% | 70,9% | 10,9% | 1,3% | 9,2% | 1,6% | 0,5% |
+| **Meio-Cen** | 0,5% | 3,7% | 1,0% | 13,5% | 57,4% | 14,4% | 2,8% | 3,9% | 2,8% |
+| **Meio-Dir** | 0,2% | 1,6% | 3,1% | 1,2% | 9,6% | 72,1% | 0,8% | 1,5% | 9,9% |
+| **Atq-Esq** | 0,0% | 0,0% | 0,0% | 8,7% | 1,6% | 0,1% | 77,6% | 10,6% | 1,4% |
+| **Atq-Cen** | 0,0% | 0,0% | 0,0% | 1,3% | 4,9% | 0,8% | 14,7% | 68,4% | 9,9% |
+| **Atq-Dir** | 0,0% | 0,0% | 0,0% | 0,0% | 1,2% | 9,2% | 1,2% | 10,3% | 78,1% |
+
+### O achado: a forma da matriz é quase idêntica — a diferença é a retenção, não a rota
+
+Comparando célula a célula, **as duas matrizes são muito parecidas**: a diagonal domina em ambas (bola tende a ficar no próprio corredor, 49-79%), a probabilidade de pular direto de defesa pra ataque é ~0% nas duas, e a distribuição de "pra onde a bola vai quando sai de cada zona" tem o mesmo formato geral no melhor e no pior time da liga. **A diferença entre Barcelona e Espanyol não está em como a bola se move quando fica em jogo — está em com que frequência ela fica em jogo** (a tabela de perda de posse acima).
+
+### Implicação pra simulação
+
+Pra uma simulação Monte Carlo baseada em zona (a aplicação que o Achado 15 já apontava), isso sugere uma simplificação real: **a matriz de transição em si pode ser tratada como praticamente universal** (uma matriz só, compartilhada por todos os times), enquanto **a taxa de perda de posse por zona é o parâmetro que precisa variar por força de time** — em vez de recalibrar as duas coisas por time, recalibrar só uma reduz a complexidade do modelo sem perder o efeito real que a força de equipe tem no jogo.
+
+### Ressalvas
+
+- **Dois times, uma temporada.** São os extremos da tabela (1º e 18º colocado por saldo de gol), não uma amostra de vários pares forte/fraco — a generalização "matriz é universal" é uma hipótese forte apoiada em 2 pontos, não testada estatisticamente.
+- **Barcelona 2015/16 é um caso extremo até pros padrões de "time forte"** (MSN no auge, título de liga+Champions) — o achado pode ser mais moderado comparando dois times de força mais parecida.
+- Mesma base de sempre (StatsBomb, La Liga 2015/16) — não é dado do projeto.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 18 — valor de elenco e Elo correlacionam com ataque/criação, mas "correlacionam negativo" com defesa é armadilha
+
+Pergunta: há indício de que valor de elenco ou um Elo por setor interfiram na qualidade de cada dimensão (ataque/defesa/criação/embate)? O projeto **não tem Elo por setor** — `team_elo`/`team_elo_history` guardam um rating único por time (escopo liga/global), nunca separado por ataque/meio/defesa. Mas duas fontes já existentes no banco permitem testar uma versão real da pergunta: o Elo geral do próprio sistema, e valor de mercado por jogador (`player_market_value_history`, fonte SciSports, cobre 2014-12-31 até hoje — inclui a temporada 2015/16 usada nos Achados 12/15/17).
+
+### Correlação nos 20 times de La Liga 2015/16
+
+| índice | r (log valor de elenco) | r (Elo interno, set/2015) |
+|---|---|---|
+| **Ataque** | **+0,70** | **+0,74** |
+| Criação | +0,51 | +0,54 |
+| Defesa | −0,36 | −0,40 |
+| Embate | −0,19 | −0,20 |
+
+Valor de elenco e Elo se correlacionam fortemente entre si (r=0,81) — as duas fontes concordam sobre quem é forte, o que valida usar qualquer uma das duas como proxy de força.
+
+### Ataque/criação: sinal real. Defesa/embate: confundido pela mesma armadilha do Achado 3
+
+Ataque e criação correlacionam positivo com força de elenco/Elo, na direção esperada. **Defesa e embate correlacionam negativo — mas isso não quer dizer "time caro defende pior".** É o mesmo confundidor do Achado 3 desta frente: o índice de defesa conta **ações defensivas brutas** (desarme, interceptação, bloqueio, corte), e um time mais forte **precisa defender menos vezes** porque passa mais tempo com a bola — então acumula menos ações defensivas por construção, não porque os zagueiros são piores. Confirmado num caso concreto: o Barcelona tinha **3× mais valor de elenco investido em defesa** que o Espanyol, mas um índice de defesa pior (−2,12 vs +0,25) — porque jogava a maior parte da partida atacando, não defendendo.
+
+### O teste que escapa da armadilha: valor por setor vs. retenção de posse
+
+Comparando o valor de elenco **por setor** entre os dois extremos da liga (Barcelona x Espanyol, ver Achado 17):
+
+| Setor | Barcelona | Espanyol | Razão |
+|---|---|---|---|
+| Ataque | €198,2M | €8,0M | 24,8× |
+| Meio-campo | €92,7M | €5,8M | 16,0× |
+| Defesa | €37,1M | €12,5M | 3,0× |
+| Goleiro | €21,5M | €5,7M | 3,8× |
+
+O gap de valor é **muito maior no ataque/meio do que na defesa** entre os dois — e isso bate com o Achado 17: a diferença de retenção de posse (perda de bola) entre eles também é proporcionalmente maior no meio-campo/defesa (onde o Espanyol perde a bola mais que o dobro) do que no ataque-centro (onde a diferença de conversão de chute, embora real, é menor em termos relativos). O padrão sugere que o dinheiro investido no setor se reflete mais em **não perder a bola** do que em **acumular ações defensivas** — a métrica de retenção de posse é a que escapa do confundidor de tempo de posse, a de ações defensivas brutas não.
+
+### Ressalvas
+
+- **n=20 times, uma liga, uma temporada** — direção clara e estatisticamente coerente (r consistente entre valor e Elo, duas fontes independentes concordando), mas não é validação com IC 95%.
+- **Cobertura do valor de mercado é parcial**: 5-17 jogadores por time (não o elenco completo de ~25), então é mais um proxy de "onde o time investe/tem os jogadores mais caros" do que o valor total do elenco.
+- **O teste "por setor" (Barcelona x Espanyol) é só 2 times** — mesma ressalva do Achado 17, hipótese com 2 pontos, não testada estatisticamente.
+- Sem Elo por setor no projeto, não dá pra isolar "Elo de defesa" de "Elo geral" — só o valor de elenco por setor permite esse corte, e só pra times com cobertura de jogadores suficiente.
 
 Descritivo, sem IC 95%.
 
