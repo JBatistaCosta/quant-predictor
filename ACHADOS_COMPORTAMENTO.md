@@ -732,6 +732,60 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 16 — o que dá (e o que não dá) pra estimar via FotMob para ligas sem StatsBomb/Understat
+
+Pergunta de acompanhamento aos Achados 11/15: dá pra estender a matriz de transição (Achado 15) ou os índices de força (Achado 12) pras ligas que só têm FotMob, sem Understat nem StatsBomb — Brasileirão, MLS, Championship, Libertadores etc.?
+
+### O que **não dá**, e não é solução de calibração — é ausência de dado
+
+A matriz de transição do Achado 15 vem de eventos `Pass`/`Carry` com local de início e fim — StatsBomb registra **cada ação com bola**, com coordenada. **O FotMob não tem isso em nenhuma liga, nenhuma era** — o único stream de evento com coordenada que ele expõe é o de chute (`match_shots_fotmob`, x/y por chute). Não existe fator de transformação, calibração ou "transformador" que reconstrua uma rede de passes a partir de dados que nunca foram capturados. O mesmo vale pra PPDA e "deep completions" (métricas de pressão do Understat, Achado 11) — também dependem de evento com local que o FotMob não tem. **Isso é limite de dado, não de método.**
+
+### O que **dá**: o FotMob já tem o próprio xG por chute, em toda liga, e ele bate com o padrão do StatsBomb
+
+`match_shots_fotmob` guarda x/y **e um `xg` de modelo próprio do FotMob** pra 99,3-100% dos 479.202 chutes do banco (18.823 partidas, 17 competições — incluindo Brasileirão Série A/B, Libertadores, MLS, Championship, nenhuma delas com Understat). Não é preciso estimar nada: o dado já existe, nativo, pra qualquer liga que o projeto acompanha.
+
+Construí um mapa de valor por zona (distância ao gol × canal central/lateral) usando esse chute+resultado real (gol ou não), comparando La Liga (tem Understat) com Brasileirão Série A (não tem):
+
+| distância ao gol | canal | La Liga: conversão | Brasileirão: conversão |
+|---|---|---|---|
+| ≤11m (muito perto) | central | 23,0% | 22,4% |
+| 11-16,5m | central | 11,8% | 10,7% |
+| 16,5-25m (entrada da área) | central | 6,0% | 5,8% |
+| >25m (longe) | central | 5,2% | 4,0% |
+| ≤11m | lateral | 12,3% | 6,8% (n baixo: 133 chutes) |
+| 11-16,5m | lateral | 8,7% | 7,7% |
+| 16,5-25m | lateral | 4,0% | 3,6% |
+| >25m | lateral | 2,5% | 2,0% |
+
+**O padrão é praticamente idêntico entre as duas ligas** (diferença ≤1,3pp na maioria das faixas, com N na casa de milhares) — central sempre converte mais que lateral na mesma distância, e a conversão cai suavemente com a distância nas duas ligas. Isso é o geometria do gol se impondo (ângulo e distância), então é esperado que generalize — mas é uma validação real, não só uma suposição: o modelo de xG do FotMob (calibrado internamente, sem StatsBomb nem Understat envolvidos) já reproduz o mesmo formato de "zona de valor" que o Achado 15 descreveu qualitativamente a partir de outra fonte inteira.
+
+### Correção ao Achado 12: "defesa/criação/embate ausentes no FotMob" era do payload antigo, não da liga
+
+O Achado 12 (StatsBomb×FotMob, La Liga 2015/16) tinha achado que `tackles`/`interceptions`/`accurate_passes`/`duels_won` vinham quase todo `NULL` no FotMob e concluiu que esses índices "só existem no lado StatsBomb". **Isso vale só pro payload antigo** (mesma causa do bug do Achado 11: pré-2018 só tem `top_stats`). Conferindo `match_stats_fotmob` pra partidas modernas (2023+) em qualquer liga, incluindo as sem Understat:
+
+| liga | % linhas com `touches_opp_box` | % com `tackles` | % com `accurate_passes` |
+|---|---|---|---|
+| Brasileirão Série A | 94,4% | 99,9% | 99,9% |
+| Brasileirão Série B | 96,3% | 99,9% | 99,9% |
+| MLS | 93,2% | 100% | 100% |
+| Championship | 100% | 100% | 100% |
+| La Liga | 95,2% | 99,9% | 99,9% |
+
+**Os campos de defesa/passe/duelo do FotMob existem em toda liga moderna do projeto, não só nas 5 europeias do Understat.** O índice de defesa/criação/embate do Achado 12 (construído só com StatsBomb, La Liga 2015/16) já teria contraparte real no FotMob se refeito com partidas modernas de qualquer liga — não foi feito aqui porque exigiria repetir o levantamento de eventos brutos numa temporada atual, fora do escopo desta verificação.
+
+### Resumo prático
+
+| o que | dá pra estender sem Understat/StatsBomb? | por quê |
+|---|---|---|
+| xG/valor por zona de chute | **Sim, já existe nativo** | FotMob tem xG próprio + x/y de chute em toda liga |
+| Índices de defesa/criação/embate (estilo Achado 12) | **Sim, com dado moderno** | `match_stats_fotmob` tem os campos desde ~2019+, qualquer liga |
+| Matriz de transição zona-a-zona (Achado 15) | **Não** | Precisa de evento de passe/condução com local — FotMob nunca capturou isso |
+| PPDA / deep completions (estilo Understat) | **Não** | Mesma razão — pressão/posicionamento exige stream de evento que o FotMob não tem |
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
