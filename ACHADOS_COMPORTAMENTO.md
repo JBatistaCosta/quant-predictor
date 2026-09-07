@@ -1272,6 +1272,62 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 26 — o árbitro já está no banco (`match_context_fotmob`), nunca usado; e o padrão do Achado 25 sobrevive ao controle por árbitro
+
+Pergunta de acompanhamento ao Achado 25: dá pra controlar por árbitro? Sim — `match_context_fotmob.referee` já vem do FotMob (`matchFacts.infoBox.Referee`) desde a primeira ingestão, **27.042 partidas, 98,5% preenchido, 796 árbitros distintos**, e nunca foi usado em nenhum modelo, feature ou painel do projeto (mesmo padrão de tabela capturada-e-esquecida do `player_details_fotmob`/`player_career_history_fotmob`).
+
+### Armadilha dupla no meio do caminho, antes de confiar em qualquer número por árbitro
+
+1. **Cobertura desigual entre tabelas**: `match_context_fotmob` cobre muito mais partida que `match_events` (cartão) — 840 partidas de La Liga e 2.325 do Brasileirão têm árbitro registrado e **zero linha de cartão**. Sem filtrar isso, vários árbitros apareciam com média de "0,00 cartão em 20+ partidas" — não é árbitro complacente, é ausência de dado.
+2. **`referee = ''` (string vazia) escapa do filtro `is not null`** — 1.843 linhas. E comparar `coalesce(soma_stats, 0) = contagem_eventos` deixa passar casos onde **os dois lados estão vazios** (nenhuma fonte tem o cartão, "0 = 0" bate por acidente) — mesmo problema do Achado 5/13 (invariante que reconcilia por não ter o que reconciliar). Corrigido exigindo que `match_stats_fotmob.yellow_cards` seja genuinamente não-nulo antes de comparar.
+
+Com os dois filtros aplicados (referee não-vazio + reconciliação com dado real): **12.988 partidas confiáveis** (de 23.479 com árbitro), cobrindo 201 árbitros com 20+ partidas cada.
+
+### Variância por árbitro é real e grande — mas menor que o artefato de cobertura sugeria
+
+| | Sem filtrar cobertura | Filtrado (12.988 partidas confiáveis) |
+|---|---|---|
+| Mínimo (cartões/partida) | 0,00 (artefato) | **1,20** |
+| Máximo | 6,03 | 6,00 |
+| Média | 2,35 | 3,97 |
+| Desvio-padrão | 1,96 (CV 83%) | **0,77 (CV 19%)** |
+
+Mesmo depois de tirar o artefato, um fator 5x entre o árbitro mais brando e o mais rigoroso (1,20 a 6,00 cartões/partida) — variância grande e real, exatamente a preocupação que motivou a pergunta.
+
+### O padrão achatado do Achado 25 sobrevive ao controle por árbitro
+
+Recalculado no subconjunto confiável, por momento (mesmo formato do Achado 25, pico em 75-90):
+
+| 00-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 | 90+ |
+|---|---|---|---|---|---|---|
+| 0,181 | 0,385 | 0,569 | 0,692 | 0,676 | **0,793** | 0,504 |
+
+Por estado do jogo, agora com denominador do mesmo subconjunto (`match_team_game_state`, minutos restritos às mesmas partidas):
+
+| Estado | Taxa /1000min |
+|---|---|
+| Ganhando | 24,16 |
+| Empatando | 22,85 |
+| Perdendo | 24,59 |
+
+Ainda achatado (diferença <8% entre extremos). E, crucial pra responder a pergunta original: testado **dentro** dos 3 árbitros com mais partidas confiáveis (Anthony Taylor, Michael Oliver, Chris Kavanagh — todos Premier League) — em nenhum dos três "perdendo" supera "ganhando" com folga (Taylor: 192 ganhando vs. 176 perdendo; Kavanagh: 140 vs. 154; Oliver: 176 vs. 175). O achado do Achado 24/25 (sem "cartão de frustração") não é um artefato de misturar árbitros brandos com rigorosos — se mantém árbitro a árbitro.
+
+### Prático
+
+- **O caveat do Achado 25 está fechado**: dá pra controlar por árbitro, o dado já existe, e o padrão achatado por estado sobrevive.
+- **`match_context_fotmob.referee` é candidato real a feature** (rigor do árbitro daquela partida, calculável como cartões/partida histórico do árbitro) — hoje totalmente parado, apesar de 98,5% de cobertura.
+- Variância por árbitro (CV 19%, fator 5x entre extremos) é ordem de grandeza maior que a variância por estado do jogo (<8%) — se o objetivo é prever cartão de uma partida específica, **quem apita importa mais que o placar do momento**.
+
+### Ressalvas
+
+- Só 3 árbitros testados individualmente (os de mais volume, todos Premier League) — não confirma se o padrão achatado vale pra árbitros de outras ligas/culturas de arbitragem.
+- `referee` é nome em texto livre — não verificado se há variação de grafia pro mesmo árbitro (ex.: acento, nome do meio) inflando a contagem de "árbitros distintos" ou fragmentando o histórico de um mesmo árbitro em duas entradas.
+- Mesma ressalva de desalinhamento `minuto_real`×`clock` do Achado 25 se aplica aqui.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
@@ -1282,6 +1338,7 @@ Aconteceu várias vezes nesta frente:
 - O **Achado 24** (falta por estado do jogo) reproduziu o mesmo confundidor do Achado 3, num recorte novo (falta, não xG) — o efeito "perdendo comete mais falta" só existia agregando dois times; dentro de cada time separadamente, desaparecia ou invertia. A checagem que expôs foi a mesma dos casos anteriores: separar por time antes de aceitar o efeito por estado.
 - O **Achado 5** era um bug de ordenação que reconciliava perfeitamente em todos os totais, porque totais não têm ordem.
 - O **Achado 13** (escanteio/falta via StatsBomb) reproduziu **o mesmo bug do Achado 5** — 2º tempo com minuto reiniciando em vez de continuar — numa fonte de dado completamente diferente, meses depois de já saber exatamente que padrão procurar. Só não passou pro arquivo final porque o usuário perguntou "isso não pode ser artefato do intervalo?" antes de eu dar o achado por fechado.
+- O **Achado 26** (cobertura de cartão por árbitro) é uma variante do mesmo bug do Achado 5: comparar `coalesce(soma_stats, 0) = contagem_eventos` reconciliava "0 = 0" pra partidas onde **nenhuma das duas fontes tinha o dado**, não onde o cartão de fato era zero — mesmo defeito de "totais que não têm de onde discordar", agora num filtro de confiabilidade em vez de numa ordenação.
 - O **Achado 11** (correlação StatsBomb×FotMob) publicou um r=0,983 pra escanteio que já parecia bom — só numa revisão pedida depois é que apareceu um bug de atribuição casa/fora (nomes tipo "Rayo Vallecano **de Madrid**" casando por engano com "Real **Madrid**") que estava jogando o r pra baixo sem parecer errado: 834 linhas com ~14 mal-atribuídas ainda dão uma correlação "boa o suficiente" pra não levantar suspeita. Corrigido, o r subiu pra 0,999. **Um coeficiente agregado plausível não garante que cada linha está emparelhada certo** — o que expôs foi olhar os maiores resíduos individuais (a partida com a maior diferença SB-FotMob), não o r em si.
 
 Em todos os casos o que expôs o problema foi **procurar um confundidor específico** (ou o maior outlier individual), não rodar mais verificações de consistência agregada. E saber de um bug numa fonte não impede o mesmo bug de reaparecer despercebido numa fonte nova — vale a pena checar deliberadamente por ele toda vez que uma fonte externa nova trouxer relógio de partida ou crosswalk de nome de time.
