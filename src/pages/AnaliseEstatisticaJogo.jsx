@@ -554,6 +554,7 @@ function PainelContextoJogo({ contexto }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <CardTendencia titulo="Estádio" valor={contexto.stadium_name || '—'} />
         <CardTendencia titulo="Cidade" valor={contexto.stadium_city || '—'} />
+        <CardTendencia titulo="Árbitro" valor={contexto.referee || '—'} />
         {temClima ? (
           <>
             <CardTendencia titulo="Temperatura" valor={contexto.weather_temperature_c} sufixo="°C" />

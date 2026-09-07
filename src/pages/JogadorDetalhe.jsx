@@ -1,12 +1,15 @@
 // src/pages/JogadorDetalhe.jsx — rota /jogadores/:id
 // "Quantificar desempenho ao longo do tempo" usando o que JÁ está no banco
 // (match_player_stats_fotmob, um registro por jogo) — sem nenhuma chamada
-// nova ao FotMob. NÃO inclui heatmap/traits de percentil (isso vive num
-// endpoint por-JOGADOR separado do FotMob, ainda não importado — decisão
-// consciente de escopo, ver CONTEXTO_PROJETO.md).
+// nova ao FotMob. NÃO inclui heatmap (`coordinates` de toque em campo —
+// existe na fonte mas custaria 1 chamada extra por jogador/temporada,
+// decisão consciente de escopo, ver CONTEXTO_PROJETO.md). Os "traits"
+// (percentil vs. pares da mesma posição) e posições secundárias JÁ são
+// capturados pelo mesmo sync de perfil avançado (`player_details_fotmob`,
+// colunas `traits`/`all_positions`) — só não eram exibidos aqui.
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar, Zap, TrendingUp, Trophy, Briefcase, RefreshCw, Ruler, Footprints, FileClock } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar, Zap, TrendingUp, Trophy, Briefcase, RefreshCw, Ruler, Footprints, FileClock, Tag, BarChart3, Coins } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 
@@ -39,6 +42,29 @@ function corNota(nota) {
   if (nota >= 7) return 'bg-emerald-500';
   if (nota < 6) return 'bg-red-500';
   return 'bg-slate-500';
+}
+
+// Barra de percentil (0-1) comparando o jogador com outros da MESMA posição
+// — cálculo é do próprio FotMob (`player_details_fotmob.traits`), aqui só
+// renderiza. Cor pela mesma convenção de nota (>=0.7 verde, <0.3 vermelho).
+function corPercentil(v) {
+  if (v >= 0.7) return 'bg-emerald-500';
+  if (v < 0.3) return 'bg-red-500';
+  return 'bg-slate-500';
+}
+
+function BarraPercentil({ titulo, valor }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
+        <span>{titulo}</span>
+        <span className="font-mono text-slate-300">{Math.round(valor * 100)}</span>
+      </div>
+      <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${corPercentil(valor)}`} style={{ width: `${Math.max(2, valor * 100)}%` }} />
+      </div>
+    </div>
+  );
 }
 
 function Escudo({ url, tamanho = 18 }) {
@@ -438,6 +464,39 @@ export default function JogadorDetalhe() {
                 <div className="bg-slate-900 rounded-lg p-2.5 text-center">
                   <div className="text-[9px] text-slate-500 uppercase flex items-center gap-1 justify-center"><FileClock size={10} /> Contrato até</div>
                   <div className="text-xs font-bold text-slate-200">{detalhesAvancados.contract_end || '—'}</div>
+                </div>
+                <div className="bg-slate-900 rounded-lg p-2.5 text-center">
+                  <div className="text-[9px] text-slate-500 uppercase flex items-center gap-1 justify-center"><Coins size={10} /> Valor (FotMob)</div>
+                  <div className="text-xs font-bold text-slate-200">{formatarValorMercado(detalhesAvancados.current_market_value_eur != null ? Number(detalhesAvancados.current_market_value_eur) : null)}</div>
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(detalhesAvancados?.all_positions) && detalhesAvancados.all_positions.some(p => !p.isMainPosition) && (
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1 mb-1.5"><Tag size={11} /> Também joga em</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {detalhesAvancados.all_positions
+                    .filter(p => !p.isMainPosition)
+                    .sort((a, b) => (b.occurences || 0) - (a.occurences || 0))
+                    .map((p, i) => (
+                      <span key={i} className="text-[10px] px-2 py-1 rounded-full bg-slate-700/50 text-slate-400">
+                        {p.strPosShort?.label || p.strPos?.label}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {detalhesAvancados?.traits?.items?.length > 0 && (
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1 mb-1.5">
+                  <BarChart3 size={11} /> Perfil estatístico (percentil vs. outros jogadores da mesma posição — cálculo do FotMob)
+                </span>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                  {detalhesAvancados.traits.items.map(t => (
+                    <BarraPercentil key={t.key} titulo={t.title} valor={Number(t.value)} />
+                  ))}
                 </div>
               </div>
             )}

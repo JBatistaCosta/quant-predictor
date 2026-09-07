@@ -2281,8 +2281,13 @@ function montarLinhasPerfilJogador(playerId, payload) {
   const contratoInfo = extrairValorPlayerInfo('Contract expires', playerInformation).dateValue
     ?? extrairValorPlayerInfo('Contract end', playerInformation).dateValue ?? null;
   const valorAtual = extrairValorPlayerInfo('Market value', playerInformation).numberValue ?? null;
-  const nascimentoRaw = extrairValorPlayerInfo('Date of birth', playerInformation).dateValue ?? null;
-  const birthDate = parseDataFotmob(nascimentoRaw);
+  // Data de nascimento NÃO vem em playerInformation (não existe título "Date
+  // of birth" ali — só Height/Shirt/Age/Preferred foot/Country/Market
+  // value/Contract end, confirmado em 2 amostras reais: Haaland e Lamine
+  // Yamal). Vem em `payload.birthDate.utcTime`, campo separado no payload —
+  // achado corrigindo um bug real: extração antiga sempre resultava em null,
+  // então `players.birth_date` nunca era preenchido por nenhum sync.
+  const birthDate = parseDataFotmob(payload.birthDate?.utcTime ?? null);
   const countryCode = payload.ccode ?? payload.countryCode ?? null;
 
   const posDesc = payload.positionDescription || {};

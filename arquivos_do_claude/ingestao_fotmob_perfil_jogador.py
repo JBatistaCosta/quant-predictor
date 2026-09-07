@@ -193,8 +193,12 @@ def montar_linhas(player_id, payload):
     contrato = extrair_valor_playerinfo("Contract expires", player_information).get("dateValue") \
         or extrair_valor_playerinfo("Contract end", player_information).get("dateValue")
     valor_atual = extrair_valor_playerinfo("Market value", player_information).get("numberValue")
-    nascimento_raw = extrair_valor_playerinfo("Date of birth", player_information).get("dateValue")
-    birth_date = parse_data(nascimento_raw)
+    # NÃO vem em playerInformation (não existe título "Date of birth" ali —
+    # confirmado em amostras reais). Vem em `payload["birthDate"]["utcTime"]`,
+    # campo separado do payload — bug real: extração antiga sempre dava null,
+    # então nenhum sync (nem este script, nem a rota jogador-perfil) nunca
+    # preenchia `players.birth_date`.
+    birth_date = parse_data((payload.get("birthDate") or {}).get("utcTime"))
 
     pos_desc = payload.get("positionDescription") or {}
     posicao_principal = (pos_desc.get("primaryPosition") or {}).get("label")
