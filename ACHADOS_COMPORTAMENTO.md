@@ -1101,7 +1101,35 @@ O rótulo real é **`"Tackles"`**, não `"Tackles won"` — o código nunca enco
 
 Ou seja: **64,4% das linhas já têm o valor de desarme certinho guardado no `stats_raw`**, só não promovido pra coluna por causa do rótulo errado. Não é um gap de dado da fonte — é possível corrigir só reprocessando o JSON já armazenado (sem custo de API, sem nova raspagem).
 
-`interceptions` **não** tem o mesmo bug (rótulo `"Interceptions"` bate certo — testado e confirmado num caso real), mas também está sub-populado: 697.299 linhas têm o valor extraível do `stats_raw`, e só 334.180 (47,9% dessas) estão na coluna hoje. Causa não confirmada — provável reprocessamento parcial em algum ponto do histórico de ingestão (a tabela é alimentada desde 27/07/2026, catálogo do projeto já registrava isso como pendência de medição, não como bug identificado). Fica como suspeita a investigar, não como achado fechado.
+`interceptions` **não** tem o mesmo bug (rótulo `"Interceptions"` bate certo — testado e confirmado num caso real), mas também estava sub-populado: 697.299 linhas tinham o valor extraível do `stats_raw`, e só 334.180 (47,9%) estavam na coluna.
+
+### Backfill executado — e um incidente real no meio do caminho
+
+Rodei o backfill de `tackles` e `interceptions` a partir do `stats_raw` já salvo (sem raspagem nova). **Primeira tentativa (um único `UPDATE` nas ~697 mil linhas de `tackles`) derrubou o banco de produção**: o volume de WAL gerado de uma vez estourou o disco (`PANIC: could not write to file "pg_wal/xlogtemp..." No space left on device`), o Postgres parou de aceitar conexões, e o Supabase auto-escalou o disco de 8GB pra 18GB de emergência (batendo no limite de 4 modificações de disco por 24h). Sem perda de dado — um `PANIC` não comita a transação em andamento, confirmado depois checando que `tackles` continuava em 0. Refeito em **14 lotes de 100 mil `id`s cada**, sem repetir o problema.
+
+| Campo | Antes | Depois |
+|---|---|---|
+| `tackles` | 0 | **697.299** (64,4% da tabela) |
+| `interceptions` | 343.116 | **706.550** (65,2% da tabela) |
+
+**Lição de método**: em tabela de produção com mais de 1M linhas, nunca rodar `UPDATE` em massa numa tacada só — sempre em lotes por faixa de `id` (aqui, 100 mil por vez se mostrou seguro). O tamanho "seguro" depende do disco disponível no projeto, não tem como saber de antemão sem checar — a mesma lição de paginação do PostgREST (`.range()`) documentada nas convenções críticas deste projeto, agora do lado de escrita, não de leitura.
+
+### Investigação dos outros campos de baixa cobertura
+
+Aplicando a mesma técnica (comparar `stats_raw` já salvo com a coluna promovida) nos demais campos parcialmente cobertos:
+
+| Campo | Recuperável no `stats_raw` | Na coluna hoje | Padrão |
+|---|---|---|---|
+| `touches_opp_box` | 697.299 | 334.180 (47,9%) | **Mesmo padrão de `interceptions`** |
+| `ground_duels_won` | 642.976 | 307.367 (47,8%) | **Mesmo padrão** |
+| `aerials_won` | 697.299 | 334.180 (47,9%) | **Mesmo padrão** |
+| `xg` | 261.067 | 261.067 (100%) | Sem gap — ausência real por jogador |
+| `xa` | 387.676 | 387.676 (100%) | Sem gap — ausência real por jogador |
+| `xgot` | 261.130 | 121.394 (46,5%) | Sub-populado, mas **sem correlação com data** — provável ausência real (jogador sem chute no alvo), não bug |
+
+**A causa do padrão "quase metade" ficou clara**: `interceptions`, `touches_opp_box`, `ground_duels_won` e `aerials_won` têm as linhas sem valor **todas concentradas entre 18/07/2026 e 26/07/2026** (uma janela de ~8 dias logo no início da ingestão desta tabela) — enquanto as linhas com valor preenchido cobrem o período inteiro, de 18/07 até hoje. Isso é o padrão clássico já visto no Achado 11: **um bug foi corrigido no meio do caminho, sem backfill retroativo das linhas antigas** — não é falta de dado da fonte, é histórico de ingestão não reprocessado. `xgot`, ao contrário, tem `NULL` espalhado por todo o período sem esse corte — condizente com ausência real (FotMob não reporta xGOT pra jogador sem chute no alvo), não bug.
+
+**Prático**: `touches_opp_box`, `ground_duels_won` e `aerials_won` são candidatos ao mesmo backfill que já funcionou pra `tackles`/`interceptions` — juntos, recuperariam mais ~360 mil linhas cada (a maioria das linhas mais antigas da tabela). Não executado ainda — mesma cautela de escrita em massa, e agora com o disco já perto do limite recém-ampliado, vale confirmar espaço disponível antes de rodar.
 
 ### Cobertura de `minutes_played`/`rating`: uniforme entre ligas, não é problema de payload
 
