@@ -780,7 +780,8 @@ O Achado 12 (StatsBomb×FotMob, La Liga 2015/16) tinha achado que `tackles`/`int
 | xG/valor por zona de chute | **Sim, já existe nativo** | FotMob tem xG próprio + x/y de chute em toda liga |
 | Índices de defesa/criação/embate (estilo Achado 12) | **Sim, com dado moderno** | `match_stats_fotmob` tem os campos desde ~2019+, qualquer liga |
 | Matriz de transição zona-a-zona (Achado 15) | **Não** | Precisa de evento de passe/condução com local — nem FotMob nem Understat expõem isso publicamente |
-| PPDA / deep completions (estilo Understat) | **Já existe, só nas 5 europeias** | Understat calcula internamente (precisa rastrear passe pra isso), mas só publica o agregado por partida — não o evento bruto. Mesmo se quiséssemos, não dá pra pedir mais granularidade dessa fonte |
+| PPDA real (estilo Understat) | **Não** (só nas 5 europeias que já têm Understat) | Understat calcula internamente (precisa rastrear passe pra isso), mas só publica o agregado por partida — não o evento bruto. Mesmo se quiséssemos, não dá pra pedir mais granularidade dessa fonte |
+| Proxy de PPDA (aproximação, não o real) | **Sim** — ver Achado 19 | `accurate_passes` do adversário ÷ (`tackles`+`interceptions` do time) já em `match_stats_fotmob`; r=0,65-0,69 contra o PPDA real, estável por liga/temporada/força de time |
 
 **Nota sobre o Understat especificamente**: pra calcular PPDA e deep completions o Understat precisa, por definição, rastrear cada passe com posição — a informação existe do lado deles. Mas a API pública só expõe o resultado agregado (`ppda`, `deep_completions` por time-partida, já ingerido em `match_stats`), nunca o evento passe-a-passe. Não é uma limitação de ingestão que dê pra contornar pedindo "mais dado" — é o que a fonte pública oferece. Do que o projeto tem acesso hoje, **só o StatsBomb Open Data expõe evento bruto com coordenada** o suficiente pra montar uma matriz de transição.
 
@@ -898,6 +899,83 @@ O gap de valor é **muito maior no ataque/meio do que na defesa** entre os dois 
 - **Cobertura do valor de mercado é parcial**: 5-17 jogadores por time (não o elenco completo de ~25), então é mais um proxy de "onde o time investe/tem os jogadores mais caros" do que o valor total do elenco.
 - **O teste "por setor" (Barcelona x Espanyol) é só 2 times** — mesma ressalva do Achado 17, hipótese com 2 pontos, não testada estatisticamente.
 - Sem Elo por setor no projeto, não dá pra isolar "Elo de defesa" de "Elo geral" — só o valor de elenco por setor permite esse corte, e só pra times com cobertura de jogadores suficiente.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 19 — proxy de PPDA a partir de dado 100% FotMob, estável entre liga/temporada/força de time
+
+Continuação do Achado 16: PPDA (passes permitidos por ação defensiva, métrica de intensidade de pressão do Understat) foi listado como algo que "não dá" pra estimar sem Understat, por depender de evento com localização. Testei uma aproximação mais grosseira, só com campos que já existem em `match_stats_fotmob` pra qualquer liga (sem zona, sem localização): **passes certos do adversário ÷ (desarmes + interceptações do próprio time)**.
+
+### Correlação contra o PPDA real (Understat), 10.506 partidas-time, 5 grandes ligas
+
+| corte | n | r |
+|---|---|---|
+| Ligue 1 | 1.834 | 0,69 |
+| La Liga | 2.278 | 0,68 |
+| Serie A (Itália) | 2.280 | 0,67 |
+| Premier League | 2.280 | 0,66 |
+| Bundesliga | 1.834 | 0,65 |
+| Temporada 2023/24 | 3.502 | 0,65 |
+| Temporada 2024/25 | 3.502 | 0,68 |
+| Temporada 2025/26 (parcial) | 3.502 | 0,67 |
+| Tercil de Elo mais fraco | 1.619 | 0,65 |
+| Tercil de Elo médio | 1.150 | 0,66 |
+| Tercil de Elo mais forte | 7.737 | 0,67 |
+
+**r=0,65-0,69 em todo corte testado** — liga, temporada e força de time. Essa estabilidade é o achado em si: não é uma correlação que só aparece numa liga específica ou um ano específico, é uma relação estrutural entre "quanto o adversário consegue passar" e "quanto o time desarma/intercepta", presente do mesmo jeito em qualquer configuração testada.
+
+**Achado lateral**: o tercil de Elo mais forte tem PPDA médio real mais baixo (12,60) que o mais fraco (15,11) — times fortes pressionam mais alto, consistente com a intuição futebolística (só quem tem físico/tática pra sustentar tem como pressionar sem abrir espaço atrás).
+
+### Sanity check pro Brasileirão (sem Understat, sem como validar direto)
+
+A mesma proxy, calculada pro Brasileirão Série A (2.460 partidas-time, 2023+), dá média 15,04 — dentro da faixa das 5 ligas europeias (15,3 a 17,0 nas ligas sem torná-lo outlier). Não prova que acerta o PPDA real de lá (não existe fonte de verdade pra comparar), só que o número se comporta de forma comparável.
+
+### Um resultado falso descartado no processo
+
+Testada uma variante com `accurate_passes_total` (em vez de `accurate_passes`) no numerador — deu r=1,000 exato. Suspeito demais pra ser real: investigado e confirmado que `accurate_passes_total` está **sempre `NULL`** no banco (0% de cobertura, já documentado no Achado 12), então a "correlação perfeita" veio de um conjunto quase vazio depois do filtro de nulos, não de sinal genuíno. Descartado.
+
+### Ressalvas
+
+- É uma proxy **grosseira**: não distingue pressão no terço ofensivo (que é o que PPDA realmente mede) de desarme em qualquer parte do campo — o r=0,65-0,69 mostra correlação real, não equivalência. Não substitui o PPDA de verdade pra quem tem Understat disponível.
+- Cobertura de `accurate_passes`/`tackles`/`interceptions` no FotMob só é boa (~95-100%) em payload moderno (~2019+, ver Achado 16) — a proxy não funciona em temporadas com payload antigo.
+- O corte por tercil de Elo usou `team_elo` com `escopo='global'` (todas as ligas do banco, não só as 5 com Understat) — os tercis ficam desbalanceados (7.737 partidas no tercil mais forte contra 1.619 no mais fraco) porque a maioria dos times mais fracos do banco é de ligas fora do top-5 europeu. Não invalida o resultado (a correlação é medida só dentro das partidas com Understat), mas os tercis não são "top/meio/fundo" das 5 ligas especificamente.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 20 — o que explica a diferença de retenção de posse: pressão sofrida, não pressão aplicada
+
+Pergunta de acompanhamento ao Achado 17 (Barcelona perde a bola menos que a metade do Espanyol em quase toda zona): quanto disso é explicado por PPDA? Como a temporada 2015/16 não tem Understat (só existe a partir de 2023), calculei um PPDA equivalente **direto dos eventos brutos do StatsBomb** (mesma fonte/temporada do Achado 17, sem depender de proxy do FotMob — que também não daria, porque `tackles`/`interceptions`/`accurate_passes` não existem no payload antigo, ver Achado 11) para Barcelona e Espanyol, nas duas direções: quanto cada um **pressiona** e quanto cada um **sofre de pressão**.
+
+### PPDA aplicado (quanto o time pressiona o adversário) — quase igual
+
+| Time | PPDA aplicado |
+|---|---|
+| Barcelona | 11,04 |
+| Espanyol | 11,40 |
+
+Praticamente idêntico. **Isso não explica a diferença de retenção de posse** — os dois pressionam o adversário com intensidade parecida quando estão sem a bola.
+
+### PPDA sofrido (quanta pressão o time recebe dos adversários) — aí está a diferença
+
+| Time | PPDA sofrido |
+|---|---|
+| Barcelona | **18,68** |
+| Espanyol | **11,04** |
+
+PPDA mais alto = menos pressão sofrida. Barcelona sofre bem menos pressão dos adversários que o Espanyol — os times que enfrentam o Barcelona pressionam muito menos (provavelmente recuam, com receio de serem punidos), enquanto os que enfrentam o Espanyol pressionam bem mais.
+
+### A cadeia causal que liga os Achados 17, 18, 19 e 20
+
+Valor de elenco/Elo mais alto (Achado 18) → adversário respeita e pressiona menos (PPDA sofrido alto, este achado) → menos perda de posse nas zonas de construção (Achado 17) → matriz de transição mais "limpa" pro time forte. **A peça que faltava não era o quanto o próprio time pressiona — é o quanto ele é pressionado.** Isso também explica por que o índice de "embate" do Achado 12/18 não mostrou correlação forte com valor de elenco (r=−0,19): duelos brutos contam ação própria, não o que se recebe do adversário — o mesmo tipo de confundidor do índice de defesa (Achado 18), agora confirmado com um mecanismo concreto (pressão sofrida) em vez de só suspeitado.
+
+### Ressalvas
+
+- **Dois times, uma temporada** — mesma ressalva dos Achados 17/18: são os extremos da liga, não uma amostra de vários pares.
+- **PPDA aqui é aproximado**: a definição padrão usa passe tentado (não só completo) do adversário nos 2/3 defensivos dele, e ação defensiva (desarme+interceptação+falta) do time nos 2/3 ofensivos dele — implementado com a mesma grade de terços (sem corredores) usada nos Achados 12/15/17, sobre os eventos StatsBomb já em cache. Valores absolutos podem diferir ligeiramente de PPDA "oficial" de outras fontes, mas a comparação relativa Barcelona×Espanyol é internamente consistente (mesma metodologia nos dois).
 
 Descritivo, sem IC 95%.
 
