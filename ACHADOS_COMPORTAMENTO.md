@@ -981,13 +981,305 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 21 — bola parada: conversão por zona é robusta com dado 100% FotMob, mas pressão não explica volume de falta
+
+Pergunta de acompanhamento: quais índices do FotMob interferem na previsão de falta/tiro-livre/escanteio e nos desfechos deles? Duas frentes testadas com dado agregado atual (`match_stats_fotmob`, `match_shots_fotmob`, todas as ligas modernas do projeto, sem StatsBomb/Understat envolvido).
+
+### Frente 1 — volume de falta: a hipótese de "pressão alta gera mais falta" não se sustenta como esperado
+
+Testada a correlação entre o proxy de PPDA aplicado (Achado 19: `accurate_passes` do adversário ÷ `tackles`+`interceptions` do time — quanto **menor**, mais pressão) e faltas cometidas, em 51.655 pares time-partida de ligas modernas:
+
+| Comparação | r |
+|---|---|
+| Faltas cometidas × proxy de PPDA aplicado | −0,094 |
+| Faltas cometidas × volume bruto de desarme+interceptação | +0,086 |
+| **Falta por tentativa de desarme** (`faltas ÷ (tackles+interceptions)`) × proxy de PPDA aplicado | **+0,308** |
+
+As duas primeiras são fracas — nem pressionar mais, nem tentar mais desarme isoladamente, explica bem quantas faltas um time comete no total. O terceiro corte inverte a intuição inicial: quando se normaliza por tentativa, **times que pressionam menos (proxy de PPDA mais alto) cometem falta com mais frequência por desarme tentado**, não menos. Leitura mais provável: desarme dentro de um esquema de pressão organizada (numérico, em bloco) tende a ser mais limpo; desarme de time recuado costuma ser isolado, de \"último homem\", contra jogador já lançado — maior risco de chegar atrasado e cometer falta. Ainda não controlado por Elo/força (mesmo cuidado do Achado 18 se aplica aqui: correlação fraca-a-moderada, não causal fechada).
+
+**Prático**: proxy de PPDA sozinho é um preditor fraco de volume de falta. Não vale a pena usá-lo isolado pra estimar quantas faltas um confronto vai ter.
+
+### Frente 2 — conversão de bola parada por zona: dado pronto, estável entre ligas
+
+`match_shots_fotmob.situation` (`FreeKick`, `FromCorner`) + coordenada x/y do chute já bastam pra reproduzir o mapa de valor por zona do Achado 16, restrito a bola parada — nenhuma fonte externa nova necessária.
+
+**Escanteio, canal central, por distância** (4 grandes ligas, chute com `event_type='Goal'` = gol):
+
+| Liga | ≤11m | 11-16,5m | 16,5-25m |
+|---|---|---|---|
+| Brasileirão Série A | 11,8% (n=3.021) | 3,9% (n=1.427) | 3,1% (n=1.083) |
+| Bundesliga | 13,3% (n=4.298) | 4,1% (n=1.390) | 3,3% (n=1.348) |
+| La Liga | 12,4% (n=4.402) | 3,3% (n=1.709) | 2,7% (n=1.437) |
+| Premier League | 12,9% (n=5.392) | 5,2% (n=1.792) | 3,4% (n=1.988) |
+
+Conversão de escanteio a queima-roupa (≤11m do gol, canal central) fica em **12-13% em toda liga testada**, incluindo Brasileirão sem Understat — o mesmo padrão de estabilidade geométrica do Achado 16 (ângulo/distância domina, a fonte de dado é irrelevante).
+
+**Tiro livre direto, canal central**: quase todo chute de falta cai fora de 16,5m (poucochíssimos dentro — faltas perto da área viram pênalti ou são cobradas indireto/cruzadas, não chute direto). Conversão de 7,6% na faixa 16,5-25m (n=4.315, a zona clássica do batedor especialista) caindo pra 4,1% acima de 25m (n=10.214).
+
+**Anomalia não explicada**: escanteio central a >25m do gol tem 7.943 chutes registrados com 5,0% de conversão — contagem alta e conversão maior que a faixa 16,5-25m mais próxima, o que não devia acontecer por geometria pura. Hipótese mais provável: `situation='FromCorner'` do FotMob rotula toda a sequência iniciada pelo escanteio (inclusive segunda bola/rebote chutado de longe), não só o primeiro chute na área — não confirmado, fica registrado como suspeita a checar antes de usar essa faixa específica em produção.
+
+### Prático
+
+- **Já dá pra estimar conversão esperada de escanteio/falta por zona hoje**, em qualquer liga do projeto, sem Understat/StatsBomb — usar `situation`+x/y de `match_shots_fotmob` direto.
+- **Não dá** pra prever bem o *volume* de falta/escanteio de um confronto só com o proxy de PPDA — o sinal é fraco demais sozinho; territorialidade (`touches_opp_box`, posse) provavelmente pesa mais pro volume de escanteio, mas isso ainda não foi testado.
+- Ressalva: nem faltas nem PPDA aqui foram controlados por estado de jogo (time perdendo tende a cometer falta "de frustração" — mesmo viés de confundimento dos Achados 3/18) nem por força via Elo. A correlação de +0,308 é a mais interessante da frente e a menos robusta — vale reconfirmar com controle antes de usar como regra.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 22 — pressão sofrida explica retenção jogo a jogo (não só time a time), abrindo caminho pra Markov condicionado por índice
+
+Pergunta de acompanhamento aos Achados 12/17/18/19/20: os índices de força e o proxy de PPDA servem só pra comparar times inteiros (média de temporada), ou também explicam a variação **de um jogo pro outro do mesmo time** — o que é o requisito mínimo pra usá-los como covariável dentro de uma cadeia de Markov intra-jogo (a matriz de transição do Achado 15 precisaria de um parâmetro que mude jogo a jogo, não só time a time)?
+
+### Frente 1 — o mesmo efeito do Achado 20, agora dentro do mesmo time, jogo a jogo
+
+O Achado 20 comparou **médias de temporada** de Barcelona × Espanyol (2 times, 1 ponto cada) e achou que pressão sofrida (PPDA sofrida) explica a diferença de retenção entre eles. Aqui a pergunta é mais dura: **dentro dos 38 jogos do mesmo Barcelona**, jogos em que o adversário pressionou mais tiveram mais perda de posse no meio-campo/ataque? Recalculado por partida (não por temporada) a partir do mesmo cache de eventos brutos StatsBomb já usado no Achado 20:
+
+| Time | Jogos | corr(PPDA sofrida, % perda posse meio+ataque) |
+|---|---|---|
+| Barcelona | 38 | **−0,463** |
+| Espanyol | 38 | **−0,587** |
+| Pooled (2 times) | 76 | −0,683 |
+
+PPDA sofrida mais alto = menos pressão recebida (Achado 20). O sinal negativo confirma a mesma direção do Achado 20, mas agora **controlando força de equipe por construção** — é o mesmo time em todos os 38 jogos, só o adversário do dia muda. Isso é o que faltava provar: a pressão sofrida não é só uma média de temporada que diferencia time bom de time ruim, ela **varia jogo a jogo e essa variação prediz a retenção daquele jogo específico**, dentro do próprio time. É o requisito mínimo pra virar covariável de uma cadeia de Markov intra-jogo — sem isso, "ajustar a matriz pela força do adversário" seria só reproduzir a diferença entre os times, não uma dinâmica condicional real.
+
+### Frente 2 — índice por jogo existe, mas é ruidoso: quantificado
+
+Resposta à pergunta anterior sobre índices "por jogo": os ingredientes do Achado 12 (chutes, xG, desarme, interceptação, corredor) já vêm por partida no dado bruto — não é preciso nada novo pra calcular o índice em janela de 1 jogo em vez de 38. Mas o preço é ruído real, medido aqui pro Barcelona (38 jogos, StatsBomb 2015/16):
+
+| Componente | Média por jogo | Desvio-padrão | Coeficiente de variação |
+|---|---|---|---|
+| xG | 2,41 | 1,04 | 43% |
+| Desarme + interceptação | 19,5 | 6,29 | 32% |
+
+Um único jogo pode ficar 40%+ acima ou abaixo da média de temporada do próprio time só por variação normal de jogo a jogo — nem toda oscilação é sinal. **Prático**: índice por jogo é calculável, mas não deve ser usado cru; precisa de encolhimento bayesiano (combinar o valor da temporada como prior com o jogo específico como atualização), do jeito que `team_strengths`/Dixon-Coles já faz pra força ofensiva/defensiva — usar o índice de 1 jogo isolado como se fosse a "verdadeira" força do time naquele dia é superestimar o quanto um jogo individual informa.
+
+### Como as duas frentes se encaixam na simulação (Achado 15)
+
+A Frente 1 mostra que existe uma covariável (pressão sofrida) que varia dentro do próprio time e prediz retenção jogo a jogo — candidata natural pra parametrizar a matriz de transição do Achado 15 por confronto, não só usar uma matriz genérica ou uma matriz fixa por tercil de força. A Frente 2 avisa que qualquer índice usado pra estimar "quanto esse time vai pressionar/reter hoje" antes do jogo (pré-jogo, sem saber o resultado) precisa vir da média de temporada com encolhimento — não do jogo anterior isolado.
+
+### Ressalvas
+
+- **Ainda só 2 times** (Barcelona, Espanyol) — a Frente 1 prova que o mecanismo existe *dentro* de um time, mas não testa se o tamanho do efeito (r≈−0,46 a −0,59) é parecido pra outros perfis de time. Estender pros 20 times exigiria recalcular PPDA por partida pra todos, o que não está no cache atual (só as 380 agregações de temporada do Achado 12 existem pra todos os 20 — não por partida; teria que buscar os eventos brutos das ~306 partidas que faltam).
+- Não testado ainda: se o mesmo padrão vale pra retenção na própria zona defensiva (só meio+ataque foi medido aqui, seguindo o recorte que já rendeu sinal mais forte no Achado 17).
+- PPDA aqui é o mesmo proxy aproximado (grade de terços, sem corredor) dos Achados 19/20 — ver ressalva de metodologia lá.
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 23 — bug real de extração: `tackles` por jogador está zerado por um erro de string, não por falta de dado
+
+Pergunta de acompanhamento: por que `match_player_stats_fotmob.tackles` vem 100% `NULL` (1.082.777 linhas), enquanto o mesmo campo a nível de time (`match_stats_fotmob.tackles`) tem 99,9% de cobertura? E a cobertura de `minutes_played`/`rating` (66-72%) está concentrada nalguma liga ou é geral?
+
+### O bug: comparando com a lição já registrada do Achado 11/12 (`fouls`→`'Fouls committed'`)
+
+`arquivos_do_claude/ingestao_fotmob.py:340` busca o rótulo `"Tackles won"` dentro do grupo `"defense"` do JSON por jogador. Inspecionando uma linha real do `stats_raw` (já salvo no banco, sem precisar de nova raspagem):
+
+```json
+{"key": "defense", "stats": {
+  "Tackles": {"key": "matchstats.headers.tackles", "stat": {"type": "integer", "value": 0}},
+  "Interceptions": {"key": "interceptions", "stat": {"type": "integer", "value": 0}},
+  ...
+}}
+```
+
+O rótulo real é **`"Tackles"`**, não `"Tackles won"` — o código nunca encontra a chave, sempre cai no `None`. Mesma categoria de bug já documentada no projeto (rótulo em inglês que não bate com a chave interna do FotMob), só que dessa vez no extrator **por jogador**, não no de time.
+
+### Quantificado: quanto já está recuperável sem raspar nada de novo
+
+```sql
+-- linhas com bloco "defense" no stats_raw (jsonb já salvo) x valor na coluna hoje
+```
+
+| | Linhas |
+|---|---|
+| Linhas com bloco `defense` no `stats_raw` | 697.299 (64,4% da tabela) |
+| Dessas, com `"Tackles"` extraível do JSON | **697.299 (100%)** |
+| Dessas, com a coluna `tackles` preenchida hoje | **0** |
+
+Ou seja: **64,4% das linhas já têm o valor de desarme certinho guardado no `stats_raw`**, só não promovido pra coluna por causa do rótulo errado. Não é um gap de dado da fonte — é possível corrigir só reprocessando o JSON já armazenado (sem custo de API, sem nova raspagem).
+
+`interceptions` **não** tem o mesmo bug (rótulo `"Interceptions"` bate certo — testado e confirmado num caso real), mas também estava sub-populado: 697.299 linhas tinham o valor extraível do `stats_raw`, e só 334.180 (47,9%) estavam na coluna.
+
+### Backfill executado — e um incidente real no meio do caminho
+
+Rodei o backfill de `tackles` e `interceptions` a partir do `stats_raw` já salvo (sem raspagem nova). **Primeira tentativa (um único `UPDATE` nas ~697 mil linhas de `tackles`) derrubou o banco de produção**: o volume de WAL gerado de uma vez estourou o disco (`PANIC: could not write to file "pg_wal/xlogtemp..." No space left on device`), o Postgres parou de aceitar conexões, e o Supabase auto-escalou o disco de 8GB pra 18GB de emergência (batendo no limite de 4 modificações de disco por 24h). Sem perda de dado — um `PANIC` não comita a transação em andamento, confirmado depois checando que `tackles` continuava em 0. Refeito em **14 lotes de 100 mil `id`s cada**, sem repetir o problema.
+
+| Campo | Antes | Depois |
+|---|---|---|
+| `tackles` | 0 | **697.299** (64,4% da tabela) |
+| `interceptions` | 343.116 | **706.550** (65,2% da tabela) |
+
+**Lição de método**: em tabela de produção com mais de 1M linhas, nunca rodar `UPDATE` em massa numa tacada só — sempre em lotes por faixa de `id` (aqui, 100 mil por vez se mostrou seguro). O tamanho "seguro" depende do disco disponível no projeto, não tem como saber de antemão sem checar — a mesma lição de paginação do PostgREST (`.range()`) documentada nas convenções críticas deste projeto, agora do lado de escrita, não de leitura.
+
+### Investigação dos outros campos de baixa cobertura
+
+Aplicando a mesma técnica (comparar `stats_raw` já salvo com a coluna promovida) nos demais campos parcialmente cobertos:
+
+| Campo | Recuperável no `stats_raw` | Na coluna hoje | Padrão |
+|---|---|---|---|
+| `touches_opp_box` | 697.299 | 334.180 (47,9%) | **Mesmo padrão de `interceptions`** |
+| `ground_duels_won` | 642.976 | 307.367 (47,8%) | **Mesmo padrão** |
+| `aerials_won` | 697.299 | 334.180 (47,9%) | **Mesmo padrão** |
+| `xg` | 261.067 | 261.067 (100%) | Sem gap — ausência real por jogador |
+| `xa` | 387.676 | 387.676 (100%) | Sem gap — ausência real por jogador |
+| `xgot` | 261.130 | 121.394 (46,5%) | Sub-populado, mas **sem correlação com data** — provável ausência real (jogador sem chute no alvo), não bug |
+
+**A causa do padrão "quase metade" ficou clara**: `interceptions`, `touches_opp_box`, `ground_duels_won` e `aerials_won` têm as linhas sem valor **todas concentradas entre 18/07/2026 e 26/07/2026** (uma janela de ~8 dias logo no início da ingestão desta tabela) — enquanto as linhas com valor preenchido cobrem o período inteiro, de 18/07 até hoje. Isso é o padrão clássico já visto no Achado 11: **um bug foi corrigido no meio do caminho, sem backfill retroativo das linhas antigas** — não é falta de dado da fonte, é histórico de ingestão não reprocessado. `xgot`, ao contrário, tem `NULL` espalhado por todo o período sem esse corte — condizente com ausência real (FotMob não reporta xGOT pra jogador sem chute no alvo), não bug.
+
+**Backfill executado** (mesma técnica, lotes de 100 mil `id`s restritos à faixa afetada — `id` entre 1 e 700.000, onde estavam as linhas anteriores a 27/07/2026 — sem repetir o incidente de disco):
+
+| Campo | Antes | Depois |
+|---|---|---|
+| `touches_opp_box` | 334.180 | **705.954** (65,2%) |
+| `ground_duels_won` | 307.367 | **651.085** (60,1%) |
+| `aerials_won` | 334.180 | **706.084** (65,2%) |
+
+Restringir a faixa de `id` ao período do bug (em vez de varrer a tabela toda) deixou o backfill mais rápido e ainda mais seguro pro disco — só processa as linhas que de fato precisam.
+
+### Cobertura de `minutes_played`/`rating`: uniforme entre ligas, não é problema de payload
+
+| Liga | % com `minutes_played` | % com `rating` |
+|---|---|---|
+| Brasileirão Série A | 67,6% | 63,1% |
+| Serie A (Itália) | 67,2% | 62,3% |
+| La Liga | 71,0% | 65,8% |
+| Premier League | 73,9% | 68,3% |
+| Bundesliga | 77,0% | 70,8% |
+| MLS | 77,0% | 70,8% |
+| Championship | 76,4% | 70,4% |
+
+Faixa estreita (67-78%) em 15 competições diferentes — não é um problema de uma liga específica ou de payload antigo (o padrão do Achado 11/12). Hipótese mais provável (não confirmada): toda a lista de relacionados/banco de reservas ganha uma linha em `match_player_stats_fotmob`, inclusive quem não entrou em campo — esses ficam sem `minutes_played`/`rating` por não terem jogado, não por falha de captura.
+
+### Prático — o que isso destrava pra índice individual/setorial por jogo e presença/ausência
+
+- **Correção aplicada** (`arquivos_do_claude/ingestao_fotmob.py`): troca `"Tackles won"` por `"Tackles"`. Vale pra ingestões novas a partir de agora.
+- **Backfill executado** nas linhas já gravadas (ver acima) — `tackles`, `interceptions`, `touches_opp_box`, `ground_duels_won` e `aerials_won` já estão promovidos a partir do `stats_raw` existente, sem raspagem nova.
+- Com o backfill feito, `match_player_stats_fotmob` já sustenta de verdade o que a resposta anterior propôs: índice individual por jogo (`rating`, `xg`, `chances_created`, `touches`, `accurate_passes`, `tackles`, `interceptions`), índice setorial por jogo (agrupando por posição), e comparação de presença/ausência normalizada por `minutes_played` — sem precisar de nenhuma raspagem nova, o dado já está no banco.
+- Ressalva que continua valendo: nada disso tem localização em campo (zona) por jogador — só `match_shots_fotmob` tem x/y por jogador (chute). Desarme/interceptação por jogador dizem "quanto", não "onde".
+
+Descritivo, sem IC 95%.
+
+---
+
+## Achado 24 — falta por zona e momento do jogo é real; falta por "estado do jogo" era confundida por força de equipe
+
+Pergunta de acompanhamento ao Achado 21: dá pra estimar chance de falta por setor do campo e por momento da partida? Usando o mesmo cache de eventos brutos StatsBomb (Barcelona + Espanyol, 74 partidas, La Liga 2015/16) — é o único dado do projeto com localização E minuto por falta ao mesmo tempo; o FotMob moderno (outras ligas) só tem falta total por partida, sem zona nem minuto, mesma limitação já registrada no Achado 21.
+
+Taxa = faltas cometidas ÷ ações com bola (`Pass`/`Carry`/`Dribble`/`Shot`/`Duel`/`Interception`/`Clearance`) na mesma zona/janela, ×1000 — normaliza por oportunidade, não é falta bruta.
+
+### Por zona do campo — sobrevive ao controle por time
+
+| Zona | Barcelona | Espanyol |
+|---|---|---|
+| Defensiva | 5,90 | 16,94 |
+| Meio-campo | 8,82 | **26,86** |
+| Ataque | 9,32 | 23,94 |
+
+Meio-campo tem a maior taxa nos dois times (defesa é sempre a menor) — o padrão se mantém dentro de cada time separadamente, não é artefato de somar os dois.
+
+### Por momento do jogo (bloco de 15min) — também sobrevive ao controle por time
+
+| | 00-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75+ |
+|---|---|---|---|---|---|---|
+| Barcelona | 6,18 | 9,09 | **9,88** | 6,15 | 9,36 | **10,09** |
+| Espanyol | 20,65 | 24,66 | **27,81** | 21,39 | 21,13 | **25,68** |
+
+Mesmo formato nos dois times — pico perto do intervalo (30-45) e pico no fim do jogo (75+), vale perto do início de cada tempo (00-15 e 45-60). Padrão de "fadiga por bloco de tempo" real, não confundido por time.
+
+### Por estado do jogo (ganhando/empatando/perdendo) — **não sobrevive**, é o mesmo tipo de armadilha do Achado 3/18
+
+Juntando os dois times, o resultado parecia bonito e intuitivo (hipótese "falta de frustração"):
+
+| Estado | Taxa (pooled) |
+|---|---|
+| Ganhando | 12,71 |
+| Empatando | 14,03 |
+| Perdendo | **17,44** |
+
+Só que **dentro de cada time** o padrão desaparece — e no Espanyol até inverte:
+
+| Estado | Barcelona | Espanyol |
+|---|---|---|
+| Ganhando | 8,65 | **27,79** |
+| Empatando | 7,89 | 24,47 |
+| Perdendo | 8,43 | 20,58 |
+
+Barcelona é essencialmente plano nos três estados (~8/1000, sem gradiente); Espanyol **cai** conforme perde, o oposto da hipótese de frustração. O resultado agregado (perdendo > empatando > ganhando) existia só porque **Espanyol comete falta ~3x mais que Barcelona em qualquer estado**, e Espanyol também é quem mais fica no estado "perdendo" na amostra (13.945 ações vs. só 4.864 do Barcelona) — o "efeito do estado" era na real o efeito de qual time domina aquele bucket, o exato padrão do Achado 3 (e do Achado 18, pra correlação de defesa/embate) com um recorte novo.
+
+### O que sobra de real
+
+- **Zona e momento do relógio são preditores válidos de falta**, testados com controle de time. Estado do jogo (placar) **não é** — nesta amostra, "time perde → comete mais falta" é confundido por "time fraco perde mais E comete mais falta sempre".
+- **Achado lateral que já bate com o Achado 21**: Espanyol comete falta a uma taxa 2-3x maior que Barcelona em toda zona e todo momento — consistente com a hipótese ainda não fechada do Achado 21 (Frente 1) de que desarme sem pressão organizada/de time mais fraco tende a sair mais frequentemente em falta.
+
+### Ressalvas
+
+- 2 times, 1 temporada — mesma amostra de sempre nesta frente. Só dá pra checar "dentro do time" com 2 times; não dá pra saber se o achado de zona/momento generaliza pra times de força intermediária.
+- Denominador é proxy de ações com bola, não minutagem real de posse.
+- Estado do jogo aqui usa placar acumulado por ordem de `index` do evento (StatsBomb), reconstruído incluindo gol contra (`Own Goal For`/`Against`) — não usa `match_team_game_state` (Fase 2, FotMob) porque essa infraestrutura foi construída sobre chutes, não sobre falta.
+
+Descritivo, sem IC 95%. **Lição de método reafirmada**: nunca aceitar um efeito por "estado"/"situação" sem testar dentro de cada unidade que poderia estar confundindo (aqui, o time) — é o terceiro recorte diferente (Achado 3, Achado 18, agora falta) em que a mesma armadilha aparece.
+
+---
+
+## Achado 25 — cartão por minuto/estado em toda liga do projeto (13.439 partidas); por zona não dá — FotMob não guarda local de cartão
+
+Pergunta de acompanhamento ao Achado 24: dá pra estender falta-por-momento além das 2 partidas de StatsBomb, usando o que já cobre todas as ligas do projeto? `match_events` (cartão amarelo/vermelho/segundo amarelo, 61.181 linhas, 13.439 partidas distintas) é o candidato óbvio — mas cartão não é falta, é só o subconjunto que o árbitro decidiu punir, e isso importa (ver ressalva de árbitro no fim).
+
+### Achado de dado no caminho: `minute` empilha o acréscimo em 45 e 90, mas o minuto real está escondido em `detail`
+
+Antes de qualquer análise por momento, `minute=45` tinha 2.943 linhas (contra ~600-700 nos minutos vizinhos) e `minute=90` tinha 8.488 (contra ~970-980 nos vizinhos) — todo cartão de acréscimo caindo empilhado no minuto cheio, sem o `minute_added` que `match_shots_fotmob` já tem pra esse mesmo problema. Inspecionando `detail` (jsonb): o campo `overloadTime` já guarda o acréscimo (`{"card_raw":"Yellow","overloadTime":"3",...}`) — só não está promovido a coluna. Minuto real = `minute + overloadTime`, sem precisar de raspagem nova. Registrado aqui como achado de dado, não corrigido no schema (ficaria pra decisão de promover `overloadTime` a coluna própria, mesmo padrão do Achado 23).
+
+### Por zona do campo: **não dá** — não é falta de técnica, é ausência real do dado
+
+`location_x`/`location_y` de `match_events` estão **100% `NULL`** nas 61.181 linhas, e `detail` não guarda posição em lugar nenhum (só `card_raw`/`overloadTime`/`cardDescription`). Diferente do bug do Achado 23 (dado existia, só não promovido), aqui o campo genuinamente não vem do FotMob pra evento de cartão — só `match_shots_fotmob` tem x/y, e só pra chute. Sem alternativa dentro do que o projeto já ingere.
+
+### Por momento do jogo — sobe ao longo da partida, mesmo padrão qualitativo do Achado 24, agora com N grande
+
+Cartões por partida, minuto real corrigido (13.439 partidas):
+
+| 00-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 | 90+ |
+|---|---|---|---|---|---|---|
+| 0,214 | 0,457 | 0,674 | 0,827 | 0,800 | **0,950** | 0,632 |
+
+Sobe de forma quase monotônica até o fim do 2º tempo (75-90 é o pico) — mesma direção geral do Achado 24 (mais cartão/falta perto do fim), agora numa amostra ~180x maior e cobrindo todas as ligas do projeto, não só La Liga 2015/16.
+
+### Por estado do jogo — **achatado**, reforça o Achado 24 numa escala muito maior
+
+Reconstruído o placar a cada cartão via `match_goal_timeline` (ordenado por `clock`, incluindo gol contra) e comparado ao lado (casa/fora) que cometeu o cartão:
+
+| Estado | Cartões | Minutos (aprox., via `match_team_game_state`) | Taxa /1000min |
+|---|---|---|---|
+| Ganhando | 15.988 | 929.021 | 17,21 |
+| Empatando | 28.978 | 1.707.472 | 16,97 |
+| Perdendo | 16.215 | 929.021 | 17,45 |
+
+**Praticamente reto** — a diferença entre o estado mais alto (perdendo, 17,45) e o mais baixo (empatando, 16,97) é <3%. Não há sinal de "cartão de frustração" nesta escala, reforçando o Achado 24 (que já tinha achado o mesmo padrão achatado dentro do Barcelona, numa amostra 1000x menor).
+
+### Ressalva que o próprio usuário levantou, e que confirmei ser real: **não dá pra controlar por árbitro**
+
+Cartão depende do critério de quem apita, não só da gravidade da entrada — dois lances idênticos podem virar cartão com um árbitro rigoroso e nada com um mais tolerante. Conferido: **não existe identificador de árbitro em nenhuma tabela do projeto** (`matches` não tem coluna de árbitro). A taxa aqui é uma média sobre milhares de árbitros diferentes, sem poder isolar "o quanto do padrão por minuto/estado é comportamento de jogador vs. calibração de árbitro" — se um tipo de liga/árbitro pune mais no fim do jogo por convenção (ex.: mais atento a perda de tempo), isso entra misturado no mesmo número.
+
+### Ressalvas adicionais
+
+- Denominador (minutos por estado) vem de `match_team_game_state`, que cobre um universo de partidas derivado de `match_shots_fotmob` — não confirmado que é exatamente o mesmo conjunto das 13.439 partidas com cartão. Taxa é aproximada, não um IC fechado.
+- Estado do jogo aqui usa `minuto_real` (cartão) comparado a `clock` (gol) — os dois resolvem o problema de acréscimo por caminhos diferentes (`overloadTime` vs. o deslocamento acumulado do Achado da migration `20260905160000`), então pode haver pequeno desalinhamento em lances bem no limite do intervalo/final — absorvido pela granularidade de 15min usada aqui, mas não zero.
+- Cartão ⊂ falta grave — o achado de zona do Achado 24 (meio-campo > ataque > defesa) não foi testado aqui e não dá pra testar com o dado atual.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
 
-Aconteceu três vezes nesta frente:
+Aconteceu várias vezes nesta frente:
 
 - O **Achado 3** passou em todas as invariantes (espelhamento perfeito, minutos fechando) e mesmo assim a conclusão agregada estava confundida com força de equipe.
+- O **Achado 24** (falta por estado do jogo) reproduziu o mesmo confundidor do Achado 3, num recorte novo (falta, não xG) — o efeito "perdendo comete mais falta" só existia agregando dois times; dentro de cada time separadamente, desaparecia ou invertia. A checagem que expôs foi a mesma dos casos anteriores: separar por time antes de aceitar o efeito por estado.
 - O **Achado 5** era um bug de ordenação que reconciliava perfeitamente em todos os totais, porque totais não têm ordem.
 - O **Achado 13** (escanteio/falta via StatsBomb) reproduziu **o mesmo bug do Achado 5** — 2º tempo com minuto reiniciando em vez de continuar — numa fonte de dado completamente diferente, meses depois de já saber exatamente que padrão procurar. Só não passou pro arquivo final porque o usuário perguntou "isso não pode ser artefato do intervalo?" antes de eu dar o achado por fechado.
 - O **Achado 11** (correlação StatsBomb×FotMob) publicou um r=0,983 pra escanteio que já parecia bom — só numa revisão pedida depois é que apareceu um bug de atribuição casa/fora (nomes tipo "Rayo Vallecano **de Madrid**" casando por engano com "Real **Madrid**") que estava jogando o r pra baixo sem parecer errado: 834 linhas com ~14 mal-atribuídas ainda dão uma correlação "boa o suficiente" pra não levantar suspeita. Corrigido, o r subiu pra 0,999. **Um coeficiente agregado plausível não garante que cada linha está emparelhada certo** — o que expôs foi olhar os maiores resíduos individuais (a partida com a maior diferença SB-FotMob), não o r em si.

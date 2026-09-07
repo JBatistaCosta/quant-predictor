@@ -337,7 +337,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
             "chances_created": extrair_stat_jogador(top_g, "Chances created"),
             "accurate_passes": (top_g.get("Accurate passes") or {}).get("stat", {}).get("value"),
             "touches": (attack_g.get("Touches") or {}).get("stat", {}).get("value"),
-            "tackles": (stats_by_group.get("defense", {}).get("Tackles won") or {}).get("stat", {}).get("value"),
+            "tackles": (stats_by_group.get("defense", {}).get("Tackles") or {}).get("stat", {}).get("value"),
             "interceptions": (stats_by_group.get("defense", {}).get("Interceptions") or {}).get("stat", {}).get("value"),
             "ground_duels_won": (stats_by_group.get("duels", {}).get("Ground duels won") or {}).get("stat", {}).get("value"),
             "aerials_won": (stats_by_group.get("duels", {}).get("Aerial duels won") or {}).get("stat", {}).get("value"),
