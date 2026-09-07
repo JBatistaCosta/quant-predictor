@@ -1028,6 +1028,47 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 22 — pressão sofrida explica retenção jogo a jogo (não só time a time), abrindo caminho pra Markov condicionado por índice
+
+Pergunta de acompanhamento aos Achados 12/17/18/19/20: os índices de força e o proxy de PPDA servem só pra comparar times inteiros (média de temporada), ou também explicam a variação **de um jogo pro outro do mesmo time** — o que é o requisito mínimo pra usá-los como covariável dentro de uma cadeia de Markov intra-jogo (a matriz de transição do Achado 15 precisaria de um parâmetro que mude jogo a jogo, não só time a time)?
+
+### Frente 1 — o mesmo efeito do Achado 20, agora dentro do mesmo time, jogo a jogo
+
+O Achado 20 comparou **médias de temporada** de Barcelona × Espanyol (2 times, 1 ponto cada) e achou que pressão sofrida (PPDA sofrida) explica a diferença de retenção entre eles. Aqui a pergunta é mais dura: **dentro dos 38 jogos do mesmo Barcelona**, jogos em que o adversário pressionou mais tiveram mais perda de posse no meio-campo/ataque? Recalculado por partida (não por temporada) a partir do mesmo cache de eventos brutos StatsBomb já usado no Achado 20:
+
+| Time | Jogos | corr(PPDA sofrida, % perda posse meio+ataque) |
+|---|---|---|
+| Barcelona | 38 | **−0,463** |
+| Espanyol | 38 | **−0,587** |
+| Pooled (2 times) | 76 | −0,683 |
+
+PPDA sofrida mais alto = menos pressão recebida (Achado 20). O sinal negativo confirma a mesma direção do Achado 20, mas agora **controlando força de equipe por construção** — é o mesmo time em todos os 38 jogos, só o adversário do dia muda. Isso é o que faltava provar: a pressão sofrida não é só uma média de temporada que diferencia time bom de time ruim, ela **varia jogo a jogo e essa variação prediz a retenção daquele jogo específico**, dentro do próprio time. É o requisito mínimo pra virar covariável de uma cadeia de Markov intra-jogo — sem isso, "ajustar a matriz pela força do adversário" seria só reproduzir a diferença entre os times, não uma dinâmica condicional real.
+
+### Frente 2 — índice por jogo existe, mas é ruidoso: quantificado
+
+Resposta à pergunta anterior sobre índices "por jogo": os ingredientes do Achado 12 (chutes, xG, desarme, interceptação, corredor) já vêm por partida no dado bruto — não é preciso nada novo pra calcular o índice em janela de 1 jogo em vez de 38. Mas o preço é ruído real, medido aqui pro Barcelona (38 jogos, StatsBomb 2015/16):
+
+| Componente | Média por jogo | Desvio-padrão | Coeficiente de variação |
+|---|---|---|---|
+| xG | 2,41 | 1,04 | 43% |
+| Desarme + interceptação | 19,5 | 6,29 | 32% |
+
+Um único jogo pode ficar 40%+ acima ou abaixo da média de temporada do próprio time só por variação normal de jogo a jogo — nem toda oscilação é sinal. **Prático**: índice por jogo é calculável, mas não deve ser usado cru; precisa de encolhimento bayesiano (combinar o valor da temporada como prior com o jogo específico como atualização), do jeito que `team_strengths`/Dixon-Coles já faz pra força ofensiva/defensiva — usar o índice de 1 jogo isolado como se fosse a "verdadeira" força do time naquele dia é superestimar o quanto um jogo individual informa.
+
+### Como as duas frentes se encaixam na simulação (Achado 15)
+
+A Frente 1 mostra que existe uma covariável (pressão sofrida) que varia dentro do próprio time e prediz retenção jogo a jogo — candidata natural pra parametrizar a matriz de transição do Achado 15 por confronto, não só usar uma matriz genérica ou uma matriz fixa por tercil de força. A Frente 2 avisa que qualquer índice usado pra estimar "quanto esse time vai pressionar/reter hoje" antes do jogo (pré-jogo, sem saber o resultado) precisa vir da média de temporada com encolhimento — não do jogo anterior isolado.
+
+### Ressalvas
+
+- **Ainda só 2 times** (Barcelona, Espanyol) — a Frente 1 prova que o mecanismo existe *dentro* de um time, mas não testa se o tamanho do efeito (r≈−0,46 a −0,59) é parecido pra outros perfis de time. Estender pros 20 times exigiria recalcular PPDA por partida pra todos, o que não está no cache atual (só as 380 agregações de temporada do Achado 12 existem pra todos os 20 — não por partida; teria que buscar os eventos brutos das ~306 partidas que faltam).
+- Não testado ainda: se o mesmo padrão vale pra retenção na própria zona defensiva (só meio+ataque foi medido aqui, seguindo o recorte que já rendeu sinal mais forte no Achado 17).
+- PPDA aqui é o mesmo proxy aproximado (grade de terços, sem corredor) dos Achados 19/20 — ver ressalva de metodologia lá.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
