@@ -54,6 +54,25 @@ RESULTADO_BTTS_NO, RESULTADO_BTTS_YES = 0, 1
 # escanteios totais -- soma casa+visitante).
 RESULTADO_CORNERS_UNDER95, RESULTADO_CORNERS_OVER95 = 0, 1
 
+# Linhas adicionais de Over/Under de escanteios totais além de 9.5 -- mesmas
+# linhas já cobertas pelo modelo paramétrico (`hibrido_gols_v1`, ver
+# `LINHAS_PADRAO_POR_STAT` em `api/corners-model.js`), agora também
+# disponíveis como alvo de classificador no Treino Customizado (achado real:
+# só 9.5 existia como target, então o modelo dedicado de escanteios --
+# "Escanteios — FBref + FotMob" -- nunca pôde ser treinado nas outras
+# linhas). Nome de coluna gerado, não hardcoded 5x, pra não duplicar a
+# linha em dois lugares (dataset + `treinar_modelo_custom.py`) e arriscar
+# divergência de arredondamento.
+LINHAS_CORNERS_OU_EXTRA = [7.5, 8.5, 10.5, 11.5, 12.5]
+
+
+def coluna_resultado_corners_ou(linha: float) -> str:
+    """Nome da coluna de alvo binário Over/Under de escanteios pra uma linha
+    -- 'resultado_corners_ou95' pra 9.5 (já existente), 'resultado_corners_ou75'
+    pra 7.5 etc. Usada tanto na construção do dataset quanto no mapeamento de
+    `TARGETS`/`_TARGET_PRED_META` de `treinar_modelo_custom.py`."""
+    return f"resultado_corners_ou{str(linha).replace('.', '')}"
+
 # Códigos do alvo multiclasse `resultado_faixa_gols` (mercado "faixa de
 # gols", 4 classes sobre o total casa+visitante -- pedido explícito do
 # usuário: 0-1 / 2-3 / 4-6 / 7+).
@@ -3691,6 +3710,10 @@ def montar_dataset_ml_empilhado(
     dataset["resultado_corners_ou95"] = np.where(
         dataset["total_corners"].notna(), (dataset["total_corners"] > 9.5).astype(float), np.nan
     )
+    for _linha in LINHAS_CORNERS_OU_EXTRA:
+        dataset[coluna_resultado_corners_ou(_linha)] = np.where(
+            dataset["total_corners"].notna(), (dataset["total_corners"] > _linha).astype(float), np.nan
+        )
     dataset["resultado_faixa_corners"] = dataset["total_corners"].apply(
         lambda x: float(codigo_faixa_corners(x)) if pd.notna(x) else np.nan
     )
@@ -3827,6 +3850,7 @@ def montar_dataset_ml_empilhado(
         "posicao_diff", "pontos_diff",
         # Alvos
         "resultado", "resultado_over25", "resultado_btts", "resultado_faixa_gols", "resultado_corners_ou95", "resultado_faixa_corners",
+        *[coluna_resultado_corners_ou(l) for l in LINHAS_CORNERS_OU_EXTRA],
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
         # Contagens observadas da própria partida -- alvo dos modelos

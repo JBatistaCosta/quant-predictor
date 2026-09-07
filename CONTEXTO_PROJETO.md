@@ -1,6 +1,23 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
+
+**Investigação de qualidade do modelo de escanteios (07/09) — achado real, plano de troca ainda não executado.** Pedido do usuário: melhorar a predição de escanteios. Achados, em ordem:
+
+1. **`hibrido_gols_v1` perde pro mercado em toda linha testada** de `corners_over_under` — log-loss do modelo pior que o mercado sem vig (ex.: linha 9.5, modelo 0,7080 vs. mercado 0,6820-0,6824) e ROI não significativo (ou negativo) em todas as linhas do `model_benchmarking_backtest`. Championship/Eredivisie chegam a ter log-loss PIOR que "chutar 50/50" (>ln2=0,693).
+2. **Correção a um erro meu no `ACHADOS_COMPORTAMENTO.md` (Achado 26)**: eu tinha dito que `match_context_fotmob.referee` nunca virou feature de modelo nenhum. **Errado** — só não tinha lido `scripts/dados_historicos.py` a fundo o suficiente. Existe `arbitro_cartoes_media`/`arbitro_faltas_media`/`arbitro_n_jogos` (`_carregar_arbitro_pre_jogo`/`obter_arbitro_atual`), sem vazamento (`shift(1).expanding().mean()`), já dentro de `FEATURES_V12_MESMA_LIGA` (usado por `hibrido_gols_v1`/`hibrido_corners_v1`). É sinal de falta/cartão do árbitro, não específico de escanteio — não explica o problema do item 1.
+3. **Por que o `hibrido_gols_v1` erra**: não é viés de escala (`corners_lambda_total` médio 9,82 vs. λ implícito do mercado 9,66 — viés de só +1,6%), é correlação partida-a-partida fraca (r=0,506 contra o λ do mercado invertido via Poisson nas odds Pinnacle, n=497). O modelo até tem os insumos certos (`media_escanteios_5j_home/away`, mando separado, via FBref, desde a v7 de `FEATURES_NUMERICAS_V7`) — não é ausência de feature óbvia, é o modelo não estar diferenciando confrontos do jeito que o mercado diferencia.
+4. **Já existe um modelo melhor treinado, mas órfão.** `custom_model_configs` id `649205e3-f71f-4626-a399-29ad181f4b90` ("Escanteios — FBref + FotMob", target `corners_over_under_9.5`, 6 ligas — `league_ids [1,13,7,10,4,16]`, treinado uma vez em 09/08/2026) bate `hibrido_gols_v1` cabeça a cabeça nos MESMOS 950 jogos (log-loss 0,6972 vs. 0,7025; Brier 0,2520 vs. 0,2546; vence em 482/950 partidas individualmente vs. 468) — vitória real mas modesta, não resolveria sozinha o item 1. **Não está em `models_registry`** (tabela de catálogo oficial) e suas 2.102 previsões salvas **não têm nenhuma sobreposição com partidas que têm odd Pinnacle registrada** — não investigado a fundo se o cron diário (`prever_partidas_futuras_custom.yml`, `0 5 * * *`, já aplica toda config `status='treinado'` sobre partidas `scheduled`) está de fato gerando previsão nova todo dia pra essa config ou travou logo depois do treino inicial.
+
+**Plano de troca, NENHUM passo executado ainda:**
+- [ ] Confirmar se `prever_partidas_futuras_custom.yml` está rodando de verdade pra essa config (checar `model_predictions` por `created_at` recente com esse `model_name`, não só o total de linhas).
+- [ ] Re-treinar com `treinar_modelo_custom_wf.py` (walk-forward, não o snapshot único de agosto) pra confirmar que a vantagem sobre `hibrido_gols_v1` se sustenta fora da amostra de treino original.
+- [ ] Comparar também contra `stats_glm_v1`/`model_stat_estimates` (o pipeline que **realmente** alimenta `api/corners-model.js` em produção hoje — GLM Poisson de `modelo_stats_esperadas.py`, um TERCEIRO modelo, nem `hibrido_gols_v1` nem o custom xgboost) — não comparado ainda nesta investigação.
+- [ ] Registrar em `models_registry` se confirmado (hoje ausente de lá).
+- [ ] Decidir o que "virar o modelo oficial" significa na prática: não existe hoje um único "modelo escolhido" pro usuário — `AnaliseEstatisticaJogo.jsx`/`AnaliseAvancadaEvento.jsx` mostram TODOS os `model_name` de `model_predictions` lado a lado (dropdown de comparação, sem "recomendado" automático). A decisão real é sobre quem entra no cron/Kelly/paper trading como candidato padrão, não sobre trocar uma linha de código.
+
+Ver histórico completo da investigação na sessão de 07/09 se precisar dos números exatos das consultas SQL (não persistidos em nenhum script, foram ad-hoc via `execute_sql`).
+
 **Os achados desta frente foram consolidados em `ACHADOS_COMPORTAMENTO.md`** (arquivo novo, 05/09) — leia ele para o conteúdo; esta seção guarda só o estado.
 
 **Frente de comportamento/interação: 3 fases entregues.** Fase 1 (esquema tático, PR #420) e fase 2 (estado do jogo, PR #433) mergeadas e em produção. Fase 3 (resposta a eventos) documentada na seção **"Resposta a eventos (`match_team_event_response`) — fase 3"**, mais abaixo.
