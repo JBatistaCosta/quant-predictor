@@ -1224,6 +1224,54 @@ Descritivo, sem IC 95%. **Lição de método reafirmada**: nunca aceitar um efei
 
 ---
 
+## Achado 25 — cartão por minuto/estado em toda liga do projeto (13.439 partidas); por zona não dá — FotMob não guarda local de cartão
+
+Pergunta de acompanhamento ao Achado 24: dá pra estender falta-por-momento além das 2 partidas de StatsBomb, usando o que já cobre todas as ligas do projeto? `match_events` (cartão amarelo/vermelho/segundo amarelo, 61.181 linhas, 13.439 partidas distintas) é o candidato óbvio — mas cartão não é falta, é só o subconjunto que o árbitro decidiu punir, e isso importa (ver ressalva de árbitro no fim).
+
+### Achado de dado no caminho: `minute` empilha o acréscimo em 45 e 90, mas o minuto real está escondido em `detail`
+
+Antes de qualquer análise por momento, `minute=45` tinha 2.943 linhas (contra ~600-700 nos minutos vizinhos) e `minute=90` tinha 8.488 (contra ~970-980 nos vizinhos) — todo cartão de acréscimo caindo empilhado no minuto cheio, sem o `minute_added` que `match_shots_fotmob` já tem pra esse mesmo problema. Inspecionando `detail` (jsonb): o campo `overloadTime` já guarda o acréscimo (`{"card_raw":"Yellow","overloadTime":"3",...}`) — só não está promovido a coluna. Minuto real = `minute + overloadTime`, sem precisar de raspagem nova. Registrado aqui como achado de dado, não corrigido no schema (ficaria pra decisão de promover `overloadTime` a coluna própria, mesmo padrão do Achado 23).
+
+### Por zona do campo: **não dá** — não é falta de técnica, é ausência real do dado
+
+`location_x`/`location_y` de `match_events` estão **100% `NULL`** nas 61.181 linhas, e `detail` não guarda posição em lugar nenhum (só `card_raw`/`overloadTime`/`cardDescription`). Diferente do bug do Achado 23 (dado existia, só não promovido), aqui o campo genuinamente não vem do FotMob pra evento de cartão — só `match_shots_fotmob` tem x/y, e só pra chute. Sem alternativa dentro do que o projeto já ingere.
+
+### Por momento do jogo — sobe ao longo da partida, mesmo padrão qualitativo do Achado 24, agora com N grande
+
+Cartões por partida, minuto real corrigido (13.439 partidas):
+
+| 00-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 | 90+ |
+|---|---|---|---|---|---|---|
+| 0,214 | 0,457 | 0,674 | 0,827 | 0,800 | **0,950** | 0,632 |
+
+Sobe de forma quase monotônica até o fim do 2º tempo (75-90 é o pico) — mesma direção geral do Achado 24 (mais cartão/falta perto do fim), agora numa amostra ~180x maior e cobrindo todas as ligas do projeto, não só La Liga 2015/16.
+
+### Por estado do jogo — **achatado**, reforça o Achado 24 numa escala muito maior
+
+Reconstruído o placar a cada cartão via `match_goal_timeline` (ordenado por `clock`, incluindo gol contra) e comparado ao lado (casa/fora) que cometeu o cartão:
+
+| Estado | Cartões | Minutos (aprox., via `match_team_game_state`) | Taxa /1000min |
+|---|---|---|---|
+| Ganhando | 15.988 | 929.021 | 17,21 |
+| Empatando | 28.978 | 1.707.472 | 16,97 |
+| Perdendo | 16.215 | 929.021 | 17,45 |
+
+**Praticamente reto** — a diferença entre o estado mais alto (perdendo, 17,45) e o mais baixo (empatando, 16,97) é <3%. Não há sinal de "cartão de frustração" nesta escala, reforçando o Achado 24 (que já tinha achado o mesmo padrão achatado dentro do Barcelona, numa amostra 1000x menor).
+
+### Ressalva que o próprio usuário levantou, e que confirmei ser real: **não dá pra controlar por árbitro**
+
+Cartão depende do critério de quem apita, não só da gravidade da entrada — dois lances idênticos podem virar cartão com um árbitro rigoroso e nada com um mais tolerante. Conferido: **não existe identificador de árbitro em nenhuma tabela do projeto** (`matches` não tem coluna de árbitro). A taxa aqui é uma média sobre milhares de árbitros diferentes, sem poder isolar "o quanto do padrão por minuto/estado é comportamento de jogador vs. calibração de árbitro" — se um tipo de liga/árbitro pune mais no fim do jogo por convenção (ex.: mais atento a perda de tempo), isso entra misturado no mesmo número.
+
+### Ressalvas adicionais
+
+- Denominador (minutos por estado) vem de `match_team_game_state`, que cobre um universo de partidas derivado de `match_shots_fotmob` — não confirmado que é exatamente o mesmo conjunto das 13.439 partidas com cartão. Taxa é aproximada, não um IC fechado.
+- Estado do jogo aqui usa `minuto_real` (cartão) comparado a `clock` (gol) — os dois resolvem o problema de acréscimo por caminhos diferentes (`overloadTime` vs. o deslocamento acumulado do Achado da migration `20260905160000`), então pode haver pequeno desalinhamento em lances bem no limite do intervalo/final — absorvido pela granularidade de 15min usada aqui, mas não zero.
+- Cartão ⊂ falta grave — o achado de zona do Achado 24 (meio-campo > ataque > defesa) não foi testado aqui e não dá pra testar com o dado atual.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
