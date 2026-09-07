@@ -66,6 +66,15 @@ TARGETS = {
     "faixa_gols": {"coluna": "resultado_faixa_gols", "tipo": "multiclasse", "classes": 4},
     "corners_over_under_9.5": {"coluna": "resultado_corners_ou95", "tipo": "binario", "classes": 2},
     "faixa_corners": {"coluna": "resultado_faixa_corners", "tipo": "multiclasse", "classes": 4},
+    # Linhas extras de escanteios (achado real: só 9.5 existia como target,
+    # então o modelo dedicado de escanteios só podia ser treinado nessa
+    # linha -- ver `dh.LINHAS_CORNERS_OU_EXTRA`/`dh.coluna_resultado_corners_ou`).
+    **{
+        f"corners_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_corners_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -92,6 +101,12 @@ _TARGET_PRED_META = {
     "faixa_gols": {"market": "faixa_gols", "class_to_sel": {0: "0-1", 1: "2-3", 2: "4-6", 3: "7+"}},
     "corners_over_under_9.5": {"market": "corners_over_under_9.5", "class_to_sel": {0: "under", 1: "over"}},
     "faixa_corners": {"market": "faixa_corners", "class_to_sel": {0: "≤8", 1: "9-10", 2: "11-12", 3: "13+"}},
+    **{
+        f"corners_over_under_{linha}": {
+            "market": f"corners_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -493,6 +508,10 @@ _MERCADO_POR_TARGET = {
     "faixa_gols": ("faixa_gols", ["0-1", "2-3", "4-6", "7+"]),
     "corners_over_under_9.5": ("corners_over_under_9.5", ["under", "over"]),
     "faixa_corners": ("faixa_corners", ["≤8", "9-10", "11-12", "13+"]),
+    **{
+        f"corners_over_under_{linha}": (f"corners_over_under_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
 }
 
 

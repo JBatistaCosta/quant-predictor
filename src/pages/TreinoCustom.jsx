@@ -445,7 +445,12 @@ const TARGETS = [
   { value: 'over_under_2.5', label: 'Over/Under 2,5 gols' },
   { value: 'btts', label: 'Ambas marcam (BTTS)' },
   { value: 'faixa_gols', label: 'Faixa de total de gols (0-1 / 2-3 / 4-6 / 7+)' },
+  { value: 'corners_over_under_7.5', label: 'Escanteios O/U 7,5' },
+  { value: 'corners_over_under_8.5', label: 'Escanteios O/U 8,5' },
   { value: 'corners_over_under_9.5', label: 'Escanteios O/U 9,5' },
+  { value: 'corners_over_under_10.5', label: 'Escanteios O/U 10,5' },
+  { value: 'corners_over_under_11.5', label: 'Escanteios O/U 11,5' },
+  { value: 'corners_over_under_12.5', label: 'Escanteios O/U 12,5' },
   { value: 'faixa_corners', label: 'Faixa de total de escanteios (≤8 / 9-10 / 11-12 / 13+)' },
 ];
 
