@@ -786,6 +786,78 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 17 — a diferença entre time forte e fraco está em reter a posse, não em como a bola se move
+
+Pergunta de acompanhamento ao Achado 15: a matriz de transição inteira muda por time, ou só a taxa de perda de posse (que o Achado 15 já tinha segmentado por tercil de força)? Construídas as matrizes 9×9 completas dos dois extremos da liga por saldo de gol — **Barcelona** (campeão, saldo +83, 38 jogos) e **Espanyol** (18º colocado, saldo −34) — a partir dos eventos brutos das 74 partidas dos dois (mesma base StatsBomb, La Liga 2015/16).
+
+### Desfecho por zona (chute / perda de posse)
+
+| Zona | Barcelona: perda | Espanyol: perda |
+|---|---|---|
+| Def-Esq | 9,1% | 19,6% |
+| Def-Cen | 6,5% | 22,3% |
+| Def-Dir | 8,8% | 20,6% |
+| Meio-Esq | 6,2% | 13,5% |
+| Meio-Cen | 6,0% | 13,7% |
+| Meio-Dir | 6,4% | 15,4% |
+| Atq-Esq | 14,2% | 24,1% |
+| Atq-Cen | 16,2% | 19,3% |
+| Atq-Dir | 14,2% | 23,2% |
+
+| Zona | Barcelona: % vira chute | Espanyol: % vira chute |
+|---|---|---|
+| Atq-Esq | 0,78% | 1,45% |
+| **Atq-Cen** | **13,4%** | **20,0%** |
+| Atq-Dir | 0,82% | 1,25% |
+
+**A diferença na perda de posse é brutal e consistente** — Espanyol perde a bola mais que o dobro do Barcelona em quase toda zona defensiva e de meio-campo (ex. Def-Cen: 22,3% vs 6,5%). E no ataque-centro o Espanyol chuta ~50% mais vezes ao chegar lá (20,0% vs 13,4%) — o mesmo padrão do Achado 15 ("time fraco aproveita logo em vez de segurar a posse"), agora confirmado nos dois extremos individuais da liga, não só nos tercis agregados.
+
+### Matriz de transição (condicional a manter a posse) — Barcelona
+
+| De \ Para | Def-Esq | Def-Cen | Def-Dir | Meio-Esq | Meio-Cen | Meio-Dir | Atq-Esq | Atq-Cen | Atq-Dir |
+|---|---|---|---|---|---|---|---|---|---|
+| **Def-Esq** | 56,1% | 17,8% | 3,5% | 17,3% | 4,5% | 0,8% | 0,0% | 0,1% | 0,0% |
+| **Def-Cen** | 14,3% | 49,6% | 12,9% | 5,6% | 11,3% | 5,9% | 0,2% | 0,1% | 0,1% |
+| **Def-Dir** | 2,8% | 14,6% | 58,5% | 1,3% | 4,3% | 18,0% | 0,1% | 0,0% | 0,3% |
+| **Meio-Esq** | 3,5% | 1,7% | 0,3% | 68,3% | 12,5% | 2,0% | 9,5% | 1,5% | 0,8% |
+| **Meio-Cen** | 0,5% | 1,7% | 0,6% | 12,3% | 58,4% | 14,0% | 4,2% | 4,9% | 3,3% |
+| **Meio-Dir** | 0,2% | 1,3% | 3,5% | 1,7% | 13,6% | 68,6% | 0,9% | 1,5% | 8,7% |
+| **Atq-Esq** | 0,0% | 0,0% | 0,0% | 7,3% | 2,2% | 0,1% | 75,5% | 13,9% | 0,9% |
+| **Atq-Cen** | 0,0% | 0,0% | 0,0% | 0,9% | 4,7% | 1,2% | 12,3% | 70,4% | 10,4% |
+| **Atq-Dir** | 0,0% | 0,0% | 0,0% | 0,4% | 2,2% | 9,1% | 1,5% | 10,6% | 76,3% |
+
+### Matriz de transição — Espanyol
+
+| De \ Para | Def-Esq | Def-Cen | Def-Dir | Meio-Esq | Meio-Cen | Meio-Dir | Atq-Esq | Atq-Cen | Atq-Dir |
+|---|---|---|---|---|---|---|---|---|---|
+| **Def-Esq** | 56,9% | 12,6% | 2,1% | 21,2% | 5,1% | 1,2% | 0,7% | 0,2% | 0,1% |
+| **Def-Cen** | 11,0% | 49,5% | 11,1% | 7,6% | 10,5% | 8,9% | 0,3% | 0,6% | 0,6% |
+| **Def-Dir** | 1,4% | 10,4% | 58,5% | 0,5% | 3,7% | 24,2% | 0,1% | 0,2% | 1,0% |
+| **Meio-Esq** | 3,7% | 1,7% | 0,2% | 70,9% | 10,9% | 1,3% | 9,2% | 1,6% | 0,5% |
+| **Meio-Cen** | 0,5% | 3,7% | 1,0% | 13,5% | 57,4% | 14,4% | 2,8% | 3,9% | 2,8% |
+| **Meio-Dir** | 0,2% | 1,6% | 3,1% | 1,2% | 9,6% | 72,1% | 0,8% | 1,5% | 9,9% |
+| **Atq-Esq** | 0,0% | 0,0% | 0,0% | 8,7% | 1,6% | 0,1% | 77,6% | 10,6% | 1,4% |
+| **Atq-Cen** | 0,0% | 0,0% | 0,0% | 1,3% | 4,9% | 0,8% | 14,7% | 68,4% | 9,9% |
+| **Atq-Dir** | 0,0% | 0,0% | 0,0% | 0,0% | 1,2% | 9,2% | 1,2% | 10,3% | 78,1% |
+
+### O achado: a forma da matriz é quase idêntica — a diferença é a retenção, não a rota
+
+Comparando célula a célula, **as duas matrizes são muito parecidas**: a diagonal domina em ambas (bola tende a ficar no próprio corredor, 49-79%), a probabilidade de pular direto de defesa pra ataque é ~0% nas duas, e a distribuição de "pra onde a bola vai quando sai de cada zona" tem o mesmo formato geral no melhor e no pior time da liga. **A diferença entre Barcelona e Espanyol não está em como a bola se move quando fica em jogo — está em com que frequência ela fica em jogo** (a tabela de perda de posse acima).
+
+### Implicação pra simulação
+
+Pra uma simulação Monte Carlo baseada em zona (a aplicação que o Achado 15 já apontava), isso sugere uma simplificação real: **a matriz de transição em si pode ser tratada como praticamente universal** (uma matriz só, compartilhada por todos os times), enquanto **a taxa de perda de posse por zona é o parâmetro que precisa variar por força de time** — em vez de recalibrar as duas coisas por time, recalibrar só uma reduz a complexidade do modelo sem perder o efeito real que a força de equipe tem no jogo.
+
+### Ressalvas
+
+- **Dois times, uma temporada.** São os extremos da tabela (1º e 18º colocado por saldo de gol), não uma amostra de vários pares forte/fraco — a generalização "matriz é universal" é uma hipótese forte apoiada em 2 pontos, não testada estatisticamente.
+- **Barcelona 2015/16 é um caso extremo até pros padrões de "time forte"** (MSN no auge, título de liga+Champions) — o achado pode ser mais moderado comparando dois times de força mais parecida.
+- Mesma base de sempre (StatsBomb, La Liga 2015/16) — não é dado do projeto.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
