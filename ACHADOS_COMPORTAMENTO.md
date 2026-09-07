@@ -1129,7 +1129,15 @@ Aplicando a mesma técnica (comparar `stats_raw` já salvo com a coluna promovid
 
 **A causa do padrão "quase metade" ficou clara**: `interceptions`, `touches_opp_box`, `ground_duels_won` e `aerials_won` têm as linhas sem valor **todas concentradas entre 18/07/2026 e 26/07/2026** (uma janela de ~8 dias logo no início da ingestão desta tabela) — enquanto as linhas com valor preenchido cobrem o período inteiro, de 18/07 até hoje. Isso é o padrão clássico já visto no Achado 11: **um bug foi corrigido no meio do caminho, sem backfill retroativo das linhas antigas** — não é falta de dado da fonte, é histórico de ingestão não reprocessado. `xgot`, ao contrário, tem `NULL` espalhado por todo o período sem esse corte — condizente com ausência real (FotMob não reporta xGOT pra jogador sem chute no alvo), não bug.
 
-**Prático**: `touches_opp_box`, `ground_duels_won` e `aerials_won` são candidatos ao mesmo backfill que já funcionou pra `tackles`/`interceptions` — juntos, recuperariam mais ~360 mil linhas cada (a maioria das linhas mais antigas da tabela). Não executado ainda — mesma cautela de escrita em massa, e agora com o disco já perto do limite recém-ampliado, vale confirmar espaço disponível antes de rodar.
+**Backfill executado** (mesma técnica, lotes de 100 mil `id`s restritos à faixa afetada — `id` entre 1 e 700.000, onde estavam as linhas anteriores a 27/07/2026 — sem repetir o incidente de disco):
+
+| Campo | Antes | Depois |
+|---|---|---|
+| `touches_opp_box` | 334.180 | **705.954** (65,2%) |
+| `ground_duels_won` | 307.367 | **651.085** (60,1%) |
+| `aerials_won` | 334.180 | **706.084** (65,2%) |
+
+Restringir a faixa de `id` ao período do bug (em vez de varrer a tabela toda) deixou o backfill mais rápido e ainda mais seguro pro disco — só processa as linhas que de fato precisam.
 
 ### Cobertura de `minutes_played`/`rating`: uniforme entre ligas, não é problema de payload
 
