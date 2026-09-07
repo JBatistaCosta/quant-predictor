@@ -1795,16 +1795,19 @@ def _anexar_bayesiano_por_partida(partidas: pd.DataFrame, w: int = 5, halflife_d
     return partidas
 
 
-COLUNAS_STATS_EXTRA = ["possession", "shots", "shots_on_target", "corners", "fouls", "yellow_cards", "red_cards"]
+COLUNAS_STATS_EXTRA = [
+    "possession", "shots", "shots_on_target", "corners", "fouls", "yellow_cards", "red_cards",
+    "ppda", "deep_completions",
+]
 
 
 def _anexar_stats_extra_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
-    """Busca as estatísticas de jogo do FBref (`match_stats.possession`/
-    `shots`/`shots_on_target`/`corners`/`fouls`/`yellow_cards`/`red_cards`)
-    de cada partida e anexa como colunas `{stat}_home`/`{stat}_away` --
-    mesmo espírito de `_anexar_xg_por_partida` (aliás, mesma tabela: até
-    agora só a coluna `xg` dela virava feature, as outras 7 eram
-    coletadas e nunca usadas por nenhum modelo). Só serve de matéria-prima
+    """Busca as estatísticas de jogo de `match_stats` (`possession`/`shots`/
+    `shots_on_target`/`corners`/`fouls`/`yellow_cards`/`red_cards` via FBref,
+    `ppda`/`deep_completions` via Understat) de cada partida e anexa como
+    colunas `{stat}_home`/`{stat}_away` -- mesmo espírito de
+    `_anexar_xg_por_partida` (aliás, mesma tabela: até a v7 só a coluna `xg`
+    dela virava feature). Só serve de matéria-prima
     pra forma pré-jogo (`_forma_por_mando`, ver FEATURES_NUMERICAS_V7) --
     o valor bruto da PRÓPRIA partida nunca é feature (vazaria o resultado:
     não dá pra saber quantos escanteios vai ter antes do jogo acontecer).
@@ -1916,10 +1919,31 @@ COLUNAS_FORMA_CARTOES_VERMELHOS = {
     "marcado_away": "media_cartoes_vermelhos_5j_away",
     "sofrido_away": "media_cartoes_vermelhos_sofridos_5j_away",
 }
+# PPDA (passes por ação defensiva -- pressão) e deep completions (passes
+# certos a <20m do gol adversário -- territorialidade), ambos via Understat
+# em `match_stats`. Adicionados pra escanteios: testado direto no banco
+# (diferença casa-fora dentro da mesma partida) que os dois correlacionam
+# com escanteios mais forte que qualquer feature já usada no modelo
+# dedicado, e sobrevivem ao controle por força de equipe (Elo) -- não é o
+# confound "time melhor cria mais" que derrubou outros candidatos (índice
+# lateral/central, xG total do game-state). Cobertura menor que posse
+# (~10,5k partidas vs ~18,6k), restrita a ligas com Understat.
+COLUNAS_FORMA_PPDA = {
+    "marcado_home": "media_ppda_5j_home",
+    "sofrido_home": "media_ppda_sofrido_5j_home",
+    "marcado_away": "media_ppda_5j_away",
+    "sofrido_away": "media_ppda_sofrido_5j_away",
+}
+COLUNAS_FORMA_DEEP_COMPLETIONS = {
+    "marcado_home": "media_deep_completions_5j_home",
+    "sofrido_home": "media_deep_completions_sofrido_5j_home",
+    "marcado_away": "media_deep_completions_5j_away",
+    "sofrido_away": "media_deep_completions_sofrido_5j_away",
+}
 
 # Coluna crua de `match_stats` (FBref) -> dict de saída COLUNAS_FORMA_X
 # correspondente -- usado pela forma AO VIVO (v7, `obter_forma_recente_
-# extra_por_mando`) pra não repetir os 7 mapeamentos na mão.
+# extra_por_mando`) pra não repetir os mapeamentos na mão.
 COLUNAS_FORMA_EXTRA_POR_RAW = {
     "possession": COLUNAS_FORMA_POSSE,
     "shots": COLUNAS_FORMA_CHUTES,
@@ -1928,6 +1952,8 @@ COLUNAS_FORMA_EXTRA_POR_RAW = {
     "fouls": COLUNAS_FORMA_FALTAS,
     "yellow_cards": COLUNAS_FORMA_CARTOES_AMARELOS,
     "red_cards": COLUNAS_FORMA_CARTOES_VERMELHOS,
+    "ppda": COLUNAS_FORMA_PPDA,
+    "deep_completions": COLUNAS_FORMA_DEEP_COMPLETIONS,
 }
 
 # Colunas de feature dos modelos de árvore (usado também por
@@ -3466,6 +3492,10 @@ def montar_dataset_ml_empilhado(
         partidas, "xgot_home", "xgot_away", "xgot_mesma_liga", agrupar_por_liga=True
     )
     forma_posse = _forma_por_mando(partidas, "possession_home", "possession_away", COLUNAS_FORMA_POSSE)
+    forma_ppda = _forma_por_mando(partidas, "ppda_home", "ppda_away", COLUNAS_FORMA_PPDA)
+    forma_deep_completions = _forma_por_mando(
+        partidas, "deep_completions_home", "deep_completions_away", COLUNAS_FORMA_DEEP_COMPLETIONS
+    )
     forma_chutes = _forma_por_mando(partidas, "shots_home", "shots_away", COLUNAS_FORMA_CHUTES)
     forma_chutes_alvo = _forma_por_mando(partidas, "shots_on_target_home", "shots_on_target_away", COLUNAS_FORMA_CHUTES_ALVO)
     forma_escanteios = _forma_por_mando(partidas, "corners_home", "corners_away", COLUNAS_FORMA_ESCANTEIOS)
@@ -3547,6 +3577,8 @@ def montar_dataset_ml_empilhado(
     dataset = dataset.join(forma_xgot, on="id")
     dataset = dataset.join(forma_xgot_mesma_liga, on="id")
     dataset = dataset.join(forma_posse, on="id")
+    dataset = dataset.join(forma_ppda, on="id")
+    dataset = dataset.join(forma_deep_completions, on="id")
     dataset = dataset.join(forma_chutes, on="id")
     dataset = dataset.join(forma_chutes_alvo, on="id")
     dataset = dataset.join(forma_escanteios, on="id")
@@ -3829,6 +3861,10 @@ def montar_dataset_ml_empilhado(
         "match_stage_ord", "is_neutral",
         # FBref (v7)
         *COLUNAS_FORMA_POSSE.values(),
+        # PPDA + deep completions (Understat via match_stats) -- ver
+        # comentário em COLUNAS_FORMA_PPDA/COLUNAS_FORMA_DEEP_COMPLETIONS
+        *COLUNAS_FORMA_PPDA.values(),
+        *COLUNAS_FORMA_DEEP_COMPLETIONS.values(),
         *COLUNAS_FORMA_CHUTES.values(),
         *COLUNAS_FORMA_CHUTES_ALVO.values(),
         *COLUNAS_FORMA_ESCANTEIOS.values(),
