@@ -981,6 +981,53 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 21 — bola parada: conversão por zona é robusta com dado 100% FotMob, mas pressão não explica volume de falta
+
+Pergunta de acompanhamento: quais índices do FotMob interferem na previsão de falta/tiro-livre/escanteio e nos desfechos deles? Duas frentes testadas com dado agregado atual (`match_stats_fotmob`, `match_shots_fotmob`, todas as ligas modernas do projeto, sem StatsBomb/Understat envolvido).
+
+### Frente 1 — volume de falta: a hipótese de "pressão alta gera mais falta" não se sustenta como esperado
+
+Testada a correlação entre o proxy de PPDA aplicado (Achado 19: `accurate_passes` do adversário ÷ `tackles`+`interceptions` do time — quanto **menor**, mais pressão) e faltas cometidas, em 51.655 pares time-partida de ligas modernas:
+
+| Comparação | r |
+|---|---|
+| Faltas cometidas × proxy de PPDA aplicado | −0,094 |
+| Faltas cometidas × volume bruto de desarme+interceptação | +0,086 |
+| **Falta por tentativa de desarme** (`faltas ÷ (tackles+interceptions)`) × proxy de PPDA aplicado | **+0,308** |
+
+As duas primeiras são fracas — nem pressionar mais, nem tentar mais desarme isoladamente, explica bem quantas faltas um time comete no total. O terceiro corte inverte a intuição inicial: quando se normaliza por tentativa, **times que pressionam menos (proxy de PPDA mais alto) cometem falta com mais frequência por desarme tentado**, não menos. Leitura mais provável: desarme dentro de um esquema de pressão organizada (numérico, em bloco) tende a ser mais limpo; desarme de time recuado costuma ser isolado, de \"último homem\", contra jogador já lançado — maior risco de chegar atrasado e cometer falta. Ainda não controlado por Elo/força (mesmo cuidado do Achado 18 se aplica aqui: correlação fraca-a-moderada, não causal fechada).
+
+**Prático**: proxy de PPDA sozinho é um preditor fraco de volume de falta. Não vale a pena usá-lo isolado pra estimar quantas faltas um confronto vai ter.
+
+### Frente 2 — conversão de bola parada por zona: dado pronto, estável entre ligas
+
+`match_shots_fotmob.situation` (`FreeKick`, `FromCorner`) + coordenada x/y do chute já bastam pra reproduzir o mapa de valor por zona do Achado 16, restrito a bola parada — nenhuma fonte externa nova necessária.
+
+**Escanteio, canal central, por distância** (4 grandes ligas, chute com `event_type='Goal'` = gol):
+
+| Liga | ≤11m | 11-16,5m | 16,5-25m |
+|---|---|---|---|
+| Brasileirão Série A | 11,8% (n=3.021) | 3,9% (n=1.427) | 3,1% (n=1.083) |
+| Bundesliga | 13,3% (n=4.298) | 4,1% (n=1.390) | 3,3% (n=1.348) |
+| La Liga | 12,4% (n=4.402) | 3,3% (n=1.709) | 2,7% (n=1.437) |
+| Premier League | 12,9% (n=5.392) | 5,2% (n=1.792) | 3,4% (n=1.988) |
+
+Conversão de escanteio a queima-roupa (≤11m do gol, canal central) fica em **12-13% em toda liga testada**, incluindo Brasileirão sem Understat — o mesmo padrão de estabilidade geométrica do Achado 16 (ângulo/distância domina, a fonte de dado é irrelevante).
+
+**Tiro livre direto, canal central**: quase todo chute de falta cai fora de 16,5m (poucochíssimos dentro — faltas perto da área viram pênalti ou são cobradas indireto/cruzadas, não chute direto). Conversão de 7,6% na faixa 16,5-25m (n=4.315, a zona clássica do batedor especialista) caindo pra 4,1% acima de 25m (n=10.214).
+
+**Anomalia não explicada**: escanteio central a >25m do gol tem 7.943 chutes registrados com 5,0% de conversão — contagem alta e conversão maior que a faixa 16,5-25m mais próxima, o que não devia acontecer por geometria pura. Hipótese mais provável: `situation='FromCorner'` do FotMob rotula toda a sequência iniciada pelo escanteio (inclusive segunda bola/rebote chutado de longe), não só o primeiro chute na área — não confirmado, fica registrado como suspeita a checar antes de usar essa faixa específica em produção.
+
+### Prático
+
+- **Já dá pra estimar conversão esperada de escanteio/falta por zona hoje**, em qualquer liga do projeto, sem Understat/StatsBomb — usar `situation`+x/y de `match_shots_fotmob` direto.
+- **Não dá** pra prever bem o *volume* de falta/escanteio de um confronto só com o proxy de PPDA — o sinal é fraco demais sozinho; territorialidade (`touches_opp_box`, posse) provavelmente pesa mais pro volume de escanteio, mas isso ainda não foi testado.
+- Ressalva: nem faltas nem PPDA aqui foram controlados por estado de jogo (time perdendo tende a cometer falta "de frustração" — mesmo viés de confundimento dos Achados 3/18) nem por força via Elo. A correlação de +0,308 é a mais interessante da frente e a menos robusta — vale reconfirmar com controle antes de usar como regra.
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
