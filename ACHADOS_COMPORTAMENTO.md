@@ -946,6 +946,41 @@ Descritivo, sem IC 95%.
 
 ---
 
+## Achado 20 — o que explica a diferença de retenção de posse: pressão sofrida, não pressão aplicada
+
+Pergunta de acompanhamento ao Achado 17 (Barcelona perde a bola menos que a metade do Espanyol em quase toda zona): quanto disso é explicado por PPDA? Como a temporada 2015/16 não tem Understat (só existe a partir de 2023), calculei um PPDA equivalente **direto dos eventos brutos do StatsBomb** (mesma fonte/temporada do Achado 17, sem depender de proxy do FotMob — que também não daria, porque `tackles`/`interceptions`/`accurate_passes` não existem no payload antigo, ver Achado 11) para Barcelona e Espanyol, nas duas direções: quanto cada um **pressiona** e quanto cada um **sofre de pressão**.
+
+### PPDA aplicado (quanto o time pressiona o adversário) — quase igual
+
+| Time | PPDA aplicado |
+|---|---|
+| Barcelona | 11,04 |
+| Espanyol | 11,40 |
+
+Praticamente idêntico. **Isso não explica a diferença de retenção de posse** — os dois pressionam o adversário com intensidade parecida quando estão sem a bola.
+
+### PPDA sofrido (quanta pressão o time recebe dos adversários) — aí está a diferença
+
+| Time | PPDA sofrido |
+|---|---|
+| Barcelona | **18,68** |
+| Espanyol | **11,04** |
+
+PPDA mais alto = menos pressão sofrida. Barcelona sofre bem menos pressão dos adversários que o Espanyol — os times que enfrentam o Barcelona pressionam muito menos (provavelmente recuam, com receio de serem punidos), enquanto os que enfrentam o Espanyol pressionam bem mais.
+
+### A cadeia causal que liga os Achados 17, 18, 19 e 20
+
+Valor de elenco/Elo mais alto (Achado 18) → adversário respeita e pressiona menos (PPDA sofrido alto, este achado) → menos perda de posse nas zonas de construção (Achado 17) → matriz de transição mais "limpa" pro time forte. **A peça que faltava não era o quanto o próprio time pressiona — é o quanto ele é pressionado.** Isso também explica por que o índice de "embate" do Achado 12/18 não mostrou correlação forte com valor de elenco (r=−0,19): duelos brutos contam ação própria, não o que se recebe do adversário — o mesmo tipo de confundidor do índice de defesa (Achado 18), agora confirmado com um mecanismo concreto (pressão sofrida) em vez de só suspeitado.
+
+### Ressalvas
+
+- **Dois times, uma temporada** — mesma ressalva dos Achados 17/18: são os extremos da liga, não uma amostra de vários pares.
+- **PPDA aqui é aproximado**: a definição padrão usa passe tentado (não só completo) do adversário nos 2/3 defensivos dele, e ação defensiva (desarme+interceptação+falta) do time nos 2/3 ofensivos dele — implementado com a mesma grade de terços (sem corredores) usada nos Achados 12/15/17, sobre os eventos StatsBomb já em cache. Valores absolutos podem diferir ligeiramente de PPDA "oficial" de outras fontes, mas a comparação relativa Barcelona×Espanyol é internamente consistente (mesma metodologia nos dois).
+
+Descritivo, sem IC 95%.
+
+---
+
 ## Lição de método (vale além deste projeto)
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
