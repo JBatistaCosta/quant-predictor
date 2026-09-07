@@ -1155,12 +1155,72 @@ Faixa estreita (67-78%) em 15 competições diferentes — não é um problema d
 
 ### Prático — o que isso destrava pra índice individual/setorial por jogo e presença/ausência
 
-- **Correção já aplicada** (`arquivos_do_claude/ingestao_fotmob.py`): troca `"Tackles won"` por `"Tackles"`. Vale pra ingestões novas a partir de agora.
-- **Não corrige retroativamente** as 1.082.777 linhas já gravadas — pra isso precisaria de um backfill que reprocessa o `stats_raw` já salvo (é só um `UPDATE` com `jsonb` parsing, não uma nova raspagem). **Não executado nesta investigação** — é escrita em massa em tabela de produção, fica pra confirmação antes de rodar.
-- Com o backfill, `match_player_stats_fotmob` passa a sustentar de verdade o que a resposta anterior propôs: índice individual por jogo (já pronto: `rating`, `xg`, `chances_created`, `touches`, `accurate_passes`), índice setorial por jogo (agrupando por posição, agora com desarme por jogador utilizável), e comparação de presença/ausência normalizada por `minutes_played` — sem precisar de nenhuma raspagem nova, o dado já está no banco.
+- **Correção aplicada** (`arquivos_do_claude/ingestao_fotmob.py`): troca `"Tackles won"` por `"Tackles"`. Vale pra ingestões novas a partir de agora.
+- **Backfill executado** nas linhas já gravadas (ver acima) — `tackles`, `interceptions`, `touches_opp_box`, `ground_duels_won` e `aerials_won` já estão promovidos a partir do `stats_raw` existente, sem raspagem nova.
+- Com o backfill feito, `match_player_stats_fotmob` já sustenta de verdade o que a resposta anterior propôs: índice individual por jogo (`rating`, `xg`, `chances_created`, `touches`, `accurate_passes`, `tackles`, `interceptions`), índice setorial por jogo (agrupando por posição), e comparação de presença/ausência normalizada por `minutes_played` — sem precisar de nenhuma raspagem nova, o dado já está no banco.
 - Ressalva que continua valendo: nada disso tem localização em campo (zona) por jogador — só `match_shots_fotmob` tem x/y por jogador (chute). Desarme/interceptação por jogador dizem "quanto", não "onde".
 
 Descritivo, sem IC 95%.
+
+---
+
+## Achado 24 — falta por zona e momento do jogo é real; falta por "estado do jogo" era confundida por força de equipe
+
+Pergunta de acompanhamento ao Achado 21: dá pra estimar chance de falta por setor do campo e por momento da partida? Usando o mesmo cache de eventos brutos StatsBomb (Barcelona + Espanyol, 74 partidas, La Liga 2015/16) — é o único dado do projeto com localização E minuto por falta ao mesmo tempo; o FotMob moderno (outras ligas) só tem falta total por partida, sem zona nem minuto, mesma limitação já registrada no Achado 21.
+
+Taxa = faltas cometidas ÷ ações com bola (`Pass`/`Carry`/`Dribble`/`Shot`/`Duel`/`Interception`/`Clearance`) na mesma zona/janela, ×1000 — normaliza por oportunidade, não é falta bruta.
+
+### Por zona do campo — sobrevive ao controle por time
+
+| Zona | Barcelona | Espanyol |
+|---|---|---|
+| Defensiva | 5,90 | 16,94 |
+| Meio-campo | 8,82 | **26,86** |
+| Ataque | 9,32 | 23,94 |
+
+Meio-campo tem a maior taxa nos dois times (defesa é sempre a menor) — o padrão se mantém dentro de cada time separadamente, não é artefato de somar os dois.
+
+### Por momento do jogo (bloco de 15min) — também sobrevive ao controle por time
+
+| | 00-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75+ |
+|---|---|---|---|---|---|---|
+| Barcelona | 6,18 | 9,09 | **9,88** | 6,15 | 9,36 | **10,09** |
+| Espanyol | 20,65 | 24,66 | **27,81** | 21,39 | 21,13 | **25,68** |
+
+Mesmo formato nos dois times — pico perto do intervalo (30-45) e pico no fim do jogo (75+), vale perto do início de cada tempo (00-15 e 45-60). Padrão de "fadiga por bloco de tempo" real, não confundido por time.
+
+### Por estado do jogo (ganhando/empatando/perdendo) — **não sobrevive**, é o mesmo tipo de armadilha do Achado 3/18
+
+Juntando os dois times, o resultado parecia bonito e intuitivo (hipótese "falta de frustração"):
+
+| Estado | Taxa (pooled) |
+|---|---|
+| Ganhando | 12,71 |
+| Empatando | 14,03 |
+| Perdendo | **17,44** |
+
+Só que **dentro de cada time** o padrão desaparece — e no Espanyol até inverte:
+
+| Estado | Barcelona | Espanyol |
+|---|---|---|
+| Ganhando | 8,65 | **27,79** |
+| Empatando | 7,89 | 24,47 |
+| Perdendo | 8,43 | 20,58 |
+
+Barcelona é essencialmente plano nos três estados (~8/1000, sem gradiente); Espanyol **cai** conforme perde, o oposto da hipótese de frustração. O resultado agregado (perdendo > empatando > ganhando) existia só porque **Espanyol comete falta ~3x mais que Barcelona em qualquer estado**, e Espanyol também é quem mais fica no estado "perdendo" na amostra (13.945 ações vs. só 4.864 do Barcelona) — o "efeito do estado" era na real o efeito de qual time domina aquele bucket, o exato padrão do Achado 3 (e do Achado 18, pra correlação de defesa/embate) com um recorte novo.
+
+### O que sobra de real
+
+- **Zona e momento do relógio são preditores válidos de falta**, testados com controle de time. Estado do jogo (placar) **não é** — nesta amostra, "time perde → comete mais falta" é confundido por "time fraco perde mais E comete mais falta sempre".
+- **Achado lateral que já bate com o Achado 21**: Espanyol comete falta a uma taxa 2-3x maior que Barcelona em toda zona e todo momento — consistente com a hipótese ainda não fechada do Achado 21 (Frente 1) de que desarme sem pressão organizada/de time mais fraco tende a sair mais frequentemente em falta.
+
+### Ressalvas
+
+- 2 times, 1 temporada — mesma amostra de sempre nesta frente. Só dá pra checar "dentro do time" com 2 times; não dá pra saber se o achado de zona/momento generaliza pra times de força intermediária.
+- Denominador é proxy de ações com bola, não minutagem real de posse.
+- Estado do jogo aqui usa placar acumulado por ordem de `index` do evento (StatsBomb), reconstruído incluindo gol contra (`Own Goal For`/`Against`) — não usa `match_team_game_state` (Fase 2, FotMob) porque essa infraestrutura foi construída sobre chutes, não sobre falta.
+
+Descritivo, sem IC 95%. **Lição de método reafirmada**: nunca aceitar um efeito por "estado"/"situação" sem testar dentro de cada unidade que poderia estar confundindo (aqui, o time) — é o terceiro recorte diferente (Achado 3, Achado 18, agora falta) em que a mesma armadilha aparece.
 
 ---
 
@@ -1168,9 +1228,10 @@ Descritivo, sem IC 95%.
 
 **Invariantes internas provam que a derivação está certa. Não provam que a interpretação está.**
 
-Aconteceu três vezes nesta frente:
+Aconteceu várias vezes nesta frente:
 
 - O **Achado 3** passou em todas as invariantes (espelhamento perfeito, minutos fechando) e mesmo assim a conclusão agregada estava confundida com força de equipe.
+- O **Achado 24** (falta por estado do jogo) reproduziu o mesmo confundidor do Achado 3, num recorte novo (falta, não xG) — o efeito "perdendo comete mais falta" só existia agregando dois times; dentro de cada time separadamente, desaparecia ou invertia. A checagem que expôs foi a mesma dos casos anteriores: separar por time antes de aceitar o efeito por estado.
 - O **Achado 5** era um bug de ordenação que reconciliava perfeitamente em todos os totais, porque totais não têm ordem.
 - O **Achado 13** (escanteio/falta via StatsBomb) reproduziu **o mesmo bug do Achado 5** — 2º tempo com minuto reiniciando em vez de continuar — numa fonte de dado completamente diferente, meses depois de já saber exatamente que padrão procurar. Só não passou pro arquivo final porque o usuário perguntou "isso não pode ser artefato do intervalo?" antes de eu dar o achado por fechado.
 - O **Achado 11** (correlação StatsBomb×FotMob) publicou um r=0,983 pra escanteio que já parecia bom — só numa revisão pedida depois é que apareceu um bug de atribuição casa/fora (nomes tipo "Rayo Vallecano **de Madrid**" casando por engano com "Real **Madrid**") que estava jogando o r pra baixo sem parecer errado: 834 linhas com ~14 mal-atribuídas ainda dão uma correlação "boa o suficiente" pra não levantar suspeita. Corrigido, o r subiu pra 0,999. **Um coeficiente agregado plausível não garante que cada linha está emparelhada certo** — o que expôs foi olhar os maiores resíduos individuais (a partida com a maior diferença SB-FotMob), não o r em si.
