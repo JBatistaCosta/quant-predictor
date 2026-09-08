@@ -138,7 +138,30 @@ Metodologia idêntica à de escanteios (`backtest_kelly.comparar_pareado_com_mer
 
 **Padrão que sobrevive às 3 casas (candidato mais forte a edge real, não só artefato de casa mole):** linhas altas — total 5.5/6.5, mandante 2.5-4.5, visitante 2.5-4.5 — vencem ou empatam (nunca perdem) nas 3 comparações onde há dado. Linhas baixas/centrais — total 1.5-4.5, mandante/visitante 0.5-1.5 — são onde a Pinnacle contradiz o bet365, incluindo a linha de maior amostra de toda a análise (total 3.5).
 
-**Decisão: NÃO promover a "oficial"/`models_registry`, mesma postura de escanteios.** Não há evidência convincente de "bate o mercado" — há sinal promissor e consistente nas linhas altas (2.5-4.5 por time, 5.5-6.5 total), mas a linha mais líquida/testável (total 3.5) mostra a Pinnacle vencendo com a maior amostra da análise inteira. Como escanteios, "não-inferior" nas linhas centrais é ausência de evidência de diferença contra Pinnacle, não prova de equivalência.
+**Não é só ONDE vence -- é COMO vence (08/09), e isso muda a leitura do achado.** Pedido do usuário: simular a aposta de verdade (lado que o modelo favorece — over se `p_model>0.5`, senão under —, odd REAL da casa, não a devigada) e medir ROI realizado por aposta + taxa de acerto + % de apostas em cada lado, nas 3 casas separadamente. Método: mesmo bootstrap pareado de sempre, mas em cima do retorno por unidade apostada (`odd-1` se acerta, `-1` se erra), não do log-loss.
+
+| Linha/lado | Casa | n | % apostas em "over" | Taxa de acerto | ROI realizado (IC95%) | EV teórico do modelo |
+|---|---|---|---|---|---|---|
+| Total 1.5 | bet365 | 107 | 100% | 65,4% | **-28,0%** [-38,2%,-18,2%] | -7,4% |
+| Total 4.5 | bet365 | 107 | 15% | 73,8% | **+27,3%** [+11,3%,+43,3%] | +4,3% |
+| Total 5.5 | bet365 | 107 | 1% | 88,8% | **+23,9%** [+13,7%,+34,0%] | +0,2% |
+| Total 6.5 | bet365 | 107 | 0% | 95,3% | **+12,3%** [+6,6%,+17,3%] | -1,9% |
+| Total 1.5 | Betano | 28 | 100% | 50,0% | **-42,1%** [-63,1%,-21,0%] | -5,3% |
+| Total 5.5 | Betano | 76 | 1% | 89,5% | **+28,8%** [+16,2%,+40,6%] | +3,1% |
+| **Total 3.5 (maior n)** | **Pinnacle fech.** | **302** | 80% | 45,7% | **-14,5%** [-25,2%,-3,5%] | **+12,6%** |
+| Total 5.5 | Pinnacle fech. | 185 | 5% | 83,2% | **+38,7%** [+29,2%,+48,0%] | +11,1% |
+| Visitante 2.5 | bet365/Betano/Pinnacle | 84-104 | 4-6% | 74-79% | **+25,8% a +31,8%**, todas sig. | +3,7% a +6,1% |
+
+Tabela completa das 16×3 comparações não cabe aqui — ver histórico da sessão de 08/09 pra reproduzir (query ad-hoc + bootstrap local em Python, não persistido em script).
+
+**O padrão é idêntico nas 3 casas, e é isso que importa:** o modelo **não está discriminando partida a partida** — ele aposta quase sempre no mesmo lado óbvio pra cada linha (0-16% ou 80-100% em "over", quase nunca no meio). Isso é esperado estatisticamente (poucos jogos passam de 6,5 cartões; quase todos passam de 1,5), então "vencer" é menos sobre "o modelo entende a partida" e mais sobre **se a odd do lado óbvio ainda paga o suficiente**:
+- **Onde ganha** (linhas extremas — total 4.5+, por time 2.5+): taxa de acerto alta (74-100%) e a odd do favorito ainda compensa. Mas repare que o **EV teórico do próprio modelo costuma ser baixo ou até negativo** (total 6.5 bet365: -1,9%; home/away 3.5-4.5: -0,4% a +2,9%) mesmo com ROI realizado bem positivo — o modelo não está "prevendo" esse lucro, só acertando a base rate, e o lucro real vem de quanto a casa paga naquele lado, não de discriminação fina.
+- **Onde perde feio, de forma consistente**: apostar "over" na linha mais baixa do total (1.5) — perde nas 2 casas testadas (-28% bet365, -42% Betano), taxa de acerto só 50-65% a odds curtas.
+- **O achado mais sério: a linha mais líquida e com maior amostra de toda a análise (total 3.5, Pinnacle fechamento, n=302) mostra o modelo APOSTANDO ERRADO com convicção** — 80% das vezes aposta "over", acerta só 45,7% (pior que cara-ou-coroa), e o próprio modelo achava que tinha +12,6% de EV nessa aposta. Isso é sinal de miscalibração real na linha "de corte" (onde a decisão é genuinamente difícil), não coincidência de amostra pequena.
+
+**Leitura final, mais precisa que "bate o mercado nas linhas altas": nas pontas do mercado (linhas muito baixas ou muito altas) o modelo replica corretamente a base rate real de cartões e lucra porque a odd ali ainda compensa — isso pode ser um viés real e explorável das casas nas pontas (ou simplesmente amostra ainda pequena), não capacidade preditiva fina. Na linha "de corte" mais negociada (3.5 total) o modelo está genuinamente errado e overconfiante, com a maior amostra de toda a investigação comprovando isso.** Antes de qualquer uso real, valeria testar se apostar SÓ nas pontas (nunca nas linhas centrais 2.5-3.5) sustenta o ROI com mais dado.
+
+**Decisão: NÃO promover a "oficial"/`models_registry`, mesma postura de escanteios.** Não há evidência convincente de "bate o mercado" — há sinal promissor e consistente nas linhas altas (2.5-4.5 por time, 5.5-6.5 total), mas a linha mais líquida/testável (total 3.5) mostra a Pinnacle vencendo com a maior amostra da análise inteira, e agora sabemos que é porque o modelo está de fato overconfiante ali, não só "azar de amostra". Como escanteios, "não-inferior" nas linhas centrais é ausência de evidência de diferença contra Pinnacle, não prova de equivalência.
 
 **Implementação no sistema — tecnicamente pronta, mas não acionada de propósito.** `avaliar_modelo_persistido_vs_mercado()`/`MODELOS_CUSTOM_CARTOES`/`MODELOS_CUSTOM_CARTOES_TIME` (PRs #462/#463) já sabem gravar essas 16 linhas em `model_benchmarking_backtest` exatamente como fazem pra escanteios — falta só rodar `backtest_kelly.py` completo (script caro, ver nota de escanteios sobre 260min/`workflow_dispatch`) pra elas aparecerem no painel `/modelos → Backtest completo`. Betano já é uma das casas que `gravar_referencia_pinnacle_sem_vig`/o restante do script comparam (não é preciso código novo pra incluí-la). Optei por não disparar esse backtest completo agora: dado o resultado misto acima, rodá-lo geraria uma entrada no painel sem uma conclusão clara pra acompanhar — mais sensato esperar o cron diário (`prever_partidas_futuras_custom.yml`) acumular mais partidas de 2026 (dobrar/triplicar o n) e reavaliar, mesma lição do "esperar mais dado" registrada pra escanteios.
 
