@@ -101,6 +101,14 @@ TARGETS = {
         for lado in ("home", "away")
         for linha in dh.LINHAS_CARTOES_TIME_OU
     },
+    # Faltas -- SEM mercado real (ver comentário em treinar_modelo_custom.py),
+    # replicado aqui pela mesma disciplina dos dois scripts de treino.
+    **{
+        f"faltas_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_FALTAS_OU
+    },
 }
 
 _TARGET_PRED_META = {
@@ -128,6 +136,12 @@ _TARGET_PRED_META = {
         }
         for lado in ("home", "away")
         for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    **{
+        f"faltas_over_under_{linha}": {
+            "market": f"faltas_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_FALTAS_OU
     },
 }
 
