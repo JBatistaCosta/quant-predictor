@@ -75,6 +75,14 @@ TARGETS = {
         }
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
     },
+    # Cartões (mercado real de mercado chama "bookings", ver dh.LINHAS_CARTOES_OU) --
+    # mesmo padrão de generalização usado pra escanteios.
+    **{
+        f"cartoes_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_cartoes_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CARTOES_OU
+    },
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -106,6 +114,12 @@ _TARGET_PRED_META = {
             "market": f"corners_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
         }
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
+    **{
+        f"cartoes_over_under_{linha}": {
+            "market": f"cartoes_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CARTOES_OU
     },
 }
 
@@ -511,6 +525,10 @@ _MERCADO_POR_TARGET = {
     **{
         f"corners_over_under_{linha}": (f"corners_over_under_{linha}", ["under", "over"])
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
+    **{
+        f"cartoes_over_under_{linha}": (f"cartoes_over_under_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_CARTOES_OU
     },
 }
 
