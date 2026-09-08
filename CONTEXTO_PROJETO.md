@@ -9,14 +9,36 @@
 3. **Por que o `hibrido_gols_v1` erra**: não é viés de escala (`corners_lambda_total` médio 9,82 vs. λ implícito do mercado 9,66 — viés de só +1,6%), é correlação partida-a-partida fraca (r=0,506 contra o λ do mercado invertido via Poisson nas odds Pinnacle, n=497). O modelo até tem os insumos certos (`media_escanteios_5j_home/away`, mando separado, via FBref, desde a v7 de `FEATURES_NUMERICAS_V7`) — não é ausência de feature óbvia, é o modelo não estar diferenciando confrontos do jeito que o mercado diferencia.
 4. **Já existe um modelo melhor treinado, mas órfão.** `custom_model_configs` id `649205e3-f71f-4626-a399-29ad181f4b90` ("Escanteios — FBref + FotMob", target `corners_over_under_9.5`, 6 ligas — `league_ids [1,13,7,10,4,16]`, treinado uma vez em 09/08/2026) bate `hibrido_gols_v1` cabeça a cabeça nos MESMOS 950 jogos (log-loss 0,6972 vs. 0,7025; Brier 0,2520 vs. 0,2546; vence em 482/950 partidas individualmente vs. 468) — vitória real mas modesta, não resolveria sozinha o item 1. **Não está em `models_registry`** (tabela de catálogo oficial) e suas 2.102 previsões salvas **não têm nenhuma sobreposição com partidas que têm odd Pinnacle registrada** — não investigado a fundo se o cron diário (`prever_partidas_futuras_custom.yml`, `0 5 * * *`, já aplica toda config `status='treinado'` sobre partidas `scheduled`) está de fato gerando previsão nova todo dia pra essa config ou travou logo depois do treino inicial.
 
-**Plano de troca, NENHUM passo executado ainda:**
-- [ ] Confirmar se `prever_partidas_futuras_custom.yml` está rodando de verdade pra essa config (checar `model_predictions` por `created_at` recente com esse `model_name`, não só o total de linhas).
-- [ ] Re-treinar com `treinar_modelo_custom_wf.py` (walk-forward, não o snapshot único de agosto) pra confirmar que a vantagem sobre `hibrido_gols_v1` se sustenta fora da amostra de treino original.
-- [ ] Comparar também contra `stats_glm_v1`/`model_stat_estimates` (o pipeline que **realmente** alimenta `api/corners-model.js` em produção hoje — GLM Poisson de `modelo_stats_esperadas.py`, um TERCEIRO modelo, nem `hibrido_gols_v1` nem o custom xgboost) — não comparado ainda nesta investigação.
-- [ ] Registrar em `models_registry` se confirmado (hoje ausente de lá).
-- [ ] Decidir o que "virar o modelo oficial" significa na prática: não existe hoje um único "modelo escolhido" pro usuário — `AnaliseEstatisticaJogo.jsx`/`AnaliseAvancadaEvento.jsx` mostram TODOS os `model_name` de `model_predictions` lado a lado (dropdown de comparação, sem "recomendado" automático). A decisão real é sobre quem entra no cron/Kelly/paper trading como candidato padrão, não sobre trocar uma linha de código.
+**Atualização 08/09 — modelo dedicado estendido pras 6 linhas, retreinado via walk-forward, comparado com `hibrido_gols_v1` E `stats_glm_v1`. Resultado: NÃO reproduz a vitória de 9.5 nas outras linhas.**
 
-Ver histórico completo da investigação na sessão de 07/09 se precisar dos números exatos das consultas SQL (não persistidos em nenhum script, foram ad-hoc via `execute_sql`).
+Trabalho feito (PRs #452/#453/#454): generalizado `corners_over_under_9.5` pras 6 linhas reais de mercado (7.5/8.5/9.5/10.5/11.5/12.5, `dh.LINHAS_CORNERS_OU_EXTRA`) em `dados_historicos.py`/`treinar_modelo_custom.py`/`TreinoCustom.jsx`; adicionadas 3 features novas (`media_posse_5j_*`, `media_ppda_5j_*`, `media_deep_completions_5j_*` — testadas por correlação direta no banco, sobrevivem ao controle por Elo, diferente do índice lateral/central do Achado 12 e do xG total do game-state, que são confound puro de "time melhor"); criadas 5 configs novas em `custom_model_configs` clonando o template de 9.5 (16 features, `algorithms=["xgboost","random_forest"]`, `walk_forward_cv`); todas as 6 treinadas com sucesso via `treinar_modelo_custom_wf.py` em 08/09 (não o snapshot único de agosto).
+
+**Bug real encontrado e corrigido no caminho (PR #454)**: `treinar_modelo_custom.py` (script "simples") teve seu `TARGETS` estendido no PR #452, mas as 6 configs são `mode='walk_forward_cv'` — rodam `treinar_modelo_custom_wf.py`, um script SEPARADO com seu próprio `TARGETS`/`_TARGET_PRED_META` hardcoded, não atualizado. Ao disparar o treino das 6, 5 falharam com `Target não suportado` (só 9.5 já existia nesse script). Corrigido com a mesma generalização (`dh.LINHAS_CORNERS_OU_EXTRA`). Vale lembrar disso da próxima vez que um mercado novo for estendido: **conferir os DOIS scripts de treino**, não só um.
+
+**Head-to-head de 3 vias** (log-loss/Brier, partidas em comum, `match_stats_fotmob` como fonte do resultado real — `sum(corners) GROUP BY match_id HAVING count(*)=2`; melhor dos dois algoritmos do modelo dedicado por linha):
+
+| Linha | n comum | log-loss dedicado | log-loss híbrido | log-loss stats_glm | Brier dedicado | Brier híbrido | Brier stats_glm | Vencedor |
+|---|---|---|---|---|---|---|---|---|
+| 7.5 | 951 | 0,6052 (xgb) | 0,6067 | — | 0,2072 | 0,2073 | — | dedicado (margem mínima) |
+| 8.5 | 951 | 0,6851 (rf) | **0,6819** | — | 0,2452 | **0,2440** | — | híbrido |
+| 9.5 | 951 (672 c/ stats_glm) | **0,6987 (xgb)** | 0,7026 | 0,7053 | **0,2526** | 0,2546 | 0,2548 | dedicado |
+| 10.5 | 951 | 0,6703 (rf) | 0,6709 | — | 0,2384 | 0,2388 | — | dedicado (margem mínima) |
+| 11.5 | 951 | 0,5962 (rf) | 0,5962 | — | 0,2026 | 0,2026 | — | empate técnico |
+| 12.5 | 951 | 0,4942 (rf) | **0,4910** | — | 0,1569 | **0,1551** | — | híbrido |
+
+**Leitura honesta**: a vitória clara do dedicado em 9.5 (achado original desta investigação) **não se generalizou** pras outras 5 linhas — nelas o resultado é essencialmente empate (margens de 0,001-0,003 em log-loss, dentro do ruído esperado pra n=951) ou o híbrido leva ligeira vantagem (8.5, 12.5). `stats_glm_v1` só tem predição pra 9.5 (não cobre as outras 5 linhas) — perde nas 3 vias ali. Hipótese não testada pra explicar por que só 9.5 funcionou: é a linha historicamente mais negociada (mais dado de treino/mercado por partida), ou o conjunto de 6 ligas do `league_ids` da config tem viés de composição que favorece especificamente essa linha — não investigado.
+
+**Decisão pendente**: com esse resultado, promover o modelo dedicado a "oficial" só faz sentido pra 9.5 (onde a vantagem é real, ainda que modesta — ver item 4 abaixo) — não pras outras 5 linhas, que ficam mais como "mais uma opção no dropdown" do que substituto do híbrido.
+
+**Plano de troca, atualizado — itens ainda não feitos:**
+- [ ] Confirmar se `prever_partidas_futuras_custom.yml` está rodando de verdade pra essas 6 configs (checar `model_predictions` por `created_at` recente com esses `model_name`, não só o total de linhas) — mesma dúvida de antes, ainda não resolvida agora que há 6 configs em vez de 1.
+- [x] Re-treinar com `treinar_modelo_custom_wf.py` (walk-forward) — feito 08/09, todas as 6 linhas.
+- [x] Comparar contra `stats_glm_v1` — feito, só cobre 9.5 (ver tabela acima).
+- [ ] Registrar em `models_registry` se confirmado (hoje ausente de lá) — só faria sentido pra 9.5 dado o resultado acima.
+- [ ] Decidir o que "virar o modelo oficial" significa na prática: não existe hoje um único "modelo escolhido" pro usuário — `AnaliseEstatisticaJogo.jsx`/`AnaliseAvancadaEvento.jsx` mostram TODOS os `model_name` de `model_predictions` lado a lado (dropdown de comparação, sem "recomendado" automático). A decisão real é sobre quem entra no cron/Kelly/paper trading como candidato padrão, não sobre trocar uma linha de código.
+- [ ] Escanteio POR TIME (mercados reais `corners_over_under_team_1_{linha}`/`team_2_{linha}`, cobertura real em `odds_market` até ~2.100 partidas/linha) — pedido pelo usuário em 08/09, ainda NÃO implementado. Precisaria de alvo novo (`resultado_corners_time_ou{linha}` a partir de `total_corners_home`/`total_corners_away`, já existentes no dataset só pro split Beta-Binomial) nos mesmos 3 arquivos generalizados nesta rodada — escopo do mesmo tamanho do que foi feito agora, não um ajuste pequeno. Adiado até decidir se vale a pena dado o resultado modesto acima.
+
+Ver histórico completo da investigação nas sessões de 07-08/09 se precisar dos números exatos das consultas SQL (não persistidos em nenhum script, foram ad-hoc via `execute_sql`).
 
 **Os achados desta frente foram consolidados em `ACHADOS_COMPORTAMENTO.md`** (arquivo novo, 05/09) — leia ele para o conteúdo; esta seção guarda só o estado.
 
