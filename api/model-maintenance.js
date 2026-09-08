@@ -2296,7 +2296,12 @@ function montarLinhasPerfilJogador(playerId, payload) {
   // Yamal). Vem em `payload.birthDate.utcTime`, campo separado no payload —
   // achado corrigindo um bug real: extração antiga sempre resultava em null,
   // então `players.birth_date` nunca era preenchido por nenhum sync.
-  const birthDate = parseDataFotmob(payload.birthDate?.utcTime ?? null);
+  // "0001-01-01" é o placeholder que o FotMob usa pra "nascimento
+  // desconhecido" (DateTime.MinValue do .NET) — achado processando o
+  // backfill (jogador "Harry Lister", fotmob_player_id=1816302) — não é uma
+  // data real, precisa virar null igual a ausência do campo.
+  const birthUtc = payload.birthDate?.utcTime ?? null;
+  const birthDate = birthUtc && !birthUtc.startsWith('0001-01-01') ? parseDataFotmob(birthUtc) : null;
   const countryCode = payload.ccode ?? payload.countryCode ?? null;
 
   const posDesc = payload.positionDescription || {};
