@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -46,10 +46,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger("treinar_modelo_custom_wf")
 
+
+# Fold 3 termina no ano fechado (2025) por padrão, mas isso deixa o teste sem
+# nenhuma partida de 2026+ -- e é justo em 2026 que a Pinnacle passou a cobrir
+# odds de escanteios (não cobria antes). Sem partida de teste recente, o
+# modelo nunca gera previsão em janela comparável à Pinnacle (zero overlap
+# real, achado em 08/09). `test_fim` estende o fold 3 até hoje-3 dias (folga
+# pra garantir que o resultado real já foi liquidado/sincronizado em
+# match_stats_fotmob antes do treino rodar) em vez de parar em 31/12/2025 --
+# só finished entra de qualquer forma, via `dropna(subset=[target])` em
+# `preparar_dataset_customizado`.
+_CORTE_FOLD3_TESTE = (datetime.now(timezone.utc) - timedelta(days=3)).date()
+
 FOLDS = [
     {"nome": "fold_1", "treino_max_ano": 2021, "val_ano": 2022, "test_ano": 2023},
     {"nome": "fold_2", "treino_max_ano": 2022, "val_ano": 2023, "test_ano": 2024},
-    {"nome": "fold_3", "treino_max_ano": 2023, "val_ano": 2024, "test_ano": 2025},
+    {"nome": "fold_3", "treino_max_ano": 2023, "val_ano": 2024, "test_ano": 2025, "test_fim": _CORTE_FOLD3_TESTE},
 ]
 
 TARGETS = {
@@ -202,11 +214,24 @@ def carregar_dataset(
     return dataset, features
 
 
-def split_por_fold(dataset: pd.DataFrame, treino_max_ano: int, val_ano: int, test_ano: int):
-    anos = pd.to_datetime(dataset["match_date"]).dt.year
+def split_por_fold(
+    dataset: pd.DataFrame, treino_max_ano: int, val_ano: int, test_ano: int, test_fim=None,
+):
+    """`test_fim` (opcional, um `date`) estende a janela de teste além do fim
+    do `test_ano` até essa data (inclusive) -- pensado pro fold mais recente,
+    pra não deixar o teste preso a 31/12 de um ano fechado quando o objetivo é
+    cobrir partida recente de verdade (ver comentário em `FOLDS`). Sem
+    `test_fim`, comportamento idêntico ao original (teste = só o `test_ano`)."""
+    datas = pd.to_datetime(dataset["match_date"], utc=True)
+    anos = datas.dt.year
     train_df = dataset[anos <= treino_max_ano].copy()
     val_df   = dataset[anos == val_ano].copy()
-    test_df  = dataset[anos == test_ano].copy()
+    if test_fim is not None:
+        inicio_teste = pd.Timestamp(f"{test_ano}-01-01", tz="UTC")
+        fim_teste = pd.Timestamp(test_fim, tz="UTC") + pd.Timedelta(days=1)
+        test_df = dataset[(datas >= inicio_teste) & (datas < fim_teste)].copy()
+    else:
+        test_df = dataset[anos == test_ano].copy()
     return train_df, val_df, test_df
 
 
@@ -517,7 +542,7 @@ def main():
             logger.info("── %s ─────────────────────────────────────", fold_nome)
 
             train_df, val_df, test_df = split_por_fold(
-                dataset, fold["treino_max_ano"], fold["val_ano"], fold["test_ano"]
+                dataset, fold["treino_max_ano"], fold["val_ano"], fold["test_ano"], fold.get("test_fim")
             )
 
             if train_df.empty or test_df.empty:
@@ -532,6 +557,7 @@ def main():
                 "treino_max_ano": fold["treino_max_ano"],
                 "val_ano":       fold["val_ano"],
                 "test_ano":      fold["test_ano"],
+                "test_fim":      str(fold["test_fim"]) if fold.get("test_fim") else None,
                 "n_treino":      len(train_df),
                 "n_val":         len(val_df),
                 "n_test":        len(test_df),
