@@ -28,6 +28,7 @@ import datetime as dt
 import gzip
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -72,8 +73,14 @@ def _upsert_em_fatias(supabase, tabela: str, linhas: list, on_conflict: str) -> 
 
 
 def _parse_data(s) -> str | None:
-    if not s:
+    # careerHistory.teamEntries[].startDate/.endDate às vezes vem como epoch em
+    # MILISSEGUNDOS (transferência já assinada com início futuro) em vez da
+    # string "YYYY-MM-DD..." usada no resto do payload — fatiar direto gera
+    # lixo tipo "1782864000", que o Postgres rejeita.
+    if s is None or s == "":
         return None
+    if isinstance(s, (int, float)) or re.fullmatch(r"\d{11,}", str(s)):
+        return dt.datetime.fromtimestamp(int(s) / 1000, tz=dt.timezone.utc).date().isoformat()
     return str(s)[:10]  # YYYY-MM-DD, corta hora se vier junto
 
 
