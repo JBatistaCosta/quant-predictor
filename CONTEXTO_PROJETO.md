@@ -45,7 +45,27 @@ Trabalho feito (PRs #452/#453/#454): generalizado `corners_over_under_9.5` pras 
 
 Mesmo padrão: mercado (Pinnacle ou Betano) vence o dedicado em quase toda linha, com uma única exceção marginal (10.5 pré-fechamento, dedicado 0,7009 vs. Betano-não-medido/Pinnacle 0,7014 — margem desprezível, n pequeno). Betano dá cobertura útil onde a Pinnacle não tem (12.5 zerada em fechamento E pré-fechamento pra essas partidas).
 
-**Decisão**: nenhum modelo (dedicado ou híbrido) bate o mercado em escanteios, em nenhuma linha, com dado real de 2026. Promover o dedicado a "oficial" não se justifica hoje — o valor real desta rodada foi técnico (generalização de 1→6 linhas, 3 features novas testadas, bug do fold 3 corrigido, `backtest_kelly.py` agora sabe avaliar os modelos dedicados), não uma vitória de modelo pronta pra produção.
+**bet365 (a casa com mais cobertura no banco) cobre TODAS as 6 linhas em pré-fechamento com n consistente (123 partidas cada) — e aparentava dar 2 vitórias ao dedicado, mas o IC 95% derrubou as duas.** Comparando bet365 pré-fechamento (mesmas 123 partidas, melhor algoritmo por linha):
+
+| Linha | log-loss dedicado | log-loss bet365 | Vencedor no número bruto |
+|---|---|---|---|
+| 7.5 | 0,5845 | **0,5563** | bet365 |
+| 8.5 | 0,6795 | **0,6598** | bet365 |
+| 9.5 | 0,7215 | **0,6786** | bet365 |
+| 10.5 | **0,6869** | 0,6922 | dedicado (margem pequena) |
+| 11.5 | 0,6763 | **0,6574** | bet365 |
+| 12.5 | **0,6104** | 0,6130 | dedicado (margem pequena) |
+
+**Teste de significância (bootstrap PAREADO, mesmo método de `backtest_kelly.comparar_pareado_com_mercado` — reamostra a diferença de log-loss por partida, 10.000 reamostragens) nas duas linhas onde o dedicado aparentava vencer:**
+
+| Linha | n | diferença média (dedicado − bet365) | IC 95% | Conclusão |
+|---|---|---|---|---|
+| 10.5 | 123 | -0,0054 | [-0,0372, +0,0258] | IC cruza zero — **sem significância** |
+| 12.5 | 123 | -0,0026 | [-0,0340, +0,0263] | IC cruza zero — **sem significância** |
+
+**A vitória aparente em 10.5/12.5 é ruído de amostra, não edge real** — o IC 95% inclui zero nas duas, então não dá pra afirmar que o dedicado supera nem que o mercado supera nessas duas linhas especificamente (diferente das outras 4, onde a margem contra a Pinnacle/Betano é grande o suficiente pra não precisar de teste formal). Reforça ainda mais a leitura de baixo: nenhuma linha tem evidência estatística de que o dedicado bate o mercado.
+
+**Decisão**: nenhum modelo (dedicado ou híbrido) bate o mercado em escanteios, em nenhuma linha, com dado real de 2026 — nem no número bruto (4 de 6 linhas) nem depois de testar significância (as outras 2). Promover o dedicado a "oficial" não se justifica hoje — o valor real desta rodada foi técnico (generalização de 1→6 linhas, 3 features novas testadas, bug do fold 3 corrigido, `backtest_kelly.py` agora sabe avaliar os modelos dedicados), não uma vitória de modelo pronta pra produção.
 
 **Plano de troca, atualizado — itens ainda não feitos:**
 - [x] Confirmar overlap real com a Pinnacle — feito, era zero por causa do fold 3 (corrigido, PR #457).
