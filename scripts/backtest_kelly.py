@@ -272,6 +272,28 @@ MERCADOS_HIBRIDO_VALIDOS = {
     "over_under_3.5", "handicap_-2.0", "handicap_-1.0", "handicap_1.0", "handicap_2.0",
 }
 
+# Modelos dedicados de escanteios (`custom_model_configs`, treinados via
+# `treinar_modelo_custom_wf.py`, walk-forward CV) -- mesmo princípio do
+# modelo misto acima: previsões já persistidas em `model_predictions`, NUNCA
+# retreinadas aqui, só lidas e avaliadas com a mesma simulação de apostas
+# (`avaliar_modelo_persistido_vs_mercado`, reaproveitada pelos dois). Nomes
+# batem exatamente com `model_name_por_algo` de `treinar_modelo_custom_wf.py`
+# ("{config.name} [{algo}]") -- a config de 9.5 não leva sufixo de linha no
+# nome (criada antes das outras 5, ver PR #452/#453), as demais levam
+# "(O/U {linha})". Adicionado em 08/09 junto com a extensão de escanteios
+# pras 6 linhas reais de mercado.
+_NOME_CONFIG_CUSTOM_ESCANTEIOS = {"9.5": "Escanteios — FBref + FotMob"}
+for _linha_custom in ("7.5", "8.5", "10.5", "11.5", "12.5"):
+    _NOME_CONFIG_CUSTOM_ESCANTEIOS[_linha_custom] = f"Escanteios — FBref + FotMob (O/U {_linha_custom})"
+del _linha_custom
+
+MODELOS_CUSTOM_ESCANTEIOS: dict[str, tuple[str, ...]] = {
+    f"corners_over_under_{_linha_custom}": tuple(
+        f"{_nome_config_custom} [{_algo_custom}]" for _algo_custom in ("xgboost", "random_forest")
+    )
+    for _linha_custom, _nome_config_custom in _NOME_CONFIG_CUSTOM_ESCANTEIOS.items()
+}
+
 
 def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) -> int:
     """Mesma ideia de `rp._resultado_codigo`, mas escolhe o espaço de
@@ -1506,6 +1528,122 @@ def imprimir_relatorio_clv(resultados_clv: dict[str, dict]) -> None:
     logger.info("=" * 86)
 
 
+def avaliar_modelo_persistido_vs_mercado(
+    supabase, nome_modelo: str, mercado: str, nomes_liga: dict,
+    relatorio: list[dict], relatorio_por_liga: list[dict],
+) -> None:
+    """Avalia UM modelo cujas previsões já estão persistidas em
+    `model_predictions` (nunca retreinado aqui) contra o resultado real e as
+    odds de fechamento/abertura, no mesmo formato de linha usado pelos
+    modelos de árvore treinados neste script. Extraído do loop do modelo
+    misto pra ser reaproveitado também pelos modelos dedicados de escanteios
+    (`MODELOS_CUSTOM_ESCANTEIOS`) sem duplicar a lógica -- mesma leitura de
+    `model_predictions`, mesma simulação de apostas (`montar_apostas`/
+    `resumir_backtest`/`_metricas_probabilisticas`, todas genéricas)."""
+    try:
+        preds = carregar_predicoes_hibrido(supabase, nome_modelo, mercado)
+        if not preds:
+            logger.info("[%s] %s: sem previsões em model_predictions -- pulando.", mercado, nome_modelo)
+            return
+
+        match_ids_m = list(preds.keys())
+        resultados_m = carregar_resultados_reais_hibrido(supabase, match_ids_m, mercado)
+        match_ids_com_resultado_m = set(resultados_m.keys())
+        if not match_ids_com_resultado_m:
+            logger.info("[%s] %s: nenhum resultado real disponível -- pulando.", mercado, nome_modelo)
+            return
+
+        partidas_m = carregar_partidas_hibrido(supabase, match_ids_m)
+        liga_por_match_id_m = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_m.items()}
+
+        odds_fechamento_m = carregar_melhores_odds_fechamento(supabase, match_ids_m, mercado)
+        odds_abertura_m = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_m, mercado)
+
+        apostas_fechamento_m = montar_apostas(preds, odds_fechamento_m, resultados_m, liga_por_match_id_m, mercado)
+        apostas_abertura_m = montar_apostas(preds, odds_abertura_m, resultados_m, liga_por_match_id_m, mercado)
+        resumo_f_m = resumir_backtest(nome_modelo, apostas_fechamento_m, None)
+        resumo_a_m = resumir_backtest(nome_modelo, apostas_abertura_m, None)
+        log_loss_m, brier_m, accuracy_m, n_qualidade_m = _metricas_probabilisticas(
+            preds, resultados_m, match_ids_com_resultado_m, mercado
+        )
+
+        datas_m = [partidas_m[mid]["match_date"] for mid in match_ids_com_resultado_m if mid in partidas_m]
+        periodo_inicio_m = min(datas_m)[:10] if datas_m else None
+        periodo_fim_m = max(datas_m)[:10] if datas_m else None
+
+        relatorio.append({
+            "model_name": nome_modelo,
+            "mercado": mercado,
+            "periodo_inicio": periodo_inicio_m,
+            "periodo_fim": periodo_fim_m,
+            "treino_periodo_inicio": None,
+            "treino_periodo_fim": None,
+            "validacao_periodo_inicio": None,
+            "validacao_periodo_fim": None,
+            "hiperparametros": None,
+            "n_apostas": resumo_f_m["n_apostas"],
+            "roi_medio": resumo_f_m["roi_medio"],
+            "roi_ic95_inferior": resumo_f_m["roi_ic95_inferior"],
+            "roi_ic95_superior": resumo_f_m["roi_ic95_superior"],
+            "significativo": resumo_f_m["significativo"],
+            "n_apostas_abertura": resumo_a_m["n_apostas"],
+            "roi_abertura_medio": resumo_a_m["roi_medio"],
+            "roi_abertura_ic95_inferior": resumo_a_m["roi_ic95_inferior"],
+            "roi_abertura_ic95_superior": resumo_a_m["roi_ic95_superior"],
+            "significativo_abertura": resumo_a_m["significativo"],
+            "log_loss": log_loss_m,
+            "brier": brier_m,
+            "accuracy": accuracy_m,
+            "n_amostras_qualidade": n_qualidade_m,
+        })
+
+        apostas_f_por_liga_m: dict[str, list[dict]] = {}
+        for a in apostas_fechamento_m:
+            apostas_f_por_liga_m.setdefault(a.get("liga") or "desconhecida", []).append(a)
+        apostas_a_por_liga_m: dict[str, list[dict]] = {}
+        for a in apostas_abertura_m:
+            apostas_a_por_liga_m.setdefault(a.get("liga") or "desconhecida", []).append(a)
+        match_ids_por_liga_m: dict[str, set[int]] = {}
+        for mid in match_ids_com_resultado_m:
+            match_ids_por_liga_m.setdefault(liga_por_match_id_m.get(mid) or "desconhecida", set()).add(mid)
+
+        for liga in set(apostas_f_por_liga_m) | set(apostas_a_por_liga_m) | set(match_ids_por_liga_m):
+            mids_liga = match_ids_por_liga_m.get(liga, set())
+            datas_liga = [partidas_m[mid]["match_date"] for mid in mids_liga if mid in partidas_m]
+            resumo_f_l = resumir_backtest(nome_modelo, apostas_f_por_liga_m.get(liga, []), None)
+            resumo_a_l = resumir_backtest(nome_modelo, apostas_a_por_liga_m.get(liga, []), None)
+            log_loss_l, brier_l, accuracy_l, n_qualidade_l = _metricas_probabilisticas(
+                preds, resultados_m, mids_liga, mercado
+            )
+            relatorio_por_liga.append({
+                "model_name": nome_modelo,
+                "liga": liga,
+                "mercado": mercado,
+                "periodo_inicio": min(datas_liga)[:10] if datas_liga else None,
+                "periodo_fim": max(datas_liga)[:10] if datas_liga else None,
+                "n_apostas": resumo_f_l["n_apostas"],
+                "roi_medio": resumo_f_l["roi_medio"],
+                "roi_ic95_inferior": resumo_f_l["roi_ic95_inferior"],
+                "roi_ic95_superior": resumo_f_l["roi_ic95_superior"],
+                "significativo": resumo_f_l["significativo"],
+                "n_apostas_abertura": resumo_a_l["n_apostas"],
+                "roi_abertura_medio": resumo_a_l["roi_medio"],
+                "roi_abertura_ic95_inferior": resumo_a_l["roi_ic95_inferior"],
+                "roi_abertura_ic95_superior": resumo_a_l["roi_ic95_superior"],
+                "significativo_abertura": resumo_a_l["significativo"],
+                "log_loss": log_loss_l,
+                "brier": brier_l,
+                "accuracy": accuracy_l,
+                "n_amostras_qualidade": n_qualidade_l,
+            })
+        imprimir_relatorio_qualidade([{
+            "nome": f"{nome_modelo} [{mercado}]", "log_loss": log_loss_m, "brier": brier_m,
+            "accuracy": accuracy_m, "n": n_qualidade_m,
+        }])
+    except Exception:
+        logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_modelo)
+
+
 # =============================================================================
 # Orquestração
 # =============================================================================
@@ -1846,108 +1984,13 @@ def main() -> None:
     # apostas/Kelly/bootstrap) dos outros modelos.
     for mercado in MERCADOS_HIBRIDO_VALIDOS:
         for nome_hibrido in MODELOS_HIBRIDOS:
-            try:
-                preds_hibrido = carregar_predicoes_hibrido(supabase, nome_hibrido, mercado)
-                if not preds_hibrido:
-                    logger.info("[%s] %s: sem previsões em model_predictions -- pulando.", mercado, nome_hibrido)
-                    continue
+            avaliar_modelo_persistido_vs_mercado(supabase, nome_hibrido, mercado, nomes_liga, relatorio, relatorio_por_liga)
 
-                match_ids_h = list(preds_hibrido.keys())
-                resultados_hibrido = carregar_resultados_reais_hibrido(supabase, match_ids_h, mercado)
-                match_ids_com_resultado_h = set(resultados_hibrido.keys())
-                if not match_ids_com_resultado_h:
-                    logger.info("[%s] %s: nenhum resultado real disponível -- pulando.", mercado, nome_hibrido)
-                    continue
-
-                partidas_hibrido = carregar_partidas_hibrido(supabase, match_ids_h)
-                liga_por_match_id_h = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_hibrido.items()}
-
-                odds_fechamento_h = carregar_melhores_odds_fechamento(supabase, match_ids_h, mercado)
-                odds_abertura_h = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_h, mercado)
-
-                apostas_fechamento_h = montar_apostas(preds_hibrido, odds_fechamento_h, resultados_hibrido, liga_por_match_id_h, mercado)
-                apostas_abertura_h = montar_apostas(preds_hibrido, odds_abertura_h, resultados_hibrido, liga_por_match_id_h, mercado)
-                resumo_f_h = resumir_backtest(nome_hibrido, apostas_fechamento_h, None)
-                resumo_a_h = resumir_backtest(nome_hibrido, apostas_abertura_h, None)
-                log_loss_h, brier_h, accuracy_h, n_qualidade_h = _metricas_probabilisticas(
-                    preds_hibrido, resultados_hibrido, match_ids_com_resultado_h, mercado
-                )
-
-                datas_h = [partidas_hibrido[mid]["match_date"] for mid in match_ids_com_resultado_h if mid in partidas_hibrido]
-                periodo_inicio_h = min(datas_h)[:10] if datas_h else None
-                periodo_fim_h = max(datas_h)[:10] if datas_h else None
-
-                relatorio.append({
-                    "model_name": nome_hibrido,
-                    "mercado": mercado,
-                    "periodo_inicio": periodo_inicio_h,
-                    "periodo_fim": periodo_fim_h,
-                    "treino_periodo_inicio": None,
-                    "treino_periodo_fim": None,
-                    "validacao_periodo_inicio": None,
-                    "validacao_periodo_fim": None,
-                    "hiperparametros": None,
-                    "n_apostas": resumo_f_h["n_apostas"],
-                    "roi_medio": resumo_f_h["roi_medio"],
-                    "roi_ic95_inferior": resumo_f_h["roi_ic95_inferior"],
-                    "roi_ic95_superior": resumo_f_h["roi_ic95_superior"],
-                    "significativo": resumo_f_h["significativo"],
-                    "n_apostas_abertura": resumo_a_h["n_apostas"],
-                    "roi_abertura_medio": resumo_a_h["roi_medio"],
-                    "roi_abertura_ic95_inferior": resumo_a_h["roi_ic95_inferior"],
-                    "roi_abertura_ic95_superior": resumo_a_h["roi_ic95_superior"],
-                    "significativo_abertura": resumo_a_h["significativo"],
-                    "log_loss": log_loss_h,
-                    "brier": brier_h,
-                    "accuracy": accuracy_h,
-                    "n_amostras_qualidade": n_qualidade_h,
-                })
-
-                apostas_f_por_liga_h: dict[str, list[dict]] = {}
-                for a in apostas_fechamento_h:
-                    apostas_f_por_liga_h.setdefault(a.get("liga") or "desconhecida", []).append(a)
-                apostas_a_por_liga_h: dict[str, list[dict]] = {}
-                for a in apostas_abertura_h:
-                    apostas_a_por_liga_h.setdefault(a.get("liga") or "desconhecida", []).append(a)
-                match_ids_por_liga_h: dict[str, set[int]] = {}
-                for mid in match_ids_com_resultado_h:
-                    match_ids_por_liga_h.setdefault(liga_por_match_id_h.get(mid) or "desconhecida", set()).add(mid)
-
-                for liga in set(apostas_f_por_liga_h) | set(apostas_a_por_liga_h) | set(match_ids_por_liga_h):
-                    mids_liga = match_ids_por_liga_h.get(liga, set())
-                    datas_liga = [partidas_hibrido[mid]["match_date"] for mid in mids_liga if mid in partidas_hibrido]
-                    resumo_f_l = resumir_backtest(nome_hibrido, apostas_f_por_liga_h.get(liga, []), None)
-                    resumo_a_l = resumir_backtest(nome_hibrido, apostas_a_por_liga_h.get(liga, []), None)
-                    log_loss_l, brier_l, accuracy_l, n_qualidade_l = _metricas_probabilisticas(
-                        preds_hibrido, resultados_hibrido, mids_liga, mercado
-                    )
-                    relatorio_por_liga.append({
-                        "model_name": nome_hibrido,
-                        "liga": liga,
-                        "mercado": mercado,
-                        "periodo_inicio": min(datas_liga)[:10] if datas_liga else None,
-                        "periodo_fim": max(datas_liga)[:10] if datas_liga else None,
-                        "n_apostas": resumo_f_l["n_apostas"],
-                        "roi_medio": resumo_f_l["roi_medio"],
-                        "roi_ic95_inferior": resumo_f_l["roi_ic95_inferior"],
-                        "roi_ic95_superior": resumo_f_l["roi_ic95_superior"],
-                        "significativo": resumo_f_l["significativo"],
-                        "n_apostas_abertura": resumo_a_l["n_apostas"],
-                        "roi_abertura_medio": resumo_a_l["roi_medio"],
-                        "roi_abertura_ic95_inferior": resumo_a_l["roi_ic95_inferior"],
-                        "roi_abertura_ic95_superior": resumo_a_l["roi_ic95_superior"],
-                        "significativo_abertura": resumo_a_l["significativo"],
-                        "log_loss": log_loss_l,
-                        "brier": brier_l,
-                        "accuracy": accuracy_l,
-                        "n_amostras_qualidade": n_qualidade_l,
-                    })
-                imprimir_relatorio_qualidade([{
-                    "nome": f"{nome_hibrido} [{mercado}]", "log_loss": log_loss_h, "brier": brier_h,
-                    "accuracy": accuracy_h, "n": n_qualidade_h,
-                }])
-            except Exception:
-                logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)
+        # Modelos dedicados de escanteios (MODELOS_CUSTOM_ESCANTEIOS só tem
+        # entrada pros mercados corners_over_under_* -- .get(mercado, ())
+        # não faz nada nos outros mercados deste loop, ex. 1X2/btts/handicap).
+        for nome_custom in MODELOS_CUSTOM_ESCANTEIOS.get(mercado, ()):
+            avaliar_modelo_persistido_vs_mercado(supabase, nome_custom, mercado, nomes_liga, relatorio, relatorio_por_liga)
 
         # --- linha de referência "mercado_pinnacle_sem_vig" (+ fechamento) ---
         # Só pros mercados que NÃO passam pelo loop clássico acima (esse já
