@@ -59,6 +59,16 @@ TARGETS = {
     "faixa_gols": {"coluna": "resultado_faixa_gols", "tipo": "multiclasse", "classes": 4},
     "corners_over_under_9.5": {"coluna": "resultado_corners_ou95", "tipo": "binario", "classes": 2},
     "faixa_corners": {"coluna": "resultado_faixa_corners", "tipo": "multiclasse", "classes": 4},
+    # Linhas de escanteio além de 9.5 (ver dh.LINHAS_CORNERS_OU_EXTRA) --
+    # mesmo padrão de generalização de treinar_modelo_custom.py (PR #452),
+    # replicado aqui porque este script (walk-forward CV) tem seu próprio
+    # TARGETS/_TARGET_PRED_META, independente do script "simples".
+    **{
+        f"corners_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_corners_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
 }
 
 _TARGET_PRED_META = {
@@ -68,6 +78,12 @@ _TARGET_PRED_META = {
     "faixa_gols": {"market": "faixa_gols", "class_to_sel": {0: "0-1", 1: "2-3", 2: "4-6", 3: "7+"}},
     "corners_over_under_9.5": {"market": "corners_over_under_9.5", "class_to_sel": {0: "under", 1: "over"}},
     "faixa_corners": {"market": "faixa_corners", "class_to_sel": {0: "≤8", 1: "9-10", 2: "11-12", 3: "13+"}},
+    **{
+        f"corners_over_under_{linha}": {
+            "market": f"corners_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
 }
 
 ALGORITMOS_ML = {"catboost", "xgboost", "lightgbm"}
