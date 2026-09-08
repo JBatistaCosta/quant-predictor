@@ -91,6 +91,16 @@ TARGETS = {
         }
         for linha in dh.LINHAS_CARTOES_OU
     },
+    # Cartões POR TIME (mandante/visitante) -- mercado real "bookings" por
+    # time, mesma generalização replicada aqui (ver comentário acima sobre
+    # os dois scripts de treino precisarem do mesmo TARGETS).
+    **{
+        f"cartoes_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_cartoes_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
 }
 
 _TARGET_PRED_META = {
@@ -111,6 +121,13 @@ _TARGET_PRED_META = {
             "market": f"cartoes_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
         }
         for linha in dh.LINHAS_CARTOES_OU
+    },
+    **{
+        f"cartoes_{lado}_over_under_{linha}": {
+            "market": f"cartoes_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
     },
 }
 
