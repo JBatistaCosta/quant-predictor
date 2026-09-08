@@ -469,6 +469,30 @@ const TEMPLATES_RECOMENDADOS = [
       }, null, 2),
     },
   },
+  {
+    id: 'faltas_fotmob',
+    label: 'Faltas O/U 24,5',
+    desc: 'FBref faltas + árbitro · sem mercado real, só métrica intrínseca · 9 features',
+    cor: 'orange',
+    config: {
+      name: 'Faltas — FBref + FotMob (O/U 24.5)',
+      mode: 'walk_forward_cv',
+      algorithm: 'lightgbm',
+      algorithms: ['xgboost', 'random_forest'],
+      target: 'faltas_over_under_24.5',
+      features: [
+        'media_faltas_5j_home', 'media_faltas_sofridas_5j_home',
+        'media_faltas_5j_away', 'media_faltas_sofridas_5j_away',
+        'media_cartoes_amarelos_5j_home', 'media_cartoes_amarelos_5j_away',
+        'arbitro_cartoes_media', 'arbitro_faltas_media', 'arbitro_n_jogos',
+      ],
+      notes: 'Não existe mercado real de faltas em odds_market (confirmado em 08/09) — este target só pode ser avaliado por log-loss/Brier do próprio walk-forward, nunca por EV/IC95 contra mercado.',
+      hyperparameters: JSON.stringify({
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
 ];
 
 const TEMPLATE_CORES = {
@@ -531,6 +555,14 @@ const TARGETS = [
   { value: 'cartoes_away_over_under_2.5', label: 'Cartões Visitante O/U 2,5' },
   { value: 'cartoes_away_over_under_3.5', label: 'Cartões Visitante O/U 3,5' },
   { value: 'cartoes_away_over_under_4.5', label: 'Cartões Visitante O/U 4,5' },
+  // Faltas -- sem mercado real pra comparar (confirmado em 08/09), só
+  // métrica intrínseca (log-loss/Brier) fica disponível pra esses targets.
+  { value: 'faltas_over_under_20.5', label: 'Faltas O/U 20,5' },
+  { value: 'faltas_over_under_22.5', label: 'Faltas O/U 22,5' },
+  { value: 'faltas_over_under_24.5', label: 'Faltas O/U 24,5' },
+  { value: 'faltas_over_under_26.5', label: 'Faltas O/U 26,5' },
+  { value: 'faltas_over_under_28.5', label: 'Faltas O/U 28,5' },
+  { value: 'faltas_over_under_30.5', label: 'Faltas O/U 30,5' },
 ];
 
 const STATUS_INFO = {

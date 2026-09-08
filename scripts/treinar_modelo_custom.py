@@ -93,6 +93,15 @@ TARGETS = {
         for lado in ("home", "away")
         for linha in dh.LINHAS_CARTOES_TIME_OU
     },
+    # Faltas -- SEM mercado real pra comparar (confirmado via SQL em
+    # 08/09, nenhuma linha de "foul"/"falta" existe em odds_market). Só
+    # serve pra métrica intrínseca (log-loss/Brier), nunca EV/IC95.
+    **{
+        f"faltas_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_FALTAS_OU
+    },
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -137,6 +146,12 @@ _TARGET_PRED_META = {
         }
         for lado in ("home", "away")
         for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    **{
+        f"faltas_over_under_{linha}": {
+            "market": f"faltas_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_FALTAS_OU
     },
 }
 
@@ -551,6 +566,10 @@ _MERCADO_POR_TARGET = {
         f"cartoes_{lado}_over_under_{linha}": (f"cartoes_{lado}_over_under_{linha}", ["under", "over"])
         for lado in ("home", "away")
         for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    **{
+        f"faltas_over_under_{linha}": (f"faltas_over_under_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_FALTAS_OU
     },
 }
 
