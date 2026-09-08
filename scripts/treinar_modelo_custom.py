@@ -102,6 +102,14 @@ TARGETS = {
         }
         for linha in dh.LINHAS_FALTAS_OU
     },
+    # Faltas POR TIME -- mesma ressalva de sem mercado real do total acima.
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -152,6 +160,13 @@ _TARGET_PRED_META = {
             "market": f"faltas_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
         }
         for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "market": f"faltas_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
     },
 }
 
@@ -570,6 +585,11 @@ _MERCADO_POR_TARGET = {
     **{
         f"faltas_over_under_{linha}": (f"faltas_over_under_{linha}", ["under", "over"])
         for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": (f"faltas_{lado}_over_under_{linha}", ["under", "over"])
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
     },
 }
 

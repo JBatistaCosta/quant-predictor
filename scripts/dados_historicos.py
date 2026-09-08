@@ -119,6 +119,21 @@ def coluna_resultado_faltas_ou(linha: float) -> str:
     'resultado_faltas_ou245' pra 24.5, etc."""
     return f"resultado_faltas_ou{str(linha).replace('.', '')}"
 
+# Faltas POR TIME (mandante/visitante) -- mesma ressalva do total acima
+# (sem mercado real). Diferente de cartões por time, não precisa de
+# função de carga dedicada: `fouls_committed` já vem como coluna ÚNICA
+# (não soma de duas, como cartões amarelo+vermelho), então as colunas
+# brutas `fouls_committed_fm_home`/`_away` que `_anexar_stats_fotmob_
+# por_partida` já anexa a `partidas` bastam direto. Linhas ~metade do
+# total (cada time comete perto da metade das faltas da partida).
+LINHAS_FALTAS_TIME_OU = [8.5, 10.5, 12.5, 14.5, 16.5]
+
+
+def coluna_resultado_faltas_time_ou(lado: str, linha: float) -> str:
+    """Mesmo padrão de `coluna_resultado_cartoes_time_ou`, pra faltas --
+    'resultado_faltas_home_ou105' pra mandante linha 10.5, etc."""
+    return f"resultado_faltas_{lado}_ou{str(linha).replace('.', '')}"
+
 # Códigos do alvo multiclasse `resultado_faixa_gols` (mercado "faixa de
 # gols", 4 classes sobre o total casa+visitante -- pedido explícito do
 # usuário: 0-1 / 2-3 / 4-6 / 7+).
@@ -3706,10 +3721,18 @@ def montar_dataset_ml_empilhado(
         "red_cards_fm_home": "cartoes_vermelhos_fm_home",
         "red_cards_fm_away": "cartoes_vermelhos_fm_away",
     }
+    # Faltas POR TIME -- coluna única (não soma de duas como cartões), já
+    # anexada a `partidas` por `_anexar_stats_fotmob_por_partida` (mesmo
+    # mecanismo de `corners_fm_home`/`_away` acima).
+    faltas_brutas_por_time = {
+        "fouls_committed_fm_home": "total_faltas_home",
+        "fouls_committed_fm_away": "total_faltas_away",
+    }
     base_cols.extend(col for col in escanteios_por_time if col in partidas.columns)
     base_cols.extend(col for col in cartoes_brutos_por_time if col in partidas.columns)
+    base_cols.extend(col for col in faltas_brutas_por_time if col in partidas.columns)
     dataset = partidas[base_cols].copy()
-    dataset = dataset.rename(columns={**escanteios_por_time, **cartoes_brutos_por_time})
+    dataset = dataset.rename(columns={**escanteios_por_time, **cartoes_brutos_por_time, **faltas_brutas_por_time})
     dataset["liga"] = dataset["league_id"].map(nome_da_liga)
     if "match_stage" in dataset.columns:
         dataset["match_stage_ord"] = dataset["match_stage"].map(MATCH_STAGE_ORDER).fillna(0).astype(int)
@@ -3950,6 +3973,18 @@ def montar_dataset_ml_empilhado(
             dataset["total_faltas"].notna(), (dataset["total_faltas"] > _linha).astype(float), np.nan
         )
 
+    # Alvo binário Over/Under de faltas POR TIME -- mesmo princípio acima,
+    # usando `total_faltas_{lado}` (já anexada via `faltas_brutas_por_time`).
+    for _lado in ("home", "away"):
+        _faltas_lado_col = f"total_faltas_{_lado}"
+        if _faltas_lado_col in dataset.columns:
+            for _linha in LINHAS_FALTAS_TIME_OU:
+                dataset[coluna_resultado_faltas_time_ou(_lado, _linha)] = np.where(
+                    dataset[_faltas_lado_col].notna(),
+                    (dataset[_faltas_lado_col] > _linha).astype(float),
+                    np.nan,
+                )
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
     # ------------------------------------------------------------------
@@ -4090,6 +4125,7 @@ def montar_dataset_ml_empilhado(
         *[coluna_resultado_cartoes_ou(l) for l in LINHAS_CARTOES_OU],
         *[coluna_resultado_cartoes_time_ou(lado, l) for lado in ("home", "away") for l in LINHAS_CARTOES_TIME_OU],
         *[coluna_resultado_faltas_ou(l) for l in LINHAS_FALTAS_OU],
+        *[coluna_resultado_faltas_time_ou(lado, l) for lado in ("home", "away") for l in LINHAS_FALTAS_TIME_OU],
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
         # Contagens observadas da própria partida -- alvo dos modelos
@@ -4104,7 +4140,7 @@ def montar_dataset_ml_empilhado(
         "home_goals", "away_goals",
         "total_corners", "total_corners_home", "total_corners_away",
         "total_cartoes", "total_cartoes_home", "total_cartoes_away",
-        "total_faltas",
+        "total_faltas", "total_faltas_home", "total_faltas_away",
     ]
     dataset = dataset[[c for c in _COLUNAS_DESEJADAS if c in dataset.columns]]
 

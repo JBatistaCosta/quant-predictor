@@ -109,6 +109,13 @@ TARGETS = {
         }
         for linha in dh.LINHAS_FALTAS_OU
     },
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
 }
 
 _TARGET_PRED_META = {
@@ -142,6 +149,13 @@ _TARGET_PRED_META = {
             "market": f"faltas_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
         }
         for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "market": f"faltas_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
     },
 }
 
