@@ -191,6 +191,35 @@ Tabela completa das 16×3 comparações não cabe aqui — ver histórico da ses
 
 Ver histórico completo da investigação nas sessões de 07-08/09 se precisar dos números exatos das consultas SQL (não persistidos em nenhum script, foram ad-hoc via `execute_sql`).
 
+**Faltas (fouls) — pipeline dedicado treinado, total + por time, 16 linhas (08/09). SEM mercado real (confirmado via SQL), validação só por log-loss/Brier intrínseco — nunca EV/IC95.**
+
+- **PR #466** (mergeado): total da partida, alvo `faltas_over_under_{linha}`, 6 linhas centradas na média real por liga (20.5 a 30.5), `_carregar_total_faltas_por_partida` soma `match_stats_fotmob.fouls_committed` dos dois times.
+- **PR #469** (mergeado): por time (mandante/visitante), alvo `faltas_{home,away}_over_under_{linha}`, 5 linhas cada lado (8.5 a 16.5) — mais simples que o equivalente de cartões: `fouls_committed` já é uma única coluna por time (sem amarelo+vermelho pra somar), então reaproveita as colunas cruas `fouls_committed_fm_home/away` já existentes, sem precisar de função de junção dedicada.
+- **16 `custom_model_configs` criadas e treinadas (08/09)** via `treinar_modelo_custom_wf.py` (walk-forward CV, `xgboost`+`random_forest`, 9 features: forma de faltas/cartões amarelos do time + médias do árbitro). Todas treinaram sem erro.
+
+**Resultado (fold 3, mais recente, n=3.419 partidas — mesmo universo de jogos pras 16 linhas, só muda o alvo; melhor algoritmo em negrito):**
+
+| Linha | log-loss xgboost | Brier xgboost | log-loss random_forest | Brier random_forest |
+|---|---|---|---|---|
+| Total 20.5 | 0,5639 | 0,1906 | **0,5554** | **0,1869** |
+| Total 22.5 | 0,6306 | 0,2202 | **0,6299** | **0,2197** |
+| Total 24.5 | **0,6390** | **0,2240** | 0,6406 | 0,2247 |
+| Total 26.5 | 0,6033 | 0,2076 | **0,6004** | **0,2064** |
+| Total 28.5 | **0,5010** | **0,1643** | 0,5030 | 0,1645 |
+| Total 30.5 | **0,3853** | **0,1182** | 0,3860 | 0,1182 |
+| Mandante 8.5 | 0,4621 | 0,1461 | **0,4606** | **0,1457** |
+| Mandante 10.5 | 0,6343 | 0,2218 | **0,6328** | **0,2208** |
+| Mandante 12.5 | 0,6490 | 0,2285 | **0,6459** | **0,2273** |
+| Mandante 14.5 | 0,5292 | 0,1754 | **0,5242** | **0,1731** |
+| Mandante 16.5 | 0,3587 | 0,1065 | **0,3567** | **0,1049** |
+| Visitante 8.5 | **0,4766** | **0,1520** | 0,4760 | 0,1518 |
+| Visitante 10.5 | 0,6273 | 0,2184 | **0,6260** | **0,2182** |
+| Visitante 12.5 | 0,6592 | 0,2334 | **0,6584** | **0,2331** |
+| Visitante 14.5 | **0,5648** | **0,1904** | 0,5681 | 0,1915 |
+| Visitante 16.5 | **0,4028** | **0,1230** | 0,4071 | 0,1235 |
+
+xgboost e random_forest ficam essencialmente empatados em toda linha (diferença de log-loss ≤0,003 na maioria) — nenhum dos dois se destaca de forma consistente. Log-loss varia bastante por linha (0,36 a 0,66) porque cada linha tem uma base rate diferente (linhas nas pontas de cada distribuição — 20.5/30.5 total, 8.5/16.5 por time — são "mais fáceis" de acertar que as centrais, mesmo padrão qualitativo já visto em cartões). **Sem mercado real pra comparar, não dá pra saber se esses números são bons ou ruins em termos absolutos** — servem só como linha de base pra acompanhar se o modelo piora/melhora ao longo do tempo, ou pra decidir entre versões futuras da mesma feature engineering.
+
 **Os achados desta frente foram consolidados em `ACHADOS_COMPORTAMENTO.md`** (arquivo novo, 05/09) — leia ele para o conteúdo; esta seção guarda só o estado.
 
 **Frente de comportamento/interação: 3 fases entregues.** Fase 1 (esquema tático, PR #420) e fase 2 (estado do jogo, PR #433) mergeadas e em produção. Fase 3 (resposta a eventos) documentada na seção **"Resposta a eventos (`match_team_event_response`) — fase 3"**, mais abaixo.
