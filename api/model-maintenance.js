@@ -2188,8 +2188,17 @@ function tarefaCatalogoFeatures() {
 // 1-2 chamadas de descoberta antes de generalizar.
 // ============================================================
 
+// Achado processando o backfill de idades: `careerHistory.teamEntries[].startDate`/
+// `.endDate` às vezes vem como epoch em MILISSEGUNDOS (ex.: 1782864000000, uma
+// transferência já assinada com início futuro) em vez da string "YYYY-MM-DD..."
+// usada em todo o resto do payload (birthDate.utcTime, Contract end.dateValue).
+// slice(0,10) num epoch em ms corta no meio do número e gera lixo tipo
+// "1782864000", que o Postgres rejeita ("date/time field value out of range").
 function parseDataFotmob(s) {
-  if (!s) return null;
+  if (s == null || s === '') return null;
+  if (typeof s === 'number' || /^\d{11,}$/.test(String(s))) {
+    return new Date(Number(s)).toISOString().slice(0, 10);
+  }
   return String(s).slice(0, 10);
 }
 
