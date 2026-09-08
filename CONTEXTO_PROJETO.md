@@ -88,7 +88,59 @@ No número bruto o mercado (Pinnacle ou Betano) fica à frente do dedicado na ma
 - **PR #462** (mergeado): total da partida, alvo `cartoes_over_under_{linha}` pras 6 linhas 1.5-6.5, `LINHAS_CARTOES_OU` em `dados_historicos.py`, resultado real via `_carregar_total_cartoes_por_partida` (soma `match_stats_fotmob.yellow_cards`+`red_cards`).
 - **PR #463** (mergeado): por time (mandante/visitante), alvo `cartoes_{home,away}_over_under_{linha}` pras linhas 0.5-4.5 cada lado, `_carregar_cartoes_por_time_por_partida` nova (cruza `matches.home_team_id`/`away_team_id` com `match_stats_fotmob` pra separar os dois lados — a função de total já existente só soma).
 - **16 `custom_model_configs` criadas e treino disparado (08/09)**: 6 total + 10 por time, todas via `treinar_modelo_custom_wf.py` (walk-forward CV, `xgboost`+`random_forest`, 13 features: forma de cartões/faltas do time + médias do árbitro específico da partida). Primeira a terminar (`Cartões Visitante O/U 0.5`) treinou sem erro — **feature importance real confirma a hipótese**: `arbitro_cartoes_media`+`arbitro_faltas_media`+`arbitro_n_jogos` somam **~74% da importância no Random Forest** (26%+25%+23%) e `arbitro_n_jogos` sozinho é 30% no XGBoost — árbitro é sinal DIRETO pra cartões (diferente de escanteios, onde não ajudou). Log-loss 0,29-0,32 nos folds 1-2, sobe pra 0,47 no fold 3 (puxado pelo Brasileirão, log-loss 0,97 isolado — investigar cobertura de árbitro nessa liga antes de confiar nesse número).
-- **Ainda NÃO feito**: validar as 16 linhas contra as odds reais de "bookings" (Pinnacle/bet365/Betano, fechamento + pré-fechamento) com IC 95% bootstrap pareado em TODAS as linhas (lição da investigação de escanteios: nunca testar só as que aparentam vitória) antes de tirar qualquer conclusão de "bate o mercado".
+**Validação completa contra o mercado (08/09) — IC 95% bootstrap pareado nas 16 linhas, 3 casas de aposta. Resultado: misto, NÃO é "o modelo bate o mercado".**
+
+Metodologia idêntica à de escanteios (`backtest_kelly.comparar_pareado_com_mercado`): para cada partida, log-loss do modelo (previsão RF do fold 3, walk-forward, `model_predictions`) menos log-loss da odd devigada (`p_over = (1/odd_over)/(1/odd_over+1/odd_under)`), 10.000 reamostragens bootstrap da diferença pareada, IC 95% via percentil 2,5/97,5. Real resultado via `_carregar_total_cartoes_por_partida`/`_carregar_cartoes_por_time_por_partida` (o mesmo usado no treino). Rodado ad-hoc via `execute_sql` + script Python local pro bootstrap (não persistido em nenhum script do repo — refazer do zero se precisar repetir).
+
+**Contra bet365 (pré-fechamento, cobertura mais consistente nas 16 linhas, n≈80-107):**
+
+| Linha | n | diferença média | IC 95% | Conclusão |
+|---|---|---|---|---|
+| Total 1.5 | 107 | -0,168 | [-0,279, -0,066] | modelo vence |
+| Total 2.5 | 107 | -0,120 | [-0,207, -0,039] | modelo vence |
+| Total 3.5 | 107 | -0,089 | [-0,157, -0,026] | modelo vence |
+| Total 4.5 | 107 | -0,056 | [-0,102, -0,012] | modelo vence |
+| Total 5.5 | 107 | -0,056 | [-0,090, -0,022] | modelo vence |
+| Total 6.5 | 107 | -0,026 | [-0,050, -0,002] | modelo vence |
+| Mandante 0.5 | 103 | -0,093 | [-0,178, -0,016] | modelo vence |
+| Mandante 1.5 | 103 | -0,080 | [-0,136, -0,026] | modelo vence |
+| Mandante 2.5-4.5 | 80-103 | -0,015 a -0,025 | cruza zero | sem significância |
+| Visitante 0.5-3.5 | 94-104 | -0,037 a -0,105 | não cruza zero | modelo vence (4 de 5 linhas) |
+| Visitante 4.5 | 94 | -0,009 | [-0,025, +0,005] | sem significância |
+
+**11 das 16 linhas vencem o bet365 com significância — zero derrota.** Isoladamente pareceria um resultado forte.
+
+**Contra a Pinnacle (fechamento pro total, pré-fechamento por time — a casa mais "afiada", cobertura menor e desigual):**
+
+| Linha/lado | n | diferença média | IC 95% | Conclusão |
+|---|---|---|---|---|
+| Total 2.5 (fech.) | 81 | +0,082 | [-0,0001, +0,168] | sem significância |
+| **Total 3.5 (fech.)** | **302 (maior n de toda a análise)** | **+0,044** | **[+0,013, +0,075]** | **mercado vence** |
+| Total 4.5 (fech.) | 316 | +0,007 | [-0,017, +0,031] | sem significância |
+| Total 5.5 (fech.) | 185 | -0,081 | [-0,112, -0,049] | modelo vence |
+| Mandante 1.5 (pré) | 74 | -0,001 | [-0,047, +0,046] | sem significância |
+| Mandante 2.5 (pré) | 24 | -0,068 | [-0,130, -0,003] | modelo vence |
+| **Visitante 1.5 (pré)** | 44 | **+0,080** | **[+0,012, +0,148]** | **mercado vence** |
+| Visitante 2.5 (pré) | 54 | -0,054 | [-0,103, -0,006] | modelo vence |
+
+**Contra a Betano (pré-fechamento, boa cobertura nas duas famílias):**
+
+| Linha/lado | n | Conclusão |
+|---|---|---|
+| Total 1.5-4.5 | 28-74 | sem significância (4 de 4) |
+| Total 5.5, 6.5 | 59-76 | modelo vence (2 de 2) |
+| Mandante 0.5-1.5 | 40-79 | sem significância |
+| Mandante 2.5-4.5 | 13-89 | modelo vence (3 de 3) |
+| Visitante 0.5-2.5 | 16-84 | sem significância |
+| Visitante 3.5-4.5 | 15-73 | modelo vence (2 de 2) |
+
+**Leitura honesta (mesma disciplina da investigação de escanteios — número bruto isolado não é conclusão):** o quadro muda de "modelo vence quase tudo" pra "misto" assim que se cruza com uma segunda/terceira casa. Contra o bet365 (a casa mais "mole"/menos afiada das 3) o modelo vence 11/16 sem nenhuma derrota — sinal de que o modelo pode estar batendo uma linha mal precificada, não necessariamente tendo edge real. Contra a Pinnacle (a mais afiada, e com a MAIOR amostra de toda a análise — 302 partidas na linha 3.5 do total, a mais líquida do mercado) **o mercado vence**, e na linha visitante 1.5 também. Contra a Betano o quadro é mais equilibrado, com sinal mais consistente nas linhas altas (5.5/6.5 total, 2.5-4.5 mandante/visitante) que convergem com o achado do bet365 nessas mesmas linhas.
+
+**Padrão que sobrevive às 3 casas (candidato mais forte a edge real, não só artefato de casa mole):** linhas altas — total 5.5/6.5, mandante 2.5-4.5, visitante 2.5-4.5 — vencem ou empatam (nunca perdem) nas 3 comparações onde há dado. Linhas baixas/centrais — total 1.5-4.5, mandante/visitante 0.5-1.5 — são onde a Pinnacle contradiz o bet365, incluindo a linha de maior amostra de toda a análise (total 3.5).
+
+**Decisão: NÃO promover a "oficial"/`models_registry`, mesma postura de escanteios.** Não há evidência convincente de "bate o mercado" — há sinal promissor e consistente nas linhas altas (2.5-4.5 por time, 5.5-6.5 total), mas a linha mais líquida/testável (total 3.5) mostra a Pinnacle vencendo com a maior amostra da análise inteira. Como escanteios, "não-inferior" nas linhas centrais é ausência de evidência de diferença contra Pinnacle, não prova de equivalência.
+
+**Implementação no sistema — tecnicamente pronta, mas não acionada de propósito.** `avaliar_modelo_persistido_vs_mercado()`/`MODELOS_CUSTOM_CARTOES`/`MODELOS_CUSTOM_CARTOES_TIME` (PRs #462/#463) já sabem gravar essas 16 linhas em `model_benchmarking_backtest` exatamente como fazem pra escanteios — falta só rodar `backtest_kelly.py` completo (script caro, ver nota de escanteios sobre 260min/`workflow_dispatch`) pra elas aparecerem no painel `/modelos → Backtest completo`. Betano já é uma das casas que `gravar_referencia_pinnacle_sem_vig`/o restante do script comparam (não é preciso código novo pra incluí-la). Optei por não disparar esse backtest completo agora: dado o resultado misto acima, rodá-lo geraria uma entrada no painel sem uma conclusão clara pra acompanhar — mais sensato esperar o cron diário (`prever_partidas_futuras_custom.yml`) acumular mais partidas de 2026 (dobrar/triplicar o n) e reavaliar, mesma lição do "esperar mais dado" registrada pra escanteios.
 
 **Cartões POR JOGADOR — investigado, viável, NÃO implementado (08/09, pedido explícito do usuário "sem implementar nada por enquanto").** Dado real já existe: `match_events` tem histórico de cartão por jogador com minuto (58.185 amarelos, 1.813 vermelhos, 1.183 segundos amarelos, todos com `player_id`), e `_carregar_cartoes_jogador_pre_jogo`/`obter_cartoes_atuais` (`dados_historicos.py`) já calculam o estado de "pendurado" ponto-no-tempo sem vazamento — hoje só usado como feature agregada por time (v4), nunca como alvo de modelo por jogador. **Confirmado: não existe mercado real de cartão por jogador em `odds_market`** (nem "player card" nem "to be booked") — igual faltas, validação só seria por métrica intrínseca, nunca EV real. Encaixaria no mesmo padrão de `scripts/treinar_modelo_jogador_mercados.py` (regressor Poisson/binário por jogador, 6 ligas de `LIGAS_MODEL_BENCHMARKING`, persistido em `player_match_estimates`) — alvo seria evento raro (~10-15% base rate típico), features fortes esperadas por analogia ao achado de cartões por time: médias do árbitro (já existem), histórico de cartões do próprio jogador, posição (zagueiro/volante > atacante). Valor prático maior em gestão de risco de suspensão (a própria feature "pendurado" já serve isso hoje) do que em apostas, por falta de mercado pra validar EV.
 
