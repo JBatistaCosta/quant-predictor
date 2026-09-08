@@ -30,7 +30,7 @@ Trabalho feito (PRs #452/#453/#454): generalizado `corners_over_under_9.5` pras 
 | 11.5 | 168 | 0,6793 (rf) | 0,6701 | **0,6579** | 0,2420 | 0,2327 |
 | 12.5 | 0 (fechamento) | — | — | — | — | — |
 
-**Leitura honesta e final: a Pinnacle vence em TODAS as linhas com dado suficiente, sem exceção — inclusive 9.5, cuja "vitória do dedicado" era um artefato do recorte de dado velho sem odd real.** O achado original desta investigação (dedicado bate híbrido em 9.5) não se sustenta contra o mercado de verdade. Nem o dedicado nem o híbrido batem a Pinnacle em escanteios, em linha nenhuma testada — confirma e reforça o Achado 1 original com dado de 2026, não mais histórico.
+**Leitura do número bruto: a Pinnacle fica à frente do dedicado em toda linha — inclusive 9.5, cuja "vitória do dedicado" era um artefato do recorte de dado velho sem odd real.** O achado original desta investigação (dedicado bate híbrido em 9.5) não se sustenta contra o mercado de verdade. **Mas número bruto não é a mesma coisa que diferença real — ver o teste de significância (IC 95% bootstrap) logo abaixo, que rodou nas 6 linhas: só 9.5 (a de maior amostra, n=1.033) tem diferença estatisticamente confiável. Nas outras 5, a amostra ainda é pequena demais pra distinguir "modelo pior" de "ruído".**
 
 **Betano cobre onde a Pinnacle não cobre (12.5) — e no pré-fechamento também perde.** `odds_market.snapshot` não tem um corte fixo de "T-3 dias" — `pre_closing` é só a primeira captura disponível antes do jogo, com desvio real de 0,1h a 206,8h antes do apito (média ≈72h, ou seja, ≈3 dias já é a média natural, mas não é controlado). Comparando pré-fechamento (Pinnacle + Betano, mesmas partidas do dedicado):
 
@@ -43,9 +43,36 @@ Trabalho feito (PRs #452/#453/#454): generalizado `corners_over_under_9.5` pras 
 | 11.5 | 16 | 0,6984 | 0,6584 | 109 | 0,6656 | **0,6465** |
 | 12.5 | 0 | — | — | 109 | 0,5825 (rf)/0,6232 (xgb) | **0,5923** |
 
-Mesmo padrão: mercado (Pinnacle ou Betano) vence o dedicado em quase toda linha, com uma única exceção marginal (10.5 pré-fechamento, dedicado 0,7009 vs. Betano-não-medido/Pinnacle 0,7014 — margem desprezível, n pequeno). Betano dá cobertura útil onde a Pinnacle não tem (12.5 zerada em fechamento E pré-fechamento pra essas partidas).
+No número bruto o mercado (Pinnacle ou Betano) fica à frente do dedicado na maioria das linhas — mas ver o teste de significância logo abaixo antes de tirar conclusão: margem bruta pequena não é o mesmo que diferença real. Betano dá cobertura útil onde a Pinnacle não tem (12.5 zerada em fechamento E pré-fechamento pra essas partidas).
 
-**Decisão**: nenhum modelo (dedicado ou híbrido) bate o mercado em escanteios, em nenhuma linha, com dado real de 2026. Promover o dedicado a "oficial" não se justifica hoje — o valor real desta rodada foi técnico (generalização de 1→6 linhas, 3 features novas testadas, bug do fold 3 corrigido, `backtest_kelly.py` agora sabe avaliar os modelos dedicados), não uma vitória de modelo pronta pra produção.
+**bet365 (a casa com mais cobertura no banco) cobre TODAS as 6 linhas em pré-fechamento com n consistente (123 partidas cada) — e aparentava dar 2 vitórias ao dedicado, mas o IC 95% derrubou as duas.** Comparando bet365 pré-fechamento (mesmas 123 partidas, melhor algoritmo por linha):
+
+| Linha | log-loss dedicado | log-loss bet365 | Vencedor no número bruto |
+|---|---|---|---|
+| 7.5 | 0,5845 | **0,5563** | bet365 |
+| 8.5 | 0,6795 | **0,6598** | bet365 |
+| 9.5 | 0,7215 | **0,6786** | bet365 |
+| 10.5 | **0,6869** | 0,6922 | dedicado (margem pequena) |
+| 11.5 | 0,6763 | **0,6574** | bet365 |
+| 12.5 | **0,6104** | 0,6130 | dedicado (margem pequena) |
+
+**Teste de significância COMPLETO (bootstrap PAREADO, mesmo método de `backtest_kelly.comparar_pareado_com_mercado` — reamostra a diferença de log-loss por partida, 10.000 reamostragens) — rodado em TODAS as 6 linhas, não só nas 2 que aparentavam vitória do dedicado:**
+
+| Linha | vs. | n | diferença média (dedicado − mercado) | IC 95% | Conclusão |
+|---|---|---|---|---|---|
+| 7.5 | Pinnacle (fechamento) | 86 | -0,0028 | [-0,0369, +0,0312] | sem significância |
+| 8.5 | Pinnacle (fechamento) | 710 | +0,0057 | [-0,0066, +0,0185] | sem significância |
+| **9.5** | **Pinnacle (fechamento)** | **1.033** | **+0,0178** | **[+0,0079, +0,0274]** | **mercado supera o modelo** |
+| 10.5 | bet365 (pré-fech.) | 123 | -0,0054 | [-0,0372, +0,0258] | sem significância |
+| 10.5 | Betano (pré-fech.) | 107 | -0,0057 | [-0,0377, +0,0257] | sem significância |
+| 10.5 | Pinnacle (pré-fech.) | 113 | -0,0005 | [-0,0242, +0,0232] | sem significância |
+| 11.5 | Pinnacle (fechamento) | 168 | +0,0214 | [-0,0077, +0,0513] | sem significância |
+| 12.5 | bet365 (pré-fech.) | 123 | -0,0026 | [-0,0340, +0,0263] | sem significância |
+| 12.5 | Betano (pré-fech.) | 109 | -0,0098 | [-0,0395, +0,0186] | sem significância |
+
+**Achado real, mais preciso do que "o mercado vence em tudo": só a linha 9.5 tem diferença estatisticamente significativa (mercado vence), e é justamente a linha com a maior amostra (n=1.033) — provável que as outras 5 linhas mostrem a mesma coisa com amostra maior, mas HOJE, com o dado disponível, não dá pra afirmar isso.** Nas outras 5 linhas (7.5, 8.5, 10.5, 11.5, 12.5), em 8 comparações diferentes (2 casas de aposta, 2 janelas de tempo), o IC 95% sempre cruza zero — o modelo dedicado é **estatisticamente não-distinguível do mercado** (nem supera, nem é superado com confiança). Isso não é "o modelo é bom" (não haveria como apostar nele com edge), mas também não é "o modelo é ruim" — é honestamente "não sabemos, a amostra ainda é pequena" pra 5 das 6 linhas.
+
+**Decisão**: **não temos um modelo que bate o mercado** em escanteios — a única linha com amostra grande o bastante pra testar direito (9.5) mostra o mercado vencendo com significância real. Mas também **não é correto dizer que os outros modelos são ruins/inferiores** — nas 5 linhas restantes o teste não tem poder estatístico suficiente (n pequeno) pra decidir em qualquer direção; "não-inferior" aqui é ausência de evidência de diferença, não prova de equivalência. Promover o dedicado a "oficial" ainda não se justifica (não há evidência POSITIVA de que ele é útil), mas também não deveria ser descartado — o caminho é deixar o cron diário acumular mais partidas de 2026 e re-testar daqui a algumas semanas, quando o n permitir um teste com poder de verdade nas 5 linhas hoje inconclusivas. O valor real desta rodada foi técnico (generalização de 1→6 linhas, 3 features novas testadas, bug do fold 3 corrigido, `backtest_kelly.py` agora sabe avaliar os modelos dedicados), não uma vitória (ou derrota) de modelo definitiva.
 
 **Plano de troca, atualizado — itens ainda não feitos:**
 - [x] Confirmar overlap real com a Pinnacle — feito, era zero por causa do fold 3 (corrigido, PR #457).
