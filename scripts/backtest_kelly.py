@@ -307,6 +307,20 @@ MODELOS_CUSTOM_CARTOES: dict[str, tuple[str, ...]] = {
     for _linha_custom in ("1.5", "2.5", "3.5", "4.5", "5.5", "6.5")
 }
 
+# Cartões POR TIME (mandante/visitante) -- mercado real "bookings" por time
+# (`bookings_over_under_team_1/2_{linha}`, ver `_nome_mercado_odds`),
+# adicionado junto com o total acima. Nomes de config seguem o mesmo padrão,
+# com "Mandante"/"Visitante" pra distinguir o lado.
+_LADO_NOME_CONFIG_CARTOES_TIME = {"home": "Mandante", "away": "Visitante"}
+MODELOS_CUSTOM_CARTOES_TIME: dict[str, tuple[str, ...]] = {
+    f"cartoes_{_lado_custom}_over_under_{_linha_custom}": tuple(
+        f"Cartões {_LADO_NOME_CONFIG_CARTOES_TIME[_lado_custom]} — FBref + FotMob (O/U {_linha_custom}) [{_algo_custom}]"
+        for _algo_custom in ("xgboost", "random_forest")
+    )
+    for _lado_custom in ("home", "away")
+    for _linha_custom in ("0.5", "1.5", "2.5", "3.5", "4.5")
+}
+
 
 def _resultado_codigo_mercado(home_goals: int, away_goals: int, mercado: str) -> int:
     """Mesma ideia de `rp._resultado_codigo`, mas escolhe o espaço de
@@ -508,6 +522,11 @@ def _nome_mercado_odds(mercado: str) -> str:
         # `odds_market`/mercado real chama de "bookings", não "cards"/"cartoes"
         # (confirmado em 08/09 -- Pinnacle/bet365/Betano usam esse nome).
         return f"bookings_over_under_full_time_{mercado.rsplit('_', 1)[-1]}"
+    if mercado.startswith("cartoes_home_over_under_") or mercado.startswith("cartoes_away_over_under_"):
+        # Cartões POR TIME -- `odds_market` chama de "team_1"/"team_2"
+        # (mandante/visitante), confirmado em 08/09 junto com o total acima.
+        _lado_odds = "team_1" if mercado.startswith("cartoes_home_") else "team_2"
+        return f"bookings_over_under_{_lado_odds}_{mercado.rsplit('_', 1)[-1]}"
     if mercado.startswith("handicap_"):
         linha = float(mercado.split("_", 1)[1])
         if linha == int(linha):
@@ -1162,6 +1181,19 @@ def carregar_resultados_reais_hibrido(supabase, match_ids: list[int], mercado: s
                 continue
             resultados[int(linha_df["match_id"])] = (
                 dados_historicos.RESULTADO_CARTOES_OVER if linha_df["total_cartoes"] > linha else dados_historicos.RESULTADO_CARTOES_UNDER
+            )
+        return resultados
+
+    if mercado.startswith("cartoes_home_over_under_") or mercado.startswith("cartoes_away_over_under_"):
+        _coluna_lado = "cartoes_home" if mercado.startswith("cartoes_home_") else "cartoes_away"
+        linha = float(mercado.rsplit("_", 1)[-1])
+        df = dados_historicos._carregar_cartoes_por_time_por_partida(supabase, match_ids)
+        resultados: dict[int, int] = {}
+        for _, linha_df in df.iterrows():
+            if pd.isna(linha_df[_coluna_lado]):
+                continue
+            resultados[int(linha_df["match_id"])] = (
+                dados_historicos.RESULTADO_CARTOES_OVER if linha_df[_coluna_lado] > linha else dados_historicos.RESULTADO_CARTOES_UNDER
             )
         return resultados
 
@@ -2107,6 +2139,15 @@ def main() -> None:
             avaliar_modelo_persistido_vs_mercado(supabase, nome_custom, mercado, nomes_liga, relatorio, relatorio_por_liga)
 
         match_ids_mkt = list(carregar_predicoes_hibrido(supabase, nomes_modelos_cartoes[0], mercado).keys())
+        gravar_referencia_pinnacle_sem_vig(supabase, mercado, match_ids_mkt, nomes_liga, relatorio, relatorio_por_liga)
+
+    # Modelos dedicados de cartões POR TIME (MODELOS_CUSTOM_CARTOES_TIME) --
+    # mesmo loop acima, mercado real "bookings_over_under_team_1/2_{linha}".
+    for mercado, nomes_modelos_cartoes_time in MODELOS_CUSTOM_CARTOES_TIME.items():
+        for nome_custom in nomes_modelos_cartoes_time:
+            avaliar_modelo_persistido_vs_mercado(supabase, nome_custom, mercado, nomes_liga, relatorio, relatorio_por_liga)
+
+        match_ids_mkt = list(carregar_predicoes_hibrido(supabase, nomes_modelos_cartoes_time[0], mercado).keys())
         gravar_referencia_pinnacle_sem_vig(supabase, mercado, match_ids_mkt, nomes_liga, relatorio, relatorio_por_liga)
 
     # --- hibrido_gols_v1 / hibrido_gols_xg_v1: dupla chance (simulação própria) ---

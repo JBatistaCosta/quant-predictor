@@ -443,6 +443,32 @@ const TEMPLATES_RECOMENDADOS = [
       }, null, 2),
     },
   },
+  {
+    id: 'cartoes_mandante_fotmob',
+    label: 'Cartões Mandante O/U 1,5',
+    desc: 'Mesmas features de cartoes_fotmob, mercado por time (mandante) · 13 features',
+    cor: 'orange',
+    config: {
+      name: 'Cartões Mandante — FBref + FotMob (O/U 1.5)',
+      mode: 'walk_forward_cv',
+      algorithm: 'lightgbm',
+      algorithms: ['xgboost', 'random_forest'],
+      target: 'cartoes_home_over_under_1.5',
+      features: [
+        'media_cartoes_amarelos_5j_home', 'media_cartoes_amarelos_sofridos_5j_home',
+        'media_cartoes_amarelos_5j_away', 'media_cartoes_amarelos_sofridos_5j_away',
+        'media_cartoes_vermelhos_5j_home', 'media_cartoes_vermelhos_5j_away',
+        'media_faltas_5j_home', 'media_faltas_sofridas_5j_home',
+        'media_faltas_5j_away', 'media_faltas_sofridas_5j_away',
+        'arbitro_cartoes_media', 'arbitro_faltas_media', 'arbitro_n_jogos',
+      ],
+      notes: 'Mesmo template de cartoes_fotmob, mas mirando o mercado real "bookings" por time (bookings_over_under_team_1_{linha}) em vez do total da partida — troque o target/name pra "away"/Visitante ao clonar pro outro lado.',
+      hyperparameters: JSON.stringify({
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
 ];
 
 const TEMPLATE_CORES = {
@@ -495,6 +521,16 @@ const TARGETS = [
   { value: 'cartoes_over_under_4.5', label: 'Cartões O/U 4,5' },
   { value: 'cartoes_over_under_5.5', label: 'Cartões O/U 5,5' },
   { value: 'cartoes_over_under_6.5', label: 'Cartões O/U 6,5' },
+  { value: 'cartoes_home_over_under_0.5', label: 'Cartões Mandante O/U 0,5' },
+  { value: 'cartoes_home_over_under_1.5', label: 'Cartões Mandante O/U 1,5' },
+  { value: 'cartoes_home_over_under_2.5', label: 'Cartões Mandante O/U 2,5' },
+  { value: 'cartoes_home_over_under_3.5', label: 'Cartões Mandante O/U 3,5' },
+  { value: 'cartoes_home_over_under_4.5', label: 'Cartões Mandante O/U 4,5' },
+  { value: 'cartoes_away_over_under_0.5', label: 'Cartões Visitante O/U 0,5' },
+  { value: 'cartoes_away_over_under_1.5', label: 'Cartões Visitante O/U 1,5' },
+  { value: 'cartoes_away_over_under_2.5', label: 'Cartões Visitante O/U 2,5' },
+  { value: 'cartoes_away_over_under_3.5', label: 'Cartões Visitante O/U 3,5' },
+  { value: 'cartoes_away_over_under_4.5', label: 'Cartões Visitante O/U 4,5' },
 ];
 
 const STATUS_INFO = {
