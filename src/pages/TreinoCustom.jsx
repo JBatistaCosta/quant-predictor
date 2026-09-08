@@ -417,6 +417,32 @@ const TEMPLATES_RECOMENDADOS = [
       }, null, 2),
     },
   },
+  {
+    id: 'cartoes_fotmob',
+    label: 'Cartões O/U 3,5',
+    desc: 'FBref cartões/faltas + árbitro · 13 features',
+    cor: 'orange',
+    config: {
+      name: 'Cartões — FBref + FotMob (O/U 3.5)',
+      mode: 'walk_forward_cv',
+      algorithm: 'lightgbm',
+      algorithms: ['xgboost', 'random_forest'],
+      target: 'cartoes_over_under_3.5',
+      features: [
+        'media_cartoes_amarelos_5j_home', 'media_cartoes_amarelos_sofridos_5j_home',
+        'media_cartoes_amarelos_5j_away', 'media_cartoes_amarelos_sofridos_5j_away',
+        'media_cartoes_vermelhos_5j_home', 'media_cartoes_vermelhos_5j_away',
+        'media_faltas_5j_home', 'media_faltas_sofridas_5j_home',
+        'media_faltas_5j_away', 'media_faltas_sofridas_5j_away',
+        'arbitro_cartoes_media', 'arbitro_faltas_media', 'arbitro_n_jogos',
+      ],
+      notes: 'Template cartões. Diferente de escanteios, o árbitro aqui é sinal DIRETO (não só proxy) — média de cartão/falta por jogo do árbitro específico da partida, já validado como feature sem vazamento (shift+expanding). Mercado real de mercado chama "bookings", não "cards" — ver CONTEXTO_PROJETO.md.',
+      hyperparameters: JSON.stringify({
+        lightgbm: { num_leaves: 15, learning_rate: 0.05 },
+        xgboost: { max_depth: 4, learning_rate: 0.05 },
+      }, null, 2),
+    },
+  },
 ];
 
 const TEMPLATE_CORES = {
@@ -463,6 +489,12 @@ const TARGETS = [
   { value: 'corners_over_under_11.5', label: 'Escanteios O/U 11,5' },
   { value: 'corners_over_under_12.5', label: 'Escanteios O/U 12,5' },
   { value: 'faixa_corners', label: 'Faixa de total de escanteios (≤8 / 9-10 / 11-12 / 13+)' },
+  { value: 'cartoes_over_under_1.5', label: 'Cartões O/U 1,5' },
+  { value: 'cartoes_over_under_2.5', label: 'Cartões O/U 2,5' },
+  { value: 'cartoes_over_under_3.5', label: 'Cartões O/U 3,5' },
+  { value: 'cartoes_over_under_4.5', label: 'Cartões O/U 4,5' },
+  { value: 'cartoes_over_under_5.5', label: 'Cartões O/U 5,5' },
+  { value: 'cartoes_over_under_6.5', label: 'Cartões O/U 6,5' },
 ];
 
 const STATUS_INFO = {
