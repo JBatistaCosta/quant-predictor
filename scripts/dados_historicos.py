@@ -2523,24 +2523,10 @@ def _carregar_arbitro_pre_jogo(supabase: Client, partidas: pd.DataFrame) -> pd.D
     por_jogo["total_cartoes"] = por_jogo["total_cartoes"] + por_jogo["total_vermelhos"]
 
     base = contexto.merge(por_jogo, on="match_id", how="inner")
-    base = base.merge(
-        partidas[["id", "match_date", "league_id", "season"]].rename(columns={"id": "match_id"}),
-        on="match_id",
-        how="inner",
-    )
+    base = base.merge(partidas[["id", "match_date"]].rename(columns={"id": "match_id"}), on="match_id", how="inner")
     base = base.sort_values(["referee", "match_date"])
 
-    # Mesma contaminação do Brasileirão pré-2023 em `match_stats_fotmob`
-    # (ver bloco de cartões por partida acima) -- excluir esses jogos SÓ da
-    # média de cartões do árbitro, sem tirá-los da média de faltas (essa
-    # não tem o problema) nem de `arbitro_n_jogos` (o árbitro apitou o jogo
-    # de verdade, só o cartão que não foi coletado direito).
-    _cartoes_confiavel = ~((base["league_id"] == 1) & (base["season"].astype(int) < 2023))
-    base["total_cartoes_confiavel"] = base["total_cartoes"].where(_cartoes_confiavel)
-
-    base["arbitro_cartoes_media"] = base.groupby("referee")["total_cartoes_confiavel"].transform(
-        lambda s: s.shift(1).expanding().mean()
-    )
+    base["arbitro_cartoes_media"] = base.groupby("referee")["total_cartoes"].transform(lambda s: s.shift(1).expanding().mean())
     base["arbitro_faltas_media"] = base.groupby("referee")["total_faltas"].transform(lambda s: s.shift(1).expanding().mean())
     base["arbitro_n_jogos"] = base.groupby("referee").cumcount()
 
@@ -3953,13 +3939,6 @@ def montar_dataset_ml_empilhado(
     if cartoes.empty:
         cartoes = pd.DataFrame(columns=["match_id", "total_cartoes"])
     dataset = dataset.merge(cartoes.rename(columns={"match_id": "id"}), on="id", how="left")
-    # `match_stats_fotmob.yellow_cards`/`red_cards` do Brasileirão (league_id=1)
-    # vem zerado (não nulo) por falha de coleta em 2017-2022 -- não é cartão
-    # real, é ausência de dado mal representada como zero (ver
-    # CONTEXTO_PROJETO.md, achado 08/09). Tratar como NaN pra não treinar o
-    # alvo com esse dado falso.
-    _cartoes_nao_confiavel = (dataset["league_id"] == 1) & (dataset["season"].astype(int) < 2023)
-    dataset.loc[_cartoes_nao_confiavel, "total_cartoes"] = np.nan
     for _linha in LINHAS_CARTOES_OU:
         dataset[coluna_resultado_cartoes_ou(_linha)] = np.where(
             dataset["total_cartoes"].notna(), (dataset["total_cartoes"] > _linha).astype(float), np.nan
@@ -3970,13 +3949,11 @@ def montar_dataset_ml_empilhado(
     # (já anexadas a `dataset` pelo bloco `cartoes_brutos_por_time`) em vez
     # de `_carregar_total_cartoes_por_partida` (que só soma o total da
     # partida, sem distinguir lado). NaN quando falta QUALQUER um dos dois
-    # tipos de cartão daquele lado -- mesma tolerância do total. Mesma
-    # ressalva do Brasileirão pré-2023 acima -- mesma fonte contaminada.
+    # tipos de cartão daquele lado -- mesma tolerância do total.
     for _lado in ("home", "away"):
         _amar_col, _verm_col = f"cartoes_amarelos_fm_{_lado}", f"cartoes_vermelhos_fm_{_lado}"
         if _amar_col in dataset.columns and _verm_col in dataset.columns:
             dataset[f"total_cartoes_{_lado}"] = dataset[_amar_col] + dataset[_verm_col]
-            dataset.loc[_cartoes_nao_confiavel, f"total_cartoes_{_lado}"] = np.nan
             for _linha in LINHAS_CARTOES_TIME_OU:
                 dataset[coluna_resultado_cartoes_time_ou(_lado, _linha)] = np.where(
                     dataset[f"total_cartoes_{_lado}"].notna(),
