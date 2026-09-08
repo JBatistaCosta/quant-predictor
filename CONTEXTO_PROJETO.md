@@ -15,28 +15,47 @@ Trabalho feito (PRs #452/#453/#454): generalizado `corners_over_under_9.5` pras 
 
 **Bug real encontrado e corrigido no caminho (PR #454)**: `treinar_modelo_custom.py` (script "simples") teve seu `TARGETS` estendido no PR #452, mas as 6 configs são `mode='walk_forward_cv'` — rodam `treinar_modelo_custom_wf.py`, um script SEPARADO com seu próprio `TARGETS`/`_TARGET_PRED_META` hardcoded, não atualizado. Ao disparar o treino das 6, 5 falharam com `Target não suportado` (só 9.5 já existia nesse script). Corrigido com a mesma generalização (`dh.LINHAS_CORNERS_OU_EXTRA`). Vale lembrar disso da próxima vez que um mercado novo for estendido: **conferir os DOIS scripts de treino**, não só um.
 
-**Head-to-head de 3 vias** (log-loss/Brier, partidas em comum, `match_stats_fotmob` como fonte do resultado real — `sum(corners) GROUP BY match_id HAVING count(*)=2`; melhor dos dois algoritmos do modelo dedicado por linha):
+**Head-to-head de 3 vias, PRIMEIRA rodada (n=951, histórico órfão — ver correção logo abaixo)**: log-loss/Brier nas mesmas 951 partidas em que dedicado e híbrido tinham previsão em comum, `match_stats_fotmob` como fonte do resultado real. Nessa rodada o dedicado vencia em 7.5/9.5/10.5, empatava em 11.5, perdia em 8.5/12.5 pro híbrido — **mas nenhuma dessas partidas tinha odd real da Pinnacle** (ver bug abaixo), então essa tabela nunca comparou contra o mercado de verdade, só dedicado-vs-híbrido num recorte de dado velho.
 
-| Linha | n comum | log-loss dedicado | log-loss híbrido | log-loss stats_glm | Brier dedicado | Brier híbrido | Brier stats_glm | Vencedor |
-|---|---|---|---|---|---|---|---|---|
-| 7.5 | 951 | 0,6052 (xgb) | 0,6067 | — | 0,2072 | 0,2073 | — | dedicado (margem mínima) |
-| 8.5 | 951 | 0,6851 (rf) | **0,6819** | — | 0,2452 | **0,2440** | — | híbrido |
-| 9.5 | 951 (672 c/ stats_glm) | **0,6987 (xgb)** | 0,7026 | 0,7053 | **0,2526** | 0,2546 | 0,2548 | dedicado |
-| 10.5 | 951 | 0,6703 (rf) | 0,6709 | — | 0,2384 | 0,2388 | — | dedicado (margem mínima) |
-| 11.5 | 951 | 0,5962 (rf) | 0,5962 | — | 0,2026 | 0,2026 | — | empate técnico |
-| 12.5 | 951 | 0,4942 (rf) | **0,4910** | — | 0,1569 | **0,1551** | — | híbrido |
+**Bug real encontrado logo depois (PR #457) — zero overlap com a Pinnacle, causa raiz temporal.** Investigando a comparação against Pinnacle (abertura/fechamento/pré-fechamento), a interseção partida-a-partida entre as previsões do dedicado e as odds da Pinnacle deu **zero**, não amostra pequena. Causa: a Pinnacle só passou a ter odds de escanteios a partir de 28/01/2026, e o fold 3 do walk-forward (único cujas previsões de teste viram `model_predictions`, via `salvar_predicoes_fold3`) parava em `test_ano=2025` — nenhuma previsão caía em 2026+. Corrigido estendendo o fold 3 até hoje-3 dias (`test_fim`, ver `treinar_modelo_custom_wf.py`), retreinadas as 6 configs — overlap real foi de 0 para **1.033 partidas** (config 9.5, testado antes de redisparar as outras 5).
 
-**Leitura honesta**: a vitória clara do dedicado em 9.5 (achado original desta investigação) **não se generalizou** pras outras 5 linhas — nelas o resultado é essencialmente empate (margens de 0,001-0,003 em log-loss, dentro do ruído esperado pra n=951) ou o híbrido leva ligeira vantagem (8.5, 12.5). `stats_glm_v1` só tem predição pra 9.5 (não cobre as outras 5 linhas) — perde nas 3 vias ali. Hipótese não testada pra explicar por que só 9.5 funcionou: é a linha historicamente mais negociada (mais dado de treino/mercado por partida), ou o conjunto de 6 ligas do `league_ids` da config tem viés de composição que favorece especificamente essa linha — não investigado.
+**Head-to-head CORRIGIDO, com odd real da Pinnacle (fechamento devigado) nas partidas de overlap real:**
 
-**Decisão pendente**: com esse resultado, promover o modelo dedicado a "oficial" só faz sentido pra 9.5 (onde a vantagem é real, ainda que modesta — ver item 4 abaixo) — não pras outras 5 linhas, que ficam mais como "mais uma opção no dropdown" do que substituto do híbrido.
+| Linha | n comum c/ Pinnacle | log-loss dedicado | log-loss híbrido | log-loss Pinnacle | Brier dedicado | Brier Pinnacle |
+|---|---|---|---|---|---|---|
+| 7.5 | 86 | 0,6517 (xgb) | 0,6557 | 0,6545 | 0,2297 | 0,2309 |
+| 8.5 | 710 | 0,6827 (xgb) | 0,6772 | **0,6770** | 0,2445 | 0,2420 |
+| 9.5 | 1.033 | 0,6978 (rf) | 0,6839 | **0,6804** | 0,2522 | 0,2437 |
+| 10.5 | 840 | 0,6773 (xgb) | 0,6700 | **0,6673** | 0,2421 | 0,2372 |
+| 11.5 | 168 | 0,6793 (rf) | 0,6701 | **0,6579** | 0,2420 | 0,2327 |
+| 12.5 | 0 (fechamento) | — | — | — | — | — |
+
+**Leitura honesta e final: a Pinnacle vence em TODAS as linhas com dado suficiente, sem exceção — inclusive 9.5, cuja "vitória do dedicado" era um artefato do recorte de dado velho sem odd real.** O achado original desta investigação (dedicado bate híbrido em 9.5) não se sustenta contra o mercado de verdade. Nem o dedicado nem o híbrido batem a Pinnacle em escanteios, em linha nenhuma testada — confirma e reforça o Achado 1 original com dado de 2026, não mais histórico.
+
+**Betano cobre onde a Pinnacle não cobre (12.5) — e no pré-fechamento também perde.** `odds_market.snapshot` não tem um corte fixo de "T-3 dias" — `pre_closing` é só a primeira captura disponível antes do jogo, com desvio real de 0,1h a 206,8h antes do apito (média ≈72h, ou seja, ≈3 dias já é a média natural, mas não é controlado). Comparando pré-fechamento (Pinnacle + Betano, mesmas partidas do dedicado):
+
+| Linha | n Pinnacle (pré) | LL dedicado | LL Pinnacle (pré) | n Betano (pré) | LL dedicado | LL Betano (pré) |
+|---|---|---|---|---|---|---|
+| 7.5 | 11 | 0,6308 | 0,6153 | 108 | 0,5719 | **0,5484** |
+| 8.5 | 73 | 0,7090 | 0,6917 | 108 | 0,6711 | **0,6612** |
+| 9.5 | 137 | 0,7192 | 0,6743 | 110 | 0,7110 | **0,6801** |
+| 10.5 | 113 | 0,7009 | 0,7014 | 107 | 0,6887 | **0,6944** |
+| 11.5 | 16 | 0,6984 | 0,6584 | 109 | 0,6656 | **0,6465** |
+| 12.5 | 0 | — | — | 109 | 0,5825 (rf)/0,6232 (xgb) | **0,5923** |
+
+Mesmo padrão: mercado (Pinnacle ou Betano) vence o dedicado em quase toda linha, com uma única exceção marginal (10.5 pré-fechamento, dedicado 0,7009 vs. Betano-não-medido/Pinnacle 0,7014 — margem desprezível, n pequeno). Betano dá cobertura útil onde a Pinnacle não tem (12.5 zerada em fechamento E pré-fechamento pra essas partidas).
+
+**Decisão**: nenhum modelo (dedicado ou híbrido) bate o mercado em escanteios, em nenhuma linha, com dado real de 2026. Promover o dedicado a "oficial" não se justifica hoje — o valor real desta rodada foi técnico (generalização de 1→6 linhas, 3 features novas testadas, bug do fold 3 corrigido, `backtest_kelly.py` agora sabe avaliar os modelos dedicados), não uma vitória de modelo pronta pra produção.
 
 **Plano de troca, atualizado — itens ainda não feitos:**
-- [ ] Confirmar se `prever_partidas_futuras_custom.yml` está rodando de verdade pra essas 6 configs (checar `model_predictions` por `created_at` recente com esses `model_name`, não só o total de linhas) — mesma dúvida de antes, ainda não resolvida agora que há 6 configs em vez de 1.
-- [x] Re-treinar com `treinar_modelo_custom_wf.py` (walk-forward) — feito 08/09, todas as 6 linhas.
-- [x] Comparar contra `stats_glm_v1` — feito, só cobre 9.5 (ver tabela acima).
-- [ ] Registrar em `models_registry` se confirmado (hoje ausente de lá) — só faria sentido pra 9.5 dado o resultado acima.
-- [ ] Decidir o que "virar o modelo oficial" significa na prática: não existe hoje um único "modelo escolhido" pro usuário — `AnaliseEstatisticaJogo.jsx`/`AnaliseAvancadaEvento.jsx` mostram TODOS os `model_name` de `model_predictions` lado a lado (dropdown de comparação, sem "recomendado" automático). A decisão real é sobre quem entra no cron/Kelly/paper trading como candidato padrão, não sobre trocar uma linha de código.
-- [ ] Escanteio POR TIME (mercados reais `corners_over_under_team_1_{linha}`/`team_2_{linha}`, cobertura real em `odds_market` até ~2.100 partidas/linha) — pedido pelo usuário em 08/09, ainda NÃO implementado. Precisaria de alvo novo (`resultado_corners_time_ou{linha}` a partir de `total_corners_home`/`total_corners_away`, já existentes no dataset só pro split Beta-Binomial) nos mesmos 3 arquivos generalizados nesta rodada — escopo do mesmo tamanho do que foi feito agora, não um ajuste pequeno. Adiado até decidir se vale a pena dado o resultado modesto acima.
+- [x] Confirmar overlap real com a Pinnacle — feito, era zero por causa do fold 3 (corrigido, PR #457).
+- [x] Re-treinar com `treinar_modelo_custom_wf.py` (walk-forward) — feito 08/09, todas as 6 linhas, 2x (uma vez com bug do fold 3, outra já corrigida).
+- [x] Comparar contra `stats_glm_v1` — feito, só cobre 9.5 (perde também, ver rodada anterior).
+- [x] Comparar contra a Pinnacle de verdade (fechamento + pré-fechamento) e a Betano (pré-fechamento) — feito, mercado vence em toda linha testada.
+- [x] Modelos dedicados agora entram no painel "Backtest completo" (`model_benchmarking_backtest`) — `backtest_kelly.py` ganhou `MODELOS_CUSTOM_ESCANTEIOS`/`avaliar_modelo_persistido_vs_mercado()` (PR #458). Ainda não rodado de verdade (script caro, 260min, só `workflow_dispatch` — decisão de quando rodar, não de código).
+- [ ] Confirmar se `prever_partidas_futuras_custom.yml` (cron diário `0 5 * * *`) está de fato gerando previsão nova todo dia pra essas 6 configs a partir de agora — com o fold 3 corrigido, o overlap com a Pinnacle deve crescer organicamente a cada dia; vale reconferir em alguns dias.
+- [ ] Registrar em `models_registry`: **não recomendado** agora — nenhuma linha justifica virar "oficial" dado o resultado acima.
+- [ ] Escanteio POR TIME (mercados reais `corners_over_under_team_1_{linha}`/`team_2_{linha}`, cobertura real em `odds_market` até ~2.100 partidas/linha) — pedido pelo usuário em 08/09, ainda NÃO implementado. Escopo do mesmo tamanho do que foi feito nesta rodada. Dado que nem a versão total bate o mercado, vale reconsiderar a prioridade disso antes de replicar o esforço.
 
 Ver histórico completo da investigação nas sessões de 07-08/09 se precisar dos números exatos das consultas SQL (não persistidos em nenhum script, foram ad-hoc via `execute_sql`).
 
