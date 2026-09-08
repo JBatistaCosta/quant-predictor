@@ -75,6 +75,41 @@ TARGETS = {
         }
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
     },
+    # Cartões (mercado real de mercado chama "bookings", ver dh.LINHAS_CARTOES_OU) --
+    # mesmo padrão de generalização usado pra escanteios.
+    **{
+        f"cartoes_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_cartoes_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CARTOES_OU
+    },
+    # Cartões POR TIME (mandante/visitante) -- mercado real "bookings" por
+    # time (`bookings_over_under_team_1/2_{linha}`, ver
+    # dh.LINHAS_CARTOES_TIME_OU), separado do total da partida acima.
+    **{
+        f"cartoes_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_cartoes_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    # Faltas -- SEM mercado real pra comparar (confirmado via SQL em
+    # 08/09, nenhuma linha de "foul"/"falta" existe em odds_market). Só
+    # serve pra métrica intrínseca (log-loss/Brier), nunca EV/IC95.
+    **{
+        f"faltas_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_FALTAS_OU
+    },
+    # Faltas POR TIME -- mesma ressalva de sem mercado real do total acima.
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -106,6 +141,32 @@ _TARGET_PRED_META = {
             "market": f"corners_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
         }
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
+    **{
+        f"cartoes_over_under_{linha}": {
+            "market": f"cartoes_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CARTOES_OU
+    },
+    **{
+        f"cartoes_{lado}_over_under_{linha}": {
+            "market": f"cartoes_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    **{
+        f"faltas_over_under_{linha}": {
+            "market": f"faltas_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "market": f"faltas_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
     },
 }
 
@@ -511,6 +572,24 @@ _MERCADO_POR_TARGET = {
     **{
         f"corners_over_under_{linha}": (f"corners_over_under_{linha}", ["under", "over"])
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
+    **{
+        f"cartoes_over_under_{linha}": (f"cartoes_over_under_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_CARTOES_OU
+    },
+    **{
+        f"cartoes_{lado}_over_under_{linha}": (f"cartoes_{lado}_over_under_{linha}", ["under", "over"])
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    **{
+        f"faltas_over_under_{linha}": (f"faltas_over_under_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": (f"faltas_{lado}_over_under_{linha}", ["under", "over"])
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
     },
 }
 

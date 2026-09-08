@@ -81,6 +81,41 @@ TARGETS = {
         }
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
     },
+    # Cartões (mercado real chama "bookings", ver dh.LINHAS_CARTOES_OU) --
+    # mesma generalização de escanteios, replicada aqui porque este script
+    # (walk-forward CV) tem seu próprio TARGETS/_TARGET_PRED_META (ver PR
+    # #454, bug real de não replicar essa mesma extensão nos dois scripts).
+    **{
+        f"cartoes_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_cartoes_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CARTOES_OU
+    },
+    # Cartões POR TIME (mandante/visitante) -- mercado real "bookings" por
+    # time, mesma generalização replicada aqui (ver comentário acima sobre
+    # os dois scripts de treino precisarem do mesmo TARGETS).
+    **{
+        f"cartoes_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_cartoes_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    # Faltas -- SEM mercado real (ver comentário em treinar_modelo_custom.py),
+    # replicado aqui pela mesma disciplina dos dois scripts de treino.
+    **{
+        f"faltas_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_time_ou(lado, linha), "tipo": "binario", "classes": 2,
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
 }
 
 _TARGET_PRED_META = {
@@ -95,6 +130,32 @@ _TARGET_PRED_META = {
             "market": f"corners_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
         }
         for linha in dh.LINHAS_CORNERS_OU_EXTRA
+    },
+    **{
+        f"cartoes_over_under_{linha}": {
+            "market": f"cartoes_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CARTOES_OU
+    },
+    **{
+        f"cartoes_{lado}_over_under_{linha}": {
+            "market": f"cartoes_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_CARTOES_TIME_OU
+    },
+    **{
+        f"faltas_over_under_{linha}": {
+            "market": f"faltas_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_FALTAS_OU
+    },
+    **{
+        f"faltas_{lado}_over_under_{linha}": {
+            "market": f"faltas_{lado}_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for lado in ("home", "away")
+        for linha in dh.LINHAS_FALTAS_TIME_OU
     },
 }
 
