@@ -205,7 +205,10 @@ def montar_linhas(player_id, payload):
     # campo separado do payload — bug real: extração antiga sempre dava null,
     # então nenhum sync (nem este script, nem a rota jogador-perfil) nunca
     # preenchia `players.birth_date`.
-    birth_date = parse_data((payload.get("birthDate") or {}).get("utcTime"))
+    # "0001-01-01" é o placeholder que o FotMob usa pra "nascimento
+    # desconhecido" (DateTime.MinValue do .NET) — não é uma data real.
+    birth_utc = (payload.get("birthDate") or {}).get("utcTime")
+    birth_date = parse_data(birth_utc) if birth_utc and not birth_utc.startswith("0001-01-01") else None
 
     pos_desc = payload.get("positionDescription") or {}
     posicao_principal = (pos_desc.get("primaryPosition") or {}).get("label")

@@ -262,7 +262,9 @@ def main():
             continue
 
         birth_utc = (payload.get("birthDate") or {}).get("utcTime")
-        birth_date = _parse_data(birth_utc)
+        # "0001-01-01" é o placeholder que o FotMob usa pra "nascimento
+        # desconhecido" (DateTime.MinValue do .NET) — não é uma data real.
+        birth_date = _parse_data(birth_utc) if birth_utc and not birth_utc.startswith("0001-01-01") else None
         if birth_date:
             birth_rows.append({"fotmob_player_id": fotmob_id, "birth_date": birth_date})
 
