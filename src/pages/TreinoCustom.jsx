@@ -563,6 +563,16 @@ const TARGETS = [
   { value: 'faltas_over_under_26.5', label: 'Faltas O/U 26,5' },
   { value: 'faltas_over_under_28.5', label: 'Faltas O/U 28,5' },
   { value: 'faltas_over_under_30.5', label: 'Faltas O/U 30,5' },
+  { value: 'faltas_home_over_under_8.5', label: 'Faltas Mandante O/U 8,5' },
+  { value: 'faltas_home_over_under_10.5', label: 'Faltas Mandante O/U 10,5' },
+  { value: 'faltas_home_over_under_12.5', label: 'Faltas Mandante O/U 12,5' },
+  { value: 'faltas_home_over_under_14.5', label: 'Faltas Mandante O/U 14,5' },
+  { value: 'faltas_home_over_under_16.5', label: 'Faltas Mandante O/U 16,5' },
+  { value: 'faltas_away_over_under_8.5', label: 'Faltas Visitante O/U 8,5' },
+  { value: 'faltas_away_over_under_10.5', label: 'Faltas Visitante O/U 10,5' },
+  { value: 'faltas_away_over_under_12.5', label: 'Faltas Visitante O/U 12,5' },
+  { value: 'faltas_away_over_under_14.5', label: 'Faltas Visitante O/U 14,5' },
+  { value: 'faltas_away_over_under_16.5', label: 'Faltas Visitante O/U 16,5' },
 ];
 
 const STATUS_INFO = {
