@@ -117,6 +117,9 @@ function formatarMensagemAcao(tarefa, corpo) {
   if (tarefa === 'disparar-atualizar-stats') {
     return `Workflow disparado: ${corpo.workflow || 'atualizar_stats.yml'} — acompanhe em GitHub Actions (≈1 min pra iniciar).`;
   }
+  if (tarefa === 'disparar-atualizar-stats-fbref') {
+    return 'Workflow disparado: atualizar_stats_fbref.yml (xG/chutes/posse/cartões, alimenta o resumo de forma) — acompanhe em GitHub Actions (≈1 min pra iniciar, leva 20-40min pra terminar).';
+  }
   if (tarefa === 'disparar-predicoes') {
     return 'Disparado! Roda no GitHub Actions (até ~15 min) e cobre as 10 partidas mais próximas entre as 6 ligas do pipeline, só entre as que já têm odds capturada — clique em "Recarregar" daqui a pouco.';
   }
@@ -348,6 +351,15 @@ export default function RodadaPrevisoes() {
         >
           {acao === 'disparar-atualizar-stats' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
           Atualizar todas (Actions)
+        </button>
+        <button
+          onClick={() => acionar('disparar-atualizar-stats-fbref', { auth: true })}
+          disabled={acao !== null || !session}
+          title={!session ? 'Faça login pra disparar o workflow.' : 'Dispara o workflow atualizar_stats_fbref.yml no GitHub Actions — xG/chutes/posse/cartões (match_stats), alimenta o resumo de forma. 1 liga por dia no rodízio automático; aqui dispara a temporada atual da liga escolhida pelo rodízio do dia (20-40min).'}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {acao === 'disparar-atualizar-stats-fbref' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          Atualizar match_stats FBref (Actions)
         </button>
       </div>
 
