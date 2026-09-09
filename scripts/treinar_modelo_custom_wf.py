@@ -175,6 +175,15 @@ _FOTMOB_SHORTS_V8 = frozenset({
 })
 _FOTMOB_POSICOES_V8 = ("sofrido_home", "sofrido_away", "home", "away")
 
+# Janelas multi-janela reais (v13, `_forma_por_mando_multi_janelas` em
+# dados_historicos.py) -- hoje só geradas pra "escanteios_fm"/"posse_fm"
+# (extensão 09/09 da migração FBref->FotMob de escanteios), mas o nome final
+# já é a coluna de verdade do dataset (`escanteios_fm_home_10j_decay` etc,
+# SEM o prefixo "media_"/reordenação que a v8 legada precisa) -- não é a
+# forma antiga precisando de tradução, então não deve cair no ramo de
+# "janela inexistente" abaixo.
+_FOTMOB_JANELAS_MULTI = ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+
 
 def _migrar_chave_fotmob_v8(key: str) -> str | None:
     for metric in sorted(_FOTMOB_SHORTS_V8, key=len, reverse=True):
@@ -188,6 +197,8 @@ def _migrar_chave_fotmob_v8(key: str) -> str | None:
                 if nova != key:
                     logger.info("Feature migrada (FotMob v8): %s → %s", key, nova)
                 return nova
+            if any(rest == f"{pos}_{janela}" for janela in _FOTMOB_JANELAS_MULTI):
+                return key
             if rest.startswith(f"{pos}_"):
                 logger.warning("Feature FotMob v8 descartada (janela inexistente): %s", key)
                 return None
