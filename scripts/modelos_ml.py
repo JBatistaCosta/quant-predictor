@@ -38,7 +38,7 @@ from dados_historicos import (
     FEATURES_V11_XG_CORRIGIDO,
     FEATURES_V12_MESMA_LIGA,
     FEATURES_V13_CORNERS_FOTMOB,
-    FEATURES_V14_CORNERS_BAYESIANO,
+    FEATURES_V14_CORNERS_DECAY,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
@@ -193,12 +193,13 @@ FEATURES_POR_MODELO = {
     "hibrido_gols_v1": FEATURES_V12_MESMA_LIGA,
     "hibrido_gols_xg_v1": FEATURES_V12_MESMA_LIGA,
     # v14 -- V13_CORNERS_FOTMOB (sem escanteios/posse do FBref, mortos desde
-    # o abandono do FBref, ago/2026) + shrinkage bayesiano de escanteios/
-    # posse (prior de temporada anterior/liga pra time recém-promovido).
-    # Só este modelo -- os outros 3 `hibrido_*` (gols) continuam em
-    # V12_MESMA_LIGA, ver comentário de FEATURES_V14_CORNERS_BAYESIANO em
-    # dados_historicos.py.
-    "hibrido_corners_v1": FEATURES_V14_CORNERS_BAYESIANO,
+    # o abandono do FBref, ago/2026) + janela 20j com decaimento exponencial
+    # (mesma janela que venceu nas 6 configs dedicadas de escanteios). O
+    # shrinkage bayesiano foi testado aqui e removido de novo -- comparação
+    # saiu mista, ver comentário de FEATURES_V14_CORNERS_DECAY em
+    # dados_historicos.py. Só este modelo -- os outros 3 `hibrido_*` (gols)
+    # continuam em V12_MESMA_LIGA.
+    "hibrido_corners_v1": FEATURES_V14_CORNERS_DECAY,
     "hibrido_gols_lgbm_v1": FEATURES_V12_MESMA_LIGA,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     # FEATURES_V9_XG_CORRIGIDO em vez de FEATURES_V9 -- achado #15
