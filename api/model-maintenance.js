@@ -699,6 +699,7 @@ const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO = 'treinar_modelo_custom.yml';
 const GITHUB_WORKFLOW_FILE_CUSTOM_TREINO_WF = 'treinar_modelo_custom_wf.yml';
 const GITHUB_WORKFLOW_FILE_ESTIMAR_PARTIDA_CUSTOM = 'estimar_partida_custom.yml';
 const GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS = 'atualizar_stats.yml';
+const GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS_FBREF = 'atualizar_stats_fbref.yml';
 const GITHUB_WORKFLOW_FILE_INGERIR_ESCALACAO = 'ingerir_escalacao_pre_jogo.yml';
 
 // Fonte única de verdade dos workflows disparáveis pelo painel de
@@ -743,6 +744,10 @@ const WORKFLOWS_DISPONIVEIS = [
     { id: 'modo', tipo: 'choice', opcoes: ['tudo', 'placar', 'stats'], default: 'tudo', descricao: 'tudo=placar+stats | placar=só placares | stats=só estatísticas' },
     { id: 'forcar', tipo: 'boolean', default: false, descricao: 'Reprocessa mesmo partidas que já têm dados parciais' },
     { id: 'ao_vivo', tipo: 'boolean', default: false, descricao: 'Processa partidas dos últimos 120min (em andamento/recém-encerradas)' },
+  ] },
+  { arquivo: 'atualizar_stats_fbref.yml', label: 'Atualizar match_stats (FBref: xG/chutes/posse/cartões)', categoria: 'importacao', inputs: [
+    { id: 'liga', tipo: 'choice', opcoes: ['', 'BSA', 'PL', 'PD', 'SA', 'BL1', 'FL1'], descricao: 'Código da liga no soccerdata (vazio = rodízio automático do dia)' },
+    { id: 'temporada', tipo: 'string', descricao: 'Temporada (ex.: 2026; vazio = a mais recente com jogo no banco pra essa liga)' },
   ] },
   { arquivo: 'backfill_odds_historico.yml', label: 'Backfill de Odds Históricas (OddsPapi)', categoria: 'importacao', inputs: [
     { id: 'ligas', tipo: 'string', descricao: 'league_ids separados por espaço (vazio = todas as 14 mapeadas)' },
@@ -913,6 +918,20 @@ async function tarefaDispararAtualizarStats(supabase, authHeader, { liga_id, lim
   if (modo && modo !== 'tudo') inputs.modo = modo;
   if (forcar === 'true' || forcar === true) inputs.forcar = 'true';
   return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS, inputs);
+}
+
+// Dispara atualizar_stats_fbref.yml (match_stats/FBref — xG, chutes, posse,
+// faltas, cartões; complementar ao FotMob acima, que cobre corners/xGOT/
+// escalação mas não alimenta o resumo de forma de AnaliseHistorica.jsx/
+// AnaliseEstatisticaJogo.jsx/TimeDetalhe.jsx, ver CONTEXTO_PROJETO.md).
+// `liga`/`temporada` vazios deixam o workflow escolher (rodízio do dia /
+// temporada mais recente no banco) — mesmo mecanismo de disparo/autenticação
+// de disparar-atualizar-stats.
+async function tarefaDispararAtualizarStatsFbref(supabase, authHeader, { liga, temporada } = {}) {
+  const inputs = {};
+  if (liga) inputs.liga = String(liga);
+  if (temporada) inputs.temporada = String(temporada);
+  return dispararWorkflow(supabase, authHeader, GITHUB_WORKFLOW_FILE_ATUALIZAR_STATS_FBREF, inputs);
 }
 
 // Dispara ingerir_escalacao_pre_jogo.yml pra 1 partida específica, via
@@ -6175,6 +6194,13 @@ export default async function handler(req, res) {
     if (tarefa === 'disparar-atualizar-stats') {
       const { liga_id: _lid, limite: _lim, modo: _modo, forcar } = req.query;
       const resultado = await tarefaDispararAtualizarStats(supabase, req.headers.authorization, { liga_id: _lid, limite: _lim, modo: _modo, forcar });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'disparar-atualizar-stats-fbref') {
+      const { liga: _liga, temporada: _temporada } = req.query;
+      const resultado = await tarefaDispararAtualizarStatsFbref(supabase, req.headers.authorization, { liga: _liga, temporada: _temporada });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }

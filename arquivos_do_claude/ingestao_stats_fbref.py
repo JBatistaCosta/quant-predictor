@@ -11,6 +11,7 @@ Uso:
 
     python ingestao_stats_fbref.py BSA 2023     (uma liga+temporada por vez)
     python ingestao_stats_fbref.py PL 2024
+    python ingestao_stats_fbref.py PL auto      (temporada = a mais recente com jogo no banco pra essa liga)
     ...
 
 IMPORTANTE - seja paciente e gentil com o FBref:
@@ -267,7 +268,6 @@ def main():
 
     liga_cod, temporada = sys.argv[1], sys.argv[2]
     liga_sd, ano_cal = LIGAS[liga_cod]
-    temp_sd = temporada_soccerdata(temporada, ano_cal)
 
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -276,6 +276,22 @@ def main():
     if not liga_row:
         sys.exit(f"Liga {liga_cod} não encontrada no banco.")
     liga_id = liga_row[0]["id"]
+
+    if temporada == "auto":
+        # Temporada mais recente com jogo cadastrado pra essa liga --
+        # usado pelo cron (atualizar_stats_fbref.yml), que não sabe de
+        # antemão qual é "a temporada atual" de cada liga (calendários
+        # diferentes: Brasil = ano civil, Europa = ago-mai). Mesmo padrão
+        # de resolução usado em dados_historicos.py.
+        temporada_row = (supabase.table("matches").select("season")
+                          .eq("league_id", liga_id).order("season", desc=True)
+                          .limit(1).execute().data)
+        if not temporada_row:
+            sys.exit(f"Nenhuma partida de {liga_cod} no banco pra descobrir a temporada atual.")
+        temporada = temporada_row[0]["season"]
+        print(f"Temporada 'auto' resolvida pra {liga_cod}: {temporada}")
+
+    temp_sd = temporada_soccerdata(temporada, ano_cal)
 
     jogos, inicio = [], 0
     while True:
