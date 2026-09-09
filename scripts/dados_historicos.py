@@ -3508,6 +3508,28 @@ FEATURES_NUMERICAS_V13_CORNERS_FOTMOB = [
 ]
 FEATURES_V13_CORNERS_FOTMOB = FEATURES_NUMERICAS_V13_CORNERS_FOTMOB + CAT_FEATURES
 
+# v14 (só `hibrido_corners_v1`) -- V13_CORNERS_FOTMOB + janela 20j com
+# decaimento exponencial (mesma janela que venceu, consistente nas 4
+# comparações, nas 6 configs dedicadas de escanteios -- ver CONTEXTO_
+# PROJETO.md) + shrinkage bayesiano de escanteios/posse
+# (`_anexar_bayesiano_escanteios_posse_por_partida`: mistura a EWMA da
+# temporada atual com um prior de temporada anterior/liga, resolvendo o
+# "sem prior pro time recém-promovido" que a janela simples E a 20j decay
+# têm -- `min_periods=1` nas duas). Aditivo, não substitui: as features
+# FotMob de janela única (`media_escanteios_fm_5j_*`) continuam em V13,
+# os modelos de árvore lidam bem com colinearidade (mesmo espírito do
+# comentário em COLUNAS_STATS_FOTMOB sobre FotMob vs FBref serem
+# "intencionalmente redundantes").
+FEATURES_NUMERICAS_V14_CORNERS_BAYESIANO = FEATURES_NUMERICAS_V13_CORNERS_FOTMOB + [
+    "escanteios_fm_home_20j_decay", "escanteios_fm_sofrido_home_20j_decay",
+    "escanteios_fm_away_20j_decay", "escanteios_fm_sofrido_away_20j_decay",
+    "posse_fm_home_20j_decay", "posse_fm_away_20j_decay",
+    "escanteios_fm_bayesiano_home", "escanteios_fm_bayesiano_away",
+    "escanteios_fm_cedido_bayesiano_home", "escanteios_fm_cedido_bayesiano_away",
+    "posse_fm_bayesiano_home", "posse_fm_bayesiano_away",
+]
+FEATURES_V14_CORNERS_BAYESIANO = FEATURES_NUMERICAS_V14_CORNERS_BAYESIANO + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.
