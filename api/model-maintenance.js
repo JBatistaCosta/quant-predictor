@@ -2525,7 +2525,10 @@ async function tarefaCalibracao(supabase, minimo, modelo, mercado) {
     return q;
   });
   const matches = await buscarTudoPaginado(() => supabase.from('matches').select('id, status, home_goals, away_goals, match_date').eq('status', 'finished').not('home_goals', 'is', null));
-  const corneragens = await buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners').not('corners', 'is', null));
+  // match_stats (FBref) foi abandonada -- scraping bloqueado por CAPTCHA nos
+  // runners do GitHub Actions (ver CONTEXTO_PROJETO.md); match_stats_fotmob
+  // é sincronizada automaticamente todo dia.
+  const corneragens = await buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, corners').not('corners', 'is', null));
 
   const matchPorId = {};
   matches.forEach(m => { matchPorId[m.id] = m; });
