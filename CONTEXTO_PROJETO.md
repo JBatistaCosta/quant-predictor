@@ -2,14 +2,22 @@
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
-**Retestar cartões 4.5 e por-time 1.5 (mandante/visitante) com carteira cronológica + gestão de risco (09/09).** A tabela `model_betting_strategy` (ver seção "config versionada" mais abaixo) tem essas 3 linhas marcadas `validado_carteira=false` — a classificação (`anti_modelo`, confiança `media`) ainda é herdada do posicionamento antigo por log-loss/ROI agregado, que **já se mostrou não confiável**: as linhas irmãs 3.5 e 5.5 de cartões, quando retestadas com o método novo (carteira jogo-a-jogo, banca R$1.000, política de risco `api/_lib/stakingPolicy.js`, teto de EV 4%-16%, line shopping entre casas), NÃO reproduziram o sinal antigo e foram rebaixadas pra "em revisão". Não há razão pra achar que 4.5/por-time 1.5 vão se comportar diferente — só ainda não foram testadas com o método certo.
+**Reteste concluído (09/09) — cartões 4.5, mandante 1.5, visitante 1.5.** Achado mais forte da rodada: **cartões total 4.5 (anti-modelo) fecha com IC95% inteiramente negativo, pior que qualquer outra linha de cartões testada nesta sessão.**
 
-Pra retomar: repetir exatamente o pipeline usado nesta sessão pra 3.5/5.5 (ver `sim_kelly_multi.py`/`sim_corners.py` como referência de estrutura, dados via `model_predictions`+`odds_market`+`match_stats`, Pinnacle+bet365 fechamento) nas 3 linhas:
-- `cartoes_total` 4.5 (anti-modelo, hoje média confiança, IC95%[+24%,+56%] no método antigo)
-- `cartoes_mandante` 1.5 (anti-modelo via bet365, hoje média confiança)
-- `cartoes_visitante` 1.5 (anti-modelo via bet365, hoje média confiança)
+| Linha | Casas / filtro | n | ROI médio | IC95% | Banca final |
+|---|---|---|---|---|---|
+| **Total 4.5 (anti-modelo)** | Pin+bet365, edge min. por faixa | **90** | **−48,2%** | **[−69,9%, −26,5%]** | R$ 644,20 |
+| Total 4.5 (anti-modelo) | Pin+bet365, EV 4%-16% | 31 | −40,1% | [−75,9%, −4,3%] | R$ 856,67 |
+| Mandante 1.5 (anti-modelo) | bet365+betano, edge min. por faixa | 20 | −30,2% | [−77,0%, +16,5%] | R$ 925,65 |
+| Mandante 1.5 (anti-modelo) | bet365+betano, EV 4%-16% | 13 | −47,5% | [−99,6%, +4,6%] | R$ 940,84 |
+| Visitante 1.5 (anti-modelo) | bet365+betano, edge min. por faixa | 14 | +15,5% | [−45,2%, +76,3%] | R$ 1.055,01 |
+| Visitante 1.5 (anti-modelo) | bet365+betano, EV 4%-16% | 10 | +14,3% | [−56,8%, +85,3%] | R$ 1.042,65 |
 
-Depois de rodar, **atualizar as 3 linhas em `model_betting_strategy`** (`confianca`, `validado_carteira=true`, `n_amostra`, `roi_ic95_inf/sup`, `notas`) e registrar o resultado no `CONTEXTO_PROJETO.md`, seguindo a mesma disciplina de honestidade desta sessão (registrar mesmo que o resultado seja negativo ou inconclusivo).
+A linha 4.5 tinha sido classificada "anti-modelo, média confiança, IC95%[+24%,+56%]" pelo método antigo (log-loss/ROI agregado) — no reteste com carteira cronológica real, **inverte completamente**: perde dinheiro de forma estatisticamente robusta, em ambas as versões do filtro (com ou sem teto de EV). Provável causa raiz: o modelo prevê "under" em 65% dos jogos, mas a taxa real de "over" nessa linha é 41% — o filtro de EV, que confia na própria probabilidade do modelo pra decidir quando apostar, acaba selecionando sistematicamente os jogos onde esse viés do modelo é maior, não menor. Mandante/visitante 1.5 seguem inconclusivos (amostra pequena, 10-20 apostas, IC95% cruzando zero) — nem confirmam nem descartam a classificação antiga.
+
+`model_betting_strategy` já atualizada: `cartoes_total`/4.5 → `nenhuma`/`alta`/`evidencia_anti_perde=true`; `cartoes_mandante`/1.5 e `cartoes_visitante`/1.5 → `nenhuma`/`em_revisao`. Todas as 3 com `validado_carteira=true`.
+
+**Conclusão que se acumula em toda a frente de cartões desta sessão: NENHUMA linha (total ou por time) sobreviveu ao reteste com carteira cronológica sem virar "em revisão" ou pior.** A linha 4.5 é a primeira a virar de "positiva" pra "confirmadamente perdedora" — mais forte que a reversão de 3.5/5.5 (que só virou "inconclusiva"). Antes de considerar qualquer linha de cartões pronta pra uso real, o caminho é o mesmo já registrado pra escanteios: esperar o cron acumular mais partidas de 2026 e reavaliar.
 
 ---
 
@@ -419,7 +427,7 @@ Adicionar um teto de EV (rejeitar apostas com edge aparente acima de 16% — a m
 
 Estado gravado nas 20 linhas, honesto sobre o que foi retestado nesta sessão e o que não foi:
 - **Cartões 3.5 e 5.5**: rebaixadas de "alta confiança" pra `nenhuma`/`em_revisao` — `validado_carteira=true`, mas nenhuma direção sobreviveu à carteira cronológica (ver correção de achado acima).
-- **Cartões 4.5 e por-time 1.5**: mantidas como `anti_modelo`/`media` — herdadas do posicionamento por log-loss/ROI agregado de sessões anteriores, mas com `validado_carteira=false` e nota explícita de que estão **pendentes de reteste** com o método mais rigoroso (não foram cobertas pelo estudo de carteira desta sessão, só 3.5/5.5 de cartões e as 5 linhas de escanteios foram).
+- **Cartões 4.5 e por-time 1.5**: RETESTADAS (09/09, ver pendência resolvida no topo do arquivo) — 4.5 vira `nenhuma`/`alta`/`evidencia_anti_perde=true` (a linha anti-modelo confirma perda real, IC95%[-69,9%,-26,5%]); mandante/visitante 1.5 viram `nenhuma`/`em_revisao` (amostra pequena, inconclusivas). Todas com `validado_carteira=true`.
 - **Cartões por-time 0.5**: `nunca`, `alta` confiança — o artefato de odd longa continua valendo independente de qualquer reteste.
 - **Escanteios 9.5 e 10.5**: `nenhuma` com `evidencia_anti_perde=true` — as duas linhas onde a carteira simulada confirmou (IC95% inteiramente negativo) que apostar contra o modelo perde dinheiro de verdade, não é só "sem edge positivo".
 - **Escanteios 7.5/8.5/11.5 e cartões 1.5/2.5/6.5/por-time 2.5+**: `nenhuma`/`em_revisao`/`insuficiente` — inconclusivas por amostra pequena, sem reivindicar edge em nenhuma direção.
