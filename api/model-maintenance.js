@@ -922,6 +922,41 @@ async function tarefaDispararAtualizarStats(supabase, authHeader, { liga_id, lim
 // escopo continua restrito a match_lineup_fotmob, nunca placar/stats).
 // Usado pelos botões "Sincronizar escalação real" em
 // /analise-avancada/:matchId (header e tabela de mercados por jogador).
+// Diagnóstico (só leitura, sem autenticação -- mesmo padrão de outras
+// tarefas de diagnóstico deste arquivo): lista partidas ainda
+// status='scheduled' com match_date bem no passado -- sintoma de
+// remarcação que nem o sync (football-data.org) nem o casamento por data
+// do safety-net FotMob (scripts/atualizar_partidas_finalizadas.py,
+// janela de 21 dias) resolveram ainda. Achado real: 14 partidas ficaram
+// presas assim por semanas (uma com 7 dias de diferença de data) antes de
+// alguém notar via "algumas partidas não sincronizam estatísticas" (ver
+// CONTEXTO_PROJETO.md) -- rodar isso periodicamente detecta o mesmo padrão
+// cedo, em vez de esperar reclamação. `horas` default 6h (folga mínima
+// pra não pegar jogo que só ainda não teve tempo de ser processado pelo
+// cron do dia).
+async function tarefaDiagnosticoPartidasAtrasadas(supabase, { liga_id, horas } = {}) {
+  const horasCorte = Number(horas) || 6;
+  const corte = new Date(Date.now() - horasCorte * 3600 * 1000).toISOString();
+  let q = supabase
+    .from('matches')
+    .select('id, league_id, match_date, leagues(name), home:teams!matches_home_team_id_fkey(name), away:teams!matches_away_team_id_fkey(name)')
+    .eq('status', 'scheduled')
+    .lt('match_date', corte)
+    .order('match_date', { ascending: true });
+  if (liga_id) q = q.eq('league_id', Number(liga_id));
+  const { data, error } = await q;
+  if (error) return { status: 500, error: error.message };
+  return {
+    status: 200,
+    corte_horas: horasCorte,
+    total: data.length,
+    partidas: data.map((m) => ({
+      match_id: m.id, league_id: m.league_id, liga: m.leagues?.name,
+      match_date: m.match_date, mandante: m.home?.name, visitante: m.away?.name,
+    })),
+  };
+}
+
 async function tarefaSincronizarEscalacaoReal(supabase, authHeader, { match_id } = {}) {
   const matchId = Number(match_id);
   if (!Number.isInteger(matchId) || matchId <= 0) {
@@ -6178,6 +6213,12 @@ export default async function handler(req, res) {
     if (tarefa === 'disparar-atualizar-stats') {
       const { liga_id: _lid, limite: _lim, modo: _modo, forcar } = req.query;
       const resultado = await tarefaDispararAtualizarStats(supabase, req.headers.authorization, { liga_id: _lid, limite: _lim, modo: _modo, forcar });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'diagnostico-partidas-atrasadas') {
+      const resultado = await tarefaDiagnosticoPartidasAtrasadas(supabase, { liga_id, horas: req.query.horas });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
