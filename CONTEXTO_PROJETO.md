@@ -100,6 +100,22 @@ No número bruto o mercado (Pinnacle ou Betano) fica à frente do dedicado na ma
 
 A direção anti-modelo tem **IC95% inteiramente negativo**, com n=88 vindo de uma base de 964 partidas — não é o tipo de amostra pequena que já rendeu falsos positivos nesta investigação (cartões, altura, etc.). Isso é consistente com a decisão já registrada acima ("não temos um modelo que bate o mercado" na 9.5, IC95% de log-loss [+0,0079,+0,0274] a favor do mercado): o mercado não só calibra melhor no agregado, como **apostar contra o modelo também é uma estratégia perdedora de verdade**, não uma oportunidade não-testada. Reforça a decisão de não promover o dedicado a `models_registry` nem tratar a 9.5 como fonte de aposta em qualquer direção. Simulação completa com gráfico da banca em artefato publicado nesta sessão (mesmo artefato da correção de cartões).
 
+**Extensão (09/09, pedido do usuário) — mesma metodologia nas outras 5 linhas de escanteios. Achado replicado: a linha 10.5 fecha o mesmo padrão da 9.5, com amostra ainda maior.**
+
+| Linha | Direção | n | ROI médio/aposta | IC95% | Banca final |
+|---|---|---|---|---|---|
+| 7.5 | Segue modelo | 28 de 86 | −9,9% | [−36,8%, +16,9%] | R$ 943,18 |
+| 7.5 | Anti-modelo | 10 de 86 | −21,2% | [−95,8%, +53,4%] | R$ 969,22 |
+| 8.5 | Segue modelo | 163 de 672 | −2,8% | [−16,1%, +10,4%] | R$ 880,13 |
+| 8.5 | Anti-modelo | 85 de 672 | −10,6% | [−35,7%, +14,6%] | R$ 871,20 |
+| **10.5** | Segue modelo | 90 de 734 | +0,7% | [−19,4%, +20,8%] | R$ 942,21 |
+| **10.5** | **Anti-modelo** | **151 de 734** | **−19,1%** | **[−37,5%, −0,8%]** | R$ 674,48 |
+| 11.5 | Segue modelo | 31 de 134 | −1,1% | [−27,0%, +24,8%] | R$ 991,78 |
+| 11.5 | Anti-modelo | 16 de 134 | +7,7% | [−52,3%, +67,7%] | R$ 1.027,76 |
+| 12.5 | — | 0 | — | — | Pinnacle não cotava fechamento nessa linha no período coberto |
+
+**A linha 10.5 replica o mesmo padrão da 9.5 — IC95% inteiramente negativo na direção anti-modelo, com amostra ainda maior (n=151, vs. 88 na 9.5).** Nas linhas 7.5, 8.5 e 11.5 a amostra é pequena demais (10 a 163 apostas, IC95% largos) pra confirmar ou descartar qualquer direção. **Duas linhas de cinco testáveis mostrando o mesmo sinal (mercado precifica melhor, apostar contra o modelo perde dinheiro de forma consistente) é replicação real, não coincidência de uma linha isolada** — reforça ainda mais a decisão de não tratar o modelo dedicado de escanteios como fonte de estratégia de aposta em nenhuma linha nem direção, hoje.
+
 **Hipótese testada e REFUTADA (08/09): altura dos jogadores não correlaciona com escanteios.** Pedido do usuário: verificar se altura média do elenco (geral ou por setor) explica escanteios — hipótese razoável (jogo aéreo/cruzamentos geraria mais disputa por escanteio). Testado via SQL direto (`player_details_fotmob.height_cm`, 86% de cobertura, titulares via `match_lineup_fotmob`, partidas 2023+ das 6 ligas do pipeline):
 
 | Comparação | r (Pearson) | n |
