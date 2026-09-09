@@ -85,8 +85,11 @@ async function buscarTendenciasTime(teamId, antesDe, n) {
   if (jogos.length === 0) return null;
 
   const matchIds = jogos.map(j => j.id);
+  // match_stats (FBref) foi abandonada -- scraping bloqueado por CAPTCHA nos
+  // runners do GitHub Actions (ver CONTEXTO_PROJETO.md). match_stats_fotmob
+  // cobre os mesmos campos e é sincronizada automaticamente todo dia.
   const { data: stats } = matchIds.length > 0
-    ? await supabase.from('match_stats').select('match_id, team_id, corners, yellow_cards, red_cards').in('match_id', matchIds)
+    ? await supabase.from('match_stats_fotmob').select('match_id, team_id, corners, yellow_cards, red_cards').in('match_id', matchIds)
     : { data: [] };
   const statsPorJogo = {};
   (stats || []).filter(s => s.team_id === teamId).forEach(s => { statsPorJogo[s.match_id] = s; });
@@ -136,7 +139,7 @@ async function buscarMediasModelo(teamId, antesDe, n) {
   const oponentePorJogo = {};
   jogos.forEach(j => { oponentePorJogo[j.id] = j.home_team_id === teamId ? j.away_team_id : j.home_team_id; });
 
-  const { data: stats } = await supabase.from('match_stats').select('match_id, team_id, xg').in('match_id', matchIds);
+  const { data: stats } = await supabase.from('match_stats_fotmob').select('match_id, team_id, xg').in('match_id', matchIds);
 
   let somaGolsPro = 0, somaGolsContra = 0;
   jogos.forEach(j => {

@@ -2,8 +2,8 @@
 // Painel leve de forma recente + confronto direto, estilo sofascore/365score
 // (NÃO roda modelo preditivo — isso continua em AnaliseEvento.jsx). Pra cada
 // time: sequência V/E/D dos últimos N jogos (qualquer competição), médias de
-// gols/escanteios/cartões quando disponível (match_stats), e o histórico de
-// confrontos diretos entre os dois times.
+// gols/escanteios/cartões quando disponível (match_stats_fotmob), e o
+// histórico de confrontos diretos entre os dois times.
 //
 // Abaixo do resumo, 3 abas: "Visão Geral" (conteúdo acima, já carregado no
 // load da página), "Estatísticas do Jogo" e "Jogadores" (ambas dados do
@@ -63,8 +63,13 @@ async function buscarFormaTime(teamId, antesDe, n) {
   });
 
   const matchIds = jogos.map(j => j.id);
+  // match_stats (FBref) foi abandonada -- scraping bloqueado por CAPTCHA nos
+  // runners do GitHub Actions (ver CONTEXTO_PROJETO.md). match_stats_fotmob
+  // cobre os mesmos campos (alias shots:total_shots pra manter o nome usado
+  // em ResumoTime.mediaStat('shots') sem mexer no resto do componente) e é
+  // sincronizada automaticamente todo dia via atualizar_stats.yml.
   const { data: stats } = matchIds.length > 0
-    ? await supabase.from('match_stats').select('match_id, team_id, corners, shots, yellow_cards, red_cards').in('match_id', matchIds)
+    ? await supabase.from('match_stats_fotmob').select('match_id, team_id, corners, shots:total_shots, yellow_cards, red_cards').in('match_id', matchIds)
     : { data: [] };
   const statsPorJogo = {};
   (stats || []).filter(s => s.team_id === teamId).forEach(s => { statsPorJogo[s.match_id] = s; });

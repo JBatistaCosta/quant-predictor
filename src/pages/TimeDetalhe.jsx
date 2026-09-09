@@ -100,9 +100,14 @@ export default function TimeDetalhe() {
           .order('updated_at', { ascending: false });
         setForcas(strengths || []);
 
+        // match_stats (FBref) foi abandonada -- scraping bloqueado por CAPTCHA
+        // nos runners do GitHub Actions (ver CONTEXTO_PROJETO.md).
+        // match_stats_fotmob cobre os mesmos campos (alias shots:total_shots
+        // pra manter o nome usado abaixo em mediaCampo/setMediasReais) e é
+        // sincronizada automaticamente todo dia.
         const { data: statsRows } = await supabase
-          .from('match_stats')
-          .select('xg, shots, shots_on_target, corners, match_id, matches!inner(match_date)')
+          .from('match_stats_fotmob')
+          .select('xg, shots:total_shots, shots_on_target, corners, match_id, matches!inner(match_date)')
           .eq('team_id', eq.pipeline_team_id)
           .order('match_date', { foreignTable: 'matches', ascending: false })
           .limit(10);
@@ -252,7 +257,7 @@ export default function TimeDetalhe() {
 
               {mediasReais && (
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">Média real — últimas {mediasReais.n} partidas (match_stats)</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">Média real — últimas {mediasReais.n} partidas (FotMob)</span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                     <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
                       <div className="text-slate-500 text-[10px] uppercase">xG</div>
