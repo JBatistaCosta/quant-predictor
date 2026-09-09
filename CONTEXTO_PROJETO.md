@@ -275,6 +275,21 @@ Tabela completa das 16×3 comparações não cabe aqui — ver histórico da ses
 
 IC95% inteiramente positivo — não é ruído. **Conclusão prática**: nessa linha específica contra a Pinnacle, o jeito de "melhorar" não é ajustar o modelo (calibração e threshold não ajudam), é inverter a leitura da saída dele — o viés sistemático de superestimar "over" é, ele mesmo, o sinal de aposta.
 
+**Estendido pras outras linhas de cartões total (08/09, pedido do usuário "e outras linhas?") — a estratégia contrária SÓ funciona nas linhas médias-altas, não em todas:**
+
+| Linha (total) | n | ROI médio | IC95% | Significativo? |
+|---|---|---|---|---|
+| 1.5 | 16 | -4,4% | — | Não (amostra pequena demais) |
+| 2.5 | 81 | -2,5% | [-0,288, +0,239] | Não (cruza zero) |
+| **3.5** | 244 | **+21,7%** | **[+0,081, +0,353]** | **Sim** |
+| **4.5** | 135 | **+39,6%** | **[+0,235, +0,558]** | **Sim** |
+| **5.5** | 26 | **+41,1%** | **[+0,168, +0,654]** | **Sim (amostra menor)** |
+| 6.5 | 1 | — | — | Amostra insuficiente |
+
+Por time (mandante/visitante) o overlap com a Pinnacle é pequeno demais pra testar (n=1-52, só há pré-fechamento pra essas linhas, não fechamento) — não dá pra confiar em nenhum número aí ainda.
+
+**Leitura mais precisa que "apostar under sempre ganha"**: a estratégia contrária funciona nas linhas MÉDIAS-ALTAS (3.5/4.5/5.5), não nas baixas (1.5/2.5). Faz sentido: nas linhas baixas a maioria das partidas já passa facilmente de 1,5-2,5 cartões (base rate alta), então o modelo apostar "over" ali é só ler corretamente essa base rate — pouco viés pra explorar. Nas linhas mais altas o modelo é sistematicamente otimista demais sobre a ocorrência de cartões, e é esse excesso de otimismo que a aposta contrária captura. **Refina o achado geral de under/over**: o padrão pooled (todas as linhas juntas) mascarava essa diferença — o "under sempre ganha" é real, mas concentrado nas linhas 3.5+, não universal.
+
 **Implementação no sistema — tecnicamente pronta, mas não acionada de propósito.** `avaliar_modelo_persistido_vs_mercado()`/`MODELOS_CUSTOM_CARTOES`/`MODELOS_CUSTOM_CARTOES_TIME` (PRs #462/#463) já sabem gravar essas 16 linhas em `model_benchmarking_backtest` exatamente como fazem pra escanteios — falta só rodar `backtest_kelly.py` completo (script caro, ver nota de escanteios sobre 260min/`workflow_dispatch`) pra elas aparecerem no painel `/modelos → Backtest completo`. Betano já é uma das casas que `gravar_referencia_pinnacle_sem_vig`/o restante do script comparam (não é preciso código novo pra incluí-la). Optei por não disparar esse backtest completo agora: dado o resultado misto acima, rodá-lo geraria uma entrada no painel sem uma conclusão clara pra acompanhar — mais sensato esperar o cron diário (`prever_partidas_futuras_custom.yml`) acumular mais partidas de 2026 (dobrar/triplicar o n) e reavaliar, mesma lição do "esperar mais dado" registrada pra escanteios.
 
 **Cartões POR JOGADOR — investigado, viável, NÃO implementado (08/09, pedido explícito do usuário "sem implementar nada por enquanto").** Dado real já existe: `match_events` tem histórico de cartão por jogador com minuto (58.185 amarelos, 1.813 vermelhos, 1.183 segundos amarelos, todos com `player_id`), e `_carregar_cartoes_jogador_pre_jogo`/`obter_cartoes_atuais` (`dados_historicos.py`) já calculam o estado de "pendurado" ponto-no-tempo sem vazamento — hoje só usado como feature agregada por time (v4), nunca como alvo de modelo por jogador. **Confirmado: não existe mercado real de cartão por jogador em `odds_market`** (nem "player card" nem "to be booked") — igual faltas, validação só seria por métrica intrínseca, nunca EV real. Encaixaria no mesmo padrão de `scripts/treinar_modelo_jogador_mercados.py` (regressor Poisson/binário por jogador, 6 ligas de `LIGAS_MODEL_BENCHMARKING`, persistido em `player_match_estimates`) — alvo seria evento raro (~10-15% base rate típico), features fortes esperadas por analogia ao achado de cartões por time: médias do árbitro (já existem), histórico de cartões do próprio jogador, posição (zagueiro/volante > atacante). Valor prático maior em gestão de risco de suspensão (a própria feature "pendurado" já serve isso hoje) do que em apostas, por falta de mercado pra validar EV.
