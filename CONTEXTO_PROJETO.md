@@ -2,6 +2,14 @@
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
+**Reavaliar as linhas classificadas `em_revisao` em `model_betting_strategy` assim que o cron tiver acumulado mais partidas de 2026.** Depois do reteste de 09/09 (histórico logo abaixo), NENHUMA linha de cartões (total ou por time) sobreviveu à carteira cronológica com classificação positiva — a maioria virou `nenhuma`/`em_revisao` por amostra pequena (10-31 apostas), não por perda confirmada. Ficam pendentes de reteste periódico, com o mesmo método (`sim_reteste_pendentes.py` no scratchpad da sessão de 09/09, adaptável por linha):
+
+- `cartoes_mandante`/1.5 e `cartoes_visitante`/1.5 (n=13-20, IC95% cruzando zero nos dois lados — ver tabela abaixo).
+- As linhas de escanteios com IC95% ainda não significativo por amostra pequena (7.5/8.5/11.5/12.5 — só 9.5/10.5 têm amostra grande o bastante pra confirmar `evidencia_anti_perde=true`; ver seção "Achado novo — carteira simulada confirma" mais abaixo).
+- Cartões total 3.5/5.5, hoje `em_revisao` (inconclusivas, não confirmadas nem descartadas).
+
+Critério de prontidão pra reteste: `select count(*) from odds_market where market = '<mercado>' and snapshot = 'closing'` (via MCP Supabase) numa faixa de datas recente mostrando crescimento real de amostra em relação ao `n_amostra` já gravado na linha — não vale reteste com o mesmo N.
+
 **Reteste concluído (09/09) — cartões 4.5, mandante 1.5, visitante 1.5.** Achado mais forte da rodada: **cartões total 4.5 (anti-modelo) fecha com IC95% inteiramente negativo, pior que qualquer outra linha de cartões testada nesta sessão.**
 
 | Linha | Casas / filtro | n | ROI médio | IC95% | Banca final |
