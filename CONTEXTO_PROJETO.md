@@ -91,6 +91,15 @@ No número bruto o mercado (Pinnacle ou Betano) fica à frente do dedicado na ma
 - [ ] Não fixar uma data — depende de quantas partidas de 2026 essas 6 ligas tiverem por semana. Estimativa grosseira: se 9.5 levou ~1.033 partidas pra fechar e o cron roda 1x/dia sobre `scheduled`, um crescimento de +50-100 partidas/mês é razoável pra essas 6 ligas somadas — nas linhas com n atual de ~100-700, provavelmente meses, não semanas, pra chegar a uma amostra comparável à da 9.5.
 - [x] ~~Escanteio POR TIME~~ — não implementado (decisão: não replicar o esforço de escanteios sem evidência de que vale a pena). Em vez disso, pedido do usuário em 08/09 pivotou pra uma frente nova: **cartões e faltas**.
 
+**Achado novo (09/09) — carteira simulada confirma: nem seguir nem apostar contra o modelo na linha 9.5 tem edge real.** Depois da correção de achado em cartões (ver seção própria abaixo), o mesmo método — carteira cronológica de verdade, banca R$1.000, política de risco de produção (`api/_lib/stakingPolicy.js`: EV mínimo por faixa de odd + fração de Kelly) com um teto adicional de EV entre 4% e 16% pra descartar edge "bom demais pra ser real" — foi repetido em escanteios linha 9.5 (modelo "Escanteios — FBref + FotMob [xgboost]", melhor odd entre Pinnacle/bet365/Betano/William Hill, fechamento). Amostra bem maior que cartões: 964 partidas com previsão + odd.
+
+| Direção | n | ROI médio/aposta | IC95% | Banca final | Drawdown máx. |
+|---|---|---|---|---|---|
+| Segue o modelo | 301 de 964 | −4,4% | [−15,5%, +6,7%] | R$ 689,39 | 41,6% |
+| Anti-modelo | 88 de 964 | **−23,4%** | **[−46,3%, −0,6%]** | R$ 716,44 | 29,9% |
+
+A direção anti-modelo tem **IC95% inteiramente negativo**, com n=88 vindo de uma base de 964 partidas — não é o tipo de amostra pequena que já rendeu falsos positivos nesta investigação (cartões, altura, etc.). Isso é consistente com a decisão já registrada acima ("não temos um modelo que bate o mercado" na 9.5, IC95% de log-loss [+0,0079,+0,0274] a favor do mercado): o mercado não só calibra melhor no agregado, como **apostar contra o modelo também é uma estratégia perdedora de verdade**, não uma oportunidade não-testada. Reforça a decisão de não promover o dedicado a `models_registry` nem tratar a 9.5 como fonte de aposta em qualquer direção. Simulação completa com gráfico da banca em artefato publicado nesta sessão (mesmo artefato da correção de cartões).
+
 **Hipótese testada e REFUTADA (08/09): altura dos jogadores não correlaciona com escanteios.** Pedido do usuário: verificar se altura média do elenco (geral ou por setor) explica escanteios — hipótese razoável (jogo aéreo/cruzamentos geraria mais disputa por escanteio). Testado via SQL direto (`player_details_fotmob.height_cm`, 86% de cobertura, titulares via `match_lineup_fotmob`, partidas 2023+ das 6 ligas do pipeline):
 
 | Comparação | r (Pearson) | n |
@@ -360,6 +369,22 @@ Isso é consistente com o risco de comparação múltipla já registrado abaixo 
 | Total 5.5 (segue/anti conforme pick) | Edge min/máx + 1/4 Kelly por faixa | 31 de 63 | −27,3% | [−58,4%, +3,9%] | R$ 841,24 | 18,5% |
 
 O filtro de EV corta a amostra drasticamente (268→24 na 3.5, 63→31 na 5.5) e reduz o drawdown máximo em todos os casos (a política fazendo exatamente o que deveria: menos exposição nos jogos de menor confiança). Na linha 3.5 isso muda o sinal de negativo pra positivo, mas com IC95% tão largo (n=24) que não dá pra chamar de edge confirmado — é "inconclusivo com viés levemente favorável". Na linha 5.5 o sinal negativo sobrevive ao filtro. **Conclusão prática igual à da carteira sem filtro: nenhuma das duas linhas está validada hoje**, mas a política de risco por faixa já limita a perda potencial em caso de operar com ela mesmo assim — reforça que a config versionada, quando implementada, deve usar essa política de staking (não stake fixo) por padrão.
+
+**Ampliação (09/09, pedido do usuário) — mais casas (line shopping) e teto de EV.** Duas extensões testadas:
+
+1. **Pré-fechamento e abertura não deram pra usar.** Não existe snapshot de "abertura" no banco (só `closing` e `pre_closing`). E `pre_closing`, checado diretamente, cobre exclusivamente partidas de 22/08 a 10/09/2026 — **nenhuma delas com resultado sincronizado em `match_stats`** ainda. Não dá pra backtestar uma aposta sem saber se ela ganhou ou perdeu; `pre_closing` só serve pra apostas ao vivo/futuras, não pra validação retrospectiva.
+2. **bet365 como segunda casa (compra da melhor odd disponível entre Pinnacle+bet365 a cada aposta, mesmo lado estratégico)** aumenta o n e melhora o drawdown, mas não muda a conclusão — os IC95% continuam cruzando zero:
+
+| Linha | Casas / filtro | n | ROI médio | IC95% | Banca final |
+|---|---|---|---|---|---|
+| Total 3.5 (anti-modelo) | Pinnacle, EV min. por faixa | 24 | +13,5% | [−36,6%, +63,6%] | R$ 1.022,23 |
+| Total 3.5 (anti-modelo) | Pin+bet365, EV min. por faixa | 31 | +29,5% | [−12,6%, +71,6%] | R$ 1.101,79 |
+| Total 3.5 (anti-modelo) | Pin+bet365, EV **4%-16%** | 15 | +15,9% | [−39,0%, +70,9%] | R$ 1.029,57 |
+| Total 5.5 (segue/anti pick) | Pinnacle, EV min. por faixa | 31 | −27,3% | [−58,4%, +3,9%] | R$ 841,24 |
+| Total 5.5 (segue/anti pick) | Pin+bet365, EV min. por faixa | 46 | −21,7% | [−47,0%, +3,6%] | R$ 813,31 |
+| Total 5.5 (segue/anti pick) | Pin+bet365, EV **4%-16%** | 20 | −29,7% | [−63,9%, +4,6%] | R$ 900,25 |
+
+Adicionar um teto de EV (rejeitar apostas com edge aparente acima de 16% — a mesma lição da linha 0.5 por time, "edge bom demais pra ser real costuma ser artefato de odd/amostra") só reduz ainda mais uma amostra que já era pequena em cartões, sem destravar significância em nenhuma direção. **É em escanteios (ver achado próprio abaixo) que esse teto de EV realmente separa sinal de ruído**, porque a base de partidas é bem maior.
 
 **Vale um modelo/camada que já pondera tudo isso automaticamente? Sim, mas como config leve, não como novo modelo de ML.** O que existe hoje é uma tabela de decisão pequena (8-9 combinações linha×mercado×estratégia) construída a partir de poucos meses de dado — é um problema de "lookup com poucas dimensões", não um problema que precise de aprendizado de máquina. Um novo modelo treinado pra decidir "seguir ou inverter" seria overkill e adicionaria uma camada de overfitting em cima de um backtest já curto (8 meses, e testamos 16 linhas simultaneamente — risco real de comparação múltipla: mesmo com IC95% individual, testar 16 hipóteses aumenta a chance de alguma "significativa" ser só sorte). **Recomendação**: formalizar a tabela acima como uma config versionada (ex.: tabela `model_betting_strategy` ou um dict no código, `{mercado, linha, estrategia, casa_referencia, data_ultima_revisao}`), reavaliada a cada poucas semanas conforme o cron acumula mais partidas de 2026 — não um modelo novo. Se essa tabela começar a exigir mais do que umas poucas dezenas de linhas com lógica condicional, aí sim reconsiderar uma camada de decisão mais sofisticada.
 
