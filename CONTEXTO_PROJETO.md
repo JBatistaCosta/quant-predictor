@@ -91,6 +91,22 @@ No número bruto o mercado (Pinnacle ou Betano) fica à frente do dedicado na ma
 - [ ] Não fixar uma data — depende de quantas partidas de 2026 essas 6 ligas tiverem por semana. Estimativa grosseira: se 9.5 levou ~1.033 partidas pra fechar e o cron roda 1x/dia sobre `scheduled`, um crescimento de +50-100 partidas/mês é razoável pra essas 6 ligas somadas — nas linhas com n atual de ~100-700, provavelmente meses, não semanas, pra chegar a uma amostra comparável à da 9.5.
 - [x] ~~Escanteio POR TIME~~ — não implementado (decisão: não replicar o esforço de escanteios sem evidência de que vale a pena). Em vez disso, pedido do usuário em 08/09 pivotou pra uma frente nova: **cartões e faltas**.
 
+**Hipótese testada e REFUTADA (08/09): altura dos jogadores não correlaciona com escanteios.** Pedido do usuário: verificar se altura média do elenco (geral ou por setor) explica escanteios — hipótese razoável (jogo aéreo/cruzamentos geraria mais disputa por escanteio). Testado via SQL direto (`player_details_fotmob.height_cm`, 86% de cobertura, titulares via `match_lineup_fotmob`, partidas 2023+ das 6 ligas do pipeline):
+
+| Comparação | r (Pearson) | n |
+|---|---|---|
+| Altura média da linha (sem goleiro) × total de escanteios da partida | -0,015 | 3.716 partidas |
+| Altura média da defesa × total de escanteios | +0,008 | 3.716 |
+| Altura média do meio × total de escanteios | -0,037 | 3.716 |
+| Altura média do ataque × total de escanteios | -0,006 | 3.716 |
+| Altura média da linha × escanteios que o PRÓPRIO time ganhou | -0,035 | 7.504 (time-partida) |
+| Altura média do ataque × escanteios próprios | -0,026 | 7.504 |
+| Altura média da linha × saldo de escanteios (próprios − adversário) | -0,033 | 7.504 |
+
+Todas as correlações são desprezíveis (|r|<0,04, muito abaixo do limiar de 0,1 pra "fraca"), tanto pro total da partida quanto pros escanteios que o próprio time ganha e pro saldo. Testadas as duas formulações da hipótese (jogo com mais escanteios no total vs. time mais alto ganha mais escanteios pra si) — nenhuma se sustenta. **Descartar altura como candidata a feature de escanteios** — não vale investigar mais sem um motivo novo pra revisitar.
+
+**Nota técnica**: consultas que fazem JOIN de `match_lineup_fotmob` (tabela grande, ~900 mil linhas, com coluna `raw` jsonb pesada) contra outra tabela por `player_id` cronometraram (>60s) quando o planner escolhe nested-loop/seq-scan; contornado restringindo `match_id` via `= any(array(select ...))` antes do JOIN, forçando uso do índice `idx_match_lineup_fotmob_match` — cair nisso de novo se outra investigação precisar cruzar titulares com outra tabela por jogador.
+
 **Cartões (bookings) — pipeline dedicado implementado e treinado, ainda NÃO validado contra o mercado (08/09).** Mesma arquitetura de escanteios (`custom_model_configs` + `treinar_modelo_custom_wf.py` + `backtest_kelly.py`), mas com uma descoberta nova: o mercado real de cartões no `odds_market` chama **"bookings"**, não "cards"/"cartões" (`bookings_over_under_full_time_{linha}` pro total, `bookings_over_under_team_1/2_{linha}` por time — mandante/visitante, linhas de 0.5 a 8.5 confirmadas no banco). Diferente de escanteios, faltas NÃO têm mercado real nenhum (nem total nem por time) — modelo de faltas só pode ser validado por métrica intrínseca (log-loss/Brier), nunca EV contra mercado.
 - **PR #462** (mergeado): total da partida, alvo `cartoes_over_under_{linha}` pras 6 linhas 1.5-6.5, `LINHAS_CARTOES_OU` em `dados_historicos.py`, resultado real via `_carregar_total_cartoes_por_partida` (soma `match_stats_fotmob.yellow_cards`+`red_cards`).
 - **PR #463** (mergeado): por time (mandante/visitante), alvo `cartoes_{home,away}_over_under_{linha}` pras linhas 0.5-4.5 cada lado, `_carregar_cartoes_por_time_por_partida` nova (cruza `matches.home_team_id`/`away_team_id` com `match_stats_fotmob` pra separar os dois lados — a função de total já existente só soma).
