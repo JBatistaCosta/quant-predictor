@@ -1952,7 +1952,102 @@ def _anexar_bayesiano_por_partida(partidas: pd.DataFrame, w: int = 5, halflife_d
     partidas = partidas.merge(home_merge, on=["id", "home_team_id"], how="left")
     partidas = partidas.merge(away_merge, on=["id", "away_team_id"], how="left")
     partidas.drop(columns=["_season_year", "xga_home", "xga_away"], inplace=True)
-    
+
+    return partidas
+
+
+def _anexar_bayesiano_escanteios_posse_por_partida(partidas: pd.DataFrame, w: int = 5, halflife_days: str = '21 days') -> pd.DataFrame:
+    """Mesmo algoritmo de regressão bayesiana à média (shrinkage) + EWMA
+    temporal de `_anexar_bayesiano_por_partida` (xG/xGOT/xGA), aplicado a
+    escanteios e posse do FotMob (`corners_fm_home/away`/`possession_fm_
+    home/away`, já anexados por `_anexar_stats_fotmob_por_partida` -- exige
+    que essa função já tenha rodado antes desta).
+
+    Motivação (pedido do usuário, 09/09): a forma multi-janela usada hoje
+    (`_forma_por_mando_multi_janelas`, `min_periods=1`) dá peso total ao
+    primeiro jogo da temporada de um time -- ruidoso na estreia, e sem
+    prior nenhum pra um time recém-promovido (nenhum jogo anterior na
+    liga). Aqui, cada partida da temporada mistura a EWMA do próprio time
+    NESTA temporada com um prior: a média do PRÓPRIO time na temporada
+    anterior (se existir) ou a média da liga na temporada anterior (caso
+    típico de time recém-promovido, sem histórico próprio na liga).
+
+    Gera `escanteios_fm_bayesiano_{home,away}` (escanteios ganhos),
+    `escanteios_fm_cedido_bayesiano_{home,away}` (escanteios cedidos ao
+    adversário -- mesma ideia de `xga_bayesiano`, mirror do valor do
+    adversário na mesma partida) e `posse_fm_bayesiano_{home,away}` (só
+    "ganho" -- posse "cedida" seria ~100-posse, não é uma métrica
+    independente, por isso a config de produção nunca teve uma versão
+    "sofrido" de posse)."""
+    if "corners_fm_home" not in partidas.columns or "possession_fm_home" not in partidas.columns:
+        return partidas
+
+    partidas = partidas.copy()
+    partidas["_season_year"] = partidas["season"].astype(str).str[:4].astype(int)
+
+    partidas["escanteios_fm_cedido_home"] = partidas["corners_fm_away"]
+    partidas["escanteios_fm_cedido_away"] = partidas["corners_fm_home"]
+
+    casa = partidas[["id", "league_id", "_season_year", "match_date", "home_team_id",
+                      "corners_fm_home", "escanteios_fm_cedido_home", "possession_fm_home"]].rename(
+        columns={"home_team_id": "team_id", "corners_fm_home": "escanteios_fm",
+                 "escanteios_fm_cedido_home": "escanteios_fm_cedido", "possession_fm_home": "posse_fm"}
+    )
+    fora = partidas[["id", "league_id", "_season_year", "match_date", "away_team_id",
+                      "corners_fm_away", "escanteios_fm_cedido_away", "possession_fm_away"]].rename(
+        columns={"away_team_id": "team_id", "corners_fm_away": "escanteios_fm",
+                 "escanteios_fm_cedido_away": "escanteios_fm_cedido", "possession_fm_away": "posse_fm"}
+    )
+    df = pd.concat([casa, fora]).sort_values(["_season_year", "team_id", "match_date"]).reset_index(drop=True)
+    df["match_date"] = pd.to_datetime(df["match_date"], utc=True)
+    df["n"] = df.groupby(["_season_year", "team_id"]).cumcount()
+
+    def calcular_ewma_grupo(group, col):
+        if group[col].isna().all():
+            return group[col]
+        return group.ewm(halflife=halflife_days, times=group["match_date"])[col].mean()
+
+    # Fallback final (nenhum prior de time nem de liga disponível -- só
+    # ocorreria numa liga/temporada sem NENHUM dado histórico de FotMob):
+    # médias globais plausíveis, mesmo espírito do "1.5" hardcoded em
+    # _anexar_bayesiano_por_partida pra xG.
+    fallback_absoluto = {"escanteios_fm": 9.5, "escanteios_fm_cedido": 9.5, "posse_fm": 50.0}
+
+    for col in ("escanteios_fm", "escanteios_fm_cedido", "posse_fm"):
+        ewm_inseguro = df.groupby(["_season_year", "team_id"], group_keys=False).apply(lambda g: calcular_ewma_grupo(g, col))
+        df[f"ewma_{col}"] = df.groupby(["_season_year", "team_id"])[ewm_inseguro.name].shift(1).fillna(0)
+
+        league_season = df.groupby(["league_id", "_season_year"])[col].mean().to_dict()
+        team_season = df.groupby(["team_id", "_season_year"])[col].mean().reset_index()
+        team_season["_prev_season"] = team_season["_season_year"] + 1
+        prior_map = team_season.set_index(["team_id", "_prev_season"])[col].to_dict()
+
+        def get_prior(row, col=col):
+            t_prior = prior_map.get((row["team_id"], row["_season_year"]))
+            if t_prior is not None:
+                return t_prior
+            l_prior = league_season.get((row["league_id"], row["_season_year"] - 1))
+            if l_prior is not None:
+                return l_prior
+            return league_season.get((row["league_id"], row["_season_year"]), fallback_absoluto[col])
+
+        df[f"{col}_prior"] = df.apply(get_prior, axis=1)
+        df[f"{col}_bayesiano"] = ((df["n"] * df[f"ewma_{col}"]) + (w * df[f"{col}_prior"])) / (df["n"] + w)
+
+    home_cols = {"team_id": "home_team_id", "escanteios_fm_bayesiano": "escanteios_fm_bayesiano_home",
+                 "escanteios_fm_cedido_bayesiano": "escanteios_fm_cedido_bayesiano_home",
+                 "posse_fm_bayesiano": "posse_fm_bayesiano_home"}
+    away_cols = {"team_id": "away_team_id", "escanteios_fm_bayesiano": "escanteios_fm_bayesiano_away",
+                 "escanteios_fm_cedido_bayesiano": "escanteios_fm_cedido_bayesiano_away",
+                 "posse_fm_bayesiano": "posse_fm_bayesiano_away"}
+    cols_bayesianas = ["escanteios_fm_bayesiano", "escanteios_fm_cedido_bayesiano", "posse_fm_bayesiano"]
+    home_merge = df[["id", "team_id", *cols_bayesianas]].rename(columns=home_cols)
+    away_merge = df[["id", "team_id", *cols_bayesianas]].rename(columns=away_cols)
+
+    partidas = partidas.merge(home_merge, on=["id", "home_team_id"], how="left")
+    partidas = partidas.merge(away_merge, on=["id", "away_team_id"], how="left")
+    partidas.drop(columns=["_season_year", "escanteios_fm_cedido_home", "escanteios_fm_cedido_away"], inplace=True)
+
     return partidas
 
 
@@ -3657,6 +3752,7 @@ def montar_dataset_ml_empilhado(
     partidas = _anexar_bayesiano_por_partida(partidas)
     partidas = _anexar_stats_extra_por_partida(supabase, partidas)
     partidas = _anexar_stats_fotmob_por_partida(supabase, partidas)
+    partidas = _anexar_bayesiano_escanteios_posse_por_partida(partidas)
     partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
@@ -3716,6 +3812,19 @@ def montar_dataset_ml_empilhado(
                  "home_goals", "away_goals", "xg_home", "xg_away", "xgot_home", "xgot_away",
                  "progresso_temporada"]
     for col in ("match_stage", "is_neutral"):
+        if col in partidas.columns:
+            base_cols.append(col)
+    # Escanteios/posse bayesianos do FotMob (v14, shrinkage + prior de
+    # temporada anterior/liga -- ver `_anexar_bayesiano_escanteios_posse_
+    # por_partida`) -- adicionados direto em `base_cols` porque já são
+    # colunas finais de `partidas` neste ponto (mesmo padrão de `xg_home`/
+    # `xgot_home` acima), não precisam de join por `id` como as features
+    # de forma multi-janela.
+    for col in (
+        "escanteios_fm_bayesiano_home", "escanteios_fm_bayesiano_away",
+        "escanteios_fm_cedido_bayesiano_home", "escanteios_fm_cedido_bayesiano_away",
+        "posse_fm_bayesiano_home", "posse_fm_bayesiano_away",
+    ):
         if col in partidas.columns:
             base_cols.append(col)
     # Escanteios POR TIME da própria partida -- alvo do split Beta-Binomial
@@ -4156,6 +4265,14 @@ def montar_dataset_ml_empilhado(
             for s in ("home", "sofrido_home", "away", "sofrido_away")
             for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
         ],
+        # Escanteios/posse FotMob bayesianos (v14) -- shrinkage + prior de
+        # temporada anterior/liga, ver _anexar_bayesiano_escanteios_posse_
+        # por_partida. Alternativa à janela multi-janela acima pra jogos de
+        # começo de temporada / time recém-promovido, onde min_periods=1
+        # dá peso total a um único jogo ruidoso e sem prior nenhum.
+        "escanteios_fm_bayesiano_home", "escanteios_fm_bayesiano_away",
+        "escanteios_fm_cedido_bayesiano_home", "escanteios_fm_cedido_bayesiano_away",
+        "posse_fm_bayesiano_home", "posse_fm_bayesiano_away",
         # Situação de chutes FotMob (v9)
         *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
         # Features derivadas (v11)
