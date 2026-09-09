@@ -2,7 +2,18 @@
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
-**Investigação de qualidade do modelo de escanteios (07/09) — achado real, plano de troca ainda não executado.** Pedido do usuário: melhorar a predição de escanteios. Achados, em ordem:
+**Retestar cartões 4.5 e por-time 1.5 (mandante/visitante) com carteira cronológica + gestão de risco (09/09).** A tabela `model_betting_strategy` (ver seção "config versionada" mais abaixo) tem essas 3 linhas marcadas `validado_carteira=false` — a classificação (`anti_modelo`, confiança `media`) ainda é herdada do posicionamento antigo por log-loss/ROI agregado, que **já se mostrou não confiável**: as linhas irmãs 3.5 e 5.5 de cartões, quando retestadas com o método novo (carteira jogo-a-jogo, banca R$1.000, política de risco `api/_lib/stakingPolicy.js`, teto de EV 4%-16%, line shopping entre casas), NÃO reproduziram o sinal antigo e foram rebaixadas pra "em revisão". Não há razão pra achar que 4.5/por-time 1.5 vão se comportar diferente — só ainda não foram testadas com o método certo.
+
+Pra retomar: repetir exatamente o pipeline usado nesta sessão pra 3.5/5.5 (ver `sim_kelly_multi.py`/`sim_corners.py` como referência de estrutura, dados via `model_predictions`+`odds_market`+`match_stats`, Pinnacle+bet365 fechamento) nas 3 linhas:
+- `cartoes_total` 4.5 (anti-modelo, hoje média confiança, IC95%[+24%,+56%] no método antigo)
+- `cartoes_mandante` 1.5 (anti-modelo via bet365, hoje média confiança)
+- `cartoes_visitante` 1.5 (anti-modelo via bet365, hoje média confiança)
+
+Depois de rodar, **atualizar as 3 linhas em `model_betting_strategy`** (`confianca`, `validado_carteira=true`, `n_amostra`, `roi_ic95_inf/sup`, `notas`) e registrar o resultado no `CONTEXTO_PROJETO.md`, seguindo a mesma disciplina de honestidade desta sessão (registrar mesmo que o resultado seja negativo ou inconclusivo).
+
+---
+
+**Investigação de qualidade do modelo de escanteios (07/09) — histórico, já superado pelos achados de 09/09 registrados mais abaixo (seção "Achado novo — carteira simulada confirma").** Pedido do usuário: melhorar a predição de escanteios. Achados, em ordem:
 
 1. **`hibrido_gols_v1` perde pro mercado em toda linha testada** de `corners_over_under` — log-loss do modelo pior que o mercado sem vig (ex.: linha 9.5, modelo 0,7080 vs. mercado 0,6820-0,6824) e ROI não significativo (ou negativo) em todas as linhas do `model_benchmarking_backtest`. Championship/Eredivisie chegam a ter log-loss PIOR que "chutar 50/50" (>ln2=0,693).
 2. **Correção a um erro meu no `ACHADOS_COMPORTAMENTO.md` (Achado 26)**: eu tinha dito que `match_context_fotmob.referee` nunca virou feature de modelo nenhum. **Errado** — só não tinha lido `scripts/dados_historicos.py` a fundo o suficiente. Existe `arbitro_cartoes_media`/`arbitro_faltas_media`/`arbitro_n_jogos` (`_carregar_arbitro_pre_jogo`/`obter_arbitro_atual`), sem vazamento (`shift(1).expanding().mean()`), já dentro de `FEATURES_V12_MESMA_LIGA` (usado por `hibrido_gols_v1`/`hibrido_corners_v1`). É sinal de falta/cartão do árbitro, não específico de escanteio — não explica o problema do item 1.
