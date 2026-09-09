@@ -3395,6 +3395,24 @@ FEATURES_NUMERICAS_V12_MESMA_LIGA = FEATURES_NUMERICAS_V10_XG_CORRIGIDO + [
 ]
 FEATURES_V12_MESMA_LIGA = FEATURES_NUMERICAS_V12_MESMA_LIGA + CAT_FEATURES
 
+# v13 (só `hibrido_corners_v1`) -- V12_MESMA_LIGA menos escanteios/posse do
+# FBref (`COLUNAS_FORMA_ESCANTEIOS`/`COLUNAS_FORMA_POSSE`, `media_escanteios_
+# 5j_*`/`media_posse_5j_*`), mortos desde o abandono do FBref (CAPTCHA
+# bloqueia GitHub Actions, ago/2026 em diante sem nenhum dado novo). Não
+# precisa ADICIONAR nada no lugar -- as versões FotMob (`media_escanteios_
+# fm_5j_*`/`media_posse_fm_5j_*`) já estão em V12_MESMA_LIGA desde a v8,
+# coexistindo com as do FBref; só remove o lado morto. Mesma lição da
+# migração das 6 configs dedicadas de escanteios (09/09), aplicada aqui só
+# em `hibrido_corners_v1` -- os outros 3 `hibrido_*` (gols) continuam em
+# V12_MESMA_LIGA sem mudança: usam escanteios/posse como contexto geral de
+# força de equipe pra prever GOLS, não escanteios, e essa troca é escopo
+# separado (fora do pedido desta sessão).
+FEATURES_NUMERICAS_V13_CORNERS_FOTMOB = [
+    f for f in FEATURES_NUMERICAS_V12_MESMA_LIGA
+    if f not in COLUNAS_FORMA_ESCANTEIOS.values() and f not in COLUNAS_FORMA_POSSE.values()
+]
+FEATURES_V13_CORNERS_FOTMOB = FEATURES_NUMERICAS_V13_CORNERS_FOTMOB + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.
