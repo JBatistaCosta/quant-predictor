@@ -3672,6 +3672,19 @@ def montar_dataset_ml_empilhado(
         col: _forma_por_mando(partidas, f"{col}_home", f"{col}_away", COLUNAS_FORMA_SITUACAO_CHUTES[col])
         for col in COLUNAS_SITUACAO_CHUTES
     }
+    # Escanteios/posse FotMob com janelas múltiplas (5j/10j/20j + decay
+    # exponencial) -- extensão (09/09) da migração FBref->FotMob dos modelos
+    # de escanteios: testar se uma janela maior ou um peso maior aos jogos
+    # recentes (ewm) captura melhor a forma do time do que a janela fixa de
+    # 5 jogos já gerada acima em `formas_fotmob["escanteios_fm"/"posse_fm"]`.
+    # Mesmo padrão de `forma_xg`/`forma_xgot` (_forma_por_mando_multi_janelas),
+    # coexiste com a versão de janela única -- nomes diferentes, sem colisão.
+    forma_escanteios_fm_multi = _forma_por_mando_multi_janelas(
+        partidas, "corners_fm_home", "corners_fm_away", "escanteios_fm"
+    )
+    forma_posse_fm_multi = _forma_por_mando_multi_janelas(
+        partidas, "possession_fm_home", "possession_fm_away", "posse_fm"
+    )
 
     elo = _carregar_elo_pre_jogo(supabase, liga_ids_resolvidos)
     if not elo.empty:
@@ -3773,6 +3786,8 @@ def montar_dataset_ml_empilhado(
         dataset = dataset.join(forma, on="id")
     for forma in formas_situacao_chutes.values():
         dataset = dataset.join(forma, on="id")
+    dataset = dataset.join(forma_escanteios_fm_multi, on="id")
+    dataset = dataset.join(forma_posse_fm_multi, on="id")
 
     squad_rating = _carregar_squad_rating_pre_jogo(supabase, partidas["id"].astype(int).tolist())
     if not squad_rating.empty:
@@ -4109,6 +4124,20 @@ def montar_dataset_ml_empilhado(
         *COLUNAS_FORMA_CARTOES_VERMELHOS.values(),
         # FotMob (v8)
         *[col for nome_curto in COLUNAS_STATS_FOTMOB.values() for col in colunas_forma_fotmob(nome_curto).values()],
+        # Escanteios/posse FotMob multi-janela (5j/10j/20j + decay, v13) --
+        # extensão (09/09) da migração FBref->FotMob de escanteios, testando
+        # se janela maior/decay exponencial bate a janela fixa de 5 jogos
+        # (`media_escanteios_fm_5j_*`/`media_posse_fm_5j_*` acima).
+        *[
+            f"escanteios_fm_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
+        *[
+            f"posse_fm_{s}_{j}"
+            for s in ("home", "sofrido_home", "away", "sofrido_away")
+            for j in ("5j", "10j", "20j", "5j_decay", "10j_decay", "20j_decay")
+        ],
         # Situação de chutes FotMob (v9)
         *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
         # Features derivadas (v11)
