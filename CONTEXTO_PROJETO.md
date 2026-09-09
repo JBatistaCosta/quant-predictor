@@ -323,13 +323,21 @@ Pinnacle e bet365 cobrem quase todo o período disponível; Betano só entrou em
 | Total | 2.5 | Pinnacle | Nenhuma — IC95% cruza zero tanto no log-loss quanto na aposta contrária | Baixa |
 | **Total** | **3.5** | **Pinnacle** | **Anti-modelo (under)** | **Alta** — n=244, IC95% [+8%,+35%] |
 | **Total** | **4.5** | **Pinnacle** | **Anti-modelo (under)** | **Alta** — n=135, IC95% [+24%,+56%] |
-| **Total** | **5.5** | Pinnacle | **Anti-modelo (under)**, mas ver tensão abaixo | Média — n=26, amostra menor |
+| **Total** | **5.5** | Pinnacle | **Modelo quando ele diz "under" (86% dos casos); anti-modelo quando ele diz "over" (14% dos casos)** — ver resolução abaixo | Alta pro "under" (n=159), média pro "over" (n=26) |
 | Total | 6.5+ | — | Amostra insuficiente (n≤1) | — |
 | Mandante/Visitante | **0.5** | qualquer | **NUNCA apostar** — artefato de odd longa, não edge | — |
 | Mandante/Visitante | **1.5** | **bet365** | **Anti-modelo (under)** | Média-alta — 3 de 4 combinações casa/lado significativas |
 | Mandante/Visitante | 2.5+ | — | Amostra insuficiente ainda (n=3-17) | — |
 
-**Tensão não resolvida na linha 5.5**: o log-loss bruto do modelo já é MELHOR que o da Pinnacle nessa linha (achado antigo, tabela "Contra a Pinnacle" acima, diff -0,081 a favor do modelo) — mas a aposta contrária (apostar under quando o modelo diz over) também dá ROI positivo. Não é necessariamente contraditório (log-loss mede calibração no espectro inteiro; a aposta contrária só olha o subconjunto de partidas onde o modelo aposta "over", que pode ser uma minoria mal calibrada mesmo com o modelo bem calibrado no geral) — mas não foi verificado a fundo. Não tratar a linha 5.5 como tão sólida quanto 3.5/4.5 até investigar essa aparente contradição.
+**Tensão da linha 5.5 — RESOLVIDA (08/09).** A pergunta era: como o log-loss geral do modelo bate o da Pinnacle nessa linha, mas apostar contra ele também dá ROI positivo? Resposta: são coisas boas em partes DIFERENTES da distribuição, e o log-loss geral escondia isso. A linha 5.5 é alta — só 13% das partidas passam dela (base rate real) — e o modelo aposta "over" em só 14,1% dos casos (n=185 total, 26 "over"/159 "under"), essencialmente alinhado com a base rate. Quebrando o log-loss por subconjunto (Pinnacle fechamento, mesmas 185 partidas):
+
+| Subconjunto | n | Log-loss modelo | Log-loss Pinnacle | Quem vence |
+|---|---|---|---|---|
+| Geral | 185 | 0,5477 | 0,5896 | Modelo |
+| Só onde o modelo diz "under" (86%) | 159 | 0,5055 | 0,5892 | **Modelo, com folga** |
+| Só onde o modelo diz "over" (14%) | 26 | **0,8055** | **0,5919** | **Mercado, disparado** |
+
+**O modelo é excelente prevendo "vai ficar under" nessa linha (maioria esmagadora dos casos) — isso puxa o log-loss geral pra baixo e mascara que, nos poucos casos em que arrisca "over", ele está bem pior calibrado que o mercado.** Mesmo padrão de overconfiança já visto nas linhas 3.5/4.5, só que camuflado aqui pela maioria bem calibrada. **Não é contradição — é o log-loss geral sendo um resumo enganoso quando a amostra é desbalanceada.** Posicionamento final: seguir o modelo quando ele disser "under" nessa linha (n=159, confiança alta); apostar contra quando ele disser "over" (n=26, mesma lógica das linhas 3.5/4.5, confiança média pela amostra menor).
 
 **Vale um modelo/camada que já pondera tudo isso automaticamente? Sim, mas como config leve, não como novo modelo de ML.** O que existe hoje é uma tabela de decisão pequena (8-9 combinações linha×mercado×estratégia) construída a partir de poucos meses de dado — é um problema de "lookup com poucas dimensões", não um problema que precise de aprendizado de máquina. Um novo modelo treinado pra decidir "seguir ou inverter" seria overkill e adicionaria uma camada de overfitting em cima de um backtest já curto (8 meses, e testamos 16 linhas simultaneamente — risco real de comparação múltipla: mesmo com IC95% individual, testar 16 hipóteses aumenta a chance de alguma "significativa" ser só sorte). **Recomendação**: formalizar a tabela acima como uma config versionada (ex.: tabela `model_betting_strategy` ou um dict no código, `{mercado, linha, estrategia, casa_referencia, data_ultima_revisao}`), reavaliada a cada poucas semanas conforme o cron acumula mais partidas de 2026 — não um modelo novo. Se essa tabela começar a exigir mais do que umas poucas dezenas de linhas com lógica condicional, aí sim reconsiderar uma camada de decisão mais sofisticada.
 
