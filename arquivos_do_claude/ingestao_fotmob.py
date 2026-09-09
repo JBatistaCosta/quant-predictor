@@ -87,6 +87,16 @@ HEADERS = {
 }
 PACING_SEGUNDOS = 1.3
 
+# Janela de tolerância pro casamento por data entre nosso match_date e o
+# fixture FotMob (usada em main()::casar() -- NÃO confundir com o guard de
+# matchId reaproveitado, esse continua em 36h de propósito, é detecção de
+# anomalia, não tolerância de remarcação). Era 36h -- achado real (mesma
+# investigação que motivou o ajuste idêntico em
+# scripts/atualizar_partidas_finalizadas.py, ver CONTEXTO_PROJETO.md): 14
+# partidas ficaram presas por semanas porque foram remarcadas e nosso
+# match_date nunca foi atualizado, com diferença real de até 7 dias.
+JANELA_CASAMENTO_SEGUNDOS = 21 * 24 * 3600
+
 INT_COLS_TEAM_STATS = [
     "total_shots", "shots_on_target", "shots_off_target", "shots_blocked",
     "shots_inside_box", "shots_outside_box", "big_chances", "big_chances_missed",
@@ -502,7 +512,7 @@ def main():
         for c in candidatos:
             cd = dt.datetime.fromisoformat(str(c["match_date"]).replace("Z", "+00:00"))
             delta = abs((cd - alvo).total_seconds())
-            if delta < 36 * 3600 and (menor_delta is None or delta < menor_delta):
+            if delta < JANELA_CASAMENTO_SEGUNDOS and (menor_delta is None or delta < menor_delta):
                 menor_delta, melhor = delta, c
         return melhor
 

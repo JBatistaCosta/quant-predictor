@@ -59,6 +59,25 @@ def _exec_retry(query, tentativas=9, espera_inicial=3, espera_max=60):
             time.sleep(espera)
 
 
+# Janela de tolerância pro casamento (data do nosso match_date x data real do
+# fixture FotMob) em casar_fixture(). Era 36h -- achado real (investigação de
+# "algumas partidas não sincronizam as estatísticas", ver CONTEXTO_PROJETO.md):
+# 14 partidas ficaram presas em status='scheduled' por SEMANAS porque foram
+# remarcadas e nosso match_date nunca foi atualizado (sync-matches/
+# football-data.org não pegou a remarcação, ou pegou atrasado) -- a diferença
+# real chegou a 7 dias (Championship) e passou de 1 mês num caso (Primeira
+# Liga, ~2 dias de diferença mas outros da mesma leva com semanas). Com 36h
+# de janela, `casar_fixture` nunca achava o fixture certo e a partida ficava
+# "sem ID FotMob identificado" pra sempre, silenciosamente, a cada execução
+# do cron. 21 dias cobre remarcação real (postponement por clima, etc.) sem
+# abrir risco real de casar com o fixture ERRADO -- a chave já é o par
+# (mandante, visitante) ORDENADO, então só colide se os mesmos dois times se
+# enfrentarem 2x com o mesmo mandante dentro dessa janela (não acontece em
+# liga de pontos corridos; em mata-mata de 2 jogos os mandantes trocam, cada
+# perna já cai numa chave diferente).
+JANELA_CASAMENTO_SEGUNDOS = 21 * 24 * 3600
+
+
 def _paginar(supabase, table, select, eq_filters=None, order="id"):
     """Busca todas as linhas com paginação explícita (evita corte silencioso de 1000)."""
     result = []
@@ -244,7 +263,10 @@ def main():
         return index
 
     def casar_fixture(index: dict, home_team_id: int, away_team_id: int, match_date_str: str):
-        """Retorna o fixture FotMob mais próximo por data (janela 36h)."""
+        """Retorna o fixture FotMob mais próximo por data (janela
+        JANELA_CASAMENTO_SEGUNDOS -- ver comentário na constante: era 36h,
+        achado real de partida presa por semanas mostrou que precisava ser
+        bem maior)."""
         home_fm = internal_to_fotmob.get(home_team_id)
         away_fm = internal_to_fotmob.get(away_team_id)
         if not home_fm or not away_fm:
@@ -260,7 +282,7 @@ def main():
                 continue
             fd = dt.datetime.fromisoformat(utc.replace("Z", "+00:00"))
             delta = abs((fd - alvo).total_seconds())
-            if delta < 36 * 3600 and (menor_delta is None or delta < menor_delta):
+            if delta < JANELA_CASAMENTO_SEGUNDOS and (menor_delta is None or delta < menor_delta):
                 menor_delta, melhor = delta, fx
         return melhor
 
