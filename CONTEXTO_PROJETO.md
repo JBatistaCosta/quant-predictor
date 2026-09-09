@@ -107,6 +107,19 @@ Todas as correlações são desprezíveis (|r|<0,04, muito abaixo do limiar de 0
 
 **Nota técnica**: consultas que fazem JOIN de `match_lineup_fotmob` (tabela grande, ~900 mil linhas, com coluna `raw` jsonb pesada) contra outra tabela por `player_id` cronometraram (>60s) quando o planner escolhe nested-loop/seq-scan; contornado restringindo `match_id` via `= any(array(select ...))` antes do JOIN, forçando uso do índice `idx_match_lineup_fotmob_match` — cair nisso de novo se outra investigação precisar cruzar titulares com outra tabela por jogador.
 
+**Cruzamentos (`match_stats_fotmob.accurate_crosses`) — investigado como objetivo em si (08/09, pedido do usuário), sem uso prático definido ainda (sem mercado real).** Só existe cruzamento CERTO (não o total tentado), 96% de cobertura (51.736/53.924).
+
+- **Como feature pra escanteios: REFUTADO.** Cruzamento certo × escanteio da MESMA partida correlaciona forte (r=0,454, n=33.148) e sobrevive a controle por Elo pré-jogo (`team_elo_history.rating_antes`, 0,39-0,51 em 4 faixas de força) — mas isso é artefato mecânico (cruzamento errado vira escanteio, os dois nascem do mesmo ataque pelo lado), não sinal preditivo. Testado como feature de verdade (média dos últimos 5 jogos, sem vazamento, prevendo escanteios da partida seguinte): correlação cai pra **r=0,0155** — nula. Controle de sanidade confirma que o método capturaria sinal se existisse: a própria média de escanteios passados (feature já usada no modelo) dá r=0,1233 pelo mesmo método. **Descartar cruzamentos como feature de escanteios.**
+- **Como alvo em si: cruzamentos TÊM persistência histórica real, diferente de quando eram testados contra escanteios.** Média dos últimos 5 jogos (sem vazamento) prevendo o cruzamento da partida seguinte:
+
+| Preditor | r com cruzamentos da partida | n |
+|---|---|---|
+| Tendência própria de cruzar (média própria 5j) | 0,2405 | 32.894 |
+| Tendência do adversário em SOFRER cruzamento (média sofrida 5j do adversário) | 0,2464 | 32.894 |
+| Soma das duas | **0,3078** | 32.894 |
+
+As duas features se somam (não são redundantes) — tendência própria de cruzar E vulnerabilidade do adversário a cruzamento contribuem de forma independente. r=0,31 é mais forte que qualquer feature validada pra escanteios (~0,12) nesta investigação inteira. Sem mercado real de cruzamento pra validar EV (mesma limitação de faltas) — se algum dia vier a ser implementado, `media_cruzamentos_5j_home/away` + `media_cruzamentos_sofridos_5j_home/away` seriam as duas features centrais, seguindo o padrão de faltas/cartões (sem mercado real, validação só por log-loss/Brier).
+
 **Cartões (bookings) — pipeline dedicado implementado e treinado, ainda NÃO validado contra o mercado (08/09).** Mesma arquitetura de escanteios (`custom_model_configs` + `treinar_modelo_custom_wf.py` + `backtest_kelly.py`), mas com uma descoberta nova: o mercado real de cartões no `odds_market` chama **"bookings"**, não "cards"/"cartões" (`bookings_over_under_full_time_{linha}` pro total, `bookings_over_under_team_1/2_{linha}` por time — mandante/visitante, linhas de 0.5 a 8.5 confirmadas no banco). Diferente de escanteios, faltas NÃO têm mercado real nenhum (nem total nem por time) — modelo de faltas só pode ser validado por métrica intrínseca (log-loss/Brier), nunca EV contra mercado.
 - **PR #462** (mergeado): total da partida, alvo `cartoes_over_under_{linha}` pras 6 linhas 1.5-6.5, `LINHAS_CARTOES_OU` em `dados_historicos.py`, resultado real via `_carregar_total_cartoes_por_partida` (soma `match_stats_fotmob.yellow_cards`+`red_cards`).
 - **PR #463** (mergeado): por time (mandante/visitante), alvo `cartoes_{home,away}_over_under_{linha}` pras linhas 0.5-4.5 cada lado, `_carregar_cartoes_por_time_por_partida` nova (cruza `matches.home_team_id`/`away_team_id` com `match_stats_fotmob` pra separar os dois lados — a função de total já existente só soma).
