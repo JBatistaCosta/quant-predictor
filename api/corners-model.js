@@ -42,6 +42,20 @@
 // método reaproveitado pros scripts de calibração de chutes/chutes no alvo
 // (`arquivos_do_claude/calibrar_disp_r_chutes*.py`).
 //
+// RECALIBRADO (3ª versão) pra usar match_stats_fotmob em vez de match_stats
+// (FBref) -- FBref parou de ser ingerido (scraping bloqueado por CAPTCHA nos
+// runners do GitHub Actions, ver CONTEXTO_PROJETO.md), FotMob é a única
+// fonte automática que resta. Recalibrado via SQL direto contra os mesmos
+// pares (match_id, model_stat_estimates.stat='corners') das 5 ligas já
+// calibradas -- cobertura 100% em match_stats_fotmob pras mesmas partidas.
+// Valores batem bem com os antigos (FBref) em 4 das 5 ligas (diferença
+// <2%): La Liga 41,0→40,9, Serie A 67,3→68,1, Bundesliga 30,0→30,1, Ligue 1
+// 25,4→25,4 -- validação cruzada natural de que as duas fontes contam
+// escanteio do mesmo jeito. Premier League teve diferença maior, 165,5→188,4
+// (+14%), dentro do esperado por amostra/cobertura ligeiramente diferente
+// entre as fontes, não investigado a fundo por não ser uma discrepância que
+// muda a conclusão (r alto = dispersão baixa nas duas versões).
+//
 // COMO CHAMAR:
 //   /api/corners-model?mandante=Manchester City&visitante=Arsenal
 //   /api/corners-model?mandante=...&visitante=...&linhas=8.5,9.5,10.5
@@ -70,10 +84,11 @@ const LINHAS_PADRAO_POR_STAT = {
 // desta sessão, não decisão de design; ver comentário no topo do arquivo).
 const STAT_LEAGUE_PARAMS_LABEL = { corners: 'corners', shots: 'chutes', shots_on_target: 'chutes_no_alvo' };
 
-// Coluna equivalente em `match_stats` (fallback quando não há estimativa do
-// modelo ainda) -- mesmos nomes nas duas tabelas, `STATS_SUPORTADAS` já bate
-// 1:1 com as colunas reais (confirmado via information_schema nesta sessão).
-const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'shots', shots_on_target: 'shots_on_target' };
+// Coluna equivalente em `match_stats_fotmob` (fallback quando não há
+// estimativa do modelo ainda) -- `shots` vira `total_shots` nessa tabela
+// (nome diferente de match_stats/FBref, que foi abandonada -- ver
+// CONTEXTO_PROJETO.md); `corners`/`shots_on_target` batem 1:1.
+const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'total_shots', shots_on_target: 'shots_on_target' };
 
 // Usado só quando a liga do confronto não tem disp_r calibrado ainda (ex:
 // Brasileirão, Champions, Eurocopa — sem model_stat_estimates da stat pra
@@ -85,7 +100,7 @@ const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'shots', shots_on_t
 // Médias reais calculadas via SQL nesta sessão (`avg(param_value)` sobre as
 // 12 ligas calibradas de cada stat, mesmo método já usado pro valor de
 // escanteios) -- não chutado.
-const DISP_R_PADRAO_POR_STAT = { corners: 65.85, shots: 5.99, shots_on_target: 5.68 };
+const DISP_R_PADRAO_POR_STAT = { corners: 70.57, shots: 5.99, shots_on_target: 5.68 };
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -129,8 +144,8 @@ async function ligaMaisRecente(supabase, teamId) {
 
 // Média da estatística esperada (modelo GLM) do time nas últimas partidas em
 // que jogou em casa (mandante=true) ou fora (mandante=false). Cai pra média
-// real de match_stats[colunaStat] se o modelo ainda não tiver estimativa
-// salva pra nenhuma dessas partidas. `stat` é a chave em inglês de
+// real de match_stats_fotmob[colunaStat] se o modelo ainda não tiver
+// estimativa salva pra nenhuma dessas partidas. `stat` é a chave em inglês de
 // `model_stat_estimates`/`STATS_SUPORTADAS` (não a de `league_model_params`,
 // ver `STAT_LEAGUE_PARAMS_LABEL`).
 async function statEsperado(supabase, teamId, mandante, stat) {
@@ -161,14 +176,14 @@ async function statEsperado(supabase, teamId, mandante, stat) {
 
   // Fallback: média real da estatística do time (jogando em casa ou fora, o que houver)
   const { data: statsReais } = await supabase
-    .from('match_stats')
+    .from('match_stats_fotmob')
     .select(`${colunaStat}, match_id`)
     .eq('team_id', teamId)
     .not(colunaStat, 'is', null)
     .limit(10);
   const reais = (statsReais || []).map(s => Number(s[colunaStat])).filter(Number.isFinite);
   if (reais.length > 0) {
-    return { valor: reais.reduce((a, b) => a + b, 0) / reais.length, origem: 'match_stats (média real)' };
+    return { valor: reais.reduce((a, b) => a + b, 0) / reais.length, origem: 'match_stats_fotmob (média real)' };
   }
 
   return { valor: null, origem: 'sem_dado' };
@@ -277,7 +292,7 @@ export default async function handler(req, res) {
 
     if (esperadoMandante.valor === null || esperadoVisitante.valor === null) {
       return res.status(404).json({
-        error: { message: `Sem histórico de "${statPedida}" suficiente pra esse confronto (nem no modelo, nem em match_stats).` },
+        error: { message: `Sem histórico de "${statPedida}" suficiente pra esse confronto (nem no modelo, nem em match_stats_fotmob).` },
       });
     }
 

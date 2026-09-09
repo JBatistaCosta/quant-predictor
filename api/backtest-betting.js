@@ -295,7 +295,11 @@ export default async function handler(req, res) {
       // Sem filtro `.not(...)` -- também precisamos de shots/shots_on_target
       // (mercados novos), que nem sempre são preenchidos junto com corners
       // (achado real: 2226 linhas têm shots sem corners, ou vice-versa).
-      buscarTudoPaginado(() => supabase.from('match_stats').select('match_id, corners, shots, shots_on_target')),
+      // match_stats (FBref) foi abandonada -- scraping bloqueado por CAPTCHA
+      // nos runners do GitHub Actions (ver CONTEXTO_PROJETO.md);
+      // match_stats_fotmob é sincronizada automaticamente todo dia (alias
+      // shots:total_shots pra manter o nome de campo já usado abaixo).
+      buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, corners, shots:total_shots, shots_on_target')),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
     ]);
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
