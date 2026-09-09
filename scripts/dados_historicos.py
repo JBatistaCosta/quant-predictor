@@ -3166,6 +3166,7 @@ COLUNAS_STATS_FOTMOB = {
     "duels_won": "duelos_vencidos_fm",
     "aerial_duels_won": "duelos_aereos_vencidos_fm",
     "successful_dribbles": "dribles_certos_fm",
+    "touches_opp_box": "toques_area_fm",
     "fouls_committed": "faltas_fm",
     "yellow_cards": "cartoes_amarelos_fm",
     "red_cards": "cartoes_vermelhos_fm",
