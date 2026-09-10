@@ -1,0 +1,51 @@
+name: Cartões/Faltas - Prever Partidas Futuras
+
+# Aplica as 12 configs "geral" já treinadas de Cartões/Faltas (O/U 1.5-6.5
+# e 20.5-30.5) sobre as partidas ainda não disputadas, gravando em
+# model_predictions -- alimenta o painel "Cartões e Faltas" em
+# AnaliseEstatisticaJogo.jsx/AnaliseAvancadaEvento.jsx (leitura instantânea
+# em vez do cálculo sob demanda via estimar_partida_custom.yml).
+#
+# Workflow SEPARADO de prever_partidas_futuras_custom.yml (que atende só a
+# Carteira/Paper Trading) desde 10/09 -- as duas frentes nasceram juntas no
+# mesmo job, mas rodar as 15 configs juntas (3 da Carteira + 12 daqui) se
+# mostrou lento em produção (uma run manual de teste passou de 1h ainda em
+# andamento). Separar isola a lentidão/falha de um lado do outro e permite
+# timeout/agendamento próprios pra cada um.
+#
+# Agendado no mesmo horário do cron da Carteira (05:00 UTC) -- são jobs
+# independentes em runners diferentes, não competem entre si.
+
+on:
+  schedule:
+    # 05:00 UTC todo dia.
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  prever-cartoes-faltas-futuras:
+    runs-on: ubuntu-latest
+    # Só 12 configs (contra as 15 do job original) -- folga menor que
+    # prever_partidas_futuras_custom.yml (180min), ajustar depois de medir
+    # o tempo real isolado.
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Prever partidas futuras (Cartões/Faltas)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/prever_cartoes_faltas_futuras.py

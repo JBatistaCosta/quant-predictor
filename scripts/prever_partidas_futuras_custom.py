@@ -29,17 +29,23 @@ ver `JANELA_DIAS` abaixo e o comentário de `match_ids_extra` em
 dados_historicos.py) e aplica todos os artefatos treinados dela sobre
 todas as partidas-alvo de uma vez.
 
-Escopo das configs processadas:
+Escopo das configs processadas por ESTE script: só MERCADOS_CARTEIRA (os
+3 mercados que a Carteira sabe apostar: 1x2/over_under_2.5/btts). Cartões/
+Faltas "geral" (as 12 configs O/U 1.5-6.5 e 20.5-30.5, consumidas pelo
+painel "Cartões e Faltas" em AnaliseEstatisticaJogo.jsx/AnaliseAvancada
+Evento.jsx) têm workflow PRÓPRIO desde 10/09 --
+`scripts/prever_cartoes_faltas_futuras.py`/`prever_cartoes_faltas_
+futuras.yml`, que importa `processar_config`/`MERCADOS_CARTOES_FALTAS_
+GERAL` deste módulo (mesma lógica, main()/escopo de target diferente).
+Separado depois que uma run manual com os 15 targets juntos (3+12) passou
+de 1h ainda em andamento -- isola a lentidão/falha de um lado do outro,
+cada um com seu próprio timeout. Outros targets (faixa_gols, corners_*, e
+as 32 configs mandante/visitante de Cartões/Faltas) ainda não têm
+consumidor que justifique pré-computar em lote -- ficam só sob demanda
+(estimar_partida_custom.py).
+
+Escopo das configs processadas (comum aos dois scripts):
   - status='treinado' (nunca dispara treino, só aplica o que já existe)
-  - target em MERCADOS_CARTEIRA (os 3 que a Carteira sabe apostar: 1x2/
-    over_under_2.5/btts) OU em MERCADOS_CARTOES_FALTAS_GERAL (as 12
-    configs "geral" de Cartões/Faltas, O/U 1.5-6.5 e 20.5-30.5 -- sem
-    mercado de odds capturado pra casar aposta na Carteira, mas com
-    consumidor real desde 10/09: o painel "Cartões e Faltas" em
-    AnaliseEstatisticaJogo.jsx). Outros targets (faixa_gols, corners_*,
-    e as 32 configs mandante/visitante de Cartões/Faltas) ainda não têm
-    consumidor que justifique pré-computar em lote -- ficam só sob
-    demanda (estimar_partida_custom.py).
   - model_artifacts não vazio (config sem NENHUM artefato persistido é
     pulada -- nada pra aplicar).
 
@@ -247,20 +253,19 @@ def main() -> None:
     logger.info("Iniciando previsão em lote de modelos customizados sobre partidas futuras...")
     supabase = criar_supabase()
 
-    targets_elegiveis = MERCADOS_CARTEIRA | MERCADOS_CARTOES_FALTAS_GERAL
     resp = (
         supabase.table("custom_model_configs")
         .select("id, name, target, todas_ligas, league_ids, seasons, model_artifacts")
         .eq("status", "treinado")
-        .in_("target", list(targets_elegiveis))
+        .in_("target", list(MERCADOS_CARTEIRA))
         .execute()
     )
     configs = resp.data or []
     if not configs:
-        logger.warning("Nenhuma config treinada com target em %s. Encerrando.", sorted(targets_elegiveis))
+        logger.warning("Nenhuma config treinada com target em %s. Encerrando.", sorted(MERCADOS_CARTEIRA))
         return
 
-    logger.info("%d config(ões) treinada(s) elegível(is) (target em %s).", len(configs), sorted(targets_elegiveis))
+    logger.info("%d config(ões) treinada(s) elegível(is) (target em %s).", len(configs), sorted(MERCADOS_CARTEIRA))
 
     total_geral = 0
     configs_com_previsao = 0

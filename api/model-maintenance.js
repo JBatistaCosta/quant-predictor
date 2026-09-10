@@ -841,7 +841,8 @@ const WORKFLOWS_DISPONIVEIS = [
   { arquivo: 'prever_jogador_mercados.yml', label: 'Prever Chutes/Gols por Jogador (fixtures futuras)', categoria: 'outros', inputs: [
     { id: 'dias', tipo: 'string', descricao: 'Janela de dias à frente para prever (default 7)' },
   ] },
-  { arquivo: 'prever_partidas_futuras_custom.yml', label: 'Prever Partidas Futuras (Modelos Customizados)', categoria: 'outros', inputs: [] },
+  { arquivo: 'prever_partidas_futuras_custom.yml', label: 'Prever Partidas Futuras (Carteira: 1X2/O-U 2.5/BTTS)', categoria: 'outros', inputs: [] },
+  { arquivo: 'prever_cartoes_faltas_futuras.yml', label: 'Prever Partidas Futuras (Cartões/Faltas)', categoria: 'outros', inputs: [] },
   { arquivo: 'prever_xi.yml', label: 'Prever XI Titular Provável (fixtures futuras)', categoria: 'outros', inputs: [
     { id: 'dias', tipo: 'string', descricao: 'Janela de dias à frente para prever (default 7)' },
   ] },
