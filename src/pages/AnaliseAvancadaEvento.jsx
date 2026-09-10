@@ -2316,7 +2316,7 @@ export default function AnaliseAvancadaEvento() {
                     Forest, ver custom_model_configs) pra Cartões e Faltas totais do jogo. Pré-computado pelo cron
                     diário quando a partida está dentro da janela de 30 dias; fora dela, calcula sob demanda.
                   </p>
-                  <ModeloCartoesFaltas matchId={jogo.id} mandanteId={jogo.home?.id} visitanteId={jogo.away?.id} />
+                  <ModeloCartoesFaltas matchId={jogo.id} matchDate={jogo.match_date} mandanteId={jogo.home?.id} visitanteId={jogo.away?.id} />
                 </Secao>
 
                 {mercadosCorners && (
