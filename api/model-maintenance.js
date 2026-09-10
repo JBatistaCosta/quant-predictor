@@ -1465,6 +1465,14 @@ async function tarefaEstimarPartidaCustom(supabase, authHeader, body) {
   const { data: match } = await supabase.from('matches').select('id').eq('id', matchId).maybeSingle();
   if (!match) return { status: 404, error: `Partida id=${matchId} não encontrada.` };
 
+  return inserirEDispararEstimativaCustom(supabase, authHeader, usuario, configId, matchId, algorithm);
+}
+
+// Insere a linha de requisição e dispara o workflow -- extraído de
+// tarefaEstimarPartidaCustom pra ser reaproveitado por
+// tarefaEstimarCartoesFaltas (que dispara uma requisição por mercado/linha,
+// não só uma).
+async function inserirEDispararEstimativaCustom(supabase, authHeader, usuario, configId, matchId, algorithm) {
   const { data: request, error: insertErr } = await supabase
     .from('custom_model_ondemand_predictions')
     .insert({ config_id: configId, match_id: matchId, algorithm, status: 'pendente', requested_by: usuario.id })
@@ -1484,6 +1492,157 @@ async function tarefaEstimarPartidaCustom(supabase, authHeader, body) {
     return resultado;
   }
   return { status: 200, request_id: request.id };
+}
+
+// Linhas "geral" (mandante+visitante somados) já cobertas por uma config
+// treinada -- ver custom_model_configs.target. Cartões: 1.5 a 6.5;
+// Faltas: 20.5 a 30.5 (confirmado via SQL, 10/09). Usado pra validar
+// `linha_cartoes`/`linha_faltas` antes de tentar montar o target.
+const LINHAS_VALIDAS_CARTOES_FALTAS = {
+  cartoes: ['1.5', '2.5', '3.5', '4.5', '5.5', '6.5'],
+  faltas: ['20.5', '22.5', '24.5', '26.5', '28.5', '30.5'],
+};
+const LINHA_PADRAO_CARTOES_FALTAS = { cartoes: '2.5', faltas: '22.5' };
+const ALGORITMOS_CARTOES_FALTAS = ['xgboost', 'random_forest'];
+
+// Resolve um time por id (preferencial, sem ambiguidade) ou por nome parcial
+// (mesma lógica de api/corners-model.js::encontrarTime/resolverTime,
+// duplicada aqui porque os dois arquivos não compartilham módulo utilitário
+// de acesso a `teams` -- é só uma query simples, não vale abstrair pra um
+// _lib/ novo só por isso).
+async function resolverTimePorNomeOuId(supabase, nome, id) {
+  if (id) {
+    const { data } = await supabase.from('teams').select('id, name').eq('id', id).maybeSingle();
+    if (data) return data;
+  }
+  if (!nome) return null;
+  const { data } = await supabase.from('teams').select('id, name').ilike('name', `%${nome}%`).limit(5);
+  if (!data || data.length === 0) return null;
+  return data.find((t) => t.name.toLowerCase() === nome.toLowerCase()) || data[0];
+}
+
+// Acha a partida entre os dois times NESSE mando de campo (mandante em casa,
+// visitante fora) -- diferente da calculadora de escanteios (que trabalha
+// com médias históricas e não precisa de uma partida real), o modelo
+// customizado (scripts/estimar_partida_custom.py) monta as features em cima
+// de um match_id que já existe em `matches`, então um confronto hipotético
+// que nunca foi agendado não tem o que estimar aqui. Prioriza a próxima
+// agendada; sem nenhuma agendada, cai pra mais recente já disputada.
+async function encontrarPartidaMandanteVisitante(supabase, homeId, awayId) {
+  const { data } = await supabase
+    .from('matches')
+    .select('id, match_date, status')
+    .eq('home_team_id', homeId)
+    .eq('away_team_id', awayId)
+    .order('match_date', { ascending: false })
+    .limit(20);
+  if (!data || data.length === 0) return null;
+  const agendadas = data.filter((p) => p.status === 'scheduled');
+  if (agendadas.length > 0) return agendadas[agendadas.length - 1]; // mais próxima no futuro (lista vem desc)
+  return data[0]; // mais recente já disputada
+}
+
+// Estima Cartões e Faltas (total do jogo, mandante+visitante somados) pra um
+// confronto, escolhendo sozinho a config já treinada certa pra cada
+// mercado/linha -- sem o usuário precisar abrir o painel "Treino
+// Customizado" e caçar entre as 32 configs manualmente (ver
+// EstimativaModeloCustom.jsx, que continua existindo pro caso de querer uma
+// linha ou o recorte mandante/visitante fora do default aqui).
+//
+// Só cobre o mercado "geral" (não mandante/visitante) e 1 linha por mercado
+// por chamada -- cada linha é um MODELO TREINADO À PARTE (não uma fórmula
+// fechada como em corners-model.js), então cada uma exige disparar 1
+// workflow do GitHub Actions (~10min de timeout, ver estimar_partida_
+// custom.yml). Pedir várias linhas de uma vez multiplicaria o número de
+// disparos por clique -- por design, mantido em no máximo 2 por chamada
+// (1 de cartões + 1 de faltas).
+//
+// Assíncrono, igual ao painel manual: devolve os request_id pra cada
+// mercado, e o frontend faz o polling em custom_model_ondemand_predictions
+// (policy de leitura pública) até status='concluido'/'erro'.
+async function tarefaEstimarCartoesFaltas(supabase, authHeader, body) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado.' };
+
+  const {
+    mandante, visitante, mandante_id: mandanteId, visitante_id: visitanteId,
+    linha_cartoes: linhaCartoesPedida, linha_faltas: linhaFaltasPedida,
+    algorithm: algoritmoPedido,
+  } = body || {};
+
+  const algoritmo = algoritmoPedido || 'xgboost';
+  if (!ALGORITMOS_CARTOES_FALTAS.includes(algoritmo)) {
+    return { status: 400, error: `algorithm inválido: "${algoritmo}" -- use um de ${ALGORITMOS_CARTOES_FALTAS.join(', ')}.` };
+  }
+
+  const linhaCartoes = String(linhaCartoesPedida || LINHA_PADRAO_CARTOES_FALTAS.cartoes);
+  const linhaFaltas = String(linhaFaltasPedida || LINHA_PADRAO_CARTOES_FALTAS.faltas);
+  if (!LINHAS_VALIDAS_CARTOES_FALTAS.cartoes.includes(linhaCartoes)) {
+    return { status: 400, error: `linha_cartoes inválida: "${linhaCartoes}" -- use uma de ${LINHAS_VALIDAS_CARTOES_FALTAS.cartoes.join(', ')}.` };
+  }
+  if (!LINHAS_VALIDAS_CARTOES_FALTAS.faltas.includes(linhaFaltas)) {
+    return { status: 400, error: `linha_faltas inválida: "${linhaFaltas}" -- use uma de ${LINHAS_VALIDAS_CARTOES_FALTAS.faltas.join(', ')}.` };
+  }
+
+  const [timeMandante, timeVisitante] = await Promise.all([
+    resolverTimePorNomeOuId(supabase, mandante, mandanteId),
+    resolverTimePorNomeOuId(supabase, visitante, visitanteId),
+  ]);
+  if (!timeMandante) return { status: 404, error: `Time mandante "${mandante || mandanteId}" não encontrado em teams.` };
+  if (!timeVisitante) return { status: 404, error: `Time visitante "${visitante || visitanteId}" não encontrado em teams.` };
+
+  const partida = await encontrarPartidaMandanteVisitante(supabase, timeMandante.id, timeVisitante.id);
+  if (!partida) {
+    return {
+      status: 404,
+      error: `Não há partida (agendada ou disputada) de "${timeMandante.name}" em casa contra "${timeVisitante.name}" no calendário -- diferente da calculadora de escanteios, este modelo precisa de uma partida real (scripts/estimar_partida_custom.py monta as features em cima do match_id).`,
+    };
+  }
+
+  const mercados = [
+    { mercado: 'cartoes', linha: linhaCartoes, target: `cartoes_over_under_${linhaCartoes}` },
+    { mercado: 'faltas', linha: linhaFaltas, target: `faltas_over_under_${linhaFaltas}` },
+  ];
+
+  const resultados = [];
+  for (const { mercado, linha, target } of mercados) {
+    const { data: cfg, error: cfgErr } = await supabase
+      .from('custom_model_configs')
+      .select('id, model_artifacts')
+      .eq('target', target)
+      .eq('mode', 'walk_forward_cv')
+      .maybeSingle();
+    if (cfgErr) throw cfgErr;
+    if (!cfg) {
+      resultados.push({ mercado, linha, erro: `Nenhuma config treinada encontrada com target="${target}".` });
+      continue;
+    }
+    // Tenta o algoritmo pedido; sem artefato pra ele, tenta o outro antes de
+    // desistir dessa linha (as 32 configs de Cartões/Faltas sempre treinam
+    // xgboost + random_forest juntas, mas não custa ser defensivo).
+    const artefatos = cfg.model_artifacts || {};
+    const algoritmoEfetivo = artefatos[algoritmo]
+      ? algoritmo
+      : ALGORITMOS_CARTOES_FALTAS.find((a) => artefatos[a]);
+    if (!algoritmoEfetivo) {
+      resultados.push({ mercado, linha, config_id: cfg.id, erro: 'Config encontrada mas sem nenhum artefato treinado/persistido ainda.' });
+      continue;
+    }
+
+    const resultado = await inserirEDispararEstimativaCustom(supabase, authHeader, usuario, cfg.id, partida.id, algoritmoEfetivo);
+    if (resultado.status !== 200) {
+      resultados.push({ mercado, linha, config_id: cfg.id, erro: resultado.error || 'Falha ao disparar workflow.' });
+    } else {
+      resultados.push({ mercado, linha, config_id: cfg.id, algorithm: algoritmoEfetivo, request_id: resultado.request_id });
+    }
+  }
+
+  return {
+    status: 200,
+    confronto: { mandante: timeMandante.name, visitante: timeVisitante.name },
+    partida: { id: partida.id, match_date: partida.match_date, status: partida.status },
+    mercados: resultados,
+  };
 }
 
 // ============================================================
@@ -6650,6 +6809,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'estimar-partida-custom') {
       const resultado = await tarefaEstimarPartidaCustom(supabase, req.headers.authorization, req.body);
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'estimar-cartoes-faltas') {
+      const resultado = await tarefaEstimarCartoesFaltas(supabase, req.headers.authorization, req.body);
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
