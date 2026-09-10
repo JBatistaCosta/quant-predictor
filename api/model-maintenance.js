@@ -4337,8 +4337,11 @@ const MAPA_STATS_TIME = {
   red_cards: ['red_cards', extrairIntValor],
 };
 
-function montarStatsTime(statsPayload) {
-  const grupos = (((statsPayload || {}).Periods || {}).All || {}).stats || [];
+// periodoChave: 'All' (padrão -- match_stats_fotmob) | 'FirstHalf' | 'SecondHalf'
+// (match_stats_fotmob_periodo). Mesmo shape de grupos nos 3 casos -- achado
+// 10/09, ver docstring de montarLinhasStatsTimePeriodo mais abaixo.
+function montarStatsTime(statsPayload, periodoChave = 'All') {
+  const grupos = (((statsPayload || {}).Periods || {})[periodoChave] || {}).stats || [];
   const porChave = {};
   for (const grupo of grupos) {
     for (const s of grupo.stats || []) {
@@ -4353,15 +4356,59 @@ function montarStatsTime(statsPayload) {
     }
     return out;
   };
-  return { home: linha(0), away: linha(1) };
+  return { home: linha(0), away: linha(1), temGrupos: grupos.length > 0 };
 }
 
-function montarLinhasStatsTime(matchIdInterno, statsPayload, homeTeamId, awayTeamId) {
+// content.attackingZones -- chave SEPARADA de content.stats (achado 09/09):
+// {home,away}.{total,firstHalf,secondHalf}.{left,center,right}, percentual
+// de ataques por lado do campo. Ausente em payload de partida antiga (pré-
+// ~2018, mesma limitação já documentada pra shots/discipline no Achado 11)
+// -- null nesse caso é dado ausente na fonte, não bug de extração.
+function extrairZonasAtaque(attackingZones, ladoChave) {
+  const z = (attackingZones || {})[ladoChave] || {};
+  const total = z.total || {};
+  const h1 = z.firstHalf || {};
+  const h2 = z.secondHalf || {};
+  return {
+    attacking_zone_left: total.left ?? null,
+    attacking_zone_center: total.center ?? null,
+    attacking_zone_right: total.right ?? null,
+    attacking_zone_left_1t: h1.left ?? null,
+    attacking_zone_center_1t: h1.center ?? null,
+    attacking_zone_right_1t: h1.right ?? null,
+    attacking_zone_left_2t: h2.left ?? null,
+    attacking_zone_center_2t: h2.center ?? null,
+    attacking_zone_right_2t: h2.right ?? null,
+    attacking_zone_checked: true,
+  };
+}
+
+function montarLinhasStatsTime(matchIdInterno, statsPayload, attackingZones, homeTeamId, awayTeamId) {
   const { home, away } = montarStatsTime(statsPayload);
   return [
-    { match_id: matchIdInterno, team_id: homeTeamId, ...home, stats_raw: statsPayload },
-    { match_id: matchIdInterno, team_id: awayTeamId, ...away, stats_raw: statsPayload },
+    { match_id: matchIdInterno, team_id: homeTeamId, ...home, ...extrairZonasAtaque(attackingZones, 'home'), stats_raw: statsPayload },
+    { match_id: matchIdInterno, team_id: awayTeamId, ...away, ...extrairZonasAtaque(attackingZones, 'away'), stats_raw: statsPayload },
   ];
+}
+
+// match_stats_fotmob_periodo -- mesma extração de montarLinhasStatsTime,
+// repetida pra FirstHalf/SecondHalf em vez de All (achado 10/09: os MESMOS
+// grupos -- shots, expected_goals, passes, defence, duels, discipline --
+// existem quebrados por tempo no payload, nunca lidos até agora). Partida
+// antiga sem Periods.FirstHalf/SecondHalf simplesmente não gera linha pra
+// esse período (temGrupos=false) -- dado ausente na fonte, não erro.
+const PERIODOS_FOTMOB = [['FirstHalf', 'primeiro_tempo'], ['SecondHalf', 'segundo_tempo']];
+
+function montarLinhasStatsTimePeriodo(matchIdInterno, statsPayload, homeTeamId, awayTeamId) {
+  const linhas = [];
+  for (const [periodoChave, periodoDb] of PERIODOS_FOTMOB) {
+    const { home, away, temGrupos } = montarStatsTime(statsPayload, periodoChave);
+    if (!temGrupos) continue;
+    const grupos = (((statsPayload || {}).Periods || {})[periodoChave] || {}).stats;
+    linhas.push({ match_id: matchIdInterno, team_id: homeTeamId, periodo: periodoDb, ...home, stats_raw: grupos });
+    linhas.push({ match_id: matchIdInterno, team_id: awayTeamId, periodo: periodoDb, ...away, stats_raw: grupos });
+  }
+  return linhas;
 }
 
 // coluna em match_player_stats_fotmob -> [chave real, parser]
@@ -4736,9 +4783,15 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
       // tudo de novo, só corrige placar/status (acima).
       if (!naoReimportarStats.has(jogo.id)) {
         await supabase.from('match_stats_fotmob').upsert(
-          montarLinhasStatsTime(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id),
+          montarLinhasStatsTime(jogo.id, content.stats, content.attackingZones, jogo.home_team_id, jogo.away_team_id)
+            .map(l => ({ ...l, periodo_checked: true })),
           { onConflict: 'match_id,team_id' }
         );
+
+        const linhasPeriodo = montarLinhasStatsTimePeriodo(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id);
+        if (linhasPeriodo.length) {
+          await supabase.from('match_stats_fotmob_periodo').upsert(linhasPeriodo, { onConflict: 'match_id,team_id,periodo' });
+        }
 
         // Lineup: dimensão de jogador enriquecida (firstName/idade/país/posição)
         // + match_lineup_fotmob (titular/reserva, posição em campo, capitão)
@@ -4834,6 +4887,100 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
     sem_casamento_ou_falha: semCasamentoOuFalha.length ? semCasamentoOuFalha : undefined,
     restantes,
   };
+}
+
+// ============================================================
+// TAREFA: backfill-detalhes-fotmob — preenche, pra partidas já importadas
+// ANTES desses campos existirem, duas coisas achadas em conteúdo do payload
+// de matchDetails que nenhum ingestor lia até 10/09:
+// 1. attacking_zone_* em match_stats_fotmob (content.attackingZones --
+//    chave SEPARADA de content.stats, ver docstring de extrairZonasAtaque).
+// 2. match_stats_fotmob_periodo (content.stats.Periods.FirstHalf/
+//    SecondHalf -- mesmos grupos de Periods.All, nunca lidos, ver docstring
+//    de montarLinhasStatsTimePeriodo).
+// As duas via o MESMO re-fetch de matchDetails por partida -- fazer numa
+// tarefa só evita buscar o payload (~250KB) duas vezes pra cada uma das
+// ~27 mil partidas já importadas. Diferente de partidas-fotmob, não refaz
+// o resto do detalhe (lineup/shots/player stats/formação/game-state).
+// `attacking_zone_checked`/`periodo_checked` marcam "já tentei" mesmo
+// quando o FotMob não tem o dado (partida antiga, mesma limitação do
+// Achado 11 pra shots/discipline) -- sem isso o backfill reprocessaria
+// essas partidas pra sempre, já que as colunas ficariam NULL/sem linha de
+// qualquer forma.
+// ============================================================
+const MAX_PARTIDAS_POR_CHAMADA_DETALHES = 20;
+
+async function tarefaBackfillDetalhesFotmob(supabase, authHeader, { limite }) {
+  const usuario = await verificarUsuarioLogado(supabase, authHeader);
+  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar.' };
+
+  const limiteJogos = Math.min(parseInt(limite, 10) || MAX_PARTIDAS_POR_CHAMADA_DETALHES, MAX_PARTIDAS_POR_CHAMADA_DETALHES);
+
+  const { data: pendentesRaw } = await supabase
+    .from('match_stats_fotmob')
+    .select('match_id')
+    .or('attacking_zone_checked.eq.false,periodo_checked.eq.false')
+    .order('match_id', { ascending: false })
+    .limit(limiteJogos * 3); // margem: até 2 linhas (home/away) por partida
+
+  const matchIdsPendentes = [...new Set((pendentesRaw || []).map(r => r.match_id))].slice(0, limiteJogos);
+  if (matchIdsPendentes.length === 0) {
+    return { mensagem: 'Nenhuma partida pendente de checagem de zonas de ataque/estatística por tempo.', restantes: 0 };
+  }
+
+  const [{ data: sourceRows }, { data: jogosRows }] = await Promise.all([
+    supabase.from('match_source_ids').select('match_id, source_id').eq('source', 'fotmob').in('match_id', matchIdsPendentes),
+    supabase.from('matches').select('id, home_team_id, away_team_id').in('id', matchIdsPendentes),
+  ]);
+  const fotmobIdPorMatch = new Map((sourceRows || []).map(r => [r.match_id, r.source_id]));
+  const jogoPorId = new Map((jogosRows || []).map(j => [j.id, j]));
+
+  let processadas = 0, comZona = 0, comPeriodo = 0;
+  const falhas = [];
+
+  for (const matchId of matchIdsPendentes) {
+    const fotmobMatchId = fotmobIdPorMatch.get(matchId);
+    const jogo = jogoPorId.get(matchId);
+    if (!fotmobMatchId || !jogo) {
+      // Não deveria acontecer (match_stats_fotmob só existe pra jogo já
+      // importado com source_id) — marca como checado pra não travar o lote.
+      await supabase.from('match_stats_fotmob')
+        .update({ attacking_zone_checked: true, periodo_checked: true }).eq('match_id', matchId);
+      continue;
+    }
+    if (processadas > 0) await esperar(700);
+    try {
+      const resp = await fetch(`https://www.fotmob.com/api/data/matchDetails?matchId=${fotmobMatchId}`, { headers: FOTMOB_HEADERS });
+      if (!resp.ok) { falhas.push({ match_id: matchId, motivo: `http_${resp.status}` }); continue; }
+      const payload = await resp.json();
+      const content = payload.content || {};
+      const attackingZones = content.attackingZones;
+
+      await supabase.from('match_stats_fotmob')
+        .update({ ...extrairZonasAtaque(attackingZones, 'home'), periodo_checked: true })
+        .eq('match_id', matchId).eq('team_id', jogo.home_team_id);
+      await supabase.from('match_stats_fotmob')
+        .update({ ...extrairZonasAtaque(attackingZones, 'away'), periodo_checked: true })
+        .eq('match_id', matchId).eq('team_id', jogo.away_team_id);
+
+      const linhasPeriodo = montarLinhasStatsTimePeriodo(matchId, content.stats, jogo.home_team_id, jogo.away_team_id);
+      if (linhasPeriodo.length) {
+        await supabase.from('match_stats_fotmob_periodo').upsert(linhasPeriodo, { onConflict: 'match_id,team_id,periodo' });
+      }
+
+      processadas++;
+      if (attackingZones) comZona++;
+      if (linhasPeriodo.length) comPeriodo++;
+    } catch (e) {
+      falhas.push({ match_id: matchId, motivo: String(e.message || e) });
+    }
+  }
+
+  const { count: restantes } = await supabase.from('match_stats_fotmob')
+    .select('match_id', { count: 'exact', head: true })
+    .or('attacking_zone_checked.eq.false,periodo_checked.eq.false');
+
+  return { processadas, com_zona_ataque: comZona, com_estatistica_por_tempo: comPeriodo, falhas, restantes: restantes ?? null };
 }
 
 // ============================================================
@@ -6205,6 +6352,13 @@ export default async function handler(req, res) {
     if (tarefa === 'partidas-fotmob') {
       const { modo } = req.query;
       const resultado = await tarefaPartidasFotmob(supabase, req.headers.authorization, { ligaId: liga_id, temporada, limite, modo });
+      if (resultado.status === 401) return res.status(401).json({ error: { message: resultado.error } });
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'backfill-detalhes-fotmob') {
+      const resultado = await tarefaBackfillDetalhesFotmob(supabase, req.headers.authorization, { limite });
       if (resultado.status === 401) return res.status(401).json({ error: { message: resultado.error } });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
