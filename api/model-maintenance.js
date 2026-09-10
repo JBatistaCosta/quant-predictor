@@ -4411,6 +4411,20 @@ function montarLinhasStatsTimePeriodo(matchIdInterno, statsPayload, homeTeamId, 
   return linhas;
 }
 
+// content.momentum.main.data -- curva de domínio/xT minuto a minuto, chave
+// SEPARADA de content.stats (achado 10/09, destacado pelo usuário como
+// candidato forte a virar feature de modelo). {minute, value}[], positivo =
+// mandante domina, negativo = visitante. Ausente (momentumPayload é
+// `false`, não a chave faltando) em partida antiga -- mesma limitação já
+// documentada pros outros achados desta auditoria.
+function montarLinhasMomentum(matchIdInterno, momentumPayload) {
+  const data = momentumPayload?.main?.data;
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter(p => typeof p?.minute === 'number' && typeof p?.value === 'number')
+    .map(p => ({ match_id: matchIdInterno, minute: p.minute, value: p.value }));
+}
+
 // coluna em match_player_stats_fotmob -> [chave real, parser]
 const MAPA_STATS_JOGADOR = {
   rating: ['rating_title', extrairFloatValor],
@@ -4804,13 +4818,18 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
       if (!naoReimportarStats.has(jogo.id)) {
         await supabase.from('match_stats_fotmob').upsert(
           montarLinhasStatsTime(jogo.id, content.stats, content.attackingZones, jogo.home_team_id, jogo.away_team_id)
-            .map(l => ({ ...l, periodo_checked: true })),
+            .map(l => ({ ...l, periodo_checked: true, momentum_checked: true })),
           { onConflict: 'match_id,team_id' }
         );
 
         const linhasPeriodo = montarLinhasStatsTimePeriodo(jogo.id, content.stats, jogo.home_team_id, jogo.away_team_id);
         if (linhasPeriodo.length) {
           await supabase.from('match_stats_fotmob_periodo').upsert(linhasPeriodo, { onConflict: 'match_id,team_id,periodo' });
+        }
+
+        const linhasMomentum = montarLinhasMomentum(jogo.id, content.momentum);
+        if (linhasMomentum.length) {
+          await supabase.from('match_momentum_fotmob').upsert(linhasMomentum, { onConflict: 'match_id,minute' });
         }
 
         // Lineup: dimensão de jogador enriquecida (firstName/idade/país/posição)
@@ -4911,22 +4930,24 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
 
 // ============================================================
 // TAREFA: backfill-detalhes-fotmob — preenche, pra partidas já importadas
-// ANTES desses campos existirem, duas coisas achadas em conteúdo do payload
+// ANTES desses campos existirem, três coisas achadas em conteúdo do payload
 // de matchDetails que nenhum ingestor lia até 10/09:
 // 1. attacking_zone_* em match_stats_fotmob (content.attackingZones --
 //    chave SEPARADA de content.stats, ver docstring de extrairZonasAtaque).
 // 2. match_stats_fotmob_periodo (content.stats.Periods.FirstHalf/
 //    SecondHalf -- mesmos grupos de Periods.All, nunca lidos, ver docstring
 //    de montarLinhasStatsTimePeriodo).
-// As duas via o MESMO re-fetch de matchDetails por partida -- fazer numa
-// tarefa só evita buscar o payload (~250KB) duas vezes pra cada uma das
-// ~27 mil partidas já importadas. Diferente de partidas-fotmob, não refaz
-// o resto do detalhe (lineup/shots/player stats/formação/game-state).
-// `attacking_zone_checked`/`periodo_checked` marcam "já tentei" mesmo
-// quando o FotMob não tem o dado (partida antiga, mesma limitação do
-// Achado 11 pra shots/discipline) -- sem isso o backfill reprocessaria
-// essas partidas pra sempre, já que as colunas ficariam NULL/sem linha de
-// qualquer forma.
+// 3. match_momentum_fotmob (content.momentum.main.data -- curva de
+//    domínio/xT minuto a minuto, ver docstring de montarLinhasMomentum).
+// As três via o MESMO re-fetch de matchDetails por partida -- fazer numa
+// tarefa só evita buscar o payload (~250KB) mais de uma vez pra cada uma
+// das ~27 mil partidas já importadas. Diferente de partidas-fotmob, não
+// refaz o resto do detalhe (lineup/shots/player stats/formação/game-state).
+// `attacking_zone_checked`/`periodo_checked`/`momentum_checked` marcam "já
+// tentei" mesmo quando o FotMob não tem o dado (partida antiga, mesma
+// limitação do Achado 11 pra shots/discipline) -- sem isso o backfill
+// reprocessaria essas partidas pra sempre, já que as colunas ficariam
+// NULL/sem linha de qualquer forma.
 // ============================================================
 const MAX_PARTIDAS_POR_CHAMADA_DETALHES = 20;
 
@@ -4937,13 +4958,13 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
   const { data: pendentesRaw } = await supabase
     .from('match_stats_fotmob')
     .select('match_id')
-    .or('attacking_zone_checked.eq.false,periodo_checked.eq.false')
+    .or('attacking_zone_checked.eq.false,periodo_checked.eq.false,momentum_checked.eq.false')
     .order('match_id', { ascending: false })
     .limit(limiteJogos * 3); // margem: até 2 linhas (home/away) por partida
 
   const matchIdsPendentes = [...new Set((pendentesRaw || []).map(r => r.match_id))].slice(0, limiteJogos);
   if (matchIdsPendentes.length === 0) {
-    return { mensagem: 'Nenhuma partida pendente de checagem de zonas de ataque/estatística por tempo.', restantes: 0 };
+    return { mensagem: 'Nenhuma partida pendente de checagem de zonas de ataque/estatística por tempo/momentum.', restantes: 0 };
   }
 
   const [{ data: sourceRows }, { data: jogosRows }] = await Promise.all([
@@ -4953,7 +4974,7 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
   const fotmobIdPorMatch = new Map((sourceRows || []).map(r => [r.match_id, r.source_id]));
   const jogoPorId = new Map((jogosRows || []).map(j => [j.id, j]));
 
-  let processadas = 0, comZona = 0, comPeriodo = 0;
+  let processadas = 0, comZona = 0, comPeriodo = 0, comMomentum = 0;
   const falhas = [];
 
   for (const matchId of matchIdsPendentes) {
@@ -4963,7 +4984,7 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
       // Não deveria acontecer (match_stats_fotmob só existe pra jogo já
       // importado com source_id) — marca como checado pra não travar o lote.
       await supabase.from('match_stats_fotmob')
-        .update({ attacking_zone_checked: true, periodo_checked: true }).eq('match_id', matchId);
+        .update({ attacking_zone_checked: true, periodo_checked: true, momentum_checked: true }).eq('match_id', matchId);
       continue;
     }
     if (processadas > 0) await esperar(700);
@@ -4975,10 +4996,10 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
       const attackingZones = content.attackingZones;
 
       await supabase.from('match_stats_fotmob')
-        .update({ ...extrairZonasAtaque(attackingZones, 'home'), periodo_checked: true })
+        .update({ ...extrairZonasAtaque(attackingZones, 'home'), periodo_checked: true, momentum_checked: true })
         .eq('match_id', matchId).eq('team_id', jogo.home_team_id);
       await supabase.from('match_stats_fotmob')
-        .update({ ...extrairZonasAtaque(attackingZones, 'away'), periodo_checked: true })
+        .update({ ...extrairZonasAtaque(attackingZones, 'away'), periodo_checked: true, momentum_checked: true })
         .eq('match_id', matchId).eq('team_id', jogo.away_team_id);
 
       const linhasPeriodo = montarLinhasStatsTimePeriodo(matchId, content.stats, jogo.home_team_id, jogo.away_team_id);
@@ -4986,9 +5007,15 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
         await supabase.from('match_stats_fotmob_periodo').upsert(linhasPeriodo, { onConflict: 'match_id,team_id,periodo' });
       }
 
+      const linhasMomentum = montarLinhasMomentum(matchId, content.momentum);
+      if (linhasMomentum.length) {
+        await supabase.from('match_momentum_fotmob').upsert(linhasMomentum, { onConflict: 'match_id,minute' });
+      }
+
       processadas++;
       if (attackingZones) comZona++;
       if (linhasPeriodo.length) comPeriodo++;
+      if (linhasMomentum.length) comMomentum++;
     } catch (e) {
       falhas.push({ match_id: matchId, motivo: String(e.message || e) });
     }
@@ -4996,9 +5023,12 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
 
   const { count: restantes } = await supabase.from('match_stats_fotmob')
     .select('match_id', { count: 'exact', head: true })
-    .or('attacking_zone_checked.eq.false,periodo_checked.eq.false');
+    .or('attacking_zone_checked.eq.false,periodo_checked.eq.false,momentum_checked.eq.false');
 
-  return { processadas, com_zona_ataque: comZona, com_estatistica_por_tempo: comPeriodo, falhas, restantes: restantes ?? null };
+  return {
+    processadas, com_zona_ataque: comZona, com_estatistica_por_tempo: comPeriodo, com_momentum: comMomentum,
+    falhas, restantes: restantes ?? null,
+  };
 }
 
 // ============================================================
