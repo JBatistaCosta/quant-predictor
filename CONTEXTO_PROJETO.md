@@ -19,6 +19,63 @@ Cartões melhorou muito mais (~13-16%) que Faltas (~1-1,5%) — coerente com a c
 
 ---
 
+**Frente nova (10/09): auditoria de campos do payload FotMob nunca lidos por nenhum ingestor.** Pedido do usuário depois de notar o widget "Zonas de ataque" no site do FotMob e perguntar se o scraping capturava aquilo. Virou uma varredura mais ampla: cada achado abaixo é um campo que **sempre esteve disponível no payload de `matchDetails`**, mas nenhum código de ingestão (nem `api/model-maintenance.js`, nem os scripts de `arquivos_do_claude/`) nunca leu.
+
+- **Zonas de ataque e estatística por 1º/2º tempo — implementado com backfill (PRs #505/#506/#507).** `content.attackingZones` (esquerda/centro/direita por time, chave separada de `content.stats`) e `content.stats.Periods.FirstHalf`/`SecondHalf` (mesmos grupos de `Periods.All` — shots/xG/passes/defence/duels/discipline — nunca lidos). Detalhe técnico completo já registrado nas mensagens de commit dessas 3 PRs; migrations `20260910030000`/`20260910040000`. Duas colunas `*_checked` (`attacking_zone_checked`/`periodo_checked`) marcam "já tentei buscar" mesmo quando a partida é antiga demais e não tem o campo — sem isso o backfill reprocessaria essas partidas pra sempre. Dois bugs reais encontrados só ao testar em produção de verdade (não pego em `node --check`/revisão de código): a tarefa de backfill exigia login do Supabase Auth (copiado sem querer de `tarefaPartidasFotmob`, mas backfill é disparado via curl direto — sessão automatizada não loga no browser) e um `ReferenceError: esperar is not defined` (`esperar()` é definida localmente em CADA função de tarefa neste arquivo, não é helper de módulo — faltou declarar a cópia local). **Backfill das ~27 mil partidas rodando em background ao fim desta sessão** (lotes de 20, pacing 700ms/chamada ao FotMob) — checar `select count(*) from match_stats_fotmob where attacking_zone_checked=false or periodo_checked=false` pra ver quanto falta.
+- **Substituição — implementado, SEM precisar re-buscar nada do FotMob (10/09).** `content.lineup.{homeTeam,awayTeam}.{starters,subs}[].performance.substitutionEvents` (array de `{time, type: 'subIn'|'subOut', reason}`) já estava dentro de `match_lineup_fotmob.raw` desde sempre (a ingestão sempre guardou o objeto do jogador inteiro), só nunca tinha sido extraído pra coluna própria. Migration `20260910050000` adiciona `substituted_in_minute`/`substituted_in_reason`/`substituted_out_minute`/`substituted_out_reason` e faz o backfill das ~903 mil linhas existentes com uma única `UPDATE` em SQL puro (sem chamada externa, sem rate limit, instantâneo) — confirmado 172.988 entradas/172.979 saídas preenchidas. Padrão real dos dados: 99,7% dos jogadores com evento têm exatamente 1 (só entrou ou só saiu) ou 2 (entrou E saiu de novo na mesma partida — 1.031/1.031 casos reais sempre na ordem subIn-depois-subOut, confirmado antes de assumir isso no schema). `reason` observado: `"tactical"`/`"light injury"` (às vezes ausente). `api/model-maintenance.js` (`extrairSubstituicao`) e `arquivos_do_claude/ingestao_fotmob.py` (`extrair_substituicao`) já gravam isso pra partida nova a partir de agora.
+- **`content.momentum` — curva de domínio/xT minuto a minuto — implementado com backfill (achado mais promissor da auditoria, pedido explícito do usuário: "provavelmente poderemos utilizar em breve").** `content.momentum.main.data` é uma série temporal `[{minute, value}]` — um ponto por minuto (94 pontos na partida Barcelona x Feyenoord testada), `value` positivo = mandante domina naquele minuto, negativo = visitante (`debugTitle: "Using xT SA-version"` confirma que é baseado em **xT** — expected threat — não em posse simples, já vem filtrado de ruído). Existe uma segunda cópia quase idêntica em `content.matchFacts.momentum` (mesmo shape, valores levemente diferentes — não investigado por quê, usado `content.momentum` como principal). Migration `20260910060000`: tabela nova `match_momentum_fotmob` (match_id, minute, value — granularidade de série temporal, mesmo padrão de `match_goal_timeline`) + coluna `momentum_checked` em `match_stats_fotmob` (mesmo padrão `*_checked` dos 2 achados acima). Ingestão de partida nova já grava (`montarLinhasMomentum`/`montar_linhas_momentum`); tarefa `?tarefa=backfill-detalhes-fotmob` estendida pra cobrir as 3 coisas no MESMO re-fetch de matchDetails (zonas + período + momentum), sem custo extra de rede.
+
+### ⭐ Por que `momentum` é o achado mais promissor pra virar feature de modelo
+
+**Por que vale a pena**: é complementar, não redundante, às duas fontes de "quem está melhor" que já existem —
+- `match_team_game_state` reconstrói o jogo por **placar** (perdendo/empatando/ganhando) — não enxerga domínio antes do primeiro gol nem dentro do mesmo estado de placar.
+- `match_shots_fotmob` é evento **discreto** (só existe no minuto do chute) — não dá uma leitura contínua.
+- `momentum` seria a única fonte de "quem estava melhor NAQUELE minuto" independente de o placar ter mudado ou não — daria pra, por exemplo, medir se um time que sofreu gol já vinha sendo dominado antes (contexto que a fase 3/resposta a evento hoje não tem) ou construir uma feature de "tendência dos últimos N minutos" pro modelo de próximo gol/cartão.
+
+**Disponibilidade confirmada**: presente na partida de 2026 testada, **ausente** (`momentum: false`, não a chave faltando — dado real de "essa partida não tem") na partida de 2014 testada. Mesma limitação histórica dos outros achados desta auditoria — não dá pra saber o corte exato sem testar mais amostras.
+
+**Escopo de implementação** (maior que zonas/período, que só precisavam de colunas na tabela já existente, e que substituição, cujo dado já estava no banco): exigiu (1) tabela nova de série temporal (`match_momentum_fotmob`, ordem de grandeza parecida com `match_goal_timeline`), e (2) backfill com **re-fetch** do FotMob pras ~27 mil partidas já importadas — reaproveitando o mesmo re-fetch que `backfill-detalhes-fotmob` já fazia pra zonas/período, sem custo extra de rede. Nenhuma feature de modelo usa `momentum` ainda — é dado cru disponível, o próximo passo (fora do escopo desta sessão) é desenhar a agregação certa (ex.: média/inclinação da curva nos últimos N minutos antes de um evento) antes de testar como feature.
+
+### Mapa completo do payload `matchDetails` (todas as chaves de `content`, o que cada uma é e se está capturada)
+
+Levantado por inspeção direta de 2 amostras reais (Barcelona x Feyenoord, `matchId=6106264`, partida rica; e um jogo de La Liga 2014/15, `matchId=1778037`, payload pobre — pra separar "não capturamos" de "não existe na fonte"), mesma disciplina de sempre no projeto (nunca generalizar de documentação).
+
+| Chave (`content.`) | O que é | Capturado? | Onde |
+|---|---|---|---|
+| `matchFacts.infoBox` | Estádio, cidade, país, lat/long, árbitro, público | ✅ | `match_context_fotmob` |
+| `matchFacts.events` | Timeline bruta de Goal/Assist/Card/AddedTime/Half/Substitution/**VAR**/Yellow/Injuries | ⚠️ parcial | Gols → `match_shots_fotmob`; cartões → `match_events`; substituição → `match_lineup_fotmob` (mas via `lineup.performance`, não via este array). **Decisões de VAR (gol anulado etc.) não são capturadas em lugar nenhum.** |
+| `matchFacts.playerOfTheMatch` | Jogador eleito "man of the match", com rating | ❌ | Rating do jogador já vem por `match_player_stats_fotmob.rating`; o *flag* de "foi eleito melhor em campo" não é gravado |
+| `matchFacts.teamForm` | Últimos 5 resultados de cada time (W/D/L) | ❌ (não precisa) | Redundante — já dá pra derivar de `matches` própria |
+| `matchFacts.poll` | Pergunta de enquete/aposta ("quem vence?") com estatística de apoio | ❌ (não vale) | Conteúdo de engajamento, não dado estrutural novo |
+| `matchFacts.topPlayers` | Melhores jogadores da partida por rating (top 3 por time) | ❌ (não precisa) | Redundante com `match_player_stats_fotmob.rating`, só filtrado |
+| `matchFacts.insights` | Ver seção dedicada abaixo | ❌ (não vale) | — |
+| `matchFacts.momentum` | Cópia quase idêntica de `content.momentum` (ver seção ⭐ acima) | ❌ | Usar `content.momentum`, não esta cópia |
+| `matchFacts.postReview`/`preReview` | Matérias jornalísticas (título, descrição, imagem) sobre a partida | ❌ (fora de escopo) | Conteúdo editorial, não estatística |
+| `matchFacts.QAData` | Par pergunta/resposta genérico ("quem ganhou X vs Y?") pra SEO | ❌ (não vale) | Texto gerado, sem dado estruturado |
+| `matchFacts.matchInsightsConfig` | Só a URL-template de outro endpoint de insights, multilíngue | ❌ (não é dado) | — |
+| `stats.Periods.{All,FirstHalf,SecondHalf}` | Estatísticas de time (posse, chutes, xG, passes, defesa, duelos, disciplina) | ✅ | `match_stats_fotmob` (All) / `match_stats_fotmob_periodo` (FirstHalf/SecondHalf) — PR #505 |
+| `attackingZones` | Zonas de ataque esquerda/centro/direita, por time e por tempo | ✅ | `match_stats_fotmob.attacking_zone_*` — PR #505 |
+| `playerStats` | Estatística individual por jogador (chutes, passes, duelos, rating...) | ✅ | `match_player_stats_fotmob` |
+| `shotmap.shots` | Chute a chute, com xG/xGOT, coordenadas, tipo | ✅ | `match_shots_fotmob` |
+| `lineup.{homeTeam,awayTeam}` | Escalação, posição em campo, capitão, **substituição** | ✅ | `match_lineup_fotmob` (substituição desde este PR) |
+| `weather` | Temperatura, vento, umidade, precipitação, descrição | ✅ | `match_context_fotmob` |
+| `momentum` | Curva de domínio/xT minuto a minuto | ✅ **ainda sem uso em modelo** | `match_momentum_fotmob` — ver seção ⭐ acima |
+| `heatmapUrl` | Link pra um endpoint SEPARADO de heatmap (não é dado embutido, é outra chamada) | ❌ (não investigado a fundo) | Exigiria fetch adicional — não avaliado se vale o custo |
+| `table` | Só 2 ids de time + URL pra um `.gz` externo com a tabela da competição | ❌ (não vale) | Classificação já vem de outras fontes no pipeline |
+| `h2h` | `false` nas 2 amostras testadas — não confirmado se tem conteúdo real em algum jogo | ❌ (não investigado) | — |
+| `liveticker` | Idiomas disponíveis + times, pra narração ao vivo | ❌ (não é dado pós-jogo) | Só relevante durante o jogo |
+| `superlive` | Link/flag pra um recurso de cobertura ao vivo | ❌ (não é dado) | — |
+| `hasPlayoff` | Booleano da competição ter mata-mata | ❌ (não vale) | Já sabemos isso do cadastro da liga |
+| `buzz` | `None` nas 2 amostras — não confirmado se tem conteúdo real | ❌ (não investigado) | — |
+
+**Cobertura resumida**: das ~20 chaves de topo de `content`, **8 já são exploradas em produção** (`matchFacts.infoBox`, `stats`, `attackingZones`, `playerStats`, `shotmap`, `lineup`, `weather`, `momentum`), e o resto é conteúdo editorial/redundante/não-dado ou não investigado a fundo (`h2h`/`buzz`/`heatmapUrl`). De `momentum` especificamente: dado capturado e com backfill, mas **ainda sem nenhuma feature de modelo construída em cima** — é trabalho futuro, fora do escopo desta sessão.
+
+### O que é `insights`?
+
+`matchFacts.insights` é uma lista de frases prontas em formato de "curiosidade" que o próprio FotMob gera pra exibir no site, por time ou jogador — ex.: `{"type": "team", "teamId": 8634, "text": "Haven't lost in 6 matches", "priority": 1343}`. Cada item tem um `localizedTextId` (o "template" da frase, tipo `insights_undefeated_team`) e `statValues` (os números que preenchem o template). É basicamente o FotMob **verbalizando** um dado que a gente já calcula sozinho a partir da própria tabela `matches` (sequência de invencibilidade, aqui é só um exemplo — na prática cada partida tem um conjunto diferente de insights, dependendo do que for notável). Não é dado estruturado novo, é texto pronto pra exibição — por isso descartei como não-valioso pra modelo ou pro pipeline.
+
+---
+
 **Investigação completa de escanteios (09/09) — migração FBref→FotMob, janela/decay, bug real corrigido, shrinkage bayesiano e comparação final com o mercado.** Sequência de pedidos do usuário na mesma sessão, cada um decorrendo do achado anterior. Resumo cronológico:
 
 1. **Suspeita confirmada: os 6 modelos dedicados de escanteios (`corners_over_under_{7.5..12.5}`) dependiam do FBref pra sua feature mais importante.** `media_escanteios_5j`/`media_posse_5j` vinham de `match_stats` (FBref) — e o FBref tinha acabado de ser abandonado como fonte automatizada (seção logo abaixo, CAPTCHA bloqueia GitHub Actions): 0 partidas com dado FBref em agosto/setembro de 2026, contra FotMob cobrindo 333/335 e 126/130 nos mesmos meses. Além disso, `media_ppda_5j`/`media_deep_completions_5j` (Understat) não têm equivalente no FotMob — ficariam sempre imputadas pela mediana (`SimpleImputer`), sem sinal real, pra qualquer partida recente.

@@ -171,6 +171,26 @@ def extrair_zonas_ataque(attacking_zones: dict | None, lado_chave: str) -> dict:
     }
 
 
+def extrair_substituicao(performance: dict | None) -> dict:
+    """p.performance.substitutionEvents -- achado 10/09: array de
+    {time, type: 'subIn'|'subOut', reason}, sempre subIn-antes-de-subOut
+    quando tem os 2 (jogador que entrou e saiu de novo na mesma partida,
+    1.031/1.031 casos reais em produção nessa ordem). Ausente (não array
+    vazio) em payload de partida antiga -- mesma limitação já documentada
+    pra zonas de ataque/estatística por tempo."""
+    eventos = (performance or {}).get("substitutionEvents")
+    if not isinstance(eventos, list):
+        return {}
+    entrada = next((e for e in eventos if e.get("type") == "subIn"), None)
+    saida = next((e for e in eventos if e.get("type") == "subOut"), None)
+    return {
+        "substituted_in_minute": (entrada or {}).get("time"),
+        "substituted_in_reason": (entrada or {}).get("reason"),
+        "substituted_out_minute": (saida or {}).get("time"),
+        "substituted_out_reason": (saida or {}).get("reason"),
+    }
+
+
 def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
     item = stats_dict.get(chave_titulo)
     if not item:
@@ -340,6 +360,23 @@ def montar_linhas_stats_periodo(content: dict, match_id: int, home_team_id: int,
     return linhas
 
 
+def montar_linhas_momentum(content: dict, match_id: int) -> list[dict]:
+    """content.momentum.main.data -- curva de domínio/xT minuto a minuto,
+    chave SEPARADA de content.stats (achado 10/09, destacado pelo usuário
+    como candidato forte a virar feature de modelo). {minute, value}[],
+    positivo = mandante domina, negativo = visitante. Ausente
+    (momentum é `false`, não a chave faltando) em partida antiga -- mesma
+    limitação já documentada pros outros achados desta auditoria."""
+    data = ((content.get("momentum") or {}).get("main") or {}).get("data")
+    if not isinstance(data, list):
+        return []
+    return [
+        {"match_id": match_id, "minute": p["minute"], "value": p["value"]}
+        for p in data
+        if isinstance(p.get("minute"), (int, float)) and isinstance(p.get("value"), (int, float))
+    ]
+
+
 def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fotmob_to_internal: dict) -> dict:
     """Extrai TODAS as tabelas derivadas de um payload `matchDetails` já
     carregado (`d`) -- time (`match_stats_fotmob`), contexto (`match_
@@ -364,6 +401,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
     away_team_id = fotmob_to_internal.get(str(d["general"]["awayTeam"]["id"]))
     team_rows, _ = parse_match_details(d, match_id, home_team_id, away_team_id)
     periodo_rows = montar_linhas_stats_periodo(content, match_id, home_team_id, away_team_id)
+    momentum_rows = montar_linhas_momentum(content, match_id)
 
     contexto_row = parse_contexto_jogo(d, match_id, fotmob_match_id)
 
@@ -407,6 +445,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
                         "field_pos_x": vl.get("x"),
                         "field_pos_y": vl.get("y"),
                         "is_captain": p.get("isCaptain") or False,
+                        **extrair_substituicao(p.get("performance")),
                         "raw": p,
                         "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                     })
@@ -489,6 +528,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
     return {
         "team_rows": team_rows,
         "periodo_rows": periodo_rows,
+        "momentum_rows": momentum_rows,
         "contexto_row": contexto_row,
         "player_dim_rows": player_dim_rows,
         "lineup_rows": lineup_rows,
@@ -666,6 +706,11 @@ def main():
         if extraido["periodo_rows"]:
             supabase.table("match_stats_fotmob_periodo").upsert(
                 extraido["periodo_rows"], on_conflict="match_id,team_id,periodo"
+            ).execute()
+
+        if extraido["momentum_rows"]:
+            supabase.table("match_momentum_fotmob").upsert(
+                extraido["momentum_rows"], on_conflict="match_id,minute"
             ).execute()
 
         supabase.table("match_context_fotmob").upsert(extraido["contexto_row"], on_conflict="match_id").execute()
