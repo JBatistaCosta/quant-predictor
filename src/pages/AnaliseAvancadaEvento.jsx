@@ -30,6 +30,7 @@ import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 import { poissonCDF } from '../utils/poisson';
 import { negBinomialCDF } from '../utils/distributions';
 import { extractJsonFromImage } from '../utils/ocr';
+import ModeloCartoesFaltas from '../components/ModeloCartoesFaltas';
 
 // Mercados em que o modelo misto (gols/escanteios) tem probabilidade
 // calculada E que aparecem salvos em odds_market — únicos candidatos pra
@@ -2306,6 +2307,30 @@ export default function AnaliseAvancadaEvento() {
                   <span className="text-slate-400 text-[10px] uppercase tracking-wider mb-2 line-clamp-1">{jogo.away?.name}</span>
                   <span className="text-2xl font-black text-white">{fmtPct(mercadosGols['1X2'].away)}</span>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                <Secao titulo="Cartões e Faltas" icone={Shield}>
+                  <p className="text-[11px] text-slate-500 mb-3">
+                    Modelo separado do misto acima (gols/escanteios) -- classificador de árvore (XGBoost/Random
+                    Forest, ver custom_model_configs) pra Cartões e Faltas totais do jogo. Pré-computado pelo cron
+                    diário quando a partida está dentro da janela de 30 dias; fora dela, calcula sob demanda.
+                  </p>
+                  <ModeloCartoesFaltas matchId={jogo.id} mandanteId={jogo.home?.id} visitanteId={jogo.away?.id} />
+                </Secao>
+
+                {mercadosCorners && (
+                  <Secao titulo="Escanteios — Over / Under (total)" icone={TrendingUp}>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Mesmo modelo misto acima (λ estimado + Binomial Negativa por liga) -- instantâneo, sem cron
+                      nem espera; detalhe completo (faixa, 1X2, por time, matriz de placar) mais abaixo nesta página.
+                    </p>
+                    {LINHAS_OU_CORNERS.map((linha) => {
+                      const m = mercadosCorners[`corners_over_under_${rotuloLinha(linha)}`];
+                      return <LinhaBinaria key={linha} rotulo={rotuloLinha(linha)} over={m?.over} under={m?.under} />;
+                    })}
+                  </Secao>
+                )}
               </div>
 
               {(jogo.status === 'scheduled' || finalizada) && (
