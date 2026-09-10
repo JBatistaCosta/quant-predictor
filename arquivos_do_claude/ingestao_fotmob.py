@@ -236,6 +236,7 @@ def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id:
             row = {
                 "match_id": match_id,
                 "team_id": team_id,
+                "periodo_checked": True,
                 **extrair_zonas_ataque(attacking_zones, lado_zona),
                 "possession": pegar(grupo_por_chave, "top_stats", "BallPossesion", lado),
                 "xg": pegar(grupo_por_chave, "expected_goals", "expected_goals", lado),
@@ -277,6 +278,68 @@ def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id:
     return team_rows, content
 
 
+# match_stats_fotmob_periodo -- achado 10/09: content.stats.Periods também
+# tem FirstHalf/SecondHalf, com os MESMOS grupos de All (shots,
+# expected_goals, passes, defence, duels, discipline), nunca lidos até
+# agora. Espelha o loop de parse_match_details, repetido pra cada período.
+PERIODOS_FOTMOB = (("FirstHalf", "primeiro_tempo"), ("SecondHalf", "segundo_tempo"))
+
+
+def montar_linhas_stats_periodo(content: dict, match_id: int, home_team_id: int, away_team_id: int) -> list[dict]:
+    linhas = []
+    for periodo_chave, periodo_db in PERIODOS_FOTMOB:
+        stats_periodo = (((content.get("stats") or {}).get("Periods") or {}).get(periodo_chave) or {}).get("stats")
+        if not stats_periodo:
+            continue  # partida antiga sem quebra por tempo -- dado ausente na fonte
+        grupo_por_chave = {}
+        for grupo in stats_periodo:
+            for s in grupo["stats"]:
+                grupo_por_chave.setdefault(grupo["key"], {})[s["key"]] = s
+
+        for lado, team_id in ((0, home_team_id), (1, away_team_id)):
+            row = {
+                "match_id": match_id,
+                "team_id": team_id,
+                "periodo": periodo_db,
+                "possession": pegar(grupo_por_chave, "top_stats", "BallPossesion", lado),
+                "xg": pegar(grupo_por_chave, "expected_goals", "expected_goals", lado),
+                "xg_open_play": pegar(grupo_por_chave, "expected_goals", "expected_goals_open_play", lado),
+                "xg_set_play": pegar(grupo_por_chave, "expected_goals", "expected_goals_set_play", lado),
+                "xg_non_penalty": pegar(grupo_por_chave, "expected_goals", "expected_goals_non_penalty", lado),
+                "xgot": pegar(grupo_por_chave, "expected_goals", "expected_goals_on_target", lado),
+                "total_shots": pegar_com_fallback_top_stats(grupo_por_chave, "shots", "total_shots", lado, "total_shots"),
+                "shots_on_target": pegar_com_fallback_top_stats(grupo_por_chave, "shots", "ShotsOnTarget", lado, "ShotsOnTarget"),
+                "shots_off_target": pegar(grupo_por_chave, "shots", "ShotsOffTarget", lado),
+                "shots_blocked": pegar(grupo_por_chave, "shots", "blocked_shots", lado),
+                "shots_inside_box": pegar(grupo_por_chave, "shots", "shots_inside_box", lado),
+                "shots_outside_box": pegar(grupo_por_chave, "shots", "shots_outside_box", lado),
+                "big_chances": pegar(grupo_por_chave, "top_stats", "big_chance", lado),
+                "big_chances_missed": pegar(grupo_por_chave, "top_stats", "big_chance_missed_title", lado),
+                "touches_opp_box": pegar(grupo_por_chave, "top_stats", "touches_opp_box", lado),
+                "accurate_passes": pegar(grupo_por_chave, "top_stats", "accurate_passes", lado),
+                "accurate_long_balls": pegar(grupo_por_chave, "passes", "long_balls_accurate", lado),
+                "accurate_crosses": pegar(grupo_por_chave, "passes", "accurate_crosses", lado),
+                "corners": pegar(grupo_por_chave, "top_stats", "corners", lado),
+                "tackles": pegar(grupo_por_chave, "defence", "matchstats.headers.tackles", lado),
+                "interceptions": pegar(grupo_por_chave, "defence", "interceptions", lado),
+                "blocks": pegar(grupo_por_chave, "defence", "shot_blocks", lado),
+                "clearances": pegar(grupo_por_chave, "defence", "clearances", lado),
+                "keeper_saves": pegar(grupo_por_chave, "defence", "keeper_saves", lado),
+                "duels_won": pegar(grupo_por_chave, "duels", "duel_won", lado),
+                "aerial_duels_won": pegar(grupo_por_chave, "duels", "aerials_won", lado),
+                "successful_dribbles": pegar(grupo_por_chave, "duels", "dribbles_succeeded", lado),
+                "fouls_committed": pegar(grupo_por_chave, "discipline", "fouls", lado),
+                "yellow_cards": pegar(grupo_por_chave, "discipline", "yellow_cards", lado),
+                "red_cards": pegar(grupo_por_chave, "discipline", "red_cards", lado),
+                "stats_raw": stats_periodo,
+            }
+            for c in INT_COLS_TEAM_STATS:
+                if row.get(c) is not None:
+                    row[c] = int(round(row[c]))
+            linhas.append(row)
+    return linhas
+
+
 def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fotmob_to_internal: dict) -> dict:
     """Extrai TODAS as tabelas derivadas de um payload `matchDetails` já
     carregado (`d`) -- time (`match_stats_fotmob`), contexto (`match_
@@ -300,6 +363,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
     home_team_id = fotmob_to_internal.get(str(d["general"]["homeTeam"]["id"]))
     away_team_id = fotmob_to_internal.get(str(d["general"]["awayTeam"]["id"]))
     team_rows, _ = parse_match_details(d, match_id, home_team_id, away_team_id)
+    periodo_rows = montar_linhas_stats_periodo(content, match_id, home_team_id, away_team_id)
 
     contexto_row = parse_contexto_jogo(d, match_id, fotmob_match_id)
 
@@ -424,6 +488,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
 
     return {
         "team_rows": team_rows,
+        "periodo_rows": periodo_rows,
         "contexto_row": contexto_row,
         "player_dim_rows": player_dim_rows,
         "lineup_rows": lineup_rows,
@@ -597,6 +662,11 @@ def main():
 
         if extraido["team_rows"]:
             supabase.table("match_stats_fotmob").upsert(extraido["team_rows"], on_conflict="match_id,team_id").execute()
+
+        if extraido["periodo_rows"]:
+            supabase.table("match_stats_fotmob_periodo").upsert(
+                extraido["periodo_rows"], on_conflict="match_id,team_id,periodo"
+            ).execute()
 
         supabase.table("match_context_fotmob").upsert(extraido["contexto_row"], on_conflict="match_id").execute()
 
