@@ -383,9 +383,15 @@ def split_dataset(dataset: pd.DataFrame, target_col: str, features: list[str]):
 # Avaliação
 # ---------------------------------------------------------------------------
 
-def calcular_metricas(y_true: np.ndarray, probs: np.ndarray, tipo: str) -> dict:
-    """Calcula log-loss, Brier e acurácia."""
+def calcular_metricas(y_true: np.ndarray, probs: np.ndarray, tipo: str, train_df: pd.DataFrame | None = None, target_col: str | None = None, test_df: pd.DataFrame | None = None) -> dict:
+    """Calcula log-loss, Brier e acurácia. `train_df`/`target_col` opcionais
+    habilitam o BSS (Brier Skill Score) contra a climatologia do TREINO --
+    ver docstring de ml.brier_e_bss/ml.taxa_base_climatologia sobre por que
+    a taxa-base nunca pode vir do teste. `test_df` opcional (precisa ter
+    `liga`/`match_date`) habilita a quebra por liga/temporada, mesmo padrão
+    de treinar_modelo_custom_wf.py::calcular_metricas_fold."""
     classes = sorted(set(y_true))
+    classes_sorted = np.array(classes)
     if probs.ndim == 1:
         probs = np.column_stack([1 - probs, probs])
 
@@ -414,6 +420,42 @@ def calcular_metricas(y_true: np.ndarray, probs: np.ndarray, tipo: str) -> dict:
             for i in range(len(classes))
         ]
         metricas["brier_score_medio"] = round(float(np.mean(briers)), 5)
+
+    if train_df is not None and target_col is not None and len(train_df) > 0:
+        taxa_base = ml.taxa_base_climatologia(train_df[target_col].values, classes_sorted, tipo)
+        _, brier_clima, bss = ml.brier_e_bss(y_true, probs, classes_sorted, tipo, taxa_base)
+        metricas["brier_climatologia"] = round(brier_clima, 5)
+        metricas["bss_climatologia"] = round(bss, 5) if bss is not None else None
+
+        if test_df is not None:
+            def _por_grupo(coluna: str) -> dict:
+                saida = {}
+                if coluna not in test_df.columns and coluna != "_temporada":
+                    return saida
+                idx_df = test_df.reset_index(drop=True)
+                chave_grupo = idx_df[coluna] if coluna != "_temporada" else pd.to_datetime(idx_df["match_date"], utc=True).dt.year
+                for chave, grupo in idx_df.groupby(chave_grupo):
+                    if len(grupo) < 10:
+                        continue
+                    idx = grupo.index
+                    y_g = y_true[idx]
+                    p_g = probs[idx]
+                    try:
+                        brier_g, _, bss_g = ml.brier_e_bss(y_g, p_g, classes_sorted, tipo, taxa_base)
+                        saida[str(chave)] = {
+                            "logloss": round(float(log_loss(y_g, p_g, labels=classes)), 5),
+                            "accuracy": round(float(accuracy_score(y_g, classes_sorted[np.argmax(p_g, axis=1)])), 4),
+                            "n": len(y_g),
+                            "brier": round(brier_g, 5),
+                            "bss_climatologia": round(bss_g, 5) if bss_g is not None else None,
+                        }
+                    except Exception:
+                        pass
+                return saida
+
+            metricas["logloss_por_liga"] = _por_grupo("liga")
+            if "match_date" in test_df.columns:
+                metricas["logloss_por_temporada"] = _por_grupo("_temporada")
 
     return metricas
 
@@ -470,7 +512,7 @@ def treinar_via_ml(
     probs, classes = prever_fn(modelo, extra, test_df, features)
 
     y_true = test_df[target_col].values
-    metricas = calcular_metricas(y_true, probs, tipo)
+    metricas = calcular_metricas(y_true, probs, tipo, train_df, target_col, test_df)
     metricas["algoritmo"] = algoritmo
     metricas["n_features"] = len(features)
     metricas["params"] = params
@@ -534,7 +576,7 @@ def treinar_via_sklearn(
     pipe.fit(X_train, y_train)
     probs = pipe.predict_proba(X_test)
 
-    metricas = calcular_metricas(y_true, probs, tipo)
+    metricas = calcular_metricas(y_true, probs, tipo, train_df, target_col, test_df)
     metricas["algoritmo"] = algoritmo
     metricas["n_features"] = len(features_num)
     metricas["params"] = hp

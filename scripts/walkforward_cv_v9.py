@@ -237,11 +237,22 @@ def construir_predicoes_mercado(
     return linhas
 
 
-def calcular_metricas(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray) -> dict:
+def calcular_metricas(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray, train_df: pd.DataFrame | None = None) -> dict:
     y = df[COLUNA_ALVO].values
+    classes_sorted = np.sort(classes)
     logloss = _log_loss_safe(y, probs, classes)
     brier = _brier_score_multiclasse(y, probs, classes)
     acc = _acuracia(y, probs, classes)
+
+    taxa_base = None
+    if train_df is not None and len(train_df) > 0:
+        taxa_base = ml.taxa_base_climatologia(train_df[COLUNA_ALVO].values, classes_sorted, "multiclasse")
+
+    def _bss(y_g, p_g):
+        if taxa_base is None:
+            return None, None
+        _, brier_clima, bss = ml.brier_e_bss(y_g, np.clip(p_g, 1e-7, 1 - 1e-7), classes_sorted, "multiclasse", taxa_base)
+        return brier_clima, bss
 
     por_liga: dict[str, dict] = {}
     for liga, grupo in df.groupby("liga"):
@@ -250,18 +261,43 @@ def calcular_metricas(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray) 
         p_l = probs[df.index.get_indexer(mask)]
         if len(y_l) < 10:
             continue
+        _, bss_l = _bss(y_l, p_l)
         por_liga[str(liga)] = {
             "logloss": round(_log_loss_safe(y_l, p_l, classes), 5),
             "brier_score": round(_brier_score_multiclasse(y_l, p_l, classes), 5),
             "accuracy": round(_acuracia(y_l, p_l, classes), 4),
+            "bss_climatologia": round(bss_l, 5) if bss_l is not None else None,
             "n": len(y_l),
         }
+
+    por_temporada: dict[str, dict] = {}
+    if "match_date" in df.columns:
+        anos = pd.to_datetime(df["match_date"], utc=True).dt.year
+        for ano, grupo in df.groupby(anos):
+            mask = grupo.index
+            y_a = grupo[COLUNA_ALVO].values
+            p_a = probs[df.index.get_indexer(mask)]
+            if len(y_a) < 10:
+                continue
+            _, bss_a = _bss(y_a, p_a)
+            por_temporada[str(ano)] = {
+                "logloss": round(_log_loss_safe(y_a, p_a, classes), 5),
+                "brier_score": round(_brier_score_multiclasse(y_a, p_a, classes), 5),
+                "accuracy": round(_acuracia(y_a, p_a, classes), 4),
+                "bss_climatologia": round(bss_a, 5) if bss_a is not None else None,
+                "n": len(y_a),
+            }
+
+    brier_clima, bss = _bss(y, probs)
 
     return {
         "logloss_test": round(logloss, 5),
         "brier_score_test": round(brier, 5),
         "accuracy_test": round(acc, 4),
+        "brier_climatologia": round(brier_clima, 5) if brier_clima is not None else None,
+        "bss_climatologia": round(bss, 5) if bss is not None else None,
         "logloss_por_liga": por_liga,
+        "logloss_por_temporada": por_temporada,
     }
 
 
@@ -404,7 +440,7 @@ def montar_meta_X_binario(probs_por_modelo: dict[str, np.ndarray], classes_por_m
     return np.hstack(blocos)
 
 
-def calcular_metricas_binario(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray, coluna_alvo: str) -> dict:
+def calcular_metricas_binario(df: pd.DataFrame, probs: np.ndarray, classes: np.ndarray, coluna_alvo: str, train_df: pd.DataFrame | None = None) -> dict:
     """Métricas para mercado binário (logloss, Brier score, acurácia)."""
     y = df[coluna_alvo].values
     ordered = np.zeros((len(probs), 2))
@@ -417,6 +453,17 @@ def calcular_metricas_binario(df: pd.DataFrame, probs: np.ndarray, classes: np.n
     brier = float(np.mean((p1 - y) ** 2))
     acc = float(np.mean((p1 >= 0.5).astype(int) == y))
 
+    classes_sorted = np.array([0, 1])
+    taxa_base = None
+    if train_df is not None and len(train_df) > 0:
+        taxa_base = ml.taxa_base_climatologia(train_df[coluna_alvo].values, classes_sorted, "binario")
+
+    def _bss(y_g, p_g):
+        if taxa_base is None:
+            return None, None
+        _, brier_clima, bss = ml.brier_e_bss(y_g, p_g, classes_sorted, "binario", taxa_base)
+        return brier_clima, bss
+
     por_liga: dict[str, dict] = {}
     for liga, grupo in df.groupby("liga"):
         mask = grupo.index
@@ -425,18 +472,44 @@ def calcular_metricas_binario(df: pd.DataFrame, probs: np.ndarray, classes: np.n
         if len(y_l) < 10:
             continue
         p1_l = p_l[:, 1]
+        _, bss_l = _bss(y_l, p_l)
         por_liga[str(liga)] = {
             "logloss": round(float(log_loss(y_l, p_l, labels=[0, 1])), 5),
             "brier_score": round(float(np.mean((p1_l - y_l) ** 2)), 5),
             "accuracy": round(float(np.mean((p1_l >= 0.5).astype(int) == y_l)), 4),
+            "bss_climatologia": round(bss_l, 5) if bss_l is not None else None,
             "n": len(y_l),
         }
+
+    por_temporada: dict[str, dict] = {}
+    if "match_date" in df.columns:
+        anos = pd.to_datetime(df["match_date"], utc=True).dt.year
+        for ano, grupo in df.groupby(anos):
+            mask = grupo.index
+            y_a = grupo[coluna_alvo].values
+            p_a = ordered[df.index.get_indexer(mask)]
+            if len(y_a) < 10:
+                continue
+            p1_a = p_a[:, 1]
+            _, bss_a = _bss(y_a, p_a)
+            por_temporada[str(ano)] = {
+                "logloss": round(float(log_loss(y_a, p_a, labels=[0, 1])), 5),
+                "brier_score": round(float(np.mean((p1_a - y_a) ** 2)), 5),
+                "accuracy": round(float(np.mean((p1_a >= 0.5).astype(int) == y_a)), 4),
+                "bss_climatologia": round(bss_a, 5) if bss_a is not None else None,
+                "n": len(y_a),
+            }
+
+    brier_clima, bss = _bss(y, ordered)
 
     return {
         "logloss_test": round(float(logloss), 5),
         "brier_score_test": round(brier, 5),
         "accuracy_test": round(acc, 4),
+        "brier_climatologia": round(brier_clima, 5) if brier_clima is not None else None,
+        "bss_climatologia": round(bss, 5) if bss is not None else None,
         "logloss_por_liga": por_liga,
+        "logloss_por_temporada": por_temporada,
     }
 
 
@@ -495,7 +568,7 @@ def treinar_mercado_binario(
 
             model_name_mercado = f"{nome}__{market_str.replace('.', '_').replace('/', '_')}"
             metricas = calcular_metricas_binario(
-                test_df.reset_index(drop=True), test_probs, test_classes, coluna_alvo
+                test_df.reset_index(drop=True), test_probs, test_classes, coluna_alvo, train_df
             )
             logger.info("  JSON:resultado_binario:%s", json.dumps({
                 "market": market_str, "modelo": nome, "fold": fold_nome,
@@ -526,10 +599,11 @@ def treinar_mercado_binario(
                     cals = cal_lib.ajustar_calibracao_np(val_probs, val_y_bin, val_classes, metodo)
                     tp_cal = cal_lib.aplicar_calibracao_np(test_probs, cals)
                     m_cal = calcular_metricas_binario(
-                        test_df.reset_index(drop=True), tp_cal, test_classes, coluna_alvo
+                        test_df.reset_index(drop=True), tp_cal, test_classes, coluna_alvo, train_df
                     )
                     resultados_wf[-1][f"logloss_calibrado_{metodo}"] = m_cal["logloss_test"]
                     resultados_wf[-1][f"brier_calibrado_{metodo}"] = m_cal["brier_score_test"]
+                    resultados_wf[-1][f"bss_calibrado_{metodo}"] = m_cal.get("bss_climatologia")
                     predicoes.extend(construir_predicoes_mercado(
                         test_df, tp_cal, test_classes,
                         f"{nome}_calibrado_{metodo}", market_str, mapa_selecao,
@@ -588,7 +662,7 @@ def treinar_mercado_binario(
             meta_X_test = montar_meta_X_binario(test_probs_por_modelo, test_classes_por_modelo)
             stacking_probs, stacking_classes = ml.prever_stacking_v9(meta_modelo, meta_X_test)
             metricas_st = calcular_metricas_binario(
-                test_df_f3.reset_index(drop=True), stacking_probs, stacking_classes, coluna_alvo
+                test_df_f3.reset_index(drop=True), stacking_probs, stacking_classes, coluna_alvo, train_f3
             )
             logger.info("  JSON:resultado_binario:%s", json.dumps({
                 "market": market_str, "modelo": "stacking_v9", "fold": "fold_3",
@@ -734,7 +808,7 @@ def main() -> None:
                 continue
 
             # Métricas no test set
-            metricas = calcular_metricas(test_df.reset_index(drop=True), test_probs, test_classes)
+            metricas = calcular_metricas(test_df.reset_index(drop=True), test_probs, test_classes, train_df)
             logger.info("  JSON:resultado:%s", json.dumps({
                 "modelo": nome, "fold": fold_nome,
                 "logloss": metricas["logloss_test"],
@@ -765,9 +839,10 @@ def main() -> None:
                 try:
                     cals = cal_lib.ajustar_calibracao_np(val_probs, val_y, val_classes, metodo)
                     tp_cal = cal_lib.aplicar_calibracao_np(test_probs, cals)
-                    m_cal = calcular_metricas(test_df.reset_index(drop=True), tp_cal, test_classes)
+                    m_cal = calcular_metricas(test_df.reset_index(drop=True), tp_cal, test_classes, train_df)
                     resultados_wf[-1][f"logloss_calibrado_{metodo}"] = m_cal["logloss_test"]
                     resultados_wf[-1][f"brier_calibrado_{metodo}"] = m_cal["brier_score_test"]
+                    resultados_wf[-1][f"bss_calibrado_{metodo}"] = m_cal.get("bss_climatologia")
                     predicoes_v9.extend(
                         construir_predicoes(test_df, tp_cal, test_classes, f"{nome}_calibrado_{metodo}")
                     )
@@ -840,7 +915,7 @@ def main() -> None:
             meta_X_test = montar_meta_X(test_probs_por_modelo, test_classes_por_modelo)
             stacking_probs, stacking_classes = ml.prever_stacking_v9(meta_modelo, meta_X_test)
             metricas_stacking = calcular_metricas(
-                test_df_fold3.reset_index(drop=True), stacking_probs, stacking_classes
+                test_df_fold3.reset_index(drop=True), stacking_probs, stacking_classes, train_fold3
             )
             logger.info("JSON:resultado:%s", json.dumps({
                 "modelo": "stacking_v9",
@@ -878,7 +953,7 @@ def main() -> None:
             )
             probs_sem_mlp, classes_sem_mlp = ml.prever_stacking_v9(meta_modelo_sem_mlp, meta_X_test_sem_mlp)
             metricas_sem_mlp = calcular_metricas(
-                test_df_fold3.reset_index(drop=True), probs_sem_mlp, classes_sem_mlp
+                test_df_fold3.reset_index(drop=True), probs_sem_mlp, classes_sem_mlp, train_fold3
             )
             logger.info("JSON:resultado:%s", json.dumps({
                 "modelo": "stacking_v9_sem_mlp",

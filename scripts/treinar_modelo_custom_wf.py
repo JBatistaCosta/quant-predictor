@@ -325,6 +325,7 @@ def calcular_metricas_fold(
     classes: np.ndarray,
     target_col: str,
     tipo: str,
+    train_df: pd.DataFrame | None = None,
 ) -> dict:
     y = test_df[target_col].values
     classes_sorted = np.sort(classes)
@@ -349,28 +350,55 @@ def calcular_metricas_fold(
         briers = [brier_score_loss(y_bin_matrix[:, i], ordered[:, i]) for i in range(len(classes_sorted))]
         metricas["brier_score_test"] = round(float(np.mean(briers)), 5)
 
-    # Por liga
-    logloss_por_liga = {}
-    if "liga" in test_df.columns:
+    # BSS (Brier Skill Score) contra a climatologia do TREINO -- ver
+    # docstring de ml.brier_e_bss/ml.taxa_base_climatologia sobre por que a
+    # taxa-base nunca pode vir do teste. `train_df` só falta em chamadas
+    # antigas/testes isolados; sem ele, BSS fica de fora em vez de calcular
+    # errado contra o próprio teste.
+    if train_df is not None and len(train_df) > 0:
+        taxa_base = ml.taxa_base_climatologia(train_df[target_col].values, classes_sorted, tipo)
+        brier_modelo, brier_clima, bss = ml.brier_e_bss(y, ordered, classes_sorted, tipo, taxa_base)
+        metricas["brier_climatologia"] = round(brier_clima, 5)
+        metricas["bss_climatologia"] = round(bss, 5) if bss is not None else None
+
+    # Por liga (log-loss/acurácia/Brier/BSS) e por temporada (mesma coisa,
+    # agrupando por ano de match_date em vez de liga) -- mesmo limiar de 10
+    # partidas mínimas pra não reportar fatia estatisticamente vazia de
+    # conteúdo (achado real: fatias <10 têm log-loss/Brier instável o
+    # bastante pra confundir mais que ajudar).
+    def _metricas_por_grupo(coluna_grupo: str) -> dict:
+        saida = {}
+        if coluna_grupo not in test_df.columns:
+            return saida
         test_indexed = test_df.reset_index(drop=True)
-        for liga, grupo in test_indexed.groupby("liga"):
+        chave_grupo = test_indexed[coluna_grupo] if coluna_grupo != "_temporada" else pd.to_datetime(test_indexed["match_date"], utc=True).dt.year
+        for chave, grupo in test_indexed.groupby(chave_grupo):
             if len(grupo) < 10:
                 continue
             idx = grupo.index
-            y_l = grupo[target_col].values
-            p_l = ordered[idx]
+            y_g = grupo[target_col].values
+            p_g = ordered[idx]
             try:
-                ll_l = log_loss(y_l, p_l, labels=classes_sorted)
-                acc_l = accuracy_score(y_l, classes_sorted[np.argmax(p_l, axis=1)])
-                logloss_por_liga[str(liga)] = {
-                    "logloss": round(float(ll_l), 5),
-                    "accuracy": round(float(acc_l), 4),
-                    "n": len(y_l),
+                ll_g = log_loss(y_g, p_g, labels=classes_sorted)
+                acc_g = accuracy_score(y_g, classes_sorted[np.argmax(p_g, axis=1)])
+                item = {
+                    "logloss": round(float(ll_g), 5),
+                    "accuracy": round(float(acc_g), 4),
+                    "n": len(y_g),
                 }
+                if train_df is not None and len(train_df) > 0:
+                    brier_g, brier_clima_g, bss_g = ml.brier_e_bss(y_g, p_g, classes_sorted, tipo, taxa_base)
+                    item["brier"] = round(brier_g, 5)
+                    item["bss_climatologia"] = round(bss_g, 5) if bss_g is not None else None
+                saida[str(chave)] = item
             except Exception:
                 pass
+        return saida
 
-    metricas["logloss_por_liga"] = logloss_por_liga
+    metricas["logloss_por_liga"] = _metricas_por_grupo("liga")
+    if "match_date" in test_df.columns:
+        metricas["logloss_por_temporada"] = _metricas_por_grupo("_temporada")
+
     return metricas
 
 
@@ -678,7 +706,7 @@ def main():
                         val_classes_por_algo[algo] = val_classes_cal
 
                     metricas = calcular_metricas_fold(
-                        test_df.reset_index(drop=True), probs, classes, target_col, tipo
+                        test_df.reset_index(drop=True), probs, classes, target_col, tipo, train_df
                     )
                     metricas["n_features"] = len(features_usadas)
                     fold_resultado["models"][algo] = metricas
@@ -710,10 +738,11 @@ def main():
                                 cals = cal_lib.ajustar_calibracao_np(val_probs_cal, val_y, val_classes_cal, metodo)
                                 tp_cal = cal_lib.aplicar_calibracao_np(probs, cals)
                                 m_cal = calcular_metricas_fold(
-                                    test_df.reset_index(drop=True), tp_cal, val_classes_cal, target_col, tipo
+                                    test_df.reset_index(drop=True), tp_cal, val_classes_cal, target_col, tipo, train_df
                                 )
                                 fold_resultado["models"][algo][f"logloss_calibrado_{metodo}"] = m_cal["logloss_test"]
                                 fold_resultado["models"][algo][f"brier_calibrado_{metodo}"] = m_cal.get("brier_score_test")
+                                fold_resultado["models"][algo][f"bss_calibrado_{metodo}"] = m_cal.get("bss_climatologia")
                                 logger.info("    [%s] logloss_cal=%.4f", metodo, m_cal["logloss_test"])
                                 if fold_nome == "fold_3":
                                     salvar_predicoes_fold3(
@@ -756,7 +785,7 @@ def main():
                     stacking_probs, stacking_classes = ml.prever_stacking_v9(meta_modelo, meta_X_test)
 
                     metricas_stack = calcular_metricas_fold(
-                        test_df.reset_index(drop=True), stacking_probs, stacking_classes, target_col, tipo
+                        test_df.reset_index(drop=True), stacking_probs, stacking_classes, target_col, tipo, train_df
                     )
                     metricas_stack["base_algorithms"] = algos_grupo
                     fold_resultado["models"][chave_resultado] = metricas_stack
