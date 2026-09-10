@@ -147,6 +147,30 @@ def pegar_com_fallback_top_stats(grupo_por_chave: dict, grupo_key: str, stat_key
     return pegar(grupo_por_chave, grupo_key, stat_key, idx_lado)
 
 
+def extrair_zonas_ataque(attacking_zones: dict | None, lado_chave: str) -> dict:
+    """content.attackingZones -- chave SEPARADA de content.stats (achado
+    10/09): {home,away}.{total,firstHalf,secondHalf}.{left,center,right},
+    percentual de ataques por lado do campo. Ausente em payload de partida
+    antiga (mesma limitação já documentada pra shots/discipline no Achado
+    11) -- None nesse caso é dado ausente na fonte, não bug de extração."""
+    z = (attacking_zones or {}).get(lado_chave) or {}
+    total = z.get("total") or {}
+    h1 = z.get("firstHalf") or {}
+    h2 = z.get("secondHalf") or {}
+    return {
+        "attacking_zone_left": total.get("left"),
+        "attacking_zone_center": total.get("center"),
+        "attacking_zone_right": total.get("right"),
+        "attacking_zone_left_1t": h1.get("left"),
+        "attacking_zone_center_1t": h1.get("center"),
+        "attacking_zone_right_1t": h1.get("right"),
+        "attacking_zone_left_2t": h2.get("left"),
+        "attacking_zone_center_2t": h2.get("center"),
+        "attacking_zone_right_2t": h2.get("right"),
+        "attacking_zone_checked": True,
+    }
+
+
 def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
     item = stats_dict.get(chave_titulo)
     if not item:
@@ -201,16 +225,18 @@ def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id:
     shot_rows = []
 
     stats_periods = (((content.get("stats") or {}).get("Periods") or {}).get("All") or {}).get("stats")
+    attacking_zones = content.get("attackingZones")
     if stats_periods:
         grupo_por_chave = {}
         for grupo in stats_periods:
             for s in grupo["stats"]:
                 grupo_por_chave.setdefault(grupo["key"], {})[s["key"]] = s
 
-        for lado, team_id in ((0, home_team_id), (1, away_team_id)):
+        for lado, team_id, lado_zona in ((0, home_team_id, "home"), (1, away_team_id, "away")):
             row = {
                 "match_id": match_id,
                 "team_id": team_id,
+                **extrair_zonas_ataque(attacking_zones, lado_zona),
                 "possession": pegar(grupo_por_chave, "top_stats", "BallPossesion", lado),
                 "xg": pegar(grupo_por_chave, "expected_goals", "expected_goals", lado),
                 "xg_open_play": pegar(grupo_por_chave, "expected_goals", "expected_goals_open_play", lado),
