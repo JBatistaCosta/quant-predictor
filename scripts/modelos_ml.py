@@ -85,8 +85,27 @@ ROTULOS_SAIDA = {
 # histórico em produção), não tem como saber quando parar, então usa um
 # teto fixo conservador (mesmo valor de sempre, sem mudança de
 # comportamento em produção).
+#
+# RODADAS_EARLY_STOPPING reduzido de 50 pra 10 (10/09, pedido do usuário
+# ao inspecionar as curvas "Treino" no Relatório de Treinamento das
+# configs de Cartões): nas curvas de fold_3/xgboost observadas (Cartões
+# Visitante O/U 2.5, Cartões Mandante O/U 3.5 e O/U 0.5), o melhor round
+# de validação sempre chegou antes da iteração 10, e o treino só parava de
+# verdade ~50 rounds depois (ex.: melhor em 7, parada em 57) -- rounds
+# puramente desperdiçados, sem afetar QUAL modelo fica salvo (o XGBoost já
+# usa só a melhor iteração encontrada, patience nunca piora o resultado,
+# só decide quantos rounds a mais o treino roda antes de confirmar que não
+# vai melhorar). Reduzir corta esse desperdício. Ressalva: só 3 curvas
+# (de ~180 combinações config×fold×algoritmo nas 32 configs de Cartões/
+# Faltas) foram inspecionadas manualmente antes dessa mudança -- não foi
+# possível checar a distribuição completa do "melhor round" nesta sessão
+# (Supabase indisponível no momento). Se algum fold tiver o ponto ótimo
+# de verdade bem mais tarde que 10 rounds, essa config treinaria com um
+# resultado ligeiramente pior que antes -- vale conferir as curvas de
+# novo depois do próximo retreino em lote pra confirmar que nenhuma
+# ficou "cortada cedo demais" (validação ainda caindo quando parou).
 ITERACOES_MAXIMAS_EARLY_STOPPING = 2000
-RODADAS_EARLY_STOPPING = 50
+RODADAS_EARLY_STOPPING = 10
 ITERACOES_PRODUCAO = {"catboost": 200, "xgboost": 200, "lightgbm": 80}
 
 # Regularização/subsampling FIXOS (não entram na grade de tuning de
