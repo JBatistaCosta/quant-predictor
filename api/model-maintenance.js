@@ -4910,10 +4910,7 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
 // ============================================================
 const MAX_PARTIDAS_POR_CHAMADA_DETALHES = 20;
 
-async function tarefaBackfillDetalhesFotmob(supabase, authHeader, { limite }) {
-  const usuario = await verificarUsuarioLogado(supabase, authHeader);
-  if (!usuario) return { status: 401, error: 'Não autenticado -- faça login antes de disparar.' };
-
+async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
   const limiteJogos = Math.min(parseInt(limite, 10) || MAX_PARTIDAS_POR_CHAMADA_DETALHES, MAX_PARTIDAS_POR_CHAMADA_DETALHES);
 
   const { data: pendentesRaw } = await supabase
@@ -6358,8 +6355,7 @@ export default async function handler(req, res) {
     }
 
     if (tarefa === 'backfill-detalhes-fotmob') {
-      const resultado = await tarefaBackfillDetalhesFotmob(supabase, req.headers.authorization, { limite });
-      if (resultado.status === 401) return res.status(401).json({ error: { message: resultado.error } });
+      const resultado = await tarefaBackfillDetalhesFotmob(supabase, { limite });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
