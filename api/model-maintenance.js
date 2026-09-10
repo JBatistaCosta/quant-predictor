@@ -5216,6 +5216,20 @@ async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
         .update({ ...extrairZonasAtaque(attackingZones, 'away'), periodo_checked: true, momentum_checked: true })
         .eq('match_id', matchId).eq('team_id', jogo.away_team_id);
 
+      // Rede de segurança: os 2 UPDATEs acima casam por team_id vindo de
+      // `matches`, mas isso pode não bater com match_stats_fotmob.team_id
+      // em jogos com time duplicado (achado real, ver CLAUDE.md -- ex.
+      // match_id=16034: matches.home_team_id=1019 "ES Troyes AC", mas
+      // match_stats_fotmob.team_id=498 "Troyes" -- a mesma equipe com IDs
+      // diferentes, sem crosswalk unificado). Sem isso, a linha órfã fica
+      // presa em *_checked=false pra sempre e o backfill nunca zera
+      // `restantes`. Não conserta o crosswalk (fora de escopo, exige
+      // supervisão manual) -- só marca "tentei" pra não travar o lote.
+      await supabase.from('match_stats_fotmob')
+        .update({ attacking_zone_checked: true, periodo_checked: true, momentum_checked: true })
+        .eq('match_id', matchId)
+        .or('attacking_zone_checked.eq.false,periodo_checked.eq.false,momentum_checked.eq.false');
+
       const linhasPeriodo = montarLinhasStatsTimePeriodo(matchId, content.stats, jogo.home_team_id, jogo.away_team_id);
       if (linhasPeriodo.length) {
         await supabase.from('match_stats_fotmob_periodo').upsert(linhasPeriodo, { onConflict: 'match_id,team_id,periodo' });
