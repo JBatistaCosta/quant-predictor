@@ -276,10 +276,20 @@ export default function RatingClubes() {
       coresRef.current = new Map();
       proximoSlotRef.current = 0;
 
-      let query = supabase.from('team_elo').select('team_id, rating, partidas, teams(name, crest_url)').eq('escopo', escopo);
+      let query = supabase.from('team_elo').select('team_id, rating, partidas, teams(name, crest_url)').eq('escopo', escopo).order('rating', { ascending: false });
       query = escopo === 'liga' ? query.eq('league_id', ligaId) : query;
-      const { data } = await query.order('rating', { ascending: false });
-      setRankingBase(data || []);
+      const linhas = await buscarPaginado(query);
+      // Dedup defensivo por team_id: já houve duplicata real em produção
+      // (2 linhas pro mesmo time em escopo 'global', ver migration
+      // 20260910090000) — mesmo com a constraint corrigida no banco, não
+      // custa não deixar isso quebrar a key do React de novo.
+      const vistos = new Set();
+      const semDuplicata = linhas.filter(l => {
+        if (vistos.has(l.team_id)) return false;
+        vistos.add(l.team_id);
+        return true;
+      });
+      setRankingBase(semDuplicata);
       setCarregandoRanking(false);
     })();
   }, [escopo, ligaId]);
