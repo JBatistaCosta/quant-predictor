@@ -364,6 +364,7 @@ def registrar_no_models_registry(supabase, model_name: str, metricas: dict) -> N
 def avaliar(
     teste: pd.DataFrame, lam_home: np.ndarray, lam_away: np.ndarray,
     lam_corners: np.ndarray | None, parametros: dict[str, float],
+    train_df: pd.DataFrame | None = None,
 ) -> dict:
     """Métrica primária: log-verossimilhança do PLACAR observado.
 
@@ -378,6 +379,11 @@ def avaliar(
         (o "chutar sempre a frequência histórica" do achado #6);
       - Poisson sem covariáveis: λ = média de gols do treino, igual pra
         toda partida. Isola quanto as features de fato agregam.
+
+    `train_df` (opcional): quando informado, calcula também o Brier Skill
+    Score (BSS) dos 3 mercados binários/1X2 contra a climatologia do
+    TREINO (nunca do teste -- mesmo cuidado de `taxa_base_climatologia` em
+    `modelos_ml.py`), com quebra por liga e por temporada.
     """
     valido = teste["home_goals"].notna() & teste["away_goals"].notna()
     idx = np.where(valido.to_numpy())[0]
@@ -396,6 +402,9 @@ def avaliar(
     log_vero, log_loss_1x2, brier_1x2, acertos = [], [], [], 0
     log_loss_ou25, brier_ou25, acertos_ou25 = [], [], 0
     log_loss_btts, brier_btts, acertos_btts = [], [], 0
+    probs_1x2_lista, real_1x2_lista = [], []
+    p_ou25_lista, real_ou25_lista = [], []
+    p_btts_lista, real_btts_lista = [], []
     for k, pos in enumerate(idx):
         matriz = dist.matriz_placares(float(lam_home[pos]), float(lam_away[pos]), parametros["rho"])
         log_vero.append(dist.log_verossimilhanca_placar(matriz, hg[k], ag[k]))
@@ -410,18 +419,24 @@ def avaliar(
         alvo = np.zeros(3); alvo[real] = 1.0
         brier_1x2.append(float(np.sum((probs - alvo) ** 2)))
         acertos += int(np.argmax(probs) == real)
+        probs_1x2_lista.append(probs)
+        real_1x2_lista.append(real)
 
         p_over25 = mercados[("over_under_2.5", "over")]
         real_over25 = 1 if (hg[k] + ag[k]) > 2.5 else 0
         log_loss_ou25.append(-np.log(max(p_over25 if real_over25 else 1.0 - p_over25, 1e-15)))
         brier_ou25.append(float((p_over25 - real_over25) ** 2 + ((1.0 - p_over25) - (1 - real_over25)) ** 2))
         acertos_ou25 += int((p_over25 >= 0.5) == bool(real_over25))
+        p_ou25_lista.append(p_over25)
+        real_ou25_lista.append(real_over25)
 
         p_btts = mercados[("btts", "yes")]
         real_btts = 1 if (hg[k] > 0 and ag[k] > 0) else 0
         log_loss_btts.append(-np.log(max(p_btts if real_btts else 1.0 - p_btts, 1e-15)))
         brier_btts.append(float((p_btts - real_btts) ** 2 + ((1.0 - p_btts) - (1 - real_btts)) ** 2))
         acertos_btts += int((p_btts >= 0.5) == bool(real_btts))
+        p_btts_lista.append(p_btts)
+        real_btts_lista.append(real_btts)
 
     metricas = {
         "n_teste": int(len(idx)),
@@ -453,6 +468,71 @@ def avaliar(
             metricas["n_teste_corners"] = int(tem.sum())
             metricas["log_verossimilhanca_corners"] = float(np.mean(log_vero_c))
             metricas["log_loss_corners_ou95"] = float(np.mean(log_loss_ou))
+
+    if train_df is not None:
+        val_tr = train_df["home_goals"].notna() & train_df["away_goals"].notna()
+        hg_tr = train_df.loc[val_tr, "home_goals"].astype(int).to_numpy()
+        ag_tr = train_df.loc[val_tr, "away_goals"].astype(int).to_numpy()
+        real_1x2_tr = np.where(hg_tr > ag_tr, 0, np.where(hg_tr == ag_tr, 1, 2))
+        real_ou25_tr = ((hg_tr + ag_tr) > 2.5).astype(int)
+        real_btts_tr = ((hg_tr > 0) & (ag_tr > 0)).astype(int)
+
+        classes_1x2 = np.array([0, 1, 2])
+        classes_bin = np.array([0, 1])
+        taxa_1x2 = ml.taxa_base_climatologia(real_1x2_tr, classes_1x2, "multiclasse")
+        taxa_ou25 = ml.taxa_base_climatologia(real_ou25_tr, classes_bin, "binario")
+        taxa_btts = ml.taxa_base_climatologia(real_btts_tr, classes_bin, "binario")
+
+        probs_1x2_arr = np.clip(np.array(probs_1x2_lista), 1e-7, 1 - 1e-7)
+        real_1x2_arr = np.array(real_1x2_lista)
+        ordered_ou25 = np.clip(np.column_stack([1.0 - np.array(p_ou25_lista), p_ou25_lista]), 1e-7, 1 - 1e-7)
+        real_ou25_arr = np.array(real_ou25_lista)
+        ordered_btts = np.clip(np.column_stack([1.0 - np.array(p_btts_lista), p_btts_lista]), 1e-7, 1 - 1e-7)
+        real_btts_arr = np.array(real_btts_lista)
+
+        def _bss_grupo(mask: np.ndarray) -> dict | None:
+            """Brier/BSS dos 3 mercados restrito às linhas de `mask` (índices
+            alinhados com `idx`/os arrays coletados no loop acima)."""
+            if mask.sum() < 10:
+                return None
+            b_1x2, bc_1x2, bss_1x2 = ml.brier_e_bss(real_1x2_arr[mask], probs_1x2_arr[mask], classes_1x2, "multiclasse", taxa_1x2)
+            b_ou25, bc_ou25, bss_ou25 = ml.brier_e_bss(real_ou25_arr[mask], ordered_ou25[mask], classes_bin, "binario", taxa_ou25)
+            b_btts, bc_btts, bss_btts = ml.brier_e_bss(real_btts_arr[mask], ordered_btts[mask], classes_bin, "binario", taxa_btts)
+            return {
+                "n": int(mask.sum()),
+                "brier_1x2": b_1x2, "brier_climatologia_1x2": bc_1x2, "bss_1x2": bss_1x2,
+                "brier_over_under_2.5": b_ou25, "brier_climatologia_over_under_2.5": bc_ou25, "bss_over_under_2.5": bss_ou25,
+                "brier_btts": b_btts, "brier_climatologia_btts": bc_btts, "bss_btts": bss_btts,
+            }
+
+        geral = _bss_grupo(np.ones(len(idx), dtype=bool))
+        if geral is not None:
+            metricas["brier_climatologia_1x2"] = geral["brier_climatologia_1x2"]
+            metricas["bss_climatologia_1x2"] = geral["bss_1x2"]
+            metricas["brier_climatologia_over_under_2.5"] = geral["brier_climatologia_over_under_2.5"]
+            metricas["bss_climatologia_over_under_2.5"] = geral["bss_over_under_2.5"]
+            metricas["brier_climatologia_btts"] = geral["brier_climatologia_btts"]
+            metricas["bss_climatologia_btts"] = geral["bss_btts"]
+
+        teste_valido = teste.loc[valido]
+        if "liga" in teste_valido.columns:
+            bss_por_liga = {}
+            for liga in teste_valido["liga"].dropna().unique():
+                grupo = _bss_grupo((teste_valido["liga"] == liga).to_numpy())
+                if grupo is not None:
+                    bss_por_liga[str(liga)] = grupo
+            if bss_por_liga:
+                metricas["bss_por_liga"] = bss_por_liga
+
+        if "match_date" in teste_valido.columns:
+            temporadas = pd.to_datetime(teste_valido["match_date"]).dt.year
+            bss_por_temporada = {}
+            for ano in temporadas.dropna().unique():
+                grupo = _bss_grupo((temporadas == ano).to_numpy())
+                if grupo is not None:
+                    bss_por_temporada[str(int(ano))] = grupo
+            if bss_por_temporada:
+                metricas["bss_por_temporada"] = bss_por_temporada
 
     return metricas
 
@@ -694,13 +774,14 @@ def main() -> None:
         # exatamente essa reutilização que faz a inferência neles ser
         # "sem treinar".
         parametros = ajustar_parametros_estruturais(calib, lam_h_calib, lam_a_calib, lam_corners_calib)
-        metricas = avaliar(teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros)
+        metricas = avaliar(teste, lam_h_teste, lam_a_teste, lam_corners_teste, parametros, train_df=treino)
         metricas.update(referencias)
         resumo[model_name] = metricas
 
-        logger.info("[%s] log-verossimilhança do placar: %.4f | log-loss 1X2: %.4f | Brier 1X2: %.4f | acurácia: %.1f%%",
+        logger.info("[%s] log-verossimilhança do placar: %.4f | log-loss 1X2: %.4f | Brier 1X2: %.4f | acurácia: %.1f%% | BSS 1X2 vs climatologia: %s",
                     model_name, metricas["log_verossimilhanca_placar"], metricas["log_loss_1x2"],
-                    metricas["brier_1x2"], 100 * metricas["acuracia_1x2"])
+                    metricas["brier_1x2"], 100 * metricas["acuracia_1x2"],
+                    f"{metricas['bss_climatologia_1x2']:.4f}" if metricas.get("bss_climatologia_1x2") is not None else "n/d")
 
         # Diagnóstico contínuo (monitoramento do achado de mistura de
         # competição) -- mesma métrica, só que restrita às partidas

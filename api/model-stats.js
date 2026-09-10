@@ -799,6 +799,11 @@ export default async function handler(req, res) {
       log_loss_mercado: null, brier_mercado: null,
       accuracy_modelo: r.accuracy_modelo != null ? Number(r.accuracy_modelo) : null, accuracy_mercado: null,
       tem_odds: false,
+      // `model_stats_resumo` guarda só o agregado final (log-loss/Brier/
+      // acurácia do modelo), sem as linhas partida-a-partida necessárias
+      // pra montar a climatologia amostral -- BSS fica indisponível aqui
+      // (mesmo tratamento que os outros campos "ao vivo" já ausentes acima).
+      brier_climatologia: null, bss_climatologia: null, bss_mercado: null,
       calibracao_disponivel: false,
       log_loss_platt: null, brier_platt: null, accuracy_platt: null,
       log_loss_isotonic: null, brier_isotonic: null, accuracy_isotonic: null,
@@ -1103,6 +1108,37 @@ export default async function handler(req, res) {
         if (!porSelecao[l.selection]) porSelecao[l.selection] = [];
         porSelecao[l.selection].push(l);
       });
+
+      // Climatologia (Brier Skill Score, achado pedido pelo usuário): taxa
+      // empírica de cada seleção dentro do PRÓPRIO grupo (model_name+market+
+      // league_id) -- diferente do treino Python (scripts/modelos_ml.py),
+      // que separa treino/teste porque o modelo em si é ajustado num split
+      // cronológico. Aqui não existe essa distinção -- o endpoint reavalia
+      // um modelo JÁ TREINADO (alhures, sem acesso a este cálculo) contra o
+      // histórico inteiro de resultados, então a climatologia amostral
+      // (calculada na mesma janela que está sendo avaliada) é a definição
+      // padrão de "referência ingênua" nesse cenário -- não há vazamento de
+      // treino porque o modelo não é ajustado aqui. `taxaBasePorSelecao` é a
+      // MESMA frequência já usada como `baseline` do lift em decis abaixo,
+      // só compartilhada entre seleções pra montar o vetor de probabilidade
+      // climatológica completo de cada partida (uma seleção sozinha não
+      // soma 1, mas juntas cobrem toda partição do mercado).
+      const taxaBasePorSelecao = {};
+      Object.entries(porSelecao).forEach(([selecao, ls]) => {
+        taxaBasePorSelecao[selecao] = ls.length > 0 ? ls.reduce((s, l) => s + l.y, 0) / ls.length : 0;
+      });
+      let brierClimatologia = null;
+      {
+        let somaBrierClima = 0, nParaClima = 0;
+        Object.values(porJogo).forEach(ls => {
+          if (ls.length === 0) return;
+          somaBrierClima += ls.reduce((s, l) => s + brierTermo(taxaBasePorSelecao[l.selection] ?? 0, l.y), 0);
+          nParaClima++;
+        });
+        brierClimatologia = nParaClima > 0 ? somaBrierClima / nParaClima : null;
+      }
+      const bssClimatologia = brierClimatologia != null && brierClimatologia > 0 ? 1 - brierModelo / brierClimatologia : null;
+      const bssMercado = temOdds && brierMercado > 0 ? 1 - brierModelo / brierMercado : null;
       const selecoes = Object.entries(porSelecao).map(([selecao, ls]) => {
         const comOdds = ls.filter(l => l.p_mercado != null);
         const edgeMedio = comOdds.length > 0 ? comOdds.reduce((s, l) => s + (l.p_modelo - l.p_mercado), 0) / comOdds.length : null;
@@ -1200,6 +1236,7 @@ export default async function handler(req, res) {
         log_loss_mercado: logLossMercado, brier_mercado: brierMercado,
         accuracy_modelo: accuracyModelo, accuracy_mercado: accuracyMercado,
         tem_odds: temOdds,
+        brier_climatologia: brierClimatologia, bss_climatologia: bssClimatologia, bss_mercado: bssMercado,
         calibracao_disponivel: calibPlatt.temCalib || calibIsotonic.temCalib,
         log_loss_platt: calibPlatt.logLoss, brier_platt: calibPlatt.brier, accuracy_platt: accuracyPlatt,
         log_loss_isotonic: calibIsotonic.logLoss, brier_isotonic: calibIsotonic.brier, accuracy_isotonic: accuracyIsotonic,

@@ -22,9 +22,10 @@ from catboost import CatBoostClassifier, CatBoostRegressor
 from lightgbm import LGBMClassifier, LGBMRegressor, early_stopping
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import brier_score_loss
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, label_binarize
 from xgboost import XGBClassifier
 
 from dados_historicos import (
@@ -277,6 +278,48 @@ def empacotar_predicoes(match_ids, probs: np.ndarray, classes, coluna_alvo: str 
     for match_id, linha_probs in zip(match_ids, probs):
         resultado[match_id] = {nome: float(linha_probs[indice_da_classe[codigo]]) for codigo, nome in rotulos.items()}
     return resultado
+
+
+def taxa_base_climatologia(y_treino: np.ndarray, classes_sorted: np.ndarray, tipo: str):
+    """Frequência empírica de cada classe MEDIDA NO TREINO -- nunca no
+    conjunto de teste/validação, senão o "baseline" da climatologia já
+    embutiria informação que o modelo em si não deveria ter (mesmo cuidado
+    de não vazar teste que já é regra no resto do projeto, ver `test_fim`/
+    split cronológico). Pra binário devolve um float (frequência da classe
+    positiva, a última de `classes_sorted`); pra multiclasse, um array na
+    mesma ordem de `classes_sorted`."""
+    if tipo == "binario":
+        return float(np.mean(y_treino == classes_sorted[-1]))
+    return np.array([float(np.mean(y_treino == c)) for c in classes_sorted])
+
+
+def brier_e_bss(y: np.ndarray, ordered: np.ndarray, classes_sorted: np.ndarray, tipo: str, taxa_base) -> tuple[float, float, float | None]:
+    """Brier Score do modelo e Brier Skill Score (BSS) contra a climatologia
+    (`taxa_base`, de `taxa_base_climatologia` -- sempre medida no treino).
+
+    BSS = 1 - brier_modelo/brier_climatologia:
+      > 0 -> modelo bate a climatologia (aprendeu algo além da frequência-base);
+      = 0 -> empate, nenhuma habilidade preditiva a mais;
+      < 0 -> a climatologia sozinha teria sido melhor -- sinal de alerta, não
+             só "sem edge" (achado real já visto no projeto: acurácia alta
+             em classe desbalanceada não significa modelo bom).
+
+    Devolve (brier_modelo, brier_climatologia, bss) -- bss é `None` só no
+    caso degenerado de brier_climatologia=0 (não deveria acontecer com
+    dado real, mas evita ZeroDivisionError num fold minúsculo/patológico)."""
+    if tipo == "binario":
+        y_bin = (y == classes_sorted[-1]).astype(int)
+        p_pos = ordered[:, -1]
+        brier_modelo = float(brier_score_loss(y_bin, p_pos))
+        brier_clima = float(brier_score_loss(y_bin, np.full_like(p_pos, taxa_base)))
+    else:
+        y_bin_matrix = label_binarize(y, classes=classes_sorted)
+        briers_modelo = [brier_score_loss(y_bin_matrix[:, i], ordered[:, i]) for i in range(len(classes_sorted))]
+        briers_clima = [brier_score_loss(y_bin_matrix[:, i], np.full(len(y), taxa_base[i])) for i in range(len(classes_sorted))]
+        brier_modelo = float(np.mean(briers_modelo))
+        brier_clima = float(np.mean(briers_clima))
+    bss = (1.0 - brier_modelo / brier_clima) if brier_clima > 0 else None
+    return brier_modelo, brier_clima, bss
 
 
 def _montar_curva(treino: list[float], validacao: list[float] | None, teste: list[float] | None) -> list[dict]:

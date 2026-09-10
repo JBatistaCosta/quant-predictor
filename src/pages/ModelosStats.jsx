@@ -72,6 +72,33 @@ function Metrica({ label, modelo, mercado, ic, menorMelhor = true, formato = 'nu
   );
 }
 
+// Brier Skill Score (BSS = 1 - Brier_modelo/Brier_referência): >0 o modelo
+// bate a referência, =0 empata, <0 o modelo é PIOR que a referência (sinal
+// de alerta, não só "sem edge"). Duas referências (api/model-stats.js):
+// climatologia (frequência empírica de cada seleção, amostral -- ver
+// comentário no endpoint) e mercado (odd de fechamento devigada). Cor
+// segue o sinal: negativo é sempre vermelho, mesmo sem seleção nenhuma
+// "vencendo" como no par modelo/mercado da métrica ao lado.
+function MetricaBss({ label, valor, referencia }) {
+  if (valor == null) {
+    return (
+      <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+        <div className="text-[10px] text-slate-500 uppercase">{label}</div>
+        <div className="text-lg font-bold text-slate-600 mt-1">—</div>
+        <div className="text-[10px] text-slate-600 mt-0.5">sem dado suficiente</div>
+      </div>
+    );
+  }
+  const cor = valor > 0 ? 'text-emerald-400' : valor < 0 ? 'text-red-400' : 'text-slate-300';
+  return (
+    <div className="bg-slate-900 border border-slate-700/50 rounded-lg p-3 text-center">
+      <div className="text-[10px] text-slate-500 uppercase">{label}</div>
+      <div className={`text-lg font-bold mt-1 ${cor}`}>{valor > 0 ? '+' : ''}{(valor * 100).toFixed(1)}%</div>
+      <div className="text-[10px] text-slate-600 mt-0.5">vs. {referencia}</div>
+    </div>
+  );
+}
+
 // McNemar pareado (qui-quadrado, achado #29) -- cada modelo contra o LÍDER
 // (menor log-loss) do mesmo grupo, populado por model_stats_mcnemar. Uma IC95%
 // sobreposta (achado #27/#28) não prova empate técnico; isso testa direto.
@@ -742,6 +769,7 @@ function gerarMarkdown(grupos, ligasPorId) {
     md += `- Jogos avaliados: ${g.n_jogos}\n`;
     md += `- Log-loss: modelo ${g.log_loss_modelo.toFixed(4)}${g.log_loss_mercado != null ? ` vs. mercado ${g.log_loss_mercado.toFixed(4)}` : ' (sem odds)'}${g.log_loss_ic_inf != null ? ` — IC95% [${g.log_loss_ic_inf.toFixed(4)}, ${g.log_loss_ic_sup.toFixed(4)}]` : ''}\n`;
     md += `- Brier Score: modelo ${g.brier_modelo.toFixed(4)}${g.brier_mercado != null ? ` vs. mercado ${g.brier_mercado.toFixed(4)}` : ' (sem odds)'}\n`;
+    md += `- Brier Skill Score: vs. climatologia ${g.bss_climatologia != null ? `${g.bss_climatologia > 0 ? '+' : ''}${(g.bss_climatologia * 100).toFixed(1)}%` : '—'} · vs. mercado ${g.bss_mercado != null ? `${g.bss_mercado > 0 ? '+' : ''}${(g.bss_mercado * 100).toFixed(1)}%` : '—'}\n`;
     md += `- Acurácia: modelo ${g.accuracy_modelo != null ? (g.accuracy_modelo * 100).toFixed(1) + '%' : '—'}${g.accuracy_mercado != null ? ` vs. mercado ${(g.accuracy_mercado * 100).toFixed(1)}%` : ' (sem odds)'}${g.accuracy_ic_inf != null ? ` — IC95% [${(g.accuracy_ic_inf * 100).toFixed(1)}%, ${(g.accuracy_ic_sup * 100).toFixed(1)}%]` : ''}\n`;
     if (g.mcnemar_eh_lider) {
       md += `- McNemar: líder do grupo (menor log-loss)\n\n`;
@@ -871,7 +899,7 @@ export default function ModelosStats() {
           <h1 className="text-2xl font-extrabold flex items-center gap-3 text-slate-100">
             <BarChart3 className="text-emerald-400" size={28} /> Estatísticas dos Modelos
           </h1>
-          <p className="text-slate-400 mt-1 text-sm">Brier Score, log-loss e comparação com a odd de fechamento média do mercado, por modelo/mercado/liga.</p>
+          <p className="text-slate-400 mt-1 text-sm">Brier Score, log-loss, Brier Skill Score (vs. climatologia e vs. mercado) e comparação com a odd de fechamento média do mercado, por modelo/mercado/liga.</p>
         </div>
         <button onClick={exportarRelatorio} disabled={gruposFiltrados.length === 0}
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
@@ -929,6 +957,11 @@ export default function ModelosStats() {
                 <Metrica label="Log-loss" modelo={g.log_loss_modelo} mercado={g.log_loss_mercado} ic={[g.log_loss_ic_inf, g.log_loss_ic_sup]} />
                 <Metrica label="Brier Score" modelo={g.brier_modelo} mercado={g.brier_mercado} />
                 <Metrica label="Acurácia" modelo={g.accuracy_modelo} mercado={g.accuracy_mercado} menorMelhor={false} formato="pct" ic={[g.accuracy_ic_inf, g.accuracy_ic_sup]} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <MetricaBss label="Brier Skill Score" valor={g.bss_climatologia} referencia="climatologia" />
+                <MetricaBss label="Brier Skill Score" valor={g.bss_mercado} referencia="mercado (fechamento)" />
               </div>
 
               <McNemarBadge g={g} />
