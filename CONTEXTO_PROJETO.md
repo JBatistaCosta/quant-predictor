@@ -1,5 +1,28 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Fix do alvo de cartões (PRs #509/#511) CONCLUÍDO — 32 configs retreinadas com sucesso, proporção over/under validada, comparação com mercado feita (10/09).** Fechamento da investigação registrada logo abaixo ("Cartões e Faltas... migradas de FBref pra FotMob").
+
+- **Validação da correção**: proporção real de "over 2.5 cartões" no fold de teste (2025+) voltou a bater com o histórico plausível (68,6%, contra ~66% antes da troca de alvo e 34,8% na 1ª tentativa quebrada do PR #509) — confirma que o fallback (PR #511) resolveu a inversão sem introduzir viés novo.
+- **32/32 configs treinadas sem erro no fold_3** (2 delas — Faltas O/U 22.5 e Faltas Mandante O/U 8.5 — tiveram timeout de statement do Postgres na 1ª tentativa, transitório por carga concorrente, resolvido no redisparo).
+- **Linha 2.5 de Cartões ficou praticamente igual ao valor pré-fix de alvo** (0,55118→0,55397 xgboost) — esperado: `match_events` cobre só uma fração pequena do período de teste recente, a maioria das partidas ainda cai no fallback (`match_stats_fotmob`, mesma fonte de antes). O ganho do fix não é em log-loss agregado — é em integridade, garantindo que a fração com `match_events` real não fica mais rotulada errado.
+
+**Comparação com mercado (Pinnacle, fechamento) — Cartões geral, todas as 6 linhas:**
+
+| Linha | n | Log-loss modelo | Log-loss Pinnacle | Diferença | IC 95% | Significativo? |
+|---|---|---|---|---|---|---|
+| 1.5 | 16 | 0,84384 | 0,60991 | +0,23392 | [-0,135, +0,603] | Não (amostra minúscula) |
+| 2.5 | 81 | 0,77053 | 0,63704 | +0,13348 | [+0,047, +0,220] | **Sim — mercado vence** |
+| 3.5 | 302 | 0,68538 | 0,69704 | -0,01167 | [-0,055, +0,032] | Não |
+| 4.5 | 316 | 0,65975 | 0,65314 | +0,00661 | [-0,027, +0,040] | Não |
+| 5.5 | 185 | 0,61582 | 0,62190 | -0,00608 | [-0,063, +0,051] | Não |
+| 6.5 | 41 | 0,57454 | 0,55228 | +0,02227 | [-0,127, +0,172] | Não |
+
+Mercado vence com significância só na 2.5; resto é empate estatístico. **Nenhuma linha mostra o modelo batendo o mercado** — mesma disciplina de escanteios: não promover pra `models_registry`/uso real de aposta.
+
+**⚠️ Comparação Casa/Visitante (Betano) NÃO É CONFIÁVEL — achado real, pendente.** A query inicial deu o modelo "batendo" o mercado por margem absurda (log-loss Pinnacle ~2,0 pra uma linha 0.5) — investigado e descartado: **100% das odds da Betano nesse mercado são de agosto/2026**, exatamente o período em que `match_events` está 100% vazio E `match_stats_fotmob` (o fallback) também erra muito pra cartões por time — MESMO bug de zeragem já documentado, só que sem fonte alternativa nenhuma pra esse recorte específico (nem `match_events` nem `match_stats_fotmob` são confiáveis pra cartões POR TIME nos últimos meses). Não é algo que o fallback do PR #511 resolve — precisa de backfill de verdade de `match_events` pra esse período, ou uma terceira fonte. **Não comparar Cartões Mandante/Visitante com mercado até isso ser resolvido.**
+
+---
+
 **`hibrido_gols_lgbm_v1` está documentado como um dos 4 modelos híbridos mas NUNCA foi treinado — gap real, achado 10/09, pendente de decisão do usuário.** Investigando por que `models_registry` parecia "sem atualizar desde 18/08" (ver item resolvido logo abaixo — era falso alarme), notei que `hibrido_gols_lgbm_v1` tem feature set definido em `FEATURES_POR_MODELO` (`modelos_ml.py`) e aparece citado como um dos "4 modelos híbridos" tanto em `CLAUDE.md` quanto nesta doc — mas o loop de treino de verdade em `treinar_modelo_hibrido.py` (`VARIANTES_GOLS`, linha ~98) só tem `hibrido_gols_v1` e `hibrido_gols_xg_v1`. `hibrido_gols_lgbm_v1` só aparece numa função auxiliar de filtro de features (linha ~638) que nunca chega a treinar nada com ele — referência órfã. Confirmado no log do GitHub Actions da execução de 09/09: zero menções a "lgbm" do início ao fim. Não é uma regressão de nada mexido nesta sessão — parece ter sido planejado (dado o nome e o feature set prontos) e nunca implementado no loop principal. **Pendente**: perguntar ao usuário se quer implementar o treino de fato (teria que entrar em `VARIANTES_GOLS` com seu próprio regressor LightGBM de λ, seguindo o mesmo padrão de `hibrido_gols_v1`/`hibrido_gols_xg_v1`) ou remover a referência morta.
 
 **`models_registry.created_at` nunca reflete retreino — CORRIGIDO (10/09), coluna `updated_at` adicionada com trigger.** Ao investigar o achado acima, cheguei a suspeitar que o retreino do híbrido de 09/09 não tinha atualizado `models_registry` (`hibrido_gols_v1`/`hibrido_gols_xg_v1` com `created_at` de 18/08) — **falso alarme**: conferido no log bruto do GitHub Actions que a métrica impressa na hora (`n_teste=2437`, `rho=-0.005626110237679608` etc.) bate dígito por dígito com o que está no banco, ou seja, o registro FOI atualizado ontem. O upsert (`ON CONFLICT (name, market) DO UPDATE`) atualiza `metrics_test`/`hyperparameters` de verdade a cada treino, mas `created_at` (default só na inserção, sem `updated_at` nenhum) nunca muda depois da primeira gravação — enganoso pra sempre. Corrigido: migration `20260910080000_models_registry_add_updated_at.sql` adiciona `updated_at timestamptz` com o trigger genérico `public.set_updated_at()` (já existia, criado em `20260718120000_create_market_odds_and_predicoes.sql` pra `market_odds` — mesmo padrão, reaproveitado). Testado direto no banco: `UPDATE` real move `updated_at`, `created_at` fica intacto.
