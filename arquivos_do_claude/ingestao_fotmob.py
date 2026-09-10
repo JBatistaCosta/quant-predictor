@@ -171,6 +171,26 @@ def extrair_zonas_ataque(attacking_zones: dict | None, lado_chave: str) -> dict:
     }
 
 
+def extrair_substituicao(performance: dict | None) -> dict:
+    """p.performance.substitutionEvents -- achado 10/09: array de
+    {time, type: 'subIn'|'subOut', reason}, sempre subIn-antes-de-subOut
+    quando tem os 2 (jogador que entrou e saiu de novo na mesma partida,
+    1.031/1.031 casos reais em produção nessa ordem). Ausente (não array
+    vazio) em payload de partida antiga -- mesma limitação já documentada
+    pra zonas de ataque/estatística por tempo."""
+    eventos = (performance or {}).get("substitutionEvents")
+    if not isinstance(eventos, list):
+        return {}
+    entrada = next((e for e in eventos if e.get("type") == "subIn"), None)
+    saida = next((e for e in eventos if e.get("type") == "subOut"), None)
+    return {
+        "substituted_in_minute": (entrada or {}).get("time"),
+        "substituted_in_reason": (entrada or {}).get("reason"),
+        "substituted_out_minute": (saida or {}).get("time"),
+        "substituted_out_reason": (saida or {}).get("reason"),
+    }
+
+
 def extrair_stat_jogador(stats_dict: dict, chave_titulo: str):
     item = stats_dict.get(chave_titulo)
     if not item:
@@ -407,6 +427,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
                         "field_pos_x": vl.get("x"),
                         "field_pos_y": vl.get("y"),
                         "is_captain": p.get("isCaptain") or False,
+                        **extrair_substituicao(p.get("performance")),
                         "raw": p,
                         "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                     })

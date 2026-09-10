@@ -4483,6 +4483,25 @@ async function upsertJogadoresDoJogo(supabase, matchIdInterno, playerStatsPayloa
 // Extrai escalação (match_lineup_fotmob) e dados ricos de dimensão de jogador
 // a partir de content.lineup — traz firstName/lastName/idade/valor de mercado/
 // país/posição habitual/posição em campo, que o bloco playerStats não tem.
+// p.performance.substitutionEvents -- achado 10/09: array de
+// {time, type: 'subIn'|'subOut', reason}, sempre subIn-antes-de-subOut
+// quando tem os 2 (jogador que entrou e saiu de novo na mesma partida,
+// 1.031/1.031 casos reais em produção nessa ordem). Ausente (não array
+// vazio) em payload de partida antiga -- mesma limitação já documentada
+// pra zonas de ataque/estatística por tempo.
+function extrairSubstituicao(performance) {
+  const eventos = performance?.substitutionEvents;
+  if (!Array.isArray(eventos)) return {};
+  const entrada = eventos.find(e => e.type === 'subIn');
+  const saida = eventos.find(e => e.type === 'subOut');
+  return {
+    substituted_in_minute: entrada?.time ?? null,
+    substituted_in_reason: entrada?.reason ?? null,
+    substituted_out_minute: saida?.time ?? null,
+    substituted_out_reason: saida?.reason ?? null,
+  };
+}
+
 function montarLinhasLineup(matchIdInterno, lineupPayload, crosswalkTimes) {
   const lineupRows = [];
   const playerDimRows = [];
@@ -4524,6 +4543,7 @@ function montarLinhasLineup(matchIdInterno, lineupPayload, crosswalkTimes) {
             field_pos_x: vl.x ?? null,
             field_pos_y: vl.y ?? null,
             is_captain: p.isCaptain || false,
+            ...extrairSubstituicao(p.performance),
             raw: p,
             captured_at: agora,
           });
