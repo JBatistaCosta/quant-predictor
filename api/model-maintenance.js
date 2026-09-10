@@ -4911,6 +4911,7 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
 const MAX_PARTIDAS_POR_CHAMADA_DETALHES = 20;
 
 async function tarefaBackfillDetalhesFotmob(supabase, { limite }) {
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const limiteJogos = Math.min(parseInt(limite, 10) || MAX_PARTIDAS_POR_CHAMADA_DETALHES, MAX_PARTIDAS_POR_CHAMADA_DETALHES);
 
   const { data: pendentesRaw } = await supabase
