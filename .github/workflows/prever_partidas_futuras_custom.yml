@@ -2,9 +2,13 @@ name: Modelos Customizados - Prever Partidas Futuras
 
 # Aplica cada custom_model_config JÁ TREINADA (nunca treina aqui) sobre as
 # partidas ainda não disputadas dentro do escopo de liga da configuração,
-# gravando em model_predictions -- sem isso, nenhum modelo customizado
-# consegue ter aposta encontrada na Carteira (Paper Trading, /carteira-
-# paper-trading), que só lê previsão de partida status=scheduled ali.
+# gravando em model_predictions. Dois consumidores: a Carteira (Paper
+# Trading, /carteira-paper-trading, mercados 1x2/over_under_2.5/btts -- só
+# lê previsão de partida status=scheduled ali) e, desde 10/09, o painel
+# "Cartões e Faltas" em AnaliseEstatisticaJogo.jsx (mercados cartoes_over_
+# under_*/faltas_over_under_* "geral") -- pré-computar aqui deixa esse
+# painel instantâneo, em vez de disparar uma estimativa sob demanda a cada
+# clique (ver MERCADOS_CARTOES_FALTAS_GERAL no script).
 # Ver docstring completa em scripts/prever_partidas_futuras_custom.py.
 #
 # Agendado 1h depois do predict.yml (04:00 UTC, modelos "de fábrica" +
