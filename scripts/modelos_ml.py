@@ -135,7 +135,6 @@ PARAMS_DEFAULT = {
     "hibrido_gols_v1": {"depth": 6, "learning_rate": 0.05},
     "hibrido_gols_xg_v1": {"depth": 6, "learning_rate": 0.05},
     "hibrido_corners_v1": {"depth": 6, "learning_rate": 0.05},
-    "hibrido_gols_lgbm_v1": {"num_leaves": 15, "learning_rate": 0.05},
     # v9 — mesmas features da v8; MLP tunado após primeira rodada mostrar log-loss ~1.07
     # (próximo ao baseline aleatório 1.099). Arquitetura maior + mais paciência no early stopping.
     "catboost_v9": {"depth": 6, "learning_rate": 0.05},
@@ -200,7 +199,6 @@ FEATURES_POR_MODELO = {
     # dados_historicos.py. Só este modelo -- os outros 3 `hibrido_*` (gols)
     # continuam em V12_MESMA_LIGA.
     "hibrido_corners_v1": FEATURES_V14_CORNERS_DECAY,
-    "hibrido_gols_lgbm_v1": FEATURES_V12_MESMA_LIGA,
     # v9 — mesmas features da v8; MLP adicionado como 4ª família.
     # FEATURES_V9_XG_CORRIGIDO em vez de FEATURES_V9 -- achado #15
     # (CONTEXTO_PROJETO.md), mesmo fix já testado isolado nos 4 `hibrido_*`
