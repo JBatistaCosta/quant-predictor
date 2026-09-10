@@ -1560,11 +1560,21 @@ async function encontrarPartidaMandanteVisitante(supabase, homeId, awayId) {
 // Assíncrono, igual ao painel manual: devolve os request_id pra cada
 // mercado, e o frontend faz o polling em custom_model_ondemand_predictions
 // (policy de leitura pública) até status='concluido'/'erro'.
+//
+// Body aceita `match_id` (+ opcionalmente `match_date` como 2º fator de
+// segurança, conferido contra a data real antes de disparar) OU
+// `mandante`/`visitante`(_id) -- ver comentário em cima do bloco que lê
+// `matchIdPedido` abaixo pra por que as duas formas existem e por que
+// `match_id` é o caminho certo quando o chamador já sabe qual partida é
+// (achado real de uso, 10/09: sem isso, uma partida finalizada mais antiga
+// entre os mesmos dois times podia acabar estimando OUTRA partida, a mais
+// recente do confronto).
 async function tarefaEstimarCartoesFaltas(supabase, authHeader, body) {
   const usuario = await verificarUsuarioLogado(supabase, authHeader);
   if (!usuario) return { status: 401, error: 'Não autenticado.' };
 
   const {
+    match_id: matchIdPedido, match_date: matchDateEsperada,
     mandante, visitante, mandante_id: mandanteId, visitante_id: visitanteId,
     linha_cartoes: linhaCartoesPedida, linha_faltas: linhaFaltasPedida,
     algorithm: algoritmoPedido,
@@ -1584,19 +1594,63 @@ async function tarefaEstimarCartoesFaltas(supabase, authHeader, body) {
     return { status: 400, error: `linha_faltas inválida: "${linhaFaltas}" -- use uma de ${LINHAS_VALIDAS_CARTOES_FALTAS.faltas.join(', ')}.` };
   }
 
-  const [timeMandante, timeVisitante] = await Promise.all([
-    resolverTimePorNomeOuId(supabase, mandante, mandanteId),
-    resolverTimePorNomeOuId(supabase, visitante, visitanteId),
-  ]);
-  if (!timeMandante) return { status: 404, error: `Time mandante "${mandante || mandanteId}" não encontrado em teams.` };
-  if (!timeVisitante) return { status: 404, error: `Time visitante "${visitante || visitanteId}" não encontrado em teams.` };
+  // `match_id` explícito (partida real que o chamador já sabe qual é --
+  // ex.: o painel de uma partida específica em AnaliseEstatisticaJogo.jsx/
+  // AnaliseAvancadaEvento.jsx) tem prioridade e pula a resolução por
+  // confronto de times inteiramente. Sem isso, um time com mais de um
+  // confronto contra o mesmo adversário (comum em ligas com turno/returno,
+  // ou times que se reencontram em temporadas diferentes)
+  // `encontrarPartidaMandanteVisitante` sempre escolhe a próxima agendada
+  // ou a mais recente disputada -- ao olhar uma partida MAIS ANTIGA entre
+  // os dois, o sob-demanda estimaria silenciosamente outra partida (achado
+  // real de uso, 10/09). `mandante`/`mandante_id`/`visitante`/`visitante_id`
+  // continuam obrigatórios quando `match_id` não vem (ex.: uso futuro fora
+  // do contexto de uma partida já carregada).
+  let partida;
+  let confronto = null;
+  if (matchIdPedido) {
+    const { data: match, error: matchErr } = await supabase
+      .from('matches')
+      .select('id, match_date, status')
+      .eq('id', matchIdPedido)
+      .maybeSingle();
+    if (matchErr) throw matchErr;
+    if (!match) return { status: 404, error: `Partida id=${matchIdPedido} não encontrada.` };
+    // Segundo fator de segurança, independente do match_id: se o chamador
+    // também manda a data que ele espera pra essa partida (o frontend já
+    // tem isso carregado, é grátis conferir), confere contra a data real
+    // antes de disparar qualquer coisa. Não protege contra todo erro
+    // possível, mas pega de graça um cenário concreto: o componente sendo
+    // reaproveitado com props desatualizadas/trocadas (troca de partida na
+    // mesma instância React sem o estado do painel resetar, por exemplo) --
+    // o match_id sozinho não entrega esse tipo de bug, a data sim.
+    if (matchDateEsperada) {
+      const dataReal = String(match.match_date).slice(0, 10);
+      const dataEsperada = String(matchDateEsperada).slice(0, 10);
+      if (dataReal !== dataEsperada) {
+        return {
+          status: 409,
+          error: `match_id=${matchIdPedido} tem data ${dataReal}, mas o chamador esperava ${dataEsperada} -- provável dessincronia de estado no frontend, abortado por segurança.`,
+        };
+      }
+    }
+    partida = match;
+  } else {
+    const [timeMandante, timeVisitante] = await Promise.all([
+      resolverTimePorNomeOuId(supabase, mandante, mandanteId),
+      resolverTimePorNomeOuId(supabase, visitante, visitanteId),
+    ]);
+    if (!timeMandante) return { status: 404, error: `Time mandante "${mandante || mandanteId}" não encontrado em teams.` };
+    if (!timeVisitante) return { status: 404, error: `Time visitante "${visitante || visitanteId}" não encontrado em teams.` };
+    confronto = { mandante: timeMandante.name, visitante: timeVisitante.name };
 
-  const partida = await encontrarPartidaMandanteVisitante(supabase, timeMandante.id, timeVisitante.id);
-  if (!partida) {
-    return {
-      status: 404,
-      error: `Não há partida (agendada ou disputada) de "${timeMandante.name}" em casa contra "${timeVisitante.name}" no calendário -- diferente da calculadora de escanteios, este modelo precisa de uma partida real (scripts/estimar_partida_custom.py monta as features em cima do match_id).`,
-    };
+    partida = await encontrarPartidaMandanteVisitante(supabase, timeMandante.id, timeVisitante.id);
+    if (!partida) {
+      return {
+        status: 404,
+        error: `Não há partida (agendada ou disputada) de "${timeMandante.name}" em casa contra "${timeVisitante.name}" no calendário -- diferente da calculadora de escanteios, este modelo precisa de uma partida real (scripts/estimar_partida_custom.py monta as features em cima do match_id).`,
+      };
+    }
   }
 
   const mercados = [
@@ -1639,7 +1693,7 @@ async function tarefaEstimarCartoesFaltas(supabase, authHeader, body) {
 
   return {
     status: 200,
-    confronto: { mandante: timeMandante.name, visitante: timeVisitante.name },
+    confronto,
     partida: { id: partida.id, match_date: partida.match_date, status: partida.status },
     mercados: resultados,
   };

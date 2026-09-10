@@ -92,7 +92,7 @@ function TabelaMercado({ mercado, item }) {
   );
 }
 
-export default function ModeloCartoesFaltas({ matchId, mandanteId, visitanteId }) {
+export default function ModeloCartoesFaltas({ matchId, matchDate, mandanteId, visitanteId }) {
   const { session } = useAuth();
   const [aberto, setAberto] = useState(false);
   const [carregandoCache, setCarregandoCache] = useState(false);
@@ -163,10 +163,18 @@ export default function ModeloCartoesFaltas({ matchId, mandanteId, visitanteId }
     setErroGeral('');
     setDisparando(true);
     try {
+      // match_id (+ match_date como 2º fator de segurança) sempre que
+      // disponível -- evita que o backend resolva "a partida mais recente
+      // entre esses dois times" e acabe estimando uma partida DIFERENTE da
+      // que está na tela (achado real de uso, 10/09: acontecia com times
+      // que se reencontram em mais de um confronto/temporada).
+      const corpo = matchId
+        ? { match_id: matchId, match_date: matchDate }
+        : { mandante_id: mandanteId, visitante_id: visitanteId };
       const resp = await fetch(apiUrl('/api/model-maintenance?tarefa=estimar-cartoes-faltas'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({ mandante_id: mandanteId, visitante_id: visitanteId }),
+        body: JSON.stringify(corpo),
       });
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || `HTTP ${resp.status}`);

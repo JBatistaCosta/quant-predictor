@@ -1201,7 +1201,7 @@ export default function AnaliseEstatisticaJogo() {
         />
       </div>
 
-      <ModeloCartoesFaltas matchId={jogo.id} mandanteId={jogo.home_team_id} visitanteId={jogo.away_team_id} />
+      <ModeloCartoesFaltas matchId={jogo.id} matchDate={jogo.match_date} mandanteId={jogo.home_team_id} visitanteId={jogo.away_team_id} />
 
       <EstimativaModeloCustom matchId={jogo.id} />
 
