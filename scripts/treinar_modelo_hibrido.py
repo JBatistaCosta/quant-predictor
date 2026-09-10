@@ -635,7 +635,7 @@ def main() -> None:
     # modelos -- é maior (muda o que TODO modelo já treinado usa) e fica
     # registrada em CONTEXTO_PROJETO.md pra decisão separada.
     colunas_dataset = set(dataset.columns)
-    for chave in ("hibrido_gols_v1", "hibrido_gols_xg_v1", "hibrido_corners_v1", "hibrido_gols_lgbm_v1"):
+    for chave in ("hibrido_gols_v1", "hibrido_gols_xg_v1", "hibrido_corners_v1"):
         originais = ml.FEATURES_POR_MODELO.get(chave, [])
         faltando = [f for f in originais if f not in colunas_dataset]
         if faltando:
