@@ -1170,11 +1170,10 @@ def _carregar_total_corners_por_partida(supabase: Client, match_ids: list[int]) 
 
 def _partidas_com_stats_processadas(supabase: Client, match_ids: list[int]) -> set[int]:
     """Quais `match_ids` já têm as 2 linhas de `match_stats_fotmob` (casa +
-    visitante) -- usado só como sinal de "partida já processada pelo
-    pipeline de stats", não como fonte de cartões (ver comentário de
-    `_carregar_total_cartoes_por_partida` sobre o bug de `yellow_cards`/
-    `red_cards`). Sem esse gate não dá pra distinguir "0 cartões de
-    verdade" (raro, mas existe) de "match_events ainda não ingerido"."""
+    visitante) -- sinal de "partida já processada pelo pipeline de stats".
+    Só serve de gate pro FALLBACK (`match_stats_fotmob.yellow_cards`/
+    `red_cards`) quando `match_events` não tem dado pra aquela partida --
+    ver `_carregar_total_cartoes_por_partida`."""
     if not match_ids:
         return set()
 
@@ -1196,59 +1195,103 @@ def _partidas_com_stats_processadas(supabase: Client, match_ids: list[int]) -> s
 _TIPOS_EVENTO_CARTAO = ("yellow_card", "second_yellow_card", "red_card")
 
 
+def _partidas_com_match_events(supabase: Client, match_ids: list[int]) -> set[int]:
+    """Quais `match_ids` têm QUALQUER linha em `match_events` (não só de
+    cartão -- também gol, substituição etc.) -- prova de que o jogo foi
+    realmente ingerido nessa tabela, distinto de "processado" (que
+    `_partidas_com_stats_processadas` já garante via `match_stats_fotmob`).
+    Achado real (10/09, ao investigar por que o fix de `_carregar_total_
+    cartoes_por_partida` piorou o log-loss em vez de melhorar): cobertura
+    de `match_events` é BEM pior do que parecia na amostra inicial -- 32-70%
+    dos jogos sem NENHUM evento em 2024-2025, **100% sem evento desde
+    junho/2026**. Sem esse gate, `_carregar_total_cartoes_por_partida`
+    rotulava todo jogo recente como "0 cartões" só por `match_events`
+    ainda não ter chegado -- pior que o bug original de `match_stats_
+    fotmob` que motivou a troca."""
+    if not match_ids:
+        return set()
+
+    def factory(lote, inicio, fim):
+        return supabase.table("match_events").select("match_id").in_("match_id", lote).range(inicio, fim)
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    if not linhas:
+        return set()
+    return set(pd.DataFrame(linhas)["match_id"].unique())
+
+
 def _carregar_total_cartoes_por_partida(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
     """Total de cartões (casa+visitante) por partida, alvo do mercado
-    "bookings" (RESULTADO real, nunca feature pré-jogo). Vem de
-    `match_events` (evento a evento -- `yellow_card`/`second_yellow_card`/
-    `red_card`, cada linha é 1 cartão mostrado; um jogador que leva 2
-    amarelos gera 2 linhas, `yellow_card` + `second_yellow_card`, nunca
-    duplicado com um `red_card` extra pro mesmo lance -- conferido direto
-    no banco antes de trocar).
-    ANTES vinha de `match_stats_fotmob.yellow_cards`/`red_cards` -- essas
-    colunas têm bug real: ficam populadas com 0 (não NULL, valor errado)
-    mesmo em partidas com cartão de verdade, taxa de "0 cartões" subindo
-    de ~1-5% (2020-2024, normal) pra 12% desde 2025 e 17-69% entre
-    abril-setembro/2026 (confirmado cruzando com `match_events`: jogos com
-    "0 cartões" na fonte antiga tinham eventos de cartão reais registrados
-    aqui). Trocado (10/09) porque contaminava o fold de teste de todos os
-    modelos de Cartões -- ver CONTEXTO_PROJETO.md.
-    `match_stats_fotmob` continua usado só como gate de "partida
-    processada" (`_partidas_com_stats_processadas`) -- sem ele um jogo sem
-    NENHUM cartão de verdade (raro) ficaria indistinguível de um jogo cujo
-    `match_events` ainda não foi ingerido."""
+    "bookings" (RESULTADO real, nunca feature pré-jogo).
+    FONTE PRIMÁRIA: `match_events` (evento a evento -- `yellow_card`/
+    `second_yellow_card`/`red_card`, cada linha é 1 cartão mostrado; um
+    jogador que leva 2 amarelos gera 2 linhas, nunca duplicado com um
+    `red_card` extra pro mesmo lance -- conferido no banco). Usada só
+    pras partidas em que `match_events` tem QUALQUER dado (`_partidas_
+    com_match_events`) -- `match_stats_fotmob.yellow_cards`/`red_cards`
+    tem bug real, fica com 0 mesmo em partida com cartão de verdade (taxa
+    subindo de ~1-5% em 2020-2024 pra 12% desde 2025 e 17-69% em
+    abril-setembro/2026).
+    FALLBACK: pras partidas SEM nenhum dado em `match_events` (cobertura
+    de `match_events` é pior do que se imaginava -- 100% ausente desde
+    junho/2026, ver `_partidas_com_match_events`), volta pro `match_stats_
+    fotmob.yellow_cards`/`red_cards` de sempre -- imperfeito, mas usar
+    `match_events` ausente como "0 cartões" seria pior ainda (rotularia
+    TODO jogo recente como zero)."""
     if not match_ids:
         return pd.DataFrame(columns=["match_id", "total_cartoes"])
 
     processadas = _partidas_com_stats_processadas(supabase, match_ids)
     if not processadas:
         return pd.DataFrame(columns=["match_id", "total_cartoes"])
+    com_eventos = _partidas_com_match_events(supabase, list(processadas))
+    sem_eventos = processadas - com_eventos
 
-    def factory(lote, inicio, fim):
-        return (
-            supabase.table("match_events")
-            .select("match_id")
-            .in_("match_id", lote)
-            .in_("event_type", list(_TIPOS_EVENTO_CARTAO))
-            .range(inicio, fim)
-        )
+    partes = []
+    if com_eventos:
+        def factory_eventos(lote, inicio, fim):
+            return (
+                supabase.table("match_events")
+                .select("match_id")
+                .in_("match_id", lote)
+                .in_("event_type", list(_TIPOS_EVENTO_CARTAO))
+                .range(inicio, fim)
+            )
 
-    eventos = _paginar_por_lotes_de_id(factory, list(processadas))
-    contagem = pd.DataFrame(eventos).groupby("match_id").size() if eventos else pd.Series(dtype=int)
-    total = pd.DataFrame({"match_id": sorted(processadas)})
-    total["total_cartoes"] = total["match_id"].map(contagem).fillna(0.0)
-    return total
+        eventos = _paginar_por_lotes_de_id(factory_eventos, list(com_eventos))
+        contagem = pd.DataFrame(eventos).groupby("match_id").size() if eventos else pd.Series(dtype=int)
+        via_eventos = pd.DataFrame({"match_id": sorted(com_eventos)})
+        via_eventos["total_cartoes"] = via_eventos["match_id"].map(contagem).fillna(0.0)
+        partes.append(via_eventos)
+
+    if sem_eventos:
+        def factory_stats(lote, inicio, fim):
+            return (
+                supabase.table("match_stats_fotmob")
+                .select("match_id, yellow_cards, red_cards")
+                .in_("match_id", lote)
+                .range(inicio, fim)
+            )
+
+        stats = _paginar_por_lotes_de_id(factory_stats, list(sem_eventos))
+        df_stats = pd.DataFrame(stats)
+        amarelos = df_stats.groupby("match_id")["yellow_cards"].apply(lambda s: s.sum(min_count=2))
+        vermelhos = df_stats.groupby("match_id")["red_cards"].apply(lambda s: s.sum(min_count=2))
+        via_stats = (amarelos + vermelhos).reset_index(name="total_cartoes")
+        partes.append(via_stats)
+
+    return pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(columns=["match_id", "total_cartoes"])
 
 
 def _carregar_cartoes_por_time_por_partida(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
     """Cartões POR TIME (mandante/visitante) -- alvo do mercado "bookings"
     por time (`bookings_over_under_team_1/2_{linha}`, ver
-    `LINHAS_CARTOES_TIME_OU`). Mesma fonte/motivo da troca de
-    `_carregar_total_cartoes_por_partida` (`match_events`, não mais
-    `match_stats_fotmob.yellow_cards`/`red_cards`) -- `team_id` nunca é
+    `LINHAS_CARTOES_TIME_OU`). Mesma fonte primária/fallback e mesmo
+    motivo de `_carregar_total_cartoes_por_partida` (`match_events` quando
+    disponível, `match_stats_fotmob.yellow_cards`/`red_cards` como
+    fallback pra partida sem NENHUM evento ingerido) -- `team_id` nunca é
     NULL nos eventos de cartão (conferido). Time distinguido via
-    `matches.home_team_id`/`away_team_id`. Gate de "partida processada"
-    igual à função irmã -- 0 cartões só entra se `match_stats_fotmob`
-    confirma que o jogo já foi processado."""
+    `matches.home_team_id`/`away_team_id`."""
     colunas_saida = ["match_id", "cartoes_home", "cartoes_away"]
     if not match_ids:
         return pd.DataFrame(columns=colunas_saida)
@@ -1256,6 +1299,8 @@ def _carregar_cartoes_por_time_por_partida(supabase: Client, match_ids: list[int
     processadas = _partidas_com_stats_processadas(supabase, match_ids)
     if not processadas:
         return pd.DataFrame(columns=colunas_saida)
+    com_eventos = _partidas_com_match_events(supabase, list(processadas))
+    sem_eventos = processadas - com_eventos
 
     def factory_partidas(lote, inicio, fim):
         return (
@@ -1265,29 +1310,51 @@ def _carregar_cartoes_por_time_por_partida(supabase: Client, match_ids: list[int
             .range(inicio, fim)
         )
 
-    def factory_eventos(lote, inicio, fim):
-        return (
-            supabase.table("match_events")
-            .select("match_id, team_id")
-            .in_("match_id", lote)
-            .in_("event_type", list(_TIPOS_EVENTO_CARTAO))
-            .range(inicio, fim)
-        )
-
     partidas = _paginar_por_lotes_de_id(factory_partidas, list(processadas))
     if not partidas:
         return pd.DataFrame(columns=colunas_saida)
-    eventos = _paginar_por_lotes_de_id(factory_eventos, list(processadas))
-
     df_partidas = pd.DataFrame(partidas).rename(columns={"id": "match_id"})
-    df_eventos = pd.DataFrame(eventos) if eventos else pd.DataFrame(columns=["match_id", "team_id"])
-    contagem = df_eventos.groupby(["match_id", "team_id"]).size() if not df_eventos.empty else pd.Series(dtype=int)
+
+    contagem_eventos = pd.Series(dtype=int)
+    if com_eventos:
+        def factory_eventos(lote, inicio, fim):
+            return (
+                supabase.table("match_events")
+                .select("match_id, team_id")
+                .in_("match_id", lote)
+                .in_("event_type", list(_TIPOS_EVENTO_CARTAO))
+                .range(inicio, fim)
+            )
+
+        eventos = _paginar_por_lotes_de_id(factory_eventos, list(com_eventos))
+        df_eventos = pd.DataFrame(eventos) if eventos else pd.DataFrame(columns=["match_id", "team_id"])
+        if not df_eventos.empty:
+            contagem_eventos = df_eventos.groupby(["match_id", "team_id"]).size()
+
+    contagem_stats: dict[tuple[int, int], float] = {}
+    if sem_eventos:
+        def factory_stats(lote, inicio, fim):
+            return (
+                supabase.table("match_stats_fotmob")
+                .select("match_id, team_id, yellow_cards, red_cards")
+                .in_("match_id", lote)
+                .range(inicio, fim)
+            )
+
+        stats = _paginar_por_lotes_de_id(factory_stats, list(sem_eventos))
+        for linha in stats:
+            contagem_stats[(linha["match_id"], linha["team_id"])] = (linha["yellow_cards"] or 0) + (linha["red_cards"] or 0)
+
+    def _cartoes_do_time(match_id: int, team_id: int) -> float:
+        if match_id in com_eventos:
+            return contagem_eventos.get((match_id, team_id), 0.0)
+        return contagem_stats.get((match_id, team_id), np.nan)
 
     df_partidas["cartoes_home"] = [
-        contagem.get((m, h), 0.0) for m, h in zip(df_partidas["match_id"], df_partidas["home_team_id"])
+        _cartoes_do_time(m, h) for m, h in zip(df_partidas["match_id"], df_partidas["home_team_id"])
     ]
     df_partidas["cartoes_away"] = [
-        contagem.get((m, a), 0.0) for m, a in zip(df_partidas["match_id"], df_partidas["away_team_id"])
+        _cartoes_do_time(m, a) for m, a in zip(df_partidas["match_id"], df_partidas["away_team_id"])
     ]
     return df_partidas[colunas_saida]
 
