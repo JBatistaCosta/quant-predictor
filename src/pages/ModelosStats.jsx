@@ -958,7 +958,7 @@ export default function ModelosStats() {
                 <h2 className="text-sm font-bold text-slate-200">
                   {rotuloModelo(g.model_name)} <span className="text-slate-500">·</span> {MERCADO_ROTULO[g.market] || g.market} <span className="text-slate-500">·</span> {ligasPorId[g.league_id] || `Liga #${g.league_id}`}
                 </h2>
-                <span className="text-xs text-slate-500">{g.n_jogos} jogos avaliados</span>
+                <span className="text-xs text-slate-500">{g.n_jogos != null ? `${g.n_jogos} jogos avaliados` : 'ainda não calculado'}</span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 mb-4">
@@ -1005,7 +1005,7 @@ export default function ModelosStats() {
 
               <div className="space-y-3">
                 <span className="text-[10px] uppercase font-bold text-slate-500">Calibração por seleção (previsto vs. real, em quintis)</span>
-                {g.por_selecao.length === 0 && MERCADOS_COM_RESUMO_PRECALCULADO.includes(g.market) ? (
+                {g.por_selecao.length === 0 ? (
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => calcularAoVivo(g.model_name, g.market)}
@@ -1017,7 +1017,9 @@ export default function ModelosStats() {
                       Calcular calibração ao vivo
                     </button>
                     <span className="text-[10px] text-slate-600">
-                      Este mercado usa estatísticas pré-calculadas (evita timeout) -- não traz calibração por padrão.
+                      {MERCADOS_COM_RESUMO_PRECALCULADO.includes(g.market)
+                        ? 'Este mercado usa estatísticas pré-calculadas (evita timeout) -- não traz calibração por padrão.'
+                        : 'Este modelo ainda não teve as métricas calculadas nesta sessão -- clique pra calcular contra o mercado real.'}
                     </span>
                   </div>
                 ) : (

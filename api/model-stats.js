@@ -248,6 +248,76 @@ const MERCADOS_CARTOES_TIME_ODDS = LINHAS_CARTOES_TIME_OU.flatMap((l) => [
   `bookings_over_under_team_1_${l}`, `bookings_over_under_team_2_${l}`,
 ]);
 
+// `model_stats_resumo` só pré-calcula 1X2/over_under_2.5/corners_over_
+// under_9.5 (MERCADOS_COM_RESUMO_PRECALCULADO) -- os outros 22 mercados de
+// Cartões/Escanteios já treinados (ver PR #526) NUNCA apareciam na lista
+// de modelos da carga inicial (sem `?modelo=`), porque essa carga só lê
+// `model_stats_resumo` + o que já estiver explicitamente filtrado. Achado
+// real reportado pelo usuário: "não vejo nenhum mercado de cartões" --
+// não era mais o bug de nome de mercado (já corrigido), e sim este: o
+// modelo nem aparecia no dropdown pra poder ser selecionado.
+//
+// Em vez de estender `model_stats_resumo` (exigiria replicar em SQL a
+// lógica de derivação de cartões, que já tem fallback condicional por
+// partida em `dados_historicos._carregar_total_cartoes_por_partida` --
+// duplicar isso aqui divergiria da fonte de verdade), lê-se
+// `custom_model_configs` (tabela pequena, leitura pública, sem risco de
+// timeout) e monta uma linha "vazia" (métricas null) por model_name já
+// treinado -- só pra aparecer na lista e habilitar o botão "Calcular ao
+// vivo" que já existe pro mesmo cenário (ver `por_selecao.length === 0`
+// no frontend). `corners_over_under_9.5` fica de fora de propósito: já
+// tem resumo de verdade, uma linha "shell" ali duplicaria o card.
+function elegivelParaShellCartoesEscanteios(target) {
+  if (!target) return false;
+  if (target.startsWith('cartoes_')) return true;
+  return target.startsWith('corners_over_under_') && target !== 'corners_over_under_9.5';
+}
+
+function nomeModeloCustom(configName, chaveArtefato) {
+  if (chaveArtefato.startsWith('stacking:')) {
+    return `${configName} [Stacking: ${chaveArtefato.slice('stacking:'.length)}]`;
+  }
+  return `${configName} [${chaveArtefato}]`;
+}
+
+async function buscarGruposShellCartoesEscanteios(supabase, { modelo, mercado, ligaIdNum }) {
+  let q = supabase.from('custom_model_configs').select('name, target, model_artifacts, league_ids').eq('status', 'treinado');
+  if (mercado) q = q.eq('target', mercado);
+  const { data, error } = await q;
+  if (error || !data) return [];
+  const linhas = [];
+  for (const cfg of data) {
+    if (!elegivelParaShellCartoesEscanteios(cfg.target)) continue;
+    const artefatos = cfg.model_artifacts || {};
+    const chaves = Object.keys(artefatos);
+    if (chaves.length === 0) continue; // config sem nenhum artefato persistido -- nada pra listar
+    const ligas = cfg.league_ids || [];
+    for (const chave of chaves) {
+      const modelName = nomeModeloCustom(cfg.name, chave);
+      if (modelo && modelName !== modelo) continue;
+      for (const ligaId of ligas) {
+        if (ligaIdNum && ligaId !== ligaIdNum) continue;
+        linhas.push({
+          model_name: modelName, market: cfg.target, league_id: ligaId,
+          n_jogos: null,
+          log_loss_modelo: null, brier_modelo: null,
+          log_likelihood_modelo: null, log_likelihood_mercado: null,
+          log_loss_mercado: null, brier_mercado: null,
+          accuracy_modelo: null, accuracy_mercado: null,
+          tem_odds: false, calibracao_disponivel: false,
+          log_loss_platt: null, brier_platt: null, accuracy_platt: null,
+          log_loss_isotonic: null, brier_isotonic: null, accuracy_isotonic: null,
+          brier_climatologia: null, bss_climatologia: null, bss_mercado: null,
+          por_selecao: [],
+          log_loss_ic_inf: null, log_loss_ic_sup: null, accuracy_ic_inf: null, accuracy_ic_sup: null,
+          mcnemar_lider: null, mcnemar_n_pareado: null, mcnemar_p_valor: null, mcnemar_significativo: null, mcnemar_confiavel: null, mcnemar_eh_lider: false,
+        });
+      }
+    }
+  }
+  return linhas;
+}
+
 // O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
 // LIMIT explícito no .select() — sem paginar de verdade, qualquer tabela/junção
 // com mais de 1000 linhas vem cortada em silêncio (foi um bug real aqui: sem
@@ -799,8 +869,14 @@ export default async function handler(req, res) {
     const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('id, match_id, team_id, corners, shots:total_shots, shots_on_target'));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
 
-    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows, statsMcnemarRows] = await Promise.all([
+    const ligaIdNumParaShell = liga_id ? Number(liga_id) : null;
+    const promiseGruposShellCartoesEscanteios = precisaResumoPreCalculado
+      ? buscarGruposShellCartoesEscanteios(supabase, { modelo, mercado, ligaIdNum: ligaIdNumParaShell })
+      : Promise.resolve([]);
+
+    const [predicoesAntigas, predicoesBenchmarkingRaw, pinnacleOddsRaw, resumoRows, statsIcRows, statsMcnemarRows, gruposShellCartoesEscanteios] = await Promise.all([
       promisePredicoesAntigas, promisePredicoesBenchmarking, promisePinnacleOdds, promiseResumoRows, promiseStatsIcRows, promiseStatsMcnemarRows,
+      promiseGruposShellCartoesEscanteios,
     ]);
     let pinnacleLinhas = normalizarPinnacleDevigada(pinnacleOddsRaw);
     if (mercado) pinnacleLinhas = pinnacleLinhas.filter((l) => l.market === mercado);
@@ -865,7 +941,7 @@ export default async function handler(req, res) {
       log_loss_isotonic: null, brier_isotonic: null, accuracy_isotonic: null,
       por_selecao: [],
       ...anexarIc(r.model_name, r.market, r.league_id),
-    }));
+    })).concat(gruposShellCartoesEscanteios);
 
     // v9 gravou '1x2' (minúscula) — normalizar pra '1X2' antes de qualquer cálculo
     // pra garantir consistência em chaveMercado, chaveOdds e chaveGrupo.
