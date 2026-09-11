@@ -41,8 +41,17 @@ import ModeloCartoesFaltas from '../components/ModeloCartoesFaltas';
 const LINHAS_OU_EV = [0.5, 1.5, 2.5, 3.5, 4.5];
 const LINHAS_OU_CORNERS_EV = [7.5, 8.5, 9.5, 10.5, 11.5]; // total do jogo — mesmas linhas de LINHAS_OU_CORNERS
 const LINHAS_OU_CORNERS_TIME_EV = [3.5, 4.5, 5.5, 6.5]; // por time — mesmas linhas do card "Escanteios por time"
+// Cartões (classificador de árvore, custom_model_configs -- modelo
+// DIFERENTE do misto acima, ver ModeloCartoesFaltas) -- mesmas linhas já
+// treinadas (dh.LINHAS_CARTOES_OU/LINHAS_CARTOES_TIME_OU). Faltas fica de
+// fora de propósito: não existe mercado real de odds pra faltas em nenhuma
+// fonte já integrada (confirmado via SQL, ver CLAUDE.md) -- sem odds não
+// tem "vs. mercado" pra comparar, só a probabilidade do modelo sozinha
+// (já mostrada no card "Cartões e Faltas" acima).
+const LINHAS_CARTOES_EV = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5]; // total do jogo
+const LINHAS_CARTOES_TIME_EV = [0.5, 1.5, 2.5, 3.5, 4.5]; // por time
 
-function mercadosComparaveis(mercadosGols, mercadosCorners) {
+function mercadosComparaveis(mercadosGols, mercadosCorners, mercadosCartoes) {
   const saida = {};
   if (mercadosGols) {
     saida['1X2'] = mercadosGols['1X2'];
@@ -59,7 +68,28 @@ function mercadosComparaveis(mercadosGols, mercadosCorners) {
       saida[`corners_over_under_team_2_${rotuloLinha(linha)}`] = mercadosCorners[`corners_away_over_under_${rotuloLinha(linha)}`];
     }
   }
+  // `mercadosCartoes` já vem indexado pelo nome REAL de odds_market (ver
+  // mercadoCartoesOddsReal) -- só espalha direto, sem tradução aqui.
+  if (mercadosCartoes) Object.assign(saida, mercadosCartoes);
   return saida;
+}
+
+// Nome do mercado como o CLASSIFICADOR de Cartões grava em model_predictions
+// (`cartoes_over_under_X.5`/`cartoes_home_over_under_X.5`/`cartoes_away_
+// over_under_X.5`) -> nome REAL usado em odds_market pela OddsPapi
+// (`bookings_over_under_full_time_X.5`/`_team_1_X.5`/`_team_2_X.5`) --
+// mesmo mapa (motivo idêntico) de mercadoOddsReal em api/model-stats.js/
+// api/backtest-betting.js, duplicado aqui porque esses arquivos são
+// serverless (Vercel) e esta página lê `model_predictions`/`odds_market`
+// direto via supabase-js, sem passar pela function.
+function mercadoCartoesOddsReal(market) {
+  let m = /^cartoes_over_under_(\d+\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_full_time_${m[1]}`;
+  m = /^cartoes_home_over_under_(\d+\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_team_1_${m[1]}`;
+  m = /^cartoes_away_over_under_(\d+\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_team_2_${m[1]}`;
+  return null;
 }
 
 // Todas as strings de `market` acima, num array — usado pra filtrar a
@@ -72,6 +102,9 @@ const MERCADOS_EV = [
   'corners_1x2', ...LINHAS_OU_CORNERS_EV.map((l) => `corners_over_under_full_time_${rotuloLinha(l)}`),
   ...LINHAS_OU_CORNERS_TIME_EV.map((l) => `corners_over_under_team_1_${rotuloLinha(l)}`),
   ...LINHAS_OU_CORNERS_TIME_EV.map((l) => `corners_over_under_team_2_${rotuloLinha(l)}`),
+  ...LINHAS_CARTOES_EV.map((l) => `bookings_over_under_full_time_${rotuloLinha(l)}`),
+  ...LINHAS_CARTOES_TIME_EV.map((l) => `bookings_over_under_team_1_${rotuloLinha(l)}`),
+  ...LINHAS_CARTOES_TIME_EV.map((l) => `bookings_over_under_team_2_${rotuloLinha(l)}`),
 ];
 
 function formatarSnapshot(capturedAt) {
@@ -90,6 +123,12 @@ function rotuloMercado(mercado) {
   if (ouCornersTime1) return `O/U ${ouCornersTime1[1]} escanteios (mandante)`;
   const ouCornersTime2 = mercado.match(/^corners_over_under_team_2_(\d+\.\d)$/);
   if (ouCornersTime2) return `O/U ${ouCornersTime2[1]} escanteios (visitante)`;
+  const ouCartoesTotal = mercado.match(/^bookings_over_under_full_time_(\d+\.\d)$/);
+  if (ouCartoesTotal) return `O/U ${ouCartoesTotal[1]} cartões (total)`;
+  const ouCartoesTime1 = mercado.match(/^bookings_over_under_team_1_(\d+\.\d)$/);
+  if (ouCartoesTime1) return `O/U ${ouCartoesTime1[1]} cartões (mandante)`;
+  const ouCartoesTime2 = mercado.match(/^bookings_over_under_team_2_(\d+\.\d)$/);
+  if (ouCartoesTime2) return `O/U ${ouCartoesTime2[1]} cartões (visitante)`;
   return mercado;
 }
 
@@ -112,18 +151,37 @@ function avaliarSelecao(mercado, selecao, resultado) {
   const ouGols = mercado.match(/^over_under_(\d+\.\d)$/);
   if (ouGols) return (selecao === 'over') === (totalGols > Number(ouGols[1]));
 
-  if (resultado.cornersHome == null || resultado.cornersAway == null) return null;
-  if (mercado === 'corners_1x2') {
-    const vencedor = resultado.cornersHome > resultado.cornersAway ? 'home' : resultado.cornersHome < resultado.cornersAway ? 'away' : 'draw';
-    return selecao === vencedor;
+  const ehMercadoCorners = mercado === 'corners_1x2' || /^corners_over_under_/.test(mercado);
+  if (ehMercadoCorners) {
+    if (resultado.cornersHome == null || resultado.cornersAway == null) return null;
+    if (mercado === 'corners_1x2') {
+      const vencedor = resultado.cornersHome > resultado.cornersAway ? 'home' : resultado.cornersHome < resultado.cornersAway ? 'away' : 'draw';
+      return selecao === vencedor;
+    }
+    const totalCorners = resultado.cornersHome + resultado.cornersAway;
+    const ouCornersTotal = mercado.match(/^corners_over_under_full_time_(\d+\.\d)$/);
+    if (ouCornersTotal) return (selecao === 'over') === (totalCorners > Number(ouCornersTotal[1]));
+    const ouCornersTime1 = mercado.match(/^corners_over_under_team_1_(\d+\.\d)$/);
+    if (ouCornersTime1) return (selecao === 'over') === (resultado.cornersHome > Number(ouCornersTime1[1]));
+    const ouCornersTime2 = mercado.match(/^corners_over_under_team_2_(\d+\.\d)$/);
+    if (ouCornersTime2) return (selecao === 'over') === (resultado.cornersAway > Number(ouCornersTime2[1]));
+    return null;
   }
-  const totalCorners = resultado.cornersHome + resultado.cornersAway;
-  const ouCornersTotal = mercado.match(/^corners_over_under_full_time_(\d+\.\d)$/);
-  if (ouCornersTotal) return (selecao === 'over') === (totalCorners > Number(ouCornersTotal[1]));
-  const ouCornersTime1 = mercado.match(/^corners_over_under_team_1_(\d+\.\d)$/);
-  if (ouCornersTime1) return (selecao === 'over') === (resultado.cornersHome > Number(ouCornersTime1[1]));
-  const ouCornersTime2 = mercado.match(/^corners_over_under_team_2_(\d+\.\d)$/);
-  if (ouCornersTime2) return (selecao === 'over') === (resultado.cornersAway > Number(ouCornersTime2[1]));
+
+  // Cartões (classificador de árvore, resultado real vem de buscarCartoesReais
+  // -- mesma fonte primária/fallback do script de treino, ver o comentário lá).
+  const ehMercadoCartoes = /^bookings_over_under_/.test(mercado);
+  if (ehMercadoCartoes) {
+    if (resultado.cartoesHome == null || resultado.cartoesAway == null) return null;
+    const ouCartoesTotal = mercado.match(/^bookings_over_under_full_time_(\d+\.\d)$/);
+    if (ouCartoesTotal) return (selecao === 'over') === ((resultado.cartoesHome + resultado.cartoesAway) > Number(ouCartoesTotal[1]));
+    const ouCartoesTime1 = mercado.match(/^bookings_over_under_team_1_(\d+\.\d)$/);
+    if (ouCartoesTime1) return (selecao === 'over') === (resultado.cartoesHome > Number(ouCartoesTime1[1]));
+    const ouCartoesTime2 = mercado.match(/^bookings_over_under_team_2_(\d+\.\d)$/);
+    if (ouCartoesTime2) return (selecao === 'over') === (resultado.cartoesAway > Number(ouCartoesTime2[1]));
+    return null;
+  }
+
   return null;
 }
 
@@ -143,6 +201,38 @@ async function buscarCornersReais(matchId, homeTeamId, awayTeamId) {
     return msf?.find((r) => r.team_id === teamId)?.corners ?? null;
   };
   return { cornersHome: cornersDoTime(homeTeamId), cornersAway: cornersDoTime(awayTeamId) };
+}
+
+// Cartões (amarelo + segundo amarelo + vermelho) reais por time da partida
+// finalizada -- mesma fonte primária/fallback de scripts/dados_historicos.py
+// (`_carregar_total_cartoes_por_partida`/`_carregar_cartoes_por_time_por_
+// partida`): `match_events` evento a evento é a fonte confiável quando
+// existe; `match_stats_fotmob.yellow_cards`/`red_cards` tem bug real (fica
+// zerado mesmo com cartão de verdade em boa parte de 2025-2026, ver
+// CONTEXTO_PROJETO.md) e só serve de fallback pras partidas sem NENHUM
+// evento capturado ainda. Grão de partida única aqui -- não precisa da
+// lógica de "cobertura por lote" que o script de treino usa pra decidir
+// fonte partida a partida em massa.
+async function buscarCartoesReais(matchId, homeTeamId, awayTeamId) {
+  const { data: eventos } = await supabase
+    .from('match_events')
+    .select('team_id, event_type')
+    .eq('match_id', matchId)
+    .in('event_type', ['yellow_card', 'second_yellow_card', 'red_card']);
+  if (eventos && eventos.length > 0) {
+    const cartoesDoTime = (teamId) => eventos.filter((e) => e.team_id === teamId).length;
+    return { cartoesHome: cartoesDoTime(homeTeamId), cartoesAway: cartoesDoTime(awayTeamId) };
+  }
+  const { data: msf } = await supabase
+    .from('match_stats_fotmob')
+    .select('team_id, yellow_cards, red_cards')
+    .eq('match_id', matchId);
+  const cartoesDoTimeFallback = (teamId) => {
+    const linha = msf?.find((r) => r.team_id === teamId);
+    if (!linha || linha.yellow_cards == null || linha.red_cards == null) return null;
+    return Number(linha.yellow_cards) + Number(linha.red_cards);
+  };
+  return { cartoesHome: cartoesDoTimeFallback(homeTeamId), cartoesAway: cartoesDoTimeFallback(awayTeamId) };
 }
 
 const LINHAS_OU_GOLS = [0.5, 1.5, 2.5, 3.5, 4.5];
@@ -1769,6 +1859,11 @@ export default function AnaliseAvancadaEvento() {
   const [oddsRaw, setOddsRaw] = useState([]);
   const [snapshotSelecionado, setSnapshotSelecionado] = useState(''); // '' = mais recente de cada casa
   const [resultadoReal, setResultadoReal] = useState(null); // só preenchido pra partida finalizada
+  // Probabilidades do classificador de Cartões (model_predictions), já
+  // indexadas pelo nome REAL do mercado em odds_market (ver
+  // mercadoCartoesOddsReal) -- fonte separada do modelo misto acima, busca
+  // própria porque não faz parte de `model_match_estimates`.
+  const [mercadosCartoesModelo, setMercadosCartoesModelo] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [calibracaoRows, setCalibracaoRows] = useState([]);
@@ -1853,7 +1948,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -1861,6 +1956,23 @@ export default function AnaliseAvancadaEvento() {
             .not('params', 'is', null),
           (j.status === 'scheduled' || finalizada) ? buscarOddsPaginado(matchId) : Promise.resolve([]),
           finalizada ? buscarCornersReais(matchId, j.home?.id, j.away?.id) : Promise.resolve(null),
+          finalizada ? buscarCartoesReais(matchId, j.home?.id, j.away?.id) : Promise.resolve(null),
+          // Classificador de Cartões (custom_model_configs) -- mesmas linhas/
+          // mercados de ModeloCartoesFaltas, buscadas aqui também porque essa
+          // seção (Verificação de EV) precisa da probabilidade indexada pelo
+          // nome REAL do mercado (mercadoCartoesOddsReal), não pelo nome
+          // interno que o card "Cartões e Faltas" usa.
+          (j.status === 'scheduled' || finalizada)
+            ? supabase
+                .from('model_predictions')
+                .select('model_name, market, selection, probability')
+                .eq('match_id', matchId)
+                .in('market', [
+                  ...LINHAS_CARTOES_EV.map((l) => `cartoes_over_under_${rotuloLinha(l)}`),
+                  ...LINHAS_CARTOES_TIME_EV.map((l) => `cartoes_home_over_under_${rotuloLinha(l)}`),
+                  ...LINHAS_CARTOES_TIME_EV.map((l) => `cartoes_away_over_under_${rotuloLinha(l)}`),
+                ])
+            : Promise.resolve({ data: [] }),
           // Calibração Platt/Isotonic já ajustada (model_calibration), mesmo
           // padrão de AnaliseEstatisticaJogo.jsx -- o edge/EV/Kelly abaixo
           // usa a probabilidade CALIBRADA quando existe pra essa combinação
@@ -1978,7 +2090,27 @@ export default function AnaliseAvancadaEvento() {
         setJogo(j);
         setOddsRaw(odds);
         setSnapshotSelecionado('');
-        setResultadoReal(finalizada ? { golsHome: j.home_goals, golsAway: j.away_goals, ...corners } : null);
+        setResultadoReal(finalizada ? { golsHome: j.home_goals, golsAway: j.away_goals, ...corners, ...cartoes } : null);
+
+        // Agrupa por (mercado REAL, seleção) preferindo o algoritmo default
+        // (xgboost) quando duas configs cobrem a mesma linha -- mesma lógica
+        // de dedup do card "Cartões e Faltas" (ModeloCartoesFaltas.jsx).
+        {
+          const porMercado = {};
+          for (const linha of cartoesModeloRows || []) {
+            const marketReal = mercadoCartoesOddsReal(linha.market);
+            if (!marketReal) continue;
+            const ehPreferido = linha.model_name?.endsWith('[xgboost]');
+            if (!porMercado[marketReal]) porMercado[marketReal] = { ehPreferido: false, probs: {} };
+            if (porMercado[marketReal].ehPreferido && !ehPreferido) continue;
+            if (ehPreferido && !porMercado[marketReal].ehPreferido) porMercado[marketReal].probs = {};
+            porMercado[marketReal].ehPreferido = porMercado[marketReal].ehPreferido || ehPreferido;
+            porMercado[marketReal].probs[linha.selection] = Number(linha.probability);
+          }
+          const saidaCartoes = {};
+          for (const [mercado, v] of Object.entries(porMercado)) saidaCartoes[mercado] = v.probs;
+          setMercadosCartoesModelo(Object.keys(saidaCartoes).length > 0 ? saidaCartoes : null);
+        }
         setCalibracaoRows(calib || []);
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
@@ -2077,8 +2209,8 @@ export default function AnaliseAvancadaEvento() {
 
   const finalizada = jogo?.status === 'finished';
   const verificacaoEV = useMemo(() => {
-    if (!(jogo?.status === 'scheduled' || finalizada) || (!mercadosGols && !mercadosCorners)) return [];
-    const comparaveis = mercadosComparaveis(mercadosGols, mercadosCorners);
+    if (!(jogo?.status === 'scheduled' || finalizada) || (!mercadosGols && !mercadosCorners && !mercadosCartoesModelo)) return [];
+    const comparaveis = mercadosComparaveis(mercadosGols, mercadosCorners, mercadosCartoesModelo);
     const linhas = [];
     for (const [bookmaker, oddsChave] of Object.entries(oddsPorBookmaker)) {
       for (const [mercado, probsModelo] of Object.entries(comparaveis)) {
@@ -2117,7 +2249,7 @@ export default function AnaliseAvancadaEvento() {
       }
     }
     return linhas.sort((a, b) => b.edge - a.edge);
-  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, oddsPorBookmaker, resultadoReal, modelSelecionado, indiceCalibracao]);
+  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, mercadosCartoesModelo, oddsPorBookmaker, resultadoReal, modelSelecionado, indiceCalibracao]);
 
   // Export cobre TODAS as linhas de verificacaoEV (todas as casas/mercados/
   // seleções, não só edge positivo) -- pedido explícito do usuário: "quero
