@@ -73,6 +73,35 @@ function normalizarMercado(m) {
   return m === '1x2' ? '1X2' : m;
 }
 
+// Cartões/Escanteios (custom_model_configs) usam nome de mercado interno
+// diferente do nome real em `odds_market` (OddsPapi) -- mesmo mapa de
+// api/model-stats.js (ver comentário lá pra explicação completa e a
+// medição real de qual bookmaker cobre cada grupo). Sem isso, nenhum
+// desses modelos nunca encontrava odd real pra apostar aqui.
+function mercadoOddsReal(market) {
+  let m = /^cartoes_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_full_time_${m[1]}`;
+  m = /^cartoes_home_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_team_1_${m[1]}`;
+  m = /^cartoes_away_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_team_2_${m[1]}`;
+  m = /^corners_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `corners_over_under_full_time_${m[1]}`;
+  return market;
+}
+
+const LINHAS_CARTOES_OU = ['1.5', '2.5', '3.5', '4.5', '5.5', '6.5'];
+const LINHAS_CARTOES_TIME_OU = ['0.5', '1.5', '2.5', '3.5', '4.5'];
+const LINHAS_CORNERS_OU = ['7.5', '8.5', '9.5', '10.5', '11.5', '12.5'];
+
+const MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS = [
+  ...LINHAS_CARTOES_OU.map((l) => `bookings_over_under_full_time_${l}`),
+  ...LINHAS_CORNERS_OU.map((l) => `corners_over_under_full_time_${l}`),
+];
+const MERCADOS_CARTOES_TIME_ODDS = LINHAS_CARTOES_TIME_OU.flatMap((l) => [
+  `bookings_over_under_team_1_${l}`, `bookings_over_under_team_2_${l}`,
+]);
+
 // `calcularResultadosReais` foi extraída pra api/_lib/resultadosReais.js
 // (compartilhada com api/model-stats.js, era código idêntico duplicado nos
 // dois arquivos) -- ver esse módulo pra explicação completa do porquê de
@@ -260,7 +289,7 @@ export default async function handler(req, res) {
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
       // Fallback pra `bookmaker='pinnacle'` -- `media_mercado` só existe pros
@@ -292,6 +321,12 @@ export default async function handler(req, res) {
         ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', mercado))
         : Promise.resolve([]),
       buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
+      // Odds reais de Cartões/Escanteios (ver mercadoOddsReal acima) --
+      // sempre buscadas (não gated por `mercado`, ao contrário do fallback
+      // Pinnacle logo acima), mesma lista pequena e fixa de mercados que
+      // api/model-stats.js usa pro mesmo propósito.
+      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS)),
+      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'betano').in('market', MERCADOS_CARTOES_TIME_ODDS)),
       // Sem filtro `.not(...)` -- também precisamos de shots/shots_on_target
       // (mercados novos), que nem sempre são preenchidos junto com corners
       // (achado real: 2226 linhas têm shots sem corners, ou vice-versa).
@@ -307,7 +342,7 @@ export default async function handler(req, res) {
     // 1 casa só quando já existe uma média melhor pros 3 mercados antigos).
     const chavesComMediaMercado = new Set(oddsRowsAntigas.map((r) => `${r.match_id}__${r.market}`));
     const oddsRowsPinnacleFallback = oddsRowsPinnacle.filter((r) => !chavesComMediaMercado.has(`${r.match_id}__${r.market}`));
-    const oddsRowsBrutas = [...oddsRowsAntigas, ...oddsRowsPinnacleFallback, ...normalizarOddsBenchmarking(marketOddsRaw)];
+    const oddsRowsBrutas = [...oddsRowsAntigas, ...oddsRowsPinnacleFallback, ...normalizarOddsBenchmarking(marketOddsRaw), ...oddsCartoesEscanteiosTotal, ...oddsCartoesTime];
 
     const calibPorChave = {};
     calibracoes.forEach(c => {
@@ -364,7 +399,7 @@ export default async function handler(req, res) {
       const resultado = resultadosReais[p.match_id];
       if (!resultado) continue; // não finalizada
 
-      const chaveOdds = `${p.match_id}__${p.market}`;
+      const chaveOdds = `${p.match_id}__${mercadoOddsReal(p.market)}`;
       const oddReal = oddsPorMatchMercado[chaveOdds]?.[p.selection];
       const pMercado = probMercadoPorChave[chaveOdds]?.[p.selection];
       if (oddReal == null || pMercado == null) continue; // sem odds = não simula
