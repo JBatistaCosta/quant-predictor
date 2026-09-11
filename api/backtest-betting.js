@@ -31,6 +31,7 @@
 //   /api/backtest-betting?edge_minimo=0.03&staking=kelly      (fração/corte de EV/teto vêm da faixa de odd de cada aposta)
 //   /api/backtest-betting?modelo=dixon_coles_walkforward_v1&mercado=1X2&liga_id=4
 //   /api/backtest-betting?usar_calibracao=platt   (usa a prob. calibrada em vez da crua, tanto pro edge quanto pro Kelly)
+//   /api/backtest-betting?data_inicio=2026-01-01&data_fim=2026-06-30   (recorta match_date -- default é o histórico inteiro)
 //
 // Cada grupo em `grupos` traz `serie_temporal` (ver api/_lib/curvaPnlEv.js):
 // Lucro Real e Valor Esperado (EV) acumulados cronologicamente + drawdown,
@@ -258,10 +259,17 @@ export default async function handler(req, res) {
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
   const supabase = getSupabase();
 
-  const { modelo, mercado, liga_id } = req.query;
+  const { modelo, mercado, liga_id, data_inicio, data_fim } = req.query;
   const edgeMinimo = req.query.edge_minimo != null ? Number(req.query.edge_minimo) : 0.02;
   const staking = req.query.staking === 'kelly' ? 'kelly' : 'flat';
   const usarCalibracao = ['platt', 'isotonic'].includes(req.query.usar_calibracao) ? req.query.usar_calibracao : 'nenhuma';
+  // Período customizável (pedido do usuário) -- por padrão o backtest roda
+  // em cima de TODO o histórico disponível. `data_inicio`/`data_fim` são
+  // datas ISO (YYYY-MM-DD) que recortam `matches.match_date`; `data_fim`
+  // é tratado como fim do DIA (23:59:59) pra incluir partidas daquele dia
+  // inteiro, não só as anteriores à meia-noite.
+  const dataInicioMs = data_inicio ? Date.parse(data_inicio) : null;
+  const dataFimMs = data_fim ? Date.parse(data_fim) + 24 * 60 * 60 * 1000 - 1 : null;
 
   try {
     const [predicoesAntigas, predicoesBenchmarkingRaw] = await Promise.all([
@@ -353,7 +361,16 @@ export default async function handler(req, res) {
     });
 
     const ligaIdNum = liga_id ? Number(liga_id) : null;
-    const matchesValidos = todasMatches.filter(m => matchIdsSet.has(m.id) && (!ligaIdNum || m.league_id === ligaIdNum));
+    const matchesValidos = todasMatches.filter(m => {
+      if (!matchIdsSet.has(m.id)) return false;
+      if (ligaIdNum && m.league_id !== ligaIdNum) return false;
+      if (dataInicioMs != null || dataFimMs != null) {
+        const dataMs = Date.parse(m.match_date);
+        if (dataInicioMs != null && dataMs < dataInicioMs) return false;
+        if (dataFimMs != null && dataMs > dataFimMs) return false;
+      }
+      return true;
+    });
     const matchIdsValidos = new Set(matchesValidos.map(m => m.id));
     const matchPorId = {};
     matchesValidos.forEach(m => { matchPorId[m.id] = m; });
@@ -473,7 +490,7 @@ export default async function handler(req, res) {
     } : null;
 
     res.status(200).json({
-      parametros: { edge_minimo: edgeMinimo, staking, staking_por_faixa: staking === 'kelly', usar_calibracao: usarCalibracao },
+      parametros: { edge_minimo: edgeMinimo, staking, staking_por_faixa: staking === 'kelly', usar_calibracao: usarCalibracao, data_inicio: data_inicio || null, data_fim: data_fim || null },
       resumo_geral: resumoGeral,
       grupos,
     });

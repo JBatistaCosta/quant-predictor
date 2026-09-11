@@ -424,6 +424,10 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
   // volume de amostra disponível hoje, então não é um default seguro.
   const [usarCalibracao, setUsarCalibracao] = useState('platt');
   const [grupoCurvaIdx, setGrupoCurvaIdx] = useState(0);
+  // Período customizável (pedido do usuário) -- vazio = histórico inteiro
+  // (comportamento de sempre, ver api/backtest-betting.js).
+  const [dataInicio, setDataInicio] = useState('');
+  const [dataFim, setDataFim] = useState('');
 
   const rodar = async () => {
     setCarregando(true);
@@ -433,6 +437,8 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
       if (filtroModelo) params.set('modelo', filtroModelo);
       if (filtroMercado) params.set('mercado', filtroMercado);
       if (filtroLiga) params.set('liga_id', filtroLiga);
+      if (dataInicio) params.set('data_inicio', dataInicio);
+      if (dataFim) params.set('data_fim', dataFim);
       const resp = await fetch(apiUrl(`/api/backtest-betting?${params}`));
       const dados = await resp.json();
       if (!resp.ok) throw new Error(dados.error?.message || 'Erro ao rodar backtest.');
@@ -483,6 +489,16 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
             <option value="isotonic">Isotonic Regression</option>
           </select>
         </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data inicial</label>
+          <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100" />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data final</label>
+          <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-2 text-sm text-slate-100" />
+        </div>
         <button onClick={rodar} disabled={carregando}
           className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm">
           {carregando ? <Loader2 size={16} className="animate-spin" /> : <PlayCircle size={16} />} Rodar backtest
@@ -516,6 +532,14 @@ function BacktestApostas({ ligasPorId, filtroModelo, filtroMercado, filtroLiga }
                   <div className="text-[10px] text-slate-500 uppercase">Estatisticamente EV+?</div>
                   <div className={`text-lg font-bold ${resultado.resumo_geral.significativo ? 'text-emerald-400' : 'text-slate-500'}`}>{resultado.resumo_geral.significativo ? 'Sim' : 'Não'}</div>
                 </div>
+                {(resultado.parametros?.data_inicio || resultado.parametros?.data_fim) && (
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase">Período</div>
+                    <div className="text-lg font-bold text-slate-300">
+                      {resultado.parametros.data_inicio || 'início'} a {resultado.parametros.data_fim || 'hoje'}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
