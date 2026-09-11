@@ -105,26 +105,23 @@ function EloTimelineChart({ series }) {
 
   const todosPontos = useMemo(() => series.flatMap(s => s.pontos), [series]);
 
-  if (todosPontos.length === 0) {
-    return <p className="text-xs text-slate-600 py-10 text-center">Sem histórico suficiente pra montar a timeline.</p>;
-  }
-
+  // domX/domY precisam existir incondicionalmente (mesmo com todosPontos
+  // vazio) porque `mover`, hook abaixo, fecha sobre eles -- todo hook tem
+  // que ser chamado em toda renderização, na mesma ordem (regra do React).
+  // Um `return` condicional ANTES de useCallback/useMemo (como era antes)
+  // faz o Nº de hooks variar entre renderizações da MESMA instância sempre
+  // que a tela troca de nível/país e o gráfico passa de "com pontos" pra
+  // "sem pontos" (ou vice-versa) -- React detecta e derruba a árvore
+  // inteira (sem ErrorBoundary no app, vira tela branca). Bug real: foi
+  // exatamente isso que quebrava a página ao trocar qualquer filtro (não só
+  // Geral/confederação), incluindo o país em "Federação".
+  const temPontos = todosPontos.length > 0;
   const datasMs = todosPontos.map(p => p.data.getTime());
-  const domX = [Math.min(...datasMs), Math.max(...datasMs)];
+  const domX = temPontos ? [Math.min(...datasMs), Math.max(...datasMs)] : [0, 1];
   const ratings = todosPontos.map(p => p.rating);
-  const domYBruto = [Math.min(...ratings), Math.max(...ratings)];
+  const domYBruto = temPontos ? [Math.min(...ratings), Math.max(...ratings)] : [0, 1];
   const folga = Math.max(10, (domYBruto[1] - domYBruto[0]) * 0.08);
   const domY = [Math.floor((domYBruto[0] - folga) / 25) * 25, Math.ceil((domYBruto[1] + folga) / 25) * 25];
-
-  const x = escalaLinear(domX, [margem.esquerda, largura - margem.direita]);
-  const y = escalaLinear(domY, [altura - margem.baixo, margem.topo]);
-
-  const tickY = 4;
-  const passoY = (domY[1] - domY[0]) / tickY;
-
-  const tickX = 5;
-  const passoX = (domX[1] - domX[0]) / tickX;
-  const anoFormato = (ms) => new Date(ms).getFullYear();
 
   const mover = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect();
@@ -151,6 +148,20 @@ function EloTimelineChart({ series }) {
       return { ...s, ponto: maisProximo };
     });
   }, [hover, series]);
+
+  if (!temPontos) {
+    return <p className="text-xs text-slate-600 py-10 text-center">Sem histórico suficiente pra montar a timeline.</p>;
+  }
+
+  const x = escalaLinear(domX, [margem.esquerda, largura - margem.direita]);
+  const y = escalaLinear(domY, [altura - margem.baixo, margem.topo]);
+
+  const tickY = 4;
+  const passoY = (domY[1] - domY[0]) / tickY;
+
+  const tickX = 5;
+  const passoX = (domX[1] - domX[0]) / tickX;
+  const anoFormato = (ms) => new Date(ms).getFullYear();
 
   return (
     <div className="relative" ref={containerRef} onMouseMove={mover} onMouseLeave={() => setHover(null)}>
