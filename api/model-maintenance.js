@@ -4481,10 +4481,19 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
 //   fuzzy-matching por nome usado com a API-Football (sync-match-stats.js),
 //   porque o crosswalk já resolve apelido/abreviação.
 // - Temporada: Brasileirão/Libertadores/MLS usam ano único no FotMob
-//   ("2024", igual ao nosso `matches.season`); testado ao vivo que as 5
-//   ligas europeias (calendário ago-mai) EXIGEM intervalo ("2024/2025" —
-//   "2024" sozinho devolve 0 fixtures) — convertido automaticamente pra
-//   essas ligas via LIGAS_TEMPORADA_PARTIDA_FOTMOB.
+//   ("2024", igual ao nosso `matches.season`); testado ao vivo que ligas de
+//   calendário ago-mai EXIGEM intervalo ("2024/2025" — "2024" sozinho
+//   devolve 0 fixtures) — convertido automaticamente pra essas ligas via
+//   LIGAS_TEMPORADA_PARTIDA_FOTMOB. Bug real (10/09): a lista só tinha as
+//   5 grandes ligas domésticas testadas originalmente; as 3 competições
+//   europeias de clubes (Champions/Europa/Conference) e mais 3 domésticas
+//   com o MESMO calendário (Championship inglês, Eredivisie, Primeira
+//   Liga) ficaram de fora, testadas e confirmadas com o mesmo problema
+//   (season=2026 -> 0 fixtures, season=2026/2027 -> fixtures reais) só
+//   depois que o botão "Atualizar" de Eventos ficou preso pra sempre em
+//   jogos de Champions League já encerrados -- `getFixtureIndex` monta um
+//   índice vazio pra essas ligas, então nenhum jogo nunca casa, sem erro
+//   nenhum visível (cai em `sem_casamento_ou_falha` silenciosamente).
 // - Custo por partida é alto (payload de matchDetails ~250KB + ~5 escritas
 //   no banco) — processamento real por chamada é limitado a
 //   MAX_PARTIDAS_POR_CHAMADA (independente do `limite` pedido) pra caber no
@@ -4493,7 +4502,11 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
 //   escolhido ou esgotar os jogos pendentes.
 // ============================================================
 
-const LIGAS_TEMPORADA_PARTIDA_FOTMOB = new Set([4, 7, 10, 13, 16]); // Premier League, La Liga, Serie A, Bundesliga, Ligue 1
+const LIGAS_TEMPORADA_PARTIDA_FOTMOB = new Set([
+  4, 7, 10, 13, 16, // Premier League, La Liga, Serie A, Bundesliga, Ligue 1
+  24, 25, 26, // Championship, Eredivisie, Primeira Liga
+  19, 48, 49, // UEFA Champions League, Europa League, Conference League
+]);
 const MAX_PARTIDAS_POR_CHAMADA_FOTMOB = 15;
 
 function temporadaFotmob(ligaId, temporada) {
@@ -5367,8 +5380,9 @@ async function tarefaImportarJogosFotmob(supabase, ligaId, temporada) {
     .eq('league_id', ligaId).eq('sistema', 'fotmob').maybeSingle();
   if (!fonte) return { error: `Liga id=${ligaId} ainda não tem crosswalk FotMob cadastrado (liga_fonte_externa, sistema=fotmob) — use "+Nova Liga > Importar do FotMob" em /ligas se essa liga nunca foi vinculada.` };
   // temporada aqui é sempre no formato ÚNICO já usado em matches.season
-  // (ex: "2024") — temporadaFotmob() converte só pra chamada externa nas 5
-  // ligas europeias (calendário ago-mai, FotMob exige "2024/2025"), mas o
+  // (ex: "2024") — temporadaFotmob() converte só pra chamada externa nas
+  // ligas de calendário ago-mai (FotMob exige "2024/2025",
+  // LIGAS_TEMPORADA_PARTIDA_FOTMOB), mas o
   // valor GRAVADO continua no formato único (temporadaArmazenada), pra não
   // fraturar o agrupamento por temporada que o resto do app já usa pra essa
   // liga (ver achado em tarefaPartidasFotmob acima).
