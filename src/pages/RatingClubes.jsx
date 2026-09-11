@@ -29,6 +29,7 @@ const nomePais = (codigo) => NOME_PAIS[codigo] || codigo;
 // ordem fixa, nunca ciclada por rank (ver skill de dataviz do projeto).
 const PALETA = ['#3987e5', '#008300', '#d55181', '#c98500', '#199e70', '#d95926', '#9085e9', '#e66767'];
 const MAX_SELECIONADOS = 6;
+const ITENS_POR_PAGINA = 30;
 
 async function buscarPaginado(query) {
   const linhas = [];
@@ -247,6 +248,7 @@ export default function RatingClubes() {
   const [selecionados, setSelecionados] = useState([]);
   const [historico, setHistorico] = useState([]); // { team_id, match_date, rating_depois }
   const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [pagina, setPagina] = useState(0); // página atual da tabela de ranking (0-indexed)
 
   const coresRef = useRef(new Map());
   const proximoSlotRef = useRef(0);
@@ -337,6 +339,14 @@ export default function RatingClubes() {
   useEffect(() => {
     setSelecionados(ranking.slice(0, 5).map(l => l.team_id));
   }, [ranking]);
+
+  // Volta pra primeira página sempre que o recorte muda (nível, país,
+  // confederação, liga ou modo "numa data") — senão o usuário pode ficar
+  // preso numa página que não existe mais no recorte novo (ex.: página 20
+  // no "Geral" e depois troca pra "Federação"/Brasil, que tem só 1 página).
+  useEffect(() => {
+    setPagina(0);
+  }, [nivel, paisSelecionado, confederacaoSelecionada, ligaId, modoRanking, dataSelecionada]);
 
   // Ranking reconstruído numa data escolhida — só roda quando o modo "nessa
   // data" está ativo, usa o roster (nomes/escudos) já filtrado acima.
@@ -513,42 +523,72 @@ export default function RatingClubes() {
             const carregando = emDataMode ? carregandoRankingData : (carregandoRanking || (nivel !== 'liga' && carregandoMapa));
             if (carregando) return <div className="text-slate-500 text-center py-10 text-sm">Carregando...</div>;
             if (linhasExibidas.length === 0) return <div className="text-slate-500 text-center py-10 text-sm">Sem rating calculado ainda pra esse recorte.</div>;
+
+            const totalPaginas = Math.max(1, Math.ceil(linhasExibidas.length / ITENS_POR_PAGINA));
+            const paginaAtual = Math.min(pagina, totalPaginas - 1);
+            const inicio = paginaAtual * ITENS_POR_PAGINA;
+            const linhasPagina = linhasExibidas.slice(inicio, inicio + ITENS_POR_PAGINA);
+
             return (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase tracking-wider">
-                    <th className="text-left p-2.5 pl-4">#</th>
-                    <th className="text-left p-2.5">Time</th>
-                    <th className="text-center p-2.5">Rating</th>
-                    <th className="text-center p-2.5 pr-4">{emDataMode ? 'Ref.' : 'Jogos'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {linhasExibidas.map((linha, i) => {
-                    const marcado = selecionados.includes(linha.team_id);
-                    return (
-                      <tr
-                        key={linha.team_id}
-                        onClick={() => alternarTime(linha.team_id)}
-                        className={`cursor-pointer transition-colors ${marcado ? 'bg-emerald-500/10' : 'hover:bg-slate-700/20'}`}
-                      >
-                        <td className="p-2.5 pl-4 text-slate-500">{i + 1}</td>
-                        <td className="p-2.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {marcado && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: corDoTime(linha.team_id) }} />}
-                            {linha.teams?.crest_url ? <img src={linha.teams.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
-                            <span className="truncate text-slate-200">{linha.teams?.name}</span>
-                          </div>
-                        </td>
-                        <td className="p-2.5 text-center font-bold text-slate-100 tabular-nums">{Math.round(linha.rating)}</td>
-                        <td className="p-2.5 pr-4 text-center text-slate-400 tabular-nums text-xs">
-                          {emDataMode ? (linha.referencia ? linha.referencia.slice(0, 10) : 'sem jogo') : linha.partidas}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-900 text-slate-500 text-[10px] uppercase tracking-wider">
+                      <th className="text-left p-2.5 pl-4">#</th>
+                      <th className="text-left p-2.5">Time</th>
+                      <th className="text-center p-2.5">Rating</th>
+                      <th className="text-center p-2.5 pr-4">{emDataMode ? 'Ref.' : 'Jogos'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {linhasPagina.map((linha, i) => {
+                      const marcado = selecionados.includes(linha.team_id);
+                      return (
+                        <tr
+                          key={linha.team_id}
+                          onClick={() => alternarTime(linha.team_id)}
+                          className={`cursor-pointer transition-colors ${marcado ? 'bg-emerald-500/10' : 'hover:bg-slate-700/20'}`}
+                        >
+                          <td className="p-2.5 pl-4 text-slate-500">{inicio + i + 1}</td>
+                          <td className="p-2.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {marcado && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: corDoTime(linha.team_id) }} />}
+                              {linha.teams?.crest_url ? <img src={linha.teams.crest_url} alt="" className="w-5 h-5 object-contain shrink-0" /> : <Shield size={16} className="text-slate-700 shrink-0" />}
+                              <span className="truncate text-slate-200">{linha.teams?.name}</span>
+                            </div>
+                          </td>
+                          <td className="p-2.5 text-center font-bold text-slate-100 tabular-nums">{Math.round(linha.rating)}</td>
+                          <td className="p-2.5 pr-4 text-center text-slate-400 tabular-nums text-xs">
+                            {emDataMode ? (linha.referencia ? linha.referencia.slice(0, 10) : 'sem jogo') : linha.partidas}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {totalPaginas > 1 && (
+                  <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border-t border-slate-700 text-xs">
+                    <button
+                      onClick={() => setPagina(p => Math.max(0, p - 1))}
+                      disabled={paginaAtual === 0}
+                      className="px-2 py-1 rounded-md font-bold text-slate-400 hover:text-emerald-400 disabled:opacity-30 disabled:hover:text-slate-400"
+                    >
+                      ◀ Anterior
+                    </button>
+                    <span className="text-slate-500 tabular-nums">
+                      Página {paginaAtual + 1} de {totalPaginas} · {linhasExibidas.length} times
+                    </span>
+                    <button
+                      onClick={() => setPagina(p => Math.min(totalPaginas - 1, p + 1))}
+                      disabled={paginaAtual >= totalPaginas - 1}
+                      className="px-2 py-1 rounded-md font-bold text-slate-400 hover:text-emerald-400 disabled:opacity-30 disabled:hover:text-slate-400"
+                    >
+                      Próxima ▶
+                    </button>
+                  </div>
+                )}
+              </>
             );
           })()}
         </div>
