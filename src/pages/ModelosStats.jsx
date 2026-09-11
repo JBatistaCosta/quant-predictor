@@ -231,7 +231,11 @@ const SELECOES_POR_MERCADO = {
 };
 
 function exportarCSV(partidas, filtroModelo, filtroMercado, ligasPorId) {
-  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['home', 'draw', 'away'];
+  // Fallback pra qualquer mercado over/under não listado acima (Cartões/
+  // Escanteios têm dezenas de linhas, uma entrada por linha seria
+  // redundante -- só 1X2/faixa_gols/faixa_corners precisam de seleções
+  // nomeadas, e esses já estão no dicionário).
+  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['over', 'under'];
   const headers = [
     'ID', 'Data-hora', 'Liga', 'Mandante', 'Visitante',
     'Gols mandante', 'Gols visitante',
@@ -305,7 +309,11 @@ function RelatorioPartidas({ filtroModelo, filtroMercado, ligasPorId }) {
 
   const temXg = partidas?.some(p => p.xg_home_previsto != null || p.xg_away_previsto != null);
   const temXgot = partidas?.some(p => p.xgot_home_previsto != null || p.xgot_away_previsto != null);
-  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['home', 'draw', 'away'];
+  // Fallback pra qualquer mercado over/under não listado acima (Cartões/
+  // Escanteios têm dezenas de linhas, uma entrada por linha seria
+  // redundante -- só 1X2/faixa_gols/faixa_corners precisam de seleções
+  // nomeadas, e esses já estão no dicionário).
+  const sels = SELECOES_POR_MERCADO[filtroMercado] || ['over', 'under'];
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">

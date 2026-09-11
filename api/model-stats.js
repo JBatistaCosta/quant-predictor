@@ -199,6 +199,55 @@ function normalizarMercado(m) {
   return m === '1x2' ? '1X2' : m;
 }
 
+// Cartões/Escanteios (custom_model_configs, treinar_modelo_custom*.py) usam
+// nome de mercado INTERNO (`cartoes_over_under_X.5`, `cartoes_home_over_
+// under_X.5`/`cartoes_away_over_under_X.5`, `corners_over_under_X.5`),
+// diferente do nome real gravado em `odds_market` pela OddsPapi
+// (`bookings_over_under_full_time_X.5`, `bookings_over_under_team_1_X.5`/
+// `team_2_X.5`, `corners_over_under_full_time_X.5`) -- sem este mapa a
+// busca de odds pra esses modelos NUNCA casava (achado real: os 23 modelos
+// já treinados desses mercados nunca apareciam com "vs. mercado" nem
+// entravam no backtest de EV+, apesar de existir odd real capturada desde
+// 14/08/2026). `team_1`=mandante/`team_2`=visitante, mesma convenção já
+// usada no resto do projeto (ver api/_lib/resultadosReais.js).
+function mercadoOddsReal(market) {
+  let m = /^cartoes_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_full_time_${m[1]}`;
+  m = /^cartoes_home_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_team_1_${m[1]}`;
+  m = /^cartoes_away_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `bookings_over_under_team_2_${m[1]}`;
+  m = /^corners_over_under_(\d\.\d)$/.exec(market);
+  if (m) return `corners_over_under_full_time_${m[1]}`;
+  return market;
+}
+
+// Mesmas linhas usadas em scripts/dados_historicos.py (LINHAS_CARTOES_OU/
+// LINHAS_CARTOES_TIME_OU) e no fallback fixo de escanteios (9.5) +
+// LINHAS_CORNERS_OU_EXTRA -- duplicado aqui em string (não dá pra importar
+// Python de dentro da function JS) só pra montar a lista de mercados a
+// buscar em `odds_market`, nunca usado como fonte de verdade de quais
+// configs existem (isso continua vindo de `custom_model_configs`).
+const LINHAS_CARTOES_OU = ['1.5', '2.5', '3.5', '4.5', '5.5', '6.5'];
+const LINHAS_CARTOES_TIME_OU = ['0.5', '1.5', '2.5', '3.5', '4.5'];
+const LINHAS_CORNERS_OU = ['7.5', '8.5', '9.5', '10.5', '11.5', '12.5'];
+
+// Cartões/escanteios TOTAIS: Pinnacle 'closing' é quem tem a melhor
+// cobertura pra esses dois grupos (18,4k/32,3k linhas, medido via SQL) --
+// mesma referência de "mercado eficiente" já usada no resto do painel.
+const MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS = [
+  ...LINHAS_CARTOES_OU.map((l) => `bookings_over_under_full_time_${l}`),
+  ...LINHAS_CORNERS_OU.map((l) => `corners_over_under_full_time_${l}`),
+];
+// Cartões POR TIME: achado real via SQL -- a Pinnacle não tem NENHUMA linha
+// 'closing' pra esse mercado específico (só 560 em 'pre_closing', contra
+// zero em 'closing'). Betano é quem tem a maior cobertura de fechamento
+// (4,4k linhas) -- usada aqui só pra este grupo, exceção documentada à
+// preferência por Pinnacle do resto do painel.
+const MERCADOS_CARTOES_TIME_ODDS = LINHAS_CARTOES_TIME_OU.flatMap((l) => [
+  `bookings_over_under_team_1_${l}`, `bookings_over_under_team_2_${l}`,
+]);
+
 // O Supabase (PostgREST) devolve no máximo 1000 linhas por chamada, mesmo sem
 // LIMIT explícito no .select() — sem paginar de verdade, qualquer tabela/junção
 // com mais de 1000 linhas vem cortada em silêncio (foi um bug real aqui: sem
@@ -733,6 +782,13 @@ export default async function handler(req, res) {
     const promiseTodasMatches = buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id'));
     const promiseOddsRowsAntigas = buscarTudoPaginado(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado'));
     const promiseMarketOddsRaw = buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away'));
+    // Odds reais de Cartões/Escanteios (ver mercadoOddsReal acima) --
+    // `.in('market', ...)` restringe a uma lista pequena e conhecida, mesmo
+    // cuidado de não escanear `odds_market` sem filtro de mercado (dezenas
+    // de outros mercados da Pinnacle nessa tabela, ver comentário mais
+    // acima sobre estourar o statement_timeout).
+    const promiseOddsCartoesEscanteiosTotal = buscarTudoPaginado(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS));
+    const promiseOddsCartoesTime = buscarTudoPaginado(() => supabase.from('odds_market').select('id, match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'betano').in('market', MERCADOS_CARTOES_TIME_ODDS));
     // Também traz shots/shots_on_target -- mesma tabela/linhas já buscadas
     // pra escanteios, sem query nova (os mercados novos de chutes/chutes no
     // gol de time reaproveitam essa mesma leitura). match_stats (FBref) foi
@@ -831,10 +887,11 @@ export default async function handler(req, res) {
 
     // As 5 promessas abaixo já foram disparadas mais acima (em paralelo com
     // a primeira leva) -- só falta esperar.
-    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime] = await Promise.all([
       promiseTodasMatches, promiseOddsRowsAntigas, promiseMarketOddsRaw, promiseCorneragensBrutas, promiseCalibracoes,
+      promiseOddsCartoesEscanteiosTotal, promiseOddsCartoesTime,
     ]);
-    const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw)];
+    const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw), ...oddsCartoesEscanteiosTotal, ...oddsCartoesTime];
 
     // calibração salva por model_name+market+selection -> { platt: {a,b}, isotonic: {x,y} }
     const calibPorChave = {};
@@ -958,7 +1015,7 @@ export default async function handler(req, res) {
         const selecoes = porMatch[matchId];
         const mercadoChave = normalizarMercado(mercado);
         const resultado = resultadosReais[matchId];
-        const chaveOdds = `${matchId}__${mercado}`;
+        const chaveOdds = `${matchId}__${mercadoOddsReal(mercado)}`;
         const oddsSel = oddsPorMatchMercado[chaveOdds] || {};
 
         const previstaMaior = selecoes.reduce((a, b) => (Number(b.probability) > Number(a.probability) ? b : a));
@@ -1020,7 +1077,7 @@ export default async function handler(req, res) {
 
       const mercadoChave = normalizarMercado(p.market);
       const y = resultado[mercadoChave] === p.selection ? 1 : 0;
-      const chaveOdds = `${p.match_id}__${p.market}`;
+      const chaveOdds = `${p.match_id}__${mercadoOddsReal(p.market)}`;
       const pMercado = probMercado[chaveOdds]?.[p.selection] ?? null;
 
       const pModelo = Number(p.probability);
