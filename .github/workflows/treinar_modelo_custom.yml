@@ -10,9 +10,12 @@ name: Treino de Modelo Customizado
 #   4. treinar_modelo_custom.py seta status=treinando, treina e grava metrics/trained_at
 #   5. Status final: treinado (sucesso) ou erro (com error_message)
 #
-# Timeout: 60min — suficiente pra CatBoost/XGBoost/LightGBM em datasets de
-# ~15k partidas. Random Forest e Logistic Regression terminam em <5min.
-# Se o usuário configurar muitas features ou dataset crescer, aumentar aqui.
+# Timeout: 100min — as 49 configs que usavam o escopo padrão de 6 ligas
+# (~17k partidas) tiveram `league_ids` ampliado pra 18 (+12 ligas "extra",
+# ~27k partidas, +~57%) depois que o modelo misto mostrou que generalizava
+# mal fora do treino nessas ligas -- CatBoost/XGBoost/LightGBM aguentavam
+# 60min com o dataset menor; Random Forest e Logistic Regression terminam
+# em <5min de qualquer forma. Se o dataset crescer mais, aumentar aqui.
 
 on:
   workflow_dispatch:
@@ -25,7 +28,7 @@ on:
 jobs:
   treinar-modelo-custom:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 100
 
     steps:
       - name: Checkout do repositório
