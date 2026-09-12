@@ -25,14 +25,29 @@ export const LINHAS_GOLS_TIME = [0.5, 1.5, 2.5, 3.5, 4.5];
 // propósito, mesmo padrão do resto do projeto).
 export const LINHAS_SHOTS = { shots: [20.5, 22.5, 24.5, 26.5], shots_on_target: [7.5, 8.5, 9.5, 10.5] };
 
-// `extras`: `{ corners, shots, shots_on_target }`, cada um um mapa
-// `{ match_id: total_da_partida }` já somado (mandante+visitante) e
-// validado (só entra se os dois times tiverem registro -- ver os call-
-// sites em api/model-stats.js/api/backtest-betting.js, `cont[id] === 2`).
-// Precisam de JOIN novo (não vêm em `matches`, diferente de gols por time)
-// -- por isso entram como parâmetro à parte, igual `corners` já fazia.
+// Mercados "1º tempo" (gols/escanteios/faltas) -- mesmas linhas de
+// `scripts/dados_historicos.py` (`LINHAS_GOLS_1T_OU`/`LINHAS_CORNERS_1T_OU`/
+// `LINHAS_FALTAS_1T_OU`), duplicadas aqui de propósito (mesmo padrão
+// JS<->Python do resto do arquivo). Nomes de mercado: gols/escanteios usam
+// o nome REAL da OddsPapi (`over_under_first_half_1h_*`/
+// `corners_over_under_first_half_1h_*`); faltas usa a chave interna
+// (`faltas_1t_over_under_*`, sem mercado real).
+export const LINHAS_GOLS_1T_OU = [0.5, 1.5, 2.5];
+export const LINHAS_CORNERS_1T_OU = [3.5, 4.5, 5.5];
+export const LINHAS_FALTAS_1T_OU = [9.5, 11.5, 13.5];
+
+// `extras`: `{ corners, shots, shots_on_target, golsPrimeiroTempo, corners1t,
+// faltas1t }`, cada um um mapa `{ match_id: total_da_partida }` já somado
+// (mandante+visitante) e validado (só entra se os dois times tiverem
+// registro -- ver os call-sites em api/model-stats.js/api/backtest-
+// betting.js, `cont[id] === 2`). Precisam de JOIN novo (não vêm em
+// `matches`, diferente de gols por time) -- por isso entram como parâmetro
+// à parte, igual `corners` já fazia.
 export function calcularResultadosReais(matches, extras = {}) {
-  const { corners = {}, shots = {}, shots_on_target: shotsOnTarget = {} } = extras;
+  const {
+    corners = {}, shots = {}, shots_on_target: shotsOnTarget = {},
+    golsPrimeiroTempo = {}, corners1t = {}, faltas1t = {},
+  } = extras;
   const porMatch = {};
   for (const m of matches) {
     if (m.status !== 'finished' || m.home_goals == null || m.away_goals == null) continue;
@@ -81,6 +96,27 @@ export function calcularResultadosReais(matches, extras = {}) {
       for (const linha of LINHAS_SHOTS[stat]) {
         porMatch[matchId][`${stat}_over_under_${linha.toFixed(1)}`] = totalStat > linha ? 'over' : 'under';
       }
+    }
+  }
+  // Mercados "1º tempo" -- mesmo padrão de escanteios/chutes acima.
+  // `golsPrimeiroTempo` já vem gated por cobertura (0 é "processado e sem
+  // gol", não "sem dado"), ver comentário no call-site.
+  for (const [matchId, totalGols1t] of Object.entries(golsPrimeiroTempo)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_GOLS_1T_OU) {
+      porMatch[matchId][`over_under_first_half_1h_${linha.toFixed(1)}`] = totalGols1t > linha ? 'over' : 'under';
+    }
+  }
+  for (const [matchId, totalCorners1t] of Object.entries(corners1t)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_CORNERS_1T_OU) {
+      porMatch[matchId][`corners_over_under_first_half_1h_${linha.toFixed(1)}`] = totalCorners1t > linha ? 'over' : 'under';
+    }
+  }
+  for (const [matchId, totalFaltas1t] of Object.entries(faltas1t)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_FALTAS_1T_OU) {
+      porMatch[matchId][`faltas_1t_over_under_${linha.toFixed(1)}`] = totalFaltas1t > linha ? 'over' : 'under';
     }
   }
   return porMatch;
