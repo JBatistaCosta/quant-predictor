@@ -110,6 +110,30 @@ TARGETS = {
         for lado in ("home", "away")
         for linha in dh.LINHAS_FALTAS_TIME_OU
     },
+    # Mercados "1º tempo" -- gols e escanteios têm mercado real na OddsPapi
+    # (`over_under_first_half_1h_*` / `corners_over_under_first_half_1h_*`,
+    # confirmados via SQL em 12/09); a chave do target já É o nome real do
+    # mercado, então nenhum mapeamento adicional é necessário em
+    # model-stats.js/backtest-betting.js. Faltas 1T não tem mercado real
+    # (mesma ressalva do faltas full-match), chave interna.
+    **{
+        f"over_under_first_half_1h_{linha}": {
+            "coluna": dh.coluna_resultado_gols_1t_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_GOLS_1T_OU
+    },
+    **{
+        f"corners_over_under_first_half_1h_{linha}": {
+            "coluna": dh.coluna_resultado_corners_1t_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CORNERS_1T_OU
+    },
+    **{
+        f"faltas_1t_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_1t_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_FALTAS_1T_OU
+    },
 }
 
 # Algoritmos que passam pelo módulo modelos_ml.py (reaproveitam treinar_*/prever_*)
@@ -167,6 +191,24 @@ _TARGET_PRED_META = {
         }
         for lado in ("home", "away")
         for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
+    **{
+        f"over_under_first_half_1h_{linha}": {
+            "market": f"over_under_first_half_1h_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_GOLS_1T_OU
+    },
+    **{
+        f"corners_over_under_first_half_1h_{linha}": {
+            "market": f"corners_over_under_first_half_1h_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CORNERS_1T_OU
+    },
+    **{
+        f"faltas_1t_over_under_{linha}": {
+            "market": f"faltas_1t_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_FALTAS_1T_OU
     },
 }
 
@@ -632,6 +674,18 @@ _MERCADO_POR_TARGET = {
         f"faltas_{lado}_over_under_{linha}": (f"faltas_{lado}_over_under_{linha}", ["under", "over"])
         for lado in ("home", "away")
         for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
+    **{
+        f"over_under_first_half_1h_{linha}": (f"over_under_first_half_1h_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_GOLS_1T_OU
+    },
+    **{
+        f"corners_over_under_first_half_1h_{linha}": (f"corners_over_under_first_half_1h_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_CORNERS_1T_OU
+    },
+    **{
+        f"faltas_1t_over_under_{linha}": (f"faltas_1t_over_under_{linha}", ["under", "over"])
+        for linha in dh.LINHAS_FALTAS_1T_OU
     },
 }
 
