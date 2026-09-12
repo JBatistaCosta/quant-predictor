@@ -6,9 +6,11 @@ name: Treino de Modelo Customizado (Walk-Forward CV)
 # Fluxo idêntico ao treinar_modelo_custom.yml mas usa o script de walk-forward
 # CV com 3 folds temporais (fold1/2/3) e múltiplos algoritmos por run.
 #
-# Timeout: 90min — 3 folds × 3 algoritmos ≈ 9 runs de treinamento.
+# Timeout: 150min — 3 folds × 3 algoritmos ≈ 9 runs de treinamento.
 # Random Forest e Logistic Regression terminam rápido; CatBoost/XGBoost/LightGBM
-# podem demorar 5-15 min cada um dependendo do dataset.
+# podem demorar 5-15 min cada um dependendo do dataset. Aumentado de 90min
+# depois que as configs de escopo padrão passaram de 6 pra 18 ligas (+12
+# "extra", ~+57% de partidas) -- 9 runs sobre um dataset maior.
 
 on:
   workflow_dispatch:
@@ -21,7 +23,7 @@ on:
 jobs:
   treinar-modelo-custom-wf:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     steps:
       - name: Checkout do repositório

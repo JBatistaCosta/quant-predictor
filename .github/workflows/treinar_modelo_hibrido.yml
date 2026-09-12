@@ -15,11 +15,20 @@ name: Treino do Modelo Misto (paramétrico)
 # fit) nas ligas "extra" e em toda partida `status='scheduled'` de qualquer
 # liga em escopo — ver docstring de scripts/treinar_modelo_hibrido.py.
 #
-# Timeout de 180min pelo mesmo motivo de prever_partidas_futuras_custom.yml:
-# o gargalo é montar o dataset "Feature Stacked" (montar_dataset_ml_empilhado
-# faz muitas queries paginadas), não o fit dos regressores, que leva segundos.
-# Rodar com `ligas` preenchido reduz bastante — é o caminho recomendado pro
-# primeiro teste.
+# Timeout de 210min (era 180) pelo mesmo motivo de prever_partidas_futuras_
+# custom.yml: o gargalo é montar o dataset "Feature Stacked"
+# (montar_dataset_ml_empilhado faz muitas queries paginadas), não o fit dos
+# regressores, que leva segundos. Rodar com `ligas` preenchido reduz bastante
+# — é o caminho recomendado pro primeiro teste.
+#
+# As 12 ligas que eram só "extra" (`modelo_misto_escopo='extra'` -- só
+# `.predict()`, nunca fit/avaliação) viraram "treino" -- o dataset delas JÁ
+# era montado todo dia (dataset_extra fazia a mesma query pesada pra aplicar
+# o modelo nelas), então o grosso do custo de rede já estava sendo pago; o
+# que muda é essas partidas entrarem no split treino/calibração/teste e no
+# fit em si (que continua rápido). O buffer de +30min é margem de segurança
+# pro loop de avaliação por liga crescer de 8 pra 20 grupos, não porque o
+# gargalo real (paginação) tenha ficado maior na mesma proporção.
 
 on:
   workflow_dispatch:
@@ -54,7 +63,7 @@ on:
 jobs:
   treinar-modelo-hibrido:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 210
 
     steps:
       - name: Checkout do repositório
