@@ -362,10 +362,28 @@ export default async function handler(req, res) {
       // ver api/_lib/resultadosReais.js) -- mesma fonte de
       // `scripts/dados_historicos.py` (`_carregar_gols_1t_por_partida`/
       // `_carregar_stat_1t_por_partida`): gols vêm de
-      // `match_goal_timeline.periodo='FirstHalf'` (contagem de linhas =
-      // gols no 1º tempo), escanteios/faltas de
+      // `match_goal_timeline` (contagem de linhas com `periodo='FirstHalf'`
+      // = gols no 1º tempo), escanteios/faltas de
       // `match_stats_fotmob_periodo.periodo='primeiro_tempo'`.
-      buscarTudoPaginado(() => supabase.from('match_goal_timeline').select('match_id').eq('periodo', 'FirstHalf')),
+      //
+      // BUG REAL corrigido nesta sessão: sem `.eq('periodo', ...)`, de
+      // propósito -- busca TODOS os períodos (~52 mil gols, tabela pequena)
+      // pra servir de gate de cobertura. Usar `match_stats_fotmob` como
+      // proxy de "match_goal_timeline tem dado" (como esta função fazia
+      // antes) é falso: são pipelines DIFERENTES (match_stats_fotmob vem
+      // direto da API do FotMob; match_goal_timeline é derivado do
+      // shotmap, `match_shots_fotmob`, que tem cobertura muito menor e
+      // ZERO para Copa do Brasil/Sudamericana -- confirmado via SQL, 0 de
+      // 775/858 partidas finalizadas). Com o gate errado, toda partida sem
+      // shotmap virava silenciosamente "0 gols no 1º tempo" em vez de
+      // "sem dado" -- inflava o backtest de `over_under_first_half_1h_*`
+      // com "vitórias" fabricadas nas ligas sem shotmap (achado real: 100%
+      // de acerto em 190+148 apostas nessas 2 ligas, óbvio demais pra ser
+      // real). O gate correto: só resolve o mercado quando a partida tem
+      // QUALQUER linha em `match_goal_timeline` (shotmap processado) OU
+      // terminou 0x0 (nesse caso "0 gols no 1º tempo" é verdade garantida
+      // sem precisar do shotmap).
+      buscarTudoPaginado(() => supabase.from('match_goal_timeline').select('match_id, periodo')),
       buscarTudoPaginado(() => supabase.from('match_stats_fotmob_periodo').select('match_id, corners, fouls_committed').eq('periodo', 'primeiro_tempo')),
     ]);
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
@@ -421,24 +439,27 @@ export default async function handler(req, res) {
 
     // Mercados "1º tempo" (ver api/_lib/resultadosReais.js). Gols: conta
     // linhas de `match_goal_timeline` no 1º tempo, mas só atribui 0 (em vez
-    // de deixar a partida de fora) quando `match_stats_fotmob` confirma que
-    // o FotMob processou a partida (`contPartida === 2`, mesmo gate de
-    // `_partidas_com_stats_processadas` em dados_historicos.py) -- senão
-    // "sem gol registrado" e "sem dado nenhum" ficariam indistinguíveis.
+    // de deixar a partida de fora) quando a partida tem QUALQUER linha em
+    // `match_goal_timeline` (shotmap processado -- ver comentário na query
+    // acima) OU terminou 0x0 (nesse caso "0 gols no 1º tempo" é verdade
+    // garantida mesmo sem shotmap) -- senão "sem gol registrado" e "sem
+    // dado nenhum" ficariam indistinguíveis.
     const golsPrimeiroTempo = {};
     const corners1t = {};
     const faltas1t = {};
     {
-      const contPartida = {};
-      corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
-        contPartida[r.match_id] = (contPartida[r.match_id] || 0) + 1;
-      });
+      const partidasComShotmap = new Set(
+        golsPrimeiroTempoBrutos.filter(r => matchIdsValidos.has(r.match_id)).map(r => r.match_id)
+      );
       const contGols1t = {};
-      golsPrimeiroTempoBrutos.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
+      golsPrimeiroTempoBrutos.filter(r => r.periodo === 'FirstHalf' && matchIdsValidos.has(r.match_id)).forEach(r => {
         contGols1t[r.match_id] = (contGols1t[r.match_id] || 0) + 1;
       });
-      Object.keys(contPartida).forEach(id => {
-        if (contPartida[id] === 2) golsPrimeiroTempo[id] = contGols1t[id] || 0;
+      matchesValidos.forEach(m => {
+        const terminouSemGols = m.home_goals === 0 && m.away_goals === 0;
+        if (partidasComShotmap.has(m.id) || terminouSemGols) {
+          golsPrimeiroTempo[m.id] = contGols1t[m.id] || 0;
+        }
       });
 
       const somaCorners1t = {}, contCorners1t = {}, somaFaltas1t = {}, contFaltas1t = {};
