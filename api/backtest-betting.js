@@ -297,7 +297,7 @@ export default async function handler(req, res) {
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
       // Fallback pra `bookmaker='pinnacle'` -- `media_mercado` só existe pros
@@ -344,6 +344,15 @@ export default async function handler(req, res) {
       // shots:total_shots pra manter o nome de campo já usado abaixo).
       buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, corners, shots:total_shots, shots_on_target')),
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
+      // Resultado real dos mercados "1º tempo" (gols/escanteios/faltas,
+      // ver api/_lib/resultadosReais.js) -- mesma fonte de
+      // `scripts/dados_historicos.py` (`_carregar_gols_1t_por_partida`/
+      // `_carregar_stat_1t_por_partida`): gols vêm de
+      // `match_goal_timeline.periodo='FirstHalf'` (contagem de linhas =
+      // gols no 1º tempo), escanteios/faltas de
+      // `match_stats_fotmob_periodo.periodo='primeiro_tempo'`.
+      buscarTudoPaginado(() => supabase.from('match_goal_timeline').select('match_id').eq('periodo', 'FirstHalf')),
+      buscarTudoPaginado(() => supabase.from('match_stats_fotmob_periodo').select('match_id, corners, fouls_committed').eq('periodo', 'primeiro_tempo')),
     ]);
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
     // match_id+market que media_mercado NÃO cobre (evita duplicar/preferir
@@ -396,7 +405,38 @@ export default async function handler(req, res) {
       Object.keys(soma.shots_on_target).forEach(id => { if (cont.shots_on_target[id] === 2) shotsOnTarget[id] = soma.shots_on_target[id]; });
     }
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget });
+    // Mercados "1º tempo" (ver api/_lib/resultadosReais.js). Gols: conta
+    // linhas de `match_goal_timeline` no 1º tempo, mas só atribui 0 (em vez
+    // de deixar a partida de fora) quando `match_stats_fotmob` confirma que
+    // o FotMob processou a partida (`contPartida === 2`, mesmo gate de
+    // `_partidas_com_stats_processadas` em dados_historicos.py) -- senão
+    // "sem gol registrado" e "sem dado nenhum" ficariam indistinguíveis.
+    const golsPrimeiroTempo = {};
+    const corners1t = {};
+    const faltas1t = {};
+    {
+      const contPartida = {};
+      corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
+        contPartida[r.match_id] = (contPartida[r.match_id] || 0) + 1;
+      });
+      const contGols1t = {};
+      golsPrimeiroTempoBrutos.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
+        contGols1t[r.match_id] = (contGols1t[r.match_id] || 0) + 1;
+      });
+      Object.keys(contPartida).forEach(id => {
+        if (contPartida[id] === 2) golsPrimeiroTempo[id] = contGols1t[id] || 0;
+      });
+
+      const somaCorners1t = {}, contCorners1t = {}, somaFaltas1t = {}, contFaltas1t = {};
+      statsPrimeiroTempoBrutos.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
+        if (r.corners != null) { somaCorners1t[r.match_id] = (somaCorners1t[r.match_id] || 0) + Number(r.corners); contCorners1t[r.match_id] = (contCorners1t[r.match_id] || 0) + 1; }
+        if (r.fouls_committed != null) { somaFaltas1t[r.match_id] = (somaFaltas1t[r.match_id] || 0) + Number(r.fouls_committed); contFaltas1t[r.match_id] = (contFaltas1t[r.match_id] || 0) + 1; }
+      });
+      Object.keys(somaCorners1t).forEach(id => { if (contCorners1t[id] === 2) corners1t[id] = somaCorners1t[id]; });
+      Object.keys(somaFaltas1t).forEach(id => { if (contFaltas1t[id] === 2) faltas1t[id] = somaFaltas1t[id]; });
+    }
+
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t });
 
     // odds cruas (pra pagamento real) e devigadas (pra edge) por match+market
     const oddsPorMatchMercado = {};
