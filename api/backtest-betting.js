@@ -297,7 +297,21 @@ export default async function handler(req, res) {
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
-    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
+    // BUG REAL corrigido nesta sessão (achado depurando o backtest de 1º
+    // tempo -- taxa de acerto ~0% em TODAS as seleções, impossível pra um
+    // mercado real): a ordem de desestruturação abaixo não batia com a
+    // ordem das queries no array logo adiante -- `corneragensBrutas`
+    // recebia as odds de cartões/escanteios, `calibracoes` recebia as odds
+    // de cartões por time, e vice-versa. Como cada `buscarTudoPaginado(...)`
+    // é anônimo (sem variável própria, diferente do padrão de
+    // `api/model-stats.js` com `promiseX` nomeado, que não tem esse bug),
+    // o TypeScript/lint não pega esse tipo de erro -- só though runtime,
+    // com dado sistematicamente errado e sem lançar exceção nenhuma.
+    // Afetava corners/shots (via `corneragensBrutas`), a calibração
+    // (`usar_calibracao=platt/isotonic`) e as odds reais de cartões/
+    // escanteios (`oddsCartoesEscanteiosTotal`/`oddsCartoesTime`) -- não só
+    // os novos mercados de 1º tempo.
+    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
       buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date')),
       buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
       // Fallback pra `bookmaker='pinnacle'` -- `media_mercado` só existe pros
