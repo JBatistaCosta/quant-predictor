@@ -870,7 +870,11 @@ export default async function handler(req, res) {
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
     // Resultado real dos mercados "1º tempo" (ver api/_lib/resultadosReais.js
     // e o mesmo comentário em api/backtest-betting.js).
-    const promiseGolsPrimeiroTempo = buscarTudoPaginado(() => supabase.from('match_goal_timeline').select('match_id').eq('periodo', 'FirstHalf'));
+    // Sem `.eq('periodo', ...)` de propósito -- serve de gate de cobertura
+    // além de contar gols do 1º tempo (ver comentário completo no mesmo
+    // ponto de api/backtest-betting.js, achado do bug 100% de acerto
+    // fabricado em Copa do Brasil/Sudamericana por falta de shotmap).
+    const promiseGolsPrimeiroTempo = buscarTudoPaginado(() => supabase.from('match_goal_timeline').select('match_id, periodo'));
     const promiseStatsPrimeiroTempo = buscarTudoPaginado(() => supabase.from('match_stats_fotmob_periodo').select('match_id, corners, fouls_committed').eq('periodo', 'primeiro_tempo'));
 
     const ligaIdNumParaShell = liga_id ? Number(liga_id) : null;
@@ -1035,16 +1039,18 @@ export default async function handler(req, res) {
     const corners1t = {};
     const faltas1t = {};
     {
-      const contPartida = {};
-      corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
-        contPartida[r.match_id] = (contPartida[r.match_id] || 0) + 1;
-      });
+      const partidasComShotmap = new Set(
+        golsPrimeiroTempoBrutos.filter(r => matchIdsValidos.has(r.match_id)).map(r => r.match_id)
+      );
       const contGols1t = {};
-      golsPrimeiroTempoBrutos.filter(r => matchIdsValidos.has(r.match_id)).forEach(r => {
+      golsPrimeiroTempoBrutos.filter(r => r.periodo === 'FirstHalf' && matchIdsValidos.has(r.match_id)).forEach(r => {
         contGols1t[r.match_id] = (contGols1t[r.match_id] || 0) + 1;
       });
-      Object.keys(contPartida).forEach(id => {
-        if (contPartida[id] === 2) golsPrimeiroTempo[id] = contGols1t[id] || 0;
+      matchesValidos.forEach(m => {
+        const terminouSemGols = m.home_goals === 0 && m.away_goals === 0;
+        if (partidasComShotmap.has(m.id) || terminouSemGols) {
+          golsPrimeiroTempo[m.id] = contGols1t[m.id] || 0;
+        }
       });
 
       const somaCorners1t = {}, contCorners1t = {}, somaFaltas1t = {}, contFaltas1t = {};
