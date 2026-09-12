@@ -116,6 +116,25 @@ TARGETS = {
         for lado in ("home", "away")
         for linha in dh.LINHAS_FALTAS_TIME_OU
     },
+    # Mercados "1º tempo" -- ver comentário em treinar_modelo_custom.py.
+    **{
+        f"over_under_first_half_1h_{linha}": {
+            "coluna": dh.coluna_resultado_gols_1t_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_GOLS_1T_OU
+    },
+    **{
+        f"corners_over_under_first_half_1h_{linha}": {
+            "coluna": dh.coluna_resultado_corners_1t_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_CORNERS_1T_OU
+    },
+    **{
+        f"faltas_1t_over_under_{linha}": {
+            "coluna": dh.coluna_resultado_faltas_1t_ou(linha), "tipo": "binario", "classes": 2,
+        }
+        for linha in dh.LINHAS_FALTAS_1T_OU
+    },
 }
 
 _TARGET_PRED_META = {
@@ -156,6 +175,24 @@ _TARGET_PRED_META = {
         }
         for lado in ("home", "away")
         for linha in dh.LINHAS_FALTAS_TIME_OU
+    },
+    **{
+        f"over_under_first_half_1h_{linha}": {
+            "market": f"over_under_first_half_1h_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_GOLS_1T_OU
+    },
+    **{
+        f"corners_over_under_first_half_1h_{linha}": {
+            "market": f"corners_over_under_first_half_1h_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_CORNERS_1T_OU
+    },
+    **{
+        f"faltas_1t_over_under_{linha}": {
+            "market": f"faltas_1t_over_under_{linha}", "class_to_sel": {0: "under", 1: "over"},
+        }
+        for linha in dh.LINHAS_FALTAS_1T_OU
     },
 }
 

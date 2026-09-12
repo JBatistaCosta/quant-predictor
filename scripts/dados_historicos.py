@@ -134,6 +134,41 @@ def coluna_resultado_faltas_time_ou(lado: str, linha: float) -> str:
     'resultado_faltas_home_ou105' pra mandante linha 10.5, etc."""
     return f"resultado_faltas_{lado}_ou{str(linha).replace('.', '')}"
 
+# Mercados "1º tempo" (gols/escanteios/faltas) -- achado real (11/09): as
+# features JÁ existentes (média recente de gols/escanteios/faltas do time,
+# usadas hoje pros mercados de jogo inteiro) carregam sinal quase
+# proporcional pro recorte de 1º tempo -- testado via SQL antes de
+# generalizar (mesma disciplina do resto do projeto): correlação da média
+# recente de faltas com faltas do 1º tempo = 0,24; escanteios = 0,10 (vs.
+# 0,12 pro jogo inteiro, praticamente igual); gols = 0,12. Não precisou de
+# feature nova, só do alvo novo. Gols e escanteios têm mercado real de odds
+# (`over_under_first_half_1h_{linha}`/`corners_over_under_first_half_1h_
+# {linha}` -- os nomes de target abaixo JÁ usam esses nomes reais direto,
+# sem precisar de mapa de tradução depois, diferente de cartões/escanteios
+# de jogo inteiro que usam nome interno); faltas não tem mercado real
+# (mesma ressalva de LINHAS_FALTAS_OU). Linhas centradas na média real
+# observada (gols 1,74/jogo, escanteios 4,60/jogo, faltas 11,62/jogo,
+# medido via SQL em 11/09).
+LINHAS_GOLS_1T_OU = [0.5, 1.5, 2.5]
+LINHAS_CORNERS_1T_OU = [3.5, 4.5, 5.5]
+LINHAS_FALTAS_1T_OU = [9.5, 11.5, 13.5]
+
+
+def coluna_resultado_gols_1t_ou(linha: float) -> str:
+    """Mesmo padrão de `coluna_resultado_cartoes_ou`, pra gols do 1º tempo --
+    'resultado_gols_1t_ou15' pra 1.5, etc."""
+    return f"resultado_gols_1t_ou{str(linha).replace('.', '')}"
+
+
+def coluna_resultado_corners_1t_ou(linha: float) -> str:
+    """Mesmo padrão acima, pra escanteios do 1º tempo."""
+    return f"resultado_corners_1t_ou{str(linha).replace('.', '')}"
+
+
+def coluna_resultado_faltas_1t_ou(linha: float) -> str:
+    """Mesmo padrão acima, pra faltas do 1º tempo."""
+    return f"resultado_faltas_1t_ou{str(linha).replace('.', '')}"
+
 # Códigos do alvo multiclasse `resultado_faixa_gols` (mercado "faixa de
 # gols", 4 classes sobre o total casa+visitante -- pedido explícito do
 # usuário: 0-1 / 2-3 / 4-6 / 7+).
@@ -1381,6 +1416,65 @@ def _carregar_total_faltas_por_partida(supabase: Client, match_ids: list[int]) -
         return pd.DataFrame(columns=["match_id", "total_faltas"])
     df = pd.DataFrame(linhas)
     total = df.groupby("match_id")["fouls_committed"].apply(lambda s: s.sum(min_count=2)).reset_index(name="total_faltas")
+    return total
+
+
+def _carregar_gols_1t_por_partida(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
+    """Total de gols (casa+visitante) marcados no 1º tempo -- de
+    `match_goal_timeline.periodo='FirstHalf'` (RESULTADO real, nunca feature
+    pré-jogo). Diferente de `_carregar_total_corners_por_partida` (soma
+    duas LINHAS, `min_count=2` resolve o gate sozinho), aqui a tabela só tem
+    linha quando HOUVE gol -- "zero linhas" significa tanto "zero gols no
+    1º tempo" quanto "partida sem shotmap ingerido ainda", indistinguíveis
+    sem um gate à parte. Usa `_partidas_com_stats_processadas` (2 linhas em
+    `match_stats_fotmob`, populado pelo MESMO pipeline de ingestão FotMob
+    que alimenta `match_goal_timeline`) como proxy de "processada"."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "total_gols_1t"])
+    processadas = _partidas_com_stats_processadas(supabase, match_ids)
+    if not processadas:
+        return pd.DataFrame(columns=["match_id", "total_gols_1t"])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_goal_timeline")
+            .select("match_id")
+            .eq("periodo", "FirstHalf")
+            .in_("match_id", lote)
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, list(processadas))
+    contagem = pd.DataFrame(linhas).groupby("match_id").size() if linhas else pd.Series(dtype=int)
+    resultado = pd.DataFrame({"match_id": sorted(processadas)})
+    resultado["total_gols_1t"] = resultado["match_id"].map(contagem).fillna(0.0)
+    return resultado
+
+
+def _carregar_stat_1t_por_partida(supabase: Client, match_ids: list[int], coluna: str, nome_saida: str) -> pd.DataFrame:
+    """Soma casa+visitante de uma coluna de `match_stats_fotmob_periodo`
+    (`periodo='primeiro_tempo'`) -- RESULTADO real, nunca feature pré-jogo.
+    Mesmo princípio de `_carregar_total_corners_por_partida`: `min_count=2`
+    garante que só soma quando as duas linhas (casa e visitante) existem.
+    Reaproveitada pra escanteios (`corners`) e faltas (`fouls_committed`) do
+    1º tempo -- só muda a coluna lida."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", nome_saida])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_stats_fotmob_periodo")
+            .select(f"match_id, {coluna}")
+            .eq("periodo", "primeiro_tempo")
+            .in_("match_id", lote)
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    if not linhas:
+        return pd.DataFrame(columns=["match_id", nome_saida])
+    df = pd.DataFrame(linhas)
+    total = df.groupby("match_id")[coluna].apply(lambda s: s.sum(min_count=2)).reset_index(name=nome_saida)
     return total
 
 
@@ -4268,6 +4362,37 @@ def montar_dataset_ml_empilhado(
                     np.nan,
                 )
 
+    # Alvos binários Over/Under de mercados "por tempo" (1º tempo) -- gols e
+    # escanteios têm mercado real na OddsPapi (`over_under_first_half_1h_*` e
+    # `corners_over_under_first_half_1h_*`); faltas não tem mercado real
+    # (mesma limitação do faltas full-match), serve só de métrica intrínseca.
+    gols_1t = _carregar_gols_1t_por_partida(supabase, partidas["id"].astype(int).tolist())
+    if gols_1t.empty:
+        gols_1t = pd.DataFrame(columns=["match_id", "total_gols_1t"])
+    dataset = dataset.merge(gols_1t.rename(columns={"match_id": "id"}), on="id", how="left")
+    for _linha in LINHAS_GOLS_1T_OU:
+        dataset[coluna_resultado_gols_1t_ou(_linha)] = np.where(
+            dataset["total_gols_1t"].notna(), (dataset["total_gols_1t"] > _linha).astype(float), np.nan
+        )
+
+    corners_1t = _carregar_stat_1t_por_partida(supabase, partidas["id"].astype(int).tolist(), "corners", "total_corners_1t")
+    if corners_1t.empty:
+        corners_1t = pd.DataFrame(columns=["match_id", "total_corners_1t"])
+    dataset = dataset.merge(corners_1t.rename(columns={"match_id": "id"}), on="id", how="left")
+    for _linha in LINHAS_CORNERS_1T_OU:
+        dataset[coluna_resultado_corners_1t_ou(_linha)] = np.where(
+            dataset["total_corners_1t"].notna(), (dataset["total_corners_1t"] > _linha).astype(float), np.nan
+        )
+
+    faltas_1t = _carregar_stat_1t_por_partida(supabase, partidas["id"].astype(int).tolist(), "fouls_committed", "total_faltas_1t")
+    if faltas_1t.empty:
+        faltas_1t = pd.DataFrame(columns=["match_id", "total_faltas_1t"])
+    dataset = dataset.merge(faltas_1t.rename(columns={"match_id": "id"}), on="id", how="left")
+    for _linha in LINHAS_FALTAS_1T_OU:
+        dataset[coluna_resultado_faltas_1t_ou(_linha)] = np.where(
+            dataset["total_faltas_1t"].notna(), (dataset["total_faltas_1t"] > _linha).astype(float), np.nan
+        )
+
     dataset = dataset.rename(columns={"id": "match_id"})
 
     # ------------------------------------------------------------------
@@ -4431,6 +4556,9 @@ def montar_dataset_ml_empilhado(
         *[coluna_resultado_cartoes_time_ou(lado, l) for lado in ("home", "away") for l in LINHAS_CARTOES_TIME_OU],
         *[coluna_resultado_faltas_ou(l) for l in LINHAS_FALTAS_OU],
         *[coluna_resultado_faltas_time_ou(lado, l) for lado in ("home", "away") for l in LINHAS_FALTAS_TIME_OU],
+        *[coluna_resultado_gols_1t_ou(l) for l in LINHAS_GOLS_1T_OU],
+        *[coluna_resultado_corners_1t_ou(l) for l in LINHAS_CORNERS_1T_OU],
+        *[coluna_resultado_faltas_1t_ou(l) for l in LINHAS_FALTAS_1T_OU],
         # xG/xGOT observados (somente como alvo de regressão, NÃO como features)
         "xg_home", "xg_away", "xgot_home", "xgot_away",
         # Contagens observadas da própria partida -- alvo dos modelos
@@ -4446,6 +4574,7 @@ def montar_dataset_ml_empilhado(
         "total_corners", "total_corners_home", "total_corners_away",
         "total_cartoes", "total_cartoes_home", "total_cartoes_away",
         "total_faltas", "total_faltas_home", "total_faltas_away",
+        "total_gols_1t", "total_corners_1t", "total_faltas_1t",
     ]
     dataset = dataset[[c for c in _COLUNAS_DESEJADAS if c in dataset.columns]]
 
