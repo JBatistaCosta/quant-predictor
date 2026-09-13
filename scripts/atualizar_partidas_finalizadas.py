@@ -423,6 +423,28 @@ def main():
                         shot_rows, on_conflict="fotmob_shot_id"
                     ))
 
+                # Cartões evento-a-evento (match_events) -- ACHADO REAL (13/09):
+                # content.stats.Periods.All.stats (grupo "discipline", fonte de
+                # match_stats_fotmob.yellow_cards/red_cards) está zerando cartão
+                # em ~87-90% das partidas recentes do Brasileirão A desde
+                # julho/2026 (confirmado por inspeção direta da API), mas
+                # content.matchFacts.events.events (mesmo payload, sem chamada
+                # extra) continua correto. match_events só era populada por um
+                # backfill manual (arquivos_do_claude/ingestao_fotmob_cartoes.py,
+                # workflow_dispatch, nunca agendado) -- por isso ficou vazia pra
+                # toda partida sincronizada depois da última vez que alguém
+                # rodou aquele workflow. `parse_eventos_cartao` foi promovida
+                # pra ingestao_fotmob.py e passa a rodar aqui, na sincronização
+                # diária automática, fechando o gap na fonte em vez de
+                # depender de backfill manual.
+                event_rows = extraido["event_rows"]
+                if event_rows:
+                    for row in event_rows:
+                        row["player_id"] = fotmob_to_player_id.get(row.pop("fotmob_player_id"))
+                    _exec_retry(supabase.table("match_events").upsert(
+                        event_rows, on_conflict="match_id,fotmob_event_id"
+                    ))
+
                 has_stats.add(match_id)
 
         # Registrar FotMob match ID se ainda não estava

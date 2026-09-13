@@ -1,36 +1,29 @@
 """
-Backfill/sync de eventos de cartão POR JOGADOR (FotMob) -- fecha o gap
-documentado em CONTEXTO_PROJETO.md: hoje só existe cartão por TIME por
-partida (`match_stats_fotmob.yellow_cards`/`red_cards`), `match_events`
-existia desde o schema original mas nunca foi populada (0 linhas).
+Backfill de eventos de cartão POR JOGADOR (FotMob) -- fecha o gap histórico
+documentado em CONTEXTO_PROJETO.md: `match_events` existia desde o schema
+original mas nunca foi populada antes deste script (0 linhas).
+
+ACHADO REAL (13/09): esta era a ÚNICA forma de popular `match_events`
+(rodada manualmente via workflow_dispatch, nunca agendada) -- por isso a
+tabela ficou vazia de novo pra qualquer partida sincronizada depois da
+última vez que alguém rodou este script. `parse_eventos_cartao` foi
+promovida pra `ingestao_fotmob.py` (módulo compartilhado) e agora roda
+também na sincronização diária automática (`scripts/atualizar_partidas_
+finalizadas.py`), fechando o gap na fonte -- este script continua existindo
+só pra reprocessar o histórico anterior a essa mudança (`--forcar`) ou
+preencher lacunas pontuais, importando a mesma função em vez de manter
+cópia própria (ver docstring de `parse_eventos_cartao` em
+`ingestao_fotmob.py` pro contexto completo do achado de `discipline.
+yellow_cards` zerando desde julho/2026).
 
 MESMO payload matchDetails já usado por match_stats_fotmob/
 match_player_stats_fotmob (`ingestao_fotmob.py`) -- zero chamada de API
 extra por partida SE já fosse sincronizada de novo, mas como o campo de
-eventos nunca foi extraído nas sincronizações anteriores, este script
-RE-BUSCA matchDetails pras partidas já em `match_source_ids` (source=
+eventos não era extraído nas sincronizações anteriores a esta mudança, este
+script RE-BUSCA matchDetails pras partidas já em `match_source_ids` (source=
 'fotmob') que ainda não têm nenhuma linha em `match_events` -- mesmo
 endpoint, mesmo pacing conservador, mesmo espírito de scraping já aceito
 neste projeto (ver ingestao_fotmob.py).
-
-Achado confirmado por inspeção direta da API antes de desenhar o schema
-(disciplina de sempre neste projeto -- nunca adivinhar formato de resposta):
-`content.matchFacts.events.events` é a timeline completa da partida
-(gols/cartões/substituições/VAR), com `type == "Card"` e `card` in
-("Yellow", "Red", "YellowRed" -- segundo amarelo, expulsão). Mapeado pra
-vocabulário já usado no resto do pipeline: 'yellow_card' | 'red_card' |
-'second_yellow_card'.
-
-BUG DE FONTE REAL, corrigido ANTES de generalizar (mesma disciplina de
-"descobrir 1-2 chamadas, inspecionar o JSON real" já usada com OddsPapi/
-FotMob no resto do projeto): `eventId` vem **0 pra TODAS as partidas do
-Brasileirão testadas** (placeholder, mesmo espírito do `fotmob_player_id`
-"0"/"-1" já documentado em `players`) -- só as 5 ligas de elite europeias
-têm `eventId` real e não-zero (confirmado testando 1 partida de cada uma
-das 5 + 5 partidas do Brasileirão). Corrigido gerando um id sintético
-NEGATIVO, estável entre re-syncs (mesma ordem de evento sempre volta da
-API), só pras partidas com eventId==0 -- preserva unicidade de
-`(match_id, fotmob_event_id)` sem quebrar upsert.
 
 Uso:
     python ingestao_fotmob_cartoes.py [--liga-id N] [--limite N] [--forcar]
@@ -47,73 +40,15 @@ import time
 
 import requests
 
+sys.path.insert(0, os.path.dirname(__file__))
+from ingestao_fotmob import parse_eventos_cartao, BASE, HEADERS, PACING_SEGUNDOS  # noqa: E402
+
 # .strip() -- secrets do GitHub Actions colados via copy-paste às vezes
 # carregam um '\n' final, que quebra o parser de URL do httpx com
 # "Invalid non-printable ASCII character in URL" na criação do client
 # (mesmo bug já documentado/corrigido em rodar_predicoes.py).
 SUPABASE_URL = (os.environ.get("SUPABASE_URL") or "").strip()
 SUPABASE_KEY = (os.environ.get("SUPABASE_KEY") or "").strip()
-
-BASE = "https://www.fotmob.com/api/data"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-}
-PACING_SEGUNDOS = 1.3
-
-# Mapeamento do campo `card` do FotMob pro vocabulário já usado no resto do
-# pipeline -- confirmado por inspeção direta (5 partidas europeias + 5 do
-# Brasileirão, ver docstring acima). Cartão vermelho DIRETO não entra na
-# conta de acúmulo de amarelos (nenhuma das federações pesquisadas conta
-# reds diretos pro limiar de suspensão por cartões) -- fica registrado aqui
-# só como dado bruto, `dados_historicos.py` filtra na hora de agregar.
-MAPA_TIPO_CARTAO = {
-    "Yellow": "yellow_card",
-    "Red": "red_card",
-    "YellowRed": "second_yellow_card",
-}
-
-
-def parse_eventos_cartao(content: dict, match_id: int, home_team_id: int, away_team_id: int) -> list[dict]:
-    """Extrai os eventos `type == "Card"` de `content.matchFacts.events.events`
-    -- função pura (sem I/O), reaproveitada tanto pelo backfill quanto por
-    quem quiser testar contra um payload salvo em disco."""
-    eventos = (((content.get("matchFacts") or {}).get("events") or {}).get("events")) or []
-    linhas = []
-    contador_id_sintetico = 0
-    for e in eventos:
-        if e.get("type") != "Card":
-            continue
-        tipo = MAPA_TIPO_CARTAO.get(e.get("card"))
-        if tipo is None:
-            continue  # valor de `card` não mapeado -- não adivinha, ignora e loga fora daqui
-        jogador = e.get("player") or {}
-        fotmob_player_id = jogador.get("id")
-        event_id = e.get("eventId")
-        if not event_id:
-            # placeholder (visto 100% das vezes no Brasileirão, ver docstring)
-            # -- id sintético negativo, estável entre re-syncs porque a
-            # ordem dos eventos na resposta da API é sempre a mesma.
-            contador_id_sintetico -= 1
-            event_id = contador_id_sintetico
-        linhas.append(
-            {
-                "match_id": match_id,
-                "team_id": home_team_id if e.get("isHome") else away_team_id,
-                "player_name": jogador.get("name"),
-                "event_type": tipo,
-                "minute": e.get("time"),
-                "source": "fotmob",
-                "fotmob_event_id": event_id,
-                "fotmob_player_id": str(fotmob_player_id) if fotmob_player_id is not None else None,
-                "detail": {
-                    "overloadTime": e.get("overloadTime"),
-                    "cardDescription": e.get("cardDescription"),
-                    "card_raw": e.get("card"),
-                },
-            }
-        )
-    return linhas
 
 
 def main() -> None:
