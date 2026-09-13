@@ -189,12 +189,25 @@ const clamp = (p) => Math.min(Math.max(p, 1e-4), 1 - 1e-4);
 const logit = (p) => Math.log(clamp(p) / (1 - clamp(p)));
 const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
-async function buscarTudoPaginado(criarQuery) {
+// `colunasOrdem` default `['id']` -- mesmo padrão de api/model-stats.js
+// (BUG REAL já documentado lá e em vários call-sites deste arquivo
+// individualmente, ver comentários em `eloProcessarLiga`/`eloProcessarGeral`/
+// a função que lê `todosOsJogos` por liga: sem `ORDER BY`, `.range()` pagina
+// sobre uma ordem que o Postgres/PostgREST NÃO garante estável entre
+// chamadas separadas -- linhas podem repetir numa página e faltar em outra
+// sem erro nenhum. A maioria das chamadas já adicionava `.order('id')`
+// manualmente no `criarQuery`; isso cobre as que não tinham, sem quebrar as
+// que já ordenavam (múltiplos `.order()` na mesma query são cumulativos,
+// não um erro). Única tabela usada aqui sem coluna `id` é `player_ratings`
+// (PK `player_id`) -- passa `colunasOrdem: ['player_id']` nesse call site.
+async function buscarTudoPaginado(criarQuery, colunasOrdem = ['id']) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
   while (true) {
-    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    let query = criarQuery();
+    for (const coluna of colunasOrdem) query = query.order(coluna);
+    const { data, error } = await query.range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
     resultado.push(...(data || []));
     if (!data || data.length < TAMANHO_PAGINA) break;
@@ -207,13 +220,15 @@ function* fatiar(array, tamanho) {
   for (let i = 0; i < array.length; i += tamanho) yield array.slice(i, i + tamanho);
 }
 
-async function buscarTudoPaginadoIn(ids, criarQuery) {
+async function buscarTudoPaginadoIn(ids, criarQuery, colunasOrdem = ['id']) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   for (const lote of fatiar(ids, 200)) {
     let pagina = 0;
     while (true) {
-      const { data, error } = await criarQuery(lote).range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+      let query = criarQuery(lote);
+      for (const coluna of colunasOrdem) query = query.order(coluna);
+      const { data, error } = await query.range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
       if (error) throw error;
       resultado.push(...(data || []));
       if (!data || data.length < TAMANHO_PAGINA) break;
@@ -533,7 +548,7 @@ async function tarefaPlayerElo(supabase, limite) {
   const [{ data: ultimaLinha }, partidasFotmob, ratingsAtuais, cfg] = await Promise.all([
     supabase.from('player_rating_history').select('match_id').order('id', { ascending: false }).limit(1).maybeSingle(),
     buscarTudoPaginado(() => supabase.from('match_source_ids').select('match_id').eq('source', 'fotmob').order('id')),
-    buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas').order('player_id')),
+    buscarTudoPaginado(() => supabase.from('player_ratings').select('player_id, rating, n_partidas'), ['player_id']),
     lerConfigModelo(supabase, 'player_elo_v1', PLAYER_ELO_CONFIG_PADRAO),
   ]);
 
