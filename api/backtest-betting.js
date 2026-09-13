@@ -361,8 +361,25 @@ export default async function handler(req, res) {
       // sempre buscadas (não gated por `mercado`, ao contrário do fallback
       // Pinnacle logo acima), mesma lista pequena e fixa de mercados que
       // api/model-stats.js usa pro mesmo propósito.
-      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('market', MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS)),
-      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'betano').in('market', MERCADOS_CARTOES_TIME_ODDS)),
+      //
+      // BUG REAL corrigido nesta sessão (achado rodando backtest de cartões
+      // em produção, timeout `57014`): um `.in('market', lista)` com
+      // `ORDER BY id` (exigido desde o fix de paginação do PR #541) não tem
+      // como ser servido sem SORT por nenhum índice -- linhas de mercados
+      // diferentes ficam em faixas separadas do índice líder por `market`,
+      // não intercaladas por `id` (confirmado via EXPLAIN ANALYZE: 17s pra
+      // uma página só, mesmo com índice novo terminando em `id`, migration
+      // `indice_odds_market_market_snapshot_bookmaker_id`). Buscando UM
+      // mercado por vez (looping em vez de `.in()`), cada consulta vira um
+      // `Index Cond` de igualdade simples e a ordenação por `id` sai direto
+      // do índice, sem SORT -- mesmo padrão de correção já usado alhures
+      // no projeto (preferir várias consultas seletivas a uma só genérica).
+      Promise.all(MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS.map((m) =>
+        buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', m))
+      )).then((paginas) => paginas.flat()),
+      Promise.all(MERCADOS_CARTOES_TIME_ODDS.map((m) =>
+        buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'betano').eq('market', m))
+      )).then((paginas) => paginas.flat()),
       // Sem filtro `.not(...)` -- também precisamos de shots/shots_on_target
       // (mercados novos), que nem sempre são preenchidos junto com corners
       // (achado real: 2226 linhas têm shots sem corners, ou vice-versa).
