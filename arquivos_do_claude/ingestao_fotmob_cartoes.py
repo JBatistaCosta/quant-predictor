@@ -65,6 +65,23 @@ def main() -> None:
 
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+    # ACHADO REAL (13/09, rodando o backfill em produção pela 1ª vez depois
+    # da promoção de parse_eventos_cartao): as 3 paginações abaixo usavam
+    # `.range()` SEM `.order()` -- mesmo bug de paginação instável já
+    # corrigido várias vezes neste projeto (api/backtest-betting.js,
+    # api/model-maintenance.js, api/sync-clubelo.js). Sem ordenação
+    # explícita, o Postgres/PostgREST não garante a mesma ordem entre
+    # chamadas `.range()` sucessivas -- linhas somem/duplicam entre páginas
+    # silenciosamente. Sintoma real confirmado: rodando pra liga_id=1, o
+    # script terminou com "0 falhas" e cobriu ~1630 partidas, mas 747
+    # partidas finalizadas com cartão real na API (confirmado ao vivo) nunca
+    # entraram no lote de `match_ids` processado -- não apareceram nem como
+    # falha nem como "sem cartão nenhum", só ficaram invisíveis. Corrigido
+    # adicionando `.order()` nas 3 paginações (chave suficiente pra ser
+    # única dentro do filtro de cada uma -- `match_id` sozinho não é único
+    # em `match_events` (~1 linha por cartão), por isso leva `id` como
+    # desempate).
+
     # Partidas já sincronizadas via FotMob (match_stats_fotmob já rodou pra
     # elas) -- mesmo matchId do FotMob que casa direto com matchDetails,
     # sem precisar de crosswalk de time (isHome já resolve o lado).
@@ -75,6 +92,7 @@ def main() -> None:
             supabase.table("match_source_ids")
             .select("match_id, source_id")
             .eq("source", "fotmob")
+            .order("match_id")
             .range(pagina * 1000, pagina * 1000 + 999)
             .execute()
             .data
@@ -94,6 +112,7 @@ def main() -> None:
                 supabase.table("matches")
                 .select("id")
                 .eq("league_id", args.liga_id)
+                .order("id")
                 .range(pagina * 1000, pagina * 1000 + 999)
                 .execute()
                 .data
@@ -111,8 +130,10 @@ def main() -> None:
         while True:
             chunk = (
                 supabase.table("match_events")
-                .select("match_id")
+                .select("match_id, id")
                 .eq("source", "fotmob")
+                .order("match_id")
+                .order("id")
                 .range(pagina * 1000, pagina * 1000 + 999)
                 .execute()
                 .data
