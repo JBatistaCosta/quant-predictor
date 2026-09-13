@@ -221,12 +221,26 @@ function normalizarOddsBenchmarking(rows) {
   return linhas;
 }
 
+// BUG REAL corrigido nesta sessão (achado testando anti-modelo de gols_1t/0.5
+// no Brasileirão A -- 19 de 88 partidas "sumiam" ao reconsultar as mesmas
+// tabelas num script à parte): sem `.order()`, `.range()` pagina sobre uma
+// ordem que o Postgres/PostgREST NÃO garante estável entre chamadas
+// separadas -- linhas podem repetir numa página e faltar na outra sem erro
+// nenhum. `api/model-stats.js` já corrigiu exatamente isso (comentário lá:
+// "buscarTudoPaginado (OFFSET paralelo com `.order('id')` default)"), mas o
+// fix nunca foi replicado aqui -- os dois arquivos duplicam essa função de
+// propósito (mesmo padrão do resto deste arquivo), então divergem se um dos
+// dois for corrigido sozinho. Toda tabela consultada aqui tem coluna `id`
+// (confirmado via schema), então basta ordenar por ela sempre -- diferente
+// de `model_stats_resumo`/`model_stats_ic` em model-stats.js, que têm PK
+// composta e por isso precisam de `colunasOrdem` configurável; não replicado
+// aqui por não ser necessário pra nenhuma tabela que este arquivo usa.
 async function buscarTudoPaginado(criarQuery) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
   while (true) {
-    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    const { data, error } = await criarQuery().order('id').range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
     resultado.push(...(data || []));
     if (!data || data.length < TAMANHO_PAGINA) break;
