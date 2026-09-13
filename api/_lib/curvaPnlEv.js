@@ -41,6 +41,14 @@ export function calcularCurvaPnlEv(apostas) {
       date: aposta.match_date,
       league_id: aposta.league_id,
       selection: aposta.selection,
+      // `stake` -- ausente até aqui (só usado internamente pro cálculo de
+      // lucro/EV). Exposto pra permitir reagrupar ROI por qualquer recorte
+      // cronológico fora deste módulo (ex.: `scripts/analisar_curva_
+      // semanal.mjs`) sem precisar reconstruir a partir de lucro/odd/venceu
+      // -- Kelly varia o stake por aposta, então lucro sozinho não basta pra
+      // recompor ROI = Σlucro/Σstake num agrupamento diferente do grupo
+      // original.
+      stake: arredondar(stake),
       lucro: arredondar(aposta.lucro),
       pnl_acumulado: arredondar(pnlAcumulado),
       ev_aposta: arredondar(evAposta),
