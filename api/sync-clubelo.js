@@ -36,12 +36,21 @@ function getSupabase() {
 // está em ~700 linhas hoje (sem national teams), perto o bastante do corte
 // pra valer a pena paginar de verdade em vez de confiar que nunca passa de
 // 1000.
-async function buscarTudoPaginado(criarQuery) {
+//
+// `colunasOrdem` default `['id']` -- os dois call-sites deste arquivo já
+// ordenam explicitamente (`teams` por name+id, `vw_team_elo_status` por
+// team_id), então isso é defensivo (consistência com api/backtest-
+// betting.js/api/model-maintenance.js, que tiveram o bug real de linha
+// sumindo/duplicando entre páginas por falta de ORDER BY), não corrige nada
+// ativo aqui.
+async function buscarTudoPaginado(criarQuery, colunasOrdem = ['id']) {
   const TAMANHO_PAGINA = 1000;
   const resultado = [];
   let pagina = 0;
   while (true) {
-    const { data, error } = await criarQuery().range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+    let query = criarQuery();
+    for (const coluna of colunasOrdem) query = query.order(coluna);
+    const { data, error } = await query.range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
     if (error) throw error;
     resultado.push(...(data || []));
     if (!data || data.length < TAMANHO_PAGINA) break;
@@ -194,7 +203,7 @@ export default async function handler(req, res) {
       // linhas (bem abaixo do corte), mas cresce 1:1 com `teams` conforme mais
       // times são sincronizados, então sem `.range()` ela quebraria do mesmo
       // jeito assim que passasse de 1000.
-      const jaSincronizados = await buscarTudoPaginado(() => supabase.from('vw_team_elo_status').select('team_id').order('team_id'));
+      const jaSincronizados = await buscarTudoPaginado(() => supabase.from('vw_team_elo_status').select('team_id'), ['team_id']);
       const idsSincronizados = new Set(jaSincronizados.map(r => r.team_id));
       timesParaProcessar = times.filter(t => !idsSincronizados.has(t.id));
     }
