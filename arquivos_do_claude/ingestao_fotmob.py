@@ -238,6 +238,94 @@ def parse_contexto_jogo(d: dict, match_id: int, fotmob_match_id):
     }
 
 
+# Mapeamento do campo `card` do FotMob pro vocabulário já usado no resto do
+# pipeline (`match_events.event_type`) -- confirmado por inspeção direta (5
+# partidas europeias + 5 do Brasileirão, ver `ingestao_fotmob_cartoes.py`,
+# script que originou esta função antes de ela ser promovida pra cá).
+# Vermelho DIRETO não entra na conta de acúmulo de amarelos (nenhuma das
+# federações pesquisadas conta reds diretos pro limiar de suspensão por
+# cartões) -- fica registrado aqui só como dado bruto, `dados_historicos.py`
+# filtra na hora de agregar.
+MAPA_TIPO_CARTAO = {
+    "Yellow": "yellow_card",
+    "Red": "red_card",
+    "YellowRed": "second_yellow_card",
+}
+
+
+# ACHADO REAL (13/09): `content.stats.Periods.All.stats` (grupo `discipline`,
+# usado por `parse_match_details` acima pra `match_stats_fotmob.yellow_cards`/
+# `red_cards`) está retornando [0, 0] pra praticamente toda partida recente
+# do Brasileirão A desde julho/2026 (~87-90% das partidas, confirmado por
+# inspeção direta da API ao vivo) -- mas `content.matchFacts.events.events`
+# (a timeline completa da partida) continua correto, com os cartões de
+# verdade lá (`type == "Card"`, mesmo payload matchDetails, zero chamada de
+# API extra). Ou seja: NÃO é uma regressão da API do FotMob como um todo, só
+# o bloco agregado de disciplina que quebrou -- a fonte evento-a-evento
+# segue íntegra.
+#
+# Essa função (extração da timeline) só existia em
+# `ingestao_fotmob_cartoes.py`, um script de BACKFILL manual
+# (workflow_dispatch, nunca agendado) -- rodada uma vez em cada liga e nunca
+# mais, por isso `match_events` está vazia pra qualquer partida sincronizada
+# depois disso (ver `scripts/dados_historicos.py`, "100% ausente desde
+# junho/2026"). Promovida pra cá (função pura, sem I/O) pra
+# `processar_matchdetails_completo` passar a extrair cartão junto com
+# tudo mais, na sincronização diária automática (`atualizar_partidas_
+# finalizadas.py`) -- fecha o gap na fonte, em vez de depender de alguém
+# lembrar de rodar o backfill manual de novo. `ingestao_fotmob_cartoes.py`
+# continua existindo só pro backfill do histórico anterior a esta mudança,
+# reaproveitando esta mesma função (import) em vez de manter cópia.
+def parse_eventos_cartao(content: dict, match_id: int, home_team_id: int, away_team_id: int) -> list[dict]:
+    """Extrai os eventos `type == "Card"` de `content.matchFacts.events.events`
+    -- função pura (sem I/O), reaproveitada tanto pela sincronização diária
+    quanto pelo backfill manual (`ingestao_fotmob_cartoes.py`) e por quem
+    quiser testar contra um payload salvo em disco.
+
+    BUG DE FONTE REAL, corrigido ANTES de generalizar (mesma disciplina de
+    "descobrir 1-2 chamadas, inspecionar o JSON real" já usada com OddsPapi/
+    FotMob no resto do projeto): `eventId` vem **0 pra TODAS as partidas do
+    Brasileirão testadas** (placeholder, mesmo espírito do `fotmob_player_id`
+    "0"/"-1" já documentado em `players`) -- só as 5 ligas de elite europeias
+    têm `eventId` real e não-zero. Corrigido gerando um id sintético
+    NEGATIVO, estável entre re-syncs (mesma ordem de evento sempre volta da
+    API), só pras partidas com eventId==0 -- preserva unicidade de
+    `(match_id, fotmob_event_id)` sem quebrar upsert."""
+    eventos = (((content.get("matchFacts") or {}).get("events") or {}).get("events")) or []
+    linhas = []
+    contador_id_sintetico = 0
+    for e in eventos:
+        if e.get("type") != "Card":
+            continue
+        tipo = MAPA_TIPO_CARTAO.get(e.get("card"))
+        if tipo is None:
+            continue  # valor de `card` não mapeado -- não adivinha, ignora
+        jogador = e.get("player") or {}
+        fotmob_player_id = jogador.get("id")
+        event_id = e.get("eventId")
+        if not event_id:
+            contador_id_sintetico -= 1
+            event_id = contador_id_sintetico
+        linhas.append(
+            {
+                "match_id": match_id,
+                "team_id": home_team_id if e.get("isHome") else away_team_id,
+                "player_name": jogador.get("name"),
+                "event_type": tipo,
+                "minute": e.get("time"),
+                "source": "fotmob",
+                "fotmob_event_id": event_id,
+                "fotmob_player_id": str(fotmob_player_id) if fotmob_player_id is not None else None,
+                "detail": {
+                    "overloadTime": e.get("overloadTime"),
+                    "cardDescription": e.get("cardDescription"),
+                    "card_raw": e.get("card"),
+                },
+            }
+        )
+    return linhas
+
+
 def parse_match_details(d: dict, match_id: int, home_team_id: int, away_team_id: int):
     content = d.get("content") or {}
     team_rows = []
@@ -402,6 +490,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
     team_rows, _ = parse_match_details(d, match_id, home_team_id, away_team_id)
     periodo_rows = montar_linhas_stats_periodo(content, match_id, home_team_id, away_team_id)
     momentum_rows = montar_linhas_momentum(content, match_id)
+    event_rows = parse_eventos_cartao(content, match_id, home_team_id, away_team_id)
 
     contexto_row = parse_contexto_jogo(d, match_id, fotmob_match_id)
 
@@ -534,6 +623,7 @@ def processar_matchdetails_completo(d: dict, match_id: int, fotmob_match_id, fot
         "lineup_rows": lineup_rows,
         "player_rows": player_rows,
         "shot_rows": shot_rows,
+        "event_rows": event_rows,
     }
 
 
@@ -757,6 +847,12 @@ def main():
             for row in shot_rows:
                 row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"]) if row["fotmob_player_id"] else None
             supabase.table("match_shots_fotmob").upsert(shot_rows, on_conflict="fotmob_shot_id").execute()
+
+        event_rows = extraido["event_rows"]
+        if event_rows:
+            for row in event_rows:
+                row["player_id"] = fotmob_to_player_id.get(row.pop("fotmob_player_id"))
+            supabase.table("match_events").upsert(event_rows, on_conflict="match_id,fotmob_event_id").execute()
 
         supabase.table("match_source_ids").upsert(
             {

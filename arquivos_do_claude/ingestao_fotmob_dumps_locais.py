@@ -163,6 +163,7 @@ def main():
         team_rows_all, contexto_rows_all = [], []
         player_dim_rows_all, lineup_rows_all = [], []
         player_rows_all, shot_rows_all = [], []
+        event_rows_all = []
         source_rows_all = []
 
         for match_id in lote_ids:
@@ -200,6 +201,7 @@ def main():
             lineup_rows_all.extend(extraido["lineup_rows"])
             player_rows_all.extend(extraido["player_rows"])
             shot_rows_all.extend(extraido["shot_rows"])
+            event_rows_all.extend(extraido["event_rows"])
             source_rows_all.append({
                 "match_id": match_id,
                 "source": "fotmob",
@@ -230,11 +232,16 @@ def main():
         for row in shot_rows_all:
             row["player_id"] = fotmob_to_player_id.get(row["fotmob_player_id"]) if row["fotmob_player_id"] else None
 
+        for row in event_rows_all:
+            row["player_id"] = fotmob_to_player_id.get(row.pop("fotmob_player_id"))
+        event_rows_all = list({(r["match_id"], r["fotmob_event_id"]): r for r in event_rows_all}.values())
+
         _upsert_em_fatias(supabase, "match_stats_fotmob", team_rows_all, "match_id,team_id")
         _upsert_em_fatias(supabase, "match_context_fotmob", contexto_rows_all, "match_id")
         _upsert_em_fatias(supabase, "match_lineup_fotmob", lineup_rows_all, "match_id,team_id,fotmob_player_id")
         _upsert_em_fatias(supabase, "match_player_stats_fotmob", player_rows_all, "match_id,fotmob_player_id")
         _upsert_em_fatias(supabase, "match_shots_fotmob", shot_rows_all, "fotmob_shot_id")
+        _upsert_em_fatias(supabase, "match_events", event_rows_all, "match_id,fotmob_event_id")
         _upsert_em_fatias(supabase, "match_source_ids", source_rows_all, "match_id,source")
 
         print(f"  lote {inicio + len(lote_ids)}/{len(match_ids_pendentes)} -- {n_ok} ok, {n_sem_match} sem match, {n_falha} falhas até agora.")
