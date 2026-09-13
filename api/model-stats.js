@@ -50,7 +50,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
-import { calcularResultadosReais, LINHAS_GOLS_TIME } from './_lib/resultadosReais.js';
+import { calcularResultadosReais, calcularCartoesExtras, LINHAS_GOLS_TIME } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -866,7 +866,15 @@ export default async function handler(req, res) {
     // Actions (ver CONTEXTO_PROJETO.md); match_stats_fotmob é sincronizada
     // automaticamente todo dia (alias shots:total_shots pra manter o nome de
     // campo já usado no resto deste arquivo).
-    const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('id, match_id, team_id, corners, shots:total_shots, shots_on_target'));
+    // `yellow_cards, red_cards` a mais nesta mesma query (não uma nova) --
+    // servem o FALLBACK de cartões (ver `calcularCartoesExtras` em
+    // api/_lib/resultadosReais.js), reaproveitando a leitura já feita pra
+    // corners/shots/chutes no gol.
+    const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('id, match_id, team_id, corners, shots:total_shots, shots_on_target, yellow_cards, red_cards'));
+    // FONTE PRIMÁRIA de cartões (ver mesmo comentário em
+    // api/backtest-betting.js) -- TODOS os tipos de evento, precisa disso
+    // pra decidir se a partida "tem match_events" antes de filtrar por tipo.
+    const promiseMatchEvents = buscarTudoPaginado(() => supabase.from('match_events').select('match_id, team_id, event_type'));
     const promiseCalibracoes = buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y'));
     // Resultado real dos mercados "1º tempo" (ver api/_lib/resultadosReais.js
     // e o mesmo comentário em api/backtest-betting.js).
@@ -971,9 +979,9 @@ export default async function handler(req, res) {
 
     // As 5 promessas abaixo já foram disparadas mais acima (em paralelo com
     // a primeira leva) -- só falta esperar.
-    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos] = await Promise.all([
       promiseTodasMatches, promiseOddsRowsAntigas, promiseMarketOddsRaw, promiseCorneragensBrutas, promiseCalibracoes,
-      promiseOddsCartoesEscanteiosTotal, promiseOddsCartoesTime, promiseGolsPrimeiroTempo, promiseStatsPrimeiroTempo,
+      promiseOddsCartoesEscanteiosTotal, promiseOddsCartoesTime, promiseGolsPrimeiroTempo, promiseStatsPrimeiroTempo, promiseMatchEvents,
     ]);
     const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw), ...oddsCartoesEscanteiosTotal, ...oddsCartoesTime];
 
@@ -1062,7 +1070,16 @@ export default async function handler(req, res) {
       Object.keys(somaFaltas1t).forEach(id => { if (contFaltas1t[id] === 2) faltas1t[id] = somaFaltas1t[id]; });
     }
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t });
+    // Cartões (bookings) -- ver `calcularCartoesExtras` em
+    // api/_lib/resultadosReais.js pra fonte primária (`match_events`) e
+    // fallback (`match_stats_fotmob.yellow_cards`+`red_cards`).
+    const { cartoesTotal, cartoesHome, cartoesAway } = calcularCartoesExtras(
+      matchesValidos,
+      corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)),
+      matchEventsBrutos.filter(r => matchIdsValidos.has(r.match_id)),
+    );
+
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway });
 
     // odds devigadas por match+market -> { selecao: prob }
     const oddsPorMatchMercado = {};

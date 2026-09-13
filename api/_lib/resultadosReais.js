@@ -36,17 +36,97 @@ export const LINHAS_GOLS_1T_OU = [0.5, 1.5, 2.5];
 export const LINHAS_CORNERS_1T_OU = [3.5, 4.5, 5.5];
 export const LINHAS_FALTAS_1T_OU = [9.5, 11.5, 13.5];
 
+// Cartões (bookings), total da partida e por time -- mesmas linhas de
+// `scripts/dados_historicos.py` (`LINHAS_CARTOES_OU`/`LINHAS_CARTOES_TIME_OU`)
+// e da lista já usada em api/backtest-betting.js/api/model-stats.js pra
+// buscar odds reais (`LINHAS_CARTOES_OU`/`LINHAS_CARTOES_TIME_OU` locais
+// nesses arquivos, como string -- duplicada aqui de propósito, mesmo padrão
+// do resto deste arquivo).
+export const LINHAS_CARTOES_OU = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5];
+export const LINHAS_CARTOES_TIME_OU = [0.5, 1.5, 2.5, 3.5, 4.5];
+
+// ACHADO REAL (13/09): até esta função existir, `cartoes_over_under_X`/
+// `cartoes_home_over_under_X`/`cartoes_away_over_under_X` não tinham NENHUMA
+// entrada em `calcularResultadosReais` -- toda aposta de cartões comparava
+// contra `undefined` e "perdia" sempre, ROI -100% fabricado em qualquer
+// linha/liga testada (ver CONTEXTO_PROJETO.md). Porta a mesma lógica de
+// fonte primária/fallback de `scripts/dados_historicos.py`
+// (`_carregar_total_cartoes_por_partida`/`_carregar_cartoes_por_time_por_
+// partida`): PRIMÁRIA `match_events` (evento a evento -- amarelo/2º
+// amarelo/vermelho, cada linha é 1 cartão mostrado), usada só quando a
+// partida tem QUALQUER linha em `match_events` (cobertura real é ruim --
+// 100% ausente desde junho/2026 no treino Python, ver comentário lá);
+// FALLBACK pra partida sem NENHUM evento ingerido: `match_stats_fotmob.
+// yellow_cards`+`red_cards` (imperfeito, mas usar "sem match_events" como
+// "0 cartões" seria pior -- rotularia todo jogo recente como zero). Gate:
+// só resolve pra partida com as 2 linhas de `match_stats_fotmob` (mesma
+// "processada" que corners/shots já exigem no call-site).
+//
+// `matchStatsRows`: linhas cruas de `match_stats_fotmob` já filtradas pro
+// lote de match_id relevante, com `match_id, team_id, yellow_cards,
+// red_cards` (reaproveita a mesma query já feita pra corners/shots/chutes
+// nos dois call-sites, só com 2 colunas a mais). `matchEventsRows`: linhas
+// cruas de `match_events` (`match_id, team_id, event_type`), TODOS os tipos
+// de evento (não só cartão) -- precisa disso pra decidir se a partida "tem
+// match_events" antes de filtrar por tipo de cartão.
+const TIPOS_EVENTO_CARTAO = new Set(['yellow_card', 'second_yellow_card', 'red_card']);
+export function calcularCartoesExtras(matchesValidos, matchStatsRows, matchEventsRows) {
+  const cartoesTotal = {}, cartoesHome = {}, cartoesAway = {};
+
+  const statsPorMatch = {};
+  matchStatsRows.forEach(r => { (statsPorMatch[r.match_id] ||= []).push(r); });
+  const processadas = new Set(
+    Object.keys(statsPorMatch).filter(id => statsPorMatch[id].length === 2).map(Number)
+  );
+
+  const comEventos = new Set(matchEventsRows.filter(r => processadas.has(r.match_id)).map(r => r.match_id));
+
+  const contagemEventosTotal = {};
+  const contagemEventosPorTime = {};
+  matchEventsRows
+    .filter(r => comEventos.has(r.match_id) && TIPOS_EVENTO_CARTAO.has(r.event_type))
+    .forEach(r => {
+      contagemEventosTotal[r.match_id] = (contagemEventosTotal[r.match_id] || 0) + 1;
+      contagemEventosPorTime[`${r.match_id}_${r.team_id}`] = (contagemEventosPorTime[`${r.match_id}_${r.team_id}`] || 0) + 1;
+    });
+
+  const fallbackPorTime = {};
+  matchStatsRows.forEach(r => {
+    if (r.yellow_cards == null && r.red_cards == null) return;
+    fallbackPorTime[`${r.match_id}_${r.team_id}`] = (Number(r.yellow_cards) || 0) + (Number(r.red_cards) || 0);
+  });
+
+  matchesValidos.forEach(m => {
+    if (!processadas.has(m.id)) return;
+    if (comEventos.has(m.id)) {
+      cartoesTotal[m.id] = contagemEventosTotal[m.id] || 0;
+      cartoesHome[m.id] = contagemEventosPorTime[`${m.id}_${m.home_team_id}`] || 0;
+      cartoesAway[m.id] = contagemEventosPorTime[`${m.id}_${m.away_team_id}`] || 0;
+    } else {
+      const home = fallbackPorTime[`${m.id}_${m.home_team_id}`];
+      const away = fallbackPorTime[`${m.id}_${m.away_team_id}`];
+      if (home != null) cartoesHome[m.id] = home;
+      if (away != null) cartoesAway[m.id] = away;
+      if (home != null && away != null) cartoesTotal[m.id] = home + away;
+    }
+  });
+
+  return { cartoesTotal, cartoesHome, cartoesAway };
+}
+
 // `extras`: `{ corners, shots, shots_on_target, golsPrimeiroTempo, corners1t,
-// faltas1t }`, cada um um mapa `{ match_id: total_da_partida }` já somado
-// (mandante+visitante) e validado (só entra se os dois times tiverem
-// registro -- ver os call-sites em api/model-stats.js/api/backtest-
-// betting.js, `cont[id] === 2`). Precisam de JOIN novo (não vêm em
-// `matches`, diferente de gols por time) -- por isso entram como parâmetro
-// à parte, igual `corners` já fazia.
+// faltas1t, cartoesTotal, cartoesHome, cartoesAway }`, cada um um mapa
+// `{ match_id: total_da_partida }` já somado (mandante+visitante, exceto
+// cartoesHome/cartoesAway que já vêm por time) e validado (só entra se os
+// dois times tiverem registro -- ver os call-sites em api/model-stats.js/
+// api/backtest-betting.js, `cont[id] === 2`/`calcularCartoesExtras` acima).
+// Precisam de JOIN novo (não vêm em `matches`, diferente de gols por time)
+// -- por isso entram como parâmetro à parte, igual `corners` já fazia.
 export function calcularResultadosReais(matches, extras = {}) {
   const {
     corners = {}, shots = {}, shots_on_target: shotsOnTarget = {},
     golsPrimeiroTempo = {}, corners1t = {}, faltas1t = {},
+    cartoesTotal = {}, cartoesHome = {}, cartoesAway = {},
   } = extras;
   const porMatch = {};
   for (const m of matches) {
@@ -117,6 +197,28 @@ export function calcularResultadosReais(matches, extras = {}) {
     if (!porMatch[matchId]) continue;
     for (const linha of LINHAS_FALTAS_1T_OU) {
       porMatch[matchId][`faltas_1t_over_under_${linha.toFixed(1)}`] = totalFaltas1t > linha ? 'over' : 'under';
+    }
+  }
+  // Cartões (bookings) -- ver `calcularCartoesExtras` acima pra fonte/
+  // fallback. Nome de mercado interno (`cartoes_*`, não `bookings_*` --
+  // esse é o nome REAL na odds_market, mapeado em `mercadoOddsReal` nos
+  // call-sites) confirmado contra `custom_model_configs`/`model_predictions`.
+  for (const [matchId, totalCartoes] of Object.entries(cartoesTotal)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_CARTOES_OU) {
+      porMatch[matchId][`cartoes_over_under_${linha.toFixed(1)}`] = totalCartoes > linha ? 'over' : 'under';
+    }
+  }
+  for (const [matchId, totalCartoesHome] of Object.entries(cartoesHome)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_CARTOES_TIME_OU) {
+      porMatch[matchId][`cartoes_home_over_under_${linha.toFixed(1)}`] = totalCartoesHome > linha ? 'over' : 'under';
+    }
+  }
+  for (const [matchId, totalCartoesAway] of Object.entries(cartoesAway)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_CARTOES_TIME_OU) {
+      porMatch[matchId][`cartoes_away_over_under_${linha.toFixed(1)}`] = totalCartoesAway > linha ? 'over' : 'under';
     }
   }
   return porMatch;

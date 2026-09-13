@@ -44,7 +44,7 @@ import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { calcularCurvaPnlEv } from './_lib/curvaPnlEv.js';
 import { calcularStakeKellyPorFaixa } from './_lib/stakingPolicy.js';
-import { calcularResultadosReais } from './_lib/resultadosReais.js';
+import { calcularResultadosReais, calcularCartoesExtras } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -322,7 +322,7 @@ export default async function handler(req, res) {
     // sempre, não só quando `liga_id` é dado: reduz o volume de `matches`
     // trazido em qualquer chamada com `data_inicio`/`data_fim`.
     const todasMatches = await buscarTudoPaginado(() => {
-      let q = supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date');
+      let q = supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date, home_team_id, away_team_id');
       if (ligaIdNum) q = q.eq('league_id', ligaIdNum);
       if (dataInicioMs != null) q = q.gte('match_date', new Date(dataInicioMs).toISOString());
       if (dataFimMs != null) q = q.lte('match_date', new Date(dataFimMs).toISOString());
@@ -397,7 +397,7 @@ export default async function handler(req, res) {
     // (`usar_calibracao=platt/isotonic`) e as odds reais de cartões/
     // escanteios (`oddsCartoesEscanteiosTotal`/`oddsCartoesTime`) -- não só
     // os novos mercados de 1º tempo.
-    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
+    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos] = await Promise.all([
       buscarPossivelmenteFiltradoPorLiga((lote) => {
         let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado');
         if (lote) q = q.in('match_id', lote);
@@ -483,8 +483,12 @@ export default async function handler(req, res) {
       // nos runners do GitHub Actions (ver CONTEXTO_PROJETO.md);
       // match_stats_fotmob é sincronizada automaticamente todo dia (alias
       // shots:total_shots pra manter o nome de campo já usado abaixo).
+      // `team_id, yellow_cards, red_cards` a mais nesta mesma query (não uma
+      // nova) -- servem o FALLBACK de cartões (ver `calcularCartoesExtras`
+      // em api/_lib/resultadosReais.js), reaproveitando a leitura já feita
+      // pra corners/shots/chutes no gol.
       buscarPossivelmenteFiltradoPorLiga((lote) => {
-        let q = supabase.from('match_stats_fotmob').select('match_id, corners, shots:total_shots, shots_on_target');
+        let q = supabase.from('match_stats_fotmob').select('match_id, team_id, corners, shots:total_shots, shots_on_target, yellow_cards, red_cards');
         if (lote) q = q.in('match_id', lote);
         return q;
       }),
@@ -524,6 +528,19 @@ export default async function handler(req, res) {
       }),
       buscarPossivelmenteFiltradoPorLiga((lote) => {
         let q = supabase.from('match_stats_fotmob_periodo').select('match_id, corners, fouls_committed').eq('periodo', 'primeiro_tempo');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
+      // FONTE PRIMÁRIA de cartões (ver `calcularCartoesExtras` em
+      // api/_lib/resultadosReais.js) -- TODOS os tipos de evento (não só
+      // cartão), precisa disso pra decidir se a partida "tem match_events"
+      // antes de filtrar por tipo. `match_events` só tem cartão/gol/
+      // substituição por design (ver CLAUDE.md); nesta tabela não tem gol
+      // nem substituição, só cartão -- mas o filtro por tipo continua
+      // necessário do mesmo jeito (evita contar linha nova que apareça no
+      // futuro como se fosse cartão).
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('match_events').select('match_id, team_id, event_type');
         if (lote) q = q.in('match_id', lote);
         return q;
       }),
@@ -617,7 +634,16 @@ export default async function handler(req, res) {
       Object.keys(somaFaltas1t).forEach(id => { if (contFaltas1t[id] === 2) faltas1t[id] = somaFaltas1t[id]; });
     }
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t });
+    // Cartões (bookings) -- ver `calcularCartoesExtras` em
+    // api/_lib/resultadosReais.js pra fonte primária (`match_events`) e
+    // fallback (`match_stats_fotmob.yellow_cards`+`red_cards`).
+    const { cartoesTotal, cartoesHome, cartoesAway } = calcularCartoesExtras(
+      matchesValidos,
+      corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)),
+      matchEventsBrutos.filter(r => matchIdsValidos.has(r.match_id)),
+    );
+
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway });
 
     // odds cruas (pra pagamento real) e devigadas (pra edge) por match+market
     const oddsPorMatchMercado = {};
