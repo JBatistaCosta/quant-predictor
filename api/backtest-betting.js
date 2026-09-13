@@ -249,6 +249,35 @@ async function buscarTudoPaginado(criarQuery) {
   return resultado;
 }
 
+// BUG REAL corrigido nesta sessão (achado rodando o backtest de cartões em
+// produção pra Brasileirão A/Serie A Itália -- `statement timeout` 57014):
+// TODA consulta match_id-keyed deste arquivo (matches, predições, odds,
+// stats) trazia a tabela INTEIRA sem filtro de liga na SQL, filtrando só em
+// JS depois -- correto, mas caro. Sob `liga_id`, o lote de match_id é
+// pequeno (centenas), então filtrar cada consulta por `.in('match_id',
+// lote)` direto no Postgres corta o volume trazido por liga inteira em vez
+// de banco inteiro. `buscarTudoPaginadoIn` faz isso em lotes de 200 ids
+// (mesmo padrão já usado em api/model-maintenance.js) -- `ORDER BY id`
+// dentro de cada lote pelo mesmo motivo de `buscarTudoPaginado` (paginação
+// estável).
+async function buscarTudoPaginadoIn(ids, criarQuery) {
+  const TAMANHO_PAGINA = 1000;
+  const TAMANHO_LOTE = 200;
+  const resultado = [];
+  for (let inicio = 0; inicio < ids.length; inicio += TAMANHO_LOTE) {
+    const lote = ids.slice(inicio, inicio + TAMANHO_LOTE);
+    let pagina = 0;
+    while (true) {
+      const { data, error } = await criarQuery(lote).order('id').range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+      if (error) throw error;
+      resultado.push(...(data || []));
+      if (!data || data.length < TAMANHO_PAGINA) break;
+      pagina++;
+    }
+  }
+  return resultado;
+}
+
 // Bootstrap: reamostra os lucros individuais com reposição N vezes, devolve IC 95% do ROI
 function bootstrapROI(apostas, iteracoes = 2000) {
   const n = apostas.length;
@@ -284,17 +313,60 @@ export default async function handler(req, res) {
   // inteiro, não só as anteriores à meia-noite.
   const dataInicioMs = data_inicio ? Date.parse(data_inicio) : null;
   const dataFimMs = data_fim ? Date.parse(data_fim) + 24 * 60 * 60 * 1000 - 1 : null;
+  const ligaIdNum = liga_id ? Number(liga_id) : null;
 
   try {
+    // Matches primeiro (não predições, como antes) -- só assim dá pra saber
+    // o lote de match_id da liga ANTES de disparar as outras 9 consultas.
+    // Filtro de liga/data já na SQL (não só em JS depois, como antes) --
+    // sempre, não só quando `liga_id` é dado: reduz o volume de `matches`
+    // trazido em qualquer chamada com `data_inicio`/`data_fim`.
+    const todasMatches = await buscarTudoPaginado(() => {
+      let q = supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date');
+      if (ligaIdNum) q = q.eq('league_id', ligaIdNum);
+      if (dataInicioMs != null) q = q.gte('match_date', new Date(dataInicioMs).toISOString());
+      if (dataFimMs != null) q = q.lte('match_date', new Date(dataFimMs).toISOString());
+      return q;
+    });
+
+    // Quando `liga_id` é dado, o lote de match_id é pequeno (centenas a
+    // poucos milhares) -- vale filtrar TODAS as consultas match_id-keyed
+    // abaixo por esse lote via `buscarTudoPaginadoIn`, em vez de trazer a
+    // tabela inteira e filtrar em JS. Sem `liga_id`, o "lote" seria o banco
+    // inteiro (dezenas de milhares de match_id) -- nesse caso, paginar por
+    // `.in('match_id', lote de 200)` só trocaria uma consulta grande por
+    // centenas de consultas pequenas, sem ganho nenhum -- mantém o
+    // comportamento antigo (busca tudo, filtra em JS).
+    const idsLigaFiltro = ligaIdNum ? todasMatches.map((m) => m.id) : null;
+    function buscarPossivelmenteFiltradoPorLiga(construirQuery) {
+      // `construirQuery(loteOuNull)`: monta a query; quando `lote` vem
+      // preenchido, deve encadear `.in('match_id', lote)`.
+      return idsLigaFiltro
+        ? buscarTudoPaginadoIn(idsLigaFiltro, (lote) => construirQuery(lote))
+        : buscarTudoPaginado(() => construirQuery(null));
+    }
+
+    // Quando um `mercado` de cartões/escanteios é pedido, só a linha real
+    // correspondente (via `mercadoOddsReal`) importa -- as outras 10 linhas
+    // da lista fixa abaixo nunca vão ser usadas por essa chamada. Sem
+    // `mercado` (visão geral, todos os grupos), mantém a lista inteira.
+    const mercadoOddsReq = mercado ? mercadoOddsReal(mercado) : null;
+    const mercadosCartoesEscanteiosBusca = mercadoOddsReq && MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS.includes(mercadoOddsReq)
+      ? [mercadoOddsReq] : MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS;
+    const mercadosCartoesTimeBusca = mercadoOddsReq && MERCADOS_CARTOES_TIME_ODDS.includes(mercadoOddsReq)
+      ? [mercadoOddsReq] : MERCADOS_CARTOES_TIME_ODDS;
+
     const [predicoesAntigas, predicoesBenchmarkingRaw] = await Promise.all([
-      buscarTudoPaginado(() => {
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
         let q = supabase.from('model_predictions').select('id, model_name, market, selection, probability, match_id');
+        if (lote) q = q.in('match_id', lote);
         if (modelo) q = q.eq('model_name', modelo);
         if (mercado) q = q.eq('market', mercado);
         return q;
       }),
-      buscarTudoPaginado(() => {
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
         let q = supabase.from('predicoes').select('match_id, model_name, mercado, prob_home, prob_draw, prob_away, prob_over, prob_under');
+        if (lote) q = q.in('match_id', lote);
         if (modelo) q = q.eq('model_name', modelo);
         // Sem `?mercado=` na URL, mantém o filtro em '1X2' (mesmo custo/
         // volume de antes do fix -- `predicoes` já tem 192k+ linhas, e
@@ -325,9 +397,12 @@ export default async function handler(req, res) {
     // (`usar_calibracao=platt/isotonic`) e as odds reais de cartões/
     // escanteios (`oddsCartoesEscanteiosTotal`/`oddsCartoesTime`) -- não só
     // os novos mercados de 1º tempo.
-    const [todasMatches, oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
-      buscarTudoPaginado(() => supabase.from('matches').select('id, league_id, status, home_goals, away_goals, match_date')),
-      buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado')),
+    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos] = await Promise.all([
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
       // Fallback pra `bookmaker='pinnacle'` -- `media_mercado` só existe pros
       // 3 mercados do pipeline antigo (1X2/over_under_2.5/btts, ver
       // `scripts/ingestar_felipe_kaggle_odds.py`, fonte histórica tipo
@@ -354,13 +429,23 @@ export default async function handler(req, res) {
       // 1X2 de `predicoes`/`media_mercado` antes desta extensão, então não
       // perde cobertura real).
       mercado
-        ? buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', mercado))
+        ? buscarPossivelmenteFiltradoPorLiga((lote) => {
+            let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', mercado);
+            if (lote) q = q.in('match_id', lote);
+            return q;
+          })
         : Promise.resolve([]),
-      buscarTudoPaginado(() => supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away')),
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('market_odds').select('match_id, odd_home, odd_draw, odd_away');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
       // Odds reais de Cartões/Escanteios (ver mercadoOddsReal acima) --
       // sempre buscadas (não gated por `mercado`, ao contrário do fallback
       // Pinnacle logo acima), mesma lista pequena e fixa de mercados que
-      // api/model-stats.js usa pro mesmo propósito.
+      // api/model-stats.js usa pro mesmo propósito (restrita a só a linha
+      // pedida quando `mercado` já identifica ela, ver
+      // `mercadosCartoesEscanteiosBusca`/`mercadosCartoesTimeBusca` acima).
       //
       // BUG REAL corrigido nesta sessão (achado rodando backtest de cartões
       // em produção, timeout `57014`): um `.in('market', lista)` com
@@ -374,11 +459,22 @@ export default async function handler(req, res) {
       // `Index Cond` de igualdade simples e a ordenação por `id` sai direto
       // do índice, sem SORT -- mesmo padrão de correção já usado alhures
       // no projeto (preferir várias consultas seletivas a uma só genérica).
-      Promise.all(MERCADOS_CARTOES_ESCANTEIOS_TOTAL_ODDS.map((m) =>
-        buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', m))
+      // Combinado com o filtro por `liga_id` (`buscarPossivelmenteFiltradoPorLiga`),
+      // é isso que resolveu o timeout de verdade -- só o `.in('market', lista)`
+      // sozinho (sem filtro de liga na SQL) ainda estourava sob carga.
+      Promise.all(mercadosCartoesEscanteiosBusca.map((m) =>
+        buscarPossivelmenteFiltradoPorLiga((lote) => {
+          let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').eq('market', m);
+          if (lote) q = q.in('match_id', lote);
+          return q;
+        })
       )).then((paginas) => paginas.flat()),
-      Promise.all(MERCADOS_CARTOES_TIME_ODDS.map((m) =>
-        buscarTudoPaginado(() => supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'betano').eq('market', m))
+      Promise.all(mercadosCartoesTimeBusca.map((m) =>
+        buscarPossivelmenteFiltradoPorLiga((lote) => {
+          let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'betano').eq('market', m);
+          if (lote) q = q.in('match_id', lote);
+          return q;
+        })
       )).then((paginas) => paginas.flat()),
       // Sem filtro `.not(...)` -- também precisamos de shots/shots_on_target
       // (mercados novos), que nem sempre são preenchidos junto com corners
@@ -387,7 +483,14 @@ export default async function handler(req, res) {
       // nos runners do GitHub Actions (ver CONTEXTO_PROJETO.md);
       // match_stats_fotmob é sincronizada automaticamente todo dia (alias
       // shots:total_shots pra manter o nome de campo já usado abaixo).
-      buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, corners, shots:total_shots, shots_on_target')),
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('match_stats_fotmob').select('match_id, corners, shots:total_shots, shots_on_target');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
+      // `model_calibration` NÃO é match_id-keyed (chave é model_name+market+
+      // selection) -- tabela pequena (144 linhas), sempre busca tudo, sem
+      // filtro de liga.
       buscarTudoPaginado(() => supabase.from('model_calibration').select('model_name, market, selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y')),
       // Resultado real dos mercados "1º tempo" (gols/escanteios/faltas,
       // ver api/_lib/resultadosReais.js) -- mesma fonte de
@@ -414,8 +517,16 @@ export default async function handler(req, res) {
       // QUALQUER linha em `match_goal_timeline` (shotmap processado) OU
       // terminou 0x0 (nesse caso "0 gols no 1º tempo" é verdade garantida
       // sem precisar do shotmap).
-      buscarTudoPaginado(() => supabase.from('match_goal_timeline').select('match_id, periodo')),
-      buscarTudoPaginado(() => supabase.from('match_stats_fotmob_periodo').select('match_id, corners, fouls_committed').eq('periodo', 'primeiro_tempo')),
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('match_goal_timeline').select('match_id, periodo');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('match_stats_fotmob_periodo').select('match_id, corners, fouls_committed').eq('periodo', 'primeiro_tempo');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
     ]);
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
     // match_id+market que media_mercado NÃO cobre (evita duplicar/preferir
@@ -432,7 +543,11 @@ export default async function handler(req, res) {
       if (c.method === 'isotonic') calibPorChave[chave].isotonic = { x: c.isotonic_x, y: c.isotonic_y };
     });
 
-    const ligaIdNum = liga_id ? Number(liga_id) : null;
+    // `todasMatches` já veio filtrado por liga/data direto da SQL (ver
+    // acima) -- o filtro aqui agora só precisa cruzar com `matchIdsSet`
+    // (partidas que realmente têm previsão). `ligaIdNum`/datas continuam
+    // conferidos de novo por segurança (idempotente, não muda resultado),
+    // sem custo real (`todasMatches` já é o lote pequeno).
     const matchesValidos = todasMatches.filter(m => {
       if (!matchIdsSet.has(m.id)) return false;
       if (ligaIdNum && m.league_id !== ligaIdNum) return false;
