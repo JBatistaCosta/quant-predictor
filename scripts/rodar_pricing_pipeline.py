@@ -44,6 +44,7 @@ import os
 import pandas as pd
 from supabase import Client, create_client
 
+import dados_historicos as dh
 from pricing_pipeline import DixonColesJointEngine, HierarchicalReconciler, PlayerToTeamAggregator
 from rodar_jogador_mercados_previsto import buscar_fixtures
 
@@ -63,16 +64,24 @@ def _buscar_macro_priors(supabase: Client, match_ids: list[int]) -> dict[int, di
     com lambda_home/lambda_away > 0 em `model_match_estimates.params`, mesmo
     critério de `lerParametrosPartida` (frontend). Partida sem nenhum
     `model_name` utilizável simplesmente não aparece no dict -- quem chama
-    pula (não há macro pra reconciliar contra, ver docstring do módulo)."""
-    resp = (
-        supabase.table("model_match_estimates")
-        .select("match_id, params")
-        .in_("match_id", match_ids)
-        .not_.is_("params", "null")
-        .execute()
+    pula (não há macro pra reconciliar contra, ver docstring do módulo).
+
+    Pagina de verdade (`dh._paginar`) -- várias partidas x até 3
+    `model_name` cada facilmente passa do corte silencioso de 1000 linhas
+    do PostgREST (achado real: sem isso, só as primeiras ~1000 linhas
+    retornadas viravam macro_priors, derrubando a cobertura da Camada 3
+    pra uma fração pequena e arbitrária das partidas na janela)."""
+    linhas = dh._paginar(
+        lambda inicio, fim: (
+            supabase.table("model_match_estimates")
+            .select("match_id, params")
+            .in_("match_id", match_ids)
+            .not_.is_("params", "null")
+            .range(inicio, fim)
+        )
     )
     saida: dict[int, dict] = {}
-    for linha in resp.data or []:
+    for linha in linhas:
         if linha["match_id"] in saida:
             continue  # já achou um macro utilizável pra essa partida, primeiro que aparece vale
         params = linha.get("params") or {}
@@ -96,14 +105,23 @@ def _buscar_jogadores(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
     """Uma linha por jogador das partidas em `match_ids`, nas DUAS fontes
     quando existirem -- a escolha de qual fonte usar (real > previsto,
     mesma prioridade de `SecaoJogadorMercados`) acontece depois, por
-    partida, em `_selecionar_fonte_por_partida`."""
-    resp = (
-        supabase.table("player_match_estimates")
-        .select(",".join(COLUNAS_JOGADOR))
-        .in_("match_id", match_ids)
-        .execute()
+    partida, em `_selecionar_fonte_por_partida`.
+
+    Pagina de verdade (`dh._paginar`) -- ~130 partidas x 40-80 jogadores
+    cada estoura o corte silencioso de 1000 linhas do PostgREST muito
+    fácil (achado real: sem paginação, só as partidas cujas linhas
+    calhavam de vir nas primeiras 1000 ganhavam elenco pra Camada 1 --
+    todas as outras eram puladas silenciosamente como "sem player_match_
+    estimates", mesmo tendo dado real no banco)."""
+    linhas = dh._paginar(
+        lambda inicio, fim: (
+            supabase.table("player_match_estimates")
+            .select(",".join(COLUNAS_JOGADOR))
+            .in_("match_id", match_ids)
+            .range(inicio, fim)
+        )
     )
-    return pd.DataFrame(resp.data or [], columns=COLUNAS_JOGADOR)
+    return pd.DataFrame(linhas, columns=COLUNAS_JOGADOR)
 
 
 def _selecionar_fonte_por_partida(jogadores_partida: pd.DataFrame) -> pd.DataFrame:
