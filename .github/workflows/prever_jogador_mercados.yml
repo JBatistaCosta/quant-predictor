@@ -1,13 +1,20 @@
 name: Predição de Chutes/Gols por Jogador (fixtures futuras)
 
 # Roda scripts/rodar_jogador_mercados_previsto.py -- pra cada partida
-# `scheduled` nos próximos 7 dias, calcula lambda de chutes/gols (Poisson)
-# por jogador, gravando em player_match_estimates com fonte_titular='real'
-# quando a escalação oficial já saiu (match_lineup_fotmob) ou 'previsto'
-# quando cai pro XI previsto (xi_previsto).
+# `scheduled` nos próximos 7 dias, calcula lambda de chutes/gols/xG/xA
+# (Poisson/regressor RMSE) por jogador, gravando em player_match_estimates
+# com fonte_titular='real' quando a escalação oficial já saiu
+# (match_lineup_fotmob) ou 'previsto' quando cai pro XI previsto
+# (xi_previsto).
 #
 # Roda depois de prever_xi.yml (05:30 UTC) -- depende do XI previsto do dia
 # já estar fresco pra partidas sem escalação oficial ainda.
+#
+# 3º step (scripts/rodar_pricing_pipeline.py) depende do 1º já ter
+# populado player_match_estimates nesta mesma execução -- roda as Camadas
+# 1-3 do pricing pipeline (scripts/pricing_pipeline.py) e grava os
+# mercados de gols reconciliados em model_predictions
+# (model_name='pricing_pipeline_v1'), exibidos em Análise Avançada.
 
 on:
   schedule:
@@ -58,3 +65,19 @@ jobs:
           ARGS=""
           if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
           python scripts/rodar_xg_agregado_previsto.py $ARGS
+
+      # Depende de player_match_estimates já populada pelo 1º step acima --
+      # agrega os lambdas por jogador (Camada 1), reconcilia contra o
+      # modelo macro já treinado em model_match_estimates.params (Camada
+      # 2) e grava os mercados de gols da matriz Dixon-Coles (Camada 3) em
+      # model_predictions. Ver scripts/rodar_pricing_pipeline.py -- não
+      # roda a Camada 4 (decisão de aposta contra odds reais), só persiste
+      # a probabilidade do modelo pra exibição em Análise Avançada.
+      - name: Rodar pricing pipeline (Dixon-Coles reconciliado)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+          python scripts/rodar_pricing_pipeline.py $ARGS
