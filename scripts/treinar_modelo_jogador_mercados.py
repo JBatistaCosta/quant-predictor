@@ -140,10 +140,15 @@ FEATURES_CHUTES = [
 # xg_90) -- xG por jogador é dominado pela mesma força ofensiva/oponente,
 # não precisa de feature set próprio.
 FEATURES_XG = [f if f != "chutes_90_bayesiano" else "xg_90_bayesiano" for f in FEATURES_CHUTES]
+# xA (expected assists) segue o mesmo raciocínio do xG -- volume ofensivo
+# do PRÓPRIO jogador não é o sinal certo pra quem cria chance pro colega;
+# troca o sinal de volume primário pelo shrinkage bayesiano de xA/90.
+FEATURES_XA = [f if f != "chutes_90_bayesiano" else "xa_90_bayesiano" for f in FEATURES_CHUTES]
 
 TARGET_CHUTES = "chutes_partida"
 TARGET_GOLS = "gols_partida"
 TARGET_XG = "xg_partida"
+TARGET_XA = "xa_partida"
 TARGET_CHUTES_NO_ALVO = "chutes_no_alvo_partida"
 FRACAO_TESTE = 0.2
 
@@ -163,6 +168,12 @@ MODEL_NAMES_GOLS = {
 # LightGBM -- mesma simplicidade do precedente de time).
 MODEL_NAMES_XG = {
     "catboost": "jogador_xg_catboost_rmse_v1",
+}
+# xA por jogador -- mesma natureza CONTÍNUA do xG (soma de
+# match_player_stats_fotmob.xa, não uma contagem), mesmo padrão de
+# regressor RMSE (só CatBoost).
+MODEL_NAMES_XA = {
+    "catboost": "jogador_xa_catboost_rmse_v1",
 }
 
 
@@ -211,7 +222,7 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     logger.info("Carregando esqueleto de aparições (match_player_stats_fotmob)...")
     stats_rows = _buscar_por_lotes(
         supabase, "match_player_stats_fotmob", "match_id", match_ids,
-        "match_id, team_id, player_id, minutes_played, rating",
+        "match_id, team_id, player_id, minutes_played, rating, xa",
     )
     df_stats = pd.DataFrame(stats_rows)
     if df_stats.empty:
@@ -270,6 +281,12 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     # 0 por acaso do fillna, senão o modelo aprenderia "sem chute" e "chute
     # sem xg registrado" como o mesmo sinal.
     df["xg_partida"] = np.where(df["chutes_partida"] == 0, df["xg_partida"].fillna(0.0), df["xg_partida"])
+    # xA já vem pronto por partida em match_player_stats_fotmob.xa (ao
+    # contrário de chutes/gols/xG, não precisa de agregação chute a chute) --
+    # sem gate "0 chutes -> 0" análogo ao de xg_partida (xA não depende de
+    # ter chutado); NaN genuíno (linha sem xA capturado) fica NaN e é
+    # dropado no treino (ver treinar(), mesmo tratamento de xg_partida).
+    df["xa_partida"] = df["xa"]
 
     df = df.rename(columns={"match_id": "id_match"}).merge(
         matches[["id", "match_date", "home_team_id", "away_team_id", "league_id", "season", "liga"]].rename(columns={"id": "id_match"}),
@@ -419,7 +436,7 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
 
     for nome, coluna_alvo in (
         ("chutes", "chutes_partida"), ("gols", "gols_partida"), ("xg", "xg_partida"),
-        ("chutes_no_alvo", "chutes_no_alvo_partida"),
+        ("chutes_no_alvo", "chutes_no_alvo_partida"), ("xa", "xa_partida"),
     ):
         col_bruto = f"_{nome}_90_bruto"
         col_ewma = f"ewma_{nome}_90"
@@ -595,7 +612,18 @@ def treinar(df: pd.DataFrame, supabase: Client) -> dict:
         algoritmos=ALGORITMOS_REGRESSAO_XG,
     )
 
-    return {"chutes": resultado_chutes, "gols_direto": resultado_gols, "xg": resultado_xg}
+    # xA por jogador -- mesmo tratamento de xg_partida (alvo contínuo, não
+    # passa pelo dropna final de engenharia_features(), filtra NaN aqui).
+    treino_xa = treino.dropna(subset=[TARGET_XA])
+    teste_xa = teste.dropna(subset=[TARGET_XA])
+    baseline_xa = (teste_xa["ewma_xa_90"] * teste_xa["minutos_esperados"] / 90.0).clip(lower=0.0).to_numpy()
+    resultado_xa = _treinar_regressor(
+        treino_xa, teste_xa, supabase, target=TARGET_XA, features=FEATURES_XA,
+        market="jogador_xa", model_names=MODEL_NAMES_XA, baseline_previsto=baseline_xa,
+        algoritmos=ALGORITMOS_REGRESSAO_XG,
+    )
+
+    return {"chutes": resultado_chutes, "gols_direto": resultado_gols, "xg": resultado_xg, "xa": resultado_xa}
 
 
 if __name__ == "__main__":
