@@ -565,6 +565,11 @@ def obter_forma_recente_por_mando(
         )
         xg_casa = _stats_marcado_sofrido_lote(supabase, "match_stats_fotmob", ["xg", "xgot", "tackles", "interceptions", "duels_won", "aerial_duels_won", "touches_opp_box"], [j["id"] for j in jogos_casa], team_id)
         xg_fora = _stats_marcado_sofrido_lote(supabase, "match_stats_fotmob", ["xg", "xgot", "tackles", "interceptions", "duels_won", "aerial_duels_won", "touches_opp_box"], [j["id"] for j in jogos_fora], team_id)
+        # EWMA + shrinkage bayesiano do xG marcado/sofrido -- feature NOVA
+        # ao lado da média crua acima (media_xg_5j_home/_sofrido), não uma
+        # substituição (ver docstring de _xg_marcado_sofrido_ewma_bayesiano).
+        xg_ewma_casa = _xg_marcado_sofrido_ewma_bayesiano(supabase, [j["id"] for j in jogos_casa], team_id)
+        xg_ewma_fora = _xg_marcado_sofrido_ewma_bayesiano(supabase, [j["id"] for j in jogos_fora], team_id)
 
         forma[team_id] = {
             "media_gols_marcados_5j_home": float(np.mean([j["home_goals"] for j in jogos_casa])) if jogos_casa else np.nan,
@@ -575,6 +580,10 @@ def obter_forma_recente_por_mando(
             "media_xg_sofrido_5j_home": xg_casa.get("xg", {}).get("sofrido"),
             "media_xg_5j_away": xg_fora.get("xg", {}).get("marcado"),
             "media_xg_sofrido_5j_away": xg_fora.get("xg", {}).get("sofrido"),
+            "media_xg_5j_home_bayesiano": xg_ewma_casa["marcado"],
+            "media_xg_sofrido_5j_home_bayesiano": xg_ewma_casa["sofrido"],
+            "media_xg_5j_away_bayesiano": xg_ewma_fora["marcado"],
+            "media_xg_sofrido_5j_away_bayesiano": xg_ewma_fora["sofrido"],
             "xgot_home_5j": xg_casa.get("xgot", {}).get("marcado"),
             "xgot_away_5j": xg_fora.get("xgot", {}).get("marcado"),
             # "sofrido" de xGOT já vem calculado por _stats_marcado_sofrido_lote
@@ -678,6 +687,59 @@ def _stats_marcado_sofrido_lote(
             "sofrido": float(np.mean(sofrido)) if sofrido else np.nan,
         }
     return resultado
+
+
+def _xg_marcado_sofrido_ewma_bayesiano(
+    supabase: Client, match_ids_recentes_primeiro: list[int], team_id: int, w: int = 5, prior: float = 1.5
+) -> dict[str, float]:
+    """Versão EWMA + shrinkage bayesiano do xG marcado/sofrido -- feature
+    NOVA ao lado de `media_xg_5j_home`/`_sofrido` (média crua, calculada
+    por `_stats_marcado_sofrido_lote` logo abaixo em
+    `obter_forma_recente_por_mando`), não uma substituição: trocar a
+    média crua que os modelos já treinados esperam mudaria o significado
+    da feature sem retreinar, gerando desalinhamento treino/produção.
+
+    EWMA com peso decrescente por recência (`span=len(match_ids_
+    recentes_primeiro)`, mesmo span-por-janela já usado em
+    `_stats_marcado_sofrido_lote_multi_janelas`) sobre os jogos mais
+    recentes primeiro (mesma ordem que `obter_forma_recente_por_mando`
+    já busca, `order("match_date", desc=True)`), depois puxado pro prior
+    via `stat_bayesiano = (n*ewma + w*prior) / (n+w)` -- mesma fórmula de
+    `_anexar_bayesiano_por_partida`/`treinar_modelo_jogador_mercados.
+    _shrinkage_bayesiano`. `w=5`/`prior=1.5` espelham os mesmos defaults
+    já usados lá (`_anexar_bayesiano_por_partida` cai pra 1.5 quando nem
+    liga nem time têm histórico -- reaproveitado aqui como prior padrão
+    em vez de uma nova query de liga só pra este lookup ao vivo)."""
+    if not match_ids_recentes_primeiro:
+        return {"marcado": np.nan, "sofrido": np.nan}
+    linhas = (
+        supabase.table("match_stats_fotmob")
+        .select("match_id, team_id, xg")
+        .in_("match_id", match_ids_recentes_primeiro)
+        .execute()
+        .data
+        or []
+    )
+    por_match: dict[int, dict[bool, float]] = {}
+    for l in linhas:
+        if l.get("xg") is None:
+            continue
+        por_match.setdefault(l["match_id"], {})[l["team_id"] == team_id] = l["xg"]
+
+    # Reverte pra ordem cronológica (mais antigo -> mais recente) --
+    # ewm() pondera o ÚLTIMO valor da série como o mais recente/mais
+    # pesado, então a série precisa entrar nessa ordem.
+    marcado = [por_match[mid][True] for mid in reversed(match_ids_recentes_primeiro) if True in por_match.get(mid, {})]
+    sofrido = [por_match[mid][False] for mid in reversed(match_ids_recentes_primeiro) if False in por_match.get(mid, {})]
+
+    def _bayesiano(valores: list[float]) -> float:
+        if not valores:
+            return np.nan
+        ewma = float(pd.Series(valores).ewm(span=len(match_ids_recentes_primeiro), min_periods=1).mean().iloc[-1])
+        n = len(valores)
+        return (n * ewma + w * prior) / (n + w)
+
+    return {"marcado": _bayesiano(marcado), "sofrido": _bayesiano(sofrido)}
 
 
 def obter_forma_recente_extra_por_mando(
