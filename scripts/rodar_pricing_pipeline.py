@@ -1,8 +1,20 @@
 """Runner fino do pricing pipeline de 4 camadas (`pricing_pipeline.py`) para
 partidas `scheduled` dentro da janela de dias configurada -- grava os
-mercados de gols da Camada 3 (Dixon-Coles reconciliado) em
-`model_predictions` com `model_name='pricing_pipeline_v1'`, pra exibição em
-`src/pages/AnaliseAvancadaEvento.jsx` (seção "Pricing Pipeline").
+mercados de gols da Camada 3 (Dixon-Coles reconciliado) com
+`model_name='pricing_pipeline_v1'`, mesmo padrão de duas tabelas já usado
+por `rodar_xg_agregado_previsto.py`:
+  - `model_match_estimates.params` (`lambda_home`/`lambda_away`/`rho`) --
+    é isso que faz `pricing_pipeline_v1` aparecer como mais uma aba de
+    modelo em `AnaliseAvancadaEvento.jsx` ao lado de `hibrido_gols_v1`/
+    `hibrido_gols_xg_v1`/`xg_jogador_agregado_v1`, com TODA a UI genérica
+    de matriz/mercados/comparação de EV/Kelly/CSV já existente pra
+    qualquer modelo (a página deriva a matriz e todos os mercados client-
+    side a partir desses 3 números via `matrizPlacares`/`mercadosDeGols`,
+    o mesmo algoritmo Dixon-Coles de `distribuicoes.py` com paridade JS/
+    Python já validada -- não precisa de nenhum código novo de exibição).
+  - `model_predictions` (mercado/seleção/probabilidade) -- tabela flat
+    equivalente, mesmo papel que já tem pros outros 3 modelos (consumo
+    programático/futuro, não é o que alimenta a UI de EV).
 
 Escopo deliberadamente restrito às Camadas 1-3 (agregação bottom-up +
 reconciliação + matriz conjunta) -- NÃO roda a Camada 4 (`EnsembleVetoManager`,
@@ -145,6 +157,7 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None) -> int:
     engine = DixonColesJointEngine()
 
     linhas_saida = []
+    estimativas_saida = []
     partidas_processadas = 0
     for _, fixture in fixtures.iterrows():
         match_id = int(fixture["id"])
@@ -198,19 +211,31 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None) -> int:
                 "match_id": match_id, "model_name": MODEL_NAME_SAIDA, "market": mercado,
                 "selection": selecao, "probability": round(float(probabilidade), 5),
             })
+        estimativas_saida.append({
+            "match_id": match_id, "model_name": MODEL_NAME_SAIDA,
+            "params": {
+                "lambda_home": round(reconciliacao_home.lambda_final, 4),
+                "lambda_away": round(reconciliacao_away.lambda_final, 4),
+                "rho": round(float(resultado.rho_efetivo), 4),
+            },
+        })
         partidas_processadas += 1
 
     if not linhas_saida:
         logger.info("Nenhuma linha gerada.")
         return 0
 
+    for i in range(0, len(estimativas_saida), 500):
+        lote = estimativas_saida[i : i + 500]
+        supabase.table("model_match_estimates").upsert(lote, on_conflict="match_id,model_name").execute()
     for i in range(0, len(linhas_saida), 500):
         lote = linhas_saida[i : i + 500]
         supabase.table("model_predictions").upsert(lote, on_conflict="match_id,model_name,market,selection").execute()
 
     logger.info(
-        "%d linhas gravadas em model_predictions (%d de %d partidas na janela).",
-        len(linhas_saida), partidas_processadas, len(fixtures),
+        "%d partidas gravadas em model_match_estimates (params) + %d linhas em model_predictions "
+        "(%d de %d partidas na janela).",
+        len(estimativas_saida), len(linhas_saida), partidas_processadas, len(fixtures),
     )
     return len(linhas_saida)
 

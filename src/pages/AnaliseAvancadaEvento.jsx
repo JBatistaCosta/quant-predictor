@@ -18,7 +18,7 @@
 // de 12 do plano Hobby do Vercel).
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid, Activity, Zap, Layers } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Shield, Loader2, FlaskConical, Target, TrendingUp, Percent, Scale, Download, Camera, Check, X, RefreshCw, LayoutGrid, Activity, Zap } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import {
@@ -1807,66 +1807,6 @@ function SecaoJogadorMercados({
   );
 }
 
-// Rótulo legível pro nome interno do mercado gravado por
-// scripts/pricing_pipeline.py (mesmo vocabulário de scripts/distribuicoes.py
-// ::mercados_de_gols -- "1x2", "over_under_2.5", "btts", "handicap_-1.5",
-// "faixa_gols", "placar_exato", "dupla_chance") -- fallback pro nome cru
-// quando não reconhecido (não é lista fechada, o pipeline pode ganhar
-// mercados novos sem quebrar a exibição).
-function rotuloMercadoPricingPipeline(mercado) {
-  const mapa = {
-    '1X2': '1X2', btts: 'Ambas marcam', faixa_gols: 'Faixa de gols',
-    placar_exato: 'Placar exato', dupla_chance: 'Dupla chance',
-  };
-  if (mapa[mercado]) return mapa[mercado];
-  if (mercado?.startsWith('over_under_')) return `Over/Under ${mercado.replace('over_under_', '')}`;
-  if (mercado?.startsWith('over_under_time_1_')) return `Over/Under mandante ${mercado.replace('over_under_time_1_', '')}`;
-  if (mercado?.startsWith('over_under_time_2_')) return `Over/Under visitante ${mercado.replace('over_under_time_2_', '')}`;
-  if (mercado?.startsWith('handicap_')) return `Handicap ${mercado.replace('handicap_', '')}`;
-  return mercado;
-}
-
-// Mercados de gols do pricing pipeline de 4 camadas (scripts/
-// pricing_pipeline.py, Camada 3 -- Dixon-Coles reconciliado), exibido como
-// modelo adicional/independente do modelo misto principal desta página.
-// Agrupa por mercado (várias seleções por linha, ex.: home/draw/away em
-// "1x2") só pra organizar a exibição -- sem cruzar com odds reais nem EV
-// aqui (isso já existe pro modelo misto, ver TabelaEV acima; comparação de
-// EV pra este modelo fica pra uma iteração futura, ver plano da sessão).
-function SecaoPricingPipeline({ linhas }) {
-  if (!linhas?.length) return null;
-  const porMercado = {};
-  for (const l of linhas) {
-    if (!porMercado[l.market]) porMercado[l.market] = [];
-    porMercado[l.market].push(l);
-  }
-  const mercadosOrdenados = Object.keys(porMercado).sort();
-  return (
-    <Secao titulo="Pricing Pipeline (Dixon-Coles reconciliado)" icone={Layers}>
-      <p className="text-[11px] text-slate-500 mb-3">
-        Mercados de gols derivados da mesma matriz conjunta reconciliada (Camada 3 de <code>pricing_pipeline.py</code>),
-        exibidos aqui como modelo adicional -- sem comparação de EV ainda.
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {mercadosOrdenados.map((mercado) => (
-          <div key={mercado} className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">{rotuloMercadoPricingPipeline(mercado)}</div>
-            {porMercado[mercado]
-              .slice()
-              .sort((a, b) => b.probability - a.probability)
-              .map((l) => (
-                <div key={l.selection} className="flex justify-between text-sm py-0.5">
-                  <span className="text-slate-400">{l.selection}</span>
-                  <span className="font-mono text-slate-100">{fmtPct(l.probability)}</span>
-                </div>
-              ))}
-          </div>
-        ))}
-      </div>
-    </Secao>
-  );
-}
-
 // Busca TODAS as linhas de odds_market da partida nos mercados em escopo,
 // paginado de verdade (loop de `.range()` até vir página incompleta) -- não
 // é frescura: uma partida negociada por muito tempo/muitos bookmakers pode
@@ -1932,13 +1872,6 @@ export default function AnaliseAvancadaEvento() {
   // mercadoCartoesOddsReal) -- fonte separada do modelo misto acima, busca
   // própria porque não faz parte de `model_match_estimates`.
   const [mercadosCartoesModelo, setMercadosCartoesModelo] = useState(null);
-  // Mercados de gols do pricing pipeline de 4 camadas (Camada 3 do
-  // scripts/pricing_pipeline.py, gravado em model_predictions com
-  // model_name='pricing_pipeline_v1' por scripts/rodar_pricing_pipeline.py)
-  // -- exibido como modelo adicional, sem entrar na comparação de EV do
-  // modelo misto acima (mercadosCartoesModelo). Vazio até o runner rodar
-  // pelo menos 1 vez pra essa partida.
-  const [pricingPipelineMercados, setPricingPipelineMercados] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [calibracaoRows, setCalibracaoRows] = useState([]);
@@ -2023,7 +1956,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: pricingPipelineRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -2047,17 +1980,6 @@ export default function AnaliseAvancadaEvento() {
                   ...LINHAS_CARTOES_TIME_EV.map((l) => `cartoes_home_over_under_${rotuloLinha(l)}`),
                   ...LINHAS_CARTOES_TIME_EV.map((l) => `cartoes_away_over_under_${rotuloLinha(l)}`),
                 ])
-            : Promise.resolve({ data: [] }),
-          // Pricing pipeline de 4 camadas (Camada 3, mercados de gols do
-          // Dixon-Coles reconciliado) -- model_name próprio, sem cruzar com
-          // o modelo misto/Cartões acima. Mesma tabela genérica
-          // model_predictions, mesmo padrão de query da consulta anterior.
-          (j.status === 'scheduled' || finalizada)
-            ? supabase
-                .from('model_predictions')
-                .select('market, selection, probability')
-                .eq('match_id', matchId)
-                .eq('model_name', 'pricing_pipeline_v1')
             : Promise.resolve({ data: [] }),
           // Calibração Platt/Isotonic já ajustada (model_calibration), mesmo
           // padrão de AnaliseEstatisticaJogo.jsx -- o edge/EV/Kelly abaixo
@@ -2197,7 +2119,6 @@ export default function AnaliseAvancadaEvento() {
           for (const [mercado, v] of Object.entries(porMercado)) saidaCartoes[mercado] = v.probs;
           setMercadosCartoesModelo(Object.keys(saidaCartoes).length > 0 ? saidaCartoes : null);
         }
-        setPricingPipelineMercados(pricingPipelineRows || []);
         setCalibracaoRows(calib || []);
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
@@ -2813,12 +2734,6 @@ export default function AnaliseAvancadaEvento() {
             </>
           )}
         </>
-      )}
-
-      {pricingPipelineMercados.length > 0 && (
-        <div className="mt-4">
-          <SecaoPricingPipeline linhas={pricingPipelineMercados} />
-        </div>
       )}
 
       {jogadorEstimativas.length > 0 && (
