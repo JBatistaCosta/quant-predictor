@@ -500,6 +500,152 @@ def obter_squad_rating_atual(supabase: Client, team_ids: list[int], top_n: int =
     return resultado
 
 
+# Últimas N partidas como titular usadas na janela de GSAx (spec "Pricing
+# Pipeline v2", item 4.2 -- goleiro).
+GSAX_N_MAX_PARTIDAS = 25
+# Amostra mínima pra confiar no GSAx calculado -- abaixo disso o valor fica
+# ausente (NULL), tratado como neutro por quem consome (ver
+# `pricing_pipeline.py::modular_por_goleiro`), em vez de um rate calculado
+# com poucochíssimos chutes sofridos.
+GSAX_MIN_AMOSTRA = 5
+
+
+def obter_gsax_atual(supabase: Client, player_ids: list[int]) -> dict[int, dict]:
+    """GSAx_rate "hoje" (sem corte de data -- toda a história disponível,
+    mesmo espírito de `_bayesiano_atual` em `rodar_jogador_mercados_
+    previsto.py`: previsão pra partida futura, sem vazamento a evitar) pros
+    goleiros em `player_ids`.
+
+    GSAx_rate = 1 - (gols_sofridos_reais / xGOT_enfrentado), nas últimas
+    `GSAX_N_MAX_PARTIDAS` partidas em que o jogador foi titular COMO
+    GOLEIRO (`match_lineup_fotmob.is_starter=true` confirmado por
+    `match_player_stats_fotmob.is_goalkeeper=true` na mesma partida --
+    dupla checagem, não assume que todo titular listado no papel de GK
+    realmente atuou como goleiro). `gols_sofridos` vem do placar OFICIAL
+    (`matches.home_goals`/`away_goals` do time adversário), não de soma de
+    xGOT nem de reconstrução via `match_goal_timeline` -- mais simples e sem
+    a ressalva de `placar_confere` (aqui só precisa do total da partida, não
+    de reconstrução minuto a minuto). `xGOT_enfrentado` = soma de
+    `match_shots_fotmob.xgot` dos chutes NO ALVO do adversário nessas
+    partidas.
+
+    Devolve só os goleiros com amostra >= `GSAX_MIN_AMOSTRA` partidas —
+    os demais ficam ausentes do dict (quem chama trata isso como "sem GSAx
+    calculável", grava `NULL`, nunca `0.0` -- ver migration
+    `20260915100000_add_gsax_rate_jogador_mercados.sql`)."""
+    if not player_ids:
+        return {}
+    ids = [int(p) for p in player_ids]
+
+    lineup_rows = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("match_lineup_fotmob")
+            .select("match_id, team_id, player_id")
+            .eq("is_starter", True)
+            .in_("player_id", lote)
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        ids,
+        tamanho_lote=50,
+    )
+    if not lineup_rows:
+        return {}
+    df_lineup = pd.DataFrame(lineup_rows)
+
+    gk_confirmado_rows = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("match_player_stats_fotmob")
+            .select("match_id, player_id")
+            .eq("is_goalkeeper", True)
+            .in_("player_id", lote)
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        ids,
+        tamanho_lote=50,
+    )
+    if not gk_confirmado_rows:
+        return {}
+    df_gk_confirmado = pd.DataFrame(gk_confirmado_rows).drop_duplicates()
+
+    df_lineup = df_lineup.merge(df_gk_confirmado, on=["match_id", "player_id"], how="inner")
+    if df_lineup.empty:
+        return {}
+
+    match_ids = df_lineup["match_id"].astype(int).unique().tolist()
+    matches_rows = []
+    for lote in _dividir_em_lotes(match_ids):
+        matches_rows.extend(
+            supabase.table("matches")
+            .select("id, match_date, home_team_id, away_team_id, home_goals, away_goals")
+            .in_("id", lote)
+            .eq("status", "finished")
+            .execute()
+            .data
+            or []
+        )
+    if not matches_rows:
+        return {}
+    df_matches = pd.DataFrame(matches_rows).rename(columns={"id": "match_id"})
+    df_matches = df_matches.dropna(subset=["home_goals", "away_goals"])
+
+    df = df_lineup.merge(df_matches, on="match_id", how="inner")
+    if df.empty:
+        return {}
+    eh_mandante = df["team_id"] == df["home_team_id"]
+    df["time_adversario"] = np.where(eh_mandante, df["away_team_id"], df["home_team_id"])
+    df["gols_sofridos"] = np.where(eh_mandante, df["away_goals"], df["home_goals"])
+
+    # Últimas GSAX_N_MAX_PARTIDAS partidas por goleiro -- mais recentes primeiro.
+    df = df.sort_values("match_date", ascending=False)
+    df = df.groupby("player_id", group_keys=False).head(GSAX_N_MAX_PARTIDAS)
+
+    match_ids_final = df["match_id"].astype(int).unique().tolist()
+    shots_rows = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("match_shots_fotmob")
+            .select("match_id, team_id, xgot")
+            .eq("is_on_target", True)
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        ),
+        match_ids_final,
+        tamanho_lote=50,
+    )
+    df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["match_id", "team_id", "xgot"])
+    if not df_shots.empty:
+        agg_xgot = (
+            df_shots.groupby(["match_id", "team_id"])["xgot"]
+            .apply(lambda s: float(s.fillna(0.0).sum()))
+            .reset_index(name="xgot_sofrido")
+            .rename(columns={"team_id": "time_adversario"})
+        )
+        df = df.merge(agg_xgot, on=["match_id", "time_adversario"], how="left")
+    else:
+        df["xgot_sofrido"] = 0.0
+    df["xgot_sofrido"] = df["xgot_sofrido"].fillna(0.0)
+
+    resultado: dict[int, dict] = {}
+    for player_id, grupo in df.groupby("player_id"):
+        n_jogos = len(grupo)
+        if n_jogos < GSAX_MIN_AMOSTRA:
+            continue
+        xgot_enfrentado = float(grupo["xgot_sofrido"].sum())
+        gols_sofridos = float(grupo["gols_sofridos"].sum())
+        if xgot_enfrentado <= 0:
+            continue  # sem chute no alvo sofrido na amostra -- rate indefinido, não um 0.0 com sentido.
+        gsax_rate = float(np.clip(1.0 - (gols_sofridos / xgot_enfrentado), -1.0, 1.0))
+        resultado[int(player_id)] = {
+            "gsax_rate": gsax_rate,
+            "n_jogos": n_jogos,
+            "xgot_enfrentado": xgot_enfrentado,
+            "gols_sofridos": gols_sofridos,
+        }
+    return resultado
+
+
 def _xg_marcado_sofrido(supabase: Client, match_ids: list[int], team_id: int) -> dict[str, float]:
     """xG marcado/sofrido do `team_id` num punhado de partidas (`match_ids`,
     tipicamente os últimos 5 jogos de casa OU de fora de um time só).

@@ -37,11 +37,18 @@ Fontes de dado (todas já existentes, nenhuma tabela nova):
     Partida sem nenhum `model_name` com params utilizáveis é pulada (não há
     macro pra reconciliar contra).
 
-GSAx (goleiro) e `delta_shooting` (xGOT-xG por jogador) não existem em
-lugar nenhum do projeto hoje -- `gk_stats` usa `gsax_rate=0.0` pros dois
-lados (neutro, sem modular nada) e `delta_shooting` fica ausente em
-`jogadores` (a Camada 1 já trata coluna ausente como 0 com aviso, não
-exceção). Gaps de dado documentados, não bugs -- ver `pricing_pipeline.py`.
+GSAx (goleiro) é lido de `player_match_estimates.gsax_rate` -- calculado por
+`dados_historicos.obter_gsax_atual` e gravado por `rodar_jogador_mercados_
+previsto.py` (mesmo pipeline que já estima chutes/gols individuais; GSAx é
+desempenho individual do goleiro, não uma função ad-hoc deste runner). Este
+runner é só CONSUMIDOR: `_gsax_do_goleiro` lê o `gsax_rate` do goleiro do
+elenco de cada lado (mesma fonte/mesma partida) e usa como
+`gsax_rate_adversario` do time rival -- goleiro sem `gsax_rate` populado
+(amostra <5 partidas, ver `dados_historicos.GSAX_MIN_AMOSTRA`) ou ausente do
+elenco cai no default neutro `0.0`, sem modular nada. `delta_shooting`
+(xGOT-xG por jogador) segue sem existir em `player_match_estimates` --
+gap de dado documentado, não bug -- e `jogadores` continua sem essa coluna
+(a Camada 1 já trata coluna ausente como 0 com aviso, não exceção).
 
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 rodar_pricing_pipeline.py [--dias N] [--match-ids ID,ID,...]
@@ -105,7 +112,7 @@ FONTES_RASTREADAS = ("previsto", "real")
 COLUNAS_JOGADOR = [
     "match_id", "team_id", "player_id", "fonte_titular", "is_titular_previsto", "prob_titular_usada",
     "posicao_detalhe", "minutos_esperados", "lambda_chutes_jogo", "lambda_chutes_no_alvo_jogo",
-    "lambda_xg_jogo", "taxa_conversao_bayesiana",
+    "lambda_xg_jogo", "taxa_conversao_bayesiana", "gsax_rate",
 ]
 
 
@@ -172,6 +179,23 @@ def _buscar_jogadores(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
         )
     )
     return pd.DataFrame(linhas, columns=COLUNAS_JOGADOR)
+
+
+def _gsax_do_goleiro(jogadores_time: pd.DataFrame) -> float:
+    """`gsax_rate` do goleiro (`posicao_detalhe='GK'`) dentro do elenco de
+    UM time/UMA fonte já filtrado -- `pricing_pipeline_v2` é consumidor
+    puro do dado (calculado e persistido em `player_match_estimates` por
+    `rodar_jogador_mercados_previsto.py`/`dados_historicos.obter_gsax_
+    atual`), nunca recalcula GSAx aqui. Sem goleiro no elenco, sem
+    `gsax_rate` populado (amostra insuficiente) ou mais de um goleiro na
+    linha (não deveria acontecer, mas não é motivo pra abortar a partida)
+    cai no default neutro `0.0` -- mesmo padrão de "gap de dado vira aviso,
+    não exceção" do resto da Camada 1."""
+    goleiros = jogadores_time[jogadores_time["posicao_detalhe"] == "GK"]
+    if goleiros.empty:
+        return 0.0
+    gsax = pd.to_numeric(goleiros["gsax_rate"], errors="coerce").dropna()
+    return float(gsax.iloc[0]) if not gsax.empty else 0.0
 
 
 def _fonte_melhor_disponivel(fontes_presentes: set[str]) -> str:
@@ -249,8 +273,8 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
                 continue  # essa fonte não tem elenco dos 2 times ainda -- tenta a outra fonte
 
             try:
-                agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=0.0)
-                agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=0.0)
+                agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=_gsax_do_goleiro(jogadores_away))
+                agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=_gsax_do_goleiro(jogadores_home))
             except ValueError as exc:
                 logger.warning("Partida %s (fonte=%s): falha na Camada 1 (%s) -- pulando essa fonte.", match_id, fonte, exc)
                 continue
