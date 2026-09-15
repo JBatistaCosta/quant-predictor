@@ -143,15 +143,34 @@ def main() -> None:
     # valor fixo (temporadas não alinham entre ligas/calendários).
     match_ids: list[int] = []
     for league_id in ligas_alvo:
-        temporadas_res = (
-            supabase.table("matches")
-            .select("season")
-            .eq("league_id", league_id)
-            .eq("status", "finished")
-            .execute()
-            .data
-            or []
-        )
+        # Pagina de verdade -- BUG REAL encontrado nesta sessão (15/09):
+        # sem `.range()`, `.select("season")` corta em 1000 linhas
+        # silenciosamente (mesmo corte já documentado várias vezes neste
+        # projeto). Ligas com >1000 partidas finalizadas (todas as 6 do
+        # dataset "Feature Stacked" já passam disso) tendem a ter as
+        # primeiras 1000 linhas como as MAIS ANTIGAS (ordem de inserção) --
+        # confirmado em produção: Brasileirão (3.696 partidas) resolveu só
+        # `['2019','2018','2017']` como "temporadas mais recentes", exatamente
+        # as 3 temporadas mais ANTIGAS (1.140 = 3×380, batendo com o corte de
+        # 1000 linhas), enquanto 2020-2026 (a parte que interessava de
+        # verdade) nunca era vista.
+        temporadas_res: list[dict] = []
+        pagina = 0
+        while True:
+            chunk = (
+                supabase.table("matches")
+                .select("season")
+                .eq("league_id", league_id)
+                .eq("status", "finished")
+                .range(pagina * 1000, pagina * 1000 + 999)
+                .execute()
+                .data
+                or []
+            )
+            temporadas_res.extend(chunk)
+            if len(chunk) < 1000:
+                break
+            pagina += 1
         temporadas_disponiveis = sorted({r["season"] for r in temporadas_res if r["season"]}, reverse=True)
         temporadas_alvo = temporadas_disponiveis[: args.temporadas]
         if not temporadas_alvo:
@@ -195,11 +214,32 @@ def main() -> None:
     print(f"Com fotmob_match_id conhecido: {len(match_ids)}")
 
     if not args.forcar:
+        # Pagina de verdade -- `match_lineup_fotmob` tem ~22-45 linhas por
+        # partida (titulares+reservas dos 2 times), então um lote de 500
+        # match_id facilmente soma milhares de linhas, muito acima do corte
+        # silencioso de 1000 do PostgREST (mesma classe de bug corrigida
+        # acima na resolução de temporadas). Sem paginar aqui, `ja_
+        # processadas` fica incompleto e partidas JÁ processadas voltam a
+        # ser tratadas como pendentes -- não corrompe dado (upsert é
+        # idempotente), mas desperdiça chamadas de API reprocessando à toa.
         ja_processadas: set[int] = set()
         for i in range(0, len(match_ids), 500):
             lote = match_ids[i : i + 500]
-            chunk = supabase.table("match_lineup_fotmob").select("match_id").in_("match_id", lote).execute().data or []
-            ja_processadas.update(row["match_id"] for row in chunk)
+            pagina = 0
+            while True:
+                chunk = (
+                    supabase.table("match_lineup_fotmob")
+                    .select("match_id")
+                    .in_("match_id", lote)
+                    .range(pagina * 1000, pagina * 1000 + 999)
+                    .execute()
+                    .data
+                    or []
+                )
+                ja_processadas.update(row["match_id"] for row in chunk)
+                if len(chunk) < 1000:
+                    break
+                pagina += 1
         match_ids = [m for m in match_ids if m not in ja_processadas]
         print(f"Ainda pendentes (sem linha em match_lineup_fotmob): {len(match_ids)}")
 
