@@ -38,6 +38,31 @@ vazamento a evitar, a predição é sempre pro futuro).
 
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 rodar_jogador_mercados_previsto.py [--dias N] [--match-ids ID,ID,...]
+
+Modo `--backtest` (pedido do usuário, 15/09): processa partidas `finished`
+nos últimos `--dias` dias (ou `--match-ids` explícito) em vez de `scheduled`
+nos próximos `--dias` -- existe pra preencher retroativamente uma coluna
+nova (ex.: `lambda_xa_jogo`, adicionada só em 14/09 -- as ~19 mil linhas de
+`player_match_estimates` geradas antes disso nunca tiveram xA calculado).
+`_buscar_candidatos_por_fonte` lê de `match_lineup_fotmob`/`xi_previsto`, não
+de `player_match_estimates` -- ambas as tabelas persistem depois da partida
+terminar (mesmo padrão de não-deleção já documentado nesse pipeline todo),
+então o mesmo caminho de código funciona sem mudança nenhuma na lógica de
+feature/modelo, só a origem da lista de partidas muda (mesmo padrão de
+`rodar_pricing_pipeline.py --backtest`). O upsert é idempotente (mesma chave
+`match_id,team_id,player_id,model_version,fonte_titular`) -- roda de novo só
+atualiza as colunas que mudaram, nunca duplica linha.
+
+Ressalva importante (já existente no modo normal, só mais visível aqui):
+`_bayesiano_atual` usa TODO o histórico disponível HOJE pra calcular os
+priors/shrinkage bayesiano, sem corte de data -- pra uma predição futura
+isso é correto por definição ("não há vazamento a evitar", ver docstring
+acima). Rodado em `--backtest` contra uma partida de 30/ago, porém, o
+shrinkage do jogador passa a enxergar também os jogos dele DEPOIS de 30/ago
+-- não é o mesmo dado que estava disponível antes daquele apito. Pros 4
+lambdas de Poisson/RMSE (chutes/gols/xg/xa) isso é uma aproximação aceitável
+(a mesma que o backtest do pricing pipeline já assume), não recomendado
+tratar como point-in-time rigoroso pra validação de modelo com corte de data.
 """
 
 from __future__ import annotations
@@ -150,6 +175,26 @@ def buscar_fixtures(supabase: Client, dias: int, match_ids: list[int] | None) ->
         .lte("match_date", limite.isoformat())
         .execute()
     )
+    return pd.DataFrame(resp.data or [])
+
+
+def _buscar_fixtures_finalizadas(supabase: Client, dias: int, match_ids: list[int] | None) -> pd.DataFrame:
+    """Mesmas colunas de `buscar_fixtures`, mas partidas `status='finished'`
+    em vez de `scheduled` -- usado só pelo modo `--backtest` (ver docstring
+    do módulo). Com `match_ids` explícito, filtra só por eles (sem janela de
+    dias); sem `match_ids`, pega toda `finished` com `match_date` nos
+    últimos `dias` dias."""
+    query = (
+        supabase.table("matches")
+        .select("id, match_date, home_team_id, away_team_id, league_id")
+        .eq("status", "finished")
+    )
+    if match_ids:
+        query = query.in_("id", match_ids)
+    else:
+        piso = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=dias)
+        query = query.gte("match_date", piso.isoformat())
+    resp = query.execute()
     return pd.DataFrame(resp.data or [])
 
 
@@ -468,10 +513,14 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     ]]
 
 
-def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int] | None = None) -> int:
-    fixtures = buscar_fixtures(supabase, dias, match_ids)
+def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int] | None = None, backtest: bool = False) -> int:
+    fixtures = (
+        _buscar_fixtures_finalizadas(supabase, dias, match_ids)
+        if backtest
+        else buscar_fixtures(supabase, dias, match_ids)
+    )
     if fixtures.empty:
-        logger.info("Nenhuma partida 'scheduled' na janela -- nada a prever.")
+        logger.info("Nenhuma partida '%s' na janela -- nada a prever.", "finished" if backtest else "scheduled")
         return 0
 
     modelo_chutes = carregar_modelo_chutes(supabase)
@@ -660,8 +709,12 @@ def modelos_ml_predict_regressor(modelo, df: pd.DataFrame, features: list[str]) 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dias", type=int, default=DIAS_JANELA_DEFAULT, help="janela de dias à frente para prever (default 7)")
+    ap.add_argument("--dias", type=int, default=DIAS_JANELA_DEFAULT, help="janela de dias (à frente por padrão; pra trás com --backtest) -- default 7")
     ap.add_argument("--match-ids", type=str, default=None, help="lista de match_id separados por vírgula (ex.: chamado logo após captura de escalação real) -- ignora --dias quando presente")
+    ap.add_argument(
+        "--backtest", action="store_true",
+        help="processa partidas 'finished' (últimos --dias dias, ou --match-ids explícito) em vez de 'scheduled' -- ver docstring do módulo",
+    )
     args = ap.parse_args()
 
     url = os.environ["SUPABASE_URL"].strip()
@@ -669,4 +722,4 @@ if __name__ == "__main__":
     sb = create_client(url, key)
 
     ids = [int(x) for x in args.match_ids.split(",")] if args.match_ids else None
-    rodar(sb, args.dias, ids)
+    rodar(sb, args.dias, ids, backtest=args.backtest)
