@@ -286,15 +286,19 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
                 agregacao_away.lambda_bottom_up, macro["lambda_away"], contexto=f"match {match_id} visitante ({fonte})"
             )
             # Quarentena não bloqueia a Camada 3 (documentado em pricing_
-            # pipeline.py) -- a matriz ainda é construída com o lambda macro, só
-            # que o valor exibido acaba não tendo o "de acordo" do bottom-up.
-            # Como este runner só grava probabilidade (não decide aposta), não
-            # há Camada 4 aqui pra propagar quarantine_flag em stake=0 -- fica
+            # pipeline.py) -- a matriz ainda é construída com o lambda_final
+            # devolvido pela reconciliação: FORA de quarentena, desde 15/09
+            # isso é a média ponderada macro/bottom-up (não mais igual ao
+            # macro puro -- é assim que GSAx e outras features da Camada 1
+            # passam a mexer no preço de verdade); EM quarentena, continua
+            # sendo o lambda_macro puro (documentado na classe). Como este
+            # runner só grava probabilidade (não decide aposta), não há
+            # Camada 4 aqui pra propagar quarantine_flag em stake=0 -- fica
             # registrado só via log.
             if reconciliacao_home.quarantine_flag or reconciliacao_away.quarantine_flag:
                 logger.warning(
                     "Partida %s (fonte=%s): reconciliação em quarentena (home kappa=%s, away kappa=%s) -- "
-                    "gravando mesmo assim (Camada 3 usa lambda_macro), sem decisão de aposta.",
+                    "gravando mesmo assim (Camada 3 usa lambda_macro puro nesse lado), sem decisão de aposta.",
                     match_id, fonte, reconciliacao_home.kappa, reconciliacao_away.kappa,
                 )
 
