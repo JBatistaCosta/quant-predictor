@@ -25,6 +25,10 @@ on:
         description: "Janela de dias à frente para prever (default 7)"
         required: false
         type: string
+      pricing_pipeline_backtest_dias:
+        description: "Só afeta o 3º step: se preenchido, roda o pricing pipeline em modo --backtest (partidas 'finished' nos últimos N dias) em vez de 'scheduled' nos próximos --dias -- usado pra popular histórico e medir desempenho real do pricing_pipeline_v1 em /modelos"
+        required: false
+        type: string
 
 jobs:
   prever-jogador-mercados:
@@ -73,11 +77,22 @@ jobs:
       # model_predictions. Ver scripts/rodar_pricing_pipeline.py -- não
       # roda a Camada 4 (decisão de aposta contra odds reais), só persiste
       # a probabilidade do modelo pra exibição em Análise Avançada.
+      #
+      # `pricing_pipeline_backtest_dias` (só workflow_dispatch manual) troca
+      # pra modo --backtest: em vez de partidas 'scheduled' futuras, roda
+      # contra partidas 'finished' dos últimos N dias -- usado uma vez pra
+      # gerar histórico e destravar as estatísticas de desempenho do
+      # pricing_pipeline_v1 em /modelos (que exigem partida com resultado
+      # real, não faz sentido rodar isso todo dia no cron).
       - name: Rodar pricing pipeline (Dixon-Coles reconciliado)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          ARGS=""
-          if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
-          python scripts/rodar_pricing_pipeline.py $ARGS
+          if [ -n "${{ inputs.pricing_pipeline_backtest_dias }}" ]; then
+            python scripts/rodar_pricing_pipeline.py --backtest --dias ${{ inputs.pricing_pipeline_backtest_dias }}
+          else
+            ARGS=""
+            if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+            python scripts/rodar_pricing_pipeline.py $ARGS
+          fi
