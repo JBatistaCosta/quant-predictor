@@ -553,6 +553,14 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
     ))
     media_titular, media_reserva = _minutos_medios_titular_reserva(supabase, todos_player_ids)
     posicao_detalhe_por_jogador = _posicao_detalhe_atual(supabase, todos_player_ids)
+    # GSAx (Pricing Pipeline v2, item "goleiro") -- desempenho individual do
+    # goleiro, mesmo pipeline que já estima chutes/gols individuais dos
+    # jogadores de linha. Só goleiros (posicao_detalhe='GK') entram na
+    # consulta -- ver dados_historicos.obter_gsax_atual. Quem não tem
+    # amostra suficiente (ou não é GK) simplesmente não aparece no dict,
+    # gravado como NULL abaixo (não 0.0 -- ver migration).
+    goleiro_ids = [pid for pid, pos in posicao_detalhe_por_jogador.items() if pos == "GK"]
+    gsax_por_goleiro = dh.obter_gsax_atual(supabase, goleiro_ids)
 
     team_ids = sorted(set(fixtures["home_team_id"]).union(fixtures["away_team_id"]))
     elo_por_time = dh.obter_elo_atual(supabase, team_ids)
@@ -663,6 +671,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "xa_por_jogo": float(row["xa_por_jogo"]),
                 "chutes_no_alvo_por_jogo": float(row["chutes_no_alvo_por_jogo"]),
                 "posicao_detalhe": posicao_detalhe_por_jogador.get(int(row["player_id"])),
+                "gsax_rate": gsax_por_goleiro.get(int(row["player_id"]), {}).get("gsax_rate"),
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
                 "lambda_gols_jogo_thinning": float(lambda_gols_thinning[i]),
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
