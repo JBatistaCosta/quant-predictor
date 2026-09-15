@@ -29,6 +29,10 @@ on:
         description: "Só afeta o 3º step: se preenchido, roda o pricing pipeline em modo --backtest (partidas 'finished' nos últimos N dias) em vez de 'scheduled' nos próximos --dias -- usado pra popular histórico e medir desempenho real do pricing_pipeline_v1 em /modelos"
         required: false
         type: string
+      jogador_mercados_backtest_dias:
+        description: "Só afeta o 1º step: se preenchido, roda a predição de chutes/gols/xG/xA por jogador em modo --backtest (partidas 'finished' nos últimos N dias) -- usado pra backfill de colunas novas (ex.: xA, adicionado depois de várias partidas já processadas) em player_match_estimates já existente"
+        required: false
+        type: string
 
 jobs:
   prever-jogador-mercados:
@@ -49,14 +53,24 @@ jobs:
       - name: Instalar dependências
         run: pip install -r scripts/requirements.txt
 
+      # `jogador_mercados_backtest_dias` (só workflow_dispatch manual) troca
+      # pra modo --backtest: em vez de partidas 'scheduled' futuras, roda
+      # contra partidas 'finished' dos últimos N dias -- usado pra backfill
+      # de coluna nova (ex.: lambda_xa_jogo) em linhas já existentes de
+      # player_match_estimates, sem depender do cron esperar essas partidas
+      # acontecerem de novo (elas já aconteceram).
       - name: Prever chutes/gols por jogador
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          ARGS=""
-          if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
-          python scripts/rodar_jogador_mercados_previsto.py $ARGS
+          if [ -n "${{ inputs.jogador_mercados_backtest_dias }}" ]; then
+            python scripts/rodar_jogador_mercados_previsto.py --backtest --dias ${{ inputs.jogador_mercados_backtest_dias }}
+          else
+            ARGS=""
+            if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+            python scripts/rodar_jogador_mercados_previsto.py $ARGS
+          fi
 
       # Depende de player_match_estimates já populada pelo step acima --
       # agrega lambda_xg_jogo por time e deriva odds (1X2/over-under) via
