@@ -37,7 +37,13 @@ on:
 jobs:
   prever-jogador-mercados:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30min bastava pro cron diário (~130 partidas/dia) e pro backtest inicial
+    # (--dias 20, ~260 partidas) -- passa a estourar em backtests maiores de
+    # temporada inteira (--dias 200+, mais de 1.000 partidas), pedido real do
+    # usuário (15/09) pra ampliar a comparação real-vs-previsto do pricing
+    # pipeline. 120min dá margem sem custar nada no caminho normal (o job só
+    # cobra pelo tempo realmente usado).
+    timeout-minutes: 120
 
     steps:
       - name: Checkout do repositório
