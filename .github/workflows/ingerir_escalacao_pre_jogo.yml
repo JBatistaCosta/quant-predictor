@@ -22,16 +22,29 @@ name: Ingestão de Escalação Real Pré-Jogo (FotMob)
 # fonte_titular): reprocessar uma partida que ainda não tem escalação real
 # só atualiza a linha 'previsto', nunca cria uma 'real' precoce.
 #
+# Terceiro step (pedido do usuário, 15/09: rodar o pricing pipeline perto do
+# jogo, não só 1x/dia): sem isso, o pricing pipeline só reprocessava via
+# prever_jogador_mercados.yml (06:00 UTC), então a escalação real quase
+# sempre saía DEPOIS desse horário e a previsão baseada em XI previsto era
+# sobrescrita sem nunca virar comparável com a versão real -- ver
+# scripts/rodar_pricing_pipeline.py (grava pricing_pipeline_previsto_v1 e
+# pricing_pipeline_real_v1 separados quando as duas fontes têm elenco
+# completo, pra viabilizar a comparação real vs. previsto em /modelos).
+# Mesma janela curta (--dias 1) do step acima, mesmo motivo: só precisa
+# reprocessar as partidas de hoje/amanhã que acabaram de ganhar escalação
+# real, não a janela inteira de 7 dias do cron diário.
+#
 # Disparo manual com `match_ids` (botão "Sincronizar escalação real" em
 # /analise-avancada/:matchId, via tarefa=sincronizar-escalacao-real):
-# repassa o mesmo CSV de IDs pros dois steps. No 1º step, ingerir_escalacao_
+# repassa o mesmo CSV de IDs pros 3 steps. No 1º step, ingerir_escalacao_
 # pre_jogo.py --match-ids ignora status/janela (funciona pra partida já
-# ENCERRADA). No 2º, rodar_jogador_mercados_previsto.py --match-ids também
-# aceita IDs explícitos, mas só grava algo novo se a partida ainda for
-# 'scheduled' (o próprio script filtra por isso) -- pra partida encerrada
-# esse 2º step é um no-op seguro (não faz sentido prever aposta pra jogo
-# que já aconteceu). Deixado vazio, os dois steps rodam exatamente como no
-# cron (sem --match-ids).
+# ENCERRADA). No 2º e 3º, --match-ids também aceita IDs explícitos, mas só
+# grava algo novo se a partida ainda for 'scheduled' (os dois scripts
+# filtram por isso) -- pra partida encerrada os steps 2 e 3 são no-op
+# seguro (não faz sentido prever aposta pra jogo que já aconteceu; pra
+# gerar a previsão retroativa de uma partida encerrada, usar
+# rodar_pricing_pipeline.py --backtest à parte). Deixado vazio, os 3 steps
+# rodam exatamente como no cron (sem --match-ids).
 
 on:
   workflow_dispatch:
@@ -79,3 +92,12 @@ jobs:
           ARGS="--dias 1"
           if [ -n "${{ inputs.match_ids }}" ]; then ARGS="--match-ids ${{ inputs.match_ids }}"; fi
           python scripts/rodar_jogador_mercados_previsto.py $ARGS
+
+      - name: Rodar pricing pipeline (captura versão 'real' assim que a escalação sair)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS="--dias 1"
+          if [ -n "${{ inputs.match_ids }}" ]; then ARGS="--match-ids ${{ inputs.match_ids }}"; fi
+          python scripts/rodar_pricing_pipeline.py $ARGS

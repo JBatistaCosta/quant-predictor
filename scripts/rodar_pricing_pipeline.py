@@ -59,6 +59,28 @@ a Camada 1-3 roda igual, só a origem da lista de partidas muda -- não é uma
 previsão "adivinhando o passado", é gerar HOJE a mesma probabilidade que o
 pipeline teria dado antes do apito, usando o mesmo dado que estava disponível
 então (estimativas de jogador/macro não usam resultado da partida).
+
+Comparação escalação real vs. prevista (pedido do usuário, 15/09): pra cada
+partida, `player_match_estimates` guarda `fonte_titular='previsto'` (XI
+provável, disponível desde a semana anterior) e `'real'` (escalação oficial,
+só sai ~60min antes do apito) LADO A LADO, sem uma sobrescrever a outra --
+mesmo padrão de `xi_previsto` vs. escalação oficial já usado em
+`rodar_jogador_mercados_previsto.py`. Antes desta mudança, este runner
+escolhia só UMA fonte por partida (real se disponível, senão previsto) e
+gravava só em `pricing_pipeline_v1` -- quando a real saía depois de já ter
+rodado com a previsto, a versão baseada em previsto era perdida (sobrescrita
+pelo `upsert`), então não dava pra comparar as duas depois. Agora, quando as
+DUAS fontes têm elenco completo dos 2 times pra uma partida, a Camada 1-3
+roda 1x pra cada fonte e grava em `model_name` SEPARADOS:
+  - `pricing_pipeline_previsto_v1` -- sempre que houver XI previsto completo.
+  - `pricing_pipeline_real_v1` -- sempre que houver escalação oficial completa.
+  - `pricing_pipeline_v1` (nome original, inalterado) continua existindo
+    como "melhor fonte disponível no momento" (real quando existe, senão
+    previsto) -- é o que a aba de Análise Avançada e o backtest já feito
+    seguem usando, sem nenhuma mudança de comportamento pra quem já
+    consumia esse nome.
+As 3 "visões" nunca conflitam entre si no `upsert` (chaves `match_id,
+model_name` distintas) -- rodar de novo só atualiza a fonte que mudou.
 """
 
 from __future__ import annotations
@@ -79,6 +101,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 MODEL_NAME_SAIDA = "pricing_pipeline_v1"
+FONTES_RASTREADAS = ("previsto", "real")
 COLUNAS_JOGADOR = [
     "match_id", "team_id", "player_id", "fonte_titular", "is_titular_previsto", "prob_titular_usada",
     "posicao_detalhe", "minutos_esperados", "lambda_chutes_jogo", "lambda_chutes_no_alvo_jogo",
@@ -151,10 +174,11 @@ def _buscar_jogadores(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
     return pd.DataFrame(linhas, columns=COLUNAS_JOGADOR)
 
 
-def _selecionar_fonte_por_partida(jogadores_partida: pd.DataFrame) -> pd.DataFrame:
-    fontes = set(jogadores_partida["fonte_titular"])
-    fonte = "real" if "real" in fontes else "previsto"
-    return jogadores_partida[jogadores_partida["fonte_titular"] == fonte]
+def _fonte_melhor_disponivel(fontes_presentes: set[str]) -> str:
+    """Mesma prioridade de sempre (real > previsto) -- usada só pra decidir
+    qual das fontes rastreadas também grava em `MODEL_NAME_SAIDA` (o nome
+    "melhor disponível", inalterado pra quem já consumia esse model_name)."""
+    return "real" if "real" in fontes_presentes else "previsto"
 
 
 def _buscar_fixtures_finalizadas(supabase: Client, dias: int, match_ids: list[int] | None) -> pd.DataFrame:
@@ -209,56 +233,76 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
         if jogadores_partida.empty:
             logger.info("Partida %s sem player_match_estimates -- pulando.", match_id)
             continue
-        jogadores_partida = _selecionar_fonte_por_partida(jogadores_partida)
 
         home_id, away_id = int(fixture["home_team_id"]), int(fixture["away_team_id"])
-        jogadores_home = jogadores_partida[jogadores_partida["team_id"] == home_id]
-        jogadores_away = jogadores_partida[jogadores_partida["team_id"] == away_id]
-        if jogadores_home.empty or jogadores_away.empty:
-            logger.info("Partida %s sem elenco dos 2 times em player_match_estimates -- pulando.", match_id)
-            continue
+        fontes_presentes = set(jogadores_partida["fonte_titular"])
+        fonte_melhor = _fonte_melhor_disponivel(fontes_presentes)
 
-        try:
-            agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=0.0)
-            agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=0.0)
-        except ValueError as exc:
-            logger.warning("Partida %s: falha na Camada 1 (%s) -- pulando.", match_id, exc)
-            continue
+        processou_alguma_fonte = False
+        for fonte in FONTES_RASTREADAS:
+            if fonte not in fontes_presentes:
+                continue
+            jogadores_fonte = jogadores_partida[jogadores_partida["fonte_titular"] == fonte]
+            jogadores_home = jogadores_fonte[jogadores_fonte["team_id"] == home_id]
+            jogadores_away = jogadores_fonte[jogadores_fonte["team_id"] == away_id]
+            if jogadores_home.empty or jogadores_away.empty:
+                continue  # essa fonte não tem elenco dos 2 times ainda -- tenta a outra fonte
 
-        reconciliacao_home = reconciler.reconciliar(
-            agregacao_home.lambda_bottom_up, macro["lambda_home"], contexto=f"match {match_id} mandante"
-        )
-        reconciliacao_away = reconciler.reconciliar(
-            agregacao_away.lambda_bottom_up, macro["lambda_away"], contexto=f"match {match_id} visitante"
-        )
-        # Quarentena não bloqueia a Camada 3 (documentado em pricing_
-        # pipeline.py) -- a matriz ainda é construída com o lambda macro, só
-        # que o valor exibido acaba não tendo o "de acordo" do bottom-up.
-        # Como este runner só grava probabilidade (não decide aposta), não
-        # há Camada 4 aqui pra propagar quarantine_flag em stake=0 -- fica
-        # registrado só via log.
-        if reconciliacao_home.quarantine_flag or reconciliacao_away.quarantine_flag:
-            logger.warning(
-                "Partida %s: reconciliação em quarentena (home kappa=%s, away kappa=%s) -- "
-                "gravando mesmo assim (Camada 3 usa lambda_macro), sem decisão de aposta.",
-                match_id, reconciliacao_home.kappa, reconciliacao_away.kappa,
+            try:
+                agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=0.0)
+                agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=0.0)
+            except ValueError as exc:
+                logger.warning("Partida %s (fonte=%s): falha na Camada 1 (%s) -- pulando essa fonte.", match_id, fonte, exc)
+                continue
+
+            reconciliacao_home = reconciler.reconciliar(
+                agregacao_home.lambda_bottom_up, macro["lambda_home"], contexto=f"match {match_id} mandante ({fonte})"
             )
+            reconciliacao_away = reconciler.reconciliar(
+                agregacao_away.lambda_bottom_up, macro["lambda_away"], contexto=f"match {match_id} visitante ({fonte})"
+            )
+            # Quarentena não bloqueia a Camada 3 (documentado em pricing_
+            # pipeline.py) -- a matriz ainda é construída com o lambda macro, só
+            # que o valor exibido acaba não tendo o "de acordo" do bottom-up.
+            # Como este runner só grava probabilidade (não decide aposta), não
+            # há Camada 4 aqui pra propagar quarantine_flag em stake=0 -- fica
+            # registrado só via log.
+            if reconciliacao_home.quarantine_flag or reconciliacao_away.quarantine_flag:
+                logger.warning(
+                    "Partida %s (fonte=%s): reconciliação em quarentena (home kappa=%s, away kappa=%s) -- "
+                    "gravando mesmo assim (Camada 3 usa lambda_macro), sem decisão de aposta.",
+                    match_id, fonte, reconciliacao_home.kappa, reconciliacao_away.kappa,
+                )
 
-        resultado = engine.gerar(reconciliacao_home.lambda_final, reconciliacao_away.lambda_final, macro["rho_liga"])
-        for (mercado, selecao), probabilidade in resultado.mercados.items():
-            linhas_saida.append({
-                "match_id": match_id, "model_name": MODEL_NAME_SAIDA, "market": mercado,
-                "selection": selecao, "probability": round(float(probabilidade), 5),
-            })
-        estimativas_saida.append({
-            "match_id": match_id, "model_name": MODEL_NAME_SAIDA,
-            "params": {
-                "lambda_home": round(reconciliacao_home.lambda_final, 4),
-                "lambda_away": round(reconciliacao_away.lambda_final, 4),
-                "rho": round(float(resultado.rho_efetivo), 4),
-            },
-        })
-        partidas_processadas += 1
+            resultado = engine.gerar(reconciliacao_home.lambda_final, reconciliacao_away.lambda_final, macro["rho_liga"])
+
+            # `pricing_pipeline_{fonte}_v1` sempre; `MODEL_NAME_SAIDA` (nome
+            # original) só na fonte "melhor disponível" -- ver docstring do
+            # módulo (comparação real vs. prevista).
+            nomes_modelo = [f"pricing_pipeline_{fonte}_v1"]
+            if fonte == fonte_melhor:
+                nomes_modelo.append(MODEL_NAME_SAIDA)
+
+            for nome_modelo in nomes_modelo:
+                for (mercado, selecao), probabilidade in resultado.mercados.items():
+                    linhas_saida.append({
+                        "match_id": match_id, "model_name": nome_modelo, "market": mercado,
+                        "selection": selecao, "probability": round(float(probabilidade), 5),
+                    })
+                estimativas_saida.append({
+                    "match_id": match_id, "model_name": nome_modelo,
+                    "params": {
+                        "lambda_home": round(reconciliacao_home.lambda_final, 4),
+                        "lambda_away": round(reconciliacao_away.lambda_final, 4),
+                        "rho": round(float(resultado.rho_efetivo), 4),
+                    },
+                })
+            processou_alguma_fonte = True
+
+        if processou_alguma_fonte:
+            partidas_processadas += 1
+        else:
+            logger.info("Partida %s sem elenco dos 2 times em nenhuma fonte de player_match_estimates -- pulando.", match_id)
 
     if not linhas_saida:
         logger.info("Nenhuma linha gerada.")
