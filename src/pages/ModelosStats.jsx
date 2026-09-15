@@ -21,7 +21,12 @@ const MERCADOS_COM_RESUMO_PRECALCULADO = ['1X2', 'over_under_2.5', 'corners_over
 // `mercado_pinnacle_devigado` (api/model-stats.js) é a odd de fechamento da
 // Pinnacle devigada tratada como se fosse um modelo — mesmo pipeline de
 // log-loss/Brier/calibração, só rótulo de exibição muda.
-const MODELO_ROTULO = { mercado_pinnacle_devigado: 'Mercado (Pinnacle devigada)' };
+const MODELO_ROTULO = {
+  mercado_pinnacle_devigado: 'Mercado (Pinnacle devigada)',
+  pricing_pipeline_v1: 'Pricing Pipeline (melhor fonte disponível)',
+  pricing_pipeline_previsto_v1: 'Pricing Pipeline (XI previsto)',
+  pricing_pipeline_real_v1: 'Pricing Pipeline (escalação real)',
+};
 const rotuloModelo = (nome) => MODELO_ROTULO[nome] || nome;
 
 function fmt(v, formato) {
