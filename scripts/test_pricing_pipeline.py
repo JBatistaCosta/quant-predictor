@@ -192,26 +192,46 @@ class TestPlayerToTeamAggregator:
 # Camada 2 -- HierarchicalReconciler
 # ---------------------------------------------------------------------------
 class TestHierarchicalReconciler:
-    def test_kappa_valido_lambda_final_igual_macro(self):
-        r = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=1.5, lambda_macro=1.6)
+    def test_kappa_valido_lambda_final_e_media_ponderada(self):
+        reconciler = pp.HierarchicalReconciler()  # peso_macro default
+        r = reconciler.reconciliar(lambda_bottom_up=1.5, lambda_macro=1.6)
         assert r.quarantine_flag is False
         assert r.kappa == pytest.approx(1.6 / 1.5)
-        assert r.lambda_final == pytest.approx(1.6)
+        esperado = reconciler.peso_macro * 1.6 + (1.0 - reconciler.peso_macro) * 1.5
+        assert r.lambda_final == pytest.approx(esperado)
+        assert r.lambda_final != pytest.approx(1.6)  # não colapsa mais pro macro puro
+
+    def test_peso_macro_customizado_muda_lambda_final(self):
+        r = pp.HierarchicalReconciler(peso_macro=0.5).reconciliar(lambda_bottom_up=1.0, lambda_macro=1.1)
+        # kappa = 1.1, dentro da banda default [0.8, 1.2] -- média 50/50.
+        assert r.quarantine_flag is False
+        assert r.lambda_final == pytest.approx(0.5 * 1.1 + 0.5 * 1.0)
+
+    def test_peso_macro_invalido_levanta_valueerror(self):
+        with pytest.raises(ValueError):
+            pp.HierarchicalReconciler(peso_macro=0.0)
+        with pytest.raises(ValueError):
+            pp.HierarchicalReconciler(peso_macro=1.5)
 
     def test_kappa_abaixo_do_limite_aciona_quarentena(self):
         r = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=2.0, lambda_macro=1.0)  # kappa=0.5
         assert r.quarantine_flag is True
         assert r.motivo is not None
+        assert r.lambda_final == pytest.approx(1.0)  # quarentenado -- macro puro, sem mistura
 
     def test_kappa_acima_do_limite_aciona_quarentena(self):
         r = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=1.0, lambda_macro=2.0)  # kappa=2.0
         assert r.quarantine_flag is True
+        assert r.lambda_final == pytest.approx(2.0)  # quarentenado -- macro puro, sem mistura
 
     def test_limites_exatos_de_kappa_sao_validos(self):
-        r_min = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=1.0, lambda_macro=0.80)
-        r_max = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=1.0, lambda_macro=1.20)
+        reconciler = pp.HierarchicalReconciler()
+        r_min = reconciler.reconciliar(lambda_bottom_up=1.0, lambda_macro=0.80)
+        r_max = reconciler.reconciliar(lambda_bottom_up=1.0, lambda_macro=1.20)
         assert r_min.quarantine_flag is False
         assert r_max.quarantine_flag is False
+        assert r_min.lambda_final == pytest.approx(reconciler.peso_macro * 0.80 + (1 - reconciler.peso_macro) * 1.0)
+        assert r_max.lambda_final == pytest.approx(reconciler.peso_macro * 1.20 + (1 - reconciler.peso_macro) * 1.0)
 
     def test_lambda_bottom_up_degenerado_nao_crasha(self):
         r = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=0.0, lambda_macro=1.5)
@@ -222,6 +242,33 @@ class TestHierarchicalReconciler:
     def test_lambda_bottom_up_nan_nao_crasha(self):
         r = pp.HierarchicalReconciler().reconciliar(lambda_bottom_up=float("nan"), lambda_macro=1.5)
         assert r.quarantine_flag is True
+
+    def test_gsax_do_goleiro_adversario_move_lambda_final(self):
+        """Fim-a-fim Camada 1 -> Camada 2: GSAx do goleiro adversário muda
+        lambda_bottom_up o bastante pra lambda_final divergir de
+        lambda_macro (dentro da banda de kappa aceita) -- prova que a
+        média ponderada de fato deixa o GSAx mexer no preço, não só na
+        Camada 1 isolada (o que já valia antes desta mudança)."""
+        elenco = _elenco_completo(team_id=10, is_home=True)
+        agregador = pp.PlayerToTeamAggregator()
+        reconciler = pp.HierarchicalReconciler()
+
+        agregacao_neutra = agregador.agregar(elenco, gsax_rate_adversario=0.0)
+        # gsax_rate=0.2 (goleiro bom, mas não extremo) -- reduz lambda_bottom_up
+        # o bastante pra medir o efeito, mas mantém kappa dentro da banda
+        # [0.8, 1.2] aceita (fora disso cairia em quarentena, que é outro
+        # comportamento -- já coberto pelos testes de quarentena acima).
+        agregacao_goleiro_bom = agregador.agregar(elenco, gsax_rate_adversario=0.2)
+        assert agregacao_goleiro_bom.lambda_bottom_up < agregacao_neutra.lambda_bottom_up
+
+        lambda_macro = agregacao_neutra.lambda_bottom_up  # macro "concorda" com o cenário neutro
+        r_neutro = reconciler.reconciliar(agregacao_neutra.lambda_bottom_up, lambda_macro)
+        r_goleiro_bom = reconciler.reconciliar(agregacao_goleiro_bom.lambda_bottom_up, lambda_macro)
+
+        assert r_neutro.quarantine_flag is False
+        assert r_goleiro_bom.quarantine_flag is False
+        assert r_goleiro_bom.lambda_final < r_neutro.lambda_final
+        assert r_goleiro_bom.lambda_final != pytest.approx(lambda_macro)
 
 
 # ---------------------------------------------------------------------------

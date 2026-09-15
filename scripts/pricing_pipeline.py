@@ -91,6 +91,13 @@ DURACAO_REGULAMENTAR = 90.0
 KAPPA_MIN = 0.80
 KAPPA_MAX = 1.20
 LAMBDA_BOTTOM_UP_MINIMO = 1e-9
+# Peso do lambda MACRO na média ponderada (dentro da faixa de kappa aceita)
+# -- default conservador de propósito: o modelo macro (equipe/liga) é o
+# mais validado do projeto, o bottom-up (soma de estimativas por jogador)
+# é mais novo e mais ruidoso. Ajustável/testável via backtest
+# (`rodar_pricing_pipeline.py --backtest`), não fixado por autoridade
+# nenhuma -- só um ponto de partida seguro.
+PESO_MACRO_DEFAULT = 0.80
 
 # ---------------------------------------------------------------------------
 # Camada 3 -- constantes
@@ -340,20 +347,39 @@ class HierarchicalReconciler:
     """Confronta o λ bottom-up (Camada 1) com o λ macro do modelo de
     equipe/liga.
 
-    Propriedade importante, documentada pra não parecer bug: como
-    `lambda_final = lambda_bottom_up * kappa = lambda_bottom_up *
-    (lambda_macro/lambda_bottom_up) = lambda_macro` sempre que κ é aceito,
-    esta camada NÃO é uma média ponderada entre os dois modelos -- é um
-    PORTÃO DE SANIDADE. Ela só deixa o número macro passar quando o
-    bottom-up concorda com ele dentro de [`kappa_min`, `kappa_max`]; fora
-    disso, aciona quarentena (`quarantine_flag=True`), que a Camada 4 usa
-    pra impedir aposta automática naquele lado, independente de qualquer
-    edge calculado depois.
+    Até 15/09 esta camada era um PORTÃO DE SANIDADE puro: `lambda_final =
+    lambda_bottom_up * kappa = lambda_macro` sempre que κ era aceito, então
+    nenhuma feature calculada só na Camada 1 (ex. GSAx de goleiro, ver
+    `PlayerToTeamAggregator.modular_por_goleiro`) chegava a mudar o preço
+    de verdade -- só podia empurrar a partida pra quarentena. Trocado a
+    pedido do usuário por uma MÉDIA PONDERADA de verdade dentro da faixa
+    aceita: `lambda_final = peso_macro*lambda_macro + (1-peso_macro)*
+    lambda_bottom_up`. `peso_macro` alto por padrão (`PESO_MACRO_DEFAULT`)
+    -- o modelo macro é o mais validado/estável do projeto, o bottom-up é
+    mais novo e mais ruidoso (soma de estimativas individuais por
+    jogador, cada uma com sua própria incerteza), então a mudança é uma
+    correção pequena, não uma substituição.
+
+    A quarentena continua sendo a rede de segurança pros casos em que o
+    bottom-up diverge demais do macro (κ fora de [`kappa_min`,
+    `kappa_max`]) OU é degenerado -- nesses casos `lambda_final` continua
+    sendo o `lambda_macro` puro, sem nenhuma mistura (não faz sentido
+    confiar parcialmente num bottom-up que já falhou o teste de
+    plausibilidade). `quarantine_flag=True` também segue sendo o sinal que
+    a Camada 4 usa pra impedir aposta automática naquele lado.
     """
 
-    def __init__(self, kappa_min: float = KAPPA_MIN, kappa_max: float = KAPPA_MAX) -> None:
+    def __init__(
+        self,
+        kappa_min: float = KAPPA_MIN,
+        kappa_max: float = KAPPA_MAX,
+        peso_macro: float = PESO_MACRO_DEFAULT,
+    ) -> None:
+        if not 0.0 < peso_macro <= 1.0:
+            raise ValueError(f"peso_macro precisa estar em (0, 1]: {peso_macro}")
         self.kappa_min = kappa_min
         self.kappa_max = kappa_max
+        self.peso_macro = peso_macro
 
     def reconciliar(
         self, lambda_bottom_up: float, lambda_macro: float, contexto: str = ""
@@ -366,9 +392,9 @@ class HierarchicalReconciler:
             )
 
         kappa = lambda_macro / lambda_bottom_up
-        lambda_final = lambda_bottom_up * kappa  # == lambda_macro, ver docstring da classe
 
         if self.kappa_min <= kappa <= self.kappa_max:
+            lambda_final = self.peso_macro * lambda_macro + (1.0 - self.peso_macro) * lambda_bottom_up
             return ReconciliacaoResultado(lambda_final=lambda_final, kappa=kappa, quarantine_flag=False)
 
         motivo = (
@@ -377,8 +403,9 @@ class HierarchicalReconciler:
             "elenco (bottom-up) e modelo de equipe (macro) divergem demais, quarentena acionada."
         )
         LOGGER.warning("Reconciliação [%s] em quarentena: %s", contexto, motivo)
+        # Quarentenado -- sem mistura, lambda_macro puro (ver docstring da classe).
         return ReconciliacaoResultado(
-            lambda_final=lambda_final, kappa=kappa, quarantine_flag=True, motivo=motivo
+            lambda_final=lambda_macro, kappa=kappa, quarantine_flag=True, motivo=motivo
         )
 
 
