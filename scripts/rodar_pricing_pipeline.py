@@ -45,11 +45,26 @@ exceção). Gaps de dado documentados, não bugs -- ver `pricing_pipeline.py`.
 
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 rodar_pricing_pipeline.py [--dias N] [--match-ids ID,ID,...]
+
+Modo `--backtest`: em vez de partidas `scheduled` nos próximos `--dias` dias,
+processa partidas já `finished` nos últimos `--dias` dias (ou os `--match-ids`
+explícitos, que nesse modo NÃO ficam restritos a `scheduled`). Existe pra
+medir estatísticas de desempenho reais do `pricing_pipeline_v1` (log-loss,
+Brier, calibração em `/modelos`) -- até rodar isso, o modelo só tinha
+previsões pra partidas ainda não realizadas, sem nenhum resultado real pra
+comparar. `player_match_estimates`/`model_match_estimates.params` de uma
+partida não são apagados quando ela termina (confirmado via SQL: 259
+partidas `finished` de 30/ago a 14/set com as duas tabelas populadas), então
+a Camada 1-3 roda igual, só a origem da lista de partidas muda -- não é uma
+previsão "adivinhando o passado", é gerar HOJE a mesma probabilidade que o
+pipeline teria dado antes do apito, usando o mesmo dado que estava disponível
+então (estimativas de jogador/macro não usam resultado da partida).
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
 import os
 
@@ -142,10 +157,34 @@ def _selecionar_fonte_por_partida(jogadores_partida: pd.DataFrame) -> pd.DataFra
     return jogadores_partida[jogadores_partida["fonte_titular"] == fonte]
 
 
-def rodar(supabase: Client, dias: int, match_ids: list[int] | None) -> int:
-    fixtures = buscar_fixtures(supabase, dias, match_ids)
+def _buscar_fixtures_finalizadas(supabase: Client, dias: int, match_ids: list[int] | None) -> pd.DataFrame:
+    """Mesmas colunas de `buscar_fixtures`, mas partidas `status='finished'`
+    em vez de `scheduled` -- usado só pelo modo `--backtest` (ver docstring
+    do módulo). Com `match_ids` explícito, filtra só por eles (sem janela de
+    dias); sem `match_ids`, pega toda `finished` com `match_date` nos
+    últimos `dias` dias."""
+    query = (
+        supabase.table("matches")
+        .select("id, match_date, home_team_id, away_team_id, league_id")
+        .eq("status", "finished")
+    )
+    if match_ids:
+        query = query.in_("id", match_ids)
+    else:
+        piso = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=dias)
+        query = query.gte("match_date", piso.isoformat())
+    resp = query.execute()
+    return pd.DataFrame(resp.data or [])
+
+
+def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bool = False) -> int:
+    fixtures = (
+        _buscar_fixtures_finalizadas(supabase, dias, match_ids)
+        if backtest
+        else buscar_fixtures(supabase, dias, match_ids)
+    )
     if fixtures.empty:
-        logger.info("Nenhuma partida 'scheduled' na janela -- nada a precificar.")
+        logger.info("Nenhuma partida '%s' na janela -- nada a precificar.", "finished" if backtest else "scheduled")
         return 0
 
     fixture_ids = [int(m) for m in fixtures["id"].tolist()]
@@ -242,8 +281,12 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None) -> int:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dias", type=int, default=7, help="janela de dias à frente para precificar (default 7)")
+    ap.add_argument("--dias", type=int, default=7, help="janela de dias (à frente por padrão; pra trás com --backtest) -- default 7")
     ap.add_argument("--match-ids", type=str, default=None, help="lista de match_id separados por vírgula -- ignora --dias quando presente")
+    ap.add_argument(
+        "--backtest", action="store_true",
+        help="processa partidas 'finished' (últimos --dias dias, ou --match-ids explícito) em vez de 'scheduled' -- ver docstring do módulo",
+    )
     args = ap.parse_args()
 
     url = os.environ["SUPABASE_URL"].strip()
@@ -251,4 +294,4 @@ if __name__ == "__main__":
     sb = create_client(url, key)
 
     ids = [int(x) for x in args.match_ids.split(",")] if args.match_ids else None
-    rodar(sb, args.dias, ids)
+    rodar(sb, args.dias, ids, backtest=args.backtest)
