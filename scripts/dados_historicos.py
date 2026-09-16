@@ -502,12 +502,24 @@ def obter_squad_rating_atual(supabase: Client, team_ids: list[int], top_n: int =
 
 # Últimas N partidas como titular usadas na janela de GSAx (spec "Pricing
 # Pipeline v2", item 4.2 -- goleiro).
-GSAX_N_MAX_PARTIDAS = 25
-# Amostra mínima pra confiar no GSAx calculado -- abaixo disso o valor fica
-# ausente (NULL), tratado como neutro por quem consome (ver
-# `pricing_pipeline.py::modular_por_goleiro`), em vez de um rate calculado
-# com poucochíssimos chutes sofridos.
-GSAX_MIN_AMOSTRA = 5
+#
+# Validado empiricamente em 16/09 (split 70/30 por goleiro, correlação
+# GSAx-treino vs. desempenho real em teste, mesma metodologia usada pra
+# rejeitar a matriz de zonas -- aqui o resultado foi o oposto, sinal real
+# e crescente com o tamanho da janela): 20 partidas -> corr 0.24, 40 -> 0.26,
+# 60 -> 0.27, 100 -> 0.37. Diferente de "forma" de jogador de linha (que
+# decai com o tempo), a qualidade de goleiro medida por xGOT parece ser um
+# traço mais ESTÁVEL, então mais exposição (mais chutes no alvo sofridos)
+# só reduz ruído da medição -- não precisa de decay temporal. Aumentado de
+# 25 pra 100 com base nisso.
+GSAX_N_MAX_PARTIDAS = 100
+# Constante K do shrinkage bayesiano (ver `GSAX_MIN_AMOSTRA`, removida) --
+# EM UNIDADE DE xGOT ACUMULADO, não partidas (`N/(N+K)`, mesma família de
+# fórmula já usada em `calcular_concessao_zona_historica`, K=12, e na spec
+# original). Validado empiricamente: a correlação GSAx-treino vs.
+# desempenho real em teste forma um platô largo entre K=2 e K=7 (0.33-0.35),
+# com pico em K≈4-5 -- não é um valor isolado escolhido a dedo.
+GSAX_SHRINKAGE_K = 5.0
 
 
 def obter_gsax_atual(supabase: Client, player_ids: list[int]) -> dict[int, dict]:
@@ -516,9 +528,9 @@ def obter_gsax_atual(supabase: Client, player_ids: list[int]) -> dict[int, dict]
     previsto.py`: previsão pra partida futura, sem vazamento a evitar) pros
     goleiros em `player_ids`.
 
-    GSAx_rate = 1 - (gols_sofridos_reais / xGOT_enfrentado), nas últimas
-    `GSAX_N_MAX_PARTIDAS` partidas em que o jogador foi titular COMO
-    GOLEIRO (`match_lineup_fotmob.is_starter=true` confirmado por
+    GSAx_rate = shrinkage_bayesiano(1 - gols_sofridos_reais/xGOT_enfrentado),
+    nas últimas `GSAX_N_MAX_PARTIDAS` partidas em que o jogador foi titular
+    COMO GOLEIRO (`match_lineup_fotmob.is_starter=true` confirmado por
     `match_player_stats_fotmob.is_goalkeeper=true` na mesma partida --
     dupla checagem, não assume que todo titular listado no papel de GK
     realmente atuou como goleiro). `gols_sofridos` vem do placar OFICIAL
@@ -529,9 +541,13 @@ def obter_gsax_atual(supabase: Client, player_ids: list[int]) -> dict[int, dict]
     `match_shots_fotmob.xgot` dos chutes NO ALVO do adversário nessas
     partidas.
 
-    Devolve só os goleiros com amostra >= `GSAX_MIN_AMOSTRA` partidas —
-    os demais ficam ausentes do dict (quem chama trata isso como "sem GSAx
-    calculável", grava `NULL`, nunca `0.0` -- ver migration
+    Shrinkage bayesiano em unidade de xGOT (ver `GSAX_SHRINKAGE_K`)
+    substituiu o corte binário antigo (mínimo de partidas + clip duro) --
+    validado empiricamente que dobra a correlação com desempenho real
+    futuro (~0.10 -> ~0.35). Só fica ausente do dict quando `xGOT_enfrentado
+    <= 0` (nenhum chute no alvo sofrido classificável na amostra -- rate
+    genuinamente indefinido, não um valor pequeno) -- quem chama trata isso
+    como "sem GSAx calculável", grava `NULL`, nunca `0.0` (ver migration
     `20260915100000_add_gsax_rate_jogador_mercados.sql`)."""
     if not player_ids:
         return {}
@@ -630,13 +646,23 @@ def obter_gsax_atual(supabase: Client, player_ids: list[int]) -> dict[int, dict]
     resultado: dict[int, dict] = {}
     for player_id, grupo in df.groupby("player_id"):
         n_jogos = len(grupo)
-        if n_jogos < GSAX_MIN_AMOSTRA:
-            continue
         xgot_enfrentado = float(grupo["xgot_sofrido"].sum())
         gols_sofridos = float(grupo["gols_sofridos"].sum())
         if xgot_enfrentado <= 0:
             continue  # sem chute no alvo sofrido na amostra -- rate indefinido, não um 0.0 com sentido.
-        gsax_rate = float(np.clip(1.0 - (gols_sofridos / xgot_enfrentado), -1.0, 1.0))
+        gsax_bruto = 1.0 - (gols_sofridos / xgot_enfrentado)
+        # Shrinkage bayesiano em unidade de xGOT (não partidas) -- substitui
+        # o corte binário antigo (GSAX_MIN_AMOSTRA=5 partidas + clip duro).
+        # N/(N+K) com N=xgot_enfrentado: goleiro com pouco xGOT sofrido (amostra
+        # pequena OU cobertura de xgot esparsa nas partidas dele, achado real
+        # de 15/09) puxa suave pro neutro (0.0) em vez de aparecer como NULL
+        # (antes) ou com um rate cru instável (sem shrinkage). Clip [-1,1]
+        # mantido como rede de segurança, mas raramente ativa depois do
+        # shrinkage -- validado empiricamente (ver comentário de
+        # GSAX_SHRINKAGE_K), correlação treino->teste sobe de ~0.10 (corte
+        # binário) pra ~0.35 (shrinkage) na mesma amostra de goleiros.
+        peso_amostra = xgot_enfrentado / (xgot_enfrentado + GSAX_SHRINKAGE_K)
+        gsax_rate = float(np.clip(peso_amostra * gsax_bruto, -1.0, 1.0))
         resultado[int(player_id)] = {
             "gsax_rate": gsax_rate,
             "n_jogos": n_jogos,
