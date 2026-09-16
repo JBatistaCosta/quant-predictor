@@ -44,7 +44,8 @@ desempenho individual do goleiro, não uma função ad-hoc deste runner). Este
 runner é só CONSUMIDOR: `_gsax_do_goleiro` lê o `gsax_rate` do goleiro do
 elenco de cada lado (mesma fonte/mesma partida) e usa como
 `gsax_rate_adversario` do time rival -- goleiro sem `gsax_rate` populado
-(amostra <5 partidas, ver `dados_historicos.GSAX_MIN_AMOSTRA`) ou ausente do
+(sem nenhum chute no alvo classificável na amostra, ver
+`dados_historicos.obter_gsax_atual`/`GSAX_SHRINKAGE_K`) ou ausente do
 elenco cai no default neutro `0.0`, sem modular nada. `delta_shooting`
 (xGOT-xG por jogador) segue sem existir em `player_match_estimates` --
 gap de dado documentado, não bug -- e `jogadores` continua sem essa coluna

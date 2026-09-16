@@ -9,12 +9,19 @@ fácil de quebrar silenciosamente (divisão por zero, amostra pequena
 inflando o rate) e caro de validar só via SQL de produção a cada mudança.
 
 Roda com `pytest scripts/test_dados_historicos_gsax.py -v` da raiz do repo.
+
+Atualizado em 16/09 (`GSAX_MIN_AMOSTRA` removida, substituída por
+shrinkage bayesiano em unidade de xGOT via `GSAX_SHRINKAGE_K`) -- validado
+empiricamente que dobra a correlação com desempenho real futuro do goleiro
+(split 70/30, ~0.10 no corte binário antigo -> ~0.35 com shrinkage).
 """
 
 from __future__ import annotations
 
 import sys
 import types
+
+import pytest
 
 # `dados_historicos.py` importa `from supabase import Client` só pra type
 # hint (nunca instanciado nem chamado de verdade aqui -- este arquivo só
@@ -104,9 +111,11 @@ def _construir_banco(
     }
 
 
-def test_gsax_rate_calculado_corretamente_com_amostra_suficiente():
+def test_gsax_rate_calculado_com_shrinkage_bayesiano():
     # 5 partidas, adversário chuta 2.0 xGOT/partida no alvo (total 10.0) e
-    # marca 1 gol/partida (total 5) -- GSAx_rate = 1 - 5/10 = 0.5.
+    # marca 1 gol/partida (total 5) -- gsax_bruto = 1 - 5/10 = 0.5.
+    # Shrinkage: peso = xgot/(xgot+K) = 10/(10+5) = 0.6667 -- gsax_rate =
+    # 0.5 * 0.6667 = 0.3333 (puxado pro neutro 0.0, não mais o valor cru).
     banco = _construir_banco(n_partidas=5, xgot_por_partida=2.0, gols_por_partida=1)
     supabase = _FakeSupabase(banco)
 
@@ -116,18 +125,27 @@ def test_gsax_rate_calculado_corretamente_com_amostra_suficiente():
     assert resultado[1]["n_jogos"] == 5
     assert resultado[1]["xgot_enfrentado"] == 10.0
     assert resultado[1]["gols_sofridos"] == 5.0
-    assert resultado[1]["gsax_rate"] == 0.5
+    peso_esperado = 10.0 / (10.0 + dh.GSAX_SHRINKAGE_K)
+    assert resultado[1]["gsax_rate"] == pytest.approx(0.5 * peso_esperado)
 
 
-def test_amostra_insuficiente_nao_populaGSAx():
-    # Só 4 partidas (< GSAX_MIN_AMOSTRA=5) -- goleiro não deve aparecer no
-    # resultado (fica NULL do lado de quem grava, não 0.0).
-    banco = _construir_banco(n_partidas=4, xgot_por_partida=2.0, gols_por_partida=1)
+def test_amostra_pequena_e_puxada_pro_neutro_mas_nao_descartada():
+    # Corte binário antigo (GSAX_MIN_AMOSTRA=5) foi substituído por
+    # shrinkage contínuo -- 3 partidas (amostra pequena) não fica mais
+    # ausente do dict, só com o rate puxado bem perto de 0.0 (neutro).
+    # gsax_bruto = 1 - 3/6 = 0.5 (mesma taxa do teste acima, xgot menor).
+    # peso = 6/(6+5) = 0.5455 -- rate menor em magnitude que o teste com
+    # xgot_enfrentado=10.0 acima, mesmo com a MESMA taxa bruta -- prova que
+    # é o volume de xGOT, não só a taxa, que decide o shrinkage.
+    banco = _construir_banco(n_partidas=3, xgot_por_partida=2.0, gols_por_partida=1)
     supabase = _FakeSupabase(banco)
 
     resultado = dh.obter_gsax_atual(supabase, [1])
 
-    assert 1 not in resultado
+    assert 1 in resultado
+    peso_esperado = 6.0 / (6.0 + dh.GSAX_SHRINKAGE_K)
+    assert resultado[1]["gsax_rate"] == pytest.approx(0.5 * peso_esperado)
+    assert abs(resultado[1]["gsax_rate"]) < 0.5  # mais perto do neutro que a taxa bruta
 
 
 def test_xgot_enfrentado_zero_nao_populaGSAx_sem_dividir_por_zero():
@@ -144,8 +162,11 @@ def test_xgot_enfrentado_zero_nao_populaGSAx_sem_dividir_por_zero():
 
 def test_gsax_rate_extremo_e_clipado():
     # 25 partidas, xGOT enfrentado minúsculo (0.1/partida = 2.5 total) mas
-    # muitos gols sofridos (3/partida = 75 total) -- rate bruto = 1 - 75/2.5
-    # = -29.0, bem fora de [-1,1]. Precisa vir clipado em -1.0.
+    # muitos gols sofridos (3/partida = 75 total) -- gsax_bruto = 1 - 75/2.5
+    # = -29.0; mesmo depois do shrinkage (peso = 2.5/(2.5+5) = 0.333, rate
+    # pré-clip = -29 * 0.333 ≈ -9.67) ainda fica bem fora de [-1,1] --
+    # precisa vir clipado em -1.0 (o shrinkage sozinho não é suficiente
+    # quando a taxa bruta é absurda o bastante).
     banco = _construir_banco(n_partidas=25, xgot_por_partida=0.1, gols_por_partida=3)
     supabase = _FakeSupabase(banco)
 
