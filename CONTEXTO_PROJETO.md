@@ -236,6 +236,25 @@ Não é problema de pacing (1 liga, 1 tentativa) — o FBref reconhece a faixa d
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
+**CONCLUÍDO (16/09) — `pricing_pipeline_previsto_v1`/`real_v1` comparados contra Pinnacle devigada (odd de fechamento E de abertura) via bootstrap IC95% pareado: Pinnacle bate o pricing pipeline nos dois mercados testados, significativo na amostra maior.** Contexto: depois de dividir a saída em `pricing_pipeline_previsto_v1` (XI previsto) e `pricing_pipeline_real_v1` (escalação oficial) e rodar backtest de temporada inteira nas 6 ligas já validadas pro modelo de jogador (ver entrada de 15/09 e as anteriores sobre a divisão previsto/real), faltava saber se o pipeline bate o mercado de verdade.
+
+- **Por que não deu pra usar `scripts/avaliar_ic_modelos_por_liga.py`**: esse script só lê `model_predictions` pelos `model_name`s cadastrados em `model_stats_resumo`. `mercado_pinnacle_devigado` é um modelo SINTÉTICO que só existe na camada HTTP de `api/model-stats.js` (calculado on-the-fly a partir de `odds_market` snapshot='closing') — **nunca é gravado em `model_predictions`** (confirmado: `select count(*) from model_predictions where model_name='mercado_pinnacle_devigado'` = 0). Foi preciso montar uma análise ad-hoc reaproveitando `backtest_kelly._devig_odds_ratio` (método Odds Ratio/Cheung, a função de devig padrão do projeto) em vez do script existente.
+- **Metodologia**: log-loss/Brier/acurácia + bootstrap (2000 reamostragens, seed=42) do IC95% marginal de cada lado e da DIFERENÇA PAREADA (mesmo índice reamostrado nos dois, teste correto pra "A bate B no mesmo conjunto de partidas"). Mercados testados: 1X2 e over/under 2.5 gols. Duas versões de odd Pinnacle: (a) `snapshot='closing'`, com fallback pra `captured_at` mais recente quando não há `closing` pra aquela partida; (b) `MIN(captured_at)` por `(match_id, seleção)` como proxy de "odd de abertura" — **`odds_market` só tem `snapshot` `closing`/`pre_closing`, não existe rótulo "opening" dedicado**, então "abertura" foi operacionalizada como o primeiro registro capturado.
+- **Resultado (idêntico qualitativamente nas duas versões de odd — fechamento e abertura)**:
+
+  | Mercado | Modelo | n | diff log-loss (modelo−Pinnacle) | IC95% | Significativo? |
+  |---|---|---|---|---|---|
+  | 1X2 | previsto_v1 | ~180 | +0,03 | cruza zero | não |
+  | 1X2 | real_v1 | ~610-615 | +0,02 a +0,023 | inteiramente positivo | **SIM — Pinnacle melhor** |
+  | O/U 2.5 | previsto_v1 | ~178 | +0,009 | cruza zero | não |
+  | O/U 2.5 | real_v1 | ~607 | +0,019 | inteiramente positivo | **SIM — Pinnacle melhor** |
+
+  Acurácia de classificação também favorece Pinnacle em todos os 4 casos (ex.: 1X2 real_v1 52,2% Pinnacle vs. 50,2% modelo).
+- **Leitura**: `previsto_v1` (amostra menor, XI previsto de dias antes do jogo) nunca mostrou diferença estatisticamente detectável contra o mercado — mas isso é mais provável ser falta de poder estatístico (n~180) do que paridade real. `real_v1` (escalação oficial confirmada, amostra >600) perde de forma estatisticamente significativa em ambos os mercados, tanto usando odd de fechamento quanto de abertura — o resultado não é sensível a qual ponto da curva de odds da Pinnacle se usa como referência. **Conclusão prática**: nenhuma das duas versões do pricing pipeline bate o mercado devigado hoje; não há base pra tratar `pricing_pipeline_*_v1` como fonte de EV+ sem revisão do modelo (Camada 1-3), e qualquer promoção futura a `model_betting_strategy` precisa reconfirmar isso com o pipeline como estiver na hora.
+- **Scripts/arquivos desta análise ficaram em `/tmp` (fora do repo, não versionados)** — se for repetir/automatizar essa comparação no futuro, vale portar pra um script versionado em `scripts/` (ex. `scripts/avaliar_pricing_pipeline_vs_pinnacle.py`) em vez de recriar ad-hoc a cada vez.
+
+---
+
 **CONCLUÍDO (15/09) — backtest retroativo de `pricing_pipeline_v1` + achado real: `?tarefa=recalcular-model-stats` (`api/model-maintenance.js`) trava em produção por `statement_timeout`, bem antes do `maxDuration=60s` da function.** `pricing_pipeline_v1` só tinha previsões pra partidas `scheduled` (121, zero `finished`) — sem partida com resultado real, `/modelos` não tinha como calcular log-loss/Brier/calibração dele.
 
 - **Backtest viabilizado (PR #555)**: confirmado via SQL que `player_match_estimates`/`model_match_estimates.params` de uma partida não são apagados quando ela termina — 259 partidas `finished` (30/ago-14/set) tinham as duas populadas. Novo modo `--backtest` em `scripts/rodar_pricing_pipeline.py` (nova `_buscar_fixtures_finalizadas`, sem alterar `buscar_fixtures` — compartilhada com o runner de `scheduled`) processa partidas `finished` nos últimos N dias em vez de `scheduled` nos próximos N. Exposto via novo input `pricing_pipeline_backtest_dias` no `workflow_dispatch` de `prever_jogador_mercados.yml`. Rodado uma vez com `dias=20`: **236 de 259 partidas elegíveis** ganharam previsão (as ~23 restantes provavelmente sem elenco completo dos 2 times ou macro inutilizável — mesmos critérios de `pulando` já existentes no runner, não investigado individualmente).
