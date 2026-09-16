@@ -633,7 +633,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
             # bucket Titular/Banco, não a probabilidade bruta.
             df["is_titular_previsto"] = df["is_titular_previsto"].fillna(False).astype(bool)
 
-        df = df.merge(fixtures.rename(columns={"id": "match_id"})[["match_id", "home_team_id", "away_team_id"]], on="match_id", how="left")
+        df = df.merge(fixtures.rename(columns={"id": "match_id"})[["match_id", "home_team_id", "away_team_id", "match_date"]], on="match_id", how="left")
         df["mando"] = (df["team_id"] == df["home_team_id"]).astype(int)
         df["opponent_team_id"] = np.where(df["team_id"] == df["home_team_id"], df["away_team_id"], df["home_team_id"])
         df["elo_diff"] = df["team_id"].map(elo_por_time) - df["opponent_team_id"].map(elo_por_time)
@@ -652,7 +652,30 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         lambda_xa = modelos_ml_predict_regressor(modelo_xa, df, tmj.FEATURES_XA) if modelo_xa is not None else None
         lambda_chutes_no_alvo = lambda_chutes * df["taxa_no_alvo_bayesiana"].to_numpy()
 
+        # Fator de matchup zonal (Pricing Pipeline v2, w_i,z · M_j,z^reg) --
+        # candidato alternativo, NUNCA usado pra derivar lambda_chutes_jogo
+        # em si (só grava lambda_chutes_jogo_zona_ajustado em paralelo, ver
+        # migration). 1 chamada RPC por PARTIDA (não por jogador) -- todos os
+        # titulares/reservas de um match_id compartilham o mesmo match_date,
+        # que é o `p_data_corte` correto (ponto-no-tempo exato da partida,
+        # funciona igual pra fixture futura e pra --backtest, sem precisar
+        # de "agora" como aproximação). Mesma disciplina de lote já usada no
+        # resto do arquivo pra não fazer 1 round-trip por jogador.
+        fator_zona_por_match_player: dict[tuple[int, int], float] = {}
+        for match_id_lote, grupo in df.groupby("match_id"):
+            resp_fator = supabase.rpc(
+                "calcular_fator_zona_jogador_lote",
+                {
+                    "p_player_ids": grupo["player_id"].astype(int).tolist(),
+                    "p_opponent_team_ids": grupo["opponent_team_id"].astype(int).tolist(),
+                    "p_data_corte": grupo["match_date"].iloc[0],
+                },
+            ).execute()
+            for linha_fator in resp_fator.data or []:
+                fator_zona_por_match_player[(int(match_id_lote), int(linha_fator["player_id"]))] = float(linha_fator["fator"])
+
         for i, (_, row) in enumerate(df.iterrows()):
+            fator_zona = fator_zona_por_match_player.get((int(row["match_id"]), int(row["player_id"])), 1.0)
             linhas_saida.append({
                 "match_id": int(row["match_id"]), "team_id": int(row["team_id"]), "player_id": int(row["player_id"]),
                 "fonte_titular": fonte, "prob_titular_usada": float(row["prob_titular_usada"]),
@@ -673,6 +696,8 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "posicao_detalhe": posicao_detalhe_por_jogador.get(int(row["player_id"])),
                 "gsax_rate": gsax_por_goleiro.get(int(row["player_id"]), {}).get("gsax_rate"),
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
+                "fator_zona_aplicado": fator_zona,
+                "lambda_chutes_jogo_zona_ajustado": float(lambda_chutes[i]) * fator_zona,
                 "lambda_gols_jogo_thinning": float(lambda_gols_thinning[i]),
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
                 "lambda_xg_jogo": float(lambda_xg[i]) if lambda_xg is not None else None,
