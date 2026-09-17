@@ -2246,6 +2246,76 @@ def _anexar_situacao_chutes_por_partida(supabase: Client, partidas: pd.DataFrame
     return partidas
 
 
+# Qualidade de finalização (xG por chute) condicionada ao estado do placar
+# -- achado da frente de comportamento (ver CLAUDE.md, seção "Estado do
+# jogo", e CONTEXTO_PROJETO.md/`v_game_state_por_forca`): controlando por
+# força de equipe (Elo), a qualidade por chute GANHANDO (~0,1219 nos dois
+# lados) fica consistentemente acima da qualidade PERDENDO (~0,0976-0,1007)
+# em toda faixa de força e nos dois mandos -- ao contrário do xG TOTAL por
+# estado, que é só efeito de "quem está ganhando é o time melhor" e
+# INVERTE sob o mesmo controle. Só esses dois estados entram aqui (não
+# 'empatando' -- não é o contraste que sobreviveu ao controle de força).
+COLUNAS_QUALIDADE_CHUTE_ESTADO = ["qualidade_chute_ganhando", "qualidade_chute_perdendo"]
+COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO = {
+    col: {
+        "marcado_home": f"media_{col}_5j_home",
+        "sofrido_home": f"media_{col}_sofrido_5j_home",
+        "marcado_away": f"media_{col}_5j_away",
+        "sofrido_away": f"media_{col}_sofrido_5j_away",
+    }
+    for col in COLUNAS_QUALIDADE_CHUTE_ESTADO
+}
+
+
+def _anexar_qualidade_chute_estado_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """`xg_pro/chutes_pro` por (partida, time), separado por estado
+    ganhando/perdendo, de `match_team_game_state` -- feature nova pro
+    `hibrido_gols_xg_v2_estado` (ver `FEATURES_NUMERICAS_V15_QUALIDADE_
+    ESTADO`). Só `placar_confere=true` (regra de sempre dessa tabela, ver
+    CLAUDE.md) -- as ~0,2% de partidas com placar reconstruído errado ficam
+    de fora em vez de contaminar a média. `chutes_pro=0` num estado vira
+    NaN (ausência de observação), nunca 0 -- 0 chutes não é "chute de
+    péssima qualidade"."""
+    match_ids = partidas["id"].astype(int).tolist()
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_team_game_state")
+            .select("match_id, team_id, estado, chutes_pro, xg_pro")
+            .in_("match_id", lote)
+            .eq("placar_confere", True)
+            .in_("estado", ["ganhando", "perdendo"])
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+
+    if not linhas:
+        for col in COLUNAS_QUALIDADE_CHUTE_ESTADO:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    estados = pd.DataFrame(linhas)
+    estados["qualidade"] = np.where(estados["chutes_pro"] > 0, estados["xg_pro"] / estados["chutes_pro"], np.nan)
+    pivot = estados.pivot_table(index=["match_id", "team_id"], columns="estado", values="qualidade").reset_index()
+    pivot = pivot.rename(columns={
+        "match_id": "id", "ganhando": "qualidade_chute_ganhando", "perdendo": "qualidade_chute_perdendo",
+    })
+    for col in COLUNAS_QUALIDADE_CHUTE_ESTADO:
+        if col not in pivot.columns:
+            pivot[col] = np.nan
+
+    for col in COLUNAS_QUALIDADE_CHUTE_ESTADO:
+        pivot_home = pivot.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
+        pivot_away = pivot.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
+        partidas = partidas.merge(pivot_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(pivot_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
 def obter_situacao_chutes_por_mando(
     supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
 ) -> dict[int, dict[str, float]]:
@@ -3968,6 +4038,27 @@ FEATURES_NUMERICAS_V14_CORNERS_DECAY = FEATURES_NUMERICAS_V13_CORNERS_FOTMOB + [
 ]
 FEATURES_V14_CORNERS_DECAY = FEATURES_NUMERICAS_V14_CORNERS_DECAY + CAT_FEATURES
 
+# v15 (só `hibrido_gols_xg_v2_estado`, variante nova comparada out-of-sample
+# contra `hibrido_gols_xg_v1` -- ver VARIANTES_GOLS em treinar_modelo_
+# hibrido.py) -- V12_MESMA_LIGA + forma pré-jogo (janela de 5 jogos,
+# separada por mando, `_forma_por_mando`) da qualidade de finalização
+# condicionada ao estado do placar (ganhando/perdendo), ver
+# `COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO`/`_anexar_qualidade_chute_estado_
+# por_partida`. Motivação medida em dado real, não teórica: controlando por
+# força de equipe (Elo, `v_game_state_por_forca`), a qualidade por chute
+# GANHANDO fica consistentemente acima da qualidade PERDENDO em toda faixa
+# de força e nos dois mandos -- ao contrário do xG TOTAL por estado (que é
+# só efeito de "quem ganha é o time melhor" e inverte sob o mesmo
+# controle). Ainda não incorporado em nenhum `hibrido_*` de produção --
+# entra aqui como variante nova pra decidir empiricamente (mesma disciplina
+# de `hibrido_gols_v1` vs. `hibrido_gols_xg_v1`) se esse sinal, condicionado
+# ao ESTADO do jogo (algo que nenhuma feature de forma existente carrega),
+# melhora a estimativa de λ de gols fora da amostra.
+FEATURES_NUMERICAS_V15_QUALIDADE_ESTADO = FEATURES_NUMERICAS_V12_MESMA_LIGA + [
+    *[col for mapa in COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO.values() for col in mapa.values()],
+]
+FEATURES_V15_QUALIDADE_ESTADO = FEATURES_NUMERICAS_V15_QUALIDADE_ESTADO + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.
@@ -4214,6 +4305,7 @@ def montar_dataset_ml_empilhado(
     partidas = _anexar_stats_fotmob_por_partida(supabase, partidas)
     partidas = _anexar_bayesiano_escanteios_posse_por_partida(partidas)
     partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
+    partidas = _anexar_qualidade_chute_estado_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_gols_mesma_liga = _forma_por_mando(
@@ -4245,6 +4337,10 @@ def montar_dataset_ml_empilhado(
     formas_situacao_chutes = {
         col: _forma_por_mando(partidas, f"{col}_home", f"{col}_away", COLUNAS_FORMA_SITUACAO_CHUTES[col])
         for col in COLUNAS_SITUACAO_CHUTES
+    }
+    formas_qualidade_chute_estado = {
+        col: _forma_por_mando(partidas, f"{col}_home", f"{col}_away", COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO[col])
+        for col in COLUNAS_QUALIDADE_CHUTE_ESTADO
     }
     # Escanteios/posse FotMob com janelas múltiplas (5j/10j/20j + decay
     # exponencial) -- extensão (09/09) da migração FBref->FotMob dos modelos
@@ -4372,6 +4468,8 @@ def montar_dataset_ml_empilhado(
     for forma in formas_fotmob.values():
         dataset = dataset.join(forma, on="id")
     for forma in formas_situacao_chutes.values():
+        dataset = dataset.join(forma, on="id")
+    for forma in formas_qualidade_chute_estado.values():
         dataset = dataset.join(forma, on="id")
     dataset = dataset.join(forma_escanteios_fm_multi, on="id")
     dataset = dataset.join(forma_posse_fm_multi, on="id")
@@ -4774,6 +4872,8 @@ def montar_dataset_ml_empilhado(
         "posse_fm_bayesiano_home", "posse_fm_bayesiano_away",
         # Situação de chutes FotMob (v9)
         *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
+        # Qualidade de finalização por estado do jogo (v15, ganhando/perdendo)
+        *[col for mapa in COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO.values() for col in mapa.values()],
         # Features derivadas (v11)
         "elo_diff",
         "xg_diff_bayesiano", "xgot_diff_bayesiano",

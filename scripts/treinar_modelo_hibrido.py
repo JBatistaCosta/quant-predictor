@@ -98,6 +98,13 @@ FRACAO_CALIBRACAO = 0.20  # o resto (20%) é teste
 VARIANTES_GOLS = {
     "hibrido_gols_v1": {"home": "home_goals", "away": "away_goals"},
     "hibrido_gols_xg_v1": {"home": "xg_home", "away": "xg_away"},
+    # Mesmo alvo de hibrido_gols_xg_v1 (xG observado) -- só muda o feature
+    # set, que ganha a qualidade de finalização por estado do jogo
+    # (ganhando/perdendo), ver FEATURES_NUMERICAS_V15_QUALIDADE_ESTADO em
+    # dados_historicos.py. Comparada out-of-sample (log-verossimilhança do
+    # placar/log-loss/Brier no Test Set, mesma disciplina das outras
+    # variantes) pra decidir empiricamente se esse sinal ajuda o λ de gols.
+    "hibrido_gols_xg_v2_estado": {"home": "xg_home", "away": "xg_away"},
 }
 MODELO_CORNERS = "hibrido_corners_v1"
 
@@ -715,7 +722,7 @@ def main() -> None:
     # modelos -- é maior (muda o que TODO modelo já treinado usa) e fica
     # registrada em CONTEXTO_PROJETO.md pra decisão separada.
     colunas_dataset = set(dataset.columns)
-    for chave in ("hibrido_gols_v1", "hibrido_gols_xg_v1", "hibrido_corners_v1"):
+    for chave in ("hibrido_gols_v1", "hibrido_gols_xg_v1", "hibrido_gols_xg_v2_estado", "hibrido_corners_v1"):
         originais = ml.FEATURES_POR_MODELO.get(chave, [])
         faltando = [f for f in originais if f not in colunas_dataset]
         if faltando:
