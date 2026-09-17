@@ -7,7 +7,8 @@ sob demanda (mesma categoria de `verificar_distribuicoes.py`), depois de
 `treinar_modelo_hibrido.py` ter persistido `model_predictions`/
 `model_match_estimates`.
 
-Compara, para cada `model_name` em `["hibrido_gols_v1", "hibrido_gols_xg_v1"]`,
+Compara, para cada `model_name` em `["hibrido_gols_v1", "hibrido_gols_xg_v1",
+"hibrido_gols_xg_v2_estado"]`,
 cada mercado em `["1X2", "over_under_2.5", "btts", "corners_over_under_9.5"]`
 e cada snapshot em `["pre_closing" (abertura), "closing" (fechamento)]`, o
 log-loss do modelo contra o log-loss da probabilidade implícita da Pinnacle
@@ -61,7 +62,7 @@ import dados_historicos as dh
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 logger = logging.getLogger("avaliar_modelo_misto_vs_mercado")
 
-MODEL_NAMES = ["hibrido_gols_v1", "hibrido_gols_xg_v1"]
+MODEL_NAMES = ["hibrido_gols_v1", "hibrido_gols_xg_v1", "hibrido_gols_xg_v2_estado"]
 MERCADOS_AVALIADOS = ["1X2", "over_under_2.5", "btts", "corners_over_under_9.5"]
 
 

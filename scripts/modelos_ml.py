@@ -40,6 +40,7 @@ from dados_historicos import (
     FEATURES_V12_MESMA_LIGA,
     FEATURES_V13_CORNERS_FOTMOB,
     FEATURES_V14_CORNERS_DECAY,
+    FEATURES_V15_QUALIDADE_ESTADO,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
@@ -154,6 +155,10 @@ PARAMS_DEFAULT = {
     # estimativa de um modelo de terceiro.
     "hibrido_gols_v1": {"depth": 6, "learning_rate": 0.05},
     "hibrido_gols_xg_v1": {"depth": 6, "learning_rate": 0.05},
+    # v2_estado -- mesmo alvo/hiperparâmetro de hibrido_gols_xg_v1, só muda
+    # o feature set (qualidade de chute por estado do jogo, ver
+    # FEATURES_NUMERICAS_V15_QUALIDADE_ESTADO em dados_historicos.py).
+    "hibrido_gols_xg_v2_estado": {"depth": 6, "learning_rate": 0.05},
     "hibrido_corners_v1": {"depth": 6, "learning_rate": 0.05},
     # v9 — mesmas features da v8; MLP tunado após primeira rodada mostrar log-loss ~1.07
     # (próximo ao baseline aleatório 1.099). Arquitetura maior + mais paciência no early stopping.
@@ -211,6 +216,11 @@ FEATURES_POR_MODELO = {
     # classificadores v9/v10/v11.
     "hibrido_gols_v1": FEATURES_V12_MESMA_LIGA,
     "hibrido_gols_xg_v1": FEATURES_V12_MESMA_LIGA,
+    # v2_estado -- V12_MESMA_LIGA + qualidade de finalização por estado do
+    # jogo (ganhando/perdendo), ver FEATURES_V15_QUALIDADE_ESTADO em
+    # dados_historicos.py. Variante nova, comparada out-of-sample contra
+    # hibrido_gols_xg_v1 (mesmo alvo, xG observado) em VARIANTES_GOLS.
+    "hibrido_gols_xg_v2_estado": FEATURES_V15_QUALIDADE_ESTADO,
     # v14 -- V13_CORNERS_FOTMOB (sem escanteios/posse do FBref, mortos desde
     # o abandono do FBref, ago/2026) + janela 20j com decaimento exponencial
     # (mesma janela que venceu nas 6 configs dedicadas de escanteios). O
