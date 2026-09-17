@@ -1,17 +1,28 @@
-"""Runner fino que combina `catboost_v9` com a Pinnacle devigada (odds
-implícitas como "fator de ajuste") pro mercado `over_under_2.5`, gravando
-`model_name='blend_catboost_pinnacle_ou25_v1'` em `model_predictions`.
+"""Runner fino que combina `hibrido_gols_xg_v1` com a Pinnacle devigada
+(odds implícitas como "fator de ajuste") pro mercado `over_under_2.5`,
+gravando `model_name='blend_xg_pinnacle_ou25_v1'` em `model_predictions`.
+
+Modelo-base é `hibrido_gols_xg_v1`, NÃO `catboost_v9` -- achado real ao
+tentar plugar a primeira versão deste runner em produção (17/09):
+`catboost_v9` só tem previsões pra partidas `finished` (artefato de
+walk-forward de treino/avaliação em `custom_model_configs`), nunca
+`scheduled` -- não gera previsão pra jogo futuro nenhum, então não tinha
+como rodar de verdade em produção. `hibrido_gols_xg_v1` é o modelo que de
+fato roda ao vivo (previsões `scheduled` populadas continuamente). A
+validação inteira (walk-forward, pesos por faixa) foi refeita do zero
+com `hibrido_gols_xg_v1` como base -- não é o mesmo resultado reaproveitado
+do CatBoost com o nome trocado, ver números abaixo.
 
 Único mercado coberto -- é o único validado. Nesta mesma sessão de
-descoberta, o mesmo blend testado em 1X2 NÃO se sustentou em walk-forward
-(peso ótimo instável entre folds, blend pior que a Pinnacle pura no
-agregado) -- ver `CONTEXTO_PROJETO.md` (achado "Blend pós-hoc modelo+
-mercado", 17/09) pro histórico completo da validação antes de estender pra
-outro mercado/modelo sem repetir esse processo.
+descoberta, o mesmo blend testado em 1X2 (com `catboost_v9`) NÃO se
+sustentou em walk-forward (peso ótimo instável entre folds, blend pior que
+a Pinnacle pura no agregado) -- ver `CONTEXTO_PROJETO.md` (achado "Blend
+pós-hoc modelo+mercado", 17/09) pro histórico completo da validação antes
+de estender pra outro mercado/modelo sem repetir esse processo.
 
 ## Método (peso por faixa, não peso único nem curva contínua)
 
-`logit(p_final) = w·logit(p_catboost) + (1-w)·logit(p_pinnacle)`, com
+`logit(p_final) = w·logit(p_xg) + (1-w)·logit(p_pinnacle)`, com
 `p_pinnacle` = Pinnacle devigada (`backtest_kelly._devig_odds_ratio`) na
 odd de ABERTURA (`MIN(captured_at)` por seleção -- nunca fechamento, que
 vazaria informação de última hora, exatamente o que se quer testar se dá
@@ -20,13 +31,12 @@ pra capturar via `w`).
 `w` varia por FAIXA de magnitude do mercado (`|p_pinnacle_over - 0,5|` --
 0 = jogo parelho, 0,5 = mercado já decidido) -- validado por walk-forward
 (4 folds cronológicos, cada um treina só com dado anterior ao fold de
-teste) contra duas alternativas:
-  - peso ÚNICO fixo: bate a Pinnacle pura, mas segmentar bate o peso único
-    de forma significativa (IC95% inteiramente negativo).
-  - curva contínua (`w = clip(a + b·mag, 0, 1)`, 2 parâmetros ajustados):
-    ganho estatisticamente idêntico à segmentação em faixas -- escolhida a
-    versão em faixas por ser mais simples de auditar (3 números fixos vs.
-    2 parâmetros de função), sem perda de desempenho.
+teste, n=5.910 partidas jan/2023-set/2026). Peso único fixo já bate mercado
+e modelo de forma significativa em todos os 4 folds (w estável, cresce
+suavemente 0,30→0,40); segmentar em 3 faixas ganha um pouco mais mas não
+fecha significância sobre o peso único aqui (diferente do CatBoost, onde
+segmentar era significativo) -- usado faixas mesmo assim por consistência
+de método entre os dois modelos-base e porque nunca piora.
 
 Os cortes de faixa (tercis) e os pesos (médias dos 4 folds do walk-forward)
 são CONSTANTES FIXAS abaixo, não recalculadas aqui -- reajustar em cima do
@@ -60,18 +70,18 @@ from rodar_jogador_mercados_previsto import buscar_fixtures
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-MODEL_NAME_ENTRADA = "catboost_v9"
-MODEL_NAME_SAIDA = "blend_catboost_pinnacle_ou25_v1"
+MODEL_NAME_ENTRADA = "hibrido_gols_xg_v1"
+MODEL_NAME_SAIDA = "blend_xg_pinnacle_ou25_v1"
 MERCADO = "over_under_2.5"
 SELECOES = ("over", "under")
 
-# Tercis de |p_pinnacle_over - 0,5| sobre as 5.285 partidas do dataset de
-# validação (jan/2023-dez/2025, odd de abertura) -- FIXOS, não recalculados
+# Tercis de |p_pinnacle_over - 0,5| sobre as 5.910 partidas do dataset de
+# validação (jan/2023-set/2026, odd de abertura) -- FIXOS, não recalculados
 # em produção (ver docstring do módulo).
-CORTES_MAGNITUDE = (0.045, 0.097)
+CORTES_MAGNITUDE = (0.041, 0.088)
 # Médias dos pesos ótimos dos 4 folds do walk-forward, mesma ordem de faixa
 # (parelho / meio-termo / favorito claro) -- FIXOS pelo mesmo motivo.
-PESOS_POR_FAIXA = (0.075, 0.25, 0.45)
+PESOS_POR_FAIXA = (0.075, 0.20, 0.51)
 
 
 def _clamp(p: float, eps: float = 1e-4) -> float:
