@@ -20,6 +20,20 @@ matriz conjunta (Dixon-Coles) -> decisão financeira.
         (incoerência direcional, zebra longa, quarentena) e decide stake —
         reaproveita devig e Kelly fracionado por faixa de odd de
         `backtest_kelly.py`, já validados em produção.
+    CAMADA 5 (`MercadoBlender`, opcional): mistura `prob_modelo` (saída da
+        Camada 3) com a probabilidade de mercado devigada ANTES da Camada 4
+        decidir edge/stake — mesmo mecanismo (blend em logit, peso por faixa
+        de magnitude do mercado) validado por walk-forward pra
+        `hibrido_gols_xg_v1` em `over_under_2.5` (ver
+        `scripts/rodar_blend_odds_pinnacle.py` e `CONTEXTO_PROJETO.md`,
+        achado "Blend pós-hoc modelo+mercado"). A probabilidade da Camada 3
+        vem de um modelo DIFERENTE (agregação bottom-up de jogador +
+        reconciliação hierárquica) — por isso os pesos default aqui são
+        zero em todo mercado (no-op, `prob_modelo` passa intocado). Ativar
+        de verdade por mercado exige repetir esse mesmo processo de
+        validação (walk-forward de 4 folds + bootstrap pareado IC95%) com
+        as previsões reais da Camada 3 daquele mercado — nunca herdar os
+        pesos do `hibrido_gols_xg_v1` sem revalidar.
 
 Este módulo é PURO (mesma disciplina de `distribuicoes.py`/`modelo_dixon_
 coles.py`) — não conhece Supabase, não faz I/O, recebe tudo por parâmetro.
@@ -120,6 +134,18 @@ EDGE_MINIMO_ZEBRA = 0.05
 # não têm lado "zebra".
 SELECOES_ZEBRA = {"away", "draw"}
 
+# ---------------------------------------------------------------------------
+# Camada 5 -- constantes
+# ---------------------------------------------------------------------------
+# Mesmos tercis de magnitude (|prob_mercado_devig - 0,5|) usados na
+# validação do hibrido_gols_xg_v1 -- reaproveitados só como formato/ponto de
+# partida, não recalibrados aqui (ver docstring de `MercadoBlender`).
+CORTES_MAGNITUDE_BLEND_DEFAULT: tuple[float, float] = (0.041, 0.088)
+# Vazio por padrão -- nenhum mercado tem blend ativo ainda (ver docstring
+# de `MercadoBlender`). Formato pra ativar depois de validar um mercado:
+# {"over_under_2.5": (0.075, 0.20, 0.51)}.
+PESOS_POR_FAIXA_BLEND_DEFAULT: dict[str, tuple[float, float, float]] = {}
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses de saída
@@ -177,7 +203,7 @@ class SelecaoAvaliada:
 
 
 COLUNAS_ORDENS = [
-    "mercado", "selecao", "prob_modelo", "prob_mercado_devig",
+    "mercado", "selecao", "prob_modelo", "prob_modelo_pre_blend", "prob_mercado_devig",
     "odd_justa", "odd_real", "edge", "ev_pct", "stake_pct", "status",
 ]
 
@@ -460,6 +486,73 @@ class DixonColesJointEngine:
 
 
 # ---------------------------------------------------------------------------
+# Camada 5
+# ---------------------------------------------------------------------------
+class MercadoBlender:
+    """Mistura `prob_modelo` (saída da Camada 3) com a probabilidade de
+    mercado devigada, em log-odds, com peso variável por faixa de
+    magnitude do mercado (`|prob_mercado_devig - 0,5|`) -- mesmo mecanismo
+    validado por walk-forward em `rodar_blend_odds_pinnacle.py` (ver
+    docstring do módulo e `CONTEXTO_PROJETO.md`, achado "Blend pós-hoc
+    modelo+mercado").
+
+    Estrutural, reaplicável a qualquer mercado -- mas o PESO por mercado é
+    uma calibração empírica que precisa ser validada separadamente (walk-
+    forward + bootstrap pareado IC95%) antes de virar diferente de zero
+    pra esse mercado (ver `PESOS_POR_FAIXA_BLEND_DEFAULT`). Sem peso
+    configurado pra um mercado, `blend()` é um no-op: devolve `prob_modelo`
+    intocado.
+
+    Pra mercados de 2 seleções complementares (over/under, sim/não), o
+    blend é exato: trata a seleção como binária e renormaliza contra seu
+    complemento. Pra mercados de N>2 seleções (ex.: 1X2), é uma
+    aproximação -- blend seleção a seleção contra "não-essa-seleção"
+    binarizado, sem garantir que as N probabilidades finais somem 1 (a
+    normalização de `EnsembleVetoManager` já não depende dessa soma pra
+    decidir edge/stake, mas fique registrado como limitação conhecida).
+    """
+
+    def __init__(
+        self,
+        pesos_por_mercado: Optional[dict[str, tuple[float, float, float]]] = None,
+        cortes_magnitude: tuple[float, float] = CORTES_MAGNITUDE_BLEND_DEFAULT,
+    ) -> None:
+        self.pesos_por_mercado = pesos_por_mercado if pesos_por_mercado is not None else PESOS_POR_FAIXA_BLEND_DEFAULT
+        self.cortes_magnitude = cortes_magnitude
+
+    @staticmethod
+    def _clamp(p: float, eps: float = 1e-4) -> float:
+        return min(max(p, eps), 1 - eps)
+
+    @classmethod
+    def _logit(cls, p: float) -> float:
+        p = cls._clamp(p)
+        return float(np.log(p / (1 - p)))
+
+    def _peso_por_magnitude(self, mercado: str, magnitude: float) -> float:
+        pesos = self.pesos_por_mercado.get(mercado)
+        if pesos is None:
+            return 0.0  # sem calibração pra esse mercado -- no-op.
+        for corte, peso in zip(self.cortes_magnitude, pesos):
+            if magnitude <= corte:
+                return peso
+        return pesos[-1]
+
+    def blend(self, mercado: str, prob_modelo: float, prob_mercado_devig: float) -> float:
+        """Devolve a probabilidade final pra Camada 4: `prob_modelo` puro
+        quando o mercado não tem peso calibrado (default), ou o blend em
+        log-odds ponderado pela faixa de magnitude quando tem."""
+        magnitude = abs(prob_mercado_devig - 0.5)
+        w = self._peso_por_magnitude(mercado, magnitude)
+        if w <= 0.0:
+            return prob_modelo
+        logit_sim = w * self._logit(prob_modelo) + (1 - w) * self._logit(prob_mercado_devig)
+        logit_nao = w * self._logit(1 - prob_modelo) + (1 - w) * self._logit(1 - prob_mercado_devig)
+        bruto_sim, bruto_nao = np.exp(logit_sim), np.exp(logit_nao)
+        return float(bruto_sim / (bruto_sim + bruto_nao))
+
+
+# ---------------------------------------------------------------------------
 # Camada 4
 # ---------------------------------------------------------------------------
 class EnsembleVetoManager:
@@ -563,6 +656,7 @@ class EnsembleVetoManager:
         odds_mercado: dict[str, dict[str, float]],
         quarantine_flag: bool,
         macro_direction: Optional[dict] = None,
+        blender: Optional[MercadoBlender] = None,
     ) -> pd.DataFrame:
         linhas = []
         for mercado, odds_selecao in odds_mercado.items():
@@ -574,14 +668,21 @@ class EnsembleVetoManager:
                 LOGGER.warning("Pulando mercado `%s`: %s", mercado, exc)
                 continue
             for selecao, odd_real in odds_selecao.items():
-                prob_modelo = mercados.get((mercado, selecao))
-                if prob_modelo is None:
+                prob_modelo_pre_blend = mercados.get((mercado, selecao))
+                if prob_modelo_pre_blend is None:
                     continue  # mercado/seleção sem contraparte na matriz -- nada a avaliar
+                prob_modelo = (
+                    blender.blend(mercado, prob_modelo_pre_blend, devigadas[selecao])
+                    if blender is not None
+                    else prob_modelo_pre_blend
+                )
                 avaliacao = self.avaliar_selecao(
                     mercado, selecao, prob_modelo, devigadas[selecao], odd_real,
                     quarantine_flag, macro_direction,
                 )
-                linhas.append(avaliacao.__dict__)
+                linha = avaliacao.__dict__.copy()
+                linha["prob_modelo_pre_blend"] = prob_modelo_pre_blend
+                linhas.append(linha)
         return pd.DataFrame(linhas, columns=COLUNAS_ORDENS)
 
 
@@ -594,8 +695,9 @@ def process_match(
     macro_priors: dict,
     gk_stats: dict[str, dict[str, float]],
     incluir_vetadas: bool = False,
+    blender: Optional[MercadoBlender] = None,
 ) -> pd.DataFrame:
-    """Executa o fluxo completo (Camadas 1-4) pra 1 partida e devolve um
+    """Executa o fluxo completo (Camadas 1-5) pra 1 partida e devolve um
     DataFrame padronizado com as seleções aprovadas (ou todas, com
     `incluir_vetadas=True`): EV(%), Odd Justa, Odd Real e Stake recomendada.
 
@@ -607,6 +709,10 @@ def process_match(
     "rho_liga": float, "macro_direction": {...} (opcional)}`.
     `odds_mercado`: `{mercado: {selecao: odd_real}}`, mesmo vocabulário que
     `distribuicoes.mercados_de_gols` produz.
+    `blender`: Camada 5 opcional (`MercadoBlender`) -- sem passar nada,
+    `prob_modelo` chega intocado na Camada 4 (comportamento de antes desta
+    mudança); só passar um `MercadoBlender` com peso calibrado pra um
+    mercado específico depois de validar (ver docstring da classe).
     """
     if "is_home" not in jogadores.columns:
         raise ValueError("`jogadores` sem coluna `is_home`.")
@@ -650,7 +756,8 @@ def process_match(
 
     veto_manager = EnsembleVetoManager()
     ordens = veto_manager.gerar_ordens(
-        resultado_matriz.mercados, odds_mercado, quarantine_flag, macro_priors.get("macro_direction")
+        resultado_matriz.mercados, odds_mercado, quarantine_flag, macro_priors.get("macro_direction"),
+        blender=blender,
     )
 
     if incluir_vetadas:

@@ -447,6 +447,92 @@ class TestEnsembleVetoManager:
         ordens = gerente.gerar_ordens(mercados, odds_mercado, quarantine_flag=False)
         assert "away" not in set(ordens["selecao"])
 
+    def test_gerar_ordens_sem_blender_preenche_pre_blend_igual_ao_final(self):
+        gerente = pp.EnsembleVetoManager()
+        mercados = {("over_under_2.5", "over"): 0.55, ("over_under_2.5", "under"): 0.45}
+        odds_mercado = {"over_under_2.5": {"over": 1.9, "under": 1.95}}
+        ordens = gerente.gerar_ordens(mercados, odds_mercado, quarantine_flag=False)
+        assert (ordens["prob_modelo"] == ordens["prob_modelo_pre_blend"]).all()
+
+    def test_gerar_ordens_com_blender_calibrado_muda_prob_modelo(self):
+        gerente = pp.EnsembleVetoManager()
+        mercados = {("over_under_2.5", "over"): 0.55, ("over_under_2.5", "under"): 0.45}
+        odds_mercado = {"over_under_2.5": {"over": 1.9, "under": 1.95}}
+        blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (0.5, 0.5, 0.5)})
+        ordens = gerente.gerar_ordens(mercados, odds_mercado, quarantine_flag=False, blender=blender)
+        linha_over = ordens[ordens["selecao"] == "over"].iloc[0]
+        assert linha_over["prob_modelo_pre_blend"] == pytest.approx(0.55)
+        assert linha_over["prob_modelo"] != pytest.approx(0.55)
+
+
+# ---------------------------------------------------------------------------
+# Camada 5 -- MercadoBlender
+# ---------------------------------------------------------------------------
+class TestMercadoBlender:
+    def test_sem_peso_configurado_e_no_op(self):
+        blender = pp.MercadoBlender()  # PESOS_POR_FAIXA_BLEND_DEFAULT vazio
+        p_final = blender.blend("over_under_2.5", prob_modelo=0.60, prob_mercado_devig=0.45)
+        assert p_final == pytest.approx(0.60)
+
+    def test_mercado_nao_listado_e_no_op_mesmo_com_outros_mercados_calibrados(self):
+        blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (0.1, 0.2, 0.3)})
+        p_final = blender.blend("1X2", prob_modelo=0.40, prob_mercado_devig=0.30)
+        assert p_final == pytest.approx(0.40)
+
+    def test_peso_zero_na_faixa_e_no_op(self):
+        blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (0.0, 0.0, 0.0)})
+        p_final = blender.blend("over_under_2.5", prob_modelo=0.60, prob_mercado_devig=0.60)
+        assert p_final == pytest.approx(0.60)
+
+    def test_peso_um_e_independente_da_probabilidade_de_mercado(self):
+        # w=1.0 zera o peso da odd de mercado no logit -- mas a renormalização
+        # (dividir pela soma de exp(logit) de "sim" e "não") não devolve
+        # `prob_modelo` inalterado, ela "afia" o valor: p^2/(p^2+(1-p)^2).
+        # Isso é uma propriedade conhecida do método (não um bug daqui) --
+        # ver `test_paridade_com_rodar_blend_odds_pinnacle` confirmando que
+        # é EXATAMENTE a mesma fórmula já validada em produção.
+        blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (1.0, 1.0, 1.0)})
+        p_a = blender.blend("over_under_2.5", prob_modelo=0.60, prob_mercado_devig=0.10)
+        p_b = blender.blend("over_under_2.5", prob_modelo=0.60, prob_mercado_devig=0.90)
+        assert p_a == pytest.approx(p_b, abs=1e-9)
+        assert p_a == pytest.approx(0.6 ** 2 / (0.6 ** 2 + 0.4 ** 2), abs=1e-9)
+
+    def test_paridade_com_rodar_blend_odds_pinnacle(self):
+        """A Camada 5 precisa reproduzir EXATAMENTE a fórmula já validada
+        por walk-forward em `rodar_blend_odds_pinnacle._blend` -- não uma
+        aproximação parecida."""
+        import rodar_blend_odds_pinnacle as rbop
+
+        for w in (0.075, 0.20, 0.51, 1.0):
+            for pm, pk in [(0.6, 0.4), (0.3, 0.55), (0.5, 0.5)]:
+                esperado = rbop._blend({"over": pm, "under": 1 - pm}, {"over": pk, "under": 1 - pk}, w)["over"]
+                blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (w, w, w)})
+                obtido = blender.blend("over_under_2.5", prob_modelo=pm, prob_mercado_devig=pk)
+                assert obtido == pytest.approx(esperado, abs=1e-9)
+
+    def test_faixa_de_magnitude_correta_e_escolhida(self):
+        blender = pp.MercadoBlender(
+            pesos_por_mercado={"over_under_2.5": (0.0, 0.5, 1.0)},
+            cortes_magnitude=(0.05, 0.10),
+        )
+        # magnitude baixa (jogo parelho) -> peso 0.0 -> no-op (prob_modelo puro).
+        p_parelho = blender.blend("over_under_2.5", prob_modelo=0.60, prob_mercado_devig=0.52)
+        assert p_parelho == pytest.approx(0.60)
+        # magnitude alta (favorito claro) -> peso 1.0 -> mesma fórmula do
+        # teste de paridade acima (0,6^2/(0,6^2+0,4^2), independente de pk).
+        p_favorito = blender.blend("over_under_2.5", prob_modelo=0.60, prob_mercado_devig=0.80)
+        assert p_favorito == pytest.approx(0.6 ** 2 / (0.6 ** 2 + 0.4 ** 2), abs=1e-9)
+
+    def test_blend_e_simetrico_complementar(self):
+        """P(over) + P(under) somam 1 quando tratados como complementares
+        binários -- garante que o blend não quebra a identidade básica pro
+        caso de 2 seleções (over/under), o único caso "exato" documentado
+        na classe."""
+        blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (0.3, 0.3, 0.3)})
+        p_over = blender.blend("over_under_2.5", prob_modelo=0.55, prob_mercado_devig=0.60)
+        p_under = blender.blend("over_under_2.5", prob_modelo=0.45, prob_mercado_devig=0.40)
+        assert p_over + p_under == pytest.approx(1.0, abs=1e-9)
+
 
 # ---------------------------------------------------------------------------
 # process_match -- fim a fim
@@ -482,6 +568,27 @@ class TestProcessMatch:
 
         resultado = pp.process_match(jogadores, odds_mercado, macro_priors, gk_stats, incluir_vetadas=True)
         assert set(resultado["status"]) == {"VETADO_QUARENTENA"}
+
+    def test_sem_blender_prob_modelo_igual_pre_blend(self):
+        jogadores = self._jogadores_partida()
+        odds_mercado = {"over_under_2.5": {"over": 1.9, "under": 1.95}}
+        macro_priors = {"lambda_home": 1.4, "lambda_away": 1.1, "rho_liga": -0.05}
+        gk_stats = {"home": {"gsax_rate": 0.0}, "away": {"gsax_rate": 0.0}}
+
+        resultado = pp.process_match(jogadores, odds_mercado, macro_priors, gk_stats, incluir_vetadas=True)
+        assert (resultado["prob_modelo"] == resultado["prob_modelo_pre_blend"]).all()
+
+    def test_com_blender_calibrado_prob_modelo_diverge_do_pre_blend(self):
+        jogadores = self._jogadores_partida()
+        odds_mercado = {"over_under_2.5": {"over": 1.9, "under": 1.95}}
+        macro_priors = {"lambda_home": 1.4, "lambda_away": 1.1, "rho_liga": -0.05}
+        gk_stats = {"home": {"gsax_rate": 0.0}, "away": {"gsax_rate": 0.0}}
+        blender = pp.MercadoBlender(pesos_por_mercado={"over_under_2.5": (0.5, 0.5, 0.5)})
+
+        resultado = pp.process_match(
+            jogadores, odds_mercado, macro_priors, gk_stats, incluir_vetadas=True, blender=blender
+        )
+        assert (resultado["prob_modelo"] != resultado["prob_modelo_pre_blend"]).any()
 
     def test_is_home_ausente_levanta_valueerror(self):
         jogadores = self._jogadores_partida().drop(columns=["is_home"])
