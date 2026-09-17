@@ -303,6 +303,19 @@ Não é problema de pacing (1 liga, 1 tentativa) — o FBref reconhece a faixa d
   - **Conclusão: `catboost_v9` + Pinnacle TAMBÉM não tem sinal validado** — mesmo bug, mesmo resultado invertido. As DUAS bases-modelo testadas nesta frente inteira (CatBoost e híbrido xG) tinham o "achado" inflado pelo mesmo erro de baseline; nenhuma sobrevive à correção. Reforça que o problema era mesmo o bug de fórmula (não uma característica de um modelo específico) — não faz sentido testar outra base de modelo nesse mesmo mercado sem uma mudança real de modelo primeiro.
 - **Conclusão final, definitiva**: com o baseline corrigido, **o blend `hibrido_gols_xg_v1` + Pinnacle NÃO tem edge sobre o mercado em over_under_2.5** — resultado oposto ao que a validação original (com bug) reportou. Não é "esperar mais dado acumular" nem "achou algo mas precisa mais N" — é um resultado negativo limpo, reproduzível, com código versionado (`scripts/validar_blend_hibrido_pinnacle.py`) que qualquer sessão futura pode rodar de novo pra conferir.
 - **Ação**: cron do `blend_xg_pinnacle_ou25_v1` permanece DESATIVADO (só `workflow_dispatch` manual). Achado original "Blend pós-hoc modelo+mercado" (abaixo) permanece marcado como INVALIDADO. Sem plano de reativar essa frente a menos que surja uma mudança real no modelo (`hibrido_gols_xg_v1`) que o usuário queira testar do zero.
+- **Varredura final (pedido do usuário: "investigar se algum outro mercado/modelo tem sinal real"), com o baseline correto (reaproveitando `ll_puro`/`ll_blend`/`rodar_walkforward` já versionados, ad-hoc só na busca/montagem do dataset por mercado)**:
+
+  | Modelo | Mercado | n | blend vs. mercado | Conclusão |
+  |---|---|---|---|---|
+  | `hibrido_gols_xg_v1` | over_under_2.5 | 4.728 | diff=+0,0089 SIGNIFICATIVO | mercado vence |
+  | `catboost_v9` | over_under_2.5 | 4.228 | diff=+0,0073 SIGNIFICATIVO | mercado vence |
+  | `hibrido_gols_xg_v1` | 1X2 (multiclasse) | 6.607 | diff=+0,0205 SIGNIFICATIVO | mercado vence |
+  | `catboost_v9` | 1X2 | (validação anterior, método direto) | blend pior no agregado | mercado vence |
+  | `hibrido_gols_xg_v1` | btts | 1.568 | diff=+0,0030 não significativo | empate — sem sinal |
+  | `hibrido_gols_xg_v1` | corners_over_under_9.5 | 908 | diff=+0,0038 não significativo | empate — sem sinal (amostra pequena, jan-jul/2026 só) |
+  | `catboost_v9` | btts | — | zero partidas com odd Pinnacle de `btts` cruzando o `match_id` do modelo | não testável (sem sobreposição de dado) |
+
+  **Nenhum mercado/modelo testado nesta frente inteira tem sinal validado.** Nos mercados com amostra grande (O/U 2.5 e 1X2, ambos os modelos), o mercado bate o blend com significância. Nos de amostra menor (btts, escanteios), não há diferença detectável em nenhuma direção — não é "quase lá", é ausência de sinal com o poder estatístico disponível. Não repetir essa varredura sem uma mudança real de modelo (ex.: expandir cobertura do CatBoost pra ficar "vivo", ideia já registrada acima) ou muito mais dado acumulado nos mercados de amostra pequena.
 
 ---
 
