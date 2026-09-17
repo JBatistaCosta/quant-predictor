@@ -4,21 +4,21 @@ name: Blend hibrido_gols_xg_v1 + Pinnacle (Over/Under 2.5)
 # com a Pinnacle devigada (odd de ABERTURA, MIN(captured_at) por seleção)
 # via peso por faixa de magnitude de mercado, gravando
 # model_name='blend_xg_pinnacle_ou25_v1' em model_predictions
-# (over_under_2.5). Único mercado/modelo-base validado até agora (ver
-# CONTEXTO_PROJETO.md, achado "Blend pós-hoc modelo+mercado", 17/09) --
-# NÃO estender pra outro mercado/modelo sem repetir a validação por
-# walk-forward primeiro.
+# (over_under_2.5).
 #
-# Agendado depois de treinar_modelo_hibrido.yml (03:00 UTC, popula
-# hibrido_gols_xg_v1 pra partidas scheduled) e depois de pelo menos uma
-# captura diária de odds em capturar_odds.yml (10h/13h/16h/19h UTC) --
-# 20:00 UTC dá margem pros dois já terem rodado no mesmo dia. Partida sem
-# hibrido_gols_xg_v1 ou sem odd de abertura da Pinnacle ainda capturada é
-# simplesmente pulada (log, não erro) -- roda de novo no dia seguinte.
+# CRON DESATIVADO (17/09) -- a validação por walk-forward que justificou
+# produção não reproduz mais com o mesmo filtro (n=5.910, só Pinnacle):
+# hoje o mercado bate o blend, o oposto do resultado documentado em
+# CONTEXTO_PROJETO.md ("Blend pós-hoc modelo+mercado"). Causa raiz ainda
+# não confirmada (candidatos: split cronológico 60/20/20 de
+# treinar_modelo_hibrido.py reescreve p_modelo de partidas ainda dentro
+# da janela de teste móvel a cada retreino diário -- ou captura
+# retroativa de odds mudando a odd de abertura resolvida). NÃO
+# reativar o schedule sem antes confirmar a causa e revalidar. Rodar
+# manualmente (workflow_dispatch, de preferência --backtest) só pra
+# investigação, não em produção real.
 
 on:
-  schedule:
-    - cron: "0 20 * * *"  # 20:00 UTC diário
   workflow_dispatch:
     inputs:
       dias:
