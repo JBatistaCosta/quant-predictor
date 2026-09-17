@@ -106,7 +106,7 @@ def _blend(p_modelo: dict[str, float], p_mercado: dict[str, float], w: float) ->
     return {s: bruto[s] / z for s in bruto}
 
 
-def _buscar_previsoes_catboost(supabase: Client, match_ids: list[int]) -> dict[int, dict[str, float]]:
+def _buscar_previsoes_modelo(supabase: Client, match_ids: list[int]) -> dict[int, dict[str, float]]:
     """`{match_id: {"over": p, "under": p}}` a partir de `model_predictions`
     -- pagina de verdade (`dh._paginar`), mesmo cuidado já documentado nos
     outros runners contra o corte silencioso de 1000 linhas do PostgREST."""
@@ -184,7 +184,7 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
         logger.info("Nenhuma partida '%s' na janela -- nada a combinar.", "finished" if backtest else "scheduled")
         return 0
 
-    previsoes = _buscar_previsoes_catboost(supabase, fixture_ids)
+    previsoes = _buscar_previsoes_modelo(supabase, fixture_ids)
     odds = _buscar_odds_abertura_pinnacle(supabase, fixture_ids)
 
     linhas_saida = []
@@ -220,8 +220,8 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
         supabase.table("model_predictions").upsert(lote, on_conflict="match_id,model_name,market,selection").execute()
 
     logger.info(
-        "%d linhas gravadas em model_predictions (%d de %d partidas na janela tinham catboost_v9 + odd de abertura).",
-        len(linhas_saida), partidas_processadas, len(fixture_ids),
+        "%d linhas gravadas em model_predictions (%d de %d partidas na janela tinham %s + odd de abertura da Pinnacle).",
+        len(linhas_saida), partidas_processadas, len(fixture_ids), MODEL_NAME_ENTRADA,
     )
     return len(linhas_saida)
 
