@@ -1,0 +1,63 @@
+name: Blend hibrido_gols_xg_v1 + Pinnacle (Over/Under 2.5)
+
+# Roda scripts/rodar_blend_odds_pinnacle.py -- combina hibrido_gols_xg_v1
+# com a Pinnacle devigada (odd de ABERTURA, MIN(captured_at) por seleção)
+# via peso por faixa de magnitude de mercado, gravando
+# model_name='blend_xg_pinnacle_ou25_v1' em model_predictions
+# (over_under_2.5). Único mercado/modelo-base validado até agora (ver
+# CONTEXTO_PROJETO.md, achado "Blend pós-hoc modelo+mercado", 17/09) --
+# NÃO estender pra outro mercado/modelo sem repetir a validação por
+# walk-forward primeiro.
+#
+# Agendado depois de treinar_modelo_hibrido.yml (03:00 UTC, popula
+# hibrido_gols_xg_v1 pra partidas scheduled) e depois de pelo menos uma
+# captura diária de odds em capturar_odds.yml (10h/13h/16h/19h UTC) --
+# 20:00 UTC dá margem pros dois já terem rodado no mesmo dia. Partida sem
+# hibrido_gols_xg_v1 ou sem odd de abertura da Pinnacle ainda capturada é
+# simplesmente pulada (log, não erro) -- roda de novo no dia seguinte.
+
+on:
+  schedule:
+    - cron: "0 20 * * *"  # 20:00 UTC diário
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Janela de dias à frente para combinar (default 7)"
+        required: false
+        type: string
+      backtest_dias:
+        description: "Se preenchido, roda em modo --backtest (partidas 'finished' nos últimos N dias) em vez de 'scheduled' -- usado pra popular histórico e medir desempenho real do blend em /modelos"
+        required: false
+        type: string
+
+jobs:
+  rodar-blend-odds-pinnacle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Combinar hibrido_gols_xg_v1 com Pinnacle devigada
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -n "${{ inputs.backtest_dias }}" ]; then
+            python scripts/rodar_blend_odds_pinnacle.py --backtest --dias ${{ inputs.backtest_dias }}
+          else
+            ARGS=""
+            if [ -n "${{ inputs.dias }}" ]; then ARGS="--dias ${{ inputs.dias }}"; fi
+            python scripts/rodar_blend_odds_pinnacle.py $ARGS
+          fi
