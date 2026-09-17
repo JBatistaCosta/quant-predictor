@@ -258,6 +258,30 @@ Não é problema de pacing (1 liga, 1 tentativa) — o FBref reconhece a faixa d
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
+**CONCLUÍDO (17/09) — Blend pós-hoc modelo+mercado (odds implícitas como "fator de ajuste"): PRIMEIRO resultado desta frente inteira que bate a Pinnacle de forma validada e robusta — só em Over/Under 2.5, NÃO em 1X2.** Contexto: depois de toda a cadeia de achados "nenhum modelo bate o mercado" (v9, ranking geral, degradação temporal), usuário escolheu entre aprimorar modelos existentes vs. criar modelo novo — decidiu por aprimorar, começando por ensemble/stacking (descartado, ver achado acima) e depois odds implícitas como fator de ajuste.
+
+- **Método**: blend em espaço log-odds — `logit(p_final) = w·logit(p_modelo) + (1-w)·logit(p_mercado)`, com `p_mercado` = Pinnacle devigada (`backtest_kelly._devig_odds_ratio`) na odd de **abertura** (`MIN(captured_at)` por seleção — nunca fechamento, pra não vazar informação de última hora que é exatamente o que se quer testar se dá pra capturar). `w` é o único parâmetro livre, ajustado por grid search (passo 0,05) minimizando log-loss.
+- **Validação em 2 etapas, a segunda invalidou a primeira em 1X2 — lição de método registrada**: (1) split cronológico único 70/30 sugeriu blend levemente melhor que a Pinnacle em 1X2 (não significativo, mas direção positiva) e ganho significativo em O/U 2.5; (2) walk-forward de verdade (4 folds, cada um treina `w` só com dado anterior ao fold de teste, nunca visto) — pedido explicitamente pelo usuário antes de considerar produção — **derrubou o resultado de 1X2** (peso ótimo instável fold a fold: 0,60→0,45→0,30→0,20, sem padrão; agregado dos 4 folds de teste, blend fica PIOR que a Pinnacle, diff +0,0033, não significativo) e **confirmou O/U 2.5 com força**.
+- **Over/Under 2.5 — resultado validado (walk-forward, `catboost_v9`, n=5.285, 4 folds de ~1.057 partidas cada, todas fora da amostra de treino do peso)**:
+
+  | Fold | w treinado | log-loss blend | log-loss mercado | log-loss modelo |
+  |---|---|---|---|---|
+  | 1 | 0,25 | 0,6709 | 0,6757 | 0,6881 |
+  | 2 | 0,30 | 0,6616 | 0,6680 | 0,6802 |
+  | 3 | 0,35 | 0,6849 | 0,6947 | 0,6896 |
+  | 4 | 0,40 | 0,6875 | 0,6974 | 0,6914 |
+
+  **O blend vence os dois lados nos 4 folds, sem exceção.** Peso ótimo estável e evolui suavemente (0,25→0,40, sem saltos). Agregado (n=4.228, bootstrap 2000 reamostragens): blend vs. mercado = **-0,0077, IC95%=[-0,0106,-0,0049], SIGNIFICATIVO**; blend vs. modelo = **-0,0111, IC95%=[-0,0172,-0,0053], SIGNIFICATIVO**.
+- **1X2 — descartado por ora nessa formulação**: peso ótimo instável entre folds e o blend perde pra Pinnacle pura no agregado walk-forward. Pode funcionar com outro modelo-base ou outra forma de combinar (não linear, dependente de liga), mas não com `catboost_v9` + blend log-odds simples.
+- **Lição de método reforçada**: um resultado de split único (mesmo com bootstrap IC95%) pode não sobreviver a walk-forward — o split único testa só UMA fronteira treino/teste, walk-forward testa várias, e só a segunda captura instabilidade do parâmetro ajustado (`w` nesse caso) ao longo do tempo. Sempre que um resultado depender de um parâmetro ajustado nos próprios dados (mesmo que em partição separada), walk-forward é o padrão mínimo antes de considerar produção — não só bootstrap IC95% de um split.
+- **Refinamento testado (17/09) — peso fixo vs. peso por faixa, ainda no mesmo walk-forward de O/U 2.5**: usuário perguntou se segmentar o peso `w` por faixa (odd/divergência/EV) melhoraria em vez de um `w` único pra tudo.
+  - **Por divergência (`|p_modelo - p_mercado|`, 3 faixas por quantil de treino)**: NÃO ajuda — empate estatístico com o peso único (diff +0,0004, IC cruza zero). A informação de divergência já estava implicitamente capturada no peso médio único; segmentar por ela não soma nada.
+  - **Por magnitude da odd de mercado (`|p_mercado - 0,5|` — jogo parelho vs. favorito claro, 3 faixas por quantil de treino): AJUDA, pequeno mas real.** Padrão consistente nos 4 folds: faixa de jogo mais parelho pede `w≈0,00-0,15` (confiar quase só na Pinnacle), faixa de favorito mais claro pede `w≈0,40-0,55` (dar mais peso ao modelo) — o modelo parece agregar valor real só quando o mercado já está confiante numa direção, não em coin-flips. Agregado walk-forward: **diff (segmentado − peso único) = -0,0015, IC95%=[-0,0027,-0,0002], SIGNIFICATIVO** (comparado ao ganho do blend fixo sobre o mercado puro, -0,0077 — é um refinamento bem menor, mas estatisticamente real, não ruído).
+  - **Decisão de escopo, ainda em aberto**: vale a complexidade extra de 3 faixas (mais parâmetro pra manter/validar) pelo ganho incremental pequeno? Ainda não decidido — ver próxima entrada sobre a ideia de generalizar isso com um meta-modelo em vez de faixas fixas.
+- **Próximo passo, ainda não feito**: decidir como persistir o blend de O/U 2.5 em produção (`model_name` novo, ex. `blend_catboost_pinnacle_ou25_v1`, calculado no momento da previsão usando a odd de abertura disponível naquele instante) — pendente de decisão do usuário. Se a segmentação por faixa de odd for adotada, o `w` passa a ser uma função de 3 degraus (ou uma curva contínua fitada, ver próxima entrada) em vez de constante.
+
+---
+
 **CORREÇÃO (16/09) ao achado "Stacking bate CatBoost na Ligue 1" (ver entrada completa mais abaixo, "Auditoria dos modelos v9") — o achado é real mas mais estreito do que a frase-resumo sugeria.** Contexto: usuário pediu pra decidir entre aprimorar os modelos existentes (começando por ensemble/stacking por liga) ou desenvolver modelo novo; ao revisitar o Stacking sistematicamente nas 6 ligas via `model_stats_mcnemar` (não só a checagem pontual da Ligue 1), o quadro completo veio diferente.
 
 - **Stacking só é o líder estatístico (menor log-loss da liga) em 2 das 6 ligas — Bundesliga e Ligue 1.** Nas outras 4 (Brasileirão, Premier League, La Liga, Serie A Itália) o líder é outro modelo e o Stacking empata com ele (p entre 0,15 e 1,0, exceto Premier League com amostra pequena/não confiável).
