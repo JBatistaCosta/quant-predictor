@@ -1,0 +1,47 @@
+name: Hibrido Gols xG - Walk-Forward Incremental (v1 vs v2_estado)
+
+# Roda scripts/validar_hibrido_walkforward_incremental.py -- compara
+# hibrido_gols_xg_v1 (FEATURES_V12_MESMA_LIGA) contra hibrido_gols_xg_v2_estado
+# (FEATURES_V15_QUALIDADE_ESTADO) via walk-forward de janela expansiva, passo
+# MENSAL: pra cada mês do período de teste, treina em tudo antes da janela de
+# calibração, calibra ρ (Dixon-Coles) nos 3 meses imediatamente anteriores e
+# aplica no mês seguinte -- transforma cada partida do período de teste numa
+# observação out-of-sample, multiplicando o N em relação ao holdout único de
+# 20% já usado por avaliar_modelo_misto_vs_mercado.yml.
+#
+# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
+# sem cron. Não grava nada no Supabase, não muda o treino diário
+# (treinar_modelo_hibrido.yml continua com o split 60/20/20 de sempre).
+#
+# O gargalo é montar o dataset "Feature Stacked" uma vez (mesmo custo de
+# treinar_modelo_hibrido.yml, ~90-110min) -- os ~20+ refits de CatBoost por
+# variante (um por mês do walk-forward) levam segundos cada. Timeout generoso
+# pra cobrir os dois.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  validar-hibrido-walkforward-incremental:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward incremental (hibrido_gols_xg_v1 vs v2_estado)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/validar_hibrido_walkforward_incremental.py
