@@ -369,6 +369,15 @@ def ajustar_rho_mle(lam: np.ndarray, mu: np.ndarray, gols_casa: np.ndarray, gols
     return float(resultado.x)
 
 
+def _alpha_dispersao_nb(lam: np.ndarray, real: np.ndarray) -> tuple[float, float]:
+    """Numerador/denominador do estimador de α da NB2 (ver `ajustar_dispersao_nb`),
+    separados pra poder somar entre janelas antes de dividir -- é o que
+    permite combinar duas amostras (ex.: calibração local + prior mais
+    amplo) sem enviesar o resultado combinado."""
+    lam, real = np.asarray(lam, dtype=float), np.asarray(real, dtype=float)
+    return float(np.sum((real - lam) ** 2 - lam)), float(np.sum(lam**2))
+
+
 def ajustar_dispersao_nb(lam: np.ndarray, real: np.ndarray) -> float:
     """Dispersão r da NB pelo resíduo de Pearson condicionado no λ da partida.
 
@@ -382,10 +391,62 @@ def ajustar_dispersao_nb(lam: np.ndarray, real: np.ndarray) -> float:
 
     Devolve `inf` quando os dados não mostram superdispersão nenhuma
     (alpha <= 0), que é a NB degenerando em Poisson.
-    """
-    lam, real = np.asarray(lam, dtype=float), np.asarray(real, dtype=float)
-    alpha = float(np.sum((real - lam) ** 2 - lam) / np.sum(lam**2))
+
+    **Este estimador é bem mais faminto por dado que ρ ou o split
+    Beta-Binomial** -- medido por bootstrap em dado real (n=11.029
+    partidas): CV(r) ainda em 445% com n=200 (o piso hoje usado antes de
+    tentar ajustar em `treinar_modelo_hibrido.ajustar_parametros_
+    estruturais`), só cai pra ~20% a partir de n≈2.000-3.000. Pra fatias de
+    calibração menores que isso (ex.: passo de um walk-forward incremental),
+    usar `ajustar_dispersao_nb_bayesiana` em vez desta função direta --
+    ela puxa a estimativa local pra um prior mais amplo em vez de confiar
+    cegamente numa fatia pequena demais pra esse parâmetro especificamente
+    (ρ e o split Beta-Binomial não precisam do mesmo tratamento -- ficam
+    razoavelmente estáveis com n bem menor, ver docstring de
+    `ajustar_beta_binomial`/uso de `ajustar_rho_mle`)."""
+    numerador, denominador = _alpha_dispersao_nb(lam, real)
+    alpha = numerador / denominador
     return float("inf") if alpha <= 0 else 1.0 / alpha
+
+
+# Peso do prior, em "partidas equivalentes" -- calibrado pela curva de CV
+# medida acima: com W=1000, uma fatia de calibração de n=200 pesa só 17%
+# contra 83% do prior (n/(n+W)), subindo pra 50% em n=1.000 e 75% em
+# n=3.000 -- deixa o prior dominar exatamente na faixa onde o estimador
+# direto é ruído puro, e converge pro estimador local conforme a fatia
+# cresce, sem precisar de um corte rígido tipo "abaixo de N não calibra".
+W_SHRINKAGE_DISP_R = 1000
+
+
+def ajustar_dispersao_nb_bayesiana(
+    lam: np.ndarray, real: np.ndarray,
+    lam_prior: np.ndarray, real_prior: np.ndarray,
+    w: float = W_SHRINKAGE_DISP_R,
+) -> float:
+    """Mesmo estimador de `ajustar_dispersao_nb`, mas com shrinkage
+    bayesiano do α local pra um α de um prior mais amplo -- mesma fórmula
+    de `treinar_modelo_jogador_mercados._shrinkage_bayesiano`
+    (`(n·local + w·prior) / (n+w)`), só que somando os pares
+    numerador/denominador do método dos momentos (`_alpha_dispersao_nb`)
+    em vez de médias -- correto pra um estimador de razão como este (soma
+    dois numeradores e dois denominadores, não duas razões já divididas).
+
+    `lam_prior`/`real_prior` devem vir de uma fatia que o regressor de λ
+    também NÃO viu no fit -- nunca do próprio treino (ver docstring de
+    `ajustar_parametros_estruturais`: resíduo de treino é otimisticamente
+    pequeno, inflaria o prior pro lado errado, o de MENOS dispersão). Numa
+    validação incremental (walk-forward), o prior natural é o acumulado de
+    passos de calibração ANTERIORES -- cresce sozinho conforme a validação
+    avança, sem window extra pra buscar.
+    """
+    n_local, d_local = _alpha_dispersao_nb(lam, real)
+    n_prior, d_prior = _alpha_dispersao_nb(lam_prior, real_prior)
+    alpha_local = n_local / d_local if d_local > 0 else 0.0
+    alpha_prior = n_prior / d_prior if d_prior > 0 else 0.0
+
+    n_efetivo = float(np.asarray(lam).size)
+    alpha_final = (n_efetivo * alpha_local + w * alpha_prior) / (n_efetivo + w)
+    return float("inf") if alpha_final <= 0 else 1.0 / alpha_final
 
 
 # Concentração máxima da Beta. Acima disso o split é indistinguível de uma
