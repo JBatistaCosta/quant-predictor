@@ -1,0 +1,49 @@
+name: Cartões/Faltas - Walk-Forward Incremental (vs. climatologia)
+
+# Roda scripts/validar_classificador_walkforward_incremental.py -- avalia
+# os classificadores de Cartões e Faltas (total da partida, 6+6 linhas)
+# contra a CLIMATOLOGIA (taxa histórica de over/under, sem nenhuma
+# feature) via walk-forward de janela expansiva, passo MENSAL, com
+# bootstrap pareado + IC95%.
+#
+# Diferente dos walk-forwards de gols/escanteios: aqui não há mercado
+# real pra Faltas (confirmado via SQL, nenhuma linha de "foul"/"falta" em
+# odds_market), então a única forma de medir capacidade preditiva real é
+# contra um baseline sem informação -- mesma máquina de bootstrap pareado
+# (backtest_kelly.comparar_pareado_com_mercado), só trocando o braço
+# "mercado" por "climatologia". Cartões já tem comparação com a Pinnacle
+# feita separadamente (ver CONTEXTO_PROJETO.md); este workflow soma mais
+# um ângulo (contra o evento real, não a odd).
+#
+# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
+# sem cron. Não grava nada no Supabase, não muda os classificadores de
+# produção (treinar_modelo_custom_wf.yml continua com o walk-forward CV
+# anual de sempre, 3 folds).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  validar-classificador-walkforward-incremental:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward incremental (Cartões/Faltas vs. climatologia)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/validar_classificador_walkforward_incremental.py
