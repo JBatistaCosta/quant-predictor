@@ -418,35 +418,61 @@ def ajustar_dispersao_nb(lam: np.ndarray, real: np.ndarray) -> float:
 W_SHRINKAGE_DISP_R = 1000
 
 
+def _blend_alpha_shrinkage(alpha_local: float, n_local: float, alpha_prior: float, w: float) -> float:
+    """Núcleo do shrinkage bayesiano (`(n·local + w·prior) / (n+w)`, mesma
+    fórmula de `treinar_modelo_jogador_mercados._shrinkage_bayesiano`),
+    já em cima de α (não r) -- extraído pra ser reaproveitado tanto por
+    `ajustar_dispersao_nb_bayesiana` (recalcula o prior a cada chamada)
+    quanto por `ajustar_dispersao_nb_bayesiana_prior_fixo` (prior já
+    calculado uma vez fora do loop, ex.: por k-fold num warm-up)."""
+    return float("inf") if (alpha_final := (n_local * alpha_local + w * alpha_prior) / (n_local + w)) <= 0 else 1.0 / alpha_final
+
+
 def ajustar_dispersao_nb_bayesiana(
     lam: np.ndarray, real: np.ndarray,
     lam_prior: np.ndarray, real_prior: np.ndarray,
     w: float = W_SHRINKAGE_DISP_R,
 ) -> float:
     """Mesmo estimador de `ajustar_dispersao_nb`, mas com shrinkage
-    bayesiano do α local pra um α de um prior mais amplo -- mesma fórmula
-    de `treinar_modelo_jogador_mercados._shrinkage_bayesiano`
-    (`(n·local + w·prior) / (n+w)`), só que somando os pares
-    numerador/denominador do método dos momentos (`_alpha_dispersao_nb`)
-    em vez de médias -- correto pra um estimador de razão como este (soma
-    dois numeradores e dois denominadores, não duas razões já divididas).
+    bayesiano do α local pra um α de um prior mais amplo -- ver
+    `_blend_alpha_shrinkage`. Soma os pares numerador/denominador do
+    método dos momentos (`_alpha_dispersao_nb`) em vez de médias --
+    correto pra um estimador de razão como este (soma dois numeradores e
+    dois denominadores, não duas razões já divididas).
 
     `lam_prior`/`real_prior` devem vir de uma fatia que o regressor de λ
     também NÃO viu no fit -- nunca do próprio treino (ver docstring de
     `ajustar_parametros_estruturais`: resíduo de treino é otimisticamente
-    pequeno, inflaria o prior pro lado errado, o de MENOS dispersão). Numa
-    validação incremental (walk-forward), o prior natural é o acumulado de
-    passos de calibração ANTERIORES -- cresce sozinho conforme a validação
-    avança, sem window extra pra buscar.
+    pequeno, inflaria o prior pro lado errado, o de MENOS dispersão).
+
+    CUIDADO numa validação incremental (walk-forward de janela
+    expansiva): a fatia de calibração do passo N vira parte do TREINO do
+    passo N+1 -- um "acumulado de passos anteriores" como prior violaria
+    essa mesma regra a partir do 2º passo. Nesse cenário, calcule o prior
+    UMA VEZ, fora do loop, numa fatia que nenhum passo do walk-forward vai
+    usar como treino nem calibração (ex.: k-fold cronológico só dentro do
+    warm-up inicial, ver `validar_corners_walkforward_incremental.
+    calcular_prior_disp_r_global`) e use `ajustar_dispersao_nb_bayesiana_
+    prior_fixo` com esse valor fixo em cada passo.
     """
     n_local, d_local = _alpha_dispersao_nb(lam, real)
     n_prior, d_prior = _alpha_dispersao_nb(lam_prior, real_prior)
     alpha_local = n_local / d_local if d_local > 0 else 0.0
     alpha_prior = n_prior / d_prior if d_prior > 0 else 0.0
+    return _blend_alpha_shrinkage(alpha_local, float(np.asarray(lam).size), alpha_prior, w)
 
-    n_efetivo = float(np.asarray(lam).size)
-    alpha_final = (n_efetivo * alpha_local + w * alpha_prior) / (n_efetivo + w)
-    return float("inf") if alpha_final <= 0 else 1.0 / alpha_final
+
+def ajustar_dispersao_nb_bayesiana_prior_fixo(
+    lam: np.ndarray, real: np.ndarray, alpha_prior: float, w: float = W_SHRINKAGE_DISP_R,
+) -> float:
+    """Mesma ideia de `ajustar_dispersao_nb_bayesiana`, mas com o α do
+    prior já calculado (escalar fixo) em vez de recalculado a cada
+    chamada -- pro caso de walk-forward onde o prior é global e computado
+    uma única vez fora do loop (ver docstring de `ajustar_dispersao_nb_
+    bayesiana`)."""
+    n_local, d_local = _alpha_dispersao_nb(lam, real)
+    alpha_local = n_local / d_local if d_local > 0 else 0.0
+    return _blend_alpha_shrinkage(alpha_local, float(np.asarray(lam).size), alpha_prior, w)
 
 
 # Concentração máxima da Beta. Acima disso o split é indistinguível de uma
