@@ -276,6 +276,32 @@ Não é problema de pacing (1 liga, 1 tentativa) — o FBref reconhece a faixa d
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
+**🔒 DECISÃO FINAL (18/09) — Cartões e Faltas TÊM capacidade preditiva real, estatisticamente significativa nas 12 linhas testadas (6 Cartões + 6 Faltas), incluindo Faltas, que nunca tinha sido validada com IC95%. Sem pendência aberta desta linha — nada a retomar aqui a menos que o usuário peça.** Pedido do usuário: medir a capacidade de predição dos classificadores de Cartões/Faltas contra os EVENTOS REAIS (não o mercado, já que Faltas nunca teve mercado — confirmado via SQL, nenhuma linha "foul"/"falta" em `odds_market`) com IC95%, via walk-forward (não holdout único).
+
+- **Metodologia** (`scripts/validar_classificador_walkforward_incremental.py`, versionado, rodado via `workflow_dispatch`, run [35389689163](https://github.com/JBatistaCosta/quant-predictor/actions/runs/35389689163)): mesma máquina de bootstrap pareado dos walk-forwards de gols/escanteios (`backtest_kelly.comparar_pareado_com_mercado`), trocando o braço "mercado" por "climatologia" (taxa histórica de over do treino até aquele ponto, sem nenhuma feature — baseline sem informação). Random Forest via sklearn (mesmos hiperparâmetros/features de `custom_model_configs` reais), janela expansiva, passo mensal, sem fatia de calibração (classificador não tem parâmetro estrutural pra calibrar depois do fit). Dataset: 21.613 partidas (2021-04-07 a 2026-09-18); todas as 12 linhas testadas com o mesmo N pareado, n=7.928.
+- **Resultado — as 12 de 12 linhas testadas vencem a climatologia com IC95% inteiramente negativo** (diferença de log-loss modelo−climatologia, margem de não-inferioridade 0,0100):
+
+  | Linha | Diferença | IC95% |
+  |---|---|---|
+  | cartoes_total O/U 1.5 | -0,0702 | [-0,0797, -0,0610] |
+  | cartoes_total O/U 2.5 | -0,0519 | [-0,0591, -0,0445] |
+  | cartoes_total O/U 3.5 | -0,0366 | [-0,0424, -0,0305] |
+  | cartoes_total O/U 4.5 | -0,0287 | [-0,0339, -0,0231] |
+  | cartoes_total O/U 5.5 | -0,0206 | [-0,0254, -0,0159] |
+  | cartoes_total O/U 6.5 | -0,0150 | [-0,0196, -0,0107] |
+  | faltas_total O/U 20.5 | -0,0461 | [-0,0536, -0,0384] |
+  | faltas_total O/U 22.5 | -0,0567 | [-0,0644, -0,0486] |
+  | faltas_total O/U 24.5 | -0,0671 | [-0,0743, -0,0592] |
+  | faltas_total O/U 26.5 | -0,0666 | [-0,0735, -0,0588] |
+  | faltas_total O/U 28.5 | -0,0633 | [-0,0701, -0,0561] |
+  | faltas_total O/U 30.5 | -0,0532 | [-0,0594, -0,0463] |
+
+- **Leitura**: diferente do que se viu com gols/escanteios (mercado sempre vence ou empata, sem edge do modelo), aqui não há mercado — a régua é "o modelo aprende alguma coisa real da forma recente + árbitro, ou só reflete a média histórica da liga?" A resposta é sim, e com folga: Cartões mais forte na linha mais baixa (1.5, diff=-0,0702, provavelmente domina o "quase nenhum cartão" que a climatologia erra mais); Faltas relativamente uniforme entre 22.5-28.5 (diff≈-0,06 nas 3), mais fraco nas pontas (20.5 e 30.5). **Isto NÃO prova edge de aposta** — não há mercado real pra comparar EV, o resultado só confirma capacidade preditiva intrínseca (log-loss vs. um baseline sem informação), que é a pergunta que o usuário fez.
+- **Diferença de escopo vs. a validação de produção existente**: `treinar_modelo_custom_wf.py` já faz um walk-forward anual (3 folds, só persiste fold_3) — este script mede a mesma família de modelo com N muito maior (mensal em vez de anual) e contra um baseline explícito com IC, não só log-loss/Brier isolado. Não substitui a validação de produção nem muda `model_betting_strategy` (que continua todo `nenhuma`/`nunca` pra Cartões e vazio pra Faltas, por falta de mercado real pra decidir estratégia de aposta) — só responde a pergunta de capacidade preditiva pura.
+- Script/workflow ficam no repo, prontos pra reuso caso surja mercado real de Faltas no futuro ou se quiser reconferir com um algoritmo diferente.
+
+---
+
 **🔒 DECISÃO FINAL (18/09) — `hibrido_gols_xg_v2_estado` (qualidade de finalização por estado do jogo) e a revalidação de `hibrido_corners_v1` NÃO têm edge sobre o mercado; frente de walk-forward incremental encerrada por ora.** Pedido do usuário: expandir N via walk-forward incremental (janela expansiva, passo mensal) pra `hibrido_gols_xg_v1` vs. `hibrido_gols_xg_v2_estado` e, na sequência ("quero sim"), o mesmo pra `hibrido_corners_v1`. Motivação: a comparação anterior de `v2_estado` (feature nova de qualidade de chute condicionada a ganhando/perdendo, ver achado abaixo) tinha N pequeno e NÃO PAREADO entre as duas variantes (`v2_estado` só tinha 1 dia de `model_predictions` acumulado), então parecia fechar o gap contra o mercado — achado precisava ser reconferido com amostra maior e comparável.
 
 - **Metodologia** (`scripts/validar_hibrido_walkforward_incremental.py`/`scripts/validar_corners_walkforward_incremental.py`, ambos versionados e rodados via `workflow_dispatch`): dataset "Feature Stacked" montado uma vez; passo mensal com janela expansiva (treina em tudo antes da calibração, calibra ρ/dispersão/split nos 3 meses antes do mês de teste, testa nesse mês) a partir dos 60% cronológicos iniciais. Achado lateral que motivou um PR próprio: a dispersão NB dos escanteios (`corners_disp_r`) é o parâmetro mais faminto por dado dos 4 calibrados (CV 445% em n=200 medido por bootstrap) — não dava pra estimar direto numa janela mensal, resolvido com shrinkage bayesiano (`dist.ajustar_dispersao_nb_bayesiana_prior_fixo`, PR #585) e um prior GLOBAL calculado uma vez por k-fold cronológico no warm-up (nunca o acumulado de passos anteriores do walk-forward — esse teria vazado, já que a calibração do passo N vira treino do passo N+1 numa janela expansiva; docstring de `ajustar_dispersao_nb_bayesiana` corrigida sobre isso, PR #587).
