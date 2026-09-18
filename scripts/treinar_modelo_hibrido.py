@@ -217,6 +217,8 @@ def ajustar_parametros_estruturais(
     lam_home: np.ndarray,
     lam_away: np.ndarray,
     lam_corners: np.ndarray | None,
+    calib_ampla: pd.DataFrame | None = None,
+    lam_corners_ampla: np.ndarray | None = None,
 ) -> dict[str, float]:
     """Estima, na fatia de CALIBRAÇÃO, o que o ML não estima.
 
@@ -228,6 +230,15 @@ def ajustar_parametros_estruturais(
     Fatia de calibração e não a de treino de propósito: o modelo já viu as
     partidas de treino, então o resíduo lá é otimisticamente pequeno e a
     dispersão sairia subestimada.
+
+    `calib_ampla`/`lam_corners_ampla` são OPCIONAIS e servem só pra
+    `corners_disp_r` (ver por quê logo abaixo) -- em produção (`calib` já
+    pooled entre ~20 ligas, tipicamente milhares de partidas) seguem `None`
+    e o comportamento fica idêntico ao de sempre. Existem pra validação
+    incremental (walk-forward), onde cada passo pode ter uma fatia de
+    calibração pequena demais pra esse parâmetro específico -- quando
+    passados, servem de PRIOR mais amplo (ex.: acumulado de passos
+    anteriores) pro shrinkage bayesiano.
     """
     parametros: dict[str, float] = {}
 
@@ -237,12 +248,37 @@ def ajustar_parametros_estruturais(
         calib.loc[valido, "home_goals"].to_numpy(), calib.loc[valido, "away_goals"].to_numpy(),
     )
     logger.info("ρ (Dixon-Coles) ajustado por MLE: %.4f", parametros["rho"])
+    # ρ e o split Beta-Binomial (abaixo) NÃO recebem esse tratamento --
+    # medido por bootstrap em dado real (n=12.864 partidas), o erro-padrão
+    # de ρ já fica menor que a própria magnitude do parâmetro a partir de
+    # n≈750-1.000, e o do split já é pequeno (poucos pontos percentuais)
+    # com n≈200-300. `corners_disp_r` é o único dos 4 parâmetros faminto
+    # o bastante por dado (CV 445% em n=200, só ~20% a partir de
+    # n≈2.000-3.000) pra precisar de tratamento assimétrico -- daí só ele
+    # ganhar `calib_ampla` como prior em vez do corte fixo `>= 200`.
 
     if lam_corners is not None and "total_corners" in calib.columns:
         tem_corner = calib["total_corners"].notna().to_numpy()
         if tem_corner.sum() >= 200:
             total = calib.loc[tem_corner, "total_corners"].to_numpy()
-            disp = dist.ajustar_dispersao_nb(lam_corners[tem_corner], total)
+            lam_corners_local = lam_corners[tem_corner]
+
+            tem_corner_ampla = None
+            if calib_ampla is not None and lam_corners_ampla is not None and "total_corners" in calib_ampla.columns:
+                tem_corner_ampla = calib_ampla["total_corners"].notna().to_numpy()
+
+            if tem_corner_ampla is not None and tem_corner_ampla.sum() >= 200:
+                disp = dist.ajustar_dispersao_nb_bayesiana(
+                    lam_corners_local, total,
+                    lam_corners_ampla[tem_corner_ampla], calib_ampla.loc[tem_corner_ampla, "total_corners"].to_numpy(),
+                )
+                logger.info(
+                    "dispersão r dos escanteios: shrinkage bayesiano (n_local=%d, w=%d, n_prior=%d)",
+                    int(tem_corner.sum()), dist.W_SHRINKAGE_DISP_R, int(tem_corner_ampla.sum()),
+                )
+            else:
+                disp = dist.ajustar_dispersao_nb(lam_corners_local, total)
+
             # `inf` é matematicamente correto (NB degenera em Poisson), mas
             # não serializa em JSON nem cabe numa coluna numeric. O teto
             # replica a Poisson pra qualquer efeito prático.
