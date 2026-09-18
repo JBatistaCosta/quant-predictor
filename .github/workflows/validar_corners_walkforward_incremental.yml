@@ -1,0 +1,52 @@
+name: Hibrido Escanteios - Walk-Forward Incremental
+
+# Roda scripts/validar_corners_walkforward_incremental.py -- valida
+# hibrido_corners_v1 contra a Pinnacle (corners_over_under_9.5) via
+# walk-forward de janela expansiva, passo MENSAL, mesma metodologia de
+# validar_hibrido_walkforward_incremental.yml (gols).
+#
+# Diferença específica de escanteios: a dispersão da Binomial Negativa
+# (corners_disp_r) é o parâmetro de calibração mais faminto por dado dos 4
+# estimados (ρ/r/α/β) -- um passo mensal sozinho não tem partidas
+# suficientes pra estimar direto (CV 445% em n=200, medido por bootstrap).
+# O script usa shrinkage bayesiano (dist.ajustar_dispersao_nb_bayesiana_
+# prior_fixo, PR #585) com um prior global calculado uma vez, por k-fold
+# cronológico dentro do warm-up inicial, antes do walk-forward começar.
+#
+# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
+# sem cron. Não grava nada no Supabase, não muda o treino diário de
+# produção (hibrido_corners_v1 continua treinado por
+# treinar_modelo_hibrido.yml, sem mudança).
+#
+# Mesmo timeout generoso de validar_hibrido_walkforward_incremental.yml --
+# o gargalo é montar o dataset "Feature Stacked" uma vez (~90-110min); os
+# refits de CatBoost por passo (um por mês, mais os do k-fold do prior)
+# levam segundos cada.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  validar-corners-walkforward-incremental:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward incremental (hibrido_corners_v1)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/validar_corners_walkforward_incremental.py
