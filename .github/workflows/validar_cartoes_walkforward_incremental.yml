@@ -1,0 +1,50 @@
+name: Cartões - Walk-Forward Incremental (vs. mercado real)
+
+# Roda scripts/validar_cartoes_walkforward_incremental.py -- avalia o
+# classificador de Cartões (total da partida, 6 linhas) contra o MERCADO
+# REAL (Pinnacle, abertura e fechamento) via walk-forward de janela
+# expansiva, passo MENSAL, com bootstrap pareado + IC95%.
+#
+# Diferente de validar_classificador_walkforward_incremental.yml (que
+# compara Cartões/Faltas contra a CLIMATOLOGIA, sem mercado): este script
+# usa o mercado real de "bookings" (odds_market.market =
+# 'bookings_over_under_full_time_{linha}', Pinnacle/bet365/Betano) --
+# responde "dá pra ganhar dinheiro apostando?", não só "o modelo aprende
+# algo real?". Faltas fica de fora (sem mercado real, confirmado via SQL).
+#
+# Pré-requisito corrigido na mesma frente: backtest_kelly.MERCADOS ganhou
+# as entradas "cartoes_over_under_{linha}" que faltavam (nunca usadas em
+# produção até agora -- ver CONTEXTO_PROJETO.md).
+#
+# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
+# sem cron. Não grava nada no Supabase, não muda os classificadores de
+# produção (treinar_modelo_custom_wf.yml continua com o walk-forward CV
+# anual de sempre, 3 folds).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  validar-cartoes-walkforward-incremental:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward incremental (Cartões vs. mercado real)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/validar_cartoes_walkforward_incremental.py

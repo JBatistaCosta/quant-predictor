@@ -210,6 +210,22 @@ for _linha_corners in ("7.5", "8.5", "10", "10.5", "11", "11.5", "12", "12.5"):
         "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CORNERS_UNDER95, "over": dados_historicos.RESULTADO_CORNERS_OVER95},
     }
 del _linha_corners
+# Cartões (total da partida) -- mesmo padrão do loop de escanteios acima,
+# nunca tinha sido adicionado (`MODELOS_CUSTOM_CARTOES`/`avaliar_modelo_
+# persistido_vs_mercado` referenciam essas chaves desde os PRs #462/#463,
+# mas sem entrada aqui em MERCADOS qualquer chamada a
+# `_carregar_odds_pinnacle_brutas`/`_devigar_odds_por_partida` com
+# mercado="cartoes_over_under_X" batia KeyError -- nunca executado em
+# produção até agora, ver CONTEXTO_PROJETO.md "Implementação no sistema --
+# tecnicamente pronta, mas não acionada de propósito"). Selações
+# "under"/"over" batem com `odds_market.selection` pro mercado real
+# "bookings_over_under_full_time_{linha}" (ver `_nome_mercado_odds`).
+for _linha_cartoes in dados_historicos.LINHAS_CARTOES_OU:
+    MERCADOS[f"cartoes_over_under_{_linha_cartoes}"] = {
+        "coluna_alvo": None,
+        "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CARTOES_UNDER, "over": dados_historicos.RESULTADO_CARTOES_OVER},
+    }
+del _linha_cartoes
 # Só as 4 linhas INTEIRAS com odd real de "european_handicap" no banco
 # (ver _nome_mercado_odds) -- handicap_0.0 (sem "european_handicap_0" no
 # banco) e as linhas de meio gol (sem equivalente de handicap europeu, só
