@@ -15,6 +15,12 @@ import { toPct } from '../utils/format';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
+// `casa_aposta` (api/backtest-betting.js) -- de qual fonte a odd real dessa
+// sugestão veio. "media_mercado" é uma média sintética entre várias casas
+// (não uma casa real específica, ver `comFonte`/`normalizarOddsBenchmarking`
+// no backend); as demais são uma casa real de referência.
+const CASA_APOSTA_ROTULO = { pinnacle: 'Pinnacle', betano: 'Betano', media_mercado: 'Média do mercado' };
+const rotuloCasaAposta = (c) => CASA_APOSTA_ROTULO[c] || c || '—';
 const MODELO_ROTULO = {
   mercado_pinnacle_devigado: 'Mercado (Pinnacle devigada)',
   pricing_pipeline_v1: 'Pricing Pipeline (melhor fonte disponível)',
@@ -171,6 +177,7 @@ export default function ResumoValorApostas() {
     { header: 'Prob. mercado (devigada)', get: (c) => (c.p_mercado * 100).toFixed(2) + '%' },
     { header: 'Edge (pp)', get: (c) => (c.edge * 100).toFixed(2) },
     { header: 'Odd real', get: (c) => c.odd.toFixed(3) },
+    { header: 'Casa de aposta', get: (c) => rotuloCasaAposta(c.casa_aposta) },
     { header: 'Status', get: (c) => STATUS_ROTULO[statusDaLinha(c)].texto },
   ]), [timesPorId, ligasPorId]);
 
@@ -285,6 +292,7 @@ export default function ResumoValorApostas() {
                 <th className="text-right p-1.5">Prob. mercado</th>
                 <th className="text-right p-1.5">Edge</th>
                 <th className="text-right p-1.5">Odd</th>
+                <th className="text-left p-1.5">Casa</th>
                 <th className="text-right p-1.5">Status</th>
               </tr>
             </thead>
@@ -303,6 +311,7 @@ export default function ResumoValorApostas() {
                     <td className="p-1.5 text-right text-slate-200">{toPct(c.p_mercado)}</td>
                     <td className="p-1.5 text-right font-bold text-emerald-400">+{(c.edge * 100).toFixed(1)}pp</td>
                     <td className="p-1.5 text-right text-slate-200">{c.odd.toFixed(2)}</td>
+                    <td className="p-1.5 text-slate-400">{rotuloCasaAposta(c.casa_aposta)}</td>
                     <td className={`p-1.5 text-right font-bold ${STATUS_ROTULO[st].cor}`}>{STATUS_ROTULO[st].texto}</td>
                   </tr>
                 );
