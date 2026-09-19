@@ -227,6 +227,21 @@ for _linha_cartoes in dados_historicos.LINHAS_CARTOES_OU:
         "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CARTOES_UNDER, "over": dados_historicos.RESULTADO_CARTOES_OVER},
     }
 del _linha_cartoes
+# Cartões POR TIME (mandante/visitante) -- mesmo padrão acima, faltava
+# desde que MODELOS_CUSTOM_CARTOES_TIME passou a referenciar essas chaves
+# (achado real rodando o backtest completo em produção pela primeira vez
+# desde essa extensão, 19/09: `avaliar_modelo_persistido_vs_mercado`
+# batia KeyError em `MERCADOS[mercado]["codigo_por_selecao"]` assim que
+# chegava no loop de cartões por time). Seleções "under"/"over" batem com
+# `odds_market.selection` pro mercado real "bookings_over_under_team_1/2_
+# {linha}" (ver `_nome_mercado_odds`).
+for _lado_cartoes_time in ("home", "away"):
+    for _linha_cartoes_time in dados_historicos.LINHAS_CARTOES_TIME_OU:
+        MERCADOS[f"cartoes_{_lado_cartoes_time}_over_under_{_linha_cartoes_time}"] = {
+            "coluna_alvo": None,
+            "codigo_por_selecao": {"under": dados_historicos.RESULTADO_CARTOES_UNDER, "over": dados_historicos.RESULTADO_CARTOES_OVER},
+        }
+del _lado_cartoes_time, _linha_cartoes_time
 # Só as 4 linhas INTEIRAS com odd real de "european_handicap" no banco
 # (ver _nome_mercado_odds) -- handicap_0.0 (sem "european_handicap_0" no
 # banco) e as linhas de meio gol (sem equivalente de handicap europeu, só
@@ -268,6 +283,16 @@ MERCADOS_SOMENTE_MODELO_MISTO = {
     "corners_over_under_10.5", "corners_over_under_11", "corners_over_under_11.5", "corners_over_under_12",
     "corners_over_under_12.5", "over_under_1.5", "over_under_3.5", "handicap_-2.0", "handicap_-1.0",
     "handicap_1.0", "handicap_2.0", "dupla_chance",
+    # Cartões (total + por time) -- BUG REAL corrigido 19/09, achado
+    # rodando o backtest completo em produção pela 1ª vez desde que essas
+    # chaves entraram em MERCADOS: sem estar aqui, `main()` tentava treinar
+    # um classificador genérico nelas (`coluna_alvo=None` -> `dropna(subset=
+    # [None])` -> `KeyError: [None]`, crash total do script, não só daquele
+    # mercado). Cartões é avaliado só pelo loop dedicado
+    # (`MODELOS_CUSTOM_CARTOES`/`_TIME` -> `avaliar_modelo_persistido_vs_
+    # mercado`), igual escanteios/handicap/dupla chance acima.
+    *(f"cartoes_over_under_{_linha}" for _linha in dados_historicos.LINHAS_CARTOES_OU),
+    *(f"cartoes_{_lado}_over_under_{_linha}" for _lado in ("home", "away") for _linha in dados_historicos.LINHAS_CARTOES_TIME_OU),
 }
 
 # Modelo misto com ML (CatBoost Poisson + camada paramétrica de
