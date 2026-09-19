@@ -1,0 +1,47 @@
+name: Cartões RF - Prever Partidas Futuras
+
+# Treina o classificador `cartoes_rf` (achado das 2 células confiáveis da
+# matriz de confiabilidade EV -- O/U 4.5 e 5.5, ver CONTEXTO_PROJETO.md)
+# com todo o histórico disponível e gera previsão pras partidas ainda não
+# disputadas, persistindo em model_predictions -- sem isso a Carteira
+# (Paper Trading, /carteira-paper-trading) não tem previsão pra apostar
+# nesse modelo em partida status=scheduled. Ver docstring completa em
+# scripts/rodar_cartoes_rf_previsto.py.
+#
+# Agendado antes do cron da Carteira em vercel.json (09:00 UTC,
+# tarefa=paper-carteira-rodar-todas), mesmo espírito de
+# prever_partidas_futuras_custom.yml (05:00 UTC).
+
+on:
+  schedule:
+    # 05:30 UTC todo dia.
+    - cron: "30 5 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  rodar-cartoes-rf-previsto:
+    runs-on: ubuntu-latest
+    # Treina 2 Random Forests sobre o dataset "Feature Stacked" completo --
+    # nunca medido em produção ainda, folga generosa de propósito (mesmo
+    # espírito de prever_partidas_futuras_custom.yml).
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Prever partidas futuras (cartoes_rf)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/rodar_cartoes_rf_previsto.py

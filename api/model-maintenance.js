@@ -180,6 +180,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { gravarComDedupCruzado } from './_lib/dedupMatches.js';
+import { calcularCartoesExtras } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -5715,7 +5716,13 @@ function ehTemporadaDeTeste(season) {
 // árvore JÁ tinham treino/avaliação real nesse mercado em backtest_
 // kelly.py -- só faltava persistir a previsão por partida em algum lugar
 // servível (ver scripts/backfill_predicoes_historicas.py).
-const MERCADOS_CARTEIRA_SUPORTADOS = new Set(['1X2', 'over_under_2.5', 'btts']);
+const MERCADOS_CARTEIRA_SUPORTADOS = new Set([
+  '1X2',
+  'over_under_2.5',
+  'btts',
+  'cartoes_over_under_4.5',
+  'cartoes_over_under_5.5',
+]);
 
 async function tarefaModelosDisponiveis(supabase, mercado = '1X2') {
   const mercadoValido = MERCADOS_CARTEIRA_SUPORTADOS.has(mercado) ? mercado : '1X2';
@@ -5808,13 +5815,48 @@ function fracaoKellySimulacao(p, odd) {
   return Math.max(0, f) * 0.25; // Quarter Kelly
 }
 
-function calcularResultadoMercadoSimulacao(m, mercado) {
+const LINHA_CARTOES_REGEX = /^cartoes_over_under_(\d+\.\d)$/;
+
+// Traduz o nome de mercado interno (`cartoes_over_under_X.X`, convenção
+// de `model_predictions`/`MERCADOS`) pro nome real em `odds_market`
+// (OddsPapi/Pinnacle chama de "bookings", não "cards"/"cartões") -- mesma
+// tradução já duplicada em api/backtest-betting.js/api/model-stats.js
+// (JS<->Python não compartilha módulo nem entre os próprios arquivos JS,
+// mesmo padrão do resto do projeto: se mudar numa cópia, mudar nas outras).
+function mercadoOddsReal(mercado) {
+  const m = LINHA_CARTOES_REGEX.exec(mercado);
+  return m ? `bookings_over_under_full_time_${m[1]}` : mercado;
+}
+
+// Busca o total de cartões (bookings) REAL por partida -- só chamado
+// quando o mercado da carteira é de cartões (`calcularResultadoMercadoSimulacao`
+// não tem como resolver isso só com `matches.home_goals/away_goals`,
+// precisa de `match_stats_fotmob`/`match_events`, mesma fonte/fallback de
+// `api/_lib/resultadosReais.js::calcularCartoesExtras`, reaproveitada
+// aqui em vez de duplicar a lógica de novo).
+async function buscarCartoesTotalPorMatch(supabase, matchIds) {
+  if (matchIds.length === 0) return {};
+  const [matches, statsRows, eventsRows] = await Promise.all([
+    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('matches').select('id, home_team_id, away_team_id').in('id', ids)),
+    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('match_stats_fotmob').select('match_id, team_id, yellow_cards, red_cards').in('match_id', ids)),
+    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('match_events').select('match_id, team_id, event_type').in('match_id', ids)),
+  ]);
+  return calcularCartoesExtras(matches, statsRows, eventsRows).cartoesTotal;
+}
+
+function calcularResultadoMercadoSimulacao(m, mercado, cartoesTotalPorMatch) {
   if (m.status !== 'finished' || m.home_goals == null || m.away_goals == null) return null;
   if (mercado === 'over_under_2.5') {
     return (m.home_goals + m.away_goals) > 2.5 ? 'over' : 'under';
   }
   if (mercado === 'btts') {
     return (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no';
+  }
+  const linhaCartoes = LINHA_CARTOES_REGEX.exec(mercado);
+  if (linhaCartoes) {
+    const total = (cartoesTotalPorMatch || {})[m.id];
+    if (total == null) return null; // ainda sem match_stats_fotmob/match_events processado -- fica pendente
+    return total > Number(linhaCartoes[1]) ? 'over' : 'under';
   }
   return m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw';
 }
@@ -5937,10 +5979,10 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   // Stage 2: odds apenas para partidas válidas (conjunto pequeno, ~centenas de IDs)
   const [pinnacleAberturaRaw, pinnacleFechaRaw] = await Promise.all([
     matchIdsValidosArray.length > 0
-      ? buscarTudoPaginadoIn(matchIdsValidosArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
+      ? buscarTudoPaginadoIn(matchIdsValidosArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercadoOddsReal(mercado)).eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
       : Promise.resolve([]),
     matchIdsValidosArray.length > 0
-      ? buscarTudoPaginadoIn(matchIdsValidosArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercado).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
+      ? buscarTudoPaginadoIn(matchIdsValidosArray, (ids) => supabase.from('odds_market').select('match_id, selection, odds').eq('market', mercadoOddsReal(mercado)).eq('snapshot', 'closing').eq('bookmaker', 'pinnacle').in('match_id', ids))
       : Promise.resolve([]),
   ]);
 
@@ -5948,13 +5990,16 @@ async function tarefaSimulacaoCarteira(supabase, query) {
   pinnacleAberturaRaw.filter((r) => matchIdsValidos.has(r.match_id)).forEach((r) => { pinnAberturaPorChave[`${r.match_id}__${r.selection}`] = Number(r.odds); });
   const pinnFechaPorChave = {};
   pinnacleFechaRaw.filter((r) => matchIdsValidos.has(r.match_id)).forEach((r) => { pinnFechaPorChave[`${r.match_id}__${r.selection}`] = Number(r.odds); });
+  const cartoesTotalPorMatch = LINHA_CARTOES_REGEX.test(mercado)
+    ? await buscarCartoesTotalPorMatch(supabase, matchIdsValidosArray)
+    : null;
 
   const construirCandidatos = (oddExecucaoPorChave) => {
     const candidatos = [];
     for (const p of predicoes) {
       if (!matchIdsValidos.has(p.match_id)) continue;
       const match = matchPorId[p.match_id];
-      const resultadoReal = calcularResultadoMercadoSimulacao(match, mercado);
+      const resultadoReal = calcularResultadoMercadoSimulacao(match, mercado, cartoesTotalPorMatch);
       if (!resultadoReal) continue;
       const chave = `${p.match_id}__${p.selection}`;
       const odd = oddExecucaoPorChave[chave];
@@ -6180,7 +6225,7 @@ async function apostarCarteira(supabase, carteira) {
 
   const [predicoesRaw, oddsRaw, calibracoesRaw, jaApostado] = await Promise.all([
     buscarPredicoesCarteira(supabase, matchIds, carteira.modelo, carteira.mercado),
-    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('odds_market').select('match_id, selection, odds, bookmaker').eq('market', carteira.mercado).eq('snapshot', 'pre_closing').in('match_id', ids)),
+    buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('odds_market').select('match_id, selection, odds, bookmaker').eq('market', mercadoOddsReal(carteira.mercado)).eq('snapshot', 'pre_closing').in('match_id', ids)),
     carteira.usar_calibracao === 'nenhuma'
       ? Promise.resolve([])
       : buscarTudoPaginado(() => supabase.from('model_calibration').select('selection, method, platt_coef, platt_intercept, isotonic_x, isotonic_y').eq('model_name', carteira.modelo).eq('market', carteira.mercado)),
@@ -6276,6 +6321,12 @@ async function resolverCarteira(supabase, carteira) {
   const matchIds = [...new Set(pendentes.map((p) => p.match_id))];
   const matches = await buscarTudoPaginadoIn(matchIds, (ids) => supabase.from('matches').select('id, status, home_goals, away_goals').in('id', ids));
   const matchPorId = Object.fromEntries(matches.map((m) => [m.id, m]));
+  // Cartões precisa de match_stats_fotmob/match_events pra saber o total
+  // real (matches.home_goals/away_goals não tem essa info) -- só busca
+  // quando a carteira é de fato de um mercado de cartões.
+  const cartoesTotalPorMatch = LINHA_CARTOES_REGEX.test(carteira.mercado)
+    ? await buscarCartoesTotalPorMatch(supabase, matchIds)
+    : null;
 
   let banca = Number(carteira.banca_atual);
   let resolvidas = 0;
@@ -6291,7 +6342,7 @@ async function resolverCarteira(supabase, carteira) {
       continue;
     }
 
-    const resultadoReal = calcularResultadoMercadoSimulacao(match, carteira.mercado);
+    const resultadoReal = calcularResultadoMercadoSimulacao(match, carteira.mercado, cartoesTotalPorMatch);
     if (resultadoReal == null) continue; // ainda scheduled/live/postponed sem placar -- fica pendente
 
     const venceu = resultadoReal === aposta.selection;
