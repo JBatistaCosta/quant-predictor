@@ -66,8 +66,15 @@ uma nova.
 FAIXAS DE EDGE: bandas fechadas 2-5%/5-10%/10-15%/15-25%/25%+ (não
 cumulativas, ao contrário do script anterior).
 
-Não escreve nada no Supabase -- só leitura e relatório em stdout, mesma
-categoria dos demais scripts `validar_*_walkforward_incremental.py`.
+PERSISTÊNCIA (pedido do usuário -- acompanhar no frontend, dia a dia, se as
+células confiáveis continuam sobrevivendo conforme mais partidas entram no
+banco): grava a matriz inteira em `matriz_confiabilidade_ev_historico`
+(migration `20260919120000_create_matriz_confiabilidade_ev_historico.sql`)
+via upsert em (data_execucao, modelo, mercado, odd_min, odd_max, edge_min,
+edge_max) -- reexecutar no mesmo dia sobrescreve, não duplica. Precisa de
+`SUPABASE_KEY` com privilégio de escrita (no workflow do GitHub Actions
+esse secret já É a service_role key, mesmo padrão dos demais scripts que
+escrevem, ex. `ingerir_escalacao_pre_jogo.py`).
 
 Uso:
     set SUPABASE_URL=...
@@ -105,6 +112,11 @@ SEED = bk.SEED
 MERCADOS_GOLS = ["1X2", "over_under_2.5", "btts"]
 MODELO_GOLS = "hibrido_gols_xg_v1"
 MERCADO_ESCANTEIOS = "corners_over_under_9.5"
+
+# Sentinelas pra persistir as faixas "sem teto" (última de cada grade) sem
+# usar NULL -- ver comentário da coluna na migration.
+ODD_MAX_SENTINELA = 999.0
+EDGE_MAX_SENTINELA = 9.99
 
 
 def obter_env(nome: str) -> str:
@@ -314,6 +326,42 @@ def coletar_apostas_cartoes(supabase: Client, dataset: pd.DataFrame) -> list[dic
     return apostas_total
 
 
+def persistir_resultados(supabase: Client, resultados: list[dict], data_execucao: str) -> None:
+    """Upsert da matriz inteira (não só as células confiáveis, mesma lógica
+    de `imprimir_matriz`) em `matriz_confiabilidade_ev_historico` -- é isso
+    que permite o frontend acompanhar a evolução dia a dia. Reexecutar o
+    workflow no mesmo `data_execucao` sobrescreve a linha (upsert na chave
+    única), não duplica."""
+    linhas = []
+    for r in resultados:
+        odd_max = r["odd_max"] if r["odd_max"] != float("inf") else ODD_MAX_SENTINELA
+        edge_max = r["edge_max"] if r["edge_max"] != float("inf") else EDGE_MAX_SENTINELA
+        c = r["carteira"]
+        linhas.append({
+            "data_execucao": data_execucao,
+            "modelo": r["modelo"], "mercado": r["mercado"],
+            "odd_min": r["odd_min"], "odd_max": odd_max,
+            "edge_min": r["edge_min"], "edge_max": edge_max,
+            "n": r["n"],
+            "roi_medio": r["roi_medio"], "roi_medio_ic_inf": r["media_ic95"][0], "roi_medio_ic_sup": r["media_ic95"][1],
+            "p_media": r["p_media"],
+            "roi_mediano": r["roi_mediano"], "roi_mediano_ic_inf": r["mediana_ic95"][0], "roi_mediano_ic_sup": r["mediana_ic95"][1],
+            "p_mediana": r["p_mediana"],
+            "confiavel": r["confiavel"],
+            "dm_stat": r["dm_stat"], "dm_p_valor": r["dm_p_valor"], "p_celula": r["p_celula"],
+            "bonferroni_significativo": r["bonferroni_significativo"], "fdr_significativo": r["fdr_significativo"],
+            "carteira_banca_final_x": c["banca_final_x"], "carteira_drawdown_maximo": c["drawdown_maximo"],
+            "carteira_n_apostado": c["n_apostado"],
+        })
+    if not linhas:
+        logger.warning("Nenhuma célula com n>=%d -- nada persistido em matriz_confiabilidade_ev_historico.", MIN_N_CELULA)
+        return
+    supabase.table("matriz_confiabilidade_ev_historico").upsert(
+        linhas, on_conflict="data_execucao,modelo,mercado,odd_min,odd_max,edge_min,edge_max"
+    ).execute()
+    logger.info("Persistidas %d células em matriz_confiabilidade_ev_historico (data_execucao=%s).", len(linhas), data_execucao)
+
+
 def imprimir_matriz(resultados: list[dict]) -> None:
     resultados_ordenados = sorted(resultados, key=lambda r: r["media_ic95"][0], reverse=True)
     n_confiaveis = sum(1 for r in resultados if r["confiavel"])
@@ -378,6 +426,8 @@ def main() -> None:
         resultados_total.extend(avaliar_matriz([a for a in apostas_cartoes if a["mercado"] == mercado], "cartoes_rf", mercado))
 
     corrigir_multiplas_comparacoes(resultados_total)
+    data_execucao = pd.Timestamp.now(tz="UTC").date().isoformat()
+    persistir_resultados(supabase, resultados_total, data_execucao)
     imprimir_matriz(resultados_total)
 
 

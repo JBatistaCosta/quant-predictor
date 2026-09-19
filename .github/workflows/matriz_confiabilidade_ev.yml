@@ -21,12 +21,19 @@ name: Matriz de confiabilidade odd x EV (Gols/Escanteios/Cartões)
 # positivo, além da média (critério "rigoroso", escolhido pelo usuário);
 # (3) amostra mínima por célula subiu pra 50.
 #
-# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
-# sem cron. Não grava nada no Supabase, não muda nenhum modelo de
-# produção nem model_betting_strategy.
+# Ferramenta de análise/pesquisa, não de produção -- não muda nenhum modelo
+# de produção nem model_betting_strategy, só GRAVA o snapshot em
+# `matriz_confiabilidade_ev_historico` (migration `20260919120000_...`) pra
+# acompanhamento no frontend (/modelos). Cron diário às 07:30 UTC (depois
+# do sync-matches de 06:00 UTC, ver CLAUDE.md, pra já pegar os placares do
+# dia) -- pedido do usuário pra ver se as células confiáveis de Cartões
+# continuam sobrevivendo conforme mais partidas entram no banco.
+# workflow_dispatch continua disponível pra rodar sob demanda.
 
 on:
   workflow_dispatch: {}
+  schedule:
+    - cron: "30 7 * * *"
 
 jobs:
   matriz-confiabilidade-ev:
