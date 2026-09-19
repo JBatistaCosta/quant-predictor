@@ -560,14 +560,27 @@ export default async function handler(req, res) {
       // de fechamento). Sem isso, jogo agendado/ainda não começado nunca
       // aparece na lista de sugestões: `closing` só existe perto do apito
       // inicial (confirmado via SQL -- partida "scheduled" só tem
-      // `snapshot='pre_closing'`), e sem NENHUMA odd real a sugestão nem
-      // chega a ser montada (`oddReal == null` mais abaixo). Restrita ao
-      // `mercado` pedido quando houver, mesmo motivo de custo do fallback
-      // Pinnacle logo acima -- sem isso arriscaria o timeout de 30s.
-      formato === 'candidatas'
+      // `snapshot='pre_closing'`).
+      //
+      // BUG REAL corrigido antes mesmo de ir pra produção de verdade (achado
+      // testando `?formato=candidatas` contra produção logo após o merge --
+      // `statement timeout`): igual ao alerta já escrito sobre
+      // `oddsCartoesEscanteiosTotal`/`oddsCartoesTime` mais acima, um
+      // `.eq('snapshot', 'pre_closing')` sem também fixar `bookmaker` quebra
+      // o aproveitamento do índice (`market, snapshot, bookmaker, id`) --
+      // pra market+snapshot fixos mas bookmaker livre, as linhas de
+      // bookmakers diferentes NÃO saem em ordem de `id`, então o Postgres
+      // não consegue satisfazer o `ORDER BY id` (exigido por
+      // `buscarTudoPaginado`) direto do índice e cai num sort completo sobre
+      // ~190 mil linhas só pra 1X2. Fixando `bookmaker='pinnacle'` (mesma
+      // casa de referência já usada como fallback de fechamento acima), a
+      // consulta volta a ser um Index Cond de igualdade simples. Também só
+      // dispara quando `mercado` foi pedido (mesmo motivo do fallback
+      // Pinnacle de fechamento: sem isso, "todos os mercados" pagina a
+      // tabela inteira e arrisca o timeout de 30s do endpoint de novo).
+      formato === 'candidatas' && mercado
         ? buscarPossivelmenteFiltradoPorLiga((lote) => {
-            let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'pre_closing');
-            if (mercado) q = q.eq('market', mercadoOddsReal(mercado));
+            let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'pre_closing').eq('bookmaker', 'pinnacle').eq('market', mercadoOddsReal(mercado));
             if (lote) q = q.in('match_id', lote);
             return q;
           })
