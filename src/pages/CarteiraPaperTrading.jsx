@@ -17,6 +17,8 @@ const MERCADOS = [
   { chave: '1X2', rotulo: '1X2' },
   { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
   { chave: 'btts', rotulo: 'Ambas Marcam (BTTS)' },
+  { chave: 'cartoes_over_under_4.5', rotulo: 'Cartões O/U 4,5 (cartoes_rf)' },
+  { chave: 'cartoes_over_under_5.5', rotulo: 'Cartões O/U 5,5 (cartoes_rf)' },
 ];
 
 const ROTULO_STATUS = { pendente: 'Pendente', ganhou: 'Ganhou', perdeu: 'Perdeu', anulada: 'Anulada' };
