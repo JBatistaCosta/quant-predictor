@@ -108,6 +108,18 @@ export default function ResumoValorApostas() {
   }, []);
 
   async function buscarSugestoes() {
+    // Sem liga, algumas combinações modelo+mercado (as com mais previsões
+    // acumuladas) estouram o `statement timeout` do Postgres no backend --
+    // confirmado em produção mesmo no endpoint antigo, sem relação com o
+    // `formato=candidatas` em si (api/backtest-betting.js já filtra TODAS as
+    // consultas por `liga_id` quando ele vem, cortando o volume de banco
+    // inteiro pra só a liga escolhida). Exigir liga aqui evita cair nesse
+    // timeout em vez de deixar o usuário descobrir só depois de esperar.
+    if (!filtroLiga) {
+      setErro('Escolha uma liga antes de buscar -- sem esse filtro, algumas combinações de modelo/mercado estouram o tempo limite da consulta.');
+      setBuscou(false);
+      return;
+    }
     setCarregando(true);
     setErro('');
     setBuscou(true);
@@ -214,12 +226,13 @@ export default function ResumoValorApostas() {
           </select>
         </div>
         <div>
-          <label className="block text-[10px] uppercase text-slate-500 mb-1">Liga</label>
+          <label className="block text-[10px] uppercase text-slate-500 mb-1">Liga <span className="text-amber-500">(obrigatório)</span></label>
           <select value={filtroLiga} onChange={(e) => setFiltroLiga(e.target.value)} disabled={carregandoOpcoes}
             className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
-            <option value="">Todas as ligas</option>
+            <option value="">Escolha uma liga...</option>
             {opcoesLigas.map(l => <option key={l} value={l}>{nomeLiga(l)}</option>)}
           </select>
+          <span className="block text-[10px] text-slate-600 mt-1 max-w-[16rem]">Sem liga, algumas combinações de modelo/mercado estouram o tempo limite da consulta.</span>
         </div>
         <div>
           <label className="block text-[10px] uppercase text-slate-500 mb-1">Edge mínimo</label>
@@ -236,7 +249,7 @@ export default function ResumoValorApostas() {
           <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)}
             className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" />
         </div>
-        <button onClick={buscarSugestoes} disabled={carregando}
+        <button onClick={buscarSugestoes} disabled={carregando || !filtroLiga}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
           {carregando ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />} Buscar sugestões
         </button>
