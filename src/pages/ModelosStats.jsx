@@ -4,10 +4,11 @@
 // calibração — agrupado por modelo + mercado + liga. Dados vêm todos de uma
 // vez de /api/model-stats (poucas dezenas de grupos, filtro é só client-side).
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save } from 'lucide-react';
+import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save, Grid3x3 } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import CurvaPnlEv from '../components/CurvaPnlEv';
+import EvolucaoConfiabilidadeEV from '../components/EvolucaoConfiabilidadeEV';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -831,6 +832,156 @@ function gerarMarkdown(grupos, ligasPorId) {
   return md;
 }
 
+// Rótulo de veredito por célula -- mesma lógica de
+// scripts/matriz_confiabilidade_ev.py::imprimir_matriz (confiavel = IC95%
+// da média E da mediana do ROI positivos, n>=50; bonferroni/fdr só fazem
+// sentido quando confiavel=true).
+function veredictoCelula(r) {
+  if (!r.confiavel) return { texto: 'não confiável', cor: 'bg-slate-700/40 text-slate-400' };
+  if (r.bonferroni_significativo) return { texto: 'confiável + sobrevive Bonferroni', cor: 'bg-emerald-500/20 text-emerald-300' };
+  if (r.fdr_significativo) return { texto: 'confiável + sobrevive FDR', cor: 'bg-cyan-500/20 text-cyan-300' };
+  return { texto: 'confiável, mas não sobrevive à correção múltipla', cor: 'bg-amber-500/20 text-amber-300' };
+}
+
+function fmtOddFaixa(r) {
+  return `${Number(r.odd_min).toFixed(2)}${r.odd_max >= 999 ? '+' : `–${Number(r.odd_max).toFixed(2)}`}`;
+}
+function fmtEdgeFaixa(r) {
+  return `${(r.edge_min * 100).toFixed(0)}%${r.edge_max >= 9.99 ? '+' : `–${(r.edge_max * 100).toFixed(0)}%`}`;
+}
+function fmtPctSinal(v) {
+  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%`;
+}
+
+// Snapshot diário (workflow matriz_confiabilidade_ev.yml, cron 07:30 UTC +
+// workflow_dispatch sob demanda) de scripts/matriz_confiabilidade_ev.py --
+// pedido do usuário: acompanhar no frontend se as células "odd x edge" que
+// batem o mercado de forma repetível continuam confiáveis conforme mais
+// partidas entram no banco, sem depender do log do GitHub Actions (some
+// quando o run expira).
+function MatrizConfiabilidadeEV() {
+  const [linhas, setLinhas] = useState([]);
+  const [dataExecucao, setDataExecucao] = useState(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (!supabaseAtivo) { setCarregando(false); return; }
+    (async () => {
+      setCarregando(true);
+      setErro('');
+      try {
+        const { data: ultima, error: erroUltima } = await supabase
+          .from('matriz_confiabilidade_ev_historico')
+          .select('data_execucao')
+          .order('data_execucao', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (erroUltima) throw erroUltima;
+        if (!ultima) { setLinhas([]); setDataExecucao(null); return; }
+        setDataExecucao(ultima.data_execucao);
+        const { data, error } = await supabase
+          .from('matriz_confiabilidade_ev_historico')
+          .select('*')
+          .eq('data_execucao', ultima.data_execucao)
+          .order('roi_medio_ic_inf', { ascending: false });
+        if (error) throw error;
+        setLinhas(data || []);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  const celulasConfiaveis = useMemo(() => linhas.filter((r) => r.confiavel), [linhas]);
+  const nBonferroni = celulasConfiaveis.filter((r) => r.bonferroni_significativo).length;
+  const nFdr = celulasConfiaveis.filter((r) => r.fdr_significativo).length;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <h2 className="text-lg font-extrabold flex items-center gap-2 text-slate-100 mb-1">
+        <Grid3x3 className="text-emerald-400" size={22} /> Matriz de confiabilidade odd × edge
+      </h2>
+      <p className="text-slate-400 text-sm mb-4">
+        Snapshot diário (cron às 07:30 UTC) de <code className="text-slate-300">scripts/matriz_confiabilidade_ev.py</code>: segmenta apostas de EV+ numa grade fechada de faixa de odd × faixa de edge e testa, célula a célula, se o ROI bate o mercado de forma repetível (IC95% da média E da mediana do ROI positivos, n≥50), com Diebold-Mariano e correção de Bonferroni/FDR por comparações múltiplas.
+      </p>
+
+      {carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-xs py-6 justify-center">
+          <Loader2 className="animate-spin" size={16} /> Carregando matriz...
+        </div>
+      ) : erro ? (
+        <p className="text-sm text-red-400">{erro}</p>
+      ) : linhas.length === 0 ? (
+        <p className="text-sm text-slate-500">
+          Sem execução registrada ainda -- rode o workflow <code className="text-slate-400">matriz_confiabilidade_ev.yml</code> (workflow_dispatch) ou aguarde o cron diário.
+        </p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
+            <span className="text-slate-500">Última execução: <span className="text-slate-300 font-semibold">{new Date(`${dataExecucao}T00:00:00Z`).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span></span>
+            <span className="text-slate-600">·</span>
+            <span className="text-slate-500">{celulasConfiaveis.length} de {linhas.length} células confiáveis</span>
+            <span className="text-slate-600">·</span>
+            <span className="text-emerald-400">{nBonferroni} sobrevivem Bonferroni</span>
+            <span className="text-slate-600">·</span>
+            <span className="text-cyan-400">{nFdr} sobrevivem FDR</span>
+          </div>
+
+          <div className="overflow-x-auto mb-5">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 uppercase text-[10px]">
+                  <th className="text-left p-1.5">Modelo · Mercado</th>
+                  <th className="text-right p-1.5">Odd</th>
+                  <th className="text-right p-1.5">Edge</th>
+                  <th className="text-right p-1.5">n</th>
+                  <th className="text-right p-1.5">ROI médio [IC95%]</th>
+                  <th className="text-right p-1.5">ROI mediano [IC95%]</th>
+                  <th className="text-right p-1.5">DM</th>
+                  <th className="text-right p-1.5">Carteira cronológica</th>
+                  <th className="text-left p-1.5">Veredito</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50">
+                {linhas.map((r) => {
+                  const v = veredictoCelula(r);
+                  return (
+                    <tr key={r.id} className={r.confiavel ? '' : 'opacity-60'}>
+                      <td className="p-1.5 text-slate-300 font-semibold">{rotuloModelo(r.modelo)} <span className="text-slate-600">·</span> {MERCADO_ROTULO[r.mercado] || r.mercado}</td>
+                      <td className="p-1.5 text-right text-slate-300">{fmtOddFaixa(r)}</td>
+                      <td className="p-1.5 text-right text-slate-300">{fmtEdgeFaixa(r)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{r.n}</td>
+                      <td className={`p-1.5 text-right font-bold ${r.roi_medio_ic_inf > 0 ? 'text-emerald-400' : r.roi_medio >= 0 ? 'text-slate-300' : 'text-red-400'}`}>
+                        {fmtPctSinal(r.roi_medio)} <span className="text-slate-500 font-normal">[{fmtPctSinal(r.roi_medio_ic_inf)}, {fmtPctSinal(r.roi_medio_ic_sup)}]</span>
+                      </td>
+                      <td className={`p-1.5 text-right font-bold ${r.roi_mediano_ic_inf > 0 ? 'text-emerald-400' : r.roi_mediano >= 0 ? 'text-slate-300' : 'text-red-400'}`}>
+                        {fmtPctSinal(r.roi_mediano)} <span className="text-slate-500 font-normal">[{fmtPctSinal(r.roi_mediano_ic_inf)}, {fmtPctSinal(r.roi_mediano_ic_sup)}]</span>
+                      </td>
+                      <td className="p-1.5 text-right text-slate-400">{r.dm_stat >= 0 ? '+' : ''}{Number(r.dm_stat).toFixed(2)}</td>
+                      <td className="p-1.5 text-right text-slate-400">
+                        {Number(r.carteira_banca_final_x).toFixed(2)}x <span className="text-slate-600">(drawdown {(r.carteira_drawdown_maximo * 100).toFixed(0)}%, n={r.carteira_n_apostado})</span>
+                      </td>
+                      <td className="p-1.5"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${v.cor}`}>{v.texto}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">Evolução do ROI médio das células confiáveis (dia a dia)</span>
+            <EvolucaoConfiabilidadeEV celulasConfiaveis={celulasConfiaveis} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function ModelosStats() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -947,6 +1098,8 @@ export default function ModelosStats() {
       {erro && <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>}
 
       <ConfigPlayerElo />
+
+      <MatrizConfiabilidadeEV />
 
       {!carregando && grupos.length > 0 && (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap gap-3">
