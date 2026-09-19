@@ -1,0 +1,49 @@
+name: Cartões - EV+ por faixa de edge
+
+# Roda scripts/analisar_cartoes_edge_ev.py -- pergunta do usuário: mesmo
+# que o classificador de Cartões perca do mercado NO AGREGADO (PR #592,
+# log-loss pareado com IC95%), existe uma faixa de EDGE ALTO (só apostar
+# quando o modelo discorda muito do mercado) onde ele ganha dinheiro de
+# verdade?
+#
+# Diferente de validar_cartoes_walkforward_incremental.yml (log-loss,
+# mede qualidade de probabilidade contra a Pinnacle devigada): este script
+# usa a máquina de EV+ já estabelecida no projeto pra ROI real
+# (backtest_kelly.montar_apostas/simular_banca/bootstrap_ic95_roi, mesmo
+# critério de api/backtest-betting.js -- só conta como edge real quando o
+# LIMITE INFERIOR do IC95% do ROI fica acima de zero) contra a MELHOR ODD
+# REAL disponível (não a Pinnacle sozinha), segmentado por 4 limiares de
+# edge cumulativos (2%/4%/7%/10%, os mesmos valores de ev_minimo já
+# usados em FAIXAS_STAKING).
+#
+# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
+# sem cron. Não grava nada no Supabase, não muda nenhum modelo de produção
+# nem a estratégia versionada em model_betting_strategy.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  analisar-cartoes-edge-ev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar análise de EV+ por faixa de edge (Cartões)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/analisar_cartoes_edge_ev.py
