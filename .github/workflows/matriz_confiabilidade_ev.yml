@@ -1,0 +1,54 @@
+name: Matriz de confiabilidade odd x EV (Gols/Escanteios/Cartões)
+
+# Roda scripts/matriz_confiabilidade_ev.py -- pergunta do usuário: existe
+# uma combinação (faixa de odd, faixa de edge) onde um modelo bate o
+# mercado de forma repetível, mesmo perdendo no agregado? (ex.: "entre
+# 13% e 25% de EV pra odds de 3.1 a 5.7 é confiável")
+#
+# Cobre os 3 pares modelo/mercado com walk-forward incremental
+# out-of-sample + mercado real já validados neste projeto:
+# hibrido_gols_xg_v1 (1X2/over_under_2.5/btts), hibrido_corners_v1
+# (corners_over_under_9.5) e o classificador de Cartões (6 linhas). Monta
+# o dataset "Feature Stacked" (~90-110min) UMA VEZ e reaproveita pros 3,
+# em vez de 3 workflows separados.
+#
+# Correção de metodologia em relação a analisar_cartoes_edge_ev.yml (que
+# devolveu ROI implausível, +100% a +880%, quase certamente artefato de
+# poucas apostas de odd extrema dominando a média -- ver CONTEXTO_
+# PROJETO.md "PENDENTE DE INVESTIGAÇÃO 19/09"): esta versão (1) segmenta
+# por uma grade 2D odd x edge (faixas FECHADAS, não cumulativas) em vez
+# de só edge cumulativo; (2) exige o IC95% da MEDIANA do ROI também
+# positivo, além da média (critério "rigoroso", escolhido pelo usuário);
+# (3) amostra mínima por célula subiu pra 50.
+#
+# Ferramenta de análise/pesquisa, não de produção -- só workflow_dispatch,
+# sem cron. Não grava nada no Supabase, não muda nenhum modelo de
+# produção nem model_betting_strategy.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  matriz-confiabilidade-ev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar matriz de confiabilidade odd x EV
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/matriz_confiabilidade_ev.py
