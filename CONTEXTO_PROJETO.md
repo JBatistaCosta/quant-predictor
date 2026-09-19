@@ -276,6 +276,30 @@ Não é problema de pacing (1 liga, 1 tentativa) — o FBref reconhece a faixa d
 
 ## ⏸️ PENDÊNCIA IMEDIATA (retomar daqui na próxima sessão)
 
+**🔒 DECISÃO FINAL (18/09) — Cartões NÃO tem edge de aposta contra o mercado real (Pinnacle) — mesmo padrão null de gols/escanteios/blend. A capacidade preditiva intrínseca (entrada anterior, vs. climatologia) é real, mas não supera o mercado. Sem pendência aberta — nada a retomar aqui a menos que o usuário peça.** Pedido do usuário: o mercado real de Cartões existe (`odds_market.market='bookings_over_under_full_time_{linha}'`, confirmado com Pinnacle/bet365/Betano — correção do usuário depois de eu ter checado só faltas) — então dá pra medir edge de aposta de verdade, não só capacidade preditiva contra climatologia.
+
+- **Metodologia** (`scripts/validar_cartoes_walkforward_incremental.py`, run [35402195331](https://github.com/JBatistaCosta/quant-predictor/actions/runs/35402195331)): mesmo walk-forward mensal de janela expansiva (Random Forest, sem fatia de calibração) combinado com a comparação por snapshot de mercado (abertura/fechamento via Pinnacle, devig Odds Ratio) já usada nos walk-forwards de gols/escanteios. Pré-requisito corrigido nesta mesma frente: `backtest_kelly.MERCADOS` nunca tinha entradas para `"cartoes_over_under_{linha}"` (código de PRs #462/#463 nunca executado em produção, batia `KeyError`) — adicionado o mesmo loop já usado pra escanteios.
+- **Cobertura de odds bem mais estreita que gols/escanteios**: Pinnacle não cobre a linha 1.5 (só 3 partidas em abertura, 23 em fechamento — pulada inteira) e as demais linhas ficam em n=41-346 por snapshot (long e não n~7.928 do walk-forward interno, que é contra climatologia sem essa restrição).
+- **Resultado — toda linha conclusiva tem MERCADO SUPERIOR; nenhuma tem sinal a favor do modelo** (diferença de log-loss modelo−mercado, margem de não-inferioridade 0,0100):
+
+  | Linha | Snapshot | n | Diferença | IC95% | Veredito |
+  |---|---|---|---|---|---|
+  | 2.5 | abertura | 54 | +0,0003 | [-0,0586, +0,0602] | inconclusivo |
+  | 2.5 | fechamento | 118 | +0,0955 | [+0,0327, +0,1643] | **mercado superior** |
+  | 3.5 | abertura | 122 | +0,0690 | [+0,0083, +0,1300] | **mercado superior** |
+  | 3.5 | fechamento | 346 | +0,0480 | [+0,0094, +0,0877] | **mercado superior** |
+  | 4.5 | abertura | 128 | +0,0654 | [-0,0084, +0,1339] | inconclusivo |
+  | 4.5 | fechamento | 327 | +0,0839 | [+0,0430, +0,1279] | **mercado superior** |
+  | 5.5 | abertura | 53 | +0,1076 | [-0,0086, +0,2244] | inconclusivo |
+  | 5.5 | fechamento | 185 | +0,1005 | [+0,0376, +0,1696] | **mercado superior** |
+  | 6.5 | fechamento | 41 | +0,2111 | [+0,0270, +0,4190] | **mercado superior** (n pequeno) |
+
+  Nas 3 linhas "inconclusivo" (todas de abertura, n≤128) o ponto estimado também é positivo (mercado melhor) — o IC só cruza a margem de não-inferioridade por falta de amostra, nunca sugere vantagem do modelo.
+- **Leitura**: o resultado de capacidade preditiva vs. climatologia (entrada acima) segue válido — o modelo aprende algo real sobre a forma/árbitro. Mas o mercado de Cartões já precifica esse mesmo sinal (e mais) melhor do que o classificador consegue replicar — mesmo padrão já visto em gols (`hibrido_gols_xg_v1`/`v2_estado`), escanteios (`hibrido_corners_v1`) e no blend modelo+mercado: nenhuma frente testada até agora bate a Pinnacle com significância e amostra grande. Reforça a leitura geral do projeto: o valor destes modelos está em previsão/análise (probabilidade calibrada, painel `/modelos`), não em EV+ de aposta contra este mercado específico.
+- Script/workflow ficam no repo, prontos pra reuso se a cobertura de odds crescer (mais temporadas de 2026 acumulando) ou se surgir uma feature nova que valha reconferir.
+
+---
+
 **🔒 DECISÃO FINAL (18/09) — Cartões e Faltas TÊM capacidade preditiva real, estatisticamente significativa nas 12 linhas testadas (6 Cartões + 6 Faltas), incluindo Faltas, que nunca tinha sido validada com IC95%. Sem pendência aberta desta linha — nada a retomar aqui a menos que o usuário peça.** Pedido do usuário: medir a capacidade de predição dos classificadores de Cartões/Faltas contra os EVENTOS REAIS (não o mercado, já que Faltas nunca teve mercado — confirmado via SQL, nenhuma linha "foul"/"falta" em `odds_market`) com IC95%, via walk-forward (não holdout único).
 
 - **Metodologia** (`scripts/validar_classificador_walkforward_incremental.py`, versionado, rodado via `workflow_dispatch`, run [35389689163](https://github.com/JBatistaCosta/quant-predictor/actions/runs/35389689163)): mesma máquina de bootstrap pareado dos walk-forwards de gols/escanteios (`backtest_kelly.comparar_pareado_com_mercado`), trocando o braço "mercado" por "climatologia" (taxa histórica de over do treino até aquele ponto, sem nenhuma feature — baseline sem informação). Random Forest via sklearn (mesmos hiperparâmetros/features de `custom_model_configs` reais), janela expansiva, passo mensal, sem fatia de calibração (classificador não tem parâmetro estrutural pra calibrar depois do fit). Dataset: 21.613 partidas (2021-04-07 a 2026-09-18); todas as 12 linhas testadas com o mesmo N pareado, n=7.928.
