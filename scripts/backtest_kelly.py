@@ -49,6 +49,7 @@ from itertools import product
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 import calibracao
 import dados_historicos
@@ -1433,6 +1434,36 @@ def _perdas_por_partida(
     return np.array(perdas_log), np.array(briers)
 
 
+def diebold_mariano_test(perdas_a: np.ndarray, perdas_b: np.ndarray, lag: int | None = None) -> tuple[float, float]:
+    """Teste de Diebold-Mariano (1995) pra acurácia preditiva pareada:
+    testa se a diferença média `d_t = perda_a - perda_b` é
+    significativamente diferente de zero, usando variância de longo
+    prazo robusta a autocorrelação (Newey-West/kernel de Bartlett) --
+    diferente do bootstrap pareado de `comparar_pareado_com_mercado`
+    (que trata cada reamostra como i.i.d.), relevante aqui porque passos
+    vizinhos de um walk-forward mensal podem compartilhar erro
+    sistemático (ex.: uma liga inteira difícil num mês), o que violaria
+    a suposição de i.i.d. de um teste mais simples. Lag de Newey-West
+    default segue a regra usual `floor(4*(n/100)^(2/9))` quando não
+    informado. Devolve `(estatistica_dm, p_valor)`, teste bicaudal
+    (H0: mesma acurácia esperada), comparado contra a Normal padrão."""
+    d = np.asarray(perdas_a) - np.asarray(perdas_b)
+    n = len(d)
+    dbar = float(d.mean())
+    if lag is None:
+        lag = max(1, int(np.floor(4 * (n / 100) ** (2 / 9))))
+    d_centrado = d - dbar
+    variancia_long_run = float(np.dot(d_centrado, d_centrado)) / n
+    for k in range(1, min(lag, n - 1) + 1):
+        gamma_k = float(np.dot(d_centrado[k:], d_centrado[:-k])) / n
+        peso = 1 - k / (lag + 1)  # kernel de Bartlett
+        variancia_long_run += 2 * peso * gamma_k
+    variancia_long_run = max(variancia_long_run, 1e-12)
+    dm_stat = dbar / np.sqrt(variancia_long_run / n)
+    p_valor = float(2 * (1 - norm.cdf(abs(dm_stat))))
+    return float(dm_stat), p_valor
+
+
 def comparar_pareado_com_mercado(
     perdas_modelo: np.ndarray,
     perdas_mercado: np.ndarray,
@@ -1444,7 +1475,10 @@ def comparar_pareado_com_mercado(
     partida a partida -- a MESMA reamostra de partidas é usada nos dois
     lados a cada iteração, então ruído compartilhado (jogos "difíceis" pros
     dois) se cancela, deixando o teste mais sensível que dois IC
-    independentes comparados visualmente.
+    independentes comparados visualmente. Também reporta o teste de
+    Diebold-Mariano (`diebold_mariano_test`) como segunda evidência,
+    robusta a autocorrelação entre partidas vizinhas no tempo -- os dois
+    testes concordando é evidência mais forte que qualquer um sozinho.
 
     - `modelo_supera_mercado`: limite SUPERIOR do IC < 0 (modelo
       confiavelmente MELHOR, perda menor).
@@ -1460,6 +1494,7 @@ def comparar_pareado_com_mercado(
     n = len(diffs)
     diffs_bootstrap = [rng.choice(diffs, size=n, replace=True).mean() for _ in range(n_reamostragens)]
     ic_inferior, ic_superior = np.percentile(diffs_bootstrap, [2.5, 97.5])
+    dm_stat, dm_p_valor = diebold_mariano_test(perdas_modelo, perdas_mercado)
     return {
         "n": n,
         "diferenca_media": float(diffs.mean()),
@@ -1468,6 +1503,8 @@ def comparar_pareado_com_mercado(
         "modelo_supera_mercado": bool(ic_superior < 0),
         "mercado_supera_modelo": bool(ic_inferior > 0),
         "nao_inferior": bool(ic_superior < margem),
+        "dm_stat": dm_stat,
+        "dm_p_valor": dm_p_valor,
     }
 
 
@@ -1489,8 +1526,9 @@ def imprimir_relatorio_pareado(linhas_pareadas: list[dict], margem: float = MARG
         else:
             veredito = "INCONCLUSIVO (IC cruza a margem)"
         logger.info(
-            "%-34s | %4d partidas | diferença %+7.4f | IC95%% [%+7.4f, %+7.4f] | %s",
+            "%-34s | %4d partidas | diferença %+7.4f | IC95%% [%+7.4f, %+7.4f] | %s | DM=%+.2f (p=%.4f)",
             r["nome"], c["n"], c["diferenca_media"], c["ic95_inferior"], c["ic95_superior"], veredito,
+            c.get("dm_stat", float("nan")), c.get("dm_p_valor", float("nan")),
         )
     logger.info("=" * 86)
 

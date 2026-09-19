@@ -28,13 +28,36 @@ bootstrap percentil. Correções aplicadas aqui:
      odd alta; se só a média passa, é o mesmo sintoma do artefato
      anterior) -- decisão do usuário, opção "rigorosa".
   3. Amostra mínima por célula subiu de 20/30 pra 50 apostas.
-Mesmo assim, qualquer célula "confiável" que sair daqui deve ser tratada
-como HIPÓTESE a testar com mais dado (o cron acumulando mais partidas),
-não como conclusão definitiva -- é uma grade de ~9-20 células por
-modelo/mercado, e mesmo com bootstrap, testar múltiplas células ao mesmo
-tempo aumenta a chance de achar uma "significativa" por acaso puro
-(problema de comparações múltiplas, não corrigido aqui de propósito --
-resultado é exploratório, não confirmatório).
+
+REFORÇOS ESTATÍSTICOS ADICIONADOS (pedido do usuário, segunda rodada):
+  4. Teste de Diebold-Mariano (`backtest_kelly.diebold_mariano_test`) como
+     segunda evidência por célula, além do bootstrap -- usa variância de
+     longo prazo (Newey-West/Bartlett) em vez de tratar cada reamostra
+     como i.i.d., o que importa aqui porque apostas vizinhas no tempo (ex.
+     mesma rodada de liga) podem compartilhar erro sistemático. Aplicado
+     testando a série de ROI contra zero (matematicamente idêntico a
+     comparar duas séries de "perda", com perda_b=0).
+  5. Correção de Bonferroni E de Benjamini-Hochberg (FDR) sobre o
+     p-valor de cada célula avaliada (gate = maior entre o p-valor da
+     média e da mediana) -- corrige exatamente o problema de comparações
+     múltiplas descrito abaixo. Uma célula só é "sobrevive à correção"
+     quando passa em AMBAS (Bonferroni é mais conservador que FDR).
+  6. Carteira simulada CRONOLÓGICA (`simular_carteira_cronologica`,
+     mesmo espírito de "validado_carteira" já usado neste projeto pra
+     escanteios/cartões) pra cada célula -- diferente do ROI por aposta
+     de banca fixa (`backtest_kelly.simular_banca`, não-composto, pensado
+     só pra comparar grupos), aqui a banca COMPÕE de verdade em ordem
+     cronológica (stake = fração de Kelly da banca ATUAL) -- é o teste
+     "se eu tivesse apostado isso em ordem, o que teria acontecido com
+     meu dinheiro", incluindo drawdown máximo. Rodado em TODAS as
+     células (não só as "confiáveis") pra dar uma base de comparação
+     direta contra os grupos não confiáveis.
+
+Mesmo com os reforços acima, qualquer célula "confiável" que sobreviva
+às correções deve ser tratada como HIPÓTESE a testar com mais dado (o
+cron acumulando mais partidas), não como conclusão definitiva -- a
+carteira cronológica em particular tem variância alta com os tamanhos de
+amostra típicos aqui (99-500 apostas).
 
 FAIXAS DE ODD: as mesmas de `backtest_kelly.FAIXAS_STAKING` (1.30-2.50/
 2.50-4.00/4.00-8.00/8.00+) -- já é a categorização de risco usada em
@@ -100,31 +123,71 @@ def obter_league_ids_escopo(supabase: Client) -> list[int]:
     return [l["id"] for l in linhas]
 
 
-def bootstrap_ic95_estatistica(valores: np.ndarray, fn_estat, n_reamostragens: int = N_REAMOSTRAGENS, seed: int = SEED) -> tuple[float, float, float]:
+def bootstrap_ic95_estatistica(valores: np.ndarray, fn_estat, n_reamostragens: int = N_REAMOSTRAGENS, seed: int = SEED) -> tuple[float, float, float, float]:
     """Generaliza `backtest_kelly.bootstrap_ic95_roi` pra qualquer
-    estatística (média OU mediana) -- precisamos das duas."""
+    estatística (média OU mediana) -- precisamos das duas. Devolve
+    também um p-valor bootstrap UNICAUDAL pra H1: estatística > 0
+    (proporção de reamostras que saem <= 0) -- usado depois pra
+    Bonferroni/FDR."""
     if len(valores) == 0:
-        return 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 1.0
     estat = float(fn_estat(valores))
     rng = np.random.default_rng(seed)
-    reamostras = [float(fn_estat(rng.choice(valores, size=len(valores), replace=True))) for _ in range(n_reamostragens)]
+    reamostras = np.array([float(fn_estat(rng.choice(valores, size=len(valores), replace=True))) for _ in range(n_reamostragens)])
     lo, hi = np.percentile(reamostras, [2.5, 97.5])
-    return estat, float(lo), float(hi)
+    p_valor = float(np.mean(reamostras <= 0))
+    return estat, float(lo), float(hi), p_valor
+
+
+def simular_carteira_cronologica(apostas_ordenadas: list[dict], banca_inicial: float = 1.0) -> dict:
+    """Carteira simulada CRONOLÓGICA (mesmo espírito de 'validado_carteira'
+    já usado neste projeto pra escanteios/cartões, ver CONTEXTO_
+    PROJETO.md) -- diferente de `backtest_kelly.simular_banca` (ROI por
+    aposta, banca FIXA de 1 unidade, não-composto, pensado pra comparar
+    grupos), aqui a banca COMPÕE de verdade ao longo do tempo (stake =
+    fração de Kelly da banca ATUAL) -- é o teste real de "se eu tivesse
+    apostado isso em ordem cronológica, o que teria acontecido com meu
+    dinheiro". `apostas_ordenadas` precisa já vir ordenada por
+    `match_date` -- esta função não ordena de novo."""
+    banca = banca_inicial
+    pico = banca_inicial
+    drawdown_maximo = 0.0
+    n_apostado = 0
+    for aposta in apostas_ordenadas:
+        stake_fracao = bk.kelly_fracionario(aposta["prob_modelo"], aposta["odd"])
+        if stake_fracao <= 0:
+            continue
+        stake = stake_fracao * banca
+        banca += stake * (aposta["odd"] - 1) if aposta["acertou"] else -stake
+        banca = max(banca, 0.0)
+        n_apostado += 1
+        pico = max(pico, banca)
+        if pico > 0:
+            drawdown_maximo = max(drawdown_maximo, (pico - banca) / pico)
+    return {"banca_final_x": banca / banca_inicial, "drawdown_maximo": drawdown_maximo, "n_apostado": n_apostado}
 
 
 def avaliar_celula(apostas_bucket: list[dict], modelo: str, mercado: str, faixa_odd: tuple[float, float], faixa_edge: tuple[float, float]) -> dict | None:
     rois = np.array(bk.simular_banca(apostas_bucket))
     if len(rois) < MIN_N_CELULA:
         return None
-    roi_medio, media_lo, media_hi = bootstrap_ic95_estatistica(rois, np.mean)
-    roi_mediano, mediana_lo, mediana_hi = bootstrap_ic95_estatistica(rois, np.median)
+    roi_medio, media_lo, media_hi, p_media = bootstrap_ic95_estatistica(rois, np.mean)
+    roi_mediano, mediana_lo, mediana_hi, p_mediana = bootstrap_ic95_estatistica(rois, np.median)
     confiavel = media_lo > 0 and mediana_lo > 0
+    dm_stat, dm_p_valor = bk.diebold_mariano_test(rois, np.zeros_like(rois))
+
+    apostas_ordenadas = sorted(apostas_bucket, key=lambda a: a["match_date"])
+    carteira = simular_carteira_cronologica(apostas_ordenadas)
+
     return {
         "modelo": modelo, "mercado": mercado, "odd_min": faixa_odd[0], "odd_max": faixa_odd[1],
         "edge_min": faixa_edge[0], "edge_max": faixa_edge[1], "n": len(rois),
-        "roi_medio": roi_medio, "media_ic95": (media_lo, media_hi),
-        "roi_mediano": roi_mediano, "mediana_ic95": (mediana_lo, mediana_hi),
+        "roi_medio": roi_medio, "media_ic95": (media_lo, media_hi), "p_media": p_media,
+        "roi_mediano": roi_mediano, "mediana_ic95": (mediana_lo, mediana_hi), "p_mediana": p_mediana,
         "confiavel": confiavel,
+        "dm_stat": dm_stat, "dm_p_valor": dm_p_valor,
+        "p_celula": max(p_media, p_mediana),
+        "carteira": carteira,
     }
 
 
@@ -143,6 +206,28 @@ def avaliar_matriz(apostas: list[dict], modelo: str, mercado: str) -> list[dict]
     return resultados
 
 
+def corrigir_multiplas_comparacoes(resultados: list[dict], alpha: float = 0.05) -> None:
+    """Aplica Bonferroni E Benjamini-Hochberg (FDR) sobre `p_celula` de
+    cada resultado, em memória (adiciona `bonferroni_significativo`/
+    `fdr_significativo` a cada dict). Bonferroni: rejeita só se
+    `p <= alpha/m` (controla a taxa de erro familiar, conservador).
+    Benjamini-Hochberg: ordena os p-valores, acha o maior k tal que
+    `p_(k) <= (k/m)*alpha`, rejeita todos até k (controla a taxa de falsas
+    descobertas, menos conservador, mais poder estatístico)."""
+    m = len(resultados)
+    if m == 0:
+        return
+    limiar_bonferroni = alpha / m
+    ordenados = sorted(resultados, key=lambda r: r["p_celula"])
+    maior_k_fdr = 0
+    for k, r in enumerate(ordenados, start=1):
+        if r["p_celula"] <= (k / m) * alpha:
+            maior_k_fdr = k
+    for k, r in enumerate(ordenados, start=1):
+        r["bonferroni_significativo"] = r["p_celula"] <= limiar_bonferroni
+        r["fdr_significativo"] = k <= maior_k_fdr
+
+
 # =============================================================================
 # Coleta de apostas por modelo/mercado (reaproveita cada walk-forward)
 # =============================================================================
@@ -154,6 +239,7 @@ def coletar_apostas_gols(supabase: Client, dataset: pd.DataFrame) -> list[dict]:
         return []
 
     resultados_gols = dict(zip(dataset["match_id"], zip(dataset["home_goals"], dataset["away_goals"])))
+    datas_por_match = dict(zip(dataset["match_id"], dataset["match_date"]))
     match_ids = list(previsoes.keys())
     apostas_total = []
     for mercado in MERCADOS_GOLS:
@@ -168,7 +254,7 @@ def coletar_apostas_gols(supabase: Client, dataset: pd.DataFrame) -> list[dict]:
             resultados_reais[match_id] = bk._resultado_codigo_mercado(hg, ag, mercado)
         apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, mercado=mercado)
         logger.info("[%s, %s]: %d apostas com edge >= %.0f%% e odd real disponível.", MODELO_GOLS, mercado, len(apostas), bk.EDGE_MINIMO * 100)
-        apostas_total.extend([{**a, "mercado": mercado} for a in apostas])
+        apostas_total.extend([{**a, "mercado": mercado, "match_date": datas_por_match[a["match_id"]]} for a in apostas])
     return apostas_total
 
 
@@ -185,6 +271,7 @@ def coletar_apostas_escanteios(supabase: Client, dataset: pd.DataFrame) -> list[
         return []
 
     resultados_reais_total = dict(zip(dataset["match_id"], dataset[wf_corners.ALVO_TOTAL]))
+    datas_por_match = dict(zip(dataset["match_id"], dataset["match_date"]))
     match_ids = list(previsoes.keys())
     predicoes, resultados_reais = {}, {}
     for match_id, p in previsoes.items():
@@ -202,7 +289,7 @@ def coletar_apostas_escanteios(supabase: Client, dataset: pd.DataFrame) -> list[
     apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, mercado=MERCADO_ESCANTEIOS)
     logger.info("[%s, %s]: %d apostas com edge >= %.0f%% e odd real disponível.",
                 wf_corners.MODEL_NAME, MERCADO_ESCANTEIOS, len(apostas), bk.EDGE_MINIMO * 100)
-    return [{**a, "mercado": MERCADO_ESCANTEIOS} for a in apostas]
+    return [{**a, "mercado": MERCADO_ESCANTEIOS, "match_date": datas_por_match[a["match_id"]]} for a in apostas]
 
 
 def coletar_apostas_cartoes(supabase: Client, dataset: pd.DataFrame) -> list[dict]:
@@ -219,32 +306,47 @@ def coletar_apostas_cartoes(supabase: Client, dataset: pd.DataFrame) -> list[dic
         match_ids = list(previsoes.keys())
         odds_reais = bk.carregar_melhores_odds_fechamento(supabase, match_ids, mercado)
         resultados_reais = dict(zip(dataset["match_id"].astype(int), dataset[coluna_alvo]))
+        datas_por_match = dict(zip(dataset["match_id"].astype(int), dataset["match_date"]))
         predicoes = {mid: {"prob_over": p, "prob_under": 1 - p} for mid, p in previsoes.items()}
         apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, mercado=mercado)
         logger.info("[cartoes_total %.1f]: %d apostas com edge >= %.0f%% e odd real disponível.", linha, len(apostas), bk.EDGE_MINIMO * 100)
-        apostas_total.extend([{**a, "mercado": mercado} for a in apostas])
+        apostas_total.extend([{**a, "mercado": mercado, "match_date": datas_por_match[a["match_id"]]} for a in apostas])
     return apostas_total
 
 
 def imprimir_matriz(resultados: list[dict]) -> None:
     resultados_ordenados = sorted(resultados, key=lambda r: r["media_ic95"][0], reverse=True)
     n_confiaveis = sum(1 for r in resultados if r["confiavel"])
-    logger.info("=" * 110)
+    n_bonferroni = sum(1 for r in resultados if r["confiavel"] and r["bonferroni_significativo"])
+    n_fdr = sum(1 for r in resultados if r["confiavel"] and r["fdr_significativo"])
+    logger.info("=" * 150)
     logger.info("MATRIZ DE CONFIABILIDADE ODD x EDGE (critério rigoroso: IC95%% da média E da mediana > 0, n>=%d)", MIN_N_CELULA)
-    logger.info("%d de %d células avaliadas passam no critério rigoroso.", n_confiaveis, len(resultados))
-    logger.info("=" * 110)
+    logger.info("%d de %d células passam no critério rigoroso -- dessas, %d sobrevivem a Bonferroni e %d a Benjamini-Hochberg (FDR).",
+                n_confiaveis, len(resultados), n_bonferroni, n_fdr)
+    logger.info("=" * 150)
     for r in resultados_ordenados:
         edge_max_str = f"{r['edge_max']*100:.0f}%" if r["edge_max"] != float("inf") else "inf"
         odd_max_str = f"{r['odd_max']:.2f}" if r["odd_max"] != float("inf") else "inf"
-        veredito = "CONFIÁVEL (média E mediana IC95%>0)" if r["confiavel"] else "não confiável"
+        if r["confiavel"]:
+            if r["bonferroni_significativo"]:
+                veredito = "CONFIÁVEL + sobrevive Bonferroni"
+            elif r["fdr_significativo"]:
+                veredito = "CONFIÁVEL + sobrevive FDR (não Bonferroni)"
+            else:
+                veredito = "CONFIÁVEL mas NÃO sobrevive à correção múltipla"
+        else:
+            veredito = "não confiável"
+        c = r["carteira"]
         logger.info(
-            "%s [%s] | odd [%.2f,%s) | edge [%.0f%%,%s) | n=%4d | ROI médio %+7.1f%% IC95%%[%+7.1f%%,%+7.1f%%] | ROI mediano %+7.1f%% IC95%%[%+7.1f%%,%+7.1f%%] | %s",
+            "%s [%s] | odd [%.2f,%s) | edge [%.0f%%,%s) | n=%4d | ROI médio %+7.1f%% IC95%%[%+7.1f%%,%+7.1f%%] p=%.4f | "
+            "ROI mediano %+7.1f%% IC95%%[%+7.1f%%,%+7.1f%%] p=%.4f | DM=%+.2f | carteira: banca final %.2fx, drawdown máx %.1f%% (n=%d) | %s",
             r["modelo"], r["mercado"], r["odd_min"], odd_max_str, r["edge_min"] * 100, edge_max_str, r["n"],
-            r["roi_medio"] * 100, r["media_ic95"][0] * 100, r["media_ic95"][1] * 100,
-            r["roi_mediano"] * 100, r["mediana_ic95"][0] * 100, r["mediana_ic95"][1] * 100,
+            r["roi_medio"] * 100, r["media_ic95"][0] * 100, r["media_ic95"][1] * 100, r["p_media"],
+            r["roi_mediano"] * 100, r["mediana_ic95"][0] * 100, r["mediana_ic95"][1] * 100, r["p_mediana"],
+            r["dm_stat"], c["banca_final_x"], c["drawdown_maximo"] * 100, c["n_apostado"],
             veredito,
         )
-    logger.info("=" * 110)
+    logger.info("=" * 150)
 
 
 def main() -> None:
@@ -275,6 +377,7 @@ def main() -> None:
         mercado = f"cartoes_over_under_{linha}"
         resultados_total.extend(avaliar_matriz([a for a in apostas_cartoes if a["mercado"] == mercado], "cartoes_rf", mercado))
 
+    corrigir_multiplas_comparacoes(resultados_total)
     imprimir_matriz(resultados_total)
 
 
