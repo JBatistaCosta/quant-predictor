@@ -5,12 +5,14 @@ name: Matriz de confiabilidade odd x EV (Gols/Escanteios/Cartões)
 # mercado de forma repetível, mesmo perdendo no agregado? (ex.: "entre
 # 13% e 25% de EV pra odds de 3.1 a 5.7 é confiável")
 #
-# Cobre os 3 pares modelo/mercado com walk-forward incremental
-# out-of-sample + mercado real já validados neste projeto:
-# hibrido_gols_xg_v1 (1X2/over_under_2.5/btts), hibrido_corners_v1
-# (corners_over_under_9.5) e o classificador de Cartões (6 linhas). Monta
-# o dataset "Feature Stacked" (~90-110min) UMA VEZ e reaproveita pros 3,
-# em vez de 3 workflows separados.
+# Cobre os 4 pares modelo/mercado com previsão out-of-sample + mercado
+# real já validados neste projeto: hibrido_gols_xg_v1 (1X2/over_under_2.5/
+# btts), hibrido_corners_v1 (corners_over_under_9.5), o classificador de
+# Cartões (6 linhas) e catboost_v9 (1X2/over_under_2.5 -- pedido do
+# usuário depois da auditoria dos modelos "v9", CONTEXTO_PROJETO.md
+# 16-17/09). Monta o dataset "Feature Stacked" (~90-110min) UMA VEZ e
+# reaproveita pros 3 primeiros; catboost_v9 já tem previsão persistida em
+# model_predictions, não precisa desse dataset.
 #
 # Correção de metodologia em relação a analisar_cartoes_edge_ev.yml (que
 # devolveu ROI implausível, +100% a +880%, quase certamente artefato de
