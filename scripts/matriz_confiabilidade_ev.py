@@ -4,15 +4,22 @@ combinação (faixa de odd, faixa de edge) onde um modelo bate o mercado de
 forma repetível, mesmo que o modelo perca no agregado? (ex.: "entre 13% e
 25% de EV pra odds de 3.1 a 5.7 é confiável")
 
-Roda essa análise pros 3 pares modelo/mercado que já têm walk-forward
-incremental out-of-sample + mercado real com odds suficientes neste
-projeto: `hibrido_gols_xg_v1` (1X2/over_under_2.5/btts), `hibrido_
-corners_v1` (corners_over_under_9.5) e o classificador de Cartões (6
-linhas). Reaproveita o loop de treino/previsão de cada um por import
-direto (`validar_hibrido_walkforward_incremental.py`/`validar_corners_
-walkforward_incremental.py`/`validar_cartoes_walkforward_incremental.py`)
--- monta o dataset "Feature Stacked" (a parte cara, ~90-110min) UMA VEZ só
-e reaproveita pros 3, em vez de rodar 3 workflows separados.
+Roda essa análise pros 4 pares modelo/mercado que já têm previsão
+out-of-sample + mercado real com odds suficientes neste projeto:
+`hibrido_gols_xg_v1` (1X2/over_under_2.5/btts), `hibrido_corners_v1`
+(corners_over_under_9.5), o classificador de Cartões (6 linhas) e
+`catboost_v9` (1X2/over_under_2.5 -- pedido do usuário depois da auditoria
+dos modelos "v9", CONTEXTO_PROJETO.md 16-17/09: melhor algoritmo individual
+entre os classificadores de árvore, mas nunca testado com edge real contra
+o mercado). Reaproveita o loop de treino/previsão de cada um dos 3
+primeiros por import direto (`validar_hibrido_walkforward_incremental.py`/
+`validar_corners_walkforward_incremental.py`/`validar_cartoes_
+walkforward_incremental.py`) -- monta o dataset "Feature Stacked" (a parte
+cara, ~90-110min) UMA VEZ só e reaproveita pros 3, em vez de rodar 3
+workflows separados. `catboost_v9` é diferente: já tem previsão
+out-of-sample persistida em `model_predictions` (walk-forward CV rodado
+uma vez em `custom_model_configs`), não precisa desse dataset nem de
+retreino aqui -- só lê o que já existe (`coletar_apostas_catboost_v9`).
 
 LIÇÃO DA RODADA ANTERIOR (`analisar_cartoes_edge_ev.py`, ver CONTEXTO_
 PROJETO.md "PENDENTE DE INVESTIGAÇÃO 19/09"): segmentar só por EDGE
@@ -112,6 +119,17 @@ SEED = bk.SEED
 MERCADOS_GOLS = ["1X2", "over_under_2.5", "btts"]
 MODELO_GOLS = "hibrido_gols_xg_v1"
 MERCADO_ESCANTEIOS = "corners_over_under_9.5"
+
+# catboost_v9 (auditoria "v9", CONTEXTO_PROJETO.md 16-17/09): melhor
+# algoritmo individual entre os classificadores de árvore treinados com
+# walk-forward CV em `custom_model_configs`, mas nunca validado com edge
+# real contra o mercado -- pedido do usuário pra incluir na matriz de
+# confiabilidade e conferir de vez. BTTS fica de fora: a cobertura de odds
+# de BTTS da Pinnacle só começa em jan/2026, sem sobreposição com o
+# período coberto pelas previsões (jan/2023-dez/2025) -- incluir daria
+# zero apostas sempre, achado já documentado.
+MODELO_CATBOOST_V9 = "catboost_v9"
+MERCADOS_CATBOOST_V9 = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
 
 # Sentinelas pra persistir as faixas "sem teto" (última de cada grade) sem
 # usar NULL -- ver comentário da coluna na migration.
@@ -326,6 +344,56 @@ def coletar_apostas_cartoes(supabase: Client, dataset: pd.DataFrame) -> list[dic
     return apostas_total
 
 
+def coletar_apostas_catboost_v9(supabase: Client) -> list[dict]:
+    """Diferente de gols/escanteios/cartões, `catboost_v9` NÃO precisa de
+    walk-forward reconstruído aqui -- as previsões já são out-of-sample de
+    verdade (walk-forward CV rodado uma vez em `custom_model_configs`,
+    persistido em `model_predictions`). Só lê o que já existe, cruza com o
+    resultado real (`matches.home_goals/away_goals`) e a odd real de
+    fechamento -- mesmo funil de `montar_apostas` dos outros modelos.
+
+    `market` grava minúsculo ('1x2') nesta família, diferente do resto do
+    projeto ('1X2') -- MERCADOS_CATBOOST_V9 normaliza na hora de montar
+    resultado/pedir odds."""
+    apostas_total = []
+    for mercado_bruto, mercado in MERCADOS_CATBOOST_V9.items():
+        linhas = dh._paginar(
+            lambda inicio, fim, mb=mercado_bruto: supabase.table("model_predictions")
+            .select("match_id, selection, probability")
+            .eq("model_name", MODELO_CATBOOST_V9)
+            .eq("market", mb)
+            .range(inicio, fim)
+        )
+        if not linhas:
+            continue
+        previsoes: dict[int, dict[str, float]] = {}
+        for linha in linhas:
+            previsoes.setdefault(linha["match_id"], {})[f"prob_{linha['selection']}"] = linha["probability"]
+        match_ids = list(previsoes.keys())
+
+        linhas_matches = dh._paginar_por_lotes_de_id(
+            lambda lote, inicio, fim: supabase.table("matches")
+            .select("id, home_goals, away_goals, match_date")
+            .in_("id", lote)
+            .range(inicio, fim),
+            match_ids,
+        )
+        resultados_reais, datas_por_match = {}, {}
+        for linha in linhas_matches:
+            hg, ag = linha["home_goals"], linha["away_goals"]
+            if hg is None or ag is None:
+                continue
+            resultados_reais[linha["id"]] = bk._resultado_codigo_mercado(hg, ag, mercado)
+            datas_por_match[linha["id"]] = linha["match_date"]
+
+        odds_reais = bk.carregar_melhores_odds_fechamento(supabase, match_ids, mercado)
+        apostas = bk.montar_apostas(previsoes, odds_reais, resultados_reais, mercado=mercado)
+        logger.info("[%s, %s]: %d apostas com edge >= %.0f%% e odd real disponível.",
+                     MODELO_CATBOOST_V9, mercado, len(apostas), bk.EDGE_MINIMO * 100)
+        apostas_total.extend([{**a, "mercado": mercado, "match_date": datas_por_match[a["match_id"]]} for a in apostas if a["match_id"] in datas_por_match])
+    return apostas_total
+
+
 def persistir_resultados(supabase: Client, resultados: list[dict], data_execucao: str) -> None:
     """Upsert da matriz inteira (não só as células confiáveis, mesma lógica
     de `imprimir_matriz`) em `matriz_confiabilidade_ev_historico` -- é isso
@@ -424,6 +492,11 @@ def main() -> None:
     for linha in dh.LINHAS_CARTOES_OU:
         mercado = f"cartoes_over_under_{linha}"
         resultados_total.extend(avaliar_matriz([a for a in apostas_cartoes if a["mercado"] == mercado], "cartoes_rf", mercado))
+
+    logger.info("--- %s (auditoria v9) ---", MODELO_CATBOOST_V9)
+    apostas_catboost_v9 = coletar_apostas_catboost_v9(supabase)
+    for mercado in MERCADOS_CATBOOST_V9.values():
+        resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9 if a["mercado"] == mercado], MODELO_CATBOOST_V9, mercado))
 
     corrigir_multiplas_comparacoes(resultados_total)
     data_execucao = pd.Timestamp.now(tz="UTC").date().isoformat()
