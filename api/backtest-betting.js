@@ -589,15 +589,30 @@ export default async function handler(req, res) {
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
     // match_id+market que media_mercado NÃO cobre (evita duplicar/preferir
     // 1 casa só quando já existe uma média melhor pros 3 mercados antigos).
+    //
+    // `comFonte` marca cada linha com QUAL casa de aposta (ou média
+    // sintética) forneceu a odd -- pedido do usuário pra mostrar isso em
+    // "Sugestões de Valor". Como cada fallback abaixo filtra por
+    // match_id+market inteiro (nunca mistura fonte dentro do mesmo par,
+    // ver os `Set`s logo abaixo), toda seleção de um mesmo match_id+market
+    // sempre vem da MESMA fonte -- por isso um único rótulo por linha já
+    // basta, sem precisar de um mapa por seleção.
+    const comFonte = (linhas, fonte) => linhas.map((r) => ({ ...r, fonte }));
     const chavesComMediaMercado = new Set(oddsRowsAntigas.map((r) => `${r.match_id}__${r.market}`));
     const oddsRowsPinnacleFallback = oddsRowsPinnacle.filter((r) => !chavesComMediaMercado.has(`${r.match_id}__${r.market}`));
-    const oddsRowsBrutas = [...oddsRowsAntigas, ...oddsRowsPinnacleFallback, ...normalizarOddsBenchmarking(marketOddsRaw), ...oddsCartoesEscanteiosTotal, ...oddsCartoesTime];
+    const oddsRowsBrutas = [
+      ...comFonte(oddsRowsAntigas, 'media_mercado'),
+      ...comFonte(oddsRowsPinnacleFallback, 'pinnacle'),
+      ...comFonte(normalizarOddsBenchmarking(marketOddsRaw), 'media_mercado'),
+      ...comFonte(oddsCartoesEscanteiosTotal, 'pinnacle'),
+      ...comFonte(oddsCartoesTime, 'betano'),
+    ];
     // `pre_closing` entra por último e só pros pares que NENHUMA fonte de
     // fechamento acima cobre -- é a odd mais distante do apito inicial
     // (menos confiável), só serve pra jogo que ainda não tem `closing`.
     const chavesComOddDeFechamento = new Set(oddsRowsBrutas.map((r) => `${r.match_id}__${r.market}`));
     const oddsRowsPreClosingFallback = oddsRowsPreClosing.filter((r) => !chavesComOddDeFechamento.has(`${r.match_id}__${r.market}`));
-    oddsRowsBrutas.push(...oddsRowsPreClosingFallback);
+    oddsRowsBrutas.push(...comFonte(oddsRowsPreClosingFallback, 'pinnacle'));
 
     const calibPorChave = {};
     calibracoes.forEach(c => {
@@ -692,12 +707,17 @@ export default async function handler(req, res) {
 
     const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway });
 
-    // odds cruas (pra pagamento real) e devigadas (pra edge) por match+market
+    // odds cruas (pra pagamento real) e devigadas (pra edge) por match+market,
+    // mais QUAL casa de aposta (`fonte`, marcada acima) forneceu essa odd --
+    // 1 valor por chave (não por seleção) já que a fonte nunca varia dentro
+    // do mesmo match_id+market (ver comentário em `comFonte`).
     const oddsPorMatchMercado = {};
+    const casaApostaPorMatchMercado = {};
     oddsRows.forEach(r => {
       const chave = `${r.match_id}__${r.market}`;
       if (!oddsPorMatchMercado[chave]) oddsPorMatchMercado[chave] = {};
       oddsPorMatchMercado[chave][r.selection] = Number(r.odds);
+      if (r.fonte) casaApostaPorMatchMercado[chave] = r.fonte;
     });
     const probMercadoPorChave = {};
     Object.entries(oddsPorMatchMercado).forEach(([chave, oddsSel]) => { probMercadoPorChave[chave] = devigar(oddsSel); });
@@ -750,6 +770,7 @@ export default async function handler(req, res) {
         match_date: match.match_date, home_team_id: match.home_team_id, away_team_id: match.away_team_id,
         status: resultado ? 'finalizada' : 'pendente',
         edge, p_aposta: pAposta, p_mercado: pMercado, odd: oddReal, stake: stakeUnitario, lucro, venceu,
+        casa_aposta: casaApostaPorMatchMercado[chaveOdds] || null,
       });
     }
 
@@ -765,7 +786,7 @@ export default async function handler(req, res) {
           home_team_id: c.home_team_id, away_team_id: c.away_team_id,
           model_name: c.model_name, market: c.market, selection: c.selection,
           p_modelo: c.p_aposta, p_mercado: c.p_mercado, edge: c.edge, odd: c.odd,
-          status: c.status, venceu: c.venceu,
+          status: c.status, venceu: c.venceu, casa_aposta: c.casa_aposta,
         }));
       return res.status(200).json({
         parametros: { edge_minimo: edgeMinimo, usar_calibracao: usarCalibracao, data_inicio: data_inicio || null, data_fim: data_fim || null },

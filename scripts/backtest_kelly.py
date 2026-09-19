@@ -576,10 +576,15 @@ def _traduzir_selecao_odds(mercado: str, selecao_odds: str) -> str:
 
 def _melhores_odds_fechamento_snapshot(
     supabase, match_ids: list[int], mercado: str, snapshot: str
-) -> dict[int, dict[str, float]]:
+) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, str]]]:
     """Melhor odd real (exclui a média sintética `media_mercado`) por
     partida/seleção, num snapshot específico -- base compartilhada de
-    `carregar_melhores_odds_fechamento` (com fallback entre snapshots)."""
+    `carregar_melhores_odds_fechamento_com_bookmaker` (com fallback entre
+    snapshots). Devolve também QUAL casa de aposta deu essa melhor odd
+    (`bookmaker_vencedor`, mesma chave `odd_<selecao>`) -- pedido do
+    usuário pra saber contra qual casa o ROI de "fechamento" (melhor odd
+    entre TODAS as casas, ao contrário de "abertura" que é sempre
+    Pinnacle) está sendo medido de verdade."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
     campo_por_selecao = {selecao: f"odd_{selecao}" for selecao in selecoes}
 
@@ -606,6 +611,7 @@ def _melhores_odds_fechamento_snapshot(
     linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids, tamanho_lote=100)
 
     melhor: dict[int, dict[str, float]] = {}
+    bookmaker_vencedor: dict[int, dict[str, str]] = {}
     for linha in linhas:
         campo = campo_por_selecao.get(_traduzir_selecao_odds(mercado, linha["selection"]))
         if not campo:
@@ -613,7 +619,25 @@ def _melhores_odds_fechamento_snapshot(
         atual = melhor.setdefault(linha["match_id"], {c: 0.0 for c in campo_por_selecao.values()})
         if linha["odds"] and linha["odds"] > atual[campo]:
             atual[campo] = linha["odds"]
-    return melhor
+            bookmaker_vencedor.setdefault(linha["match_id"], {})[campo] = linha["bookmaker"]
+    return melhor, bookmaker_vencedor
+
+
+def carregar_melhores_odds_fechamento_com_bookmaker(
+    supabase, match_ids: list[int], mercado: str = "1X2"
+) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, str]]]:
+    """Mesma odd/fallback de `carregar_melhores_odds_fechamento`, mas
+    devolve junto qual casa de aposta ofereceu a melhor odd em cada
+    partida/seleção -- usado pelo "Backtest completo" pra reportar contra
+    qual bookmaker o ROI de fechamento foi medido de verdade (a odd de
+    abertura já é sempre Pinnacle, sem ambiguidade)."""
+    principal, bookmaker_principal = _melhores_odds_fechamento_snapshot(supabase, match_ids, mercado, "pre_closing")
+    faltando = [mid for mid in match_ids if mid not in principal]
+    if faltando:
+        fallback, bookmaker_fallback = _melhores_odds_fechamento_snapshot(supabase, faltando, mercado, "closing")
+        principal.update(fallback)
+        bookmaker_principal.update(bookmaker_fallback)
+    return principal, bookmaker_principal
 
 
 def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: str = "1X2") -> dict[int, dict[str, float]]:
@@ -630,13 +654,13 @@ def carregar_melhores_odds_fechamento(supabase, match_ids: list[int], mercado: s
     têm `pre_closing` -- não muda nada pras 5 ligas europeias, que já têm
     `pre_closing` de sobra. Investigado Betfair Exchange como alternativa
     de odd de abertura pro Brasileirão -- também só tem `closing` (774
-    partidas, 0 em `pre_closing`), mesma limitação da fonte."""
-    principal = _melhores_odds_fechamento_snapshot(supabase, match_ids, mercado, "pre_closing")
-    faltando = [mid for mid in match_ids if mid not in principal]
-    if faltando:
-        fallback = _melhores_odds_fechamento_snapshot(supabase, faltando, mercado, "closing")
-        principal.update(fallback)
-    return principal
+    partidas, 0 em `pre_closing`), mesma limitação da fonte.
+
+    Só as odds -- quem precisar saber a casa de aposta vencedora usa
+    `carregar_melhores_odds_fechamento_com_bookmaker` (mesma query, sem
+    duplicar round-trip)."""
+    odds, _ = carregar_melhores_odds_fechamento_com_bookmaker(supabase, match_ids, mercado)
+    return odds
 
 
 # =============================================================================
@@ -684,13 +708,18 @@ def montar_apostas(
     resultados_reais: dict[int, int],
     liga_por_match_id: dict[int, str] | None = None,
     mercado: str = "1X2",
+    bookmakers_por_partida: dict[int, dict[str, str]] | None = None,
 ) -> list[dict]:
     """Só entra em campo quando o edge (prob. modelo - prob. implícita da
     odd) passa de `EDGE_MINIMO` -- mesmo filtro de `api/backtest-betting.js`.
     Cada aposta carrega a `liga` do jogo (quando informada) pra permitir
     quebrar o relatório por liga depois (`resumir_por_liga`). `mercado`
     escolhe o conjunto de seleções (ver `MERCADOS`) -- mesma mecânica pra
-    1X2 (3 seleções) e Over/Under 2.5 (2 seleções)."""
+    1X2 (3 seleções) e Over/Under 2.5 (2 seleções). `bookmakers_por_partida`
+    é opcional (só faz sentido pra odds de "fechamento", que são a melhor
+    entre várias casas -- odd de abertura já é sempre Pinnacle): quando
+    passado, anexa `casa_aposta` em cada aposta, consumido depois por
+    `resumir_backtest` pra reportar contra qual bookmaker o ROI foi medido."""
     apostas = []
     for match_id, probs in predicoes.items():
         odds = odds_por_partida.get(match_id)
@@ -714,6 +743,7 @@ def montar_apostas(
                     "odd": odd,
                     "acertou": resultado_real == codigo_resultado,
                     "liga": (liga_por_match_id or {}).get(match_id),
+                    "casa_aposta": (bookmakers_por_partida or {}).get(match_id, {}).get(campo_odd),
                 }
             )
     return apostas
@@ -751,6 +781,27 @@ def bootstrap_ic95_roi(
     return roi_medio, float(limite_inferior), float(limite_superior)
 
 
+def _resumir_casas_aposta(apostas: list[dict]) -> dict[str, int] | None:
+    """Conta quantas apostas (entre as que teriam stake>0 no Kelly, mesmo
+    filtro de `simular_banca`) vieram de cada casa de aposta -- só quando
+    `montar_apostas`/`montar_apostas_dupla_chance` recebeu o mapa de
+    bookmakers (odds de "fechamento"; odds de "abertura" são sempre
+    Pinnacle, sem essa info anexada, e `casas_aposta` sai `None` nesse
+    caso). Devolve `None` também quando nenhuma aposta tem a info (ex.
+    mercado sem odds reais de fechamento) -- distingue "não se aplica" de
+    "todas de uma casa só"."""
+    contagem: dict[str, int] = {}
+    tem_info = False
+    for aposta in apostas:
+        if kelly_fracionario(aposta["prob_modelo"], aposta["odd"]) <= 0:
+            continue
+        casa = aposta.get("casa_aposta")
+        if casa:
+            tem_info = True
+        contagem[casa or "desconhecida"] = contagem.get(casa or "desconhecida", 0) + 1
+    return contagem if tem_info else None
+
+
 def resumir_backtest(nome_modelo: str, apostas: list[dict], melhor_params: dict | None) -> dict:
     rois = simular_banca(apostas)
     roi_medio, ic_inferior, ic_superior = bootstrap_ic95_roi(rois)
@@ -762,6 +813,7 @@ def resumir_backtest(nome_modelo: str, apostas: list[dict], melhor_params: dict 
         "roi_ic95_inferior": ic_inferior,
         "roi_ic95_superior": ic_superior,
         "significativo": ic_inferior > 0,
+        "casas_aposta": _resumir_casas_aposta(apostas),
     }
 
 
@@ -860,6 +912,7 @@ def salvar_relatorio(supabase, relatorio: list[dict]) -> None:
             "accuracy": _arredondar_ou_none(r.get("accuracy"), 5),
             "n_amostras_qualidade": r.get("n_amostras_qualidade"),
             "hiperparametros": r.get("hiperparametros"),
+            "casas_aposta_fechamento": r.get("casas_aposta_fechamento"),
         }
         for r in relatorio
     ]
@@ -895,6 +948,7 @@ def salvar_relatorio_por_liga(supabase, relatorio_por_liga: list[dict]) -> None:
             "brier": _arredondar_ou_none(r.get("brier"), 6),
             "accuracy": _arredondar_ou_none(r.get("accuracy"), 5),
             "n_amostras_qualidade": r.get("n_amostras_qualidade"),
+            "casas_aposta_fechamento": r.get("casas_aposta_fechamento"),
         }
         for r in relatorio_por_liga
     ]
@@ -1301,10 +1355,13 @@ def montar_apostas_dupla_chance(
     odds_por_partida: dict[int, dict[str, float]],
     resultado_1x2_bruto: dict[int, str],
     liga_por_match_id: dict[int, str] | None = None,
+    bookmakers_por_partida: dict[int, dict[str, str]] | None = None,
 ) -> list[dict]:
     """Mesmo filtro de edge/Kelly de `montar_apostas`, mas `acertou` checa
     se a seleção está no conjunto de vencedoras do resultado bruto (ver
-    módulo acima), não igualdade contra um código único."""
+    módulo acima), não igualdade contra um código único. `bookmakers_por_
+    partida` tem o mesmo papel de `montar_apostas` (só pra odds de
+    fechamento, anexa `casa_aposta`)."""
     apostas = []
     for match_id, probs in predicoes.items():
         odds = odds_por_partida.get(match_id)
@@ -1313,7 +1370,8 @@ def montar_apostas_dupla_chance(
             continue
         vencedoras = _DUPLA_CHANCE_VENCEDORAS_POR_RESULTADO[bruto]
         for selecao in DUPLA_CHANCE_SELECOES:
-            odd = odds.get(f"odd_{selecao}")
+            campo_odd = f"odd_{selecao}"
+            odd = odds.get(campo_odd)
             if not odd:
                 continue
             prob_modelo = probs[f"prob_{selecao}"]
@@ -1324,6 +1382,7 @@ def montar_apostas_dupla_chance(
                 "match_id": match_id, "selecao": selecao, "prob_modelo": prob_modelo, "odd": odd,
                 "acertou": selecao in vencedoras,
                 "liga": (liga_por_match_id or {}).get(match_id),
+                "casa_aposta": (bookmakers_por_partida or {}).get(match_id, {}).get(campo_odd),
             })
     return apostas
 
@@ -1734,10 +1793,10 @@ def avaliar_modelo_persistido_vs_mercado(
         partidas_m = carregar_partidas_hibrido(supabase, match_ids_m)
         liga_por_match_id_m = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_m.items()}
 
-        odds_fechamento_m = carregar_melhores_odds_fechamento(supabase, match_ids_m, mercado)
+        odds_fechamento_m, bookmakers_fechamento_m = carregar_melhores_odds_fechamento_com_bookmaker(supabase, match_ids_m, mercado)
         odds_abertura_m = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_m, mercado)
 
-        apostas_fechamento_m = montar_apostas(preds, odds_fechamento_m, resultados_m, liga_por_match_id_m, mercado)
+        apostas_fechamento_m = montar_apostas(preds, odds_fechamento_m, resultados_m, liga_por_match_id_m, mercado, bookmakers_fechamento_m)
         apostas_abertura_m = montar_apostas(preds, odds_abertura_m, resultados_m, liga_por_match_id_m, mercado)
         resumo_f_m = resumir_backtest(nome_modelo, apostas_fechamento_m, None)
         resumo_a_m = resumir_backtest(nome_modelo, apostas_abertura_m, None)
@@ -1773,6 +1832,7 @@ def avaliar_modelo_persistido_vs_mercado(
             "brier": brier_m,
             "accuracy": accuracy_m,
             "n_amostras_qualidade": n_qualidade_m,
+            "casas_aposta_fechamento": resumo_f_m["casas_aposta"],
         })
 
         apostas_f_por_liga_m: dict[str, list[dict]] = {}
@@ -1813,6 +1873,7 @@ def avaliar_modelo_persistido_vs_mercado(
                 "brier": brier_l,
                 "accuracy": accuracy_l,
                 "n_amostras_qualidade": n_qualidade_l,
+                "casas_aposta_fechamento": resumo_f_l["casas_aposta"],
             })
         imprimir_relatorio_qualidade([{
             "nome": f"{nome_modelo} [{mercado}]", "log_loss": log_loss_m, "brier": brier_m,
@@ -1897,7 +1958,7 @@ def main() -> None:
         validacao_periodo_inicio_mercado, validacao_periodo_fim_mercado = _periodo_teste(val_df_m)
 
         logger.info("[%s] Buscando odds reais pro Test Set (%d partidas out-of-sample)...", mercado, len(match_ids_teste_m))
-        odds_fechamento = carregar_melhores_odds_fechamento(supabase, match_ids_teste_m, mercado)
+        odds_fechamento, bookmakers_fechamento = carregar_melhores_odds_fechamento_com_bookmaker(supabase, match_ids_teste_m, mercado)
         odds_abertura = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_teste_m, mercado)
         pinnacle_devigada = carregar_odds_pinnacle_devigadas(supabase, match_ids_teste_m, mercado)
         # Par abertura/fechamento da referência de mercado -- mesma ideia
@@ -1930,7 +1991,7 @@ def main() -> None:
 
         def _registrar(nome_variante: str, preds: dict[int, dict[str, float]], melhor_params: dict | None, por_liga: bool) -> None:
             todas_as_predicoes_teste[nome_variante] = preds
-            apostas_fechamento = montar_apostas(preds, odds_fechamento, resultados_reais, liga_por_match_id, mercado)
+            apostas_fechamento = montar_apostas(preds, odds_fechamento, resultados_reais, liga_por_match_id, mercado, bookmakers_fechamento)
             apostas_abertura = montar_apostas(preds, odds_abertura, resultados_reais, liga_por_match_id, mercado)
             resumo_f = resumir_backtest(nome_variante, apostas_fechamento, melhor_params)
             resumo_a = resumir_backtest(nome_variante, apostas_abertura, melhor_params)
@@ -1962,6 +2023,7 @@ def main() -> None:
                     "brier": brier,
                     "accuracy": accuracy,
                     "n_amostras_qualidade": n_qualidade,
+                    "casas_aposta_fechamento": resumo_f["casas_aposta"],
                 }
             )
             if not por_liga:
@@ -2004,6 +2066,7 @@ def main() -> None:
                         "brier": brier_l,
                         "accuracy": accuracy_l,
                         "n_amostras_qualidade": n_qualidade_l,
+                        "casas_aposta_fechamento": resumo_f_l["casas_aposta"],
                     }
                 )
 
@@ -2227,10 +2290,10 @@ def main() -> None:
             partidas_hibrido = carregar_partidas_hibrido(supabase, match_ids_h)
             liga_por_match_id_h = {mid: nomes_liga.get(p["league_id"], "desconhecida") for mid, p in partidas_hibrido.items()}
 
-            odds_fechamento_h = carregar_melhores_odds_fechamento(supabase, match_ids_h, mercado)
+            odds_fechamento_h, bookmakers_fechamento_h = carregar_melhores_odds_fechamento_com_bookmaker(supabase, match_ids_h, mercado)
             odds_abertura_h = carregar_odds_pinnacle_abertura_bruta(supabase, match_ids_h, mercado)
 
-            apostas_fechamento_h = montar_apostas_dupla_chance(preds_hibrido, odds_fechamento_h, resultado_bruto_h, liga_por_match_id_h)
+            apostas_fechamento_h = montar_apostas_dupla_chance(preds_hibrido, odds_fechamento_h, resultado_bruto_h, liga_por_match_id_h, bookmakers_fechamento_h)
             apostas_abertura_h = montar_apostas_dupla_chance(preds_hibrido, odds_abertura_h, resultado_bruto_h, liga_por_match_id_h)
             resumo_f_h = resumir_backtest(nome_hibrido, apostas_fechamento_h, None)
             resumo_a_h = resumir_backtest(nome_hibrido, apostas_abertura_h, None)
@@ -2266,6 +2329,7 @@ def main() -> None:
                 "brier": brier_h,
                 "accuracy": accuracy_h,
                 "n_amostras_qualidade": n_qualidade_h,
+                "casas_aposta_fechamento": resumo_f_h["casas_aposta"],
             })
 
             apostas_f_por_liga_h: dict[str, list[dict]] = {}
@@ -2304,6 +2368,7 @@ def main() -> None:
                     "brier": brier_l,
                     "accuracy": accuracy_l,
                     "n_amostras_qualidade": n_qualidade_l,
+                    "casas_aposta_fechamento": resumo_f_l["casas_aposta"],
                 })
         except Exception:
             logger.exception("[%s] Falha ao avaliar %s -- pulando, os outros modelos continuam.", mercado, nome_hibrido)

@@ -54,6 +54,28 @@ function fmtPeriodo(inicio, fim) {
   return `${f(inicio)} – ${f(fim)}`;
 }
 
+// Rótulo de exibição das casas de aposta que aparecem em odds_market --
+// mesmos nomes crus gravados no banco, só pra ficar legível na tela.
+const ROTULO_BOOKMAKER = {
+  pinnacle: 'Pinnacle', bet365: 'Bet365', betano: 'Betano', william_hill: 'William Hill',
+  '1xbet': '1xBet', betfair_exchange: 'Betfair Exchange', kaggle_oddspedia: 'Oddspedia',
+};
+
+// `casas_aposta_fechamento` (scripts/backtest_kelly.py::_resumir_casas_aposta)
+// é a contagem de apostas por bookmaker que ofereceu a MELHOR odd de
+// fechamento -- pedido do usuário pra saber contra qual casa o ROI de
+// "fechamento" (melhor odd entre TODAS as casas, diferente de "abertura"
+// que é sempre Pinnacle) está sendo medido de verdade. Mostra as 2
+// principais por contagem + "+N outras" quando há mais.
+function fmtCasasAposta(casas) {
+  if (!casas || Object.keys(casas).length === 0) return null;
+  const total = Object.values(casas).reduce((s, n) => s + n, 0);
+  const ordenadas = Object.entries(casas).sort((a, b) => b[1] - a[1]);
+  const principais = ordenadas.slice(0, 2).map(([nome, n]) => `${ROTULO_BOOKMAKER[nome] || nome} ${Math.round((n / total) * 100)}%`);
+  const resto = ordenadas.length - 2;
+  return principais.join(' · ') + (resto > 0 ? ` · +${resto} outra${resto > 1 ? 's' : ''}` : '');
+}
+
 const MERCADOS_BACKTEST = [
   { chave: '1X2', rotulo: '1X2' },
   { chave: 'over_under_2.5', rotulo: 'Over/Under 2.5' },
@@ -76,6 +98,25 @@ const MERCADOS_BACKTEST = [
   { chave: 'corners_over_under_12.5', rotulo: 'Escanteios O/U 12,5' },
   { chave: 'corners_ou95', rotulo: 'Escanteios O/U 9,5 (classificador)' },
   { chave: 'faixa_gols', rotulo: 'Faixa de gols' },
+  // Cartões (MODELOS_CUSTOM_CARTOES/_TIME em backtest_kelly.py) -- já eram
+  // calculados e persistidos em model_benchmarking_backtest a cada rodada
+  // de "Rodar backtest", só faltavam aparecer aqui (pedido do usuário).
+  { chave: 'cartoes_over_under_1.5', rotulo: 'Cartões O/U 1,5' },
+  { chave: 'cartoes_over_under_2.5', rotulo: 'Cartões O/U 2,5' },
+  { chave: 'cartoes_over_under_3.5', rotulo: 'Cartões O/U 3,5' },
+  { chave: 'cartoes_over_under_4.5', rotulo: 'Cartões O/U 4,5' },
+  { chave: 'cartoes_over_under_5.5', rotulo: 'Cartões O/U 5,5' },
+  { chave: 'cartoes_over_under_6.5', rotulo: 'Cartões O/U 6,5' },
+  { chave: 'cartoes_home_over_under_0.5', rotulo: 'Cartões Mandante O/U 0,5' },
+  { chave: 'cartoes_home_over_under_1.5', rotulo: 'Cartões Mandante O/U 1,5' },
+  { chave: 'cartoes_home_over_under_2.5', rotulo: 'Cartões Mandante O/U 2,5' },
+  { chave: 'cartoes_home_over_under_3.5', rotulo: 'Cartões Mandante O/U 3,5' },
+  { chave: 'cartoes_home_over_under_4.5', rotulo: 'Cartões Mandante O/U 4,5' },
+  { chave: 'cartoes_away_over_under_0.5', rotulo: 'Cartões Visitante O/U 0,5' },
+  { chave: 'cartoes_away_over_under_1.5', rotulo: 'Cartões Visitante O/U 1,5' },
+  { chave: 'cartoes_away_over_under_2.5', rotulo: 'Cartões Visitante O/U 2,5' },
+  { chave: 'cartoes_away_over_under_3.5', rotulo: 'Cartões Visitante O/U 3,5' },
+  { chave: 'cartoes_away_over_under_4.5', rotulo: 'Cartões Visitante O/U 4,5' },
 ];
 // Escanteios (classificador) e faixa de gols não têm nenhuma fonte de odds
 // de mercado neste projeto -- pra esses 2, o backtest só traz qualidade
@@ -458,7 +499,12 @@ function BacktestModelBenchmarking({ session }) {
                       <td className="p-1.5 text-right text-slate-400">{fmtNum(r.brier)}</td>
                       <td className="p-1.5 text-right text-slate-400">{fmtPct(r.accuracy)}</td>
                       <td className="p-1.5 text-right text-slate-400">{r.n_apostas}</td>
-                      <td className={`p-1.5 text-right font-bold ${r.roi_medio > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtPctSigned(r.roi_medio)}</td>
+                      <td className={`p-1.5 text-right font-bold ${r.roi_medio > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {fmtPctSigned(r.roi_medio)}
+                        {fmtCasasAposta(r.casas_aposta_fechamento) && (
+                          <div className="text-[9px] font-normal text-slate-600 normal-case">{fmtCasasAposta(r.casas_aposta_fechamento)}</div>
+                        )}
+                      </td>
                       <td className="p-1.5 text-right text-slate-500">[{fmtPctSigned(r.roi_ic95_inferior)}, {fmtPctSigned(r.roi_ic95_superior)}]</td>
                       <td className="p-1.5 text-center">{r.significativo ? <span className="text-emerald-400 font-bold">✓</span> : <span className="text-slate-600">—</span>}</td>
                       <td className="p-1.5 text-right text-slate-400">{r.n_apostas_abertura}</td>
@@ -476,7 +522,12 @@ function BacktestModelBenchmarking({ session }) {
                         <td className="p-1.5 text-right text-slate-500">{fmtNum(l.brier)}</td>
                         <td className="p-1.5 text-right text-slate-500">{fmtPct(l.accuracy)}</td>
                         <td className="p-1.5 text-right text-slate-500">{l.n_apostas}</td>
-                        <td className={`p-1.5 text-right ${l.roi_medio > 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>{fmtPctSigned(l.roi_medio)}</td>
+                        <td className={`p-1.5 text-right ${l.roi_medio > 0 ? 'text-emerald-500/80' : 'text-red-500/80'}`}>
+                          {fmtPctSigned(l.roi_medio)}
+                          {fmtCasasAposta(l.casas_aposta_fechamento) && (
+                            <div className="text-[9px] text-slate-700 normal-case">{fmtCasasAposta(l.casas_aposta_fechamento)}</div>
+                          )}
+                        </td>
                         <td className="p-1.5 text-right text-slate-600">[{fmtPctSigned(l.roi_ic95_inferior)}, {fmtPctSigned(l.roi_ic95_superior)}]</td>
                         <td className="p-1.5 text-center">{l.significativo ? <span className="text-emerald-500/80 font-bold">✓</span> : <span className="text-slate-700">—</span>}</td>
                         <td className="p-1.5 text-right text-slate-500">{l.n_apostas_abertura}</td>
@@ -492,7 +543,8 @@ function BacktestModelBenchmarking({ session }) {
           </table>
           <p className="text-[10px] text-slate-600 mt-2">
             Linhas verdes = IC 95% do ROI inteiramente acima de zero em pelo menos um dos dois testes (EV+ estatisticamente
-            sustentado, não só edge médio positivo). "Fech." = melhor odd real de fechamento entre todos os bookmakers;
+            sustentado, não só edge médio positivo). "Fech." = melhor odd real de fechamento entre todos os bookmakers
+            (texto pequeno abaixo do ROI mostra contra qual casa a maioria das apostas foi medida);
             "Abert." = odd de abertura da Pinnacle especificamente. Clique na seta pra ver a quebra por liga (só disponível
             pra variante crua de cada modelo).
           </p>
