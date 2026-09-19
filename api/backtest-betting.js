@@ -32,6 +32,7 @@
 //   /api/backtest-betting?modelo=dixon_coles_walkforward_v1&mercado=1X2&liga_id=4
 //   /api/backtest-betting?usar_calibracao=platt   (usa a prob. calibrada em vez da crua, tanto pro edge quanto pro Kelly)
 //   /api/backtest-betting?data_inicio=2026-01-01&data_fim=2026-06-30   (recorta match_date -- default é o histórico inteiro)
+//   /api/backtest-betting?formato=candidatas&modelo=...&mercado=...     (lista crua de sugestões de valor, jogo a jogo, inclui pendentes)
 //
 // Cada grupo em `grupos` traz `serie_temporal` (ver api/_lib/curvaPnlEv.js):
 // Lucro Real e Valor Esperado (EV) acumulados cronologicamente + drawdown,
@@ -302,7 +303,14 @@ export default async function handler(req, res) {
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: { message: 'SUPABASE_URL / SUPABASE_KEY não configuradas.' } });
   const supabase = getSupabase();
 
-  const { modelo, mercado, liga_id, data_inicio, data_fim } = req.query;
+  const { modelo, mercado, liga_id, data_inicio, data_fim, formato } = req.query;
+  // `formato=candidatas`: devolve a lista crua de sugestões de valor (edge
+  // modelo-vs-mercado >= edge_minimo), uma linha por aposta candidata, SEM
+  // agregar em grupos e SEM exigir que a partida já tenha terminado -- pedido
+  // do usuário pra um resumo exportável em planilha, cobrindo partidas
+  // futuras/ainda não resolvidas (que os `grupos`/`resumo_geral` abaixo nunca
+  // incluíram, de propósito: ROI/IC95% só fazem sentido com resultado real).
+  // Ver `src/pages/ResumoValorApostas.jsx`, que é quem consome isso.
   const edgeMinimo = req.query.edge_minimo != null ? Number(req.query.edge_minimo) : 0.02;
   const staking = req.query.staking === 'kelly' ? 'kelly' : 'flat';
   const usarCalibracao = ['platt', 'isotonic'].includes(req.query.usar_calibracao) ? req.query.usar_calibracao : 'nenhuma';
@@ -379,7 +387,9 @@ export default async function handler(req, res) {
       }),
     ]);
     const predicoes = [...predicoesAntigas, ...normalizarPredicoesBenchmarking(predicoesBenchmarkingRaw)];
-    if (!predicoes || predicoes.length === 0) return res.status(200).json({ grupos: [], resumo_geral: null });
+    if (!predicoes || predicoes.length === 0) {
+      return res.status(200).json(formato === 'candidatas' ? { candidatas: [] } : { grupos: [], resumo_geral: null });
+    }
 
     const matchIdsSet = new Set(predicoes.map(p => p.match_id));
 
@@ -397,7 +407,7 @@ export default async function handler(req, res) {
     // (`usar_calibracao=platt/isotonic`) e as odds reais de cartões/
     // escanteios (`oddsCartoesEscanteiosTotal`/`oddsCartoesTime`) -- não só
     // os novos mercados de 1º tempo.
-    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos] = await Promise.all([
+    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos, oddsRowsPreClosing] = await Promise.all([
       buscarPossivelmenteFiltradoPorLiga((lote) => {
         let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado');
         if (lote) q = q.in('match_id', lote);
@@ -544,6 +554,24 @@ export default async function handler(req, res) {
         if (lote) q = q.in('match_id', lote);
         return q;
       }),
+      // Odds `pre_closing` como ÚLTIMO fallback -- só buscada em
+      // `formato=candidatas` (pra não pesar o backtest normal, que nunca
+      // precisa dela: toda partida finalizada já teve tempo de acumular odd
+      // de fechamento). Sem isso, jogo agendado/ainda não começado nunca
+      // aparece na lista de sugestões: `closing` só existe perto do apito
+      // inicial (confirmado via SQL -- partida "scheduled" só tem
+      // `snapshot='pre_closing'`), e sem NENHUMA odd real a sugestão nem
+      // chega a ser montada (`oddReal == null` mais abaixo). Restrita ao
+      // `mercado` pedido quando houver, mesmo motivo de custo do fallback
+      // Pinnacle logo acima -- sem isso arriscaria o timeout de 30s.
+      formato === 'candidatas'
+        ? buscarPossivelmenteFiltradoPorLiga((lote) => {
+            let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'pre_closing');
+            if (mercado) q = q.eq('market', mercadoOddsReal(mercado));
+            if (lote) q = q.in('match_id', lote);
+            return q;
+          })
+        : Promise.resolve([]),
     ]);
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
     // match_id+market que media_mercado NÃO cobre (evita duplicar/preferir
@@ -551,6 +579,12 @@ export default async function handler(req, res) {
     const chavesComMediaMercado = new Set(oddsRowsAntigas.map((r) => `${r.match_id}__${r.market}`));
     const oddsRowsPinnacleFallback = oddsRowsPinnacle.filter((r) => !chavesComMediaMercado.has(`${r.match_id}__${r.market}`));
     const oddsRowsBrutas = [...oddsRowsAntigas, ...oddsRowsPinnacleFallback, ...normalizarOddsBenchmarking(marketOddsRaw), ...oddsCartoesEscanteiosTotal, ...oddsCartoesTime];
+    // `pre_closing` entra por último e só pros pares que NENHUMA fonte de
+    // fechamento acima cobre -- é a odd mais distante do apito inicial
+    // (menos confiável), só serve pra jogo que ainda não tem `closing`.
+    const chavesComOddDeFechamento = new Set(oddsRowsBrutas.map((r) => `${r.match_id}__${r.market}`));
+    const oddsRowsPreClosingFallback = oddsRowsPreClosing.filter((r) => !chavesComOddDeFechamento.has(`${r.match_id}__${r.market}`));
+    oddsRowsBrutas.push(...oddsRowsPreClosingFallback);
 
     const calibPorChave = {};
     calibracoes.forEach(c => {
@@ -655,13 +689,19 @@ export default async function handler(req, res) {
     const probMercadoPorChave = {};
     Object.entries(oddsPorMatchMercado).forEach(([chave, oddsSel]) => { probMercadoPorChave[chave] = devigar(oddsSel); });
 
-    // Monta as apostas candidatas: precisa de odds (senão não dá pra apostar de verdade)
+    // Monta as apostas candidatas: precisa de odds (senão não dá pra apostar de verdade).
+    // Diferente da versão anterior, NÃO exige mais partida finalizada aqui --
+    // `resultado` pode ser null (jogo futuro/ainda sem resultado sincronizado),
+    // nesse caso `venceu`/`lucro` saem null e `status` marca 'pendente'. Só é
+    // excluída quando falta odd real ou a política de Kelly recusa a aposta
+    // (motivos independentes de resultado). A agregação em `grupos`/`resumo_geral`
+    // abaixo continua restrita às finalizadas (filtra por `venceu != null`),
+    // então o comportamento default deste endpoint não muda.
     const candidatas = [];
     for (const p of predicoes) {
       if (!matchIdsValidos.has(p.match_id)) continue;
       const match = matchPorId[p.match_id];
-      const resultado = resultadosReais[p.match_id];
-      if (!resultado) continue; // não finalizada
+      const resultado = resultadosReais[p.match_id] || null;
 
       const chaveOdds = `${p.match_id}__${mercadoOddsReal(p.market)}`;
       const oddReal = oddsPorMatchMercado[chaveOdds]?.[p.selection];
@@ -678,27 +718,55 @@ export default async function handler(req, res) {
       const edge = pAposta - pMercado;
       if (edge < edgeMinimo) continue;
 
-      const venceu = resultadosReais[p.match_id][normalizarMercado(p.market)] === p.selection ? 1 : 0;
       let stakeUnitario = 1;
       if (staking === 'kelly') {
         const politica = calcularStakeKellyPorFaixa(pAposta, oddReal);
         if (!politica.apostar) continue; // fora da política por faixa (odd<1.30, EV abaixo do corte da faixa, ou Kelly completo negativo)
         stakeUnitario = politica.stakeFracaoBanca;
+        if (stakeUnitario <= 0) continue;
       }
-      if (stakeUnitario <= 0) continue;
 
-      const lucro = venceu ? stakeUnitario * (oddReal - 1) : -stakeUnitario;
+      let venceu = null, lucro = null;
+      if (resultado) {
+        venceu = resultado[normalizarMercado(p.market)] === p.selection ? 1 : 0;
+        lucro = venceu ? stakeUnitario * (oddReal - 1) : -stakeUnitario;
+      }
 
       candidatas.push({
         match_id: p.match_id, model_name: p.model_name, market: p.market, selection: p.selection, league_id: match.league_id,
-        match_date: match.match_date, edge, p_aposta: pAposta, odd: oddReal, stake: stakeUnitario, lucro, venceu,
+        match_date: match.match_date, home_team_id: match.home_team_id, away_team_id: match.away_team_id,
+        status: resultado ? 'finalizada' : 'pendente',
+        edge, p_aposta: pAposta, p_mercado: pMercado, odd: oddReal, stake: stakeUnitario, lucro, venceu,
       });
     }
 
-    candidatas.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
+    // `formato=candidatas` para por aqui -- devolve tudo (finalizadas e
+    // pendentes), mais recente primeiro, sem rodar bootstrap/agregação (que
+    // não se aplica a jogo pendente e seria custo à toa).
+    if (formato === 'candidatas') {
+      const lista = candidatas
+        .slice()
+        .sort((a, b) => new Date(b.match_date) - new Date(a.match_date))
+        .map(c => ({
+          match_id: c.match_id, match_date: c.match_date, league_id: c.league_id,
+          home_team_id: c.home_team_id, away_team_id: c.away_team_id,
+          model_name: c.model_name, market: c.market, selection: c.selection,
+          p_modelo: c.p_aposta, p_mercado: c.p_mercado, edge: c.edge, odd: c.odd,
+          status: c.status, venceu: c.venceu,
+        }));
+      return res.status(200).json({
+        parametros: { edge_minimo: edgeMinimo, usar_calibracao: usarCalibracao, data_inicio: data_inicio || null, data_fim: data_fim || null },
+        candidatas: lista,
+      });
+    }
+
+    // A partir daqui, comportamento idêntico ao anterior: só partidas
+    // finalizadas entram no backtest agregado (ROI/IC95% exigem resultado real).
+    const candidatasResolvidas = candidatas.filter(a => a.venceu != null);
+    candidatasResolvidas.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
 
     const porGrupo = {};
-    candidatas.forEach(a => {
+    candidatasResolvidas.forEach(a => {
       const chave = `${a.model_name}__${a.market}__${a.selection}__${a.league_id}`;
       if (!porGrupo[chave]) porGrupo[chave] = { model_name: a.model_name, market: a.market, selection: a.selection, league_id: a.league_id, apostas: [] };
       porGrupo[chave].apostas.push(a);
@@ -726,11 +794,11 @@ export default async function handler(req, res) {
 
     grupos.sort((a, b) => (b.roi_ic95_inferior ?? -Infinity) - (a.roi_ic95_inferior ?? -Infinity));
 
-    const stakedGeral = candidatas.reduce((s, a) => s + a.stake, 0);
-    const lucroGeral = candidatas.reduce((s, a) => s + a.lucro, 0);
-    const icGeral = bootstrapROI(candidatas);
-    const resumoGeral = candidatas.length > 0 ? {
-      n_apostas: candidatas.length, staked_total: stakedGeral, lucro_total: lucroGeral,
+    const stakedGeral = candidatasResolvidas.reduce((s, a) => s + a.stake, 0);
+    const lucroGeral = candidatasResolvidas.reduce((s, a) => s + a.lucro, 0);
+    const icGeral = bootstrapROI(candidatasResolvidas);
+    const resumoGeral = candidatasResolvidas.length > 0 ? {
+      n_apostas: candidatasResolvidas.length, staked_total: stakedGeral, lucro_total: lucroGeral,
       roi: stakedGeral > 0 ? lucroGeral / stakedGeral : 0,
       roi_ic95_inferior: icGeral.lo, roi_ic95_superior: icGeral.hi,
       significativo: icGeral.lo != null && icGeral.lo > 0,

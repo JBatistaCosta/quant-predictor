@@ -34,6 +34,7 @@ const ModeloV9 = lazy(() => import('./pages/ModeloV9'));
 const ExploracaoDados = lazy(() => import('./pages/ExploracaoDados'));
 const Configuracoes = lazy(() => import('./pages/Configuracoes'));
 const ModelosAvancados = lazy(() => import('./pages/ModelosAvancados'));
+const ResumoValorApostas = lazy(() => import('./pages/ResumoValorApostas'));
 
 function CarregandoPagina() {
   return (
@@ -126,6 +127,9 @@ export default function App() {
             } />
             <Route path="/modelos-avancados" element={
               <ProtectedRoute><Layout><ModelosAvancados /></Layout></ProtectedRoute>
+            } />
+            <Route path="/sugestoes-valor" element={
+              <ProtectedRoute><Layout><ResumoValorApostas /></Layout></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/analise" replace />} />
