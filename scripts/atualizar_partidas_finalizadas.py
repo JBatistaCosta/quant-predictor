@@ -18,6 +18,16 @@ Times sem crosswalk têm placar atualizado mas stats puladas (aviso no log).
 
 Pacing: 1.3s entre chamadas de API (mesmo do ingestao_fotmob.py).
 
+Re-fetch de correção pós-jogo (24-48h): achado real (20/09, match_id 110225)
+-- o FotMob revisa xG/xGOT algumas horas depois do apito final, e o snapshot
+de match_stats_fotmob normalmente NUNCA é rebuscado depois da 1ª captura
+(needs_stats vira falso assim que a partida já tem 1 linha). Partidas com
+stats já ingeridos, match_date entre 24h e 48h atrás e que ainda não
+passaram por esse re-fetch (match_stats_fotmob.resync_pos_jogo_em IS NULL)
+entram na lista de pendentes de novo, exatamente 1 vez -- ver `resync_
+pendentes`/`resync_ja_feito`. Roda de graça dentro do modo "tudo"/"stats"
+padrão, sem flag nova.
+
 Uso:
     python scripts/atualizar_partidas_finalizadas.py [--limite N] [--league-id ID]
         [--modo tudo|placar|stats] [--forcar] [--ao-vivo]
@@ -76,6 +86,20 @@ def _exec_retry(query, tentativas=9, espera_inicial=3, espera_max=60):
 # liga de pontos corridos; em mata-mata de 2 jogos os mandantes trocam, cada
 # perna já cai numa chave diferente).
 JANELA_CASAMENTO_SEGUNDOS = 21 * 24 * 3600
+
+
+def _match_date_dt(match_date_str):
+    """Converte `matches.match_date` (string ISO vinda do PostgREST, às
+    vezes com sufixo 'Z' em vez de '+00:00') pra datetime timezone-aware --
+    mesma normalização já usada em `casar_fixture` mais abaixo. Comparar
+    essas strings direto (lexicograficamente) NÃO é seguro: 'Z' (0x5A)
+    ordena depois de '+' (0x2B) em ASCII, então um `match_date` com 'Z'
+    compararia como "mais tardio" que um limite de janela com '+00:00'
+    mesmo em horários idênticos -- por isso a janela de resync (24-48h,
+    ver `main()`) compara datetime de verdade, não string."""
+    if not match_date_str:
+        return None
+    return dt.datetime.fromisoformat(str(match_date_str).replace("Z", "+00:00"))
 
 
 def _paginar(supabase, table, select, eq_filters=None, order="id"):
@@ -143,17 +167,46 @@ def main():
     # ── match_stats_fotmob: set de match_ids que já têm stats ─────────────────
     if args.modo in ("tudo", "stats"):
         print("Carregando IDs com stats já ingeridos...")
-        stats_rows = _paginar(supabase, "match_stats_fotmob", "match_id", order="match_id")
+        # `resync_pos_jogo_em` junto na mesma consulta paginada -- evita
+        # escanear match_stats_fotmob (54k+ linhas) 2x só pra derivar 2 sets
+        # diferentes dela.
+        #
+        # ACHADO REAL (20/09, investigação de match_id 110225): o FotMob
+        # revisa xG/xGOT (bloco content.stats.Periods.All.stats) algumas
+        # horas depois do apito final -- o snapshot que capturamos no
+        # primeiro sync (logo que a partida termina) fica desatualizado em
+        # relação ao valor "corrigido" que a API passa a servir depois.
+        # `has_stats` abaixo só diz "já tem 1ª captura", nunca rebusca
+        # depois disso (nem via cron, só com --forcar manual, que
+        # reprocessaria TODA a base). `resync_ja_feito` é o log de partidas
+        # que já passaram pelo re-fetch único de correção
+        # (`resync_pos_jogo_em`, migration 20260920100000) -- sem ele,
+        # `needs_resync` abaixo rebuscaria a mesma partida em TODA execução
+        # do cron dentro da janela de 24h, e nunca mais depois -- com ele, é
+        # exatamente 1 rebusca por partida.
+        stats_rows = _paginar(supabase, "match_stats_fotmob", "match_id, resync_pos_jogo_em", order="match_id")
         has_stats = {row["match_id"] for row in stats_rows}
-        print(f"  {len(has_stats)} partidas com stats.")
+        resync_ja_feito = {row["match_id"] for row in stats_rows if row.get("resync_pos_jogo_em")}
+        print(f"  {len(has_stats)} partidas com stats ({len(resync_ja_feito)} já resincronizadas).")
     else:
         has_stats = set()
+        resync_ja_feito = set()
 
     # ── Janela de tempo para detecção de partidas ─────────────────────────────
     agora_utc = dt.datetime.now(dt.timezone.utc)
     corte_utc = agora_utc - dt.timedelta(minutes=120)
     corte_iso = corte_utc.isoformat()
     agora_iso = agora_utc.isoformat()
+
+    # Janela do re-fetch único de correção -- só entre 24h e 48h depois do
+    # jogo (achado acima). Mais cedo que 24h a correção do FotMob pode
+    # ainda não ter acontecido; sem teto de 48h, uma partida que passar
+    # meses sem o cron rodar acabaria resincronizada de qualquer jeito só
+    # por ainda não ter `resync_pos_jogo_em`, quando na prática o valor já
+    # está estável há muito tempo -- 48h é folga generosa sobre a correção
+    # observada (confirmada em ~15h após o jogo já mudada).
+    resync_inicio = agora_utc - dt.timedelta(hours=48)
+    resync_fim = agora_utc - dt.timedelta(hours=24)
 
     if args.ao_vivo:
         descricao_filtro = f"ao vivo (match_date entre {corte_iso[:16]} e {agora_iso[:16]} UTC)"
@@ -164,6 +217,7 @@ def main():
     # ── Partidas finalizadas que precisam de atualização ──────────────────────
     print("Buscando partidas pendentes...")
     pendentes = []
+    resync_pendentes = set()
     for lid in ligas_alvo:
         page = 0
         while True:
@@ -185,13 +239,27 @@ def main():
                     continue
                 needs_score = args.modo in ("tudo", "placar") and m["home_goals"] is None
                 needs_stats = args.modo in ("tudo", "stats") and m["id"] not in has_stats
-                if needs_score or needs_stats:
+                # Re-fetch único de correção (achado acima) -- só pra quem
+                # JÁ tem stats (senão é needs_stats normal), dentro da
+                # janela de 24-48h pós-jogo, e que ainda não passou por
+                # essa correção.
+                m_data = _match_date_dt(m.get("match_date"))
+                needs_resync = (
+                    args.modo in ("tudo", "stats")
+                    and m["id"] in has_stats
+                    and m["id"] not in resync_ja_feito
+                    and m_data is not None
+                    and resync_inicio <= m_data < resync_fim
+                )
+                if needs_resync:
+                    resync_pendentes.add(m["id"])
+                if needs_score or needs_stats or needs_resync:
                     pendentes.append(m)
             if len(chunk) < 1000:
                 break
             page += 1
 
-    print(f"Partidas pendentes: {len(pendentes)}")
+    print(f"Partidas pendentes: {len(pendentes)} ({len(resync_pendentes)} são re-fetch de correção 24-48h)")
     if args.limite:
         pendentes = pendentes[: args.limite]
         print(f"  Limitado a {args.limite} partidas.")
@@ -274,7 +342,7 @@ def main():
         candidatos = index.get((home_fm, away_fm), [])
         if not candidatos:
             return None
-        alvo = dt.datetime.fromisoformat(str(match_date_str).replace("Z", "+00:00"))
+        alvo = _match_date_dt(match_date_str)
         melhor, menor_delta = None, None
         for fx in candidatos:
             utc = fx["status"].get("utcTime", "")
@@ -349,8 +417,12 @@ def main():
             except Exception as exc:
                 print(f"  [{i+1}/{len(pendentes)}] Aviso: placar match_id={match_id}: {exc}")
 
-        # Ingerir stats completas
-        if args.modo != "placar" and (match_id not in has_stats or args.forcar):
+        # Ingerir stats completas -- inclui o re-fetch único de correção
+        # 24-48h pós-jogo (`match_id in resync_pendentes`, achado acima),
+        # que sem essa condição seria pulado aqui (`match_id` já está em
+        # `has_stats`, senão nem entraria como needs_resync).
+        eh_resync = match_id in resync_pendentes
+        if args.modo != "placar" and (match_id not in has_stats or args.forcar or eh_resync):
             home_fm_id = str(d["general"]["homeTeam"]["id"])
             away_fm_id = str(d["general"]["awayTeam"]["id"])
             if not fotmob_to_internal.get(home_fm_id) or not fotmob_to_internal.get(away_fm_id):
@@ -370,6 +442,13 @@ def main():
                     continue
 
                 if extraido["team_rows"]:
+                    if eh_resync:
+                        # Marca as 2 linhas (casa/visitante) como já tendo
+                        # passado pelo re-fetch único de correção -- impede
+                        # que `resync_ja_feito` (carregado no próximo run)
+                        # rebusque essa partida de novo depois da janela.
+                        for row in extraido["team_rows"]:
+                            row["resync_pos_jogo_em"] = agora_iso
                     _exec_retry(supabase.table("match_stats_fotmob").upsert(
                         extraido["team_rows"], on_conflict="match_id,team_id"
                     ))
