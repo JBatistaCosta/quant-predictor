@@ -2,8 +2,12 @@
 """Pergunta do usuário sobre `cartoes_rf` (o classificador por trás das 2
 únicas células confiáveis da matriz de confiabilidade EV -- cartões O/U
 4.5 e 5.5, odd 1.30-2.50, edge 15%+, ver CONTEXTO_PROJETO.md "ACHADO
-REFORÇADO 19/09"): "desse modelo, quais ligas mostraram sinal?" e, na
-sequência, "e qual casa de apostas tem sinal?"
+REFORÇADO 19/09"): "desse modelo, quais ligas mostraram sinal?", "e qual
+casa de apostas tem sinal?" e, por fim, "roda a carteira cronológica só
+com Série B + bet365/betano" -- o recorte descoberto pelas 2 perguntas
+anteriores (ver `LIGA_RESTRITA`/`CASAS_RESTRITAS` abaixo), registrado como
+próximo passo em `model_betting_strategy` (sub_faixa `rf_confiavel_*`,
+20/09) antes de promover a confiança de `em_revisao` pra `alta`.
 
 A matriz de confiabilidade EV (`matriz_confiabilidade_ev.py`) agrega TODAS
 as ligas/casas do escopo numa célula só -- nunca quebrou por liga nem por
@@ -46,6 +50,7 @@ from supabase import Client, create_client
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import backtest_kelly as bk
 import dados_historicos as dh
+import matriz_confiabilidade_ev as mcev
 import validar_cartoes_walkforward_incremental as wf_cartoes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
@@ -59,6 +64,16 @@ LINHAS_ALVO = (4.5, 5.5)
 ODD_MIN, ODD_MAX = 1.30, 2.50
 EDGE_MINIMO_SINAL = 0.15
 MIN_N_LIGA_CONCLUSIVO = 20  # abaixo disso, "não conclusivo" mesmo se IC>0
+
+# Recorte "restrito" pedido pelo usuário depois de ver a quebra por liga/casa
+# (registrado como próximo passo em model_betting_strategy, sub_faixa
+# rf_confiavel_*, 20/09): a carteira cronológica original (CONTEXTO_
+# PROJETO.md "ACHADO REFORÇADO 19/09") usa TODAS as ligas/casas agregadas --
+# isto testa o efeito líquido de restringir às 2 únicas fatias com edge
+# demonstrado (liga: Brasileirão Série B; casa: bet365/betano, excluindo
+# Pinnacle, que não mostrou edge nenhum).
+LIGA_RESTRITA = "Brasileirão Série B"
+CASAS_RESTRITAS = {"bet365", "betano"}
 
 
 def obter_env(nome: str) -> str:
@@ -82,6 +97,8 @@ def main() -> None:
     # "liga" já vem como NOME (dataset["liga"] = dataset["league_id"].map(nome_da_liga),
     # ver dados_historicos.py) -- exatamente o que montar_apostas/resumir_por_liga esperam.
     liga_por_match_id = dict(zip(dataset["match_id"].astype(int), dataset["liga"]))
+
+    datas_por_match = dict(zip(dataset["match_id"].astype(int), dataset["match_date"]))
 
     features = [f for f in wf_cartoes.FEATURES_CARTOES if f in dataset.columns]
     faltando = set(wf_cartoes.FEATURES_CARTOES) - set(features)
@@ -125,7 +142,7 @@ def main() -> None:
             "[cartoes_total %.1f]: %d apostas na faixa confiável (odd [%.2f,%.2f), edge>=%.0f%%) de %d totais com edge>=2%%.",
             linha, len(confiaveis), ODD_MIN, ODD_MAX, EDGE_MINIMO_SINAL * 100, len(apostas),
         )
-        apostas_confiaveis_total.extend([{**a, "mercado": mercado} for a in confiaveis])
+        apostas_confiaveis_total.extend([{**a, "mercado": mercado, "match_date": datas_por_match[a["match_id"]]} for a in confiaveis])
 
     if not apostas_confiaveis_total:
         logger.error("Nenhuma aposta na faixa confiável em nenhuma linha -- não há como quebrar por liga.")
@@ -154,6 +171,58 @@ def main() -> None:
     for r in sorted(relatorio_por_liga, key=lambda r: r["roi_ic95_inferior"], reverse=True):
         if r["n_apostas"] < MIN_N_LIGA_CONCLUSIVO:
             logger.info("  -> %s: n=%d (< %d, não conclusivo)", r["model_name"], r["n_apostas"], MIN_N_LIGA_CONCLUSIVO)
+
+    # ==========================================================================
+    # Carteira cronológica RESTRITA (liga=Brasileirão Série B, casa in
+    # {bet365,betano}) -- pedido do usuário depois de ver a quebra por liga/
+    # casa acima, é o "próximo passo antes de promover a alta" já registrado
+    # em model_betting_strategy (sub_faixa rf_confiavel_*). Reaproveita
+    # `simular_carteira_cronologica` de matriz_confiabilidade_ev.py (mesma
+    # função que gerou os números 3,09x/3,86x/1,67x já citados em
+    # CONTEXTO_PROJETO.md, mas ali rodada sobre TODAS as ligas/casas
+    # agregadas) -- aqui roda só no recorte com edge demonstrado.
+    # ==========================================================================
+    restritas = [
+        a for a in apostas_confiaveis_total
+        if a.get("liga") == LIGA_RESTRITA and a.get("casa_aposta") in CASAS_RESTRITAS
+    ]
+    logger.info("=" * 100)
+    logger.info(
+        "CARTEIRA CRONOLÓGICA RESTRITA (liga=%r, casa em %s): %d de %d apostas confiáveis sobrevivem ao recorte.",
+        LIGA_RESTRITA, sorted(CASAS_RESTRITAS), len(restritas), len(apostas_confiaveis_total),
+    )
+    if not restritas:
+        logger.error("Nenhuma aposta sobrevive ao recorte liga+casa -- não há como simular a carteira restrita.")
+    else:
+        # Por linha (mercado) separada, mesmo recorte de granularidade que
+        # CONTEXTO_PROJETO.md já reporta pra carteira agregada (3,09x pra 4.5,
+        # 3,86x/1,67x pras 2 células de 5.5) -- e também combinada (as 2
+        # linhas juntas, ordem cronológica real de quem apostaria nas 2 ao
+        # mesmo tempo).
+        for mercado_alvo in sorted({a["mercado"] for a in restritas}):
+            subset = sorted([a for a in restritas if a["mercado"] == mercado_alvo], key=lambda a: a["match_date"])
+            resultado = mcev.simular_carteira_cronologica(subset)
+            relatorio = bk.resumir_backtest(f"cartoes_rf / {mercado_alvo} (restrito)", subset, None)
+            logger.info(
+                "  %s: n=%d | ROI médio %+.1f%% IC95%%[%+.1f%%,%+.1f%%] | carteira: banca final %.2fx, drawdown máx %.1f%% (n apostado=%d)",
+                mercado_alvo, relatorio["n_apostas"], relatorio["roi_medio"] * 100,
+                relatorio["roi_ic95_inferior"] * 100, relatorio["roi_ic95_superior"] * 100,
+                resultado["banca_final_x"], resultado["drawdown_maximo"] * 100, resultado["n_apostado"],
+            )
+
+        restritas_ordenadas = sorted(restritas, key=lambda a: a["match_date"])
+        resultado_combinado = mcev.simular_carteira_cronologica(restritas_ordenadas)
+        relatorio_combinado = bk.resumir_backtest("cartoes_rf / restrito (4.5+5.5 combinadas)", restritas_ordenadas, None)
+        logger.info("-" * 100)
+        logger.info(
+            "COMBINADO (4.5+5.5, mesma banca): n=%d | ROI médio %+.1f%% IC95%%[%+.1f%%,%+.1f%%] | %s | "
+            "carteira: banca final %.2fx, drawdown máx %.1f%% (n apostado=%d)",
+            relatorio_combinado["n_apostas"], relatorio_combinado["roi_medio"] * 100,
+            relatorio_combinado["roi_ic95_inferior"] * 100, relatorio_combinado["roi_ic95_superior"] * 100,
+            "SIGNIFICATIVO (IC95%>0)" if relatorio_combinado["significativo"] else "sem evidência",
+            resultado_combinado["banca_final_x"], resultado_combinado["drawdown_maximo"] * 100, resultado_combinado["n_apostado"],
+        )
+    logger.info("=" * 100)
 
 
 if __name__ == "__main__":
