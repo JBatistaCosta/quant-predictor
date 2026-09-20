@@ -661,16 +661,40 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         # funciona igual pra fixture futura e pra --backtest, sem precisar
         # de "agora" como aproximação). Mesma disciplina de lote já usada no
         # resto do arquivo pra não fazer 1 round-trip por jogador.
+        # ACHADO REAL (20/09): essa RPC processa `match_shots_fotmob` (477k+
+        # linhas) por jogador e vinha estourando `statement timeout` (57014)
+        # com frequência real em produção -- 26 de 30 execuções do workflow
+        # `ingerir_escalacao_pre_jogo.yml` falharam por causa disso entre
+        # 18-20/09 (não intermitente, praticamente sempre), derrubando o
+        # script INTEIRO e, em cascata, pulando o step seguinte (pricing
+        # pipeline) mesmo quando a escalação real já tinha sido capturada
+        # com sucesso no step anterior. `fator_zona_ajustado` já é um
+        # CANDIDATO nunca usado pra derivar `lambda_chutes_jogo` de verdade
+        # (só grava em paralelo, ver comentário acima) e já foi validado
+        # SEM sinal preditivo mensurável (RMSE praticamente empatado, ver
+        # CONTEXTO_PROJETO.md, "Validação ampliada N=300") -- não vale a
+        # pena travar o pipeline crítico (escalação/previsão/pricing) por
+        # uma feature exploratória. Erro (timeout ou qualquer outro) agora
+        # só pula o AJUSTE pra aquela partida -- `fator_zona` cai no default
+        # neutro (1.0) já usado abaixo pra jogador ausente do dict.
         fator_zona_por_match_player: dict[tuple[int, int], float] = {}
         for match_id_lote, grupo in df.groupby("match_id"):
-            resp_fator = supabase.rpc(
-                "calcular_fator_zona_jogador_lote",
-                {
-                    "p_player_ids": grupo["player_id"].astype(int).tolist(),
-                    "p_opponent_team_ids": grupo["opponent_team_id"].astype(int).tolist(),
-                    "p_data_corte": grupo["match_date"].iloc[0],
-                },
-            ).execute()
+            try:
+                resp_fator = supabase.rpc(
+                    "calcular_fator_zona_jogador_lote",
+                    {
+                        "p_player_ids": grupo["player_id"].astype(int).tolist(),
+                        "p_opponent_team_ids": grupo["opponent_team_id"].astype(int).tolist(),
+                        "p_data_corte": grupo["match_date"].iloc[0],
+                    },
+                ).execute()
+            except Exception as exc:
+                logger.warning(
+                    "Falha em calcular_fator_zona_jogador_lote pra match_id=%s (%s) -- "
+                    "seguindo com fator_zona neutro (1.0) só pra essa partida.",
+                    match_id_lote, exc,
+                )
+                continue
             for linha_fator in resp_fator.data or []:
                 fator_zona_por_match_player[(int(match_id_lote), int(linha_fator["player_id"]))] = float(linha_fator["fator"])
 
