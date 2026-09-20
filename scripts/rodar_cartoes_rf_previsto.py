@@ -145,10 +145,15 @@ def main() -> None:
                             linha, len(treino_valido), MIN_TREINO)
             continue
 
-        alvo_validos = linhas_alvo_df.dropna(subset=features).reset_index(drop=True)
-        if alvo_validos.empty:
-            logger.warning("[cartoes_total %.1f]: nenhuma partida-alvo com todas as features -- pulando.", linha)
-            continue
+        # NÃO faz dropna nas partidas-alvo -- diferente do treino (que precisa
+        # de dado real completo), o Pipeline treinado por treinar_random_forest
+        # já tem SimpleImputer(median) como 1º passo, então lida nativamente
+        # com NaN (ex.: média do árbitro, que só é conhecida perto do jogo,
+        # não com JANELA_DIAS=14 de antecedência) -- mesmo padrão já usado em
+        # prever_partidas_futuras_custom.processar_config/ma.prever_com_estado.
+        # Um dropna aqui derrubava 100% das 109 partidas candidatas na 1ª
+        # execução em produção (20/09), todas sem árbitro anunciado ainda.
+        alvo_validos = linhas_alvo_df.reset_index(drop=True)
 
         modelo = wf_cartoes.treinar_random_forest(treino_valido, features, coluna_alvo)
         classes = np.array(modelo.classes_)
