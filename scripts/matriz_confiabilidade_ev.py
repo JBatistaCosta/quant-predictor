@@ -169,6 +169,37 @@ def bootstrap_ic95_estatistica(valores: np.ndarray, fn_estat, n_reamostragens: i
     return estat, float(lo), float(hi), p_valor
 
 
+def simular_carteira_cronologica_detalhada(apostas_ordenadas: list[dict], banca_inicial: float = 1.0) -> tuple[dict, list[dict]]:
+    """Mesma simulação de `simular_carteira_cronologica`, mas também
+    devolve o LEDGER aposta a aposta (banca antes/depois, stake em fração
+    da banca do momento) -- usado por quem precisa persistir/exibir a
+    carteira aposta a aposta (ex.: aba "Carteira" em Sugestões de Valor,
+    `scripts/analisar_cartoes_liga_sinal.py`), não só o resumo agregado
+    que `simular_carteira_cronologica` devolve. `apostas_ordenadas`
+    precisa já vir ordenada por `match_date` -- esta função não ordena de
+    novo. Apostas com stake=0 (fora da política de staking, ver
+    `kelly_fracionario`) são omitidas do ledger, igual já eram omitidas
+    do resumo."""
+    banca = banca_inicial
+    pico = banca_inicial
+    drawdown_maximo = 0.0
+    ledger = []
+    for aposta in apostas_ordenadas:
+        stake_fracao = bk.kelly_fracionario(aposta["prob_modelo"], aposta["odd"])
+        if stake_fracao <= 0:
+            continue
+        banca_antes = banca
+        stake = stake_fracao * banca
+        banca += stake * (aposta["odd"] - 1) if aposta["acertou"] else -stake
+        banca = max(banca, 0.0)
+        pico = max(pico, banca)
+        if pico > 0:
+            drawdown_maximo = max(drawdown_maximo, (pico - banca) / pico)
+        ledger.append({**aposta, "stake_pct": stake_fracao, "banca_antes": banca_antes, "banca_depois": banca})
+    resumo = {"banca_final_x": banca / banca_inicial, "drawdown_maximo": drawdown_maximo, "n_apostado": len(ledger)}
+    return resumo, ledger
+
+
 def simular_carteira_cronologica(apostas_ordenadas: list[dict], banca_inicial: float = 1.0) -> dict:
     """Carteira simulada CRONOLÓGICA (mesmo espírito de 'validado_carteira'
     já usado neste projeto pra escanteios/cartões, ver CONTEXTO_
@@ -177,24 +208,11 @@ def simular_carteira_cronologica(apostas_ordenadas: list[dict], banca_inicial: f
     grupos), aqui a banca COMPÕE de verdade ao longo do tempo (stake =
     fração de Kelly da banca ATUAL) -- é o teste real de "se eu tivesse
     apostado isso em ordem cronológica, o que teria acontecido com meu
-    dinheiro". `apostas_ordenadas` precisa já vir ordenada por
-    `match_date` -- esta função não ordena de novo."""
-    banca = banca_inicial
-    pico = banca_inicial
-    drawdown_maximo = 0.0
-    n_apostado = 0
-    for aposta in apostas_ordenadas:
-        stake_fracao = bk.kelly_fracionario(aposta["prob_modelo"], aposta["odd"])
-        if stake_fracao <= 0:
-            continue
-        stake = stake_fracao * banca
-        banca += stake * (aposta["odd"] - 1) if aposta["acertou"] else -stake
-        banca = max(banca, 0.0)
-        n_apostado += 1
-        pico = max(pico, banca)
-        if pico > 0:
-            drawdown_maximo = max(drawdown_maximo, (pico - banca) / pico)
-    return {"banca_final_x": banca / banca_inicial, "drawdown_maximo": drawdown_maximo, "n_apostado": n_apostado}
+    dinheiro". Só o resumo agregado -- quem precisar do ledger aposta a
+    aposta usa `simular_carteira_cronologica_detalhada` (mesmo cálculo,
+    sem round-trip duplicado)."""
+    resumo, _ = simular_carteira_cronologica_detalhada(apostas_ordenadas, banca_inicial)
+    return resumo
 
 
 def avaliar_celula(apostas_bucket: list[dict], modelo: str, mercado: str, faixa_odd: tuple[float, float], faixa_edge: tuple[float, float]) -> dict | None:

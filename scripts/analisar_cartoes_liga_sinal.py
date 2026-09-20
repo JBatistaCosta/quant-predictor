@@ -30,7 +30,11 @@ casa de aposta usando a infraestrutura já existente em `backtest_kelly.py`
 chamadas avulsas; a quebra por casa é nova, adicionada aqui e reaproveitável
 por qualquer script futuro que precise da mesma pergunta).
 
-Não escreve nada no Supabase -- só leitura e relatório em stdout, mesma
+Escreve em `carteira_cartoes_rf_historico` (precisa de service_role key) --
+o ledger aposta a aposta da carteira cronológica RESTRITA combinada (seção
+mais abaixo), que alimenta a aba "Carteira" em Sugestões de Valor
+(src/pages/ResumoValorApostas.jsx). O resto (quebra por liga/casa,
+resumo agregado) continua só leitura e relatório em stdout, mesma
 categoria de `validar_cartoes_walkforward_incremental.py`.
 
 AVISO ESTATÍSTICO: quebrar por liga divide a amostra já modesta (99-141
@@ -82,6 +86,12 @@ MIN_N_LIGA_CONCLUSIVO = 20  # abaixo disso, "não conclusivo" mesmo se IC>0
 # Pinnacle, que não mostrou edge nenhum).
 LIGA_RESTRITA = "Brasileirão Série B"
 CASAS_RESTRITAS = {"bet365", "betano"}
+
+# Identifica, em `carteira_cartoes_rf_historico`, QUAL execução da carteira
+# restrita gerou cada linha do ledger -- hoje só existe a combinada (4.5+5.5
+# na mesma banca, ver seção "Carteira cronológica RESTRITA" abaixo). Ver
+# migration 20260920160000_create_carteira_cartoes_rf_historico.sql.
+SUB_FAIXA_CARTEIRA = "rf_confiavel_serieB_bet365betano_combinado"
 
 
 def obter_env(nome: str) -> str:
@@ -150,7 +160,22 @@ def main() -> None:
             "[cartoes_total %.1f]: %d apostas na faixa confiável (odd [%.2f,%.2f), edge>=%.0f%%) de %d totais com edge>=2%%.",
             linha, len(confiaveis), ODD_MIN, ODD_MAX, EDGE_MINIMO_SINAL * 100, len(apostas),
         )
-        apostas_confiaveis_total.extend([{**a, "mercado": mercado, "match_date": datas_por_match[a["match_id"]]} for a in confiaveis])
+        for a in confiaveis:
+            a["mercado"] = mercado
+            a["linha"] = linha
+            a["match_date"] = datas_por_match[a["match_id"]]
+            # prob_devig -- pedido do usuário na aba "Carteira" de Sugestões
+            # de Valor: além da odd real, ver a probabilidade implícita do
+            # mercado já sem a margem da casa (mesma convenção de devig do
+            # resto do projeto). Precisa das DUAS pontas do O/U (over e
+            # under) da mesma partida, não só a que virou aposta.
+            odds_partida = odds_reais.get(a["match_id"], {})
+            odd_over, odd_under = odds_partida.get("odd_over"), odds_partida.get("odd_under")
+            if odd_over and odd_under:
+                a["prob_devig"] = bk._devig_odds_ratio({"over": odd_over, "under": odd_under})[a["selecao"]]
+            else:
+                a["prob_devig"] = None
+        apostas_confiaveis_total.extend(confiaveis)
 
     if not apostas_confiaveis_total:
         logger.error("Nenhuma aposta na faixa confiável em nenhuma linha -- não há como quebrar por liga.")
@@ -219,7 +244,7 @@ def main() -> None:
             )
 
         restritas_ordenadas = sorted(restritas, key=lambda a: a["match_date"])
-        resultado_combinado = mcev.simular_carteira_cronologica(restritas_ordenadas)
+        resultado_combinado, ledger_combinado = mcev.simular_carteira_cronologica_detalhada(restritas_ordenadas)
         relatorio_combinado = bk.resumir_backtest("cartoes_rf / restrito (4.5+5.5 combinadas)", restritas_ordenadas, None)
         logger.info("-" * 100)
         logger.info(
@@ -230,7 +255,47 @@ def main() -> None:
             "SIGNIFICATIVO (IC95%>0)" if relatorio_combinado["significativo"] else "sem evidência",
             resultado_combinado["banca_final_x"], resultado_combinado["drawdown_maximo"] * 100, resultado_combinado["n_apostado"],
         )
+        persistir_carteira_restrita(supabase, SUB_FAIXA_CARTEIRA, ledger_combinado)
     logger.info("=" * 100)
+
+
+def persistir_carteira_restrita(supabase: Client, sub_faixa: str, ledger: list[dict]) -> None:
+    """Apaga e recria (não upsert incremental) todas as linhas de
+    `carteira_cartoes_rf_historico` para `sub_faixa` -- cada execução do
+    script recalcula a carteira do zero (o walk-forward pode mudar de uma
+    execução pra outra, ex. mais partidas resolvidas), então o ledger
+    persistido precisa refletir exatamente a última execução, não acumular
+    junto com execuções antigas."""
+    linhas = []
+    for i, aposta in enumerate(ledger):
+        linhas.append({
+            "sub_faixa": sub_faixa,
+            "match_id": int(aposta["match_id"]),
+            "match_date": aposta["match_date"].isoformat(),
+            "mercado": aposta["mercado"],
+            "linha": aposta["linha"],
+            "selecao": aposta["selecao"],
+            "bookmaker": aposta.get("casa_aposta"),
+            "prob_modelo": aposta["prob_modelo"],
+            "odd_justa": 1 / aposta["prob_modelo"],
+            "odd_real": aposta["odd"],
+            "prob_devig": aposta.get("prob_devig"),
+            "edge": aposta["prob_modelo"] - 1 / aposta["odd"],
+            "ev": aposta["prob_modelo"] * aposta["odd"] - 1,
+            "stake_pct": aposta["stake_pct"],
+            "acertou": bool(aposta["acertou"]),
+            "banca_antes": aposta["banca_antes"],
+            "banca_depois": aposta["banca_depois"],
+            "ordem": i,
+        })
+    supabase.table("carteira_cartoes_rf_historico").delete().eq("sub_faixa", sub_faixa).execute()
+    if not linhas:
+        logger.warning("Ledger vazio -- nada persistido em carteira_cartoes_rf_historico (sub_faixa=%s).", sub_faixa)
+        return
+    supabase.table("carteira_cartoes_rf_historico").upsert(
+        linhas, on_conflict="sub_faixa,match_id,mercado,selecao"
+    ).execute()
+    logger.info("Persistidas %d linhas em carteira_cartoes_rf_historico (sub_faixa=%s).", len(linhas), sub_faixa)
 
 
 if __name__ == "__main__":

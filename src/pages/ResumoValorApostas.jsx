@@ -8,10 +8,16 @@
 // Reaproveita a MESMA lógica de edge/devig de api/backtest-betting.js
 // (?formato=candidatas), só sem a agregação em grupos/bootstrap.
 import React, { useState, useEffect, useMemo } from 'react';
-import { Target, AlertTriangle, Loader2, Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Target, AlertTriangle, Loader2, Download, Search, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import { toPct } from '../utils/format';
+
+// Identifica em `carteira_cartoes_rf_historico` a carteira restrita
+// combinada (4.5+5.5, Série B + bet365/betano, mesma banca) -- ver
+// SUB_FAIXA_CARTEIRA em scripts/analisar_cartoes_liga_sinal.py e
+// CONTEXTO_PROJETO.md ("ACHADO REFORÇADO" de cartões).
+const SUB_FAIXA_CARTEIRA = 'rf_confiavel_serieB_bet365betano_combinado';
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -65,11 +71,19 @@ function exportarCSV(linhas, colunas, nomeArquivo) {
 }
 
 export default function ResumoValorApostas() {
+  const [aba, setAba] = useState('sugestoes'); // 'sugestoes' | 'carteira'
+
   const [carregandoOpcoes, setCarregandoOpcoes] = useState(true);
   const [opcoesModelos, setOpcoesModelos] = useState([]);
   const [opcoesMercados, setOpcoesMercados] = useState([]);
   const [opcoesLigas, setOpcoesLigas] = useState([]);
   const [ligasPorId, setLigasPorId] = useState({});
+  const [timesPorId, setTimesPorId] = useState({});
+
+  const [carregandoCarteira, setCarregandoCarteira] = useState(false);
+  const [erroCarteira, setErroCarteira] = useState('');
+  const [carteira, setCarteira] = useState([]);
+  const [carteiraCarregada, setCarteiraCarregada] = useState(false);
 
   const [filtroModelo, setFiltroModelo] = useState('');
   const [filtroMercado, setFiltroMercado] = useState('');
@@ -81,7 +95,6 @@ export default function ResumoValorApostas() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const [candidatas, setCandidatas] = useState([]);
-  const [timesPorId, setTimesPorId] = useState({});
   const [buscou, setBuscou] = useState(false);
   const [paginaAtual, setPaginaAtual] = useState(0);
 
@@ -165,6 +178,88 @@ export default function ResumoValorApostas() {
   const nomeTime = (id) => timesPorId[id] || (id ? `Time #${id}` : '—');
   const nomeLiga = (id) => ligasPorId[id] || `Liga #${id}`;
 
+  // Aba "Carteira" -- ledger aposta a aposta da carteira cronológica
+  // restrita de cartoes_rf (Série B + bet365/betano, O/U 4.5/5.5,
+  // edge>=25%), persistida por scripts/analisar_cartoes_liga_sinal.py em
+  // carteira_cartoes_rf_historico (não existe endpoint dedicado -- é
+  // leitura pública direto do Supabase, mesmo padrão de outras tabelas
+  // *_historico deste projeto).
+  async function buscarCarteira() {
+    if (!supabaseAtivo) return;
+    setCarregandoCarteira(true);
+    setErroCarteira('');
+    try {
+      const { data, error } = await supabase
+        .from('carteira_cartoes_rf_historico')
+        .select('*, matches(round, league_id, home_team_id, away_team_id)')
+        .eq('sub_faixa', SUB_FAIXA_CARTEIRA)
+        .order('ordem', { ascending: true });
+      if (error) throw error;
+      const linhas = data || [];
+      setCarteira(linhas);
+      setCarteiraCarregada(true);
+
+      const idsTimes = [...new Set(linhas.flatMap(l => [l.matches?.home_team_id, l.matches?.away_team_id]).filter(Boolean))];
+      if (idsTimes.length > 0) {
+        const { data: times } = await supabase.from('teams').select('id, name').in('id', idsTimes);
+        const mapaTimes = {};
+        (times || []).forEach(t => { mapaTimes[t.id] = t.name; });
+        setTimesPorId(prev => ({ ...prev, ...mapaTimes }));
+      }
+    } catch (e) {
+      setErroCarteira(e.message);
+      setCarteira([]);
+    } finally {
+      setCarregandoCarteira(false);
+    }
+  }
+
+  useEffect(() => {
+    if (aba === 'carteira' && !carteiraCarregada && !carregandoCarteira) buscarCarteira();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba]);
+
+  const linhaRotulo = (l) => `${l.selecao === 'over' ? 'Over' : 'Under'} ${Number(l.linha).toFixed(1)}`;
+  const resultadoCarteira = (l) => (l.acertou ? { texto: 'Green', cor: 'text-emerald-400' } : { texto: 'Red', cor: 'text-red-400' });
+  const diferencaBanca = (l) => l.banca_depois - l.banca_antes;
+
+  const resumoCarteira = useMemo(() => {
+    if (carteira.length === 0) return null;
+    const ultima = carteira[carteira.length - 1];
+    const pico = carteira.reduce((max, l) => Math.max(max, l.banca_depois), carteira[0]?.banca_antes ?? 1);
+    let drawdownMax = 0;
+    let picoCorrente = carteira[0]?.banca_antes ?? 1;
+    for (const l of carteira) {
+      picoCorrente = Math.max(picoCorrente, l.banca_depois);
+      if (picoCorrente > 0) drawdownMax = Math.max(drawdownMax, (picoCorrente - l.banca_depois) / picoCorrente);
+    }
+    return { bancaFinalX: ultima.banca_depois, drawdownMax, n: carteira.length, pico };
+  }, [carteira]);
+
+  const colunasCSVCarteira = useMemo(() => ([
+    { header: 'Data', get: (l) => new Date(l.match_date).toLocaleDateString('pt-BR') },
+    { header: 'Liga', get: (l) => nomeLiga(l.matches?.league_id) },
+    { header: 'Rodada', get: (l) => l.matches?.round ?? '—' },
+    { header: 'Time 1 (mandante)', get: (l) => nomeTime(l.matches?.home_team_id) },
+    { header: 'Time 2 (visitante)', get: (l) => nomeTime(l.matches?.away_team_id) },
+    { header: 'Mercado', get: () => 'Cartões — Total' },
+    { header: 'Linha', get: (l) => linhaRotulo(l) },
+    { header: 'Prob. modelo', get: (l) => (l.prob_modelo * 100).toFixed(2) + '%' },
+    { header: 'Odd justa', get: (l) => l.odd_justa.toFixed(3) },
+    { header: 'Odd real', get: (l) => l.odd_real.toFixed(3) },
+    { header: 'Prob. devig (mercado)', get: (l) => (l.prob_devig != null ? (l.prob_devig * 100).toFixed(2) + '%' : '—') },
+    { header: 'Edge (pp)', get: (l) => (l.edge * 100).toFixed(2) },
+    { header: 'EV', get: (l) => (l.ev * 100).toFixed(2) + '%' },
+    { header: 'Stake sugerida (% banca)', get: (l) => (l.stake_pct * 100).toFixed(2) + '%' },
+    { header: 'Resultado', get: (l) => resultadoCarteira(l).texto },
+    { header: 'Diferença na banca', get: (l) => (diferencaBanca(l) * 100).toFixed(2) + '%' },
+  ]), [timesPorId, ligasPorId]);
+
+  const exportarCarteira = () => {
+    const nome = `carteira-cartoes-rf-serieB-${new Date().toISOString().slice(0, 10)}.csv`;
+    exportarCSV(carteira, colunasCSVCarteira, nome);
+  };
+
   const colunasCSV = useMemo(() => ([
     { header: 'Data', get: (c) => new Date(c.match_date).toLocaleString('pt-BR') },
     { header: 'Liga', get: (c) => nomeLiga(c.league_id) },
@@ -206,15 +301,37 @@ export default function ResumoValorApostas() {
             <Target className="text-emerald-400" size={28} /> Sugestões de Valor
           </h1>
           <p className="text-slate-400 mt-1 text-sm">
-            Todas as apostas com edge positivo (probabilidade do modelo acima da probabilidade devigada do mercado) que cada modelo sugeriu, jogo a jogo — inclui partidas ainda pendentes, não só o histórico já resolvido.
+            {aba === 'sugestoes'
+              ? 'Todas as apostas com edge positivo (probabilidade do modelo acima da probabilidade devigada do mercado) que cada modelo sugeriu, jogo a jogo — inclui partidas ainda pendentes, não só o histórico já resolvido.'
+              : 'Ledger aposta a aposta da carteira cronológica restrita de Cartões (cartoes_rf, Brasileirão Série B + bet365/betano, O/U 4.5 e 5.5, edge≥25%) — a banca composta de verdade, em ordem cronológica, achado registrado em model_betting_strategy.'}
           </p>
         </div>
-        <button onClick={exportar} disabled={candidatas.length === 0}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
-          <Download size={16} /> Exportar CSV
+        {aba === 'sugestoes' ? (
+          <button onClick={exportar} disabled={candidatas.length === 0}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
+            <Download size={16} /> Exportar CSV
+          </button>
+        ) : (
+          <button onClick={exportarCarteira} disabled={carteira.length === 0}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
+            <Download size={16} /> Exportar CSV
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => setAba('sugestoes')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border ${aba === 'sugestoes' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>
+          <Target size={15} /> Sugestões de Valor
+        </button>
+        <button onClick={() => setAba('carteira')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border ${aba === 'carteira' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>
+          <Wallet size={15} /> Carteira (Cartões — Série B)
         </button>
       </div>
 
+      {aba === 'sugestoes' && (
+      <>
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-3">
         <div>
           <label className="block text-[10px] uppercase text-slate-500 mb-1">Modelo</label>
@@ -342,6 +459,141 @@ export default function ResumoValorApostas() {
           )}
         </div>
       )}
+      </>
+      )}
+
+      {aba === 'carteira' && (
+        <CarteiraCartoesTab
+          carregando={carregandoCarteira}
+          erro={erroCarteira}
+          carteira={carteira}
+          resumo={resumoCarteira}
+          nomeLiga={nomeLiga}
+          nomeTime={nomeTime}
+          linhaRotulo={linhaRotulo}
+          resultadoCarteira={resultadoCarteira}
+          diferencaBanca={diferencaBanca}
+        />
+      )}
     </div>
+  );
+}
+
+function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nomeTime, linhaRotulo, resultadoCarteira, diferencaBanca }) {
+  const [paginaAtual, setPaginaAtual] = useState(0);
+  const totalPaginas = Math.max(1, Math.ceil(carteira.length / LINHAS_POR_PAGINA));
+  const linhasDaPagina = carteira.slice(paginaAtual * LINHAS_POR_PAGINA, (paginaAtual + 1) * LINHAS_POR_PAGINA);
+
+  if (erro) return <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>;
+
+  if (carregando) {
+    return (
+      <div className="flex items-center justify-center py-16 text-slate-500 gap-2">
+        <Loader2 className="animate-spin" size={20} /> Carregando carteira...
+      </div>
+    );
+  }
+
+  if (carteira.length === 0) {
+    return (
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center text-slate-500 text-sm">
+        Nenhuma aposta na carteira restrita ainda — ela é populada pelo workflow `analisar_cartoes_liga_sinal.yml`.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {resumo && (
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+            <div className="text-[10px] uppercase text-slate-500 font-bold">Banca final</div>
+            <div className="text-xl font-extrabold text-emerald-400 mt-1">{resumo.bancaFinalX.toFixed(2)}x</div>
+          </div>
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+            <div className="text-[10px] uppercase text-slate-500 font-bold">Drawdown máximo</div>
+            <div className="text-xl font-extrabold text-amber-400 mt-1">{(resumo.drawdownMax * 100).toFixed(1)}%</div>
+          </div>
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+            <div className="text-[10px] uppercase text-slate-500 font-bold">Apostas na carteira</div>
+            <div className="text-xl font-extrabold text-slate-100 mt-1">{resumo.n}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 overflow-x-auto">
+        <div className="text-xs text-slate-500 mb-2">{carteira.length} apostas na carteira (ordem cronológica)</div>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 uppercase text-[10px]">
+              <th className="text-left p-1.5">Data</th>
+              <th className="text-left p-1.5">Liga</th>
+              <th className="text-right p-1.5">Rodada</th>
+              <th className="text-left p-1.5">Confronto</th>
+              <th className="text-left p-1.5">Mercado</th>
+              <th className="text-left p-1.5">Linha</th>
+              <th className="text-right p-1.5">Prob. modelo</th>
+              <th className="text-right p-1.5">Odd justa</th>
+              <th className="text-right p-1.5">Odd real</th>
+              <th className="text-right p-1.5">Prob. devig</th>
+              <th className="text-right p-1.5">Edge</th>
+              <th className="text-right p-1.5">EV</th>
+              <th className="text-right p-1.5">Stake</th>
+              <th className="text-right p-1.5">Resultado</th>
+              <th className="text-right p-1.5">Δ Banca</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/50">
+            {linhasDaPagina.map((l) => {
+              const resultado = resultadoCarteira(l);
+              const diff = diferencaBanca(l);
+              return (
+                <tr key={l.id}>
+                  <td className="p-1.5 text-slate-400 whitespace-nowrap">{new Date(l.match_date).toLocaleDateString('pt-BR')}</td>
+                  <td className="p-1.5 text-slate-400">{nomeLiga(l.matches?.league_id)}</td>
+                  <td className="p-1.5 text-right text-slate-400">{l.matches?.round ?? '—'}</td>
+                  <td className="p-1.5 text-slate-300 font-semibold whitespace-nowrap">{nomeTime(l.matches?.home_team_id)} x {nomeTime(l.matches?.away_team_id)}</td>
+                  <td className="p-1.5 text-slate-400">Cartões — Total</td>
+                  <td className="p-1.5 text-slate-300 font-semibold">{linhaRotulo(l)}</td>
+                  <td className="p-1.5 text-right text-slate-200">{toPct(l.prob_modelo)}</td>
+                  <td className="p-1.5 text-right text-slate-400">{l.odd_justa.toFixed(2)}</td>
+                  <td className="p-1.5 text-right text-slate-200">{l.odd_real.toFixed(2)}</td>
+                  <td className="p-1.5 text-right text-slate-400">{l.prob_devig != null ? toPct(l.prob_devig) : '—'}</td>
+                  <td className="p-1.5 text-right font-bold text-emerald-400">+{(l.edge * 100).toFixed(1)}pp</td>
+                  <td className="p-1.5 text-right text-slate-200">+{(l.ev * 100).toFixed(1)}%</td>
+                  <td className="p-1.5 text-right text-slate-300">{(l.stake_pct * 100).toFixed(1)}%</td>
+                  <td className={`p-1.5 text-right font-bold ${resultado.cor}`}>{resultado.texto}</td>
+                  <td className={`p-1.5 text-right font-bold ${diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {diff >= 0 ? '+' : ''}{(diff * 100).toFixed(2)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {totalPaginas > 1 && (
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700">
+            <button
+              onClick={() => setPaginaAtual(p => Math.max(0, p - 1))}
+              disabled={paginaAtual === 0}
+              className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft size={14} /> Anterior
+            </button>
+            <span className="text-[11px] text-slate-500">
+              Página {paginaAtual + 1} de {totalPaginas} ({linhasDaPagina.length} de {carteira.length} linhas)
+            </span>
+            <button
+              onClick={() => setPaginaAtual(p => Math.min(totalPaginas - 1, p + 1))}
+              disabled={paginaAtual >= totalPaginas - 1}
+              className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Próxima <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
