@@ -609,14 +609,27 @@ def _melhores_odds_fechamento_snapshot(
     (`bookmaker_vencedor`, mesma chave `odd_<selecao>`) -- pedido do
     usuário pra saber contra qual casa o ROI de "fechamento" (melhor odd
     entre TODAS as casas, ao contrário de "abertura" que é sempre
-    Pinnacle) está sendo medido de verdade."""
+    Pinnacle) está sendo medido de verdade.
+
+    CORREÇÃO (20/09): o rótulo categórico `snapshot` não é um instante
+    único -- confirmado em produção que ~9% das chaves (partida, casa,
+    seleção) de cartões O/U em `pre_closing` têm mais de uma captura real
+    (`captured_at` diferentes) com odds DIFERENTES entre si (a cotação se
+    moveu enquanto o rótulo ficou o mesmo). A versão anterior pegava o
+    maior odds de cada seleção independentemente, o que podia combinar o
+    "over" de uma captura com o "under" de outra captura horas ou dias
+    distante -- um par de odds que nunca existiu no mercado ao mesmo
+    tempo, inflando o edge calculado. Agora: por (partida, casa de
+    aposta), fica só a captura de `captured_at` mais recente; o máximo
+    entre casas de aposta diferentes só é tirado DEPOIS disso, quando
+    todas as cotações comparadas já são da mesma janela de tempo."""
     selecoes = list(MERCADOS[mercado]["codigo_por_selecao"].keys())
     campo_por_selecao = {selecao: f"odd_{selecao}" for selecao in selecoes}
 
     def factory(lote, inicio, fim):
         return (
             supabase.table("odds_market")
-            .select("match_id, bookmaker, selection, odds")
+            .select("match_id, bookmaker, selection, odds, captured_at")
             .in_("match_id", lote)
             .eq("market", _nome_mercado_odds(mercado))
             .eq("snapshot", snapshot)
@@ -635,16 +648,31 @@ def _melhores_odds_fechamento_snapshot(
     # tamanho_lote em vez de mudar a estratégia de paginação).
     linhas = dados_historicos._paginar_por_lotes_de_id(factory, match_ids, tamanho_lote=100)
 
-    melhor: dict[int, dict[str, float]] = {}
-    bookmaker_vencedor: dict[int, dict[str, str]] = {}
+    # Passo 1: por (partida, casa de aposta, seleção), guarda só a
+    # captura de `captured_at` mais recente -- nunca combina odds de
+    # momentos diferentes da mesma casa. `captured_at` vem como string
+    # ISO 8601 (timestamptz via PostgREST), comparável lexicograficamente.
+    ultima_captura: dict[tuple[int, str, str], tuple[str, float]] = {}
     for linha in linhas:
         campo = campo_por_selecao.get(_traduzir_selecao_odds(mercado, linha["selection"]))
-        if not campo:
+        if not campo or not linha["odds"]:
             continue
-        atual = melhor.setdefault(linha["match_id"], {c: 0.0 for c in campo_por_selecao.values()})
-        if linha["odds"] and linha["odds"] > atual[campo]:
-            atual[campo] = linha["odds"]
-            bookmaker_vencedor.setdefault(linha["match_id"], {})[campo] = linha["bookmaker"]
+        chave = (linha["match_id"], linha["bookmaker"], campo)
+        capturado_em = linha.get("captured_at") or ""
+        anterior = ultima_captura.get(chave)
+        if anterior is None or capturado_em >= anterior[0]:
+            ultima_captura[chave] = (capturado_em, linha["odds"])
+
+    # Passo 2: entre as casas de aposta (já reduzidas à captura mais
+    # recente de cada uma), pega a melhor odd -- comparação legítima
+    # porque todas as cotações agora são da mesma janela de tempo.
+    melhor: dict[int, dict[str, float]] = {}
+    bookmaker_vencedor: dict[int, dict[str, str]] = {}
+    for (match_id, bookmaker, campo), (_, odds) in ultima_captura.items():
+        atual = melhor.setdefault(match_id, {c: 0.0 for c in campo_por_selecao.values()})
+        if odds > atual[campo]:
+            atual[campo] = odds
+            bookmaker_vencedor.setdefault(match_id, {})[campo] = bookmaker
     return melhor, bookmaker_vencedor
 
 
@@ -1076,7 +1104,7 @@ def _carregar_odds_pinnacle_brutas(
         def factory(lote, inicio, fim):
             return (
                 supabase.table("odds_market")
-                .select("match_id, selection, odds")
+                .select("match_id, selection, odds, captured_at")
                 .in_("match_id", lote)
                 .eq("market", _nome_mercado_odds(mercado))
                 .eq("snapshot", snap)
@@ -1086,11 +1114,22 @@ def _carregar_odds_pinnacle_brutas(
             )
 
         linhas = dados_historicos._paginar_por_lotes_de_id(factory, ids)
+        # Mesmo achado de `_melhores_odds_fechamento_snapshot` (20/09): o
+        # rótulo `snapshot` pode ter mais de uma captura real da Pinnacle
+        # com odds diferentes -- sem isso, a linha era sobrescrita pela
+        # ordem arbitrária de chegada da página, não pela mais recente.
+        # Fica só a captura de `captured_at` mais recente por seleção.
+        ultima_captura: dict[tuple[int, str], str] = {}
         odds_por_partida: dict[int, dict[str, float]] = {}
         for linha in linhas:
             selecao = _traduzir_selecao_odds(mercado, linha["selection"])
             if selecao not in selecoes:
                 continue
+            chave = (linha["match_id"], selecao)
+            capturado_em = linha.get("captured_at") or ""
+            if chave in ultima_captura and capturado_em < ultima_captura[chave]:
+                continue
+            ultima_captura[chave] = capturado_em
             odds_por_partida.setdefault(linha["match_id"], {})[selecao] = linha["odds"]
         return odds_por_partida
 
