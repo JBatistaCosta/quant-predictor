@@ -896,6 +896,42 @@ def imprimir_relatorio_por_liga(relatorio_por_liga: list[dict]) -> None:
     logger.info("=" * 86)
 
 
+# =============================================================================
+# Quebra por casa de aposta -- mesma disciplina de resumir_por_liga/
+# imprimir_relatorio_por_liga acima, aplicada à casa que ofereceu a odd
+# (só faz sentido pra odds de "fechamento" -- "abertura" é sempre Pinnacle,
+# sem essa info, ver `montar_apostas`/`bookmakers_por_partida`). Pergunta:
+# o edge medido é uniforme entre casas, ou concentrado numa só (ex.: uma
+# casa com linha mal calibrada, que fecharia assim que ela ajustasse)?
+# =============================================================================
+def resumir_por_casa_aposta(nome_modelo: str, apostas: list[dict]) -> list[dict]:
+    apostas_por_casa: dict[str, list[dict]] = {}
+    for aposta in apostas:
+        apostas_por_casa.setdefault(aposta.get("casa_aposta") or "desconhecida", []).append(aposta)
+    return [resumir_backtest(f"{nome_modelo} / {casa}", apostas_casa, None) for casa, apostas_casa in apostas_por_casa.items()]
+
+
+def imprimir_relatorio_por_casa_aposta(relatorio_por_casa: list[dict]) -> None:
+    if not relatorio_por_casa:
+        return
+    relatorio_ordenado = sorted(relatorio_por_casa, key=lambda r: r["roi_ic95_inferior"], reverse=True)
+    logger.info("=" * 86)
+    logger.info("BACKTEST POR CASA DE APOSTA -- edge é uniforme ou concentrado numa casa só?")
+    logger.info("=" * 86)
+    for r in relatorio_ordenado:
+        flag = "SIGNIFICATIVO (IC95% > 0)" if r["significativo"] else "sem evidência de edge positivo"
+        logger.info(
+            "%-40s | %4d apostas | ROI médio %+7.2f%% | IC95%% [%+7.2f%%, %+7.2f%%] | %s",
+            r["model_name"],
+            r["n_apostas"],
+            r["roi_medio"] * 100,
+            r["roi_ic95_inferior"] * 100,
+            r["roi_ic95_superior"] * 100,
+            flag,
+        )
+    logger.info("=" * 86)
+
+
 def _arredondar_ou_none(valor, casas: int):
     return None if valor is None or (isinstance(valor, float) and np.isnan(valor)) else round(valor, casas)
 
