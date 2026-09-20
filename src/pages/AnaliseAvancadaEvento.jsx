@@ -27,6 +27,7 @@ import {
 import { devigarOddsRatio, stakeKelly25 } from '../utils/devig';
 import { toPct } from '../utils/format';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
+import { buscarMatrizConfiabilidadeAtual, classificarComMatriz } from '../utils/classificarAposta';
 import { poissonCDF } from '../utils/poisson';
 import { negBinomialCDF } from '../utils/distributions';
 import { extractJsonFromImage } from '../utils/ocr';
@@ -295,6 +296,34 @@ function BotaoExportarCSV({ onClick, disabled }) {
     >
       <Download size={12} /> Exportar CSV
     </button>
+  );
+}
+
+// Badge compacto da classificação contra a matriz de confiabilidade EV
+// (ver src/utils/classificarAposta.js) -- usado na tabela de Verificação
+// de EV abaixo, uma linha por (casa, mercado, seleção).
+const COR_NIVEL_MATRIZ = {
+  bonferroni: 'bg-emerald-500/15 text-emerald-400',
+  fdr: 'bg-emerald-500/15 text-emerald-400',
+  fraco: 'bg-amber-500/15 text-amber-400',
+  nao_confiavel: 'bg-red-500/15 text-red-400',
+  sem_dado: 'bg-slate-700/40 text-slate-500',
+};
+const ABREV_NIVEL_MATRIZ = {
+  bonferroni: 'Confiável',
+  fdr: 'Confiável (FDR)',
+  fraco: 'Fraco',
+  nao_confiavel: 'Não confiável',
+  sem_dado: '—',
+};
+function BadgeMatriz({ classificacao }) {
+  return (
+    <span
+      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${COR_NIVEL_MATRIZ[classificacao.nivel]}`}
+      title={classificacao.rotulo}
+    >
+      {ABREV_NIVEL_MATRIZ[classificacao.nivel]}
+    </span>
   );
 }
 
@@ -1875,6 +1904,13 @@ export default function AnaliseAvancadaEvento() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [calibracaoRows, setCalibracaoRows] = useState([]);
+  // Matriz de confiabilidade odd x EV (matriz_confiabilidade_ev_historico) --
+  // reaproveitada aqui pra marcar, na Verificação de EV abaixo, se cada
+  // linha (modelo/mercado/odd real) cai numa célula já validada como
+  // confiável, sem repetir a consulta a cada linha. Não filtra por
+  // match_id (é uma tabela de referência global, mesmo padrão de
+  // model_calibration acima) -- buscada uma vez por carregamento.
+  const [matrizConfiabilidade, setMatrizConfiabilidade] = useState([]);
   const [jogadorEstimativas, setJogadorEstimativas] = useState([]);
   // disp_r (Binomial Negativa) dos mercados de chutes (total) e chutes ao
   // gol, calibrados por liga -- ver probPeloMenos/arquivos_do_claude/
@@ -1956,7 +1992,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }, matrizConfRows] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -2091,6 +2127,10 @@ export default function AnaliseAvancadaEvento() {
                 .lt('matches.match_date', j.match_date)
                 .gte('matches.match_date', inicioJanelaTatica)
             : Promise.resolve({ data: [] }),
+          // Matriz de confiabilidade odd x EV (ver comentário no state acima)
+          // -- pra marcar na Verificação de EV se cada linha cai numa célula
+          // já validada, sem uma consulta por linha.
+          (j.status === 'scheduled' || finalizada) ? buscarMatrizConfiabilidadeAtual(supabase) : Promise.resolve([]),
         ]);
         if (cancelado) return;
         if (erroEst) { setErro(erroEst.message); setCarregando(false); return; }
@@ -2120,6 +2160,7 @@ export default function AnaliseAvancadaEvento() {
           setMercadosCartoesModelo(Object.keys(saidaCartoes).length > 0 ? saidaCartoes : null);
         }
         setCalibracaoRows(calib || []);
+        setMatrizConfiabilidade(matrizConfRows || []);
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
         setDispRChutesNoAlvo(dispRNoAlvoRow?.param_value != null ? Number(dispRNoAlvoRow.param_value) : null);
@@ -2249,15 +2290,22 @@ export default function AnaliseAvancadaEvento() {
           const retorno = finalizada && acertou != null && kelly25 > 0
             ? (acertou ? kelly25 * (oddReal - 1) : -kelly25)
             : null;
+          // Classificação contra a matriz de confiabilidade EV (odd x edge
+          // já validado, ver src/utils/classificarAposta.js) -- usa o edge
+          // "cru" (p - 1/odd, MESMA convenção de matriz_confiabilidade_ev.py),
+          // diferente do `edge` acima (devigado) usado no resto desta tabela.
+          const classificacao = modelSelecionado
+            ? classificarComMatriz(matrizConfiabilidade, modelSelecionado, mercado, pParaCalculo, oddReal)
+            : null;
           linhas.push({
             bookmaker, mercado, selecao: s, oddReal, pModelo, pCalibrado: calibrado?.probabilidade ?? null,
-            metodoCalibracao: calibrado?.metodo ?? null, pMercado, edge, ev, kelly25, acertou, retorno,
+            metodoCalibracao: calibrado?.metodo ?? null, pMercado, edge, ev, kelly25, acertou, retorno, classificacao,
           });
         }
       }
     }
     return linhas.sort((a, b) => b.edge - a.edge);
-  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, mercadosCartoesModelo, oddsPorBookmaker, resultadoReal, modelSelecionado, indiceCalibracao]);
+  }, [jogo?.status, finalizada, mercadosGols, mercadosCorners, mercadosCartoesModelo, oddsPorBookmaker, resultadoReal, modelSelecionado, indiceCalibracao, matrizConfiabilidade]);
 
   // Export cobre TODAS as linhas de verificacaoEV (todas as casas/mercados/
   // seleções, não só edge positivo) -- pedido explícito do usuário: "quero
@@ -2545,6 +2593,7 @@ export default function AnaliseAvancadaEvento() {
                                 <th className="text-right pb-2">Prob. mercado (devig)</th>
                                 <th className="text-right pb-2">Edge</th>
                                 <th className="text-right pb-2">EV</th>
+                                <th className="text-right pb-2" title="Classificação contra a matriz de confiabilidade EV (odd x edge já validado historicamente para este modelo/mercado)">Matriz</th>
                                 <th className="text-right pb-2">Stake Kelly 25%</th>
                                 {finalizada && <th className="text-right pb-2">Resultado</th>}
                                 {finalizada && <th className="text-right pb-2">Retorno</th>}
@@ -2570,6 +2619,9 @@ export default function AnaliseAvancadaEvento() {
                                   </td>
                                   <td className={`py-1.5 text-right font-mono ${l.ev > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
                                     {l.ev > 0 ? '+' : ''}{(l.ev * 100).toFixed(1)}%
+                                  </td>
+                                  <td className="py-1.5 text-right">
+                                    {l.classificacao && <BadgeMatriz classificacao={l.classificacao} />}
                                   </td>
                                   <td className="py-1.5 text-right font-mono text-slate-300">{l.kelly25 > 0 ? `${(l.kelly25 * 100).toFixed(2)}%` : '—'}</td>
                                   {finalizada && (
