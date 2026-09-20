@@ -2,18 +2,21 @@
 """Pergunta do usuário sobre `cartoes_rf` (o classificador por trás das 2
 únicas células confiáveis da matriz de confiabilidade EV -- cartões O/U
 4.5 e 5.5, odd 1.30-2.50, edge 15%+, ver CONTEXTO_PROJETO.md "ACHADO
-REFORÇADO 19/09"): "desse modelo, quais ligas mostraram sinal?"
+REFORÇADO 19/09"): "desse modelo, quais ligas mostraram sinal?" e, na
+sequência, "e qual casa de apostas tem sinal?"
 
 A matriz de confiabilidade EV (`matriz_confiabilidade_ev.py`) agrega TODAS
-as ligas do escopo numa célula só -- nunca quebrou por liga. Este script
-reaproveita a MESMA reconstrução walk-forward (`validar_cartoes_
-walkforward_incremental.gerar_previsoes_walkforward`, mesmas features/
-hiperparâmetros) e a MESMA faixa confiável (odd [1.30,2.50), edge>=15%)
-já validada, e quebra o relatório por liga usando a infraestrutura já
-existente em `backtest_kelly.py` (`montar_apostas(liga_por_match_id=...)`
-+ `resumir_por_liga`/`imprimir_relatorio_por_liga`, usada antes só pros
-walk-forwards de gols/escanteios via chamadas avulsas -- nunca tinha sido
-aplicada em Cartões).
+as ligas/casas do escopo numa célula só -- nunca quebrou por liga nem por
+bookmaker. Este script reaproveita a MESMA reconstrução walk-forward
+(`validar_cartoes_walkforward_incremental.gerar_previsoes_walkforward`,
+mesmas features/hiperparâmetros) e a MESMA faixa confiável (odd
+[1.30,2.50), edge>=15%) já validada, e quebra o relatório por liga E por
+casa de aposta usando a infraestrutura já existente em `backtest_kelly.py`
+(`montar_apostas(liga_por_match_id=..., bookmakers_por_partida=...)` +
+`resumir_por_liga`/`resumir_por_casa_aposta` e seus `imprimir_relatorio_*`
+-- a quebra por liga já existia pros walk-forwards de gols/escanteios via
+chamadas avulsas; a quebra por casa é nova, adicionada aqui e reaproveitável
+por qualquer script futuro que precise da mesma pergunta).
 
 Não escreve nada no Supabase -- só leitura e relatório em stdout, mesma
 categoria de `validar_cartoes_walkforward_incremental.py`.
@@ -99,12 +102,17 @@ def main() -> None:
 
         mercado = f"cartoes_over_under_{linha}"
         match_ids = list(previsoes.keys())
-        odds_reais = bk.carregar_melhores_odds_fechamento(supabase, match_ids, mercado)
+        # _com_bookmaker (não só a odd) -- pergunta do usuário: além de liga,
+        # o edge também é uniforme entre casas de aposta ou concentrado numa
+        # só? Mesma info que api/backtest-betting.js já expõe como
+        # casas_aposta_fechamento no Backtest completo (PR #605).
+        odds_reais, bookmaker_por_partida = bk.carregar_melhores_odds_fechamento_com_bookmaker(supabase, match_ids, mercado)
         resultados_reais = dict(zip(dataset["match_id"].astype(int), dataset[coluna_alvo]))
         predicoes = {mid: {"prob_over": p, "prob_under": 1 - p} for mid, p in previsoes.items()}
 
         apostas = bk.montar_apostas(
             predicoes, odds_reais, resultados_reais, liga_por_match_id=liga_por_match_id, mercado=mercado,
+            bookmakers_por_partida=bookmaker_por_partida,
         )
         # Restringe à faixa confiável de verdade (odd [1.30,2.50), edge>=15%)
         # -- montar_apostas só filtra por EDGE_MINIMO=2% (padrão do projeto),
@@ -135,6 +143,9 @@ def main() -> None:
 
     relatorio_por_liga = bk.resumir_por_liga("cartoes_rf", apostas_confiaveis_total)
     bk.imprimir_relatorio_por_liga(relatorio_por_liga)
+
+    relatorio_por_casa = bk.resumir_por_casa_aposta("cartoes_rf", apostas_confiaveis_total)
+    bk.imprimir_relatorio_por_casa_aposta(relatorio_por_casa)
 
     logger.info(
         "Ligas com n<%d são NÃO CONCLUSIVAS mesmo com IC95%%>0 -- amostra pequena demais pra distinguir "
