@@ -17,6 +17,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Shield, Loader2, Swords, Landmark, TrendingUp, LayoutGrid, BarChart3, UserRound } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import WidgetOddsTheOddsAPI from '../components/WidgetOddsTheOddsAPI';
+import { buscarCartoesReaisPorPartida, aplicarCartoesReais } from '../utils/cartoes';
 
 const OPCOES_N = [5, 10, 20];
 const CASAS_ROTULO = { pinnacle: 'Pinnacle', bet365: 'Bet365', betano: 'Betano' };
@@ -68,11 +69,18 @@ async function buscarFormaTime(teamId, antesDe, n) {
   // cobre os mesmos campos (alias shots:total_shots pra manter o nome usado
   // em ResumoTime.mediaStat('shots') sem mexer no resto do componente) e é
   // sincronizada automaticamente todo dia via atualizar_stats.yml.
-  const { data: stats } = matchIds.length > 0
-    ? await supabase.from('match_stats_fotmob').select('match_id, team_id, corners, shots:total_shots, yellow_cards, red_cards').in('match_id', matchIds)
-    : { data: [] };
+  const [{ data: stats }, cartoesReais] = await Promise.all([
+    matchIds.length > 0
+      ? supabase.from('match_stats_fotmob').select('match_id, team_id, corners, shots:total_shots, yellow_cards, red_cards').in('match_id', matchIds)
+      : Promise.resolve({ data: [] }),
+    buscarCartoesReaisPorPartida(matchIds),
+  ]);
   const statsPorJogo = {};
   (stats || []).filter(s => s.team_id === teamId).forEach(s => { statsPorJogo[s.match_id] = s; });
+  // match_stats_fotmob.yellow_cards/red_cards zera mesmo com cartão real (bug
+  // do lado da API do FotMob, ver utils/cartoes.js) -- corrige com match_events
+  // nas partidas em que ele tem cobertura.
+  aplicarCartoesReais(statsPorJogo, teamId, cartoesReais);
 
   return jogos.map(j => ({ ...j, stats: statsPorJogo[j.id] || null }));
 }
@@ -466,16 +474,27 @@ export default function AnaliseHistorica() {
   useEffect(() => {
     if (abaAtiva !== 'estatisticas' || !jogo || statsFotmob !== null) return;
     setStatsFotmobCarregando(true);
-    supabase
-      .from('match_stats_fotmob')
-      .select('team_id,' + METRICAS_JOGO.map(m => m.campo).join(','))
-      .eq('match_id', jogo.id)
-      .then(({ data }) => {
-        const homeStats = (data || []).find(s => s.team_id === jogo.home_team_id) || null;
-        const awayStats = (data || []).find(s => s.team_id === jogo.away_team_id) || null;
-        setStatsFotmob((homeStats || awayStats) ? { homeStats, awayStats } : false);
-        setStatsFotmobCarregando(false);
-      });
+    Promise.all([
+      supabase
+        .from('match_stats_fotmob')
+        .select('team_id,' + METRICAS_JOGO.map(m => m.campo).join(','))
+        .eq('match_id', jogo.id),
+      buscarCartoesReaisPorPartida([jogo.id]),
+    ]).then(([{ data }, { porPartida, temEvento }]) => {
+      let homeStats = (data || []).find(s => s.team_id === jogo.home_team_id) || null;
+      let awayStats = (data || []).find(s => s.team_id === jogo.away_team_id) || null;
+      // match_stats_fotmob.yellow_cards/red_cards zera mesmo com cartão real
+      // (bug do lado da API do FotMob, ver utils/cartoes.js) -- corrige com
+      // match_events quando a partida tem cobertura lá.
+      if (temEvento.has(jogo.id)) {
+        const corrHome = porPartida.get(`${jogo.id}:${jogo.home_team_id}`) || { yellow_cards: 0, red_cards: 0 };
+        const corrAway = porPartida.get(`${jogo.id}:${jogo.away_team_id}`) || { yellow_cards: 0, red_cards: 0 };
+        homeStats = { ...(homeStats || {}), ...corrHome };
+        awayStats = { ...(awayStats || {}), ...corrAway };
+      }
+      setStatsFotmob((homeStats || awayStats) ? { homeStats, awayStats } : false);
+      setStatsFotmobCarregando(false);
+    });
   }, [abaAtiva, jogo, statsFotmob]);
 
   // Aba "Jogadores": idem, só consulta na primeira vez que a aba é aberta.
