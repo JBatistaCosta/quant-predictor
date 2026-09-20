@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Pergunta do usuário sobre `cartoes_rf` (o classificador por trás das 2
-únicas células confiáveis da matriz de confiabilidade EV -- cartões O/U
-4.5 e 5.5, odd 1.30-2.50, edge 15%+, ver CONTEXTO_PROJETO.md "ACHADO
-REFORÇADO 19/09"): "desse modelo, quais ligas mostraram sinal?", "e qual
+"""Pergunta do usuário sobre `cartoes_rf` (o classificador por trás das
+células confiáveis da matriz de confiabilidade EV -- cartões O/U 4.5 e
+5.5, odd 1.30-2.50): "desse modelo, quais ligas mostraram sinal?", "e qual
 casa de apostas tem sinal?" e, por fim, "roda a carteira cronológica só
 com Série B + bet365/betano" -- o recorte descoberto pelas 2 perguntas
 anteriores (ver `LIGA_RESTRITA`/`CASAS_RESTRITAS` abaixo), registrado como
 próximo passo em `model_betting_strategy` (sub_faixa `rf_confiavel_*`,
 20/09) antes de promover a confiança de `em_revisao` pra `alta`.
+
+ATUALIZADO 20/09 pós-fix de dado (PRs #612/#613, bug de match_stats_fotmob.
+yellow_cards/red_cards zerando cartão real -- até 30,4% das linhas no Q3/
+2026): rerodando `matriz_confiabilidade_ev.py` com o dado corrigido, a
+célula 5.5/edge[15%,25%) (que existia no achado original de 19/09) deixou
+de ser confiável (IC95% agora cruza zero) -- só sobrevivem as 2 células de
+edge>=25% (4.5 e 5.5), ambas mais fortes que antes do fix. `EDGE_MINIMO_
+SINAL` abaixo foi atualizado de 0.15 pra 0.25 por isso -- reflete o
+critério confiável ATUAL, não o de 19/09.
 
 A matriz de confiabilidade EV (`matriz_confiabilidade_ev.py`) agrega TODAS
 as ligas/casas do escopo numa célula só -- nunca quebrou por liga nem por
@@ -56,13 +64,13 @@ import validar_cartoes_walkforward_incremental as wf_cartoes
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 logger = logging.getLogger("analisar_cartoes_liga_sinal")
 
-# Mesma faixa confiável das 2 linhas registradas em CONTEXTO_PROJETO.md
-# ("ACHADO REFORÇADO 19/09") -- odd baixa (bucket [1.30,2.50) de
-# `backtest_kelly.FAIXAS_STAKING`) e edge >= 15% (as 2 células confiáveis
-# são 15-25% e 25%+, ambas >= 15%).
+# Faixa confiável ATUAL (pós-fix, 20/09) -- odd baixa (bucket [1.30,2.50)
+# de `backtest_kelly.FAIXAS_STAKING`) e edge >= 25% (as 2 células que
+# sobrevivem com o dado corrigido; a de edge 15-25% que existia no achado
+# de 19/09 não se sustentou depois do fix de PRs #612/#613).
 LINHAS_ALVO = (4.5, 5.5)
 ODD_MIN, ODD_MAX = 1.30, 2.50
-EDGE_MINIMO_SINAL = 0.15
+EDGE_MINIMO_SINAL = 0.25
 MIN_N_LIGA_CONCLUSIVO = 20  # abaixo disso, "não conclusivo" mesmo se IC>0
 
 # Recorte "restrito" pedido pelo usuário depois de ver a quebra por liga/casa
