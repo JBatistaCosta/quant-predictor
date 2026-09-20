@@ -1161,6 +1161,67 @@ async function tarefaDerivarGameState(supabase, { match_id, dias, limite } = {})
   return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_linhas_gravadas: data ?? 0 };
 }
 
+const DIAS_DISCIPLINA_PADRAO = 7;
+const LIMITE_DISCIPLINA_POR_CHAMADA = 500;
+
+// Deriva match_disciplina (cartões amarelo/vermelho + faltas, ver migration
+// 20260920180000_create_match_disciplina.sql) das partidas que já têm
+// match_events OU match_stats_fotmob mas ainda não têm disciplina. Mesma
+// função de rede de segurança de derivar-game-state/derivar-formacoes --
+// AINDA NÃO chamada automaticamente após nenhum upsert (diferente das
+// outras duas), por isso esperar achar muito mais pendente aqui até essa
+// chamada automática ser adicionada.
+//
+// NÃO corrige o bug de ingestão que zera cartões (ver comentário da
+// migration) -- só materializa, com a fonte marcada, o que já está no
+// banco hoje. `fonte_cartoes='fallback_suspeito'` continua precisando de
+// backfill real de outra fonte antes de virar confiável.
+async function tarefaDerivarDisciplina(supabase, { match_id, dias, limite } = {}) {
+  if (match_id) {
+    const matchId = Number(match_id);
+    if (!Number.isInteger(matchId) || matchId <= 0) return { status: 400, error: 'match_id inválido.' };
+    const { data, error } = await supabase.rpc('derivar_disciplina', { p_match_ids: [matchId] });
+    if (error) return { status: 500, error: `Falha ao derivar disciplina: ${error.message}` };
+    return { status: 200, escopo: `partida ${matchId}`, n_linhas_gravadas: data ?? 0 };
+  }
+
+  const janelaDias = Number(dias) || DIAS_DISCIPLINA_PADRAO;
+  const teto = Math.min(Number(limite) || LIMITE_DISCIPLINA_POR_CHAMADA, LIMITE_DISCIPLINA_POR_CHAMADA);
+  const desde = new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: recentes, error: erroRecentes } = await supabase
+    .from('matches')
+    .select('id')
+    .gte('match_date', desde)
+    .order('match_date', { ascending: false })
+    .limit(1000);
+  if (erroRecentes) return { status: 500, error: `Falha ao buscar partidas recentes: ${erroRecentes.message}` };
+  if (!recentes?.length) return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0 };
+
+  const ids = recentes.map((m) => m.id);
+  const comFonte = new Set();
+  const comDisciplina = new Set();
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const [{ data: ev }, { data: st }, { data: di }] = await Promise.all([
+      supabase.from('match_events').select('match_id').in('match_id', lote),
+      supabase.from('match_stats_fotmob').select('match_id').in('match_id', lote),
+      supabase.from('match_disciplina').select('match_id').in('match_id', lote),
+    ]);
+    for (const r of ev || []) comFonte.add(r.match_id);
+    for (const r of st || []) comFonte.add(r.match_id);
+    for (const r of di || []) comDisciplina.add(r.match_id);
+  }
+  const pendentes = ids.filter((id) => comFonte.has(id) && !comDisciplina.has(id)).slice(0, teto);
+  if (!pendentes.length) {
+    return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0, mensagem: 'Nenhuma partida com match_events/match_stats_fotmob e sem disciplina na janela.' };
+  }
+
+  const { data, error } = await supabase.rpc('derivar_disciplina', { p_match_ids: pendentes });
+  if (error) return { status: 500, error: `Falha ao derivar disciplina: ${error.message}` };
+  return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_linhas_gravadas: data ?? 0 };
+}
+
 const LIMITE_RESPOSTA_EVENTO_POR_CHAMADA = 150; // bem menor que os outros: a derivação corta a partida em intervalos por time e cruza cada um com o shotmap -- foi a que mais pesou no backfill
 
 // Deriva match_team_event_response das partidas que já têm estado do jogo mas
@@ -6759,6 +6820,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'derivar-formacoes') {
       const resultado = await tarefaDerivarFormacoes(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'derivar-disciplina') {
+      const resultado = await tarefaDerivarDisciplina(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }

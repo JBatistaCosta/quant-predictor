@@ -19,26 +19,23 @@ import { toPct } from '../utils/format';
 // CONTEXTO_PROJETO.md ("ACHADO REFORÇADO" de cartões).
 const SUB_FAIXA_CARTEIRA = 'rf_confiavel_serieB_bet365betano_combinado';
 
-// Regra de liquidação real de mercados de cartões (print do usuário, 20/09):
-// amarelo vale 1 ponto, vermelho vale 2, teto de 3 pontos por jogador (1
-// amarelo + o vermelho do 2º amarelo = 3). `match_events` (mesma fonte de
-// `dados_historicos._carregar_total_cartoes_por_partida`, que hoje conta
-// TODO evento como 1 ponto, sem essa ponderação -- ver observação abaixo)
-// tem 3 tipos: 'yellow_card' (1º amarelo, vale 1), 'second_yellow_card' (2º
-// amarelo -- é o evento que expulsa o jogador, equivalente a vermelho pra
-// pontuação) e 'red_card' (vermelho direto). Por isso o "Vermelho" aqui
-// agrega second_yellow_card + red_card, não só red_card.
-//
-// PENDENTE (registrado pelo usuário, tratar depois): se o mesmo jogador
-// tiver um `second_yellow_card` seguido de um `red_card` no `match_events`
-// (a mesma expulsão logada duas vezes -- árbitro mostra o 2º amarelo e na
-// sequência o vermelho confirmando), só o vermelho deveria contar, não os
-// dois -- hoje não deduplicamos isso, então esse cenário específico infla
-// o total ponderado em +1. Não investigado ainda se isso acontece de fato
-// nos dados (não apareceu nos 7 jogos conferidos em 20/09, todos só com
-// yellow_card puro).
-const TIPO_EVENTO_AMARELO = ['yellow_card'];
-const TIPO_EVENTO_VERMELHO = ['second_yellow_card', 'red_card'];
+// Cartões/faltas por partida vêm de `match_disciplina` (migration
+// 20260920180000_create_match_disciplina.sql, regerada por
+// public.derivar_disciplina()) -- não mais calculados ao vivo aqui.
+// ACHADO CRÍTICO (20/09): boa parte da carteira depende do fallback
+// `match_stats_fotmob` (match_events está vazio pra maioria da janela
+// histórica de Série B), e esse fallback bate 0-0 numa fração muito alta
+// dos casos sem match_events (~84% na Série B recente) -- confirmado
+// manualmente contra o FotMob ao vivo (match_id 110163: 3 cartões reais,
+// banco mostrava 0-0). `fonte_cartoes='fallback_suspeito'` marca
+// exatamente esses casos -- NÃO tratar como "0 cartões confirmado".
+// model_betting_strategy foi rebaixado pra confianca='em_revisao' por
+// causa disso -- ver notas na tabela.
+const FONTE_CARTOES_ROTULO = {
+  match_events: { texto: 'confiável', cor: 'text-emerald-400' },
+  fallback_fotmob: { texto: 'fallback', cor: 'text-amber-400' },
+  fallback_suspeito: { texto: 'SUSPEITO', cor: 'text-red-400' },
+};
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -105,7 +102,7 @@ export default function ResumoValorApostas() {
   const [erroCarteira, setErroCarteira] = useState('');
   const [carteira, setCarteira] = useState([]);
   const [carteiraCarregada, setCarteiraCarregada] = useState(false);
-  const [cartoesPorMatch, setCartoesPorMatch] = useState({}); // match_id -> {amareloHome, amareloAway, vermelhoHome, vermelhoAway}
+  const [cartoesPorMatch, setCartoesPorMatch] = useState({}); // match_id -> {amareloHome, amareloAway, vermelhoHome, vermelhoAway, faltasHome, faltasAway, fonteHome, fonteAway}
 
   const [filtroModelo, setFiltroModelo] = useState('');
   const [filtroMercado, setFiltroMercado] = useState('');
@@ -229,30 +226,30 @@ export default function ResumoValorApostas() {
         setTimesPorId(prev => ({ ...prev, ...mapaTimes }));
       }
 
-      // Contagem de amarelos/vermelhos por time direto de match_events
-      // (mesma fonte do alvo real, ver TIPO_EVENTO_AMARELO/VERMELHO acima) --
-      // só pra exibição, não muda o resultado (Green/Red) já persistido.
+      // Cartões/faltas persistidos em match_disciplina (uma linha por
+      // partida/time, já com a fonte marcada -- ver comentário no topo do
+      // arquivo). Nada de agregação client-side de match_events aqui.
       const idsPartidas = [...new Set(linhas.map(l => l.match_id))];
       if (idsPartidas.length > 0) {
-        const { data: eventos } = await supabase
-          .from('match_events')
-          .select('match_id, team_id, event_type')
-          .in('match_id', idsPartidas)
-          .in('event_type', [...TIPO_EVENTO_AMARELO, ...TIPO_EVENTO_VERMELHO]);
+        const { data: disciplina } = await supabase
+          .from('match_disciplina')
+          .select('match_id, is_home, cartoes_amarelos, cartoes_vermelhos_equiv, faltas_cometidas, fonte_cartoes')
+          .in('match_id', idsPartidas);
         const porPartida = {};
         for (const l of linhas) {
-          porPartida[l.match_id] = { amareloHome: 0, amareloAway: 0, vermelhoHome: 0, vermelhoAway: 0 };
+          porPartida[l.match_id] = {
+            amareloHome: 0, amareloAway: 0, vermelhoHome: 0, vermelhoAway: 0,
+            faltasHome: null, faltasAway: null, fonteHome: null, fonteAway: null,
+          };
         }
-        for (const ev of (eventos || [])) {
-          const linha = linhas.find(l => l.match_id === ev.match_id);
-          if (!linha) continue;
-          const agregado = porPartida[ev.match_id];
-          const ehCasa = ev.team_id === linha.matches?.home_team_id;
-          if (TIPO_EVENTO_AMARELO.includes(ev.event_type)) {
-            if (ehCasa) agregado.amareloHome++; else agregado.amareloAway++;
-          } else {
-            if (ehCasa) agregado.vermelhoHome++; else agregado.vermelhoAway++;
-          }
+        for (const d of (disciplina || [])) {
+          const agregado = porPartida[d.match_id];
+          if (!agregado) continue;
+          const lado = d.is_home ? 'Home' : 'Away';
+          agregado[`amarelo${lado}`] = d.cartoes_amarelos;
+          agregado[`vermelho${lado}`] = d.cartoes_vermelhos_equiv;
+          agregado[`faltas${lado}`] = d.faltas_cometidas;
+          agregado[`fonte${lado}`] = d.fonte_cartoes;
         }
         setCartoesPorMatch(porPartida);
       }
@@ -279,10 +276,17 @@ export default function ResumoValorApostas() {
   // dados_historicos._carregar_total_cartoes_por_partida conta o alvo hoje
   // (cada evento = 1 ponto, sem essa ponderação) -- exibido aqui só como
   // informação adicional, não substitui o resultado Green/Red já gravado.
-  const cartoesDaPartida = (matchId) => cartoesPorMatch[matchId] || { amareloHome: 0, amareloAway: 0, vermelhoHome: 0, vermelhoAway: 0 };
+  const cartoesDaPartida = (matchId) => cartoesPorMatch[matchId] || {
+    amareloHome: 0, amareloAway: 0, vermelhoHome: 0, vermelhoAway: 0,
+    faltasHome: null, faltasAway: null, fonteHome: null, fonteAway: null,
+  };
   const totalPonderado = (matchId) => {
     const c = cartoesDaPartida(matchId);
     return 1 * (c.amareloHome + c.amareloAway) + 2 * (c.vermelhoHome + c.vermelhoAway);
+  };
+  const fonteSuspeita = (matchId) => {
+    const c = cartoesDaPartida(matchId);
+    return c.fonteHome === 'fallback_suspeito' || c.fonteAway === 'fallback_suspeito';
   };
 
   const resumoCarteira = useMemo(() => {
@@ -315,6 +319,11 @@ export default function ResumoValorApostas() {
       get: (l) => { const c = cartoesDaPartida(l.match_id); return `${c.vermelhoHome}-${c.vermelhoAway} (${c.vermelhoHome + c.vermelhoAway})`; },
     },
     { header: 'Total ponderado (1×A+2×V)', get: (l) => totalPonderado(l.match_id) },
+    {
+      header: 'Faltas (casa-visitante)',
+      get: (l) => { const c = cartoesDaPartida(l.match_id); return `${c.faltasHome ?? '—'}-${c.faltasAway ?? '—'}`; },
+    },
+    { header: 'Fonte dos cartões', get: (l) => (fonteSuspeita(l.match_id) ? 'SUSPEITO (fallback 0-0)' : (FONTE_CARTOES_ROTULO[cartoesDaPartida(l.match_id).fonteHome]?.texto || '—')) },
     { header: 'Prob. modelo', get: (l) => (l.prob_modelo * 100).toFixed(2) + '%' },
     { header: 'Odd justa', get: (l) => l.odd_justa.toFixed(3) },
     { header: 'Odd real', get: (l) => l.odd_real.toFixed(3) },
@@ -546,13 +555,14 @@ export default function ResumoValorApostas() {
           diferencaBanca={diferencaBanca}
           cartoesDaPartida={cartoesDaPartida}
           totalPonderado={totalPonderado}
+          fonteSuspeita={fonteSuspeita}
         />
       )}
     </div>
   );
 }
 
-function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nomeTime, linhaRotulo, resultadoCarteira, diferencaBanca, cartoesDaPartida, totalPonderado }) {
+function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nomeTime, linhaRotulo, resultadoCarteira, diferencaBanca, cartoesDaPartida, totalPonderado, fonteSuspeita }) {
   const [paginaAtual, setPaginaAtual] = useState(0);
   const totalPaginas = Math.max(1, Math.ceil(carteira.length / LINHAS_POR_PAGINA));
   const linhasDaPagina = carteira.slice(paginaAtual * LINHAS_POR_PAGINA, (paginaAtual + 1) * LINHAS_POR_PAGINA);
@@ -623,6 +633,7 @@ function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nome
                   <Info size={11} className="text-slate-600" title="1×Amarelo + 2×Vermelho (regra real de liquidação do mercado de cartões)" />
                 </span>
               </th>
+              <th className="text-right p-1.5">Faltas</th>
               <th className="text-right p-1.5">Prob. modelo</th>
               <th className="text-right p-1.5">Odd justa</th>
               <th className="text-right p-1.5">Odd real</th>
@@ -649,7 +660,12 @@ function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nome
                   <td className="p-1.5 text-slate-300 font-semibold">{linhaRotulo(l)}</td>
                   <td className="p-1.5 text-right text-amber-300">{cartoes.amareloHome}-{cartoes.amareloAway} ({cartoes.amareloHome + cartoes.amareloAway})</td>
                   <td className="p-1.5 text-right text-red-300">{cartoes.vermelhoHome}-{cartoes.vermelhoAway} ({cartoes.vermelhoHome + cartoes.vermelhoAway})</td>
-                  <td className="p-1.5 text-right font-bold text-slate-200">{totalPonderado(l.match_id)}</td>
+                  <td className="p-1.5 text-right">
+                    <span className={`font-bold ${fonteSuspeita(l.match_id) ? 'text-red-400' : 'text-slate-200'}`} title={fonteSuspeita(l.match_id) ? 'Fonte suspeita: fallback bateu 0-0, provável dado faltando (não jogo sem cartão)' : ''}>
+                      {totalPonderado(l.match_id)}{fonteSuspeita(l.match_id) && ' ⚠'}
+                    </span>
+                  </td>
+                  <td className="p-1.5 text-right text-slate-400">{cartoes.faltasHome ?? '—'}-{cartoes.faltasAway ?? '—'}</td>
                   <td className="p-1.5 text-right text-slate-200">{toPct(l.prob_modelo)}</td>
                   <td className="p-1.5 text-right text-slate-400">{l.odd_justa.toFixed(2)}</td>
                   <td className="p-1.5 text-right text-slate-200">{l.odd_real.toFixed(2)}</td>
