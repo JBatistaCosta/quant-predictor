@@ -5918,6 +5918,12 @@ async function tarefaSimulacaoCarteira(supabase, query) {
 
   const evMinimo = query.ev_minimo != null ? Number(query.ev_minimo) : 1.02;
   const evMaximo = query.ev_maximo != null ? Number(query.ev_maximo) : 2.0; // 100% default
+  // Faixa de odd bruta (independente do EV) -- pedido do usuário pra poder
+  // isolar o mesmo tipo de segmento que a matriz de confiabilidade EV usa
+  // (odd baixa 1.30-2.50 é onde as 3 células confiáveis de Cartões vivem,
+  // ver CONTEXTO_PROJETO.md) sem precisar que o EV sozinho já garanta isso.
+  const oddMinima = query.odd_minima != null ? Number(query.odd_minima) : 1.0;
+  const oddMaxima = query.odd_maxima != null ? Number(query.odd_maxima) : Infinity;
   const stakeMinimaPct = query.stake_minima_pct != null ? Number(query.stake_minima_pct) : 0.005;
   const tetoExposicaoPct = query.teto_exposicao_pct != null ? Number(query.teto_exposicao_pct) : 0.15;
   const bancaInicial = query.banca_inicial != null ? Number(query.banca_inicial) : 1000;
@@ -6012,6 +6018,7 @@ async function tarefaSimulacaoCarteira(supabase, query) {
         pModelo = calib.tipo === 'platt' ? aplicarPlattPredicao(pModelo, calib.a, calib.b) : aplicarIsotonicPredicao(pModelo, calib.x, calib.y);
         if (pModelo == null) continue;
       }
+      if (odd < oddMinima || odd > oddMaxima) continue;
       const ev = pModelo * odd;
       if (ev < evMinimo || ev > evMaximo) continue;
 
