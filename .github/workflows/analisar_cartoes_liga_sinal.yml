@@ -1,0 +1,42 @@
+name: Cartões RF - Sinal por Liga (faixa confiável)
+
+# Roda scripts/analisar_cartoes_liga_sinal.py -- pergunta do usuário:
+# dentro da faixa confiável já validada de cartoes_rf (odd 1.30-2.50,
+# edge 15%+, cartões O/U 4.5/5.5, ver CONTEXTO_PROJETO.md "ACHADO
+# REFORÇADO 19/09"), quais ligas concentram o sinal?
+#
+# Ferramenta de análise/pesquisa, só leitura -- não escreve nada no
+# Supabase, não muda nenhum modelo de produção. Sob demanda
+# (workflow_dispatch), sem cron -- pergunta pontual, não acompanhamento
+# contínuo (isso já é feito por matriz_confiabilidade_ev.yml no agregado).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  analisar-cartoes-liga-sinal:
+    runs-on: ubuntu-latest
+    # Monta o mesmo dataset "Feature Stacked" (~90-110min, ver
+    # matriz_confiabilidade_ev.yml) + 2 walk-forwards de Random Forest
+    # (rápido comparado à montagem do dataset).
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Analisar sinal de cartoes_rf por liga
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/analisar_cartoes_liga_sinal.py

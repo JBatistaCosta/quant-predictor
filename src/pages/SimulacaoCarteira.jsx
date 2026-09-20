@@ -203,6 +203,8 @@ export default function SimulacaoCarteira() {
   const [tetoExposicaoPct, setTetoExposicaoPct] = useState(0.15);
   const [evMinimo, setEvMinimo] = useState(1.04); // 4%
   const [evMaximo, setEvMaximo] = useState(1.10); // 10%
+  const [oddMinima, setOddMinima] = useState(1.0);
+  const [oddMaxima, setOddMaxima] = useState('');
 
   const [rodando, setRodando] = useState(false);
   const [erro, setErro] = useState('');
@@ -283,6 +285,8 @@ export default function SimulacaoCarteira() {
           ev_minimo: String(evMinimo),
           ev_maximo: String(evMaximo)
         });
+        if (oddMinima !== '' && Number(oddMinima) > 1.0) params.set('odd_minima', String(oddMinima));
+        if (oddMaxima !== '') params.set('odd_maxima', String(oddMaxima));
         if (ligaId) params.set('liga_id', ligaId);
         if (temporada) params.set('temporada', temporada);
         if (dataInicio) params.set('data_inicio', dataInicio);
@@ -350,7 +354,8 @@ export default function SimulacaoCarteira() {
   <p class="subtitulo">
     Gerado em ${geradoEm}. Mercado: ${escaparHtml(rotuloMercado)}. Banca inicial: R$ ${fmtMoney(Number(bancaInicial))}.
     Correção: ${escaparHtml(usarCalibracao === 'nenhuma' ? 'crua' : usarCalibracao)}.
-    EV Range: ${(Number(evMinimo) * 100 - 100).toFixed(1)}% a ${(Number(evMaximo) * 100 - 100).toFixed(1)}%. 
+    EV Range: ${(Number(evMinimo) * 100 - 100).toFixed(1)}% a ${(Number(evMaximo) * 100 - 100).toFixed(1)}%.
+    Faixa de odd: ${Number(oddMinima).toFixed(2)} a ${oddMaxima === '' ? 'sem teto' : Number(oddMaxima).toFixed(2)}.
     Stake: ${tipoStake === 'fixa' ? 'Fixa R$ ' + stakeFixa : 'Kelly ' + (Number(kellyMultiplier)*100).toFixed(0) + '%'}.
     Teto Exposição: ${(Number(tetoExposicaoPct)*100).toFixed(1)}% por rodada. Execuções "Abertura"/"Fechamento" usam odds Pinnacle.
     ${dataInicio || dataFim ? `Período: ${dataInicio || 'início do teste'} a ${dataFim || 'hoje'}.` : ''}
@@ -528,6 +533,20 @@ export default function SimulacaoCarteira() {
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">EV Max</label>
                 <input type="number" step="0.01" min="1.00" value={evMaximo} onChange={(e) => setEvMaximo(e.target.value)}
                   className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" title="Ex: 1.10 para 10% de EV max" />
+              </div>
+
+              {/* Faixa de odd bruta -- independente do EV, pra isolar o mesmo
+                  tipo de segmento (odd baixa 1.30-2.50) que a matriz de
+                  confiabilidade EV usa em /modelos */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Odd Min</label>
+                <input type="number" step="0.10" min="1.00" value={oddMinima} onChange={(e) => setOddMinima(e.target.value)}
+                  className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" title="Ex: 1.30 para odd mínima 1.30" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Odd Max</label>
+                <input type="number" step="0.10" min="1.00" placeholder="sem teto" value={oddMaxima} onChange={(e) => setOddMaxima(e.target.value)}
+                  className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100" title="Ex: 2.50 para odd máxima 2.50 (vazio = sem teto)" />
               </div>
 
               <div className="flex-1"></div>
