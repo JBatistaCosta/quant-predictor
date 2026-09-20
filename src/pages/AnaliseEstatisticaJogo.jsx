@@ -33,6 +33,7 @@ import { negBinomialPMF } from '../utils/distributions';
 import { apiUrl } from '../utils/apiUrl';
 import EstimativaModeloCustom from '../components/EstimativaModeloCustom';
 import ModeloCartoesFaltas from '../components/ModeloCartoesFaltas';
+import { buscarCartoesReaisPorPartida, aplicarCartoesReais } from '../utils/cartoes';
 
 // Mesmo prompt de AnaliseEvento.jsx (OCR_STATS_PROMPT) — extrai xG/xGA/chutes/
 // escanteios dos DOIS times de uma vez a partir da tabela "Estatística média".
@@ -89,11 +90,18 @@ async function buscarTendenciasTime(teamId, antesDe, n) {
   // match_stats (FBref) foi abandonada -- scraping bloqueado por CAPTCHA nos
   // runners do GitHub Actions (ver CONTEXTO_PROJETO.md). match_stats_fotmob
   // cobre os mesmos campos e é sincronizada automaticamente todo dia.
-  const { data: stats } = matchIds.length > 0
-    ? await supabase.from('match_stats_fotmob').select('match_id, team_id, corners, yellow_cards, red_cards').in('match_id', matchIds)
-    : { data: [] };
+  const [{ data: stats }, cartoesReais] = await Promise.all([
+    matchIds.length > 0
+      ? supabase.from('match_stats_fotmob').select('match_id, team_id, corners, yellow_cards, red_cards').in('match_id', matchIds)
+      : Promise.resolve({ data: [] }),
+    buscarCartoesReaisPorPartida(matchIds),
+  ]);
   const statsPorJogo = {};
   (stats || []).filter(s => s.team_id === teamId).forEach(s => { statsPorJogo[s.match_id] = s; });
+  // match_stats_fotmob.yellow_cards/red_cards zera mesmo com cartão real (bug
+  // do lado da API do FotMob, ver utils/cartoes.js) -- corrige com match_events
+  // nas partidas em que ele tem cobertura.
+  aplicarCartoesReais(statsPorJogo, teamId, cartoesReais);
 
   let over25 = 0, btts = 0;
   let somaCorners = 0, nCorners = 0, somaCartoes = 0, nCartoes = 0;
