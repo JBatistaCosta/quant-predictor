@@ -8,7 +8,7 @@
 // Reaproveita a MESMA lógica de edge/devig de api/backtest-betting.js
 // (?formato=candidatas), só sem a agregação em grupos/bootstrap.
 import React, { useState, useEffect, useMemo } from 'react';
-import { Target, AlertTriangle, Loader2, Download, Search, ChevronLeft, ChevronRight, Wallet } from 'lucide-react';
+import { Target, AlertTriangle, Loader2, Download, Search, ChevronLeft, ChevronRight, Wallet, Info } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import { toPct } from '../utils/format';
@@ -18,6 +18,27 @@ import { toPct } from '../utils/format';
 // SUB_FAIXA_CARTEIRA em scripts/analisar_cartoes_liga_sinal.py e
 // CONTEXTO_PROJETO.md ("ACHADO REFORÇADO" de cartões).
 const SUB_FAIXA_CARTEIRA = 'rf_confiavel_serieB_bet365betano_combinado';
+
+// Regra de liquidação real de mercados de cartões (print do usuário, 20/09):
+// amarelo vale 1 ponto, vermelho vale 2, teto de 3 pontos por jogador (1
+// amarelo + o vermelho do 2º amarelo = 3). `match_events` (mesma fonte de
+// `dados_historicos._carregar_total_cartoes_por_partida`, que hoje conta
+// TODO evento como 1 ponto, sem essa ponderação -- ver observação abaixo)
+// tem 3 tipos: 'yellow_card' (1º amarelo, vale 1), 'second_yellow_card' (2º
+// amarelo -- é o evento que expulsa o jogador, equivalente a vermelho pra
+// pontuação) e 'red_card' (vermelho direto). Por isso o "Vermelho" aqui
+// agrega second_yellow_card + red_card, não só red_card.
+//
+// PENDENTE (registrado pelo usuário, tratar depois): se o mesmo jogador
+// tiver um `second_yellow_card` seguido de um `red_card` no `match_events`
+// (a mesma expulsão logada duas vezes -- árbitro mostra o 2º amarelo e na
+// sequência o vermelho confirmando), só o vermelho deveria contar, não os
+// dois -- hoje não deduplicamos isso, então esse cenário específico infla
+// o total ponderado em +1. Não investigado ainda se isso acontece de fato
+// nos dados (não apareceu nos 7 jogos conferidos em 20/09, todos só com
+// yellow_card puro).
+const TIPO_EVENTO_AMARELO = ['yellow_card'];
+const TIPO_EVENTO_VERMELHO = ['second_yellow_card', 'red_card'];
 
 const MERCADO_ROTULO = { '1X2': '1X2', 'over_under_2.5': 'Over/Under 2.5 gols', 'corners_over_under_9.5': 'Over/Under 9.5 escanteios' };
 const SELECAO_ROTULO = { home: 'Mandante', draw: 'Empate', away: 'Visitante', over: 'Over', under: 'Under' };
@@ -84,6 +105,7 @@ export default function ResumoValorApostas() {
   const [erroCarteira, setErroCarteira] = useState('');
   const [carteira, setCarteira] = useState([]);
   const [carteiraCarregada, setCarteiraCarregada] = useState(false);
+  const [cartoesPorMatch, setCartoesPorMatch] = useState({}); // match_id -> {amareloHome, amareloAway, vermelhoHome, vermelhoAway}
 
   const [filtroModelo, setFiltroModelo] = useState('');
   const [filtroMercado, setFiltroMercado] = useState('');
@@ -206,6 +228,34 @@ export default function ResumoValorApostas() {
         (times || []).forEach(t => { mapaTimes[t.id] = t.name; });
         setTimesPorId(prev => ({ ...prev, ...mapaTimes }));
       }
+
+      // Contagem de amarelos/vermelhos por time direto de match_events
+      // (mesma fonte do alvo real, ver TIPO_EVENTO_AMARELO/VERMELHO acima) --
+      // só pra exibição, não muda o resultado (Green/Red) já persistido.
+      const idsPartidas = [...new Set(linhas.map(l => l.match_id))];
+      if (idsPartidas.length > 0) {
+        const { data: eventos } = await supabase
+          .from('match_events')
+          .select('match_id, team_id, event_type')
+          .in('match_id', idsPartidas)
+          .in('event_type', [...TIPO_EVENTO_AMARELO, ...TIPO_EVENTO_VERMELHO]);
+        const porPartida = {};
+        for (const l of linhas) {
+          porPartida[l.match_id] = { amareloHome: 0, amareloAway: 0, vermelhoHome: 0, vermelhoAway: 0 };
+        }
+        for (const ev of (eventos || [])) {
+          const linha = linhas.find(l => l.match_id === ev.match_id);
+          if (!linha) continue;
+          const agregado = porPartida[ev.match_id];
+          const ehCasa = ev.team_id === linha.matches?.home_team_id;
+          if (TIPO_EVENTO_AMARELO.includes(ev.event_type)) {
+            if (ehCasa) agregado.amareloHome++; else agregado.amareloAway++;
+          } else {
+            if (ehCasa) agregado.vermelhoHome++; else agregado.vermelhoAway++;
+          }
+        }
+        setCartoesPorMatch(porPartida);
+      }
     } catch (e) {
       setErroCarteira(e.message);
       setCarteira([]);
@@ -222,6 +272,18 @@ export default function ResumoValorApostas() {
   const linhaRotulo = (l) => `${l.selecao === 'over' ? 'Over' : 'Under'} ${Number(l.linha).toFixed(1)}`;
   const resultadoCarteira = (l) => (l.acertou ? { texto: 'Green', cor: 'text-emerald-400' } : { texto: 'Red', cor: 'text-red-400' });
   const diferencaBanca = (l) => l.banca_depois - l.banca_antes;
+
+  // Ponderação real de liquidação de mercados de cartões (ver TIPO_EVENTO_
+  // AMARELO/VERMELHO): amarelo=1, vermelho=2 (onde "vermelho" já inclui o
+  // 2º amarelo, que é o evento que expulsa). Isso é DIFERENTE do jeito que
+  // dados_historicos._carregar_total_cartoes_por_partida conta o alvo hoje
+  // (cada evento = 1 ponto, sem essa ponderação) -- exibido aqui só como
+  // informação adicional, não substitui o resultado Green/Red já gravado.
+  const cartoesDaPartida = (matchId) => cartoesPorMatch[matchId] || { amareloHome: 0, amareloAway: 0, vermelhoHome: 0, vermelhoAway: 0 };
+  const totalPonderado = (matchId) => {
+    const c = cartoesDaPartida(matchId);
+    return 1 * (c.amareloHome + c.amareloAway) + 2 * (c.vermelhoHome + c.vermelhoAway);
+  };
 
   const resumoCarteira = useMemo(() => {
     if (carteira.length === 0) return null;
@@ -244,6 +306,15 @@ export default function ResumoValorApostas() {
     { header: 'Time 2 (visitante)', get: (l) => nomeTime(l.matches?.away_team_id) },
     { header: 'Mercado', get: () => 'Cartões — Total' },
     { header: 'Linha', get: (l) => linhaRotulo(l) },
+    {
+      header: 'Amarelo (casa-visitante (total))',
+      get: (l) => { const c = cartoesDaPartida(l.match_id); return `${c.amareloHome}-${c.amareloAway} (${c.amareloHome + c.amareloAway})`; },
+    },
+    {
+      header: 'Vermelho (casa-visitante (total))',
+      get: (l) => { const c = cartoesDaPartida(l.match_id); return `${c.vermelhoHome}-${c.vermelhoAway} (${c.vermelhoHome + c.vermelhoAway})`; },
+    },
+    { header: 'Total ponderado (1×A+2×V)', get: (l) => totalPonderado(l.match_id) },
     { header: 'Prob. modelo', get: (l) => (l.prob_modelo * 100).toFixed(2) + '%' },
     { header: 'Odd justa', get: (l) => l.odd_justa.toFixed(3) },
     { header: 'Odd real', get: (l) => l.odd_real.toFixed(3) },
@@ -253,7 +324,7 @@ export default function ResumoValorApostas() {
     { header: 'Stake sugerida (% banca)', get: (l) => (l.stake_pct * 100).toFixed(2) + '%' },
     { header: 'Resultado', get: (l) => resultadoCarteira(l).texto },
     { header: 'Diferença na banca', get: (l) => (diferencaBanca(l) * 100).toFixed(2) + '%' },
-  ]), [timesPorId, ligasPorId]);
+  ]), [timesPorId, ligasPorId, cartoesPorMatch]);
 
   const exportarCarteira = () => {
     const nome = `carteira-cartoes-rf-serieB-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -473,13 +544,15 @@ export default function ResumoValorApostas() {
           linhaRotulo={linhaRotulo}
           resultadoCarteira={resultadoCarteira}
           diferencaBanca={diferencaBanca}
+          cartoesDaPartida={cartoesDaPartida}
+          totalPonderado={totalPonderado}
         />
       )}
     </div>
   );
 }
 
-function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nomeTime, linhaRotulo, resultadoCarteira, diferencaBanca }) {
+function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nomeTime, linhaRotulo, resultadoCarteira, diferencaBanca, cartoesDaPartida, totalPonderado }) {
   const [paginaAtual, setPaginaAtual] = useState(0);
   const totalPaginas = Math.max(1, Math.ceil(carteira.length / LINHAS_POR_PAGINA));
   const linhasDaPagina = carteira.slice(paginaAtual * LINHAS_POR_PAGINA, (paginaAtual + 1) * LINHAS_POR_PAGINA);
@@ -532,6 +605,24 @@ function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nome
               <th className="text-left p-1.5">Confronto</th>
               <th className="text-left p-1.5">Mercado</th>
               <th className="text-left p-1.5">Linha</th>
+              <th className="text-right p-1.5">
+                <span className="inline-flex items-center gap-1 justify-end w-full">
+                  <span className="text-amber-400">Amarelo</span>
+                  <Info size={11} className="text-slate-600" title="Cartões Amarelos" />
+                </span>
+              </th>
+              <th className="text-right p-1.5">
+                <span className="inline-flex items-center gap-1 justify-end w-full">
+                  <span className="text-red-400">Vermelho</span>
+                  <Info size={11} className="text-slate-600" title="Cartões Vermelhos (inclui o 2º amarelo, que expulsa)" />
+                </span>
+              </th>
+              <th className="text-right p-1.5">
+                <span className="inline-flex items-center gap-1 justify-end w-full">
+                  Total ponderado
+                  <Info size={11} className="text-slate-600" title="1×Amarelo + 2×Vermelho (regra real de liquidação do mercado de cartões)" />
+                </span>
+              </th>
               <th className="text-right p-1.5">Prob. modelo</th>
               <th className="text-right p-1.5">Odd justa</th>
               <th className="text-right p-1.5">Odd real</th>
@@ -547,6 +638,7 @@ function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nome
             {linhasDaPagina.map((l) => {
               const resultado = resultadoCarteira(l);
               const diff = diferencaBanca(l);
+              const cartoes = cartoesDaPartida(l.match_id);
               return (
                 <tr key={l.id}>
                   <td className="p-1.5 text-slate-400 whitespace-nowrap">{new Date(l.match_date).toLocaleDateString('pt-BR')}</td>
@@ -555,6 +647,9 @@ function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nome
                   <td className="p-1.5 text-slate-300 font-semibold whitespace-nowrap">{nomeTime(l.matches?.home_team_id)} x {nomeTime(l.matches?.away_team_id)}</td>
                   <td className="p-1.5 text-slate-400">Cartões — Total</td>
                   <td className="p-1.5 text-slate-300 font-semibold">{linhaRotulo(l)}</td>
+                  <td className="p-1.5 text-right text-amber-300">{cartoes.amareloHome}-{cartoes.amareloAway} ({cartoes.amareloHome + cartoes.amareloAway})</td>
+                  <td className="p-1.5 text-right text-red-300">{cartoes.vermelhoHome}-{cartoes.vermelhoAway} ({cartoes.vermelhoHome + cartoes.vermelhoAway})</td>
+                  <td className="p-1.5 text-right font-bold text-slate-200">{totalPonderado(l.match_id)}</td>
                   <td className="p-1.5 text-right text-slate-200">{toPct(l.prob_modelo)}</td>
                   <td className="p-1.5 text-right text-slate-400">{l.odd_justa.toFixed(2)}</td>
                   <td className="p-1.5 text-right text-slate-200">{l.odd_real.toFixed(2)}</td>
