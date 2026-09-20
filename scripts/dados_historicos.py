@@ -3797,12 +3797,82 @@ def colunas_forma_fotmob(nome_curto: str) -> dict[str, str]:
     }
 
 
+# ACHADO REAL (20/09, mesma investigação de match_stats_fotmob.yellow_cards
+# zerando cartão real -- ver `_carregar_cartoes_por_time_por_partida`):
+# aquela correção (match_events como fonte primária) só cobria o ALVO
+# (total de cartões da partida) e o árbitro (`_carregar_arbitro_pre_jogo`)
+# -- a FEATURE de forma do time (`media_cartoes_amarelos_fm_5j_*`, usada
+# por `FEATURES_CARTOES` do `cartoes_rf`) continuava vindo direto de
+# `_anexar_stats_fotmob_por_partida`, sem essa correção, herdando o mesmo
+# viés sistemático rumo a zero. Medido por SQL nas ligas de treino: taxa de
+# linhas team×partida zeradas (`yellow_cards=0 AND red_cards=0`) que na
+# verdade TINHAM cartão real em `match_events` -- 4-6% em 2025, subindo pra
+# 11-14% em 2026 (~25-30% das linhas já zeradas em partidas recentes).
+def _corrigir_cartoes_fm_com_match_events(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Corrige `yellow_cards_fm_{home,away}`/`red_cards_fm_{home,away}`
+    (anexadas acima a partir de `match_stats_fotmob`) com `match_events`
+    nas partidas em que ele tem cobertura -- mesma fonte primária/fallback
+    de `_carregar_cartoes_por_time_por_partida` (ver docstring lá pro achado
+    completo do bug do bloco `discipline` da API do FotMob). `second_yellow_
+    card` conta como vermelho (é a expulsão em si), mesmo critério de
+    `buscarCartoesReaisPorPartida` (`src/utils/cartoes.js`)."""
+    match_ids = partidas["id"].astype(int).tolist()
+    com_eventos = _partidas_com_match_events(supabase, match_ids)
+    if not com_eventos:
+        return partidas
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_events")
+            .select("match_id, team_id, event_type")
+            .in_("match_id", lote)
+            .in_("event_type", list(_TIPOS_EVENTO_CARTAO))
+            .range(inicio, fim)
+        )
+
+    eventos = _paginar_por_lotes_de_id(factory, sorted(com_eventos))
+    partidas = partidas.copy()
+    cobertura = partidas["id"].isin(com_eventos)
+
+    if not eventos:
+        # com_eventos não vazio mas nenhuma linha é cartão -- 0 real
+        # confirmado nas partidas cobertas, não lacuna de dado.
+        for lado in ("home", "away"):
+            partidas.loc[cobertura, f"yellow_cards_fm_{lado}"] = 0.0
+            partidas.loc[cobertura, f"red_cards_fm_{lado}"] = 0.0
+        return partidas
+
+    df_eventos = pd.DataFrame(eventos)
+    df_eventos["tipo"] = np.where(df_eventos["event_type"] == "yellow_card", "amarelo", "vermelho")
+    contagem = df_eventos.groupby(["match_id", "team_id", "tipo"]).size().unstack(fill_value=0).reset_index()
+    for col in ("amarelo", "vermelho"):
+        if col not in contagem.columns:
+            contagem[col] = 0
+
+    for lado, col_team in (("home", "home_team_id"), ("away", "away_team_id")):
+        renomeado = contagem.rename(
+            columns={"match_id": "id", "team_id": col_team, "amarelo": f"_amarelo_{lado}", "vermelho": f"_vermelho_{lado}"}
+        )
+        partidas = partidas.merge(
+            renomeado[["id", col_team, f"_amarelo_{lado}", f"_vermelho_{lado}"]], on=["id", col_team], how="left"
+        )
+        # partida coberta sem cartão nenhum PRO LADO (merge não achou linha)
+        # -- 0 real, não lacuna (por isso fillna(0), não deixar NaN).
+        partidas.loc[cobertura, f"yellow_cards_fm_{lado}"] = partidas.loc[cobertura, f"_amarelo_{lado}"].fillna(0.0)
+        partidas.loc[cobertura, f"red_cards_fm_{lado}"] = partidas.loc[cobertura, f"_vermelho_{lado}"].fillna(0.0)
+        partidas = partidas.drop(columns=[f"_amarelo_{lado}", f"_vermelho_{lado}"])
+
+    return partidas
+
+
 def _anexar_stats_fotmob_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
     """Busca as colunas do FotMob listadas em `COLUNAS_STATS_FOTMOB` de
     cada partida e anexa como `{coluna}_home`/`{coluna}_away` -- mesmo
     espírito de `_anexar_stats_extra_por_partida` (FBref), só que lendo de
     `match_stats_fotmob`. Só matéria-prima pra forma pré-jogo -- o valor
-    bruto da PRÓPRIA partida nunca é feature (vazaria o resultado)."""
+    bruto da PRÓPRIA partida nunca é feature (vazaria o resultado).
+    `yellow_cards_fm`/`red_cards_fm` passam por `_corrigir_cartoes_fm_com_
+    match_events` antes de sair daqui -- ver achado acima."""
     match_ids = partidas["id"].astype(int).tolist()
     colunas_raw = list(COLUNAS_STATS_FOTMOB.keys())
 
@@ -3828,7 +3898,7 @@ def _anexar_stats_fotmob_por_partida(supabase: Client, partidas: pd.DataFrame) -
         for col in colunas_raw:
             partidas[f"{col}_fm_home"] = np.nan
             partidas[f"{col}_fm_away"] = np.nan
-        return partidas
+        return _corrigir_cartoes_fm_com_match_events(supabase, partidas)
 
     stats = pd.DataFrame(linhas).rename(columns={"match_id": "id"})
     for col in colunas_raw:
@@ -3836,7 +3906,7 @@ def _anexar_stats_fotmob_por_partida(supabase: Client, partidas: pd.DataFrame) -
         stats_away = stats.rename(columns={"team_id": "away_team_id", col: f"{col}_fm_away"})
         partidas = partidas.merge(stats_home[["id", "home_team_id", f"{col}_fm_home"]], on=["id", "home_team_id"], how="left")
         partidas = partidas.merge(stats_away[["id", "away_team_id", f"{col}_fm_away"]], on=["id", "away_team_id"], how="left")
-    return partidas
+    return _corrigir_cartoes_fm_com_match_events(supabase, partidas)
 
 
 FEATURES_NUMERICAS_V8 = FEATURES_NUMERICAS_V7 + [
