@@ -61,9 +61,14 @@
 //   /api/corners-model?mandante=...&visitante=...&linhas=8.5,9.5,10.5
 //   /api/corners-model?mandante=...&visitante=...&stat=shots
 //   /api/corners-model?mandante=...&visitante=...&stat=shots_on_target&linhas=2.5,3.5,4.5
+//   /api/corners-model?mandante=...&visitante=...&linhas_handicap=-1.5,-0.5,0.5,1.5
+//     -> handicap/1X2 de escanteios (mandante×visitante) só existem pra
+//        stat=corners (padrão); vêm em `mercados_handicap`/`mercado_1x2` na
+//        resposta, `null` pras outras stats. AINDA NÃO VALIDADO contra
+//        resultado real de aposta -- ver aviso em RHO_SPLIT_PADRAO_CORNERS.
 
 import { createClient } from '@supabase/supabase-js';
-import { negBinomialCDF } from './_lib/negbin.js';
+import { negBinomialCDF, negBinomialPMFArray, betaBinomialPMFArray } from './_lib/negbin.js';
 import { applyCors } from './_lib/cors.js';
 
 const STATS_SUPORTADAS = ['corners', 'shots', 'shots_on_target'];
@@ -101,6 +106,43 @@ const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'total_shots', shot
 // 12 ligas calibradas de cada stat, mesmo método já usado pro valor de
 // escanteios) -- não chutado.
 const DISP_R_PADRAO_POR_STAT = { corners: 70.57, shots: 5.99, shots_on_target: 5.68 };
+
+// Linhas padrão de handicap de escanteios (mandante - visitante) quando
+// `?linhas_handicap=` não é informado -- faixa observada em odds_market
+// (`corners_handicap_*`, ver CONTEXTO_PROJETO.md) pras linhas com mais
+// partidas cobertas.
+const LINHAS_PADRAO_HANDICAP_CORNERS = ['-2.5', '-1.5', '-0.5', '0.5', '1.5', '2.5'];
+
+// disp_rho_split: correlação intraclasse do split mandante/visitante dentro
+// do total de escanteios já sorteado (Beta-Binomial condicionada no total
+// NB) -- ver comentário em `decomporMandanteVisitante` abaixo pra por quê
+// isso existe e não é opcional (mandante e visitante NÃO são independentes:
+// corr(corners_mandante, corners_visitante) = -0,26 nos dados reais, porque
+// escanteio de um lado "consome" posse/tempo de jogo que teria ido pro
+// outro). Calibrado nesta sessão via resíduo de Pearson quadrático em
+// `k|n` (mesmo método já usado pro disp_r da NB, só que na variável de
+// split), sobre os pares (corners_mandante real, corners_visitante real,
+// home_expected/away_expected de model_stat_estimates) das mesmas 5 ligas já
+// calibradas pra disp_r (n=272-342 partidas cada, rho entre 0,059 e 0,094 --
+// persistido em league_model_params, stat='corners', param_name=
+// 'disp_rho_split'). Fallback abaixo é a média dessas 5 ligas -- só pra
+// escanteios; chutes/chutes no gol de time NÃO têm esse split calibrado
+// ainda (a decomposição mandante×visitante só vale pra `stat==='corners'`
+// por ora).
+//
+// AINDA NÃO VALIDADO contra resultado real de handicap/1X2 de escanteios em
+// carteira cronológica -- é um candidato, não uma estratégia com confiança
+// "alta" (mesmo padrão de cautela de `model_betting_strategy`: log-loss/
+// calibração isolados já se mostraram reversíveis neste projeto depois de
+// testados contra apostas reais). Backtestar antes de usar pra decisão de
+// aposta.
+const RHO_SPLIT_PADRAO_CORNERS = 0.0764;
+
+// Cap superior pro total de escanteios somado na distribuição conjunta --
+// generoso de propósito (jogos reais raramente passam de ~25 escanteios no
+// total); soma de massa de probabilidade acima disso é desprezível pra
+// qualquer confronto real, então não vale o custo de recalcular por partida.
+const TOTAL_MAX_JOINT_CORNERS = 50;
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -255,6 +297,95 @@ async function dispRDaLiga(supabase, leagueId, stat) {
   return { valor: dispRPadrao, origem: 'padrao_generico (liga sem calibração própria)' };
 }
 
+// Mesmo padrão de `dispRDaLiga`, mas pro parâmetro do split mandante/
+// visitante (só existe pra stat='corners' -- ver comentário em
+// RHO_SPLIT_PADRAO_CORNERS).
+async function dispRhoSplitDaLiga(supabase, leagueId) {
+  if (!leagueId) return { valor: RHO_SPLIT_PADRAO_CORNERS, origem: 'padrao_generico' };
+  const { data } = await supabase
+    .from('league_model_params')
+    .select('param_value')
+    .eq('league_id', leagueId)
+    .eq('stat', 'corners')
+    .eq('param_name', 'disp_rho_split')
+    .maybeSingle();
+  if (data?.param_value) return { valor: Number(data.param_value), origem: 'league_model_params' };
+  return { valor: RHO_SPLIT_PADRAO_CORNERS, origem: 'padrao_generico (liga sem calibração própria)' };
+}
+
+// Decompõe o total de escanteios (já modelado como Binomial Negativa, ver
+// topo do arquivo) em mandante × visitante.
+//
+// POR QUE NÃO É SÓ "NB(lambda_mandante) e NB(lambda_visitante) separados":
+// mandante e visitante não são independentes -- corr(corners_mandante,
+// corners_visitante) = -0,26 nos dados reais (achado desta sessão, ver
+// CONTEXTO_PROJETO.md). Faz sentido futebolisticamente: escanteio de um
+// lado consome posse/tempo de jogo que "tiraria" chance do outro lado
+// cobrar. Tratar os dois como independentes SUBESTIMARIA a variância da
+// DIFERENÇA (mandante-visitante) -- Var(X-Y) = VarX+VarY-2Cov(X,Y), e
+// Cov<0 aumenta essa variância -- inflando artificialmente a confiança do
+// modelo em handicap/1X2 de escanteios.
+//
+// A composição usada é T (total) × K|T (split condicional):
+//   T ~ NB(lambdaTotal, dispR)              -- já calibrado e testado (topo do arquivo)
+//   K|T ~ BetaBinomial(T, p=lambdaMandante/lambdaTotal, rho)
+// K = escanteios do mandante, T-K = escanteios do visitante. O split
+// condicional ao total já reproduz a correlação negativa de forma natural
+// (mandante e visitante disputam a mesma "torta" T), e o rho da Beta-
+// Binomial captura a dispersão EXTRA que sobra além disso (jogos onde o
+// domínio de escanteios foi mais ou menos lopsided do que a proporção
+// p sozinha explicaria -- confirmado nos dados: variância observada do
+// split é ~1,7x a variância de uma Binomial(T,p) pura, daí rho>0).
+//
+// Devolve a massa de probabilidade P(K=k, T=t) só pros pontos que importam
+// pro cálculo de handicap/1X2 (chamador agrega o que precisar).
+function decomporMandanteVisitante(lambdaMandante, lambdaVisitante, dispR, rho) {
+  const lambdaTotal = lambdaMandante + lambdaVisitante;
+  const p = lambdaTotal > 0 ? lambdaMandante / lambdaTotal : 0.5;
+  const pmfTotal = negBinomialPMFArray(lambdaTotal, dispR, TOTAL_MAX_JOINT_CORNERS);
+
+  // probDiferenca[d + TOTAL_MAX_JOINT_CORNERS] = P(mandante - visitante = d)
+  const probDiferenca = new Array(2 * TOTAL_MAX_JOINT_CORNERS + 1).fill(0);
+  for (let t = 0; t <= TOTAL_MAX_JOINT_CORNERS; t++) {
+    const probT = pmfTotal[t];
+    if (probT <= 0) continue;
+    const pmfSplit = betaBinomialPMFArray(t, p, rho);
+    for (let k = 0; k <= t; k++) {
+      const diferenca = k - (t - k); // mandante - visitante
+      probDiferenca[diferenca + TOTAL_MAX_JOINT_CORNERS] += probT * pmfSplit[k];
+    }
+  }
+  return probDiferenca; // índice = diferença + TOTAL_MAX_JOINT_CORNERS
+}
+
+// Handicap "mandante -X.5": mandante cobre se (mandante - visitante) > X.5,
+// ou seja, se a diferença real for >= ceil(X.5) (linhas .5 nunca empatam;
+// linhas inteiras, se aparecerem, empatam nesse ponto exato -- não usado
+// nas linhas padrão, mas o cálculo já trata o caso certo via `>=`/`<=`
+// estritos em vez de assumir sempre .5).
+function probabilidadeHandicap(probDiferenca, linha) {
+  let probMandanteCobre = 0, probVisitanteCobre = 0, probPush = 0;
+  for (let idx = 0; idx < probDiferenca.length; idx++) {
+    const diferenca = idx - TOTAL_MAX_JOINT_CORNERS;
+    const resultado = diferenca + linha; // mandante cobre se > 0, visitante se < 0
+    if (resultado > 0) probMandanteCobre += probDiferenca[idx];
+    else if (resultado < 0) probVisitanteCobre += probDiferenca[idx];
+    else probPush += probDiferenca[idx];
+  }
+  return { prob_mandante_cobre: probMandanteCobre, prob_visitante_cobre: probVisitanteCobre, prob_push: probPush };
+}
+
+function probabilidade1x2(probDiferenca) {
+  let probMandante = 0, probEmpate = 0, probVisitante = 0;
+  for (let idx = 0; idx < probDiferenca.length; idx++) {
+    const diferenca = idx - TOTAL_MAX_JOINT_CORNERS;
+    if (diferenca > 0) probMandante += probDiferenca[idx];
+    else if (diferenca < 0) probVisitante += probDiferenca[idx];
+    else probEmpate += probDiferenca[idx];
+  }
+  return { prob_mandante: probMandante, prob_empate: probEmpate, prob_visitante: probVisitante };
+}
+
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -270,6 +401,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: { message: `?stat inválido: "${statPedida}" -- use um de ${STATS_SUPORTADAS.join(', ')}.` } });
   }
   const linhasPedidas = (linhas ? linhas.split(',') : LINHAS_PADRAO_POR_STAT[statPedida])
+    .map(l => parseFloat(l.trim()))
+    .filter(Number.isFinite);
+  const { linhas_handicap: linhasHandicapRaw } = req.query;
+  const linhasHandicapPedidas = (linhasHandicapRaw ? linhasHandicapRaw.split(',') : LINHAS_PADRAO_HANDICAP_CORNERS)
     .map(l => parseFloat(l.trim()))
     .filter(Number.isFinite);
 
@@ -304,9 +439,29 @@ export default async function handler(req, res) {
       return { linha, prob_over: 1 - probUnder, prob_under: probUnder, odd_justa_over: +(1 / (1 - probUnder)).toFixed(2), odd_justa_under: +(1 / probUnder).toFixed(2) };
     });
 
+    // Handicap e 1X2 de escanteios (mandante × visitante) -- só faz sentido
+    // pra `stat==='corners'`, é a única stat com `disp_rho_split` calibrado
+    // (ver RHO_SPLIT_PADRAO_CORNERS). `null` pra chutes/chutes no gol é
+    // resposta normal, não erro.
+    let handicap = null;
+    let resultado1x2 = null;
+    let rhoSplitInfo = null;
+    if (statPedida === 'corners') {
+      const { valor: rhoSplit, origem: origemRhoSplit } = await dispRhoSplitDaLiga(supabase, ligaId);
+      rhoSplitInfo = { valor: rhoSplit, origem: origemRhoSplit };
+      const probDiferenca = decomporMandanteVisitante(esperadoMandante.valor, esperadoVisitante.valor, dispR, rhoSplit);
+      handicap = linhasHandicapPedidas.map(linha => ({ linha, ...probabilidadeHandicap(probDiferenca, linha) }));
+      resultado1x2 = probabilidade1x2(probDiferenca);
+    }
+
     res.status(200).json({
       confronto: { equipe_mandante: timeMandante.name, equipe_visitante: timeVisitante.name },
-      modelo: { nome: 'stats_glm_v1 + Binomial Negativa', stat: statPedida, league_id: ligaId, disp_r: dispR, origem_disp_r: origemDispR },
+      modelo: {
+        nome: 'stats_glm_v1 + Binomial Negativa', stat: statPedida, league_id: ligaId,
+        disp_r: dispR, origem_disp_r: origemDispR,
+        // Só preenchido pra escanteios -- ver comentário em decomporMandanteVisitante.
+        disp_rho_split: rhoSplitInfo?.valor ?? null, origem_disp_rho_split: rhoSplitInfo?.origem ?? null,
+      },
       // `stat_esperado`: nome genérico novo, serve pra qualquer uma das
       // STATS_SUPORTADAS. `escanteios_esperados`: MESMO objeto, mantido por
       // compatibilidade -- `src/pages/AnaliseEvento.jsx`/
@@ -324,6 +479,11 @@ export default async function handler(req, res) {
         total: lambdaTotal,
       },
       mercados: linhasCalculadas,
+      // Handicap e 1X2 de escanteios (mandante × visitante) -- AINDA NÃO
+      // VALIDADO contra resultado real em carteira cronológica, ver aviso
+      // em RHO_SPLIT_PADRAO_CORNERS. `null` pra chutes/chutes no gol.
+      mercados_handicap: handicap,
+      mercado_1x2: resultado1x2,
       // Presente só quando o modelo misto tem estimativa pra uma partida entre
       // esses dois times. `null` é resposta normal (confronto hipotético, ou
       // partida fora do escopo de treino), e a calculadora trata como tal.
