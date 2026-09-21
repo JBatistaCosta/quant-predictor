@@ -1,0 +1,40 @@
+name: catboost_v9 - Backfill 2026 (out-of-sample)
+
+# Gera previsão do catboost_v9 pras partidas de 2026 JÁ DISPUTADAS
+# (jan/2026 até hoje) -- período totalmente fora da amostra de treino do
+# walk-forward original (walkforward_cv_v9.py só cobre até dez/2025).
+# Treina só com dados < 01/01/2026 (evita vazamento -- ver docstring
+# completa em scripts/backfill_catboost_v9_2026.py) e prevê em todas as
+# partidas de 2026 já resolvidas, persistindo em model_predictions. Depois
+# disso, a próxima rodada de matriz_confiabilidade_ev.yml já inclui esse
+# período automaticamente.
+#
+# workflow_dispatch só -- execução única (backfill), não cron.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backfill-catboost-v9-2026:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Backfill de previsões 2026 (catboost_v9)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backfill_catboost_v9_2026.py
