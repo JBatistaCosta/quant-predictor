@@ -6330,6 +6330,22 @@ async function apostarCarteira(supabase, carteira) {
       pModelo = calib.tipo === 'platt' ? aplicarPlattPredicao(pModelo, calib.a, calib.b) : aplicarIsotonicPredicao(pModelo, calib.x, calib.y);
       if (pModelo == null) continue;
     }
+
+    // Faixa de valor encontrada na matriz de confiabilidade EV (21/09):
+    // mandante, 1X2, odd 1.30-2.50, edge 5-10% -- única célula com
+    // confiavel=true pra catboost_v9 (n=586, IC95% da média E da mediana
+    // positivos, positivo nas 6 ligas do benchmarking). Fora dessa faixa
+    // (visitante, empate, odd/edge fora do range) o mesmo modelo não tem
+    // vantagem nenhuma -- ver matriz_confiabilidade_ev_historico. Filtro
+    // hardcoded (não config genérica) porque hoje só esta carteira precisa
+    // dele; se surgir uma 2ª faixa restrita, generalizar pra colunas em
+    // paper_trading_carteiras em vez de if novo aqui.
+    if (carteira.modelo === 'catboost_v9') {
+      const edge = pModelo - 1 / melhor.odd;
+      const naFaixaDeValor = p.selection === 'home' && melhor.odd >= 1.30 && melhor.odd < 2.50 && edge >= 0.05 && edge < 0.10;
+      if (!naFaixaDeValor) continue;
+    }
+
     const ev = pModelo * melhor.odd;
     if (ev < evMinimo || ev > evMaximo) continue;
 

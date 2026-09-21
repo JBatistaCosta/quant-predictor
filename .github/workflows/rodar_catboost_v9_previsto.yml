@@ -1,0 +1,48 @@
+name: catboost_v9 - Prever Partidas Futuras
+
+# Treina catboost_v9 (hoje só existia como backtest walk-forward histórico,
+# jan/2023-dez/2025) com todo o histórico disponível e gera previsão pras
+# partidas ainda não disputadas, persistindo em model_predictions -- sem
+# isso a Carteira (Paper Trading) não tem previsão pra apostar nesse modelo
+# em partida status=scheduled, inclusive na faixa mandante/1X2/odd
+# 1.30-2.50/edge 5-10% que a matriz de confiabilidade EV marcou como
+# confiavel=true. Ver docstring completa em
+# scripts/rodar_catboost_v9_previsto.py.
+#
+# Agendado antes do cron da Carteira em vercel.json (09:00 UTC,
+# tarefa=paper-carteira-rodar-todas), mesmo espírito de
+# rodar_cartoes_rf_previsto.yml (05:30 UTC).
+
+on:
+  schedule:
+    # 05:00 UTC todo dia.
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  rodar-catboost-v9-previsto:
+    runs-on: ubuntu-latest
+    # Treina 1 CatBoost (1x2 multiclasse + 2 mercados binários) sobre o
+    # dataset "Feature Stacked" completo -- nunca medido em produção ainda,
+    # folga generosa de propósito (mesmo espírito de rodar_cartoes_rf_previsto.yml).
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Prever partidas futuras (catboost_v9)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/rodar_catboost_v9_previsto.py
