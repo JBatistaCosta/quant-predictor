@@ -19,6 +19,15 @@ import { toPct } from '../utils/format';
 // CONTEXTO_PROJETO.md ("ACHADO REFORÇADO" de cartões).
 const SUB_FAIXA_CARTEIRA = 'rf_confiavel_serieB_bet365betano_combinado';
 
+// Carteira restrita de catboost_v9 (achado 21/09): mandante, 1X2, odd
+// [1.30,2.50), edge [5%,10%) -- única célula confiavel=true da matriz de
+// confiabilidade EV pra esse modelo, positiva nas 6 ligas do benchmarking
+// (diferente da carteira de cartões, esta NÃO é restrita a uma liga só,
+// por isso tem filtro de liga na própria aba). Ver SUB_FAIXA_CARTEIRA em
+// scripts/analisar_catboost_v9_liga_sinal.py e model_betting_strategy
+// (mercado='1x2_mandante').
+const SUB_FAIXA_CARTEIRA_CATBOOST_V9 = 'catboost_v9_odd1.30-2.50_edge5-10';
+
 // Cartões/faltas por partida vêm de `match_disciplina` (migration
 // 20260920180000_create_match_disciplina.sql, regerada por
 // public.derivar_disciplina()) -- não mais calculados ao vivo aqui.
@@ -89,7 +98,7 @@ function exportarCSV(linhas, colunas, nomeArquivo) {
 }
 
 export default function ResumoValorApostas() {
-  const [aba, setAba] = useState('sugestoes'); // 'sugestoes' | 'carteira'
+  const [aba, setAba] = useState('sugestoes'); // 'sugestoes' | 'carteira' | 'carteira_catboost'
 
   const [carregandoOpcoes, setCarregandoOpcoes] = useState(true);
   const [opcoesModelos, setOpcoesModelos] = useState([]);
@@ -103,6 +112,12 @@ export default function ResumoValorApostas() {
   const [carteira, setCarteira] = useState([]);
   const [carteiraCarregada, setCarteiraCarregada] = useState(false);
   const [cartoesPorMatch, setCartoesPorMatch] = useState({}); // match_id -> {amareloHome, amareloAway, vermelhoHome, vermelhoAway, faltasHome, faltasAway, fonteHome, fonteAway}
+
+  const [carregandoCarteiraCB, setCarregandoCarteiraCB] = useState(false);
+  const [erroCarteiraCB, setErroCarteiraCB] = useState('');
+  const [carteiraCB, setCarteiraCB] = useState([]);
+  const [carteiraCBCarregada, setCarteiraCBCarregada] = useState(false);
+  const [filtroLigaCarteiraCB, setFiltroLigaCarteiraCB] = useState('');
 
   const [filtroModelo, setFiltroModelo] = useState('');
   const [filtroMercado, setFiltroMercado] = useState('');
@@ -263,8 +278,45 @@ export default function ResumoValorApostas() {
 
   useEffect(() => {
     if (aba === 'carteira' && !carteiraCarregada && !carregandoCarteira) buscarCarteira();
+    if (aba === 'carteira_catboost' && !carteiraCBCarregada && !carregandoCarteiraCB) buscarCarteiraCatboostV9();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba]);
+
+  // Aba "Carteira catboost_v9" -- ledger aposta a aposta da carteira
+  // cronológica restrita a mandante/1X2/odd 1.30-2.50/edge 5-10% (única
+  // célula confiavel=true da matriz de confiabilidade EV pra esse modelo),
+  // persistida por scripts/analisar_catboost_v9_liga_sinal.py em
+  // carteira_catboost_v9_historico. Mesmo padrão de leitura direta do
+  // Supabase que a aba de cartões já usa.
+  async function buscarCarteiraCatboostV9() {
+    if (!supabaseAtivo) return;
+    setCarregandoCarteiraCB(true);
+    setErroCarteiraCB('');
+    try {
+      const { data, error } = await supabase
+        .from('carteira_catboost_v9_historico')
+        .select('*, matches(round, league_id, home_team_id, away_team_id)')
+        .eq('sub_faixa', SUB_FAIXA_CARTEIRA_CATBOOST_V9)
+        .order('ordem', { ascending: true });
+      if (error) throw error;
+      const linhas = data || [];
+      setCarteiraCB(linhas);
+      setCarteiraCBCarregada(true);
+
+      const idsTimes = [...new Set(linhas.flatMap(l => [l.matches?.home_team_id, l.matches?.away_team_id]).filter(Boolean))];
+      if (idsTimes.length > 0) {
+        const { data: times } = await supabase.from('teams').select('id, name').in('id', idsTimes);
+        const mapaTimes = {};
+        (times || []).forEach(t => { mapaTimes[t.id] = t.name; });
+        setTimesPorId(prev => ({ ...prev, ...mapaTimes }));
+      }
+    } catch (e) {
+      setErroCarteiraCB(e.message);
+      setCarteiraCB([]);
+    } finally {
+      setCarregandoCarteiraCB(false);
+    }
+  }
 
   const linhaRotulo = (l) => `${l.selecao === 'over' ? 'Over' : 'Under'} ${Number(l.linha).toFixed(1)}`;
   const resultadoCarteira = (l) => (l.acertou ? { texto: 'Green', cor: 'text-emerald-400' } : { texto: 'Red', cor: 'text-red-400' });
@@ -340,6 +392,62 @@ export default function ResumoValorApostas() {
     exportarCSV(carteira, colunasCSVCarteira, nome);
   };
 
+  // Filtro por liga da carteira catboost_v9 -- diferente da carteira de
+  // cartões (já restrita a uma liga só na origem), esta carteira cobre as 6
+  // ligas do benchmarking, então o filtro é útil de verdade aqui.
+  const opcoesLigasCarteiraCB = useMemo(() => {
+    const ids = [...new Set(carteiraCB.map(l => l.matches?.league_id).filter(Boolean))];
+    return ids.sort((a, b) => nomeLiga(a).localeCompare(nomeLiga(b)));
+  }, [carteiraCB, ligasPorId]);
+
+  const carteiraCBFiltrada = useMemo(() => {
+    if (!filtroLigaCarteiraCB) return carteiraCB;
+    return carteiraCB.filter(l => String(l.matches?.league_id) === String(filtroLigaCarteiraCB));
+  }, [carteiraCB, filtroLigaCarteiraCB]);
+
+  const resumoCarteiraCB = useMemo(() => {
+    if (carteiraCBFiltrada.length === 0) return null;
+    const acertos = carteiraCBFiltrada.filter(l => l.acertou).length;
+    // Banca final/drawdown recalculados só sobre o subconjunto filtrado --
+    // com filtro de liga ativo, isso mostra "e se eu tivesse apostado só
+    // nessa liga", não a banca real combinada (que é a sem filtro).
+    let banca = 1;
+    let pico = 1;
+    let drawdownMax = 0;
+    for (const l of carteiraCBFiltrada) {
+      banca += (l.banca_depois - l.banca_antes);
+      pico = Math.max(pico, banca);
+      if (pico > 0) drawdownMax = Math.max(drawdownMax, (pico - banca) / pico);
+    }
+    return { bancaFinalX: banca, drawdownMax, n: carteiraCBFiltrada.length, taxaAcerto: acertos / carteiraCBFiltrada.length };
+  }, [carteiraCBFiltrada]);
+
+  const colunasCSVCarteiraCB = useMemo(() => ([
+    { header: 'Data', get: (l) => new Date(l.match_date).toLocaleDateString('pt-BR') },
+    { header: 'Liga', get: (l) => nomeLiga(l.matches?.league_id) },
+    { header: 'Rodada', get: (l) => l.matches?.round ?? '—' },
+    { header: 'Mandante', get: (l) => nomeTime(l.matches?.home_team_id) },
+    { header: 'Visitante', get: (l) => nomeTime(l.matches?.away_team_id) },
+    { header: 'Mercado', get: () => '1X2' },
+    { header: 'Seleção', get: () => 'Mandante' },
+    { header: 'Casa de aposta', get: (l) => rotuloCasaAposta(l.bookmaker) },
+    { header: 'Prob. modelo', get: (l) => (l.prob_modelo * 100).toFixed(2) + '%' },
+    { header: 'Odd justa', get: (l) => l.odd_justa.toFixed(3) },
+    { header: 'Odd real', get: (l) => l.odd_real.toFixed(3) },
+    { header: 'Prob. devig (mercado)', get: (l) => (l.prob_devig != null ? (l.prob_devig * 100).toFixed(2) + '%' : '—') },
+    { header: 'Edge (pp)', get: (l) => (l.edge * 100).toFixed(2) },
+    { header: 'EV', get: (l) => (l.ev * 100).toFixed(2) + '%' },
+    { header: 'Stake sugerida (% banca)', get: (l) => (l.stake_pct * 100).toFixed(2) + '%' },
+    { header: 'Resultado', get: (l) => resultadoCarteira(l).texto },
+    { header: 'Diferença na banca', get: (l) => (diferencaBanca(l) * 100).toFixed(2) + '%' },
+  ]), [timesPorId, ligasPorId]);
+
+  const exportarCarteiraCB = () => {
+    const sufixoLiga = filtroLigaCarteiraCB ? `-${nomeLiga(filtroLigaCarteiraCB).toLowerCase().replace(/\s+/g, '-')}` : '';
+    const nome = `carteira-catboost-v9-mandante${sufixoLiga}-${new Date().toISOString().slice(0, 10)}.csv`;
+    exportarCSV(carteiraCBFiltrada, colunasCSVCarteiraCB, nome);
+  };
+
   const colunasCSV = useMemo(() => ([
     { header: 'Data', get: (c) => new Date(c.match_date).toLocaleString('pt-BR') },
     { header: 'Liga', get: (c) => nomeLiga(c.league_id) },
@@ -383,7 +491,9 @@ export default function ResumoValorApostas() {
           <p className="text-slate-400 mt-1 text-sm">
             {aba === 'sugestoes'
               ? 'Todas as apostas com edge positivo (probabilidade do modelo acima da probabilidade devigada do mercado) que cada modelo sugeriu, jogo a jogo — inclui partidas ainda pendentes, não só o histórico já resolvido.'
-              : 'Ledger aposta a aposta da carteira cronológica restrita de Cartões (cartoes_rf, Brasileirão Série B + bet365/betano, O/U 4.5 e 5.5, edge≥25%) — a banca composta de verdade, em ordem cronológica, achado registrado em model_betting_strategy.'}
+              : aba === 'carteira'
+              ? 'Ledger aposta a aposta da carteira cronológica restrita de Cartões (cartoes_rf, Brasileirão Série B + bet365/betano, O/U 4.5 e 5.5, edge≥25%) — a banca composta de verdade, em ordem cronológica, achado registrado em model_betting_strategy.'
+              : 'Ledger aposta a aposta da carteira cronológica de catboost_v9 (mandante, 1X2, odd 1.30-2.50, edge 5-10%) — única célula confiável da matriz de confiabilidade EV pra esse modelo, positiva nas 6 ligas do benchmarking, achado registrado em model_betting_strategy.'}
           </p>
         </div>
         {aba === 'sugestoes' ? (
@@ -391,8 +501,13 @@ export default function ResumoValorApostas() {
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
             <Download size={16} /> Exportar CSV
           </button>
-        ) : (
+        ) : aba === 'carteira' ? (
           <button onClick={exportarCarteira} disabled={carteira.length === 0}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
+            <Download size={16} /> Exportar CSV
+          </button>
+        ) : (
+          <button onClick={exportarCarteiraCB} disabled={carteiraCBFiltrada.length === 0}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold px-4 py-2.5 rounded-lg text-sm">
             <Download size={16} /> Exportar CSV
           </button>
@@ -407,6 +522,10 @@ export default function ResumoValorApostas() {
         <button onClick={() => setAba('carteira')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border ${aba === 'carteira' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>
           <Wallet size={15} /> Carteira (Cartões — Série B)
+        </button>
+        <button onClick={() => setAba('carteira_catboost')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border ${aba === 'carteira_catboost' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>
+          <Wallet size={15} /> Carteira (catboost_v9 — Mandante)
         </button>
       </div>
 
@@ -558,6 +677,23 @@ export default function ResumoValorApostas() {
           fonteSuspeita={fonteSuspeita}
         />
       )}
+
+      {aba === 'carteira_catboost' && (
+        <CarteiraCatboostV9Tab
+          carregando={carregandoCarteiraCB}
+          erro={erroCarteiraCB}
+          carteira={carteiraCBFiltrada}
+          resumo={resumoCarteiraCB}
+          nomeLiga={nomeLiga}
+          nomeTime={nomeTime}
+          rotuloCasaAposta={rotuloCasaAposta}
+          resultadoCarteira={resultadoCarteira}
+          diferencaBanca={diferencaBanca}
+          opcoesLigas={opcoesLigasCarteiraCB}
+          filtroLiga={filtroLigaCarteiraCB}
+          onFiltroLigaChange={setFiltroLigaCarteiraCB}
+        />
+      )}
     </div>
   );
 }
@@ -705,6 +841,146 @@ function CarteiraCartoesTab({ carregando, erro, carteira, resumo, nomeLiga, nome
           </div>
         )}
       </div>
+    </>
+  );
+}
+
+function CarteiraCatboostV9Tab({ carregando, erro, carteira, resumo, nomeLiga, nomeTime, rotuloCasaAposta, resultadoCarteira, diferencaBanca, opcoesLigas, filtroLiga, onFiltroLigaChange }) {
+  const [paginaAtual, setPaginaAtual] = useState(0);
+  const totalPaginas = Math.max(1, Math.ceil(carteira.length / LINHAS_POR_PAGINA));
+  const linhasDaPagina = carteira.slice(paginaAtual * LINHAS_POR_PAGINA, (paginaAtual + 1) * LINHAS_POR_PAGINA);
+
+  // Reseta pra 1ª página sempre que o filtro de liga muda -- senão o usuário
+  // pode ficar numa página que não existe mais no subconjunto filtrado.
+  useEffect(() => { setPaginaAtual(0); }, [filtroLiga]);
+
+  if (erro) return <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>;
+
+  if (carregando) {
+    return (
+      <div className="flex items-center justify-center py-16 text-slate-500 gap-2">
+        <Loader2 className="animate-spin" size={20} /> Carregando carteira...
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-[10px] uppercase text-slate-500 mb-1">Liga</label>
+          <select value={filtroLiga} onChange={(e) => onFiltroLigaChange(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100">
+            <option value="">Todas as ligas</option>
+            {opcoesLigas.map(l => <option key={l} value={l}>{nomeLiga(l)}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {carteira.length === 0 ? (
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center text-slate-500 text-sm">
+          {filtroLiga
+            ? 'Nenhuma aposta dessa liga na carteira restrita.'
+            : 'Nenhuma aposta na carteira restrita ainda — ela é populada pelo workflow `analisar_catboost_v9_liga_sinal.yml`.'}
+        </div>
+      ) : (
+        <>
+          {resumo && (
+            <div className="grid grid-cols-4 gap-3 mb-4">
+              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+                <div className="text-[10px] uppercase text-slate-500 font-bold">Banca final</div>
+                <div className="text-xl font-extrabold text-emerald-400 mt-1">{resumo.bancaFinalX.toFixed(2)}x</div>
+              </div>
+              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+                <div className="text-[10px] uppercase text-slate-500 font-bold">Drawdown máximo</div>
+                <div className="text-xl font-extrabold text-amber-400 mt-1">{(resumo.drawdownMax * 100).toFixed(1)}%</div>
+              </div>
+              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+                <div className="text-[10px] uppercase text-slate-500 font-bold">Taxa de acerto</div>
+                <div className="text-xl font-extrabold text-slate-100 mt-1">{(resumo.taxaAcerto * 100).toFixed(1)}%</div>
+              </div>
+              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4">
+                <div className="text-[10px] uppercase text-slate-500 font-bold">Apostas na carteira</div>
+                <div className="text-xl font-extrabold text-slate-100 mt-1">{resumo.n}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 overflow-x-auto">
+            <div className="text-xs text-slate-500 mb-2">{carteira.length} apostas na carteira (ordem cronológica)</div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 uppercase text-[10px]">
+                  <th className="text-left p-1.5">Data</th>
+                  <th className="text-left p-1.5">Liga</th>
+                  <th className="text-right p-1.5">Rodada</th>
+                  <th className="text-left p-1.5">Confronto</th>
+                  <th className="text-left p-1.5">Seleção</th>
+                  <th className="text-left p-1.5">Casa</th>
+                  <th className="text-right p-1.5">Prob. modelo</th>
+                  <th className="text-right p-1.5">Odd justa</th>
+                  <th className="text-right p-1.5">Odd real</th>
+                  <th className="text-right p-1.5">Prob. devig</th>
+                  <th className="text-right p-1.5">Edge</th>
+                  <th className="text-right p-1.5">EV</th>
+                  <th className="text-right p-1.5">Stake</th>
+                  <th className="text-right p-1.5">Resultado</th>
+                  <th className="text-right p-1.5">Δ Banca</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50">
+                {linhasDaPagina.map((l) => {
+                  const resultado = resultadoCarteira(l);
+                  const diff = diferencaBanca(l);
+                  return (
+                    <tr key={l.id}>
+                      <td className="p-1.5 text-slate-400 whitespace-nowrap">{new Date(l.match_date).toLocaleDateString('pt-BR')}</td>
+                      <td className="p-1.5 text-slate-400">{nomeLiga(l.matches?.league_id)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{l.matches?.round ?? '—'}</td>
+                      <td className="p-1.5 text-slate-300 font-semibold whitespace-nowrap">{nomeTime(l.matches?.home_team_id)} x {nomeTime(l.matches?.away_team_id)}</td>
+                      <td className="p-1.5 text-slate-300 font-semibold">Mandante</td>
+                      <td className="p-1.5 text-slate-400">{rotuloCasaAposta(l.bookmaker)}</td>
+                      <td className="p-1.5 text-right text-slate-200">{toPct(l.prob_modelo)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{l.odd_justa.toFixed(2)}</td>
+                      <td className="p-1.5 text-right text-slate-200">{l.odd_real.toFixed(2)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{l.prob_devig != null ? toPct(l.prob_devig) : '—'}</td>
+                      <td className="p-1.5 text-right font-bold text-emerald-400">+{(l.edge * 100).toFixed(1)}pp</td>
+                      <td className="p-1.5 text-right text-slate-200">+{(l.ev * 100).toFixed(1)}%</td>
+                      <td className="p-1.5 text-right text-slate-300">{(l.stake_pct * 100).toFixed(1)}%</td>
+                      <td className={`p-1.5 text-right font-bold ${resultado.cor}`}>{resultado.texto}</td>
+                      <td className={`p-1.5 text-right font-bold ${diff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {diff >= 0 ? '+' : ''}{(diff * 100).toFixed(2)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {totalPaginas > 1 && (
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700">
+                <button
+                  onClick={() => setPaginaAtual(p => Math.max(0, p - 1))}
+                  disabled={paginaAtual === 0}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} /> Anterior
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  Página {paginaAtual + 1} de {totalPaginas} ({linhasDaPagina.length} de {carteira.length} linhas)
+                </span>
+                <button
+                  onClick={() => setPaginaAtual(p => Math.min(totalPaginas - 1, p + 1))}
+                  disabled={paginaAtual >= totalPaginas - 1}
+                  className="flex items-center gap-1 text-xs font-bold text-slate-400 hover:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Próxima <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </>
   );
 }
