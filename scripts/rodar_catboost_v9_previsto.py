@@ -64,7 +64,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("rodar_catboost_v9_previsto")
 
 MODEL_NAME = "catboost_v9"
-JANELA_DIAS = 14
+# 30 (não 14, como em rodar_cartoes_rf_previsto.py) -- as 6 ligas do
+# benchmarking entram em pausa (janela internacional/fim de temporada) por
+# períodos que passam de 14 dias entre rodadas (confirmado em produção,
+# 21/09: só 2 partidas na janela de 14 dias, todas as outras 5 ligas com a
+# próxima rodada só ~19 dias à frente) -- 30 dias garante margem sem
+# aumentar demais o custo de treino (ainda 1 treino só, não por partida).
+JANELA_DIAS = 30
 MIN_TREINO = 500  # sanity check -- dataset histórico real tem milhares de linhas
 
 
