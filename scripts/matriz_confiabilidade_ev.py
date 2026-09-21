@@ -324,6 +324,12 @@ def coletar_apostas_gols(supabase: Client, dataset: pd.DataFrame, modelo: str) -
 
     resultados_gols = dict(zip(dataset["match_id"], zip(dataset["home_goals"], dataset["away_goals"])))
     datas_por_match = dict(zip(dataset["match_id"], dataset["match_date"]))
+    # "liga" já vem como NOME em `dataset` (dataset["liga"] = dataset["league_id"].map(nome_da_liga),
+    # ver dados_historicos.py) -- exatamente o que `montar_apostas`/`resumir_por_liga` esperam.
+    # Custa nada anexar aqui mesmo quando `avaliar_matriz` não quebra por liga --
+    # é o que permite reaproveitar esta função pra análises mais finas (ex.
+    # `analisar_hibridos_sublinha_liga.py`) sem duplicar a coleta.
+    liga_por_match_id = dict(zip(dataset["match_id"].astype(int), dataset["liga"]))
     match_ids = list(previsoes.keys())
     apostas_total = []
     for mercado in MERCADOS_GOLS:
@@ -336,7 +342,7 @@ def coletar_apostas_gols(supabase: Client, dataset: pd.DataFrame, modelo: str) -
             mercados_modelo = wf_gols._probs_mercados(p["lam_home"], p["lam_away"], p["rho"])
             predicoes[match_id] = {f"prob_{selecao}": prob for (m, selecao), prob in mercados_modelo.items() if m == mercado}
             resultados_reais[match_id] = bk._resultado_codigo_mercado(hg, ag, mercado)
-        apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, mercado=mercado)
+        apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, liga_por_match_id=liga_por_match_id, mercado=mercado)
         logger.info("[%s, %s]: %d apostas com edge >= %.0f%% e odd real disponível.", modelo, mercado, len(apostas), bk.EDGE_MINIMO * 100)
         apostas_total.extend([{**a, "mercado": mercado, "match_date": datas_por_match[a["match_id"]]} for a in apostas])
     return apostas_total
@@ -369,8 +375,9 @@ def coletar_apostas_escanteios(supabase: Client, dataset: pd.DataFrame) -> list[
         }
         resultados_reais[match_id] = dh.RESULTADO_CORNERS_OVER95 if total_real > wf_corners.LINHA_MERCADO else dh.RESULTADO_CORNERS_UNDER95
 
+    liga_por_match_id = dict(zip(dataset["match_id"].astype(int), dataset["liga"]))
     odds_reais = bk.carregar_melhores_odds_fechamento(supabase, match_ids, MERCADO_ESCANTEIOS)
-    apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, mercado=MERCADO_ESCANTEIOS)
+    apostas = bk.montar_apostas(predicoes, odds_reais, resultados_reais, liga_por_match_id=liga_por_match_id, mercado=MERCADO_ESCANTEIOS)
     logger.info("[%s, %s]: %d apostas com edge >= %.0f%% e odd real disponível.",
                 wf_corners.MODEL_NAME, MERCADO_ESCANTEIOS, len(apostas), bk.EDGE_MINIMO * 100)
     return [{**a, "mercado": MERCADO_ESCANTEIOS, "match_date": datas_por_match[a["match_id"]]} for a in apostas]
