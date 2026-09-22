@@ -178,6 +178,15 @@ MERCADOS_CATBOOST_V9_ESTADO = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
 MODELO_CATBOOST_V9_XI_AGREGADO = "catboost_v9_xi_agregado"
 MERCADOS_CATBOOST_V9_XI_AGREGADO = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
 
+# catboost_v9_xi_agregado_top11 (22/09) -- variante 3: mesma ideia acima, mas
+# soma só os 11 titulares reconstruídos (top-11 por prob_titular em
+# xi_titular_walkforward), não o elenco relacionado inteiro -- catboost_v9_
+# xi_agregado não teve NENHUMA célula confiável nesta mesma matriz; hipótese
+# do usuário é que somar o banco inteiro diluía o sinal do XI de verdade.
+# Ver walkforward_cv_v9_xi_agregado_top11.py.
+MODELO_CATBOOST_V9_XI_AGREGADO_TOP11 = "catboost_v9_xi_agregado_top11"
+MERCADOS_CATBOOST_V9_XI_AGREGADO_TOP11 = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
+
 _ALGORITMOS_V11 = ["catboost_v11", "xgboost_v11", "lightgbm_v11", "mlp_v11"]
 _VARIANTES_V11 = ["", "_calibrado_isotonic", "_calibrado_platt"]
 MODELOS_V11 = [f"{algo}{variante}" for algo in _ALGORITMOS_V11 for variante in _VARIANTES_V11] + ["stacking_v11"]
@@ -593,6 +602,11 @@ def main() -> None:
     apostas_catboost_v9_xi_agregado = coletar_apostas_modelo_persistido(supabase, MODELO_CATBOOST_V9_XI_AGREGADO, MERCADOS_CATBOOST_V9_XI_AGREGADO)
     for mercado in MERCADOS_CATBOOST_V9_XI_AGREGADO.values():
         resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9_xi_agregado if a["mercado"] == mercado], MODELO_CATBOOST_V9_XI_AGREGADO, mercado))
+
+    logger.info("--- %s (xG/gols/chutes agregados só dos 11 titulares reconstruídos) ---", MODELO_CATBOOST_V9_XI_AGREGADO_TOP11)
+    apostas_catboost_v9_xi_agregado_top11 = coletar_apostas_modelo_persistido(supabase, MODELO_CATBOOST_V9_XI_AGREGADO_TOP11, MERCADOS_CATBOOST_V9_XI_AGREGADO_TOP11)
+    for mercado in MERCADOS_CATBOOST_V9_XI_AGREGADO_TOP11.values():
+        resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9_xi_agregado_top11 if a["mercado"] == mercado], MODELO_CATBOOST_V9_XI_AGREGADO_TOP11, mercado))
 
     for modelo_v11 in MODELOS_V11:
         mercados_modelo = MERCADOS_POR_MODELO_V11[modelo_v11]
