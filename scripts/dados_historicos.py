@@ -2379,6 +2379,91 @@ def _anexar_forca_xi_agregada_por_partida(supabase: Client, partidas: pd.DataFra
     return partidas
 
 
+# Variante 3 de COLUNAS_XI_AGREGADO_JOGADOR (pedido do usuário 22/09, depois
+# de matriz_confiabilidade_ev não achar edge na variante "elenco relacionado
+# inteiro" acima): em vez de somar todo o elenco relacionado (~15,4
+# jogadores/time em média, a maioria banco com prob_titular baixíssima --
+# achado só depois de investigar `player_match_estimates`, a versão de
+# PRODUÇÃO desta mesma tabela, que tem uma coluna `is_titular_previsto` pra
+# marcar exatamente os 11 titulares e que `player_match_walkforward` não
+# tem), restringe a soma aos 11 de maior `prob_titular` por (match_id,
+# team_id) em `xi_titular_walkforward` -- a previsão de titularidade
+# walk-forward sem vazamento (ver backtest_xi_walkforward.py).
+#
+# NÃO reimplementa `rodar_xi_previsto.selecionar_titulares_por_posicao`
+# (a seleção "de verdade" usada em produção, que respeita uma formação
+# plausível 1 GK/4-5 DEF/3-5 MEI/1-3 ATA) porque essa função depende de
+# `usual_position_id`/`posicao_detalhe` PONTO-NO-TEMPO (de
+# `player_availability_fotmob`, um snapshot só do elenco ATUAL, sem
+# histórico) -- não dá pra reconstruir com confiança a posição de um
+# jogador em 2021 a partir de um snapshot de 2026. Top-11 puro por
+# probabilidade é exatamente o critério que `backtest_xi_walkforward.
+# _metricas_grupo` já usa e valida pra medir a acurácia do próprio modelo
+# de XI (sem posição), então não é uma aproximação nova/não testada.
+COLUNAS_XI_AGREGADO_TOP11_JOGADOR = {
+    "xi_agregado_top11_lambda_gols": "lambda_gols_jogo_direto",
+    "xi_agregado_top11_lambda_xg": "lambda_xg_jogo",
+    "xi_agregado_top11_lambda_chutes": "lambda_chutes_jogo",
+    "xi_agregado_top11_lambda_chutes_alvo": "lambda_chutes_no_alvo_jogo",
+}
+
+
+def _anexar_forca_xi_agregada_top11_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Ver comentário de `COLUNAS_XI_AGREGADO_TOP11_JOGADOR` acima."""
+    match_ids = partidas["id"].astype(int).tolist()
+    partidas = partidas.copy()
+
+    def factory_prob(lote, inicio, fim):
+        return (
+            supabase.table("xi_titular_walkforward")
+            .select("match_id, team_id, player_id, prob_titular")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas_prob = _paginar_por_lotes_de_id(factory_prob, match_ids)
+    if not linhas_prob:
+        for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    prob_df = pd.DataFrame(linhas_prob)
+    prob_df = prob_df.sort_values(["match_id", "team_id", "prob_titular"], ascending=[True, True, False])
+    top11 = prob_df.groupby(["match_id", "team_id"], as_index=False).head(11)[["match_id", "team_id", "player_id"]]
+
+    colunas_origem = list(COLUNAS_XI_AGREGADO_TOP11_JOGADOR.values())
+
+    def factory_lambda(lote, inicio, fim):
+        return (
+            supabase.table("player_match_walkforward")
+            .select("match_id, team_id, player_id, " + ", ".join(colunas_origem))
+            .in_("match_id", lote)
+            .eq("fonte_titular", "previsto")
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas_lambda = _paginar_por_lotes_de_id(factory_lambda, match_ids)
+    if not linhas_lambda:
+        for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    jogadores = pd.DataFrame(linhas_lambda).merge(top11, on=["match_id", "team_id", "player_id"], how="inner")
+    agregados = jogadores.groupby(["match_id", "team_id"], as_index=False)[colunas_origem].sum()
+    agregados = agregados.rename(columns={"match_id": "id", **{v: k for k, v in COLUNAS_XI_AGREGADO_TOP11_JOGADOR.items()}})
+
+    for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR:
+        agregados_home = agregados.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
+        agregados_away = agregados.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
+        partidas = partidas.merge(agregados_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(agregados_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
 def obter_situacao_chutes_por_mando(
     supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
 ) -> dict[int, dict[str, float]]:
@@ -4227,6 +4312,20 @@ FEATURES_NUMERICAS_V18_XI_AGREGADO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + [
 ]
 FEATURES_V18_XI_AGREGADO = FEATURES_NUMERICAS_V18_XI_AGREGADO + CAT_FEATURES
 
+# v19 (só `catboost_v9_xi_agregado_top11`) -- variante 3 da v18: mesma base
+# V9_XG_CORRIGIDO, mas soma só os 11 titulares reconstruídos por top-11 de
+# `prob_titular` (ver COLUNAS_XI_AGREGADO_TOP11_JOGADOR/
+# _anexar_forca_xi_agregada_top11_por_partida), não o elenco relacionado
+# inteiro (~15 jogadores) que a v18 usa -- matriz_confiabilidade_ev não achou
+# edge na v18; hipótese do usuário (22/09) é que somar o banco inteiro dilui
+# o sinal do XI de verdade.
+FEATURES_NUMERICAS_V19_XI_AGREGADO_TOP11 = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + [
+    f"{col}_home" for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR
+] + [
+    f"{col}_away" for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR
+]
+FEATURES_V19_XI_AGREGADO_TOP11 = FEATURES_NUMERICAS_V19_XI_AGREGADO_TOP11 + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.
@@ -4475,6 +4574,7 @@ def montar_dataset_ml_empilhado(
     partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
     partidas = _anexar_qualidade_chute_estado_por_partida(supabase, partidas)
     partidas = _anexar_forca_xi_agregada_por_partida(supabase, partidas)
+    partidas = _anexar_forca_xi_agregada_top11_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_gols_mesma_liga = _forma_por_mando(
@@ -4562,6 +4662,8 @@ def montar_dataset_ml_empilhado(
     for col in (
         *[f"{c}_home" for c in COLUNAS_XI_AGREGADO_JOGADOR],
         *[f"{c}_away" for c in COLUNAS_XI_AGREGADO_JOGADOR],
+        *[f"{c}_home" for c in COLUNAS_XI_AGREGADO_TOP11_JOGADOR],
+        *[f"{c}_away" for c in COLUNAS_XI_AGREGADO_TOP11_JOGADOR],
     ):
         if col in partidas.columns:
             base_cols.append(col)
@@ -5060,6 +5162,8 @@ def montar_dataset_ml_empilhado(
         # COLUNAS_XI_AGREGADO_JOGADOR/_anexar_forca_xi_agregada_por_partida)
         *[f"{col}_home" for col in COLUNAS_XI_AGREGADO_JOGADOR],
         *[f"{col}_away" for col in COLUNAS_XI_AGREGADO_JOGADOR],
+        *[f"{col}_home" for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR],
+        *[f"{col}_away" for col in COLUNAS_XI_AGREGADO_TOP11_JOGADOR],
         # Features derivadas (v11)
         "elo_diff",
         "xg_diff_bayesiano", "xgot_diff_bayesiano",
