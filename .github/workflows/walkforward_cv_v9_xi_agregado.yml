@@ -1,0 +1,41 @@
+name: catboost_v9_xi_agregado - Walk-forward CV (dado individual de jogador)
+
+# Roda scripts/walkforward_cv_v9_xi_agregado.py -- compara catboost_v9 (sem
+# feature) contra catboost_v9_xi_agregado (+ xG/gols/chutes agregados
+# bottom-up a partir das previsões individuais de jogador em
+# player_match_walkforward) nos mesmos 3 folds anuais de walkforward_cv_v9.py,
+# e persiste as previsões out-of-sample de catboost_v9_xi_agregado em
+# model_predictions (1x2 e over_under_2.5) -- alimenta a próxima rodada de
+# matriz_confiabilidade_ev.py pra checar se a feature bate o mercado, não
+# só a log-loss.
+#
+# workflow_dispatch só -- é uma rodada de pesquisa/validação, não cron
+# diário.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  walkforward-cv-v9-xi-agregado:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward CV catboost_v9 vs catboost_v9_xi_agregado
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/walkforward_cv_v9_xi_agregado.py
