@@ -2316,6 +2316,69 @@ def _anexar_qualidade_chute_estado_por_partida(supabase: Client, partidas: pd.Da
     return partidas
 
 
+# xG/gols/chutes agregados BOTTOM-UP a partir das previsões INDIVIDUAIS de
+# jogador (`player_match_walkforward` -- walk-forward out-of-sample de
+# `scripts/backtest_jogador_mercados_walkforward.py`, 15.400 partidas,
+# 2021-2026, 6 ligas do Model Benchmarking) -- pedido do usuário 22/09:
+# "temos excelentes dados individuais... gostaria de tentar obter valor com
+# isso" -- sem odds de mercado de jogador pra validar edge direto (zero
+# linhas em odds_market pra chutes/gols de jogador, confirmado por query),
+# a via é usar essas previsões como FEATURE nos modelos de TIME que já têm
+# odds reais. Soma, por (partida, time), o lambda individual de cada
+# jogador do elenco (a probabilidade de titularidade e os minutos esperados
+# já estão embutidos em cada lambda -- somar direto não pondera de novo).
+# Só `fonte_titular='previsto'` -- cobre as 15.400 partidas (a escalação
+# OFICIAL/'real' só cobre 65% e só fica disponível ~1h antes do jogo, tarde
+# demais pra maioria das odds capturadas, ver CLAUDE.md sobre as duas
+# fontes coexistirem sem uma sobrescrever a outra).
+COLUNAS_XI_AGREGADO_JOGADOR = {
+    "xi_agregado_lambda_gols": "lambda_gols_jogo_direto",
+    "xi_agregado_lambda_xg": "lambda_xg_jogo",
+    "xi_agregado_lambda_chutes": "lambda_chutes_jogo",
+    "xi_agregado_lambda_chutes_alvo": "lambda_chutes_no_alvo_jogo",
+}
+
+
+def _anexar_forca_xi_agregada_por_partida(supabase: Client, partidas: pd.DataFrame) -> pd.DataFrame:
+    """Ver comentário de `COLUNAS_XI_AGREGADO_JOGADOR` acima. Cobertura por
+    liga/temporada é parcial em ligas com histórico menor no pipeline de
+    jogador (ex. Brasileirão Série A só a partir de 2023) -- vira NaN nessas
+    linhas, mesma tolerância já usada por `titular_rating`/`titular_valor_
+    mercado` (v3B) em partidas sem XI conhecido."""
+    match_ids = partidas["id"].astype(int).tolist()
+    colunas_origem = list(COLUNAS_XI_AGREGADO_JOGADOR.values())
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("player_match_walkforward")
+            .select("match_id, team_id, " + ", ".join(colunas_origem))
+            .in_("match_id", lote)
+            .eq("fonte_titular", "previsto")
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    linhas = _paginar_por_lotes_de_id(factory, match_ids)
+    partidas = partidas.copy()
+
+    if not linhas:
+        for col in COLUNAS_XI_AGREGADO_JOGADOR:
+            partidas[f"{col}_home"] = np.nan
+            partidas[f"{col}_away"] = np.nan
+        return partidas
+
+    jogadores = pd.DataFrame(linhas)
+    agregados = jogadores.groupby(["match_id", "team_id"], as_index=False)[colunas_origem].sum()
+    agregados = agregados.rename(columns={"match_id": "id", **{v: k for k, v in COLUNAS_XI_AGREGADO_JOGADOR.items()}})
+
+    for col in COLUNAS_XI_AGREGADO_JOGADOR:
+        agregados_home = agregados.rename(columns={"team_id": "home_team_id", col: f"{col}_home"})
+        agregados_away = agregados.rename(columns={"team_id": "away_team_id", col: f"{col}_away"})
+        partidas = partidas.merge(agregados_home[["id", "home_team_id", f"{col}_home"]], on=["id", "home_team_id"], how="left")
+        partidas = partidas.merge(agregados_away[["id", "away_team_id", f"{col}_away"]], on=["id", "away_team_id"], how="left")
+    return partidas
+
+
 def obter_situacao_chutes_por_mando(
     supabase: Client, team_ids: list[int], ultimos_n: int = JANELA_ROLLING_ML
 ) -> dict[int, dict[str, float]]:
@@ -4146,6 +4209,24 @@ FEATURES_NUMERICAS_V16_CATBOOST_ESTADO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + [
 ]
 FEATURES_V16_CATBOOST_ESTADO = FEATURES_NUMERICAS_V16_CATBOOST_ESTADO + CAT_FEATURES
 
+# v18 (só `catboost_v9_xi_agregado`) -- mesma base V9_XG_CORRIGIDO do
+# catboost_v9, somada às 8 features de xG/gols/chutes/chutes-ao-gol
+# agregados bottom-up a partir das previsões INDIVIDUAIS de jogador
+# (`COLUNAS_XI_AGREGADO_JOGADOR`/`_anexar_forca_xi_agregada_por_partida`,
+# ver comentário completo lá). Pedido do usuário 22/09, depois de mapear
+# que não há odds de mercado de jogador pra validar valor direto (zero
+# cobertura em odds_market): a via escolhida foi usar o dado individual já
+# validado (walk-forward de `treinar_modelo_jogador_mercados.py`, RMSE bate
+# baseline nas 6 ligas) como feature de força de elenco pros modelos de
+# TIME que já têm odds reais, em vez de abrir uma frente de captura de odds
+# de jogador do zero.
+FEATURES_NUMERICAS_V18_XI_AGREGADO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + [
+    f"{col}_home" for col in COLUNAS_XI_AGREGADO_JOGADOR
+] + [
+    f"{col}_away" for col in COLUNAS_XI_AGREGADO_JOGADOR
+]
+FEATURES_V18_XI_AGREGADO = FEATURES_NUMERICAS_V18_XI_AGREGADO + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.
@@ -4393,6 +4474,7 @@ def montar_dataset_ml_empilhado(
     partidas = _anexar_bayesiano_escanteios_posse_por_partida(partidas)
     partidas = _anexar_situacao_chutes_por_partida(supabase, partidas)
     partidas = _anexar_qualidade_chute_estado_por_partida(supabase, partidas)
+    partidas = _anexar_forca_xi_agregada_por_partida(supabase, partidas)
     partidas = _progresso_temporada(partidas)
     forma_gols = _forma_por_mando(partidas, "home_goals", "away_goals", COLUNAS_FORMA_GOLS)
     forma_gols_mesma_liga = _forma_por_mando(

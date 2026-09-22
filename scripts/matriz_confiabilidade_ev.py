@@ -13,7 +13,10 @@ depois da auditoria dos modelos "v9", CONTEXTO_PROJETO.md 16-17/09: melhor
 algoritmo individual entre os classificadores de árvore, mas nunca testado
 com edge real contra o mercado), `catboost_v9_estado` (mesma feature de
 qualidade-por-chute por estado do jogo de hibrido_gols_xg_v2_estado, testada
-isolada no catboost -- pedido do usuário 22/09) e a família `*_v11` completa (catboost/
+isolada no catboost -- pedido do usuário 22/09), `catboost_v9_xi_agregado`
+(xG/gols/chutes agregados bottom-up a partir das previsões individuais de
+jogador -- pedido do usuário 22/09, já que não há odds de mercado de
+jogador pra validar valor direto) e a família `*_v11` completa (catboost/
 xgboost/lightgbm/mlp x {cru, calibrado_isotonic, calibrado_platt} +
 stacking_v11, 1X2/over_under_2.5 -- pedido do usuário 21/09 pra substituir
 o screening ad-hoc por SQL, que só usava aproximação normal e não corrigia
@@ -165,6 +168,15 @@ MERCADOS_CATBOOST_V9 = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
 # Mesmos mercados/exclusão de BTTS de catboost_v9 (mesmo motivo: sem odds).
 MODELO_CATBOOST_V9_ESTADO = "catboost_v9_estado"
 MERCADOS_CATBOOST_V9_ESTADO = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
+
+# catboost_v9_xi_agregado (22/09) -- xG/gols/chutes agregados bottom-up a
+# partir das previsões individuais de jogador (soma do lambda de cada
+# jogador do XI previsto), testado no catboost_v9 já que não há odds de
+# mercado de jogador pra validar valor direto -- ver
+# walkforward_cv_v9_xi_agregado.py. Mesmos mercados/exclusão de BTTS de
+# catboost_v9 (mesmo motivo: sem odds).
+MODELO_CATBOOST_V9_XI_AGREGADO = "catboost_v9_xi_agregado"
+MERCADOS_CATBOOST_V9_XI_AGREGADO = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
 
 _ALGORITMOS_V11 = ["catboost_v11", "xgboost_v11", "lightgbm_v11", "mlp_v11"]
 _VARIANTES_V11 = ["", "_calibrado_isotonic", "_calibrado_platt"]
@@ -576,6 +588,11 @@ def main() -> None:
     apostas_catboost_v9_estado = coletar_apostas_modelo_persistido(supabase, MODELO_CATBOOST_V9_ESTADO, MERCADOS_CATBOOST_V9_ESTADO)
     for mercado in MERCADOS_CATBOOST_V9_ESTADO.values():
         resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9_estado if a["mercado"] == mercado], MODELO_CATBOOST_V9_ESTADO, mercado))
+
+    logger.info("--- %s (xG/gols/chutes agregados bottom-up de jogador) ---", MODELO_CATBOOST_V9_XI_AGREGADO)
+    apostas_catboost_v9_xi_agregado = coletar_apostas_modelo_persistido(supabase, MODELO_CATBOOST_V9_XI_AGREGADO, MERCADOS_CATBOOST_V9_XI_AGREGADO)
+    for mercado in MERCADOS_CATBOOST_V9_XI_AGREGADO.values():
+        resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9_xi_agregado if a["mercado"] == mercado], MODELO_CATBOOST_V9_XI_AGREGADO, mercado))
 
     for modelo_v11 in MODELOS_V11:
         mercados_modelo = MERCADOS_POR_MODELO_V11[modelo_v11]
