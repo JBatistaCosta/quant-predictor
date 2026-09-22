@@ -4552,6 +4552,19 @@ def montar_dataset_ml_empilhado(
     ):
         if col in partidas.columns:
             base_cols.append(col)
+    # xG/gols/chutes agregados bottom-up do XI previsto (v18, ver
+    # COLUNAS_XI_AGREGADO_JOGADOR/_anexar_forca_xi_agregada_por_partida) --
+    # mesmo padrão dos bayesianos acima: já são colunas finais de `partidas`
+    # neste ponto, precisam ser incluídas em `base_cols` explicitamente ou
+    # somem quando `dataset = partidas[base_cols].copy()` roda logo abaixo
+    # (a whitelist `_COLUNAS_DESEJADAS` só filtra o que já chegou em
+    # `dataset` -- não resolve sozinha se a coluna nunca entrou).
+    for col in (
+        *[f"{c}_home" for c in COLUNAS_XI_AGREGADO_JOGADOR],
+        *[f"{c}_away" for c in COLUNAS_XI_AGREGADO_JOGADOR],
+    ):
+        if col in partidas.columns:
+            base_cols.append(col)
     # Escanteios POR TIME da própria partida -- alvo do split Beta-Binomial
     # do modelo paramétrico de escanteios (ver `treinar_modelo_hibrido.py`).
     # Renomeados pra `total_corners_home`/`_away` pra ficarem ao lado de
