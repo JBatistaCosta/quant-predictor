@@ -5043,6 +5043,10 @@ def montar_dataset_ml_empilhado(
         *[col for mapa in COLUNAS_FORMA_SITUACAO_CHUTES.values() for col in mapa.values()],
         # Qualidade de finalização por estado do jogo (v15, ganhando/perdendo)
         *[col for mapa in COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO.values() for col in mapa.values()],
+        # xG/gols/chutes agregados bottom-up do XI previsto (v18, ver
+        # COLUNAS_XI_AGREGADO_JOGADOR/_anexar_forca_xi_agregada_por_partida)
+        *[f"{col}_home" for col in COLUNAS_XI_AGREGADO_JOGADOR],
+        *[f"{col}_away" for col in COLUNAS_XI_AGREGADO_JOGADOR],
         # Features derivadas (v11)
         "elo_diff",
         "xg_diff_bayesiano", "xgot_diff_bayesiano",
