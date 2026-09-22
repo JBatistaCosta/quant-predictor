@@ -4,7 +4,7 @@
 // calibração — agrupado por modelo + mercado + liga. Dados vêm todos de uma
 // vez de /api/model-stats (poucas dezenas de grupos, filtro é só client-side).
 import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save, Grid3x3 } from 'lucide-react';
+import { BarChart3, AlertTriangle, Loader2, Download, TrendingUp, PlayCircle, Settings2, RotateCcw, Save, Grid3x3, StickyNote, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
 import CurvaPnlEv from '../components/CurvaPnlEv';
@@ -982,6 +982,139 @@ function MatrizConfiabilidadeEV() {
   );
 }
 
+const ESTRATEGIA_ROTULO = {
+  seguir_modelo: { texto: 'seguir modelo', cor: 'bg-emerald-500/20 text-emerald-300' },
+  anti_modelo: { texto: 'anti-modelo', cor: 'bg-cyan-500/20 text-cyan-300' },
+  nenhuma: { texto: 'nenhuma', cor: 'bg-slate-700/40 text-slate-400' },
+  nunca: { texto: 'nunca apostar', cor: 'bg-red-500/20 text-red-300' },
+};
+const CONFIANCA_ROTULO = {
+  alta: { texto: 'alta', cor: 'bg-emerald-500/20 text-emerald-300' },
+  media: { texto: 'média', cor: 'bg-cyan-500/20 text-cyan-300' },
+  baixa: { texto: 'baixa', cor: 'bg-amber-500/20 text-amber-300' },
+  em_revisao: { texto: 'em revisão', cor: 'bg-amber-500/20 text-amber-300' },
+  insuficiente: { texto: 'insuficiente', cor: 'bg-slate-700/40 text-slate-400' },
+};
+function badge(mapa, chave) {
+  const r = mapa[chave] || { texto: chave, cor: 'bg-slate-700/40 text-slate-400' };
+  return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${r.cor}`}>{r.texto}</span>;
+}
+
+// Tabela de `model_betting_strategy` -- decisão versionada (lookup, não
+// modelo de ML) de qual estratégia seguir por mercado/linha/sub_faixa, com
+// o texto de `notas` (histórico de achados/investigações por trás de cada
+// linha) visível -- até aqui só existia no banco, consultado via SQL sessão
+// a sessão; pedido do usuário pra parar de depender disso e ver as
+// anotações direto no painel.
+function EstrategiasApostas() {
+  const [linhas, setLinhas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState('');
+  const [expandidas, setExpandidas] = useState(() => new Set());
+
+  useEffect(() => {
+    if (!supabaseAtivo) { setCarregando(false); return; }
+    (async () => {
+      setCarregando(true);
+      setErro('');
+      try {
+        const { data, error } = await supabase
+          .from('model_betting_strategy')
+          .select('*')
+          .order('mercado', { ascending: true })
+          .order('linha', { ascending: true })
+          .order('sub_faixa', { ascending: true, nullsFirst: true });
+        if (error) throw error;
+        setLinhas(data || []);
+      } catch (e) {
+        setErro(e.message);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  const alternarExpandida = (id) => setExpandidas((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 mb-4">
+      <h2 className="text-lg font-extrabold flex items-center gap-2 text-slate-100 mb-1">
+        <StickyNote className="text-emerald-400" size={22} /> Estratégias e anotações por mercado
+      </h2>
+      <p className="text-slate-400 text-sm mb-4">
+        Tabela <code className="text-slate-300">model_betting_strategy</code> -- decisão versionada por mercado/linha/sub-faixa (seguir modelo, anti-modelo, nenhuma ou nunca apostar), com o histórico de achados/investigações por trás de cada linha. Clique numa linha pra ver a nota completa.
+      </p>
+
+      {carregando ? (
+        <div className="flex items-center gap-2 text-slate-500 text-xs py-6 justify-center">
+          <Loader2 className="animate-spin" size={16} /> Carregando estratégias...
+        </div>
+      ) : erro ? (
+        <p className="text-sm text-red-400">{erro}</p>
+      ) : linhas.length === 0 ? (
+        <p className="text-sm text-slate-500">Nenhuma estratégia registrada ainda.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 uppercase text-[10px]">
+                <th className="w-6"></th>
+                <th className="text-left p-1.5">Mercado</th>
+                <th className="text-right p-1.5">Linha</th>
+                <th className="text-left p-1.5">Sub-faixa</th>
+                <th className="text-left p-1.5">Estratégia</th>
+                <th className="text-left p-1.5">Confiança</th>
+                <th className="text-right p-1.5">n</th>
+                <th className="text-right p-1.5">ROI IC95%</th>
+                <th className="text-left p-1.5">Carteira · anti-perde</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {linhas.map((r) => {
+                const abertaTd = expandidas.has(r.id);
+                const temIc = r.roi_ic95_inf != null && r.roi_ic95_sup != null;
+                return (
+                  <React.Fragment key={r.id}>
+                    <tr className="cursor-pointer hover:bg-slate-700/20" onClick={() => alternarExpandida(r.id)}>
+                      <td className="p-1.5 text-slate-500">{abertaTd ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+                      <td className="p-1.5 text-slate-300 font-semibold">{r.mercado}</td>
+                      <td className="p-1.5 text-right text-slate-400">{r.linha}</td>
+                      <td className="p-1.5 text-slate-400">{r.sub_faixa || '—'}</td>
+                      <td className="p-1.5">{badge(ESTRATEGIA_ROTULO, r.estrategia)}</td>
+                      <td className="p-1.5">{badge(CONFIANCA_ROTULO, r.confianca)}</td>
+                      <td className="p-1.5 text-right text-slate-400">{r.n_amostra ?? '—'}</td>
+                      <td className={`p-1.5 text-right font-bold ${temIc ? (r.roi_ic95_inf > 0 ? 'text-emerald-400' : r.roi_ic95_sup < 0 ? 'text-red-400' : 'text-slate-300') : 'text-slate-600'}`}>
+                        {temIc ? `[${fmtPctSinal(r.roi_ic95_inf)}, ${fmtPctSinal(r.roi_ic95_sup)}]` : '—'}
+                      </td>
+                      <td className="p-1.5 text-slate-400">
+                        {r.validado_carteira ? 'sim' : 'não'} · {r.evidencia_anti_perde ? <span className="text-red-400 font-semibold">perde confirmado</span> : 'não confirmado'}
+                      </td>
+                    </tr>
+                    {abertaTd && (
+                      <tr>
+                        <td></td>
+                        <td colSpan={8} className="p-3 pb-4 text-slate-300 whitespace-pre-wrap leading-relaxed bg-slate-900/40 rounded-b-lg">
+                          {r.notas || <span className="text-slate-600">Sem anotação.</span>}
+                          {r.casa_referencia && <div className="mt-2 text-[10px] text-slate-500 uppercase">Casa de referência: {r.casa_referencia}</div>}
+                          <div className="mt-1 text-[10px] text-slate-600">Atualizado em {new Date(r.atualizado_em).toLocaleString('pt-BR')}</div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ModelosStats() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -1100,6 +1233,8 @@ export default function ModelosStats() {
       <ConfigPlayerElo />
 
       <MatrizConfiabilidadeEV />
+
+      <EstrategiasApostas />
 
       {!carregando && grupos.length > 0 && (
         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 mb-4 flex flex-wrap gap-3">
