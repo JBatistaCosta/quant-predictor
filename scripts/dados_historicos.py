@@ -4129,6 +4129,23 @@ FEATURES_NUMERICAS_V15_QUALIDADE_ESTADO = FEATURES_NUMERICAS_V12_MESMA_LIGA + [
 ]
 FEATURES_V15_QUALIDADE_ESTADO = FEATURES_NUMERICAS_V15_QUALIDADE_ESTADO + CAT_FEATURES
 
+# v16 (só `catboost_v9_estado`) -- mesma feature de qualidade-por-chute por
+# estado do jogo da v15, só que somada à base V9_XG_CORRIGIDO (a do
+# classificador CatBoost, não a V12_MESMA_LIGA do GLM híbrido). Motivação
+# (21/09): a mesma feature em `hibrido_gols_xg_v2_estado` (v15, GLM híbrido)
+# não achou nenhuma célula confiável na matriz de confiabilidade EV --
+# achado documentado em `model_betting_strategy`. Mas `catboost_v9` é o
+# único algoritmo deste projeto que já provou achar edge real contra o
+# mercado (mesma matriz), e GLM-de-Poisson-sobre-xG vs. classificador direto
+# de resultado são modelos estruturalmente diferentes o bastante pra a
+# mesma feature falhar num e ainda valer testar no outro -- decisão do
+# usuário de testar isolado em vez de assumir que o resultado do híbrido já
+# responde pelo catboost.
+FEATURES_NUMERICAS_V16_CATBOOST_ESTADO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + [
+    *[col for mapa in COLUNAS_FORMA_QUALIDADE_CHUTE_ESTADO.values() for col in mapa.values()],
+]
+FEATURES_V16_CATBOOST_ESTADO = FEATURES_NUMERICAS_V16_CATBOOST_ESTADO + CAT_FEATURES
+
 
 def _carregar_venue_capacity(supabase: Client, team_ids: list[int]) -> pd.Series:
     """Capacidade do estádio por teams.id — NaN quando não preenchido.

@@ -11,7 +11,9 @@ btts), `hibrido_corners_v1` (corners_over_under_9.5), o classificador de
 Cartões (6 linhas), `catboost_v9` (1X2/over_under_2.5 -- pedido do usuário
 depois da auditoria dos modelos "v9", CONTEXTO_PROJETO.md 16-17/09: melhor
 algoritmo individual entre os classificadores de árvore, mas nunca testado
-com edge real contra o mercado) e a família `*_v11` completa (catboost/
+com edge real contra o mercado), `catboost_v9_estado` (mesma feature de
+qualidade-por-chute por estado do jogo de hibrido_gols_xg_v2_estado, testada
+isolada no catboost -- pedido do usuário 22/09) e a família `*_v11` completa (catboost/
 xgboost/lightgbm/mlp x {cru, calibrado_isotonic, calibrado_platt} +
 stacking_v11, 1X2/over_under_2.5 -- pedido do usuário 21/09 pra substituir
 o screening ad-hoc por SQL, que só usava aproximação normal e não corrigia
@@ -154,6 +156,15 @@ MERCADO_ESCANTEIOS = "corners_over_under_9.5"
 # apostas sempre (confirmado por query direta), achado já documentado.
 MODELO_CATBOOST_V9 = "catboost_v9"
 MERCADOS_CATBOOST_V9 = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
+
+# catboost_v9_estado (21/09) -- mesma feature de qualidade-por-chute por
+# estado do jogo que falhou no GLM híbrido (hibrido_gols_xg_v2_estado, ver
+# MODELOS_GOLS acima), testada isolada no único algoritmo que já provou
+# achar edge real (catboost_v9) em vez de assumir que o resultado do
+# híbrido já responde pela pergunta -- ver walkforward_cv_v9_estado.py.
+# Mesmos mercados/exclusão de BTTS de catboost_v9 (mesmo motivo: sem odds).
+MODELO_CATBOOST_V9_ESTADO = "catboost_v9_estado"
+MERCADOS_CATBOOST_V9_ESTADO = {"1x2": "1X2", "over_under_2.5": "over_under_2.5"}
 
 _ALGORITMOS_V11 = ["catboost_v11", "xgboost_v11", "lightgbm_v11", "mlp_v11"]
 _VARIANTES_V11 = ["", "_calibrado_isotonic", "_calibrado_platt"]
@@ -560,6 +571,11 @@ def main() -> None:
     apostas_catboost_v9 = coletar_apostas_modelo_persistido(supabase, MODELO_CATBOOST_V9, MERCADOS_CATBOOST_V9)
     for mercado in MERCADOS_CATBOOST_V9.values():
         resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9 if a["mercado"] == mercado], MODELO_CATBOOST_V9, mercado))
+
+    logger.info("--- %s (feature de estado do jogo) ---", MODELO_CATBOOST_V9_ESTADO)
+    apostas_catboost_v9_estado = coletar_apostas_modelo_persistido(supabase, MODELO_CATBOOST_V9_ESTADO, MERCADOS_CATBOOST_V9_ESTADO)
+    for mercado in MERCADOS_CATBOOST_V9_ESTADO.values():
+        resultados_total.extend(avaliar_matriz([a for a in apostas_catboost_v9_estado if a["mercado"] == mercado], MODELO_CATBOOST_V9_ESTADO, mercado))
 
     for modelo_v11 in MODELOS_V11:
         mercados_modelo = MERCADOS_POR_MODELO_V11[modelo_v11]

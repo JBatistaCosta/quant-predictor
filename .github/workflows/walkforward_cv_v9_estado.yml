@@ -1,0 +1,43 @@
+name: catboost_v9_estado - Walk-forward CV (feature de estado do jogo)
+
+# Roda scripts/walkforward_cv_v9_estado.py -- compara catboost_v9 (sem
+# feature) contra catboost_v9_estado (+ qualidade-por-chute ganhando/
+# perdendo, mesma feature que falhou no GLM híbrido hibrido_gols_xg_v2_estado)
+# nos mesmos 3 folds anuais de walkforward_cv_v9.py, e persiste as previsões
+# out-of-sample de catboost_v9_estado em model_predictions (1x2 e
+# over_under_2.5) -- alimenta a próxima rodada de
+# matriz_confiabilidade_ev.py pra checar se a feature ajuda a bater o
+# mercado, não só a log-loss.
+#
+# workflow_dispatch só -- é uma rodada de pesquisa/validação, não cron
+# diário (catboost_v9_estado já roda todo dia dentro do loop de
+# `rodar_predicoes.py`/Model Benchmarking via TREINADORES, isso é
+# independente e não precisa deste workflow).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  walkforward-cv-v9-estado:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar walk-forward CV catboost_v9 vs catboost_v9_estado
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/walkforward_cv_v9_estado.py

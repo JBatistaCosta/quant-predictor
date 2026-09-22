@@ -41,6 +41,7 @@ from dados_historicos import (
     FEATURES_V13_CORNERS_FOTMOB,
     FEATURES_V14_CORNERS_DECAY,
     FEATURES_V15_QUALIDADE_ESTADO,
+    FEATURES_V16_CATBOOST_ESTADO,
     FEATURES_XG_XI_V2,
     RESULTADO_AWAY,
     RESULTADO_CORNERS_OVER95,
@@ -166,6 +167,12 @@ PARAMS_DEFAULT = {
     "xgboost_v9": {"max_depth": 4, "learning_rate": 0.08},
     "lightgbm_v9": {"num_leaves": 15, "learning_rate": 0.1},
     "mlp_v9": {"hidden_layer_sizes": (256, 128, 64), "max_iter": 1000, "learning_rate_init": 0.0005, "n_iter_no_change": 50},
+    # catboost_v9_estado -- mesmos hiperparâmetros de catboost_v9, só muda o
+    # feature set (qualidade de chute por estado do jogo somada à base v9,
+    # ver FEATURES_V16_CATBOOST_ESTADO em dados_historicos.py). Testa se a
+    # feature que falhou no GLM híbrido (hibrido_gols_xg_v2_estado) ajuda o
+    # único algoritmo que já provou achar edge real neste projeto.
+    "catboost_v9_estado": {"depth": 6, "learning_rate": 0.05},
     # v10/v11 -- mesmos hiperparâmetros da v9 (só o feature set muda entre
     # versões, não o algoritmo) -- v10 estava FALTANDO aqui até agora: como
     # `rodar_predicoes.py` acessa `PARAMS_DEFAULT[nome_modelo]` direto (sem
@@ -239,6 +246,7 @@ FEATURES_POR_MODELO = {
     "xgboost_v9": FEATURES_V9_XG_CORRIGIDO,
     "lightgbm_v9": FEATURES_V9_XG_CORRIGIDO,
     "mlp_v9": FEATURES_V9_XG_CORRIGIDO,
+    "catboost_v9_estado": FEATURES_V16_CATBOOST_ESTADO,
     # v10 — v9 + idade/altura do XI titular (na data da partida) + venue_capacity_home.
     # Cobertura depende do backfill de birth_date/height (ingestao_perfil_jogador_local)
     # e de stadium_capacity (ingestao_equipes_local). Features ficam NaN onde sem dado,
@@ -716,6 +724,7 @@ TREINADORES = {
     "xgboost_v9": (treinar_xgboost, prever_xgboost),
     "lightgbm_v9": (treinar_lightgbm, prever_lightgbm),
     "mlp_v9": (None, None),  # funções definidas abaixo; placeholder pra herdar grade
+    "catboost_v9_estado": (treinar_catboost, prever_catboost),
     # v10 — adiciona titular_avg_age, titular_avg_height e venue_capacity_home
     "catboost_v10": (treinar_catboost, prever_catboost),
     "xgboost_v10": (treinar_xgboost, prever_xgboost),
