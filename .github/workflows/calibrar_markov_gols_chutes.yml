@@ -1,0 +1,45 @@
+name: Calibrar motor de Markov (gol e chute)
+
+# Roda arquivos_do_claude/calibrar_markov_gols_chutes.py -- calibra
+# mult_estado_placar (match_team_game_state, placar_confere=true) e
+# mult_minuto_bin (histograma direto de match_shots_fotmob.minute) de
+# gol/chute/chute_no_alvo com dado PRÓPRIO do projeto, substituindo os
+# multiplicadores hardcoded (StatsBomb, Copa do Mundo 2022) que
+# runMarkovSimulation usava antes da Fase 2 do motor de Markov
+# multi-evento. Grava em league_markov_params, por liga (fallback global
+# quando a amostra não é suficiente -- ver docstring do script).
+#
+# `chute_no_alvo` é PROXY explícito de `chute` (match_team_game_state não
+# separa chutes no alvo) -- ver comentário no próprio script.
+#
+# Idempotente (upsert por league_id+evento+tipo+chave) -- workflow_dispatch
+# manual, sem cron: recalibração é esporádica, não precisa rodar toda vez
+# que uma partida termina (mesmo espírito de modelo_stats_esperadas.yml).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  calibrar-markov-gols-chutes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar calibração de gol/chute
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python arquivos_do_claude/calibrar_markov_gols_chutes.py

@@ -1,0 +1,45 @@
+name: Calibrar disp_r de faltas (Binomial Negativa)
+
+# Roda arquivos_do_claude/calibrar_disp_r_faltas.py -- calibra o parâmetro
+# de forma "r" da Binomial Negativa do TOTAL de faltas por partida
+# (mandante+visitante), por liga, walk-forward (lambda = média real das
+# até 10 partidas ANTERIORES do time naquele mando -- nunca olha pra
+# frente), mesmo método (resíduo de Pearson condicionado ao λ) já usado
+# pra escanteios/chutes. Grava em league_model_params
+# (model_name='faltas_negbin_v1', stat='faltas') -- é o que
+# api/corners-model.js (?stat=fouls) lê via dispRDaLiga; sem isso, o
+# endpoint usa o valor provisório hardcoded em DISP_R_PADRAO_POR_STAT.
+#
+# PRÉ-REQUISITO: match_disciplina populada (faltas_cometidas por
+# time-partida) -- já é o caso em produção.
+#
+# Idempotente (upsert por league_id+model_name+stat+param_name) --
+# workflow_dispatch manual, sem cron: recalibração é esporádica.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  calibrar-disp-r-faltas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar calibração de disp_r de faltas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python arquivos_do_claude/calibrar_disp_r_faltas.py
