@@ -13,6 +13,8 @@ import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions
 import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
 import { apiUrl } from '../utils/apiUrl';
 import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
+import { MARKOV_MINUTES, MINUTE_BINS as MARKOV_MINUTE_BIN_LABELS, runMarkovSimulation as runMarkovSimulationDireto } from '../utils/markovEngine';
+import { carregarMarkovParams } from '../utils/markovParams';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
 
@@ -172,6 +174,12 @@ export default function AnaliseEvento() {
   const [ocrCopyMsg, setOcrCopyMsg] = useState('');
   const statsInputRef = useRef(null);
   const oddsInputRef = useRef(null);
+  // Worker do motor de Markov multi-evento (Fase 2) — criado uma vez no
+  // useEffect de montagem, ver mais abaixo. requestIdRef descarta resposta
+  // obsoleta se o usuário disparar a simulação de novo antes da anterior
+  // terminar (mesmo `requestId` que o worker devolve na mensagem).
+  const markovWorkerRef = useRef(null);
+  const markovRequestIdRef = useRef(0);
 
   // Odds da casa importadas (para o scanner multi-Kelly)
   const [bookieOddsData, setBookieOddsData] = useState(null);
@@ -223,6 +231,14 @@ export default function AnaliseEvento() {
   const [cornersDisp, setCornersDisp] = useState(65.85); // parâmetro de forma (r) da Binomial Negativa — 65,85 é a média calibrada nas 5 ligas europeias com dado (ver league_model_params, calibração via resíduo de Pearson); sobrescrito automaticamente quando o modelo carrega (ver useEffect de auto-load)
   const [markovSimCount, setMarkovSimCount] = useState(20000);
   const [markovResults, setMarkovResults] = useState(null);
+  // Totais de chutes/chutes-no-alvo/cartões pro motor multi-evento (Fase 2),
+  // buscados em `/api/corners-model?stat=...` no mesmo useEffect de
+  // auto-load que já busca escanteios. `null` = ainda não carregado, ou o
+  // confronto não tem dado suficiente (a cadeia degrada graciosamente pro
+  // comportamento de só-gol nesse caso, ver src/utils/markovEngine.js).
+  const [markovEventRates, setMarkovEventRates] = useState(null);
+  const [markovLeagueId, setMarkovLeagueId] = useState(null);
+  const [markovParams, setMarkovParams] = useState({});
   const [markovHeatDisplay, setMarkovHeatDisplay] = useState('pct'); // 'pct' ou 'odd'
   const [heatmapDisplay, setHeatmapDisplay] = useState('pct'); // 'pct' ou 'odd' — mapa de calor da Matriz de Placares
   const [markovRunning, setMarkovRunning] = useState(false);
@@ -456,6 +472,17 @@ export default function AnaliseEvento() {
     });
   }, [predictionsLog]);
 
+  // Worker do motor de Markov multi-evento — criado uma vez na montagem,
+  // terminado no cleanup. Se `Worker` não existir no ambiente (não deveria
+  // acontecer em browser moderno), `markovWorkerRef.current` fica `null` e
+  // `dispararSimulacaoMarkov` cai pro caminho degradado (roda na main thread
+  // dentro de um `setTimeout`, ver mais abaixo).
+  useEffect(() => {
+    if (typeof Worker === 'undefined') return;
+    markovWorkerRef.current = new Worker(new URL('../workers/markovEngine.worker.js', import.meta.url), { type: 'module' });
+    return () => { markovWorkerRef.current?.terminate(); markovWorkerRef.current = null; };
+  }, []);
+
   // Sempre que os times selecionados mudarem, busca no Supabase ANTES de pedir
   // pra colar o JSON de novo. Se já existir algo salvo, preenche sozinho.
   useEffect(() => {
@@ -551,6 +578,45 @@ export default function AnaliseEvento() {
         }
       } catch (erroCorners) {
         console.warn('Modelo de escanteios indisponível:', erroCorners.message);
+      }
+
+      // Totais de chute/chute-no-alvo/cartão pro motor de Markov multi-evento
+      // (Fase 2) — mesmo endpoint de escanteios, `?stat=` diferente (ver
+      // api/corners-model.js). Buscados em paralelo, silencioso por stat se o
+      // confronto não tiver dado suficiente pra algum deles (a cadeia dentro
+      // do motor degrada graciosamente quando falta chute/chute-no-alvo; sem
+      // cartão o motor só não sorteia esse evento). `league_id` (pra carregar
+      // `league_markov_params`) vem de qualquer resposta que tenha sucesso.
+      try {
+        const statsParaBuscar = ['shots', 'shots_on_target', 'cartao_amarelo', 'cartao_vermelho'];
+        const respostas = await Promise.all(statsParaBuscar.map(async (statPedido) => {
+          try {
+            const resp = await fetch(apiUrl(`/api/corners-model?mandante=${encodeURIComponent(t1.name)}&visitante=${encodeURIComponent(t2.name)}&stat=${statPedido}`));
+            return resp.ok ? await resp.json() : null;
+          } catch {
+            return null;
+          }
+        }));
+        if (!cancelado) {
+          const [dadosShots, dadosShotsOnTarget, dadosAmarelo, dadosVermelho] = respostas;
+          setMarkovEventRates({
+            chutes1: dadosShots?.stat_esperado?.mandante ?? null,
+            chutes2: dadosShots?.stat_esperado?.visitante ?? null,
+            chutesNoAlvo1: dadosShotsOnTarget?.stat_esperado?.mandante ?? null,
+            chutesNoAlvo2: dadosShotsOnTarget?.stat_esperado?.visitante ?? null,
+            cartaoAmarelo1: dadosAmarelo?.stat_esperado?.mandante ?? null,
+            cartaoAmarelo2: dadosAmarelo?.stat_esperado?.visitante ?? null,
+            cartaoVermelho1: dadosVermelho?.stat_esperado?.mandante ?? null,
+            cartaoVermelho2: dadosVermelho?.stat_esperado?.visitante ?? null,
+          });
+          const ligaId = dadosShots?.modelo?.league_id ?? dadosShotsOnTarget?.modelo?.league_id
+            ?? dadosAmarelo?.modelo?.league_id ?? dadosVermelho?.modelo?.league_id ?? null;
+          setMarkovLeagueId(ligaId);
+          const paramsCarregados = await carregarMarkovParams(supabaseAtivo ? supabase : null, ligaId);
+          if (!cancelado) setMarkovParams(paramsCarregados);
+        }
+      } catch (erroMarkov) {
+        console.warn('Dados do motor de Markov multi-evento indisponíveis:', erroMarkov.message);
       }
 
       const { data: oddsData, error: oddsErro } = await supabase
@@ -1121,140 +1187,63 @@ export default function AnaliseEvento() {
     }, 50);
   };
 
-  const MARKOV_MINUTES = 90;
-
-  // --- MULTIPLICADORES CALIBRADOS COM DADOS REAIS ---
-  // Fonte: StatsBomb Open Data, FIFA World Cup 2022 (64 partidas, licença não-comercial).
-  // Metodologia: para cada minuto de jogo, classificamos o estado de placar (do ponto de
-  // vista de quem ataca) e medimos a taxa real de golos por minuto em cada estado,
-  // dividida pela taxa média geral do torneio (1.4885 golos/90min).
-  // Amostra pequena (64 jogos, torneio único e de mata-mata) — trate como um primeiro sinal
-  // real, não como verdade definitiva. Script de recalibração: calibrate_markov.py.
-  const MARKOV_STATE_MULTIPLIERS = {
-    perdendo_2mais: 1.313, // atrás por 2+ golos: ataca mais desesperadamente
-    perdendo_1: 0.945,     // atrás por 1 golo: quase neutro
-    empatando: 0.768,      // empate: jogo mais cauteloso
-    ganhando_1: 1.518,     // à frente por 1: ataca MAIS (contra-ataque, quem está atrás se expõe)
-    ganhando_2mais: 1.376, // à frente por 2+: ainda ataca mais que a média
-  };
-
-  const getStateMultiplier = (diff) => {
-    if (diff <= -2) return MARKOV_STATE_MULTIPLIERS.perdendo_2mais;
-    if (diff === -1) return MARKOV_STATE_MULTIPLIERS.perdendo_1;
-    if (diff === 0) return MARKOV_STATE_MULTIPLIERS.empatando;
-    if (diff === 1) return MARKOV_STATE_MULTIPLIERS.ganhando_1;
-    return MARKOV_STATE_MULTIPLIERS.ganhando_2mais;
-  };
-
-  // --- MULTIPLICADOR TEMPORAL (distribuição real de gols ao longo dos 90 minutos) ---
-  // Mesma fonte e amostra do multiplicador de placar acima (StatsBomb, Copa 2022, 64 jogos).
-  // Fato bem documentado no futebol: gols se concentram no fim de cada tempo (cansaço
-  // defensivo + acréscimos). Os multiplicadores já vêm normalizados para média 1 ao longo
-  // dos 90 minutos, então aplicá-los preserva o total esperado de golos do modelo (λ).
-  const MARKOV_MINUTE_BINS = [
-    { label: '0–14',  lo: 0,  hi: 14, mult: 0.455 },
-    { label: '15–29', lo: 15, hi: 29, mult: 0.485 },
-    { label: '30–44', lo: 30, hi: 44, mult: 0.939 },
-    { label: '45–59', lo: 45, hi: 59, mult: 1.000 },
-    { label: '60–74', lo: 60, hi: 74, mult: 0.939 },
-    { label: '75–89', lo: 75, hi: 89, mult: 2.182 }, // inclui efeito de acréscimos/cansaço
-  ];
-  // Distribuição real observada (% dos golos em cada bin) — usada só para comparação visual
+  // Distribuição real de gols observada (StatsBomb, Copa 2022, 64 jogos) —
+  // usada só pra comparação visual no gráfico de barras, não entra em
+  // nenhum cálculo do motor (que agora lê os multiplicadores calibrados com
+  // dado próprio do projeto em `league_markov_params`, ver `markovParams.js`).
   const REAL_MINUTE_DISTRIBUTION = [0.076, 0.081, 0.157, 0.167, 0.157, 0.364];
 
-  const getTimeMultiplier = (minute) => {
-    const bin = MARKOV_MINUTE_BINS.find(b => minute >= b.lo && minute <= b.hi);
-    return bin ? bin.mult : 1;
-  };
-
-  const getMinuteBinIndex = (minute) => {
-    const idx = MARKOV_MINUTE_BINS.findIndex(b => minute >= b.lo && minute <= b.hi);
-    return idx === -1 ? MARKOV_MINUTE_BINS.length - 1 : idx;
-  };
-
-  // --- MOTOR DE SIMULAÇÃO POR CADEIA DE MARKOV (minuto a minuto) ---
-  // Diferença central para o Monte Carlo acima: aqui o jogo é simulado passo a passo
-  // (90 "estados", um por minuto). A probabilidade de gol em cada minuto pode reagir
-  // ao placar atual, usando os multiplicadores calibrados acima — algo que uma Poisson
-  // bivariada simples não consegue representar.
-  const runMarkovSimulation = () => {
+  // --- MOTOR DE SIMULAÇÃO POR CADEIA DE MARKOV MULTI-EVENTO (Fase 2) ---
+  // A lógica do motor (gol via cadeia chute→chute-no-alvo→gol, cartão
+  // amarelo/vermelho, multiplicadores de estado/minuto/janela pós-evento/
+  // vantagem numérica) mora inteira em `src/utils/markovEngine.js` — função
+  // pura, sem estado React, testada em `markovEngine.test.js`. Este handler
+  // só monta o `input` a partir do estado do componente e roda a simulação
+  // num Web Worker (`src/workers/markovEngine.worker.js`), pra não travar a
+  // UI durante o laço bloqueante — substitui o `setTimeout(fn, 50)` que a
+  // versão anterior usava só pra liberar o event loop antes do laço.
+  const dispararSimulacaoMarkov = () => {
     if (!results) return;
     setMarkovRunning(true);
 
-    setTimeout(() => {
-      const { lambda1, lambda2 } = results;
-      // Taxa de gol "de base" por minuto (Poisson dividida igualmente pelos 90 minutos)
-      const baseRate1 = lambda1 / MARKOV_MINUTES;
-      const baseRate2 = lambda2 / MARKOV_MINUTES;
+    const input = {
+      gols: { lambda1: results.lambda1, lambda2: results.lambda2 },
+      chutes: {
+        chutes1: markovEventRates?.chutes1 ?? undefined,
+        chutes2: markovEventRates?.chutes2 ?? undefined,
+        chutesNoAlvo1: markovEventRates?.chutesNoAlvo1 ?? undefined,
+        chutesNoAlvo2: markovEventRates?.chutesNoAlvo2 ?? undefined,
+      },
+      cartaoAmarelo: { taxa1: markovEventRates?.cartaoAmarelo1 ?? 0, taxa2: markovEventRates?.cartaoAmarelo2 ?? 0 },
+      cartaoVermelho: { taxa1: markovEventRates?.cartaoVermelho1 ?? 0, taxa2: markovEventRates?.cartaoVermelho2 ?? 0 },
+      dynamics: markovDynamics,
+      simCount: markovSimCount,
+      params: markovParams,
+    };
 
-      let wins1 = 0, wins2 = 0, draws = 0;
-      const scoreCounts = {};
-      const goalMinuteBins = new Array(MARKOV_MINUTE_BINS.length).fill(0);
+    const requestId = ++markovRequestIdRef.current;
+    const worker = markovWorkerRef.current;
 
-      for (let sim = 0; sim < markovSimCount; sim++) {
-        let g1 = 0, g2 = 0;
+    if (!worker) {
+      // Fallback degradado (ambiente sem suporte a Worker) — roda na main
+      // thread, mesmo hack de `setTimeout` de sempre, só nesse caminho.
+      setTimeout(() => {
+        if (markovRequestIdRef.current !== requestId) return;
+        setMarkovResults(runMarkovSimulationDireto(input));
+        setMarkovRunning(false);
+      }, 0);
+      return;
+    }
 
-        for (let minute = 0; minute < MARKOV_MINUTES; minute++) {
-          let p1 = baseRate1;
-          let p2 = baseRate2;
-
-          if (markovDynamics) {
-            p1 *= getStateMultiplier(g1 - g2) * getTimeMultiplier(minute);
-            p2 *= getStateMultiplier(g2 - g1) * getTimeMultiplier(minute);
-          }
-
-          // Estado -> Próximo estado: no máximo 1 gol por equipa por minuto (aproximação razoável,
-          // já que p1 e p2 são frações pequenas, tipicamente < 5% por minuto)
-          const binIdx = getMinuteBinIndex(minute);
-          if (Math.random() < p1) { g1++; goalMinuteBins[binIdx]++; }
-          if (Math.random() < p2) { g2++; goalMinuteBins[binIdx]++; }
-        }
-
-        if (g1 > g2) wins1++;
-        else if (g1 < g2) wins2++;
-        else draws++;
-
-        const key = `${g1}-${g2}`;
-        scoreCounts[key] = (scoreCounts[key] || 0) + 1;
-      }
-
-      const topScores = Object.entries(scoreCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
-        .map(([score, count]) => ({ score, prob: count / markovSimCount }));
-
-      const totalSimGoals = goalMinuteBins.reduce((a, b) => a + b, 0);
-      const minuteDistribution = goalMinuteBins.map(c => totalSimGoals > 0 ? c / totalSimGoals : 0);
-
-      // Matriz 7x7 (0 a 6 golos) com as probabilidades REAIS obtidas na simulação,
-      // no mesmo formato do mapa de calor de Poisson lá em cima — permite comparar
-      // "teoria" (Poisson puro) com "simulação" (que pode incluir a dinâmica calibrada).
-      const heatGrid = [];
-      let heatMin = Infinity, heatMax = -Infinity;
-      for (let i = 0; i < 7; i++) {
-        const row = [];
-        for (let j = 0; j < 7; j++) {
-          const count = scoreCounts[`${i}-${j}`] || 0;
-          const p = count / markovSimCount;
-          row.push(p);
-          if (p < heatMin) heatMin = p;
-          if (p > heatMax) heatMax = p;
-        }
-        heatGrid.push(row);
-      }
-
-      setMarkovResults({
-        probWin1: wins1 / markovSimCount,
-        probDraw: draws / markovSimCount,
-        probWin2: wins2 / markovSimCount,
-        topScores,
-        minuteDistribution,
-        heatGrid,
-        heatMin,
-        heatMax,
-      });
+    const handleMessage = (event) => {
+      if (event.data?.requestId !== requestId) return; // resposta obsoleta (usuário disparou de novo antes desta terminar)
+      worker.removeEventListener('message', handleMessage);
+      if (event.data.ok) setMarkovResults(event.data.resultado);
+      else console.warn('Falha na simulação de Markov (worker):', event.data.erro);
       setMarkovRunning(false);
-    }, 50);
+    };
+    worker.addEventListener('message', handleMessage);
+    worker.postMessage({ requestId, input });
   };
 
 
@@ -2504,27 +2493,27 @@ export default function AnaliseEvento() {
                       className="w-5 h-5 accent-blue-500"
                     />
                     <div>
-                      <span className="text-sm font-bold text-slate-200 block">Ativar dinâmica de placar + tempo (calibrada com dados reais)</span>
+                      <span className="text-sm font-bold text-slate-200 block">Ativar dinâmica de placar + tempo (calibrada com dado do próprio projeto)</span>
                       <span className="text-xs text-slate-500">
                         Desligado: estatisticamente equivalente à Poisson pura (serve para validar o modelo).
-                        Ligado: usa multiplicadores calibrados com 64 jogos reais da Copa do Mundo 2022 (StatsBomb Open Data) —
-                        por placar (empatando: ×0.77; à frente por 1: ×1.52; atrás por 2+: ×1.31) e por minuto do jogo
-                        (últimos 15min: ×2.18; primeiros 15min: ×0.46 — gols se concentram no fim da partida).
-                        Amostra pequena (um único torneio); trate como indicativo, não definitivo.
+                        Ligado: usa multiplicadores calibrados a partir das próprias partidas do projeto (estado do
+                        placar, minuto do jogo, janela após gol/cartão vermelho, vantagem numérica — ver
+                        `league_markov_params`), com prioridade pro valor específico da liga deste confronto e
+                        fallback global quando a liga ainda não tem calibração própria.
                       </span>
                     </div>
                   </label>
-                  {markovDynamics && (
+                  {markovDynamics && !markovParams?.gol && (
                     <p className="text-[11px] text-yellow-400/80 -mt-3 mb-5 flex items-start gap-1.5">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0"/>
-                      Calibração baseada em apenas 64 partidas de mata-mata de Copa do Mundo — contexto de alta pressão que
-                      pode não generalizar para ligas domésticas. Use o script <code className="text-yellow-300">calibrate_markov.py</code> para
-                      recalibrar com mais competições/temporadas.
+                      Nenhum multiplicador calibrado carregado pra este confronto ainda (liga sem calibração e sem
+                      fallback global gravado) — a simulação com dinâmica ligada deve sair praticamente igual à
+                      desligada, até os scripts de calibração rodarem contra o banco de produção.
                     </p>
                   )}
 
                   <button
-                    onClick={runMarkovSimulation}
+                    onClick={dispararSimulacaoMarkov}
                     disabled={markovRunning}
                     className={`w-full text-white font-bold py-4 rounded-xl transition-all flex justify-center items-center gap-2 ${markovRunning ? 'bg-slate-700 cursor-wait' : 'bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.3)]'}`}
                   >
@@ -2597,7 +2586,7 @@ export default function AnaliseEvento() {
                           <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block"/> Real (Copa 2022, referência)</span>
                         </p>
                         <div className="flex items-end justify-between gap-2 h-36">
-                          {MARKOV_MINUTE_BINS.map((bin, idx) => {
+                          {MARKOV_MINUTE_BIN_LABELS.map((bin, idx) => {
                             const simPct = markovResults.minuteDistribution[idx] * 100;
                             const realPct = REAL_MINUTE_DISTRIBUTION[idx] * 100;
                             const maxPct = Math.max(...markovResults.minuteDistribution.map(v => v * 100), ...REAL_MINUTE_DISTRIBUTION.map(v => v * 100));
@@ -2947,9 +2936,9 @@ export default function AnaliseEvento() {
               <span className="block text-[11px] text-slate-500">314 jogos reais, 6 torneios</span>
             </div>
             <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
-              <span className="block text-[10px] text-slate-500 uppercase font-bold">Multiplicador Temporal (Markov)</span>
-              <span className="block text-lg font-mono font-bold text-emerald-400">últ. 15min ×2,18</span>
-              <span className="block text-[11px] text-slate-500">64 jogos, Copa do Mundo 2022</span>
+              <span className="block text-[10px] text-slate-500 uppercase font-bold">Multiplicadores da Cadeia de Markov</span>
+              <span className="block text-lg font-mono font-bold text-emerald-400">por liga + fallback global</span>
+              <span className="block text-[11px] text-slate-500">gol/chute/cartão, dado próprio do projeto</span>
             </div>
             <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
               <span className="block text-[10px] text-slate-500 uppercase font-bold">Expected Threat (xT)</span>
