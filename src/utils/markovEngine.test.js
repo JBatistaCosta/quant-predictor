@@ -168,6 +168,66 @@ describe('runMarkovSimulation -- cartões', () => {
   });
 });
 
+describe('runMarkovSimulation -- escanteios e faltas (Fase 3)', () => {
+  it('taxa de escanteio/falta simulada converge pra taxa de entrada sem dynamics', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      escanteio: { taxa1: 5.2, taxa2: 4.1 },
+      falta: { taxa1: 11.3, taxa2: 12.7 },
+      dynamics: false,
+      simCount: 30000,
+    });
+    expect(r.escanteios.escanteio1).toBeCloseTo(5.2, 1);
+    expect(r.escanteios.escanteio2).toBeCloseTo(4.1, 1);
+    expect(r.faltas.falta1).toBeCloseTo(11.3, 0);
+    expect(r.faltas.falta2).toBeCloseTo(12.7, 0);
+  });
+
+  it('distribuições de minuto de escanteio/falta somam 1 (histogramas normalizados)', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      escanteio: { taxa1: 5.2, taxa2: 4.1 },
+      falta: { taxa1: 11.3, taxa2: 12.7 },
+      dynamics: false,
+      simCount: 10000,
+    });
+    const soma = (arr) => arr.reduce((a, b) => a + b, 0);
+    expect(soma(r.escanteios.distribuicaoMinuto1)).toBeCloseTo(1, 8);
+    expect(soma(r.escanteios.distribuicaoMinuto2)).toBeCloseTo(1, 8);
+    expect(soma(r.faltas.distribuicaoMinuto1)).toBeCloseTo(1, 8);
+    expect(soma(r.faltas.distribuicaoMinuto2)).toBeCloseTo(1, 8);
+    expect(r.escanteios.distribuicaoMinuto1).toHaveLength(6);
+  });
+
+  it('com dynamics ligado e mult_minuto_bin calibrado, a forma temporal simulada reflete o multiplicador (mais eventos no bin com mult>1)', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      escanteio: { taxa1: 5, taxa2: 5 },
+      dynamics: true,
+      simCount: 40000,
+      params: {
+        escanteio: {
+          mult_minuto_bin: { '0-14': 0.5, '15-29': 0.5, '30-44': 0.5, '45-59': 0.5, '60-74': 0.5, '75-89': 3.0 },
+        },
+      },
+    });
+    // bin '75-89' (índice 5) tem multiplicador 6x maior que os outros bins
+    // (3.0 vs 0.5) -- a fração de escanteios simulados nesse bin deve ser a
+    // maior de longe, mesmo os bins tendo o mesmo nº de minutos (15 cada).
+    const dist = r.escanteios.distribuicaoMinuto1;
+    const maiorIndex = dist.indexOf(Math.max(...dist));
+    expect(maiorIndex).toBe(5);
+  });
+
+  it('sem dado de escanteio/falta (taxa ausente), não sorteia nada e não quebra', () => {
+    const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });
+    expect(r.escanteios.escanteio1).toBe(0);
+    expect(r.escanteios.escanteio2).toBe(0);
+    expect(r.faltas.falta1).toBe(0);
+    expect(r.faltas.falta2).toBe(0);
+  });
+});
+
 describe('runMarkovSimulation -- contrato mínimo de saída (compatibilidade com a UI atual)', () => {
   it('devolve todos os campos que a UI de AnaliseEvento.jsx já consome hoje', () => {
     const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });

@@ -494,6 +494,10 @@ export default function AnaliseEvento() {
     let cancelado = false;
     (async () => {
       const mensagens = [];
+      // Preenchidos no bloco de escanteios logo abaixo, lidos mais adiante
+      // no `setMarkovEventRates` (mesmo efeito, sem precisar de um 2º fetch
+      // — `stat_esperado` já vem por time nessa resposta, ver Fase 3).
+      let escanteioMandante = null, escanteioVisitante = null;
 
       const { data: statsData, error: statsErro } = await supabase
         .from('team_stats')
@@ -552,6 +556,10 @@ export default function AnaliseEvento() {
             setCornersModel('negbin');
             setCornersDisp(dadosCorners.modelo.disp_r);
             mensagens.push(`Escanteios (Binomial Negativa, modelo) carregados — r=${dadosCorners.modelo.disp_r.toFixed(1)}`);
+            // Mesmos valores por time (`stat_esperado`), guardados pro motor
+            // de Markov (Fase 3) montar `escanteio` no input — sem 2º fetch.
+            escanteioMandante = dadosCorners.escanteios_esperados.mandante;
+            escanteioVisitante = dadosCorners.escanteios_esperados.visitante;
           }
 
           // Modelo misto: λ estimado por ML pra ESTA partida, quando existe.
@@ -580,15 +588,17 @@ export default function AnaliseEvento() {
         console.warn('Modelo de escanteios indisponível:', erroCorners.message);
       }
 
-      // Totais de chute/chute-no-alvo/cartão pro motor de Markov multi-evento
-      // (Fase 2) — mesmo endpoint de escanteios, `?stat=` diferente (ver
-      // api/corners-model.js). Buscados em paralelo, silencioso por stat se o
-      // confronto não tiver dado suficiente pra algum deles (a cadeia dentro
-      // do motor degrada graciosamente quando falta chute/chute-no-alvo; sem
-      // cartão o motor só não sorteia esse evento). `league_id` (pra carregar
+      // Totais de chute/chute-no-alvo/cartão/falta pro motor de Markov
+      // multi-evento (Fase 2 + Fase 3 — escanteio já veio do fetch de
+      // escanteios acima, `escanteioMandante`/`escanteioVisitante`) — mesmo
+      // endpoint, `?stat=` diferente (ver api/corners-model.js). Buscados em
+      // paralelo, silencioso por stat se o confronto não tiver dado
+      // suficiente pra algum deles (a cadeia dentro do motor degrada
+      // graciosamente quando falta chute/chute-no-alvo; sem cartão/falta o
+      // motor só não sorteia esse evento). `league_id` (pra carregar
       // `league_markov_params`) vem de qualquer resposta que tenha sucesso.
       try {
-        const statsParaBuscar = ['shots', 'shots_on_target', 'cartao_amarelo', 'cartao_vermelho'];
+        const statsParaBuscar = ['shots', 'shots_on_target', 'cartao_amarelo', 'cartao_vermelho', 'fouls'];
         const respostas = await Promise.all(statsParaBuscar.map(async (statPedido) => {
           try {
             const resp = await fetch(apiUrl(`/api/corners-model?mandante=${encodeURIComponent(t1.name)}&visitante=${encodeURIComponent(t2.name)}&stat=${statPedido}`));
@@ -598,7 +608,7 @@ export default function AnaliseEvento() {
           }
         }));
         if (!cancelado) {
-          const [dadosShots, dadosShotsOnTarget, dadosAmarelo, dadosVermelho] = respostas;
+          const [dadosShots, dadosShotsOnTarget, dadosAmarelo, dadosVermelho, dadosFaltas] = respostas;
           setMarkovEventRates({
             chutes1: dadosShots?.stat_esperado?.mandante ?? null,
             chutes2: dadosShots?.stat_esperado?.visitante ?? null,
@@ -608,9 +618,13 @@ export default function AnaliseEvento() {
             cartaoAmarelo2: dadosAmarelo?.stat_esperado?.visitante ?? null,
             cartaoVermelho1: dadosVermelho?.stat_esperado?.mandante ?? null,
             cartaoVermelho2: dadosVermelho?.stat_esperado?.visitante ?? null,
+            escanteio1: escanteioMandante,
+            escanteio2: escanteioVisitante,
+            falta1: dadosFaltas?.stat_esperado?.mandante ?? null,
+            falta2: dadosFaltas?.stat_esperado?.visitante ?? null,
           });
           const ligaId = dadosShots?.modelo?.league_id ?? dadosShotsOnTarget?.modelo?.league_id
-            ?? dadosAmarelo?.modelo?.league_id ?? dadosVermelho?.modelo?.league_id ?? null;
+            ?? dadosAmarelo?.modelo?.league_id ?? dadosVermelho?.modelo?.league_id ?? dadosFaltas?.modelo?.league_id ?? null;
           setMarkovLeagueId(ligaId);
           const paramsCarregados = await carregarMarkovParams(supabaseAtivo ? supabase : null, ligaId);
           if (!cancelado) setMarkovParams(paramsCarregados);
@@ -1216,6 +1230,8 @@ export default function AnaliseEvento() {
       },
       cartaoAmarelo: { taxa1: markovEventRates?.cartaoAmarelo1 ?? 0, taxa2: markovEventRates?.cartaoAmarelo2 ?? 0 },
       cartaoVermelho: { taxa1: markovEventRates?.cartaoVermelho1 ?? 0, taxa2: markovEventRates?.cartaoVermelho2 ?? 0 },
+      escanteio: { taxa1: markovEventRates?.escanteio1 ?? 0, taxa2: markovEventRates?.escanteio2 ?? 0 },
+      falta: { taxa1: markovEventRates?.falta1 ?? 0, taxa2: markovEventRates?.falta2 ?? 0 },
       dynamics: markovDynamics,
       simCount: markovSimCount,
       params: markovParams,
