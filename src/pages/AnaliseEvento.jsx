@@ -15,6 +15,7 @@ import { apiUrl } from '../utils/apiUrl';
 import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
 import { MARKOV_MINUTES, MINUTE_BINS as MARKOV_MINUTE_BIN_LABELS, runMarkovSimulation as runMarkovSimulationDireto } from '../utils/markovEngine';
 import { carregarMarkovParams } from '../utils/markovParams';
+import { ZONAS, simularOrigemChutes } from '../utils/zoneTransitionMatrix';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
 
@@ -236,6 +237,15 @@ export default function AnaliseEvento() {
   // decide qual desses o painel mostra por vez (mesmo padrão das abas
   // superiores `resultTab`, só que aninhado).
   const [markovMercadoTab, setMarkovMercadoTab] = useState('1x2');
+  // Camada de zona-a-zona (Fase 4) -- módulo à parte do motor multi-evento,
+  // desligado por padrão (`zonaAtiva=false`, conforme o plano): matriz
+  // universal externa (Achado 15, StatsBomb La Liga 2015/16), não calibrada
+  // por liga/confronto -- ver src/utils/zoneTransitionMatrix.js.
+  const [zonaAtiva, setZonaAtiva] = useState(false);
+  const zonaResultado = useMemo(
+    () => (zonaAtiva ? simularOrigemChutes(20000) : null),
+    [zonaAtiva]
+  );
   // Totais de chutes/chutes-no-alvo/cartões pro motor multi-evento (Fase 2),
   // buscados em `/api/corners-model?stat=...` no mesmo useEffect de
   // auto-load que já busca escanteios. `null` = ainda não carregado, ou o
@@ -2909,6 +2919,70 @@ export default function AnaliseEvento() {
                         </div>
                       )}
                     </>
+                  )}
+                </div>
+
+                {/* ZONA-A-ZONA (FASE 4, EXPERIMENTAL) -- módulo à parte do
+                    motor de Markov acima: não lê nada deste confronto (nem
+                    times, nem liga, nem odds), é uma constante universal
+                    externa (Achado 15, StatsBomb La Liga 2015/16). Por isso
+                    o resultado é sempre o mesmo, qualquer que seja o jogo
+                    selecionado -- deixado claro no texto abaixo pra não
+                    confundir com algo calibrado pra este confronto. */}
+                <div className="lg:col-span-3 bg-slate-800 p-6 rounded-2xl border border-purple-500/30 mt-4 shadow-xl">
+                  <label className="flex items-center gap-3 bg-slate-900 border border-slate-700 rounded-xl p-4 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={zonaAtiva}
+                      onChange={(e) => setZonaAtiva(e.target.checked)}
+                      className="w-5 h-5 accent-purple-500"
+                    />
+                    <div>
+                      <span className="text-sm font-bold text-slate-200 block flex items-center gap-2">
+                        <Grid3x3 size={15} className="text-purple-400"/> Zona-a-zona: de onde vêm os chutes (experimental)
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        Simulação separada do motor acima, baseada numa matriz de transição de bola entre 9 zonas do
+                        campo (Achado 15 — StatsBomb, La Liga 2015/16, 552 mil ações). É uma constante universal, igual
+                        pra qualquer confronto — não foi calibrada pra este jogo, nem por liga, nem por time.
+                      </span>
+                    </div>
+                  </label>
+
+                  {zonaAtiva && zonaResultado && (
+                    <div className="mt-4">
+                      <p className="text-[11px] text-slate-500 mb-4">
+                        De 20.000 posses simuladas, {(zonaResultado.taxaChutePorPosse * 100).toFixed(1)}% terminaram em
+                        chute. Abaixo, de onde veio o chute nessas posses (% do total de chutes simulados).
+                      </p>
+                      <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto">
+                        {ZONAS.map((z, idx) => {
+                          const p = zonaResultado.distribuicaoPorZona[idx];
+                          const { background, color } = heatColor(
+                            p,
+                            Math.min(...zonaResultado.distribuicaoPorZona),
+                            Math.max(...zonaResultado.distribuicaoPorZona)
+                          );
+                          return (
+                            <div
+                              key={z.id}
+                              className="aspect-square rounded-lg flex flex-col items-center justify-center text-center p-1"
+                              style={{ background, color }}
+                              title={z.label}
+                            >
+                              <span className="text-[9px] font-bold uppercase leading-tight">{z.label}</span>
+                              <span className="text-sm font-black font-mono mt-1">{(p * 100).toFixed(1)}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-yellow-400/80 mt-4 flex items-start gap-1.5">
+                        <AlertTriangle size={12} className="mt-0.5 shrink-0"/>
+                        Descritivo, sem IC 95% — amostra externa de uma liga/temporada, sem validação contra o dado do
+                        próprio projeto (o FotMob não registra local de passe/condução — ver Achado 16). Não entra em
+                        nenhum cálculo de probabilidade/odd da calculadora; é só ilustrativo.
+                      </p>
+                    </div>
                   )}
                 </div>
                 </>
