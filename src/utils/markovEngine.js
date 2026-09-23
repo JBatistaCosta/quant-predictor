@@ -1,16 +1,17 @@
 // src/utils/markovEngine.js
 // Motor de simulação por Cadeia de Markov MULTI-EVENTO (Fase 2 do plano de
-// extensão do app) — generaliza o antigo `runMarkovSimulation` de
-// `AnaliseEvento.jsx` (que só simulava gol) para simular, no MESMO laço
-// minuto a minuto: gol (via cadeia chute → chute no alvo → gol, não mais um
-// sorteio único), cartão amarelo, cartão vermelho.
+// extensão do app, com escanteio/falta adicionados na Fase 3) — generaliza o
+// antigo `runMarkovSimulation` de `AnaliseEvento.jsx` (que só simulava gol)
+// para simular, no MESMO laço minuto a minuto: gol (via cadeia chute →
+// chute no alvo → gol, não mais um sorteio único), cartão amarelo, cartão
+// vermelho, escanteio, falta.
 //
 // Mesmo contrato de `lambdaFormulas.js`: função pura, contexto explícito por
 // parâmetro, sem hooks/closures sobre estado React, sem I/O (multiplicadores
 // e taxas já vêm carregados de fora — ver `markovParams.js` pra
 // `league_markov_params`, e `api/corners-model.js` pros totais de
-// chute/chute-no-alvo/cartão). `AnaliseEvento.jsx` chama esta função de
-// dentro de `src/workers/markovEngine.worker.js`.
+// chute/chute-no-alvo/cartão/escanteio/falta). `AnaliseEvento.jsx` chama esta
+// função de dentro de `src/workers/markovEngine.worker.js`.
 //
 // DECISÃO ARQUITETURAL: o gol deixa de ter taxa própria e passa a ser o
 // produto final da cadeia chute → chute-no-alvo → gol — os três estágios
@@ -156,16 +157,18 @@ function proximoUltimoEvento(atual, minuto, { vermelhoProprio, vermelhoContra, g
  * @param {{chutes1?:number, chutes2?:number, chutesNoAlvo1?:number, chutesNoAlvo2?:number}} [entrada.chutes] - Totais de PARTIDA esperados (não por minuto), de `/api/corners-model?stat=shots`/`shots_on_target`. Ausente = cadeia degrada pra sorteio único de gol (comportamento de hoje).
  * @param {{taxa1?:number, taxa2?:number}} [entrada.cartaoAmarelo] - Totais de PARTIDA esperados por time, de `/api/corners-model?stat=cartao_amarelo`.
  * @param {{taxa1?:number, taxa2?:number}} [entrada.cartaoVermelho] - Idem, `?stat=cartao_vermelho`.
+ * @param {{taxa1?:number, taxa2?:number}} [entrada.escanteio] - Idem, `?stat=corners` (`stat_esperado.mandante/visitante` -- já é por time, apesar do `disp_r` da linha O/U ser calibrado sobre o TOTAL). `mult_estado_placar`/`mult_vantagem_numerica`/`mult_janela_pos_evento` não têm calibração própria pra este evento (Fase 1) -- só `mult_minuto_bin` (forma StatsBomb, Achado 13, fallback global); os demais tipos caem no neutro (=1) automaticamente via `getMultiplicador`.
+ * @param {{taxa1?:number, taxa2?:number}} [entrada.falta] - Idem, `?stat=fouls`. Mesma ressalva de `escanteio` acima.
  * @param {boolean} entrada.dynamics - Equivalente a `markovDynamics` de hoje — liga/desliga TODOS os multiplicadores (estado/minuto/janela/vantagem numérica) de uma vez.
  * @param {number} entrada.simCount - Número de simulações Monte Carlo.
  * @param {object} [entrada.params] - Saída de `carregarMarkovParams` (`markovParams.js`): `{ [evento]: { [tipo]: { [chave]: valor } } }`.
  * @param {number} [entrada.minutes] - Default `MARKOV_MINUTES` (90).
  * @param {() => number} [entrada.rng] - Injeção de RNG (testes determinísticos); default `Math.random`.
- * @returns {object} `{ probWin1, probDraw, probWin2, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes }`
+ * @returns {object} `{ probWin1, probDraw, probWin2, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes, escanteios, faltas }`
  */
 export function runMarkovSimulation(entrada) {
   const {
-    gols, chutes = {}, cartaoAmarelo = {}, cartaoVermelho = {},
+    gols, chutes = {}, cartaoAmarelo = {}, cartaoVermelho = {}, escanteio = {}, falta = {},
     dynamics = false, simCount, params = {}, minutes = MARKOV_MINUTES, rng = Math.random,
   } = entrada;
 
@@ -174,6 +177,8 @@ export function runMarkovSimulation(entrada) {
   const cadeia2 = montarCadeiaChute(lambda2, chutes.chutes2, chutes.chutesNoAlvo2, minutes);
   const taxaAmarelo = [Number(cartaoAmarelo.taxa1) / minutes || 0, Number(cartaoAmarelo.taxa2) / minutes || 0];
   const taxaVermelho = [Number(cartaoVermelho.taxa1) / minutes || 0, Number(cartaoVermelho.taxa2) / minutes || 0];
+  const taxaEscanteio = [Number(escanteio.taxa1) / minutes || 0, Number(escanteio.taxa2) / minutes || 0];
+  const taxaFalta = [Number(falta.taxa1) / minutes || 0, Number(falta.taxa2) / minutes || 0];
   const cadeiaChute = [cadeia1, cadeia2];
 
   let wins1 = 0, wins2 = 0, draws = 0;
@@ -183,7 +188,10 @@ export function runMarkovSimulation(entrada) {
     [new Array(MINUTE_BINS.length).fill(0), new Array(MINUTE_BINS.length).fill(0)], // amarelo: [time1, time2]
     [new Array(MINUTE_BINS.length).fill(0), new Array(MINUTE_BINS.length).fill(0)], // vermelho: [time1, time2]
   ];
+  const escanteioMinuteBins = [new Array(MINUTE_BINS.length).fill(0), new Array(MINUTE_BINS.length).fill(0)];
+  const faltaMinuteBins = [new Array(MINUTE_BINS.length).fill(0), new Array(MINUTE_BINS.length).fill(0)];
   const somaChutes = [0, 0], somaChutesNoAlvo = [0, 0], somaAmarelos = [0, 0], somaVermelhos = [0, 0];
+  const somaEscanteios = [0, 0], somaFaltas = [0, 0];
 
   for (let sim = 0; sim < simCount; sim++) {
     const times = [criarEstadoTime(), criarEstadoTime()];
@@ -222,6 +230,24 @@ export function runMarkovSimulation(entrada) {
           times[t].vermelhos++;
           somaVermelhos[t]++;
           cardMinuteBins[1][t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
+        }
+
+        // Escanteio, falta — mesmo padrão de sorteio independente dos
+        // cartões, mas sem afetar estado/ultimoEvento do time (não são
+        // eventos que mudam o jogo pros outros mercados, só contados). Só
+        // `mult_minuto_bin` tem calibração própria pra estes dois eventos
+        // (Fase 1/Achado 13) — os demais tipos caem no neutro via
+        // `getMultiplicador`, então `multiplicadorCombinado` funciona sem
+        // ajuste nenhum aqui.
+        const multEscanteio = dynamics ? multiplicadorCombinado(params, 'escanteio', ctx) : 1;
+        if (rng() < clamp01(taxaEscanteio[t] * multEscanteio)) {
+          somaEscanteios[t]++;
+          escanteioMinuteBins[t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
+        }
+        const multFalta = dynamics ? multiplicadorCombinado(params, 'falta', ctx) : 1;
+        if (rng() < clamp01(taxaFalta[t] * multFalta)) {
+          somaFaltas[t]++;
+          faltaMinuteBins[t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
         }
 
         // 3) Cadeia chute → chute no alvo → gol.
@@ -315,6 +341,16 @@ export function runMarkovSimulation(entrada) {
       distribuicaoAmareloMinuto2: normalizarBins(cardMinuteBins[0][1]),
       distribuicaoVermelhoMinuto1: normalizarBins(cardMinuteBins[1][0]),
       distribuicaoVermelhoMinuto2: normalizarBins(cardMinuteBins[1][1]),
+    },
+    escanteios: {
+      escanteio1: somaEscanteios[0] / simCount, escanteio2: somaEscanteios[1] / simCount,
+      distribuicaoMinuto1: normalizarBins(escanteioMinuteBins[0]),
+      distribuicaoMinuto2: normalizarBins(escanteioMinuteBins[1]),
+    },
+    faltas: {
+      falta1: somaFaltas[0] / simCount, falta2: somaFaltas[1] / simCount,
+      distribuicaoMinuto1: normalizarBins(faltaMinuteBins[0]),
+      distribuicaoMinuto2: normalizarBins(faltaMinuteBins[1]),
     },
   };
 }
