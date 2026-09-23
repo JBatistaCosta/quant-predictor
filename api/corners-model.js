@@ -28,6 +28,21 @@
 // `match_disciplina.faltas_cometidas` (migration 20260920180000), não
 // `match_stats_fotmob` -- ver STAT_TABELA_REAL abaixo.
 //
+// `?stat=cartao_amarelo`/`?stat=cartao_vermelho` foram adicionados na Fase 2
+// do motor de Markov -- mesmo padrão de faltas (fonte real é
+// `match_disciplina`, sem model_stat_estimates). IMPORTANTE: diferente de
+// faltas, a contagem de cartão em `match_disciplina` tem uma coluna própria
+// de confiabilidade (`fonte_cartoes`) porque CONTEXTO_PROJETO.md documenta um
+// bug real, já investigado 2x (PRs #509/#511), de contagem de cartão zerada
+// incorretamente numa fração grande de partidas recentes (12% em 2025,
+// 17-69% entre abril-set/2026 em algumas janelas). `fonte_cartoes=
+// 'fallback_suspeito'`/`'sem_dado'` marcam exatamente as linhas não
+// confiáveis -- a query de fallback real para esses dois stats FILTRA por
+// `fonte_cartoes in ('match_events','fallback_fotmob')`, nunca lê a coluna de
+// cartão sem esse filtro (ver STAT_FILTRO_FALLBACK). Faltas não tem esse
+// problema documentado (é outra coluna, outra fonte de confiabilidade), por
+// isso não é filtrada.
+//
 // `model_stat_estimates.stat` usa inglês (`corners`/`shots`/`shots_on_
 // target`); `league_model_params.stat` usa português (`corners`/`chutes`/
 // `chutes_no_alvo`) -- convenção divergente já existente nas duas tabelas
@@ -68,12 +83,15 @@
 //   /api/corners-model?mandante=...&visitante=...&linhas=8.5,9.5,10.5
 //   /api/corners-model?mandante=...&visitante=...&stat=shots
 //   /api/corners-model?mandante=...&visitante=...&stat=shots_on_target&linhas=2.5,3.5,4.5
+//   /api/corners-model?mandante=...&visitante=...&stat=fouls
+//   /api/corners-model?mandante=...&visitante=...&stat=cartao_amarelo
+//   /api/corners-model?mandante=...&visitante=...&stat=cartao_vermelho&linhas=0.5,1.5
 
 import { createClient } from '@supabase/supabase-js';
 import { negBinomialCDF } from './_lib/negbin.js';
 import { applyCors } from './_lib/cors.js';
 
-const STATS_SUPORTADAS = ['corners', 'shots', 'shots_on_target', 'fouls'];
+const STATS_SUPORTADAS = ['corners', 'shots', 'shots_on_target', 'fouls', 'cartao_amarelo', 'cartao_vermelho'];
 
 // Linhas padrão por stat, quando `?linhas=` não é informado -- medianas
 // reais do TOTAL por partida (mandante+visitante), via SQL nesta sessão:
@@ -82,37 +100,65 @@ const STATS_SUPORTADAS = ['corners', 'shots', 'shots_on_target', 'fouls'];
 // linhas em uso). Faltas: mesma faixa já usada pelo classificador dedicado
 // em produção (`scripts/prever_cartoes_faltas_futuras.py`,
 // `MERCADOS_CARTOES_FALTAS_GERAL`, linhas 20.5-30.5) -- reaproveitada aqui
-// como ponto de partida, não medida de novo nesta sessão.
+// como ponto de partida, não medida de novo nesta sessão. Cartões: mesma
+// faixa das 6 linhas gerais já usadas em produção pro classificador de
+// cartões (CONTEXTO_PROJETO.md, tabela "Cartões geral, todas as 6 linhas":
+// 1.5 a 6.5) -- vermelho usa faixa bem menor (é raro, total de partida
+// raramente passa de 1).
 const LINHAS_PADRAO_POR_STAT = {
   corners: ['8.5', '9.5', '10.5', '11.5'],
   shots: ['20.5', '22.5', '24.5', '26.5'],
   shots_on_target: ['7.5', '8.5', '9.5', '10.5'],
   fouls: ['20.5', '24.5', '27.5', '30.5'],
+  cartao_amarelo: ['2.5', '3.5', '4.5', '5.5'],
+  cartao_vermelho: ['0.5', '1.5'],
 };
 
 // Tradução `model_stat_estimates.stat` (inglês) -> `league_model_params.stat`
 // (português) -- as duas tabelas usam vocabulário diferente (achado real
 // desta sessão, não decisão de design; ver comentário no topo do arquivo).
-const STAT_LEAGUE_PARAMS_LABEL = { corners: 'corners', shots: 'chutes', shots_on_target: 'chutes_no_alvo', fouls: 'faltas' };
+const STAT_LEAGUE_PARAMS_LABEL = {
+  corners: 'corners', shots: 'chutes', shots_on_target: 'chutes_no_alvo', fouls: 'faltas',
+  cartao_amarelo: 'cartoes_amarelos', cartao_vermelho: 'cartoes_vermelhos',
+};
 
 // Coluna equivalente em `match_stats_fotmob` (fallback quando não há
 // estimativa do modelo ainda) -- `shots` vira `total_shots` nessa tabela
 // (nome diferente de match_stats/FBref, que foi abandonada -- ver
-// CONTEXTO_PROJETO.md); `corners`/`shots_on_target` batem 1:1. `fouls` não
-// existe em match_stats_fotmob pra esse propósito (ver STAT_TABELA_REAL).
+// CONTEXTO_PROJETO.md); `corners`/`shots_on_target` batem 1:1. `fouls`/
+// cartões não existem em match_stats_fotmob pra esse propósito (ver
+// STAT_TABELA_REAL).
 const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'total_shots', shots_on_target: 'shots_on_target' };
 
 // Tabela + coluna de fallback "real" por stat, quando não há estimativa de
-// modelo salva ainda. Todas menos `fouls` usam `match_stats_fotmob`
-// (STAT_COLUNA_MATCH_STATS acima); `fouls` usa `match_disciplina.
-// faltas_cometidas` (migration 20260920180000) porque falta nunca teve GLM
-// Poisson treinado (diferente de corners/shots/shots_on_target) -- aqui o
-// fallback histórico real É a única fonte, não um fallback de segunda linha.
+// modelo salva ainda. `corners`/`shots`/`shots_on_target` usam
+// `match_stats_fotmob` (STAT_COLUNA_MATCH_STATS acima); `fouls`/
+// `cartao_amarelo`/`cartao_vermelho` usam `match_disciplina` (migration
+// 20260920180000) porque nenhum dos três tem GLM Poisson treinado --
+// `faltas_cometidas`/`cartoes_amarelos`/`cartoes_vermelhos_equiv`. Vermelho
+// é `cartoes_vermelhos_equiv` (red_card + second_yellow_card combinados,
+// mesma convenção já usada na Fase 1 do motor de Markov pra
+// match_team_cartoes_estado).
 const STAT_TABELA_REAL = {
   corners: { tabela: 'match_stats_fotmob', coluna: STAT_COLUNA_MATCH_STATS.corners },
   shots: { tabela: 'match_stats_fotmob', coluna: STAT_COLUNA_MATCH_STATS.shots },
   shots_on_target: { tabela: 'match_stats_fotmob', coluna: STAT_COLUNA_MATCH_STATS.shots_on_target },
   fouls: { tabela: 'match_disciplina', coluna: 'faltas_cometidas' },
+  cartao_amarelo: { tabela: 'match_disciplina', coluna: 'cartoes_amarelos' },
+  cartao_vermelho: { tabela: 'match_disciplina', coluna: 'cartoes_vermelhos_equiv' },
+};
+
+// Filtro adicional aplicado só na query de fallback real de
+// `cartao_amarelo`/`cartao_vermelho` -- exclui as linhas de
+// `match_disciplina` cuja contagem de cartão não é confiável
+// (`fonte_cartoes in ('fallback_suspeito','sem_dado')`, ver comentário no
+// topo do arquivo). Sem esse filtro, o motor de Markov herdaria em silêncio
+// o mesmo tipo de contaminação que os modelos de cartão deste projeto já
+// encontraram (e corrigiram) duas vezes. `null` = sem filtro adicional
+// (demais stats).
+const STAT_FILTRO_FALLBACK = {
+  cartao_amarelo: { coluna: 'fonte_cartoes', valoresPermitidos: ['match_events', 'fallback_fotmob'] },
+  cartao_vermelho: { coluna: 'fonte_cartoes', valoresPermitidos: ['match_events', 'fallback_fotmob'] },
 };
 
 // Usado só quando a liga do confronto não tem disp_r calibrado ainda (ex:
@@ -132,7 +178,13 @@ const STAT_TABELA_REAL = {
 // só pra não deixar o endpoint sem resposta até a calibração real rodar --
 // TROCAR assim que `calibrar_disp_r_faltas.py` gravar valores reais em
 // `league_model_params` (stat='faltas').
-const DISP_R_PADRAO_POR_STAT = { corners: 70.57, shots: 5.99, shots_on_target: 5.68, fouls: 40 };
+// `cartao_amarelo`/`cartao_vermelho`: também PROVISÓRIO -- nenhum script
+// calibra disp_r de cartão ainda (a Fase 1/2 do motor de Markov calibram
+// MULTIPLICADORES de cartão em league_markov_params, não a dispersão NB
+// deste endpoint, que é uma tabela/finalidade diferente). Vermelho tem
+// dispersão mais alta (evento raro, mais "tudo ou nada" por partida) --
+// valor emprestado propositalmente menor que os demais.
+const DISP_R_PADRAO_POR_STAT = { corners: 70.57, shots: 5.99, shots_on_target: 5.68, fouls: 40, cartao_amarelo: 15, cartao_vermelho: 3 };
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -207,15 +259,17 @@ async function statEsperado(supabase, teamId, mandante, stat) {
   }
 
   // Fallback: média real da estatística do time (jogando em casa ou fora, o
-  // que houver). Tabela/coluna variam por stat -- `fouls` usa
-  // match_disciplina.faltas_cometidas, o resto usa match_stats_fotmob (ver
-  // STAT_TABELA_REAL).
-  const { data: statsReais } = await supabase
+  // que houver). Tabela/coluna variam por stat -- `fouls`/cartões usam
+  // match_disciplina, o resto usa match_stats_fotmob (ver STAT_TABELA_REAL).
+  let query = supabase
     .from(tabelaFallback)
     .select(`${colunaStat}, match_id`)
     .eq('team_id', teamId)
     .not(colunaStat, 'is', null)
     .limit(10);
+  const filtro = STAT_FILTRO_FALLBACK[stat];
+  if (filtro) query = query.in(filtro.coluna, filtro.valoresPermitidos);
+  const { data: statsReais } = await query;
   const reais = (statsReais || []).map(s => Number(s[colunaStat])).filter(Number.isFinite);
   if (reais.length > 0) {
     return { valor: reais.reduce((a, b) => a + b, 0) / reais.length, origem: `${tabelaFallback} (média real)` };
