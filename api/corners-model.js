@@ -21,6 +21,13 @@
 // escanteios/chutes/chutes no gol de TIME, chutes/chutes no gol de JOGADOR
 // é OUTRO sistema (`player_match_estimates` etc.), não relacionado.
 //
+// `?stat=fouls` (faltas) foi adicionado como parte da Fase 1/3 do motor de
+// Markov multi-evento (ver plano da sessão): diferente de corners/shots/
+// shots_on_target, faltas NÃO tem estimativa de model_stat_estimates (não é
+// GLM Poisson treinado, ainda) e a fonte de fallback real é
+// `match_disciplina.faltas_cometidas` (migration 20260920180000), não
+// `match_stats_fotmob` -- ver STAT_TABELA_REAL abaixo.
+//
 // `model_stat_estimates.stat` usa inglês (`corners`/`shots`/`shots_on_
 // target`); `league_model_params.stat` usa português (`corners`/`chutes`/
 // `chutes_no_alvo`) -- convenção divergente já existente nas duas tabelas
@@ -66,29 +73,47 @@ import { createClient } from '@supabase/supabase-js';
 import { negBinomialCDF } from './_lib/negbin.js';
 import { applyCors } from './_lib/cors.js';
 
-const STATS_SUPORTADAS = ['corners', 'shots', 'shots_on_target'];
+const STATS_SUPORTADAS = ['corners', 'shots', 'shots_on_target', 'fouls'];
 
 // Linhas padrão por stat, quando `?linhas=` não é informado -- medianas
 // reais do TOTAL por partida (mandante+visitante), via SQL nesta sessão:
 // chutes ~25 (linhas 20.5-26.5), chutes no gol ~9 (linhas 7.5-10.5).
 // Escanteios mantém as linhas antigas (não medido de novo, já eram as
-// linhas em uso).
+// linhas em uso). Faltas: mesma faixa já usada pelo classificador dedicado
+// em produção (`scripts/prever_cartoes_faltas_futuras.py`,
+// `MERCADOS_CARTOES_FALTAS_GERAL`, linhas 20.5-30.5) -- reaproveitada aqui
+// como ponto de partida, não medida de novo nesta sessão.
 const LINHAS_PADRAO_POR_STAT = {
   corners: ['8.5', '9.5', '10.5', '11.5'],
   shots: ['20.5', '22.5', '24.5', '26.5'],
   shots_on_target: ['7.5', '8.5', '9.5', '10.5'],
+  fouls: ['20.5', '24.5', '27.5', '30.5'],
 };
 
 // Tradução `model_stat_estimates.stat` (inglês) -> `league_model_params.stat`
 // (português) -- as duas tabelas usam vocabulário diferente (achado real
 // desta sessão, não decisão de design; ver comentário no topo do arquivo).
-const STAT_LEAGUE_PARAMS_LABEL = { corners: 'corners', shots: 'chutes', shots_on_target: 'chutes_no_alvo' };
+const STAT_LEAGUE_PARAMS_LABEL = { corners: 'corners', shots: 'chutes', shots_on_target: 'chutes_no_alvo', fouls: 'faltas' };
 
 // Coluna equivalente em `match_stats_fotmob` (fallback quando não há
 // estimativa do modelo ainda) -- `shots` vira `total_shots` nessa tabela
 // (nome diferente de match_stats/FBref, que foi abandonada -- ver
-// CONTEXTO_PROJETO.md); `corners`/`shots_on_target` batem 1:1.
+// CONTEXTO_PROJETO.md); `corners`/`shots_on_target` batem 1:1. `fouls` não
+// existe em match_stats_fotmob pra esse propósito (ver STAT_TABELA_REAL).
 const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'total_shots', shots_on_target: 'shots_on_target' };
+
+// Tabela + coluna de fallback "real" por stat, quando não há estimativa de
+// modelo salva ainda. Todas menos `fouls` usam `match_stats_fotmob`
+// (STAT_COLUNA_MATCH_STATS acima); `fouls` usa `match_disciplina.
+// faltas_cometidas` (migration 20260920180000) porque falta nunca teve GLM
+// Poisson treinado (diferente de corners/shots/shots_on_target) -- aqui o
+// fallback histórico real É a única fonte, não um fallback de segunda linha.
+const STAT_TABELA_REAL = {
+  corners: { tabela: 'match_stats_fotmob', coluna: STAT_COLUNA_MATCH_STATS.corners },
+  shots: { tabela: 'match_stats_fotmob', coluna: STAT_COLUNA_MATCH_STATS.shots },
+  shots_on_target: { tabela: 'match_stats_fotmob', coluna: STAT_COLUNA_MATCH_STATS.shots_on_target },
+  fouls: { tabela: 'match_disciplina', coluna: 'faltas_cometidas' },
+};
 
 // Usado só quando a liga do confronto não tem disp_r calibrado ainda (ex:
 // Brasileirão, Champions, Eurocopa — sem model_stat_estimates da stat pra
@@ -100,7 +125,14 @@ const STAT_COLUNA_MATCH_STATS = { corners: 'corners', shots: 'total_shots', shot
 // Médias reais calculadas via SQL nesta sessão (`avg(param_value)` sobre as
 // 12 ligas calibradas de cada stat, mesmo método já usado pro valor de
 // escanteios) -- não chutado.
-const DISP_R_PADRAO_POR_STAT = { corners: 70.57, shots: 5.99, shots_on_target: 5.68 };
+// `fouls`: PROVISÓRIO -- ainda não calibrado por liga (ver
+// `arquivos_do_claude/calibrar_disp_r_faltas.py`, roda na Fase 1 do motor de
+// Markov). Valor emprestado da ordem de grandeza de escanteios/chutes
+// (dispersão baixa-moderada é o padrão comum a essas contagens de partida)
+// só pra não deixar o endpoint sem resposta até a calibração real rodar --
+// TROCAR assim que `calibrar_disp_r_faltas.py` gravar valores reais em
+// `league_model_params` (stat='faltas').
+const DISP_R_PADRAO_POR_STAT = { corners: 70.57, shots: 5.99, shots_on_target: 5.68, fouls: 40 };
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -150,7 +182,7 @@ async function ligaMaisRecente(supabase, teamId) {
 // ver `STAT_LEAGUE_PARAMS_LABEL`).
 async function statEsperado(supabase, teamId, mandante, stat) {
   const campoTime = mandante ? 'home_team_id' : 'away_team_id';
-  const colunaStat = STAT_COLUNA_MATCH_STATS[stat];
+  const { tabela: tabelaFallback, coluna: colunaStat } = STAT_TABELA_REAL[stat];
   const { data: partidas } = await supabase
     .from('matches')
     .select('id, match_date')
@@ -174,16 +206,19 @@ async function statEsperado(supabase, teamId, mandante, stat) {
     }
   }
 
-  // Fallback: média real da estatística do time (jogando em casa ou fora, o que houver)
+  // Fallback: média real da estatística do time (jogando em casa ou fora, o
+  // que houver). Tabela/coluna variam por stat -- `fouls` usa
+  // match_disciplina.faltas_cometidas, o resto usa match_stats_fotmob (ver
+  // STAT_TABELA_REAL).
   const { data: statsReais } = await supabase
-    .from('match_stats_fotmob')
+    .from(tabelaFallback)
     .select(`${colunaStat}, match_id`)
     .eq('team_id', teamId)
     .not(colunaStat, 'is', null)
     .limit(10);
   const reais = (statsReais || []).map(s => Number(s[colunaStat])).filter(Number.isFinite);
   if (reais.length > 0) {
-    return { valor: reais.reduce((a, b) => a + b, 0) / reais.length, origem: 'match_stats_fotmob (média real)' };
+    return { valor: reais.reduce((a, b) => a + b, 0) / reais.length, origem: `${tabelaFallback} (média real)` };
   }
 
   return { valor: null, origem: 'sem_dado' };

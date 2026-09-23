@@ -1161,6 +1161,57 @@ async function tarefaDerivarGameState(supabase, { match_id, dias, limite } = {})
   return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_linhas_gravadas: data ?? 0 };
 }
 
+const LIMITE_CARTOES_ESTADO_POR_CHAMADA = 300; // mesmo teto de derivar-game-state -- varre match_shots_fotmob inteiro pra reconstruir os segmentos de placar
+
+// Deriva match_team_cartoes_estado (migration 20260922110000) das partidas
+// que já têm estado do jogo (match_team_game_state, pré-requisito -- usa
+// match_goal_timeline) mas ainda não têm cartões por estado. Rede de
+// segurança do caminho automático, mesmo padrão de derivar-game-state/
+// derivar-resposta-evento.
+async function tarefaDerivarCartoesEstado(supabase, { match_id, dias, limite } = {}) {
+  if (match_id) {
+    const matchId = Number(match_id);
+    if (!Number.isInteger(matchId) || matchId <= 0) return { status: 400, error: 'match_id inválido.' };
+    const { data, error } = await supabase.rpc('derivar_cartoes_estado', { p_match_ids: [matchId] });
+    if (error) return { status: 500, error: `Falha ao derivar cartões por estado: ${error.message}` };
+    return { status: 200, escopo: `partida ${matchId}`, n_linhas_gravadas: data ?? 0 };
+  }
+
+  const janelaDias = Number(dias) || DIAS_GAME_STATE_PADRAO;
+  const teto = Math.min(Number(limite) || LIMITE_CARTOES_ESTADO_POR_CHAMADA, LIMITE_CARTOES_ESTADO_POR_CHAMADA);
+  const desde = new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: recentes, error: erroRecentes } = await supabase
+    .from('matches')
+    .select('id')
+    .gte('match_date', desde)
+    .order('match_date', { ascending: false })
+    .limit(1000);
+  if (erroRecentes) return { status: 500, error: `Falha ao buscar partidas recentes: ${erroRecentes.message}` };
+  if (!recentes?.length) return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0 };
+
+  const ids = recentes.map((m) => m.id);
+  const comEstado = new Set();
+  const comCartoes = new Set();
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200);
+    const [{ data: st }, { data: ct }] = await Promise.all([
+      supabase.from('match_team_game_state').select('match_id').in('match_id', lote),
+      supabase.from('match_team_cartoes_estado').select('match_id').in('match_id', lote),
+    ]);
+    for (const r of st || []) comEstado.add(r.match_id);
+    for (const r of ct || []) comCartoes.add(r.match_id);
+  }
+  const pendentes = ids.filter((id) => comEstado.has(id) && !comCartoes.has(id)).slice(0, teto);
+  if (!pendentes.length) {
+    return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0, mensagem: 'Nenhuma partida com estado do jogo e sem cartões por estado na janela.' };
+  }
+
+  const { data, error } = await supabase.rpc('derivar_cartoes_estado', { p_match_ids: pendentes });
+  if (error) return { status: 500, error: `Falha ao derivar cartões por estado: ${error.message}` };
+  return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_linhas_gravadas: data ?? 0 };
+}
+
 const DIAS_DISCIPLINA_PADRAO = 7;
 const LIMITE_DISCIPLINA_POR_CHAMADA = 500;
 
@@ -5196,6 +5247,14 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
           if (!erroEstado) {
             const { error: erroResp } = await supabase.rpc('derivar_resposta_evento', { p_match_ids: [jogo.id] });
             if (erroResp) console.warn(`[resposta-evento] partida ${jogo.id}: ${erroResp.message}`);
+
+            // Cartões por estado (motor de Markov multi-evento, migration
+            // 20260922110000): mesma dependência de derivar_game_state
+            // (usa match_goal_timeline pros segmentos de placar), independente
+            // de resposta-evento. Falha só avisa -- regerável por
+            // ?tarefa=derivar-cartoes-estado.
+            const { error: erroCartoes } = await supabase.rpc('derivar_cartoes_estado', { p_match_ids: [jogo.id] });
+            if (erroCartoes) console.warn(`[cartoes-estado] partida ${jogo.id}: ${erroCartoes.message}`);
           }
         }
 
@@ -6830,6 +6889,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'derivar-game-state') {
       const resultado = await tarefaDerivarGameState(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'derivar-cartoes-estado') {
+      const resultado = await tarefaDerivarCartoesEstado(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
