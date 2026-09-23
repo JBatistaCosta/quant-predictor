@@ -231,6 +231,11 @@ export default function AnaliseEvento() {
   const [cornersDisp, setCornersDisp] = useState(65.85); // parâmetro de forma (r) da Binomial Negativa — 65,85 é a média calibrada nas 5 ligas europeias com dado (ver league_model_params, calibração via resíduo de Pearson); sobrescrito automaticamente quando o modelo carrega (ver useEffect de auto-load)
   const [markovSimCount, setMarkovSimCount] = useState(20000);
   const [markovResults, setMarkovResults] = useState(null);
+  // Sub-aba de mercado dentro da seção da Cadeia de Markov (Fase 5) — o motor
+  // já calcula chutes/cartões/escanteios/faltas desde as Fases 2-3, isto só
+  // decide qual desses o painel mostra por vez (mesmo padrão das abas
+  // superiores `resultTab`, só que aninhado).
+  const [markovMercadoTab, setMarkovMercadoTab] = useState('1x2');
   // Totais de chutes/chutes-no-alvo/cartões pro motor multi-evento (Fase 2),
   // buscados em `/api/corners-model?stat=...` no mesmo useEffect de
   // auto-load que já busca escanteios. `null` = ainda não carregado, ou o
@@ -1262,6 +1267,43 @@ export default function AnaliseEvento() {
     worker.postMessage({ requestId, input });
   };
 
+  // Gráfico de barras comparando a distribuição por minuto de um evento entre
+  // os dois times (cartão/escanteio/falta) — mesmo estilo visual do gráfico
+  // de gol acima, mas time1 vs time2 em vez de simulação-vs-referência-real
+  // (esses eventos não têm uma "distribuição real" de referência guardada,
+  // só a forma calibrada que já entrou no cálculo). `dist1`/`dist2` são os
+  // arrays de 6 posições que `markovEngine.js` já devolve normalizados
+  // (somam 1) — null/undefined se o mercado não tiver dado, tratado como
+  // "sem dado" (array de zeros) pra não quebrar o gráfico.
+  const renderDistribuicaoPorTime = (titulo, dist1, dist2) => {
+    const d1 = dist1 || MARKOV_MINUTE_BIN_LABELS.map(() => 0);
+    const d2 = dist2 || MARKOV_MINUTE_BIN_LABELS.map(() => 0);
+    const maxPct = Math.max(...d1.map(v => v * 100), ...d2.map(v => v * 100), 1);
+    return (
+      <div className="bg-slate-900 rounded-xl border border-slate-700 p-4">
+        <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">{titulo}</span>
+        <p className="text-[11px] text-slate-500 mb-4">
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block"/> {results.t1.name}</span>
+          {' vs '}
+          <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-orange-500 inline-block"/> {results.t2.name}</span>
+        </p>
+        <div className="flex items-end justify-between gap-2 h-28">
+          {MARKOV_MINUTE_BIN_LABELS.map((bin, idx) => {
+            const pct1 = d1[idx] * 100, pct2 = d2[idx] * 100;
+            return (
+              <div key={idx} className="flex-1 flex flex-col items-center h-full">
+                <div className="flex-1 w-full flex items-end justify-center gap-0.5">
+                  <div className="w-1/2 bg-emerald-500 rounded-t" style={{ height: `${(pct1 / maxPct) * 100}%` }} title={`${results.t1.name}: ${pct1.toFixed(1)}%`}/>
+                  <div className="w-1/2 bg-orange-500 rounded-t" style={{ height: `${(pct2 / maxPct) * 100}%` }} title={`${results.t2.name}: ${pct2.toFixed(1)}%`}/>
+                </div>
+                <span className="text-[9px] text-slate-500 mt-1">{bin.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const getCustomScoreData = () => {
     if (!results) return { prob: 0, odd: 0 };
@@ -2539,6 +2581,30 @@ export default function AnaliseEvento() {
 
                   {markovResults && (
                     <>
+                      {/* SUB-ABAS DE MERCADO: o motor já calcula chutes/cartões/
+                          escanteios/faltas na mesma rodada (Fases 2-3) — isto só
+                          decide qual desses o painel mostra por vez, sem rodar
+                          simulação de novo. */}
+                      <div className="mt-6 flex bg-slate-900 rounded-lg p-1 border border-slate-700 flex-wrap gap-1">
+                        {[
+                          { id: '1x2', label: 'Resultado (1X2)', icon: TrendingUp },
+                          { id: 'chutes', label: 'Chutes', icon: Crosshair },
+                          { id: 'cartoes', label: 'Cartões', icon: AlertTriangle },
+                          { id: 'escanteios', label: 'Escanteios', icon: Flag },
+                          { id: 'faltas', label: 'Faltas', icon: ShieldCheck },
+                        ].map(({ id, label, icon: Icon }) => (
+                          <button
+                            key={id}
+                            onClick={() => setMarkovMercadoTab(id)}
+                            className={`flex-1 min-w-[30%] sm:min-w-0 px-3 py-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${markovMercadoTab === id ? 'bg-blue-500/20 text-blue-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                          >
+                            <Icon size={14}/> {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {markovMercadoTab === '1x2' && (
+                      <>
                       <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 text-center">
                           <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t1.name}</span>
@@ -2696,6 +2762,150 @@ export default function AnaliseEvento() {
                               ))}
                             </div>
                           </div>
+                        </div>
+                      )}
+                      </>
+                      )}
+
+                      {/* CHUTES / CHUTES NO ALVO — só totais esperados por time (o
+                          motor não guarda distribuição por minuto pra esse
+                          mercado, ao contrário de cartão/escanteio/falta: ver
+                          markovEngine.js, não há bins de minuto de chute). */}
+                      {markovMercadoTab === 'chutes' && markovResults.chutes && (
+                        <div className="mt-6 bg-slate-900 rounded-xl border border-slate-700 p-4">
+                          <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-3">
+                            Chutes esperados (simulação, {markovSimCount.toLocaleString('pt-BR')} jogos)
+                          </span>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2 truncate">{results.t1.name}</span>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-xs text-slate-400">Chutes</span>
+                                <span className="text-xl font-black text-emerald-400 font-mono">{markovResults.chutes.chutes1.toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-baseline justify-between mt-1">
+                                <span className="text-xs text-slate-400">No alvo</span>
+                                <span className="text-lg font-bold text-emerald-300 font-mono">{markovResults.chutes.chutesNoAlvo1.toFixed(2)}</span>
+                              </div>
+                            </div>
+                            <div className="bg-slate-950 p-4 rounded-xl border border-orange-500/30">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2 truncate">{results.t2.name}</span>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-xs text-slate-400">Chutes</span>
+                                <span className="text-xl font-black text-orange-400 font-mono">{markovResults.chutes.chutes2.toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-baseline justify-between mt-1">
+                                <span className="text-xs text-slate-400">No alvo</span>
+                                <span className="text-lg font-bold text-orange-300 font-mono">{markovResults.chutes.chutesNoAlvo2.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {!markovEventRates?.chutes1 && (
+                            <p className="text-[11px] text-yellow-400/80 mt-3 flex items-start gap-1.5">
+                              <AlertTriangle size={12} className="mt-0.5 shrink-0"/>
+                              Sem dado de chutes pra este confronto em <code>/api/corners-model?stat=shots</code> — a cadeia
+                              degradou pra sorteio único de gol (chutes = gols simulados).
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* CARTÕES — total esperado + distribuição por minuto, um
+                          time de cada vez (diferente do gráfico de gol acima, que
+                          compara simulação-vs-referência-real; aqui compara
+                          time 1 vs time 2, já que cada um tem taxa própria). */}
+                      {markovMercadoTab === 'cartoes' && markovResults.cartoes && (
+                        <div className="mt-6 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2 truncate">{results.t1.name}</span>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-xs text-slate-400">🟨 Amarelo</span>
+                                <span className="text-xl font-black text-yellow-400 font-mono">{markovResults.cartoes.amarelo1.toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-baseline justify-between mt-1">
+                                <span className="text-xs text-slate-400">🟥 Vermelho</span>
+                                <span className="text-lg font-bold text-red-400 font-mono">{markovResults.cartoes.vermelho1.toFixed(3)}</span>
+                              </div>
+                            </div>
+                            <div className="bg-slate-950 p-4 rounded-xl border border-orange-500/30">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-2 truncate">{results.t2.name}</span>
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-xs text-slate-400">🟨 Amarelo</span>
+                                <span className="text-xl font-black text-yellow-400 font-mono">{markovResults.cartoes.amarelo2.toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-baseline justify-between mt-1">
+                                <span className="text-xs text-slate-400">🟥 Vermelho</span>
+                                <span className="text-lg font-bold text-red-400 font-mono">{markovResults.cartoes.vermelho2.toFixed(3)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {renderDistribuicaoPorTime(
+                            'Amarelos por minuto',
+                            markovResults.cartoes.distribuicaoAmareloMinuto1,
+                            markovResults.cartoes.distribuicaoAmareloMinuto2,
+                          )}
+                          {renderDistribuicaoPorTime(
+                            'Vermelhos por minuto',
+                            markovResults.cartoes.distribuicaoVermelhoMinuto1,
+                            markovResults.cartoes.distribuicaoVermelhoMinuto2,
+                          )}
+                        </div>
+                      )}
+
+                      {/* ESCANTEIOS — mesmo padrão de cartões, forma temporal vem
+                          do Achado 13 (fallback global, ver Fase 3/CONTEXTO_
+                          PROJETO.md), não calibração por estado do placar. */}
+                      {markovMercadoTab === 'escanteios' && markovResults.escanteios && (
+                        <div className="mt-6 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 text-center">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t1.name}</span>
+                              <span className="text-2xl font-black text-emerald-400 font-mono">{markovResults.escanteios.escanteio1.toFixed(2)}</span>
+                            </div>
+                            <div className="bg-slate-950 p-4 rounded-xl border border-orange-500/30 text-center">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t2.name}</span>
+                              <span className="text-2xl font-black text-orange-400 font-mono">{markovResults.escanteios.escanteio2.toFixed(2)}</span>
+                            </div>
+                          </div>
+                          {renderDistribuicaoPorTime(
+                            'Escanteios por minuto',
+                            markovResults.escanteios.distribuicaoMinuto1,
+                            markovResults.escanteios.distribuicaoMinuto2,
+                          )}
+                          {!markovEventRates?.escanteio1 && (
+                            <p className="text-[11px] text-yellow-400/80 flex items-start gap-1.5">
+                              <AlertTriangle size={12} className="mt-0.5 shrink-0"/>
+                              Sem dado de escanteios pra este confronto — a taxa ficou em zero.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* FALTAS — idem escanteios (forma StatsBomb Achado 13). */}
+                      {markovMercadoTab === 'faltas' && markovResults.faltas && (
+                        <div className="mt-6 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 text-center">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t1.name}</span>
+                              <span className="text-2xl font-black text-emerald-400 font-mono">{markovResults.faltas.falta1.toFixed(2)}</span>
+                            </div>
+                            <div className="bg-slate-950 p-4 rounded-xl border border-orange-500/30 text-center">
+                              <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 truncate">{results.t2.name}</span>
+                              <span className="text-2xl font-black text-orange-400 font-mono">{markovResults.faltas.falta2.toFixed(2)}</span>
+                            </div>
+                          </div>
+                          {renderDistribuicaoPorTime(
+                            'Faltas por minuto',
+                            markovResults.faltas.distribuicaoMinuto1,
+                            markovResults.faltas.distribuicaoMinuto2,
+                          )}
+                          {!markovEventRates?.falta1 && (
+                            <p className="text-[11px] text-yellow-400/80 flex items-start gap-1.5">
+                              <AlertTriangle size={12} className="mt-0.5 shrink-0"/>
+                              Sem dado de faltas pra este confronto — a taxa ficou em zero.
+                            </p>
+                          )}
                         </div>
                       )}
                     </>
