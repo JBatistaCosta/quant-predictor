@@ -281,6 +281,107 @@ describe('runMarkovSimulation -- linhasOverUnder/overUnder (Fase 6, job em lote)
   });
 });
 
+describe('runMarkovSimulation -- btts/dupla_chance (sempre computados, precisão total)', () => {
+  it('dupla_chance é sempre aritmética exata de 1X2 (soma os pares corretos)', () => {
+    const r = runMarkovSimulation({ gols: { lambda1: 1.8, lambda2: 1.1 }, dynamics: false, simCount: 20000 });
+    expect(r.dupla_chance['1X']).toBeCloseTo(r.probWin1 + r.probDraw, 10);
+    expect(r.dupla_chance.X2).toBeCloseTo(r.probDraw + r.probWin2, 10);
+    expect(r.dupla_chance['12']).toBeCloseTo(r.probWin1 + r.probWin2, 10);
+  });
+
+  it('btts converge pra uma fração plausível e nunca depende do tamanho de heatGrid', () => {
+    const lambda1 = 1.6, lambda2 = 1.3;
+    const comGradePadrao = runMarkovSimulation({ gols: { lambda1, lambda2 }, dynamics: false, simCount: 30000, heatGridSize: 7 });
+    const comGradeGrande = runMarkovSimulation({ gols: { lambda1, lambda2 }, dynamics: false, simCount: 30000, heatGridSize: 15 });
+    expect(comGradePadrao.btts.yes).toBeGreaterThan(0);
+    expect(comGradePadrao.btts.yes).toBeLessThan(1);
+    expect(comGradePadrao.btts.yes + comGradePadrao.btts.no).toBeCloseTo(1, 10);
+    // heatGridSize só afeta heatGrid -- btts/probWin* usam tally direto de
+    // g1/g2 por simulação, nunca cortado pela grade.
+    expect(Math.abs(comGradePadrao.btts.yes - comGradeGrande.btts.yes)).toBeLessThan(0.02);
+  });
+});
+
+describe('runMarkovSimulation -- heatGridSize', () => {
+  it('default continua 7 (contrato da UI intocado)', () => {
+    const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });
+    expect(r.heatGrid).toHaveLength(7);
+    expect(r.heatGrid[0]).toHaveLength(7);
+  });
+
+  it('heatGridSize maior devolve grade proporcionalmente maior, sem afetar probWin1/probDraw/probWin2', () => {
+    const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000, heatGridSize: 15 });
+    expect(r.heatGrid).toHaveLength(15);
+    expect(r.heatGrid[0]).toHaveLength(15);
+    expect(r.probWin1 + r.probDraw + r.probWin2).toBeCloseTo(1, 10);
+  });
+});
+
+describe('runMarkovSimulation -- linhasOverUnderGols (Fase 6, job em lote)', () => {
+  it('sem linhasOverUnderGols, overUnderGols é null', () => {
+    const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });
+    expect(r.overUnderGols).toBeNull();
+  });
+
+  it('com linhasOverUnderGols, devolve total/time1/time2 monotonicamente decrescentes por linha', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.8, lambda2: 1.1 },
+      dynamics: false,
+      simCount: 30000,
+      linhasOverUnderGols: { total: [0.5, 1.5, 2.5, 3.5, 4.5], time1: [0.5, 1.5, 2.5], time2: [0.5, 1.5, 2.5] },
+    });
+    expect(r.overUnderGols).not.toBeNull();
+    for (const grupo of ['total', 'time1', 'time2']) {
+      const linhas = Object.keys(r.overUnderGols[grupo]).map(Number).sort((a, b) => a - b);
+      let anterior = 1;
+      for (const linha of linhas) {
+        const p = r.overUnderGols[grupo][linha.toFixed(1)];
+        expect(p).toBeGreaterThanOrEqual(0);
+        expect(p).toBeLessThanOrEqual(1);
+        expect(p).toBeLessThanOrEqual(anterior + 1e-9);
+        anterior = p;
+      }
+    }
+    // over_under_2.5 TOTAL deve aproximar o mesmo valor que já é possível
+    // reconstruir por fora somando probWin1/probDraw/probWin2 não dá (não é
+    // função de 1X2) -- mas dá pra checar contra o total esperado de gols
+    // (lambda1+lambda2=2.9): P(total>2.5) de uma Poisson(2.9) é ~0.58-0.66,
+    // faixa larga o bastante pra não ser um teste frágil, só uma sanidade.
+    expect(r.overUnderGols.total['2.5']).toBeGreaterThan(0.4);
+    expect(r.overUnderGols.total['2.5']).toBeLessThan(0.8);
+  });
+});
+
+describe('runMarkovSimulation -- linhasHandicap (Fase 6, job em lote)', () => {
+  it('sem linhasHandicap, handicap é null', () => {
+    const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });
+    expect(r.handicap).toBeNull();
+  });
+
+  it('com linhasHandicap, home+away(+push) soma 1 e favorito cobre linha negativa com mais frequência que o azarão', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 2.5, lambda2: 0.8 }, // mandante bem favorito
+      dynamics: false,
+      simCount: 30000,
+      linhasHandicap: [-1.5, -0.5, 0, 0.5, 1.5],
+    });
+    expect(r.handicap).not.toBeNull();
+    for (const [, resultado] of Object.entries(r.handicap)) {
+      const soma = resultado.home + resultado.away + (resultado.push || 0);
+      expect(soma).toBeCloseTo(1, 6);
+    }
+    // Linha 0 (sem handicap) pode dar push (empate) -- as fracionárias nunca.
+    expect(r.handicap['0.0'].push).toBeGreaterThan(0);
+    expect(r.handicap['-1.5'].push).toBeUndefined();
+    // Time muito mais forte cobre -1.5 (precisa ganhar por 2+) com boa
+    // probabilidade, claramente acima de cobrir a marca simétrica +1.5 (não
+    // perder por 2+) só pelo lado do azarão -- checa a direção certa: o
+    // mandante forte cobre a linha -0.5 (ganhar por qualquer margem) mais
+    // que o visitante fraco cobre a linha +0.5 (não perder).
+    expect(r.handicap['-0.5'].home).toBeGreaterThan(r.handicap['0.5'].away);
+  });
+});
+
 describe('runMarkovSimulation -- contrato mínimo de saída (compatibilidade com a UI atual)', () => {
   it('devolve todos os campos que a UI de AnaliseEvento.jsx já consome hoje', () => {
     const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });

@@ -165,13 +165,16 @@ function proximoUltimoEvento(atual, minuto, { vermelhoProprio, vermelhoContra, g
  * @param {number} [entrada.minutes] - Default `MARKOV_MINUTES` (90).
  * @param {() => number} [entrada.rng] - Injeção de RNG (testes determinísticos); default `Math.random`.
  * @param {{cartoes?:number[], escanteios?:number[], faltas?:number[]}} [entrada.linhasOverUnder] - Linhas O/U pra computar over/under de TOTAL de partida (cartão/escanteio/falta), além do valor esperado que os campos `cartoes`/`escanteios`/`faltas` já trazem. Opcional -- só usado pelo job em lote (Fase 6, `scripts/rodar_markov_batch.mjs`) que persiste previsões em `model_predictions`; a UI interativa nunca precisou disso, só do valor esperado. `null`/omitido não pesa o caminho existente.
- * @returns {object} `{ probWin1, probDraw, probWin2, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes, escanteios, faltas, overUnder }` -- `overUnder` é `null` quando `linhasOverUnder` não foi passado.
+ * @param {{total?:number[], time1?:number[], time2?:number[]}} [entrada.linhasOverUnderGols] - Linhas O/U de GOLS (total da partida e por time), mesmo padrão/motivo de `linhasOverUnder` acima -- opcional, só pro job em lote.
+ * @param {number[]} [entrada.linhasHandicap] - Linhas de handicap ASIÁTICO aplicado ao mandante (`margem = g1-g2+linha`; `margem>0`=mandante cobre, `margem=0`=push, `margem<0`=visitante cobre) -- mesma convenção de `distribuicoesMercados.js`/`mercadosDeGols`. Opcional, só pro job em lote.
+ * @param {number} [entrada.heatGridSize] - Tamanho do lado de `heatGrid` (placares de 0 a `heatGridSize-1` por time). Default 7 (placar 0-6, contrato já consumido pela UI) -- o job em lote passa um valor maior pra ter uma grade de auditoria mais completa (ver `scripts/rodar_markov_batch.mjs`); `probWin1`/`probDraw`/`probWin2`/`btts`/`dupla_chance` NUNCA são afetados pelo tamanho da grade (tally direto de `g1`/`g2` por simulação, sem corte).
+ * @returns {object} `{ probWin1, probDraw, probWin2, btts, dupla_chance, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes, escanteios, faltas, overUnder, overUnderGols, handicap }` -- `overUnder`/`overUnderGols`/`handicap` são `null` quando a linha correspondente não foi passada.
  */
 export function runMarkovSimulation(entrada) {
   const {
     gols, chutes = {}, cartaoAmarelo = {}, cartaoVermelho = {}, escanteio = {}, falta = {},
     dynamics = false, simCount, params = {}, minutes = MARKOV_MINUTES, rng = Math.random,
-    linhasOverUnder = null,
+    linhasOverUnder = null, linhasOverUnderGols = null, linhasHandicap = null, heatGridSize = 7,
   } = entrada;
 
   const { lambda1, lambda2 } = gols;
@@ -206,6 +209,24 @@ export function runMarkovSimulation(entrada) {
     escanteios: Object.fromEntries((linhasOverUnder.escanteios || []).map(l => [l.toFixed(1), 0])),
     faltas: Object.fromEntries((linhasOverUnder.faltas || []).map(l => [l.toFixed(1), 0])),
   } : null;
+
+  // btts/dupla_chance: sempre computados (custo O(1) por sim, mesmo padrão
+  // barato de wins1/wins2/draws) -- dupla_chance é só aritmética em cima de
+  // probWin1/probDraw/probWin2 no retorno, nem precisa de contador próprio.
+  let bttsCount = 0;
+
+  // Gols total/por-time e handicap: mesmo padrão opcional de overUnderContagem
+  // acima -- só custam quando o job em lote passa as linhas.
+  const overUnderGolsContagem = linhasOverUnderGols ? {
+    total: Object.fromEntries((linhasOverUnderGols.total || []).map(l => [l.toFixed(1), 0])),
+    time1: Object.fromEntries((linhasOverUnderGols.time1 || []).map(l => [l.toFixed(1), 0])),
+    time2: Object.fromEntries((linhasOverUnderGols.time2 || []).map(l => [l.toFixed(1), 0])),
+  } : null;
+  // `ganha`/`push` por linha -- `away` no retorno é o complemento
+  // (simCount - ganha - push), sem precisar de 3º contador.
+  const handicapContagem = linhasHandicap
+    ? Object.fromEntries(linhasHandicap.map(l => [l.toFixed(1), { ganha: 0, push: 0 }]))
+    : null;
 
   for (let sim = 0; sim < simCount; sim++) {
     const times = [criarEstadoTime(), criarEstadoTime()];
@@ -320,6 +341,22 @@ export function runMarkovSimulation(entrada) {
     if (g1 > g2) wins1++; else if (g1 < g2) wins2++; else draws++;
     const key = `${g1}-${g2}`;
     scoreCounts[key] = (scoreCounts[key] || 0) + 1;
+
+    if (g1 > 0 && g2 > 0) bttsCount++;
+
+    if (overUnderGolsContagem) {
+      const totalGols = g1 + g2;
+      for (const linha in overUnderGolsContagem.total) if (totalGols > Number(linha)) overUnderGolsContagem.total[linha]++;
+      for (const linha in overUnderGolsContagem.time1) if (g1 > Number(linha)) overUnderGolsContagem.time1[linha]++;
+      for (const linha in overUnderGolsContagem.time2) if (g2 > Number(linha)) overUnderGolsContagem.time2[linha]++;
+    }
+    if (handicapContagem) {
+      for (const linha in handicapContagem) {
+        const margem = g1 - g2 + Number(linha);
+        if (margem > 0) handicapContagem[linha].ganha++;
+        else if (margem === 0) handicapContagem[linha].push++;
+      }
+    }
   }
 
   const topScores = Object.entries(scoreCounts)
@@ -332,9 +369,9 @@ export function runMarkovSimulation(entrada) {
 
   const heatGrid = [];
   let heatMin = Infinity, heatMax = -Infinity;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < heatGridSize; i++) {
     const row = [];
-    for (let j = 0; j < 7; j++) {
+    for (let j = 0; j < heatGridSize; j++) {
       const count = scoreCounts[`${i}-${j}`] || 0;
       const p = count / simCount;
       row.push(p);
@@ -353,6 +390,16 @@ export function runMarkovSimulation(entrada) {
     probWin1: wins1 / simCount,
     probDraw: draws / simCount,
     probWin2: wins2 / simCount,
+    // Sempre computados, precisão total (tally direto de g1/g2, nunca cortado
+    // pelo tamanho de heatGrid) -- dupla_chance é aritmética pura em cima dos
+    // 3 campos de 1X2 acima, mesma convenção de chave de
+    // `distribuicoesMercados.js`/`mercadosDeGols` ('1X'/'X2'/'12').
+    btts: { yes: bttsCount / simCount, no: 1 - bttsCount / simCount },
+    dupla_chance: {
+      '1X': (wins1 + draws) / simCount,
+      X2: (draws + wins2) / simCount,
+      '12': (wins1 + wins2) / simCount,
+    },
     topScores,
     minuteDistribution,
     heatGrid,
@@ -388,5 +435,17 @@ export function runMarkovSimulation(entrada) {
       escanteios: Object.fromEntries(Object.entries(overUnderContagem.escanteios).map(([l, c]) => [l, c / simCount])),
       faltas: Object.fromEntries(Object.entries(overUnderContagem.faltas).map(([l, c]) => [l, c / simCount])),
     } : null,
+    overUnderGols: overUnderGolsContagem ? {
+      total: Object.fromEntries(Object.entries(overUnderGolsContagem.total).map(([l, c]) => [l, c / simCount])),
+      time1: Object.fromEntries(Object.entries(overUnderGolsContagem.time1).map(([l, c]) => [l, c / simCount])),
+      time2: Object.fromEntries(Object.entries(overUnderGolsContagem.time2).map(([l, c]) => [l, c / simCount])),
+    } : null,
+    // `push` só aparece quando >0 (mesma convenção de `mercadosDeGols`) --
+    // `away` é o complemento (simCount - ganha - push), sem contador à parte.
+    handicap: handicapContagem ? Object.fromEntries(Object.entries(handicapContagem).map(([l, { ganha, push }]) => {
+      const resultado = { home: ganha / simCount, away: (simCount - ganha - push) / simCount };
+      if (push > 0) resultado.push = push / simCount;
+      return [l, resultado];
+    })) : null,
   };
 }
