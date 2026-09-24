@@ -45,6 +45,23 @@ export const LINHAS_FALTAS_1T_OU = [9.5, 11.5, 13.5];
 export const LINHAS_CARTOES_OU = [1.5, 2.5, 3.5, 4.5, 5.5, 6.5];
 export const LINHAS_CARTOES_TIME_OU = [0.5, 1.5, 2.5, 3.5, 4.5];
 
+// Escanteios TOTAIS (mandante+visitante) -- mesmas 6 linhas já usadas em
+// api/model-stats.js/api/backtest-betting.js pra buscar odds reais
+// (LINHAS_CORNERS_OU locais nesses arquivos), mas até esta sessão só a
+// linha 9.5 tinha resultado real resolvido aqui embaixo -- as outras 5
+// (7.5/8.5/10.5/11.5/12.5) caíam no MESMO bug já documentado acima pra
+// cartões (comparar contra `undefined`, nunca "acerta" por acaso).
+export const LINHAS_CORNERS_OU = [7.5, 8.5, 9.5, 10.5, 11.5, 12.5];
+
+// Faltas TOTAIS (mandante+visitante) -- mesmas linhas de
+// `LINHAS_PADRAO_POR_STAT.fouls` em api/corners-model.js. ACHADO REAL desta
+// sessão (Fase 6 do motor de Markov): `faltas_over_under_*` nunca teve
+// NENHUMA entrada aqui, em NENHUMA linha -- mesmo bug de "compara contra
+// undefined, perde sempre" já documentado pra cartões, nunca corrigido pra
+// faltas. Fonte: `match_disciplina.faltas_cometidas` (não tem o problema de
+// confiabilidade de `fonte_cartoes` que cartões tem -- ver CLAUDE.md).
+export const LINHAS_FALTAS_OU = [20.5, 22.5, 24.5, 26.5, 28.5, 30.5];
+
 // ACHADO REAL (13/09): até esta função existir, `cartoes_over_under_X`/
 // `cartoes_home_over_under_X`/`cartoes_away_over_under_X` não tinham NENHUMA
 // entrada em `calcularResultadosReais` -- toda aposta de cartões comparava
@@ -114,6 +131,31 @@ export function calcularCartoesExtras(matchesValidos, matchStatsRows, matchEvent
   return { cartoesTotal, cartoesHome, cartoesAway };
 }
 
+// Faltas TOTAIS (mandante+visitante) -- bem mais simples que cartões: uma
+// fonte só (`match_disciplina.faltas_cometidas`), sem problema de
+// confiabilidade documentado (diferente de `fonte_cartoes`, ver CLAUDE.md),
+// então não precisa de fallback nem filtro por origem. Gate: só resolve
+// quando os DOIS times da partida têm linha em `match_disciplina` (mesmo
+// padrão de "count===2" já usado em `calcularCartoesExtras`/escanteios).
+//
+// `disciplinaRows`: linhas cruas de `match_disciplina` já filtradas pro
+// lote de match_id relevante (`match_id, team_id, faltas_cometidas`).
+export function calcularFaltasExtras(matchesValidos, disciplinaRows) {
+  const faltasTotal = {};
+  const porMatch = {};
+  disciplinaRows.forEach(r => { (porMatch[r.match_id] ||= []).push(r); });
+
+  matchesValidos.forEach(m => {
+    const linhas = porMatch[m.id];
+    if (!linhas || linhas.length !== 2) return;
+    const [a, b] = linhas;
+    if (a.faltas_cometidas == null || b.faltas_cometidas == null) return;
+    faltasTotal[m.id] = Number(a.faltas_cometidas) + Number(b.faltas_cometidas);
+  });
+
+  return { faltasTotal };
+}
+
 // `extras`: `{ corners, shots, shots_on_target, golsPrimeiroTempo, corners1t,
 // faltas1t, cartoesTotal, cartoesHome, cartoesAway }`, cada um um mapa
 // `{ match_id: total_da_partida }` já somado (mandante+visitante, exceto
@@ -126,7 +168,7 @@ export function calcularResultadosReais(matches, extras = {}) {
   const {
     corners = {}, shots = {}, shots_on_target: shotsOnTarget = {},
     golsPrimeiroTempo = {}, corners1t = {}, faltas1t = {},
-    cartoesTotal = {}, cartoesHome = {}, cartoesAway = {},
+    cartoesTotal = {}, cartoesHome = {}, cartoesAway = {}, faltasTotal = {},
   } = extras;
   const porMatch = {};
   for (const m of matches) {
@@ -137,6 +179,15 @@ export function calcularResultadosReais(matches, extras = {}) {
       '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
       'over_under_2.5': total > 2.5 ? 'over' : 'under',
       btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
+      // ACHADO REAL (Fase 6 do motor de Markov): `placar_exato` nunca teve
+      // NENHUMA entrada aqui, em nenhum modelo -- mesmo bug de "compara
+      // contra undefined, perde sempre" já documentado (e corrigido) acima
+      // pra cartões/faltas/escanteios. Não precisa de join novo: `home_goals`/
+      // `away_goals` já vêm carregados na query de `matches` que todo o
+      // resto desta função já usa. Placar fora da grade que um modelo prevê
+      // (ex.: >6 gols de um lado) simplesmente não bate com nenhuma seleção
+      // prevista -- mercado esparso normal, não é bug.
+      placar_exato: `${m.home_goals}-${m.away_goals}`,
     };
     // Gols por time (mandante/visitante separados) -- `home_goals`/
     // `away_goals` já vêm carregados na query de `matches`, então não
@@ -160,8 +211,17 @@ export function calcularResultadosReais(matches, extras = {}) {
     }
     porMatch[m.id] = resultado;
   }
+  // ACHADO REAL (Fase 6 do motor de Markov): até esta sessão, só a linha
+  // 9.5 tinha resultado real resolvido aqui -- as outras 5 (7.5/8.5/10.5/
+  // 11.5/12.5) caíam no mesmo bug já corrigido uma vez pra cartões
+  // (comparar contra `undefined`, nunca "acerta" por acaso). Generalizado
+  // pra todas as linhas de `LINHAS_CORNERS_OU`, mesmo padrão de
+  // shots/shots_on_target logo abaixo.
   for (const [matchId, totalCorners] of Object.entries(corners)) {
-    if (porMatch[matchId]) porMatch[matchId]['corners_over_under_9.5'] = totalCorners > 9.5 ? 'over' : 'under';
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_CORNERS_OU) {
+      porMatch[matchId][`corners_over_under_${linha.toFixed(1)}`] = totalCorners > linha ? 'over' : 'under';
+    }
   }
   // Chutes/chutes no gol (TOTAL, mandante+visitante) -- mesmo padrão de
   // escanteios acima, mas com várias linhas (não uma só) por stat, mesma
@@ -219,6 +279,17 @@ export function calcularResultadosReais(matches, extras = {}) {
     if (!porMatch[matchId]) continue;
     for (const linha of LINHAS_CARTOES_TIME_OU) {
       porMatch[matchId][`cartoes_away_over_under_${linha.toFixed(1)}`] = totalCartoesAway > linha ? 'over' : 'under';
+    }
+  }
+  // Faltas (bookings) TOTAIS -- ver `calcularFaltasExtras` acima.
+  // ACHADO REAL (Fase 6 do motor de Markov): `faltas_over_under_*` nunca
+  // teve NENHUMA entrada aqui, em nenhuma linha -- mesmo bug de "compara
+  // contra undefined, perde sempre" já documentado pra cartões, nunca
+  // corrigido pra faltas totais (só a versão "1º tempo" era resolvida).
+  for (const [matchId, totalFaltas] of Object.entries(faltasTotal)) {
+    if (!porMatch[matchId]) continue;
+    for (const linha of LINHAS_FALTAS_OU) {
+      porMatch[matchId][`faltas_over_under_${linha.toFixed(1)}`] = totalFaltas > linha ? 'over' : 'under';
     }
   }
   return porMatch;

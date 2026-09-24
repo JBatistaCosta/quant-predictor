@@ -164,12 +164,14 @@ function proximoUltimoEvento(atual, minuto, { vermelhoProprio, vermelhoContra, g
  * @param {object} [entrada.params] - Saída de `carregarMarkovParams` (`markovParams.js`): `{ [evento]: { [tipo]: { [chave]: valor } } }`.
  * @param {number} [entrada.minutes] - Default `MARKOV_MINUTES` (90).
  * @param {() => number} [entrada.rng] - Injeção de RNG (testes determinísticos); default `Math.random`.
- * @returns {object} `{ probWin1, probDraw, probWin2, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes, escanteios, faltas }`
+ * @param {{cartoes?:number[], escanteios?:number[], faltas?:number[]}} [entrada.linhasOverUnder] - Linhas O/U pra computar over/under de TOTAL de partida (cartão/escanteio/falta), além do valor esperado que os campos `cartoes`/`escanteios`/`faltas` já trazem. Opcional -- só usado pelo job em lote (Fase 6, `scripts/rodar_markov_batch.mjs`) que persiste previsões em `model_predictions`; a UI interativa nunca precisou disso, só do valor esperado. `null`/omitido não pesa o caminho existente.
+ * @returns {object} `{ probWin1, probDraw, probWin2, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes, escanteios, faltas, overUnder }` -- `overUnder` é `null` quando `linhasOverUnder` não foi passado.
  */
 export function runMarkovSimulation(entrada) {
   const {
     gols, chutes = {}, cartaoAmarelo = {}, cartaoVermelho = {}, escanteio = {}, falta = {},
     dynamics = false, simCount, params = {}, minutes = MARKOV_MINUTES, rng = Math.random,
+    linhasOverUnder = null,
   } = entrada;
 
   const { lambda1, lambda2 } = gols;
@@ -193,8 +195,24 @@ export function runMarkovSimulation(entrada) {
   const somaChutes = [0, 0], somaChutesNoAlvo = [0, 0], somaAmarelos = [0, 0], somaVermelhos = [0, 0];
   const somaEscanteios = [0, 0], somaFaltas = [0, 0];
 
+  // Contadores de over/under (Fase 6 -- job em lote pra persistir em
+  // model_predictions, ver scripts/rodar_markov_batch.mjs): opcional, só
+  // computado quando `linhasOverUnder` é passado, pra não pesar o caminho
+  // interativo da UI (que nunca precisou disso, só do valor esperado). Cada
+  // linha guarda a CONTAGEM de simulações com total>linha; vira fração só
+  // no fim (dividido por simCount), igual o resto do arquivo já faz.
+  const overUnderContagem = linhasOverUnder ? {
+    cartoes: Object.fromEntries((linhasOverUnder.cartoes || []).map(l => [l.toFixed(1), 0])),
+    escanteios: Object.fromEntries((linhasOverUnder.escanteios || []).map(l => [l.toFixed(1), 0])),
+    faltas: Object.fromEntries((linhasOverUnder.faltas || []).map(l => [l.toFixed(1), 0])),
+  } : null;
+
   for (let sim = 0; sim < simCount; sim++) {
     const times = [criarEstadoTime(), criarEstadoTime()];
+    // Totais DESTA simulação (zerados a cada sim) -- só usados pra
+    // over/under; `somaCartoes`/`somaEscanteios`/`somaFaltas` acima já
+    // acumulam o valor esperado através de todas as simulações.
+    let cartaoSimTotal = 0, escanteioSimTotal = 0, faltaSimTotal = 0;
 
     for (let minute = 0; minute < minutes; minute++) {
       const minutoBucket = bucketMinuto(minute);
@@ -223,6 +241,7 @@ export function runMarkovSimulation(entrada) {
           times[t].amarelos++;
           somaAmarelos[t]++;
           cardMinuteBins[0][t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
+          cartaoSimTotal++;
         }
         const multVermelho = dynamics ? multiplicadorCombinado(params, 'cartao_vermelho', ctx) : 1;
         if (rng() < clamp01(taxaVermelho[t] * multVermelho)) {
@@ -230,6 +249,7 @@ export function runMarkovSimulation(entrada) {
           times[t].vermelhos++;
           somaVermelhos[t]++;
           cardMinuteBins[1][t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
+          cartaoSimTotal++;
         }
 
         // Escanteio, falta — mesmo padrão de sorteio independente dos
@@ -243,11 +263,13 @@ export function runMarkovSimulation(entrada) {
         if (rng() < clamp01(taxaEscanteio[t] * multEscanteio)) {
           somaEscanteios[t]++;
           escanteioMinuteBins[t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
+          escanteioSimTotal++;
         }
         const multFalta = dynamics ? multiplicadorCombinado(params, 'falta', ctx) : 1;
         if (rng() < clamp01(taxaFalta[t] * multFalta)) {
           somaFaltas[t]++;
           faltaMinuteBins[t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
+          faltaSimTotal++;
         }
 
         // 3) Cadeia chute → chute no alvo → gol.
@@ -286,6 +308,12 @@ export function runMarkovSimulation(entrada) {
           golProprio: golNesteMinuto[t], golContra: golNesteMinuto[o],
         });
       }
+    }
+
+    if (overUnderContagem) {
+      for (const linha in overUnderContagem.cartoes) if (cartaoSimTotal > Number(linha)) overUnderContagem.cartoes[linha]++;
+      for (const linha in overUnderContagem.escanteios) if (escanteioSimTotal > Number(linha)) overUnderContagem.escanteios[linha]++;
+      for (const linha in overUnderContagem.faltas) if (faltaSimTotal > Number(linha)) overUnderContagem.faltas[linha]++;
     }
 
     const g1 = times[0].gols, g2 = times[1].gols;
@@ -352,5 +380,13 @@ export function runMarkovSimulation(entrada) {
       distribuicaoMinuto1: normalizarBins(faltaMinuteBins[0]),
       distribuicaoMinuto2: normalizarBins(faltaMinuteBins[1]),
     },
+    // `null` quando `linhasOverUnder` não foi passado -- não muda o shape que
+    // a UI (Fase 5) já consome. Cada linha guarda a FRAÇÃO de simulações com
+    // total>linha (over); `1 - valor` é o under.
+    overUnder: overUnderContagem ? {
+      cartoes: Object.fromEntries(Object.entries(overUnderContagem.cartoes).map(([l, c]) => [l, c / simCount])),
+      escanteios: Object.fromEntries(Object.entries(overUnderContagem.escanteios).map(([l, c]) => [l, c / simCount])),
+      faltas: Object.fromEntries(Object.entries(overUnderContagem.faltas).map(([l, c]) => [l, c / simCount])),
+    } : null,
   };
 }

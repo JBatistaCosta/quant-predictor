@@ -1,0 +1,64 @@
+name: Rodar motor de Markov em lote (Fase 6 -- validação estatística)
+
+# Roda scripts/rodar_markov_batch.mjs -- persiste as probabilidades do motor
+# de Markov multi-evento (placar_exato + over/under de cartão/escanteio/
+# falta) em model_predictions (model_name='markov_multievento_v1') pra todas
+# as partidas finalizadas que já têm λ de gol estimado (model_match_estimates,
+# model_name='hibrido_gols_v1') -- ~15.700 partidas na primeira rodada.
+#
+# Primeiro workflow NODE do repo (os demais rodam scripts Python) -- o motor
+# é JS de propósito, pra não duplicar a lógica calibrada em duas linguagens
+# (ver plano da sessão, Fase 6).
+#
+# `limit`/`desde` (opcionais): passam direto pros flags --limit/--desde do
+# script, pra permitir um smoke-test manual antes de rodar contra as ~15.700
+# partidas inteiras.
+#
+# Idempotente (upsert por match_id+model_name+market+selection) --
+# workflow_dispatch manual, sem cron.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Rodar só as N partidas mais antigas (smoke test). Vazio = todas."
+        required: false
+        type: string
+      desde:
+        description: "Só partidas com match_date >= esta data (YYYY-MM-DD). Vazio = todo o histórico."
+        required: false
+        type: string
+
+jobs:
+  rodar-markov-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar job em lote do motor de Markov
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # Convenção já em uso nos outros workflows deste repo (ver
+          # arquivos_do_claude/calibrar_markov_cartoes.py): o secret do
+          # GitHub Actions chamado SUPABASE_KEY guarda a service_role key,
+          # diferente do env var homônimo do Vercel (que é a chave pública
+          # anon). scripts/rodar_markov_batch.mjs lê SUPABASE_SERVICE_ROLE_KEY
+          # pelo nome mais explícito -- mapeado aqui a partir do secret real.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
+          if [ -n "${{ inputs.desde }}" ]; then ARGS="$ARGS --desde=${{ inputs.desde }}"; fi
+          node scripts/rodar_markov_batch.mjs $ARGS
