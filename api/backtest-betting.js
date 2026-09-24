@@ -45,7 +45,7 @@ import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { calcularCurvaPnlEv } from './_lib/curvaPnlEv.js';
 import { calcularStakeKellyPorFaixa } from './_lib/stakingPolicy.js';
-import { calcularResultadosReais, calcularCartoesExtras } from './_lib/resultadosReais.js';
+import { calcularResultadosReais, calcularCartoesExtras, calcularFaltasExtras } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -407,7 +407,7 @@ export default async function handler(req, res) {
     // (`usar_calibracao=platt/isotonic`) e as odds reais de cartões/
     // escanteios (`oddsCartoesEscanteiosTotal`/`oddsCartoesTime`) -- não só
     // os novos mercados de 1º tempo.
-    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos, oddsRowsPreClosing] = await Promise.all([
+    const [oddsRowsAntigas, oddsRowsPinnacle, marketOddsRaw, oddsCartoesEscanteiosTotal, oddsCartoesTime, corneragensBrutas, calibracoes, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos, oddsRowsPreClosing, disciplinaBrutas] = await Promise.all([
       buscarPossivelmenteFiltradoPorLiga((lote) => {
         let q = supabase.from('odds_market').select('match_id, market, selection, odds').eq('snapshot', 'closing').eq('bookmaker', 'media_mercado');
         if (lote) q = q.in('match_id', lote);
@@ -585,6 +585,14 @@ export default async function handler(req, res) {
             return q;
           })
         : Promise.resolve([]),
+      // Faltas TOTAIS -- ver `calcularFaltasExtras` em api/_lib/resultadosReais.js
+      // (achado real desta sessão: `faltas_over_under_*` nunca tinha
+      // resultado real resolvido, mesmo bug já corrigido uma vez pra cartões).
+      buscarPossivelmenteFiltradoPorLiga((lote) => {
+        let q = supabase.from('match_disciplina').select('match_id, team_id, faltas_cometidas');
+        if (lote) q = q.in('match_id', lote);
+        return q;
+      }),
     ]);
     // Merge com prioridade pra media_mercado: só usa pinnacle pro par
     // match_id+market que media_mercado NÃO cobre (evita duplicar/preferir
@@ -704,8 +712,13 @@ export default async function handler(req, res) {
       corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)),
       matchEventsBrutos.filter(r => matchIdsValidos.has(r.match_id)),
     );
+    // Faltas TOTAIS -- ver `calcularFaltasExtras` em api/_lib/resultadosReais.js.
+    const { faltasTotal } = calcularFaltasExtras(
+      matchesValidos,
+      disciplinaBrutas.filter(r => matchIdsValidos.has(r.match_id)),
+    );
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway });
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway, faltasTotal });
 
     // odds cruas (pra pagamento real) e devigadas (pra edge) por match+market,
     // mais QUAL casa de aposta (`fonte`, marcada acima) forneceu essa odd --

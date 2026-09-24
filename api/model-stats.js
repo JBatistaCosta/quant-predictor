@@ -50,7 +50,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
-import { calcularResultadosReais, calcularCartoesExtras, LINHAS_GOLS_TIME } from './_lib/resultadosReais.js';
+import { calcularResultadosReais, calcularCartoesExtras, calcularFaltasExtras, LINHAS_GOLS_TIME } from './_lib/resultadosReais.js';
 
 function getSupabase() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -871,6 +871,10 @@ export default async function handler(req, res) {
     // api/_lib/resultadosReais.js), reaproveitando a leitura já feita pra
     // corners/shots/chutes no gol.
     const promiseCorneragensBrutas = buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('id, match_id, team_id, corners, shots:total_shots, shots_on_target, yellow_cards, red_cards'));
+    // Faltas TOTAIS -- ver `calcularFaltasExtras` em api/_lib/resultadosReais.js
+    // (achado real desta sessão: `faltas_over_under_*` nunca tinha resultado
+    // real resolvido, mesmo bug já corrigido uma vez pra cartões).
+    const promiseMatchDisciplina = buscarTudoPaginado(() => supabase.from('match_disciplina').select('match_id, team_id, faltas_cometidas'));
     // FONTE PRIMÁRIA de cartões (ver mesmo comentário em
     // api/backtest-betting.js) -- TODOS os tipos de evento, precisa disso
     // pra decidir se a partida "tem match_events" antes de filtrar por tipo.
@@ -979,9 +983,10 @@ export default async function handler(req, res) {
 
     // As 5 promessas abaixo já foram disparadas mais acima (em paralelo com
     // a primeira leva) -- só falta esperar.
-    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos] = await Promise.all([
+    const [todasMatches, oddsRowsAntigas, marketOddsRaw, corneragensBrutas, calibracoes, oddsCartoesEscanteiosTotal, oddsCartoesTime, golsPrimeiroTempoBrutos, statsPrimeiroTempoBrutos, matchEventsBrutos, disciplinaBrutas] = await Promise.all([
       promiseTodasMatches, promiseOddsRowsAntigas, promiseMarketOddsRaw, promiseCorneragensBrutas, promiseCalibracoes,
       promiseOddsCartoesEscanteiosTotal, promiseOddsCartoesTime, promiseGolsPrimeiroTempo, promiseStatsPrimeiroTempo, promiseMatchEvents,
+      promiseMatchDisciplina,
     ]);
     const oddsRowsBrutas = [...oddsRowsAntigas, ...normalizarOddsBenchmarking(marketOddsRaw), ...oddsCartoesEscanteiosTotal, ...oddsCartoesTime];
 
@@ -1078,8 +1083,13 @@ export default async function handler(req, res) {
       corneragensBrutas.filter(r => matchIdsValidos.has(r.match_id)),
       matchEventsBrutos.filter(r => matchIdsValidos.has(r.match_id)),
     );
+    // Faltas TOTAIS -- ver `calcularFaltasExtras` em api/_lib/resultadosReais.js.
+    const { faltasTotal } = calcularFaltasExtras(
+      matchesValidos,
+      disciplinaBrutas.filter(r => matchIdsValidos.has(r.match_id)),
+    );
 
-    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway });
+    const resultadosReais = calcularResultadosReais(matchesValidos, { corners, shots, shots_on_target: shotsOnTarget, golsPrimeiroTempo, corners1t, faltas1t, cartoesTotal, cartoesHome, cartoesAway, faltasTotal });
 
     // odds devigadas por match+market -> { selecao: prob }
     const oddsPorMatchMercado = {};

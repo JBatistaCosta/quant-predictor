@@ -228,6 +228,59 @@ describe('runMarkovSimulation -- escanteios e faltas (Fase 3)', () => {
   });
 });
 
+describe('runMarkovSimulation -- linhasOverUnder/overUnder (Fase 6, job em lote)', () => {
+  it('sem linhasOverUnder, overUnder é null (não regride o caminho da UI/Fase 5)', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      cartaoAmarelo: { taxa1: 2.2, taxa2: 2.6 },
+      dynamics: false,
+      simCount: 5000,
+    });
+    expect(r.overUnder).toBeNull();
+  });
+
+  it('com linhasOverUnder, devolve fração over em [0,1] pra cada linha pedida, monotonicamente decrescente', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      cartaoAmarelo: { taxa1: 2.2, taxa2: 2.6 },
+      cartaoVermelho: { taxa1: 0.1, taxa2: 0.12 },
+      escanteio: { taxa1: 5.2, taxa2: 4.1 },
+      falta: { taxa1: 11.3, taxa2: 12.7 },
+      dynamics: false,
+      simCount: 20000,
+      linhasOverUnder: {
+        cartoes: [1.5, 2.5, 3.5, 4.5, 5.5, 6.5],
+        escanteios: [7.5, 8.5, 9.5, 10.5, 11.5, 12.5],
+        faltas: [20.5, 22.5, 24.5, 26.5, 28.5, 30.5],
+      },
+    });
+    expect(r.overUnder).not.toBeNull();
+    for (const grupo of ['cartoes', 'escanteios', 'faltas']) {
+      const linhas = Object.keys(r.overUnder[grupo]).map(Number).sort((a, b) => a - b);
+      let anterior = 1;
+      for (const linha of linhas) {
+        const p = r.overUnder[grupo][linha.toFixed(1)];
+        expect(p).toBeGreaterThanOrEqual(0);
+        expect(p).toBeLessThanOrEqual(1);
+        expect(p).toBeLessThanOrEqual(anterior + 1e-9); // linha maior nunca tem over mais provável
+        anterior = p;
+      }
+    }
+  });
+
+  it('taxa muito alta -> over ~1 numa linha baixa; taxa muito baixa -> over ~0 numa linha alta (controle positivo da contagem)', () => {
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      cartaoAmarelo: { taxa1: 20, taxa2: 20 }, // taxa altíssima, quase sempre > 1.5 no total da partida
+      dynamics: false,
+      simCount: 5000,
+      linhasOverUnder: { cartoes: [1.5, 200.5] }, // 200.5 é impossível de estourar em 90 min
+    });
+    expect(r.overUnder.cartoes['1.5']).toBeGreaterThan(0.99);
+    expect(r.overUnder.cartoes['200.5']).toBe(0);
+  });
+});
+
 describe('runMarkovSimulation -- contrato mínimo de saída (compatibilidade com a UI atual)', () => {
   it('devolve todos os campos que a UI de AnaliseEvento.jsx já consome hoje', () => {
     const r = runMarkovSimulation({ gols: { lambda1: 1.5, lambda2: 1.2 }, dynamics: false, simCount: 5000 });
