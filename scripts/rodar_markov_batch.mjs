@@ -30,10 +30,21 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { runMarkovSimulation } from '../src/utils/markovEngine.js';
-import { LINHAS_CARTOES_OU, LINHAS_CORNERS_OU, LINHAS_FALTAS_OU } from '../api/_lib/resultadosReais.js';
+import {
+  LINHAS_CARTOES_OU, LINHAS_CORNERS_OU, LINHAS_FALTAS_OU, LINHAS_GOLS_OU, LINHAS_GOLS_TIME, LINHAS_HANDICAP_OU,
+} from '../api/_lib/resultadosReais.js';
 
 const MODEL_NAME = 'markov_multievento_v1';
 const LAMBDA_MODEL_NAME = 'hibrido_gols_v1';
+// Grade REAL de `correct_score` já sincronizada da OddsPapi (confirmado via
+// SQL em produção: `correct_score_full_time` oferece 0-0 até 7-7, 64
+// seleções) -- persistir `placar_exato` até esse teto, não um número
+// inventado. `HEAT_GRID_SIZE_AUDITORIA` é maior (motor não paga custo extra
+// nenhum por isso, é só o tamanho do array no fim da simulação) e vai pra
+// `model_match_estimates.params.heatGrid` como auditoria/backtest futuro,
+// sem inflar `model_predictions` com centenas de linhas por partida.
+const PLACAR_EXATO_TETO = 8; // placar 0-7 por lado
+const HEAT_GRID_SIZE_AUDITORIA = 15;
 // 2.000 sims -- a própria investigação empírica desta sessão (2.000 vs.
 // 20.000 sorteios) já mostrou que a diferença de probabilidade/odds entre
 // as duas contagens não é considerável; mantém o job em tempo razoável
@@ -221,8 +232,49 @@ function montarLinhasPredicao(matchId, resultado) {
     linhas.push({ match_id: matchId, model_name: MODEL_NAME, market, selection, probability: p, created_at: agora });
   };
 
-  for (let i = 0; i < 7; i++) {
-    for (let j = 0; j < 7; j++) linha('placar_exato', `${i}-${j}`, resultado.heatGrid[i][j]);
+  // Grade REAL de correct_score da OddsPapi (0-7 por lado, ver
+  // PLACAR_EXATO_TETO acima) -- `heatGrid` é maior (HEAT_GRID_SIZE_AUDITORIA)
+  // mas só as primeiras PLACAR_EXATO_TETO linhas/colunas vão pra
+  // model_predictions; a grade completa vai pro JSONB de auditoria (ver
+  // montarLinhaEstimate).
+  for (let i = 0; i < PLACAR_EXATO_TETO; i++) {
+    for (let j = 0; j < PLACAR_EXATO_TETO; j++) linha('placar_exato', `${i}-${j}`, resultado.heatGrid[i][j]);
+  }
+
+  linha('1X2', 'home', resultado.probWin1);
+  linha('1X2', 'draw', resultado.probDraw);
+  linha('1X2', 'away', resultado.probWin2);
+
+  // Persistido sem resolução de resultado real por ora (ver
+  // api/_lib/resultadosReais.js -- 2 das 3 seleções vencem em qualquer
+  // partida, estruturalmente incompatível com a convenção de "1 vencedor por
+  // mercado" que model-stats.js/backtest-betting.js usam hoje). Gravar aqui
+  // não é bug: é dado útil/inofensivo, só não é avaliado ainda.
+  linha('dupla_chance', '1X', resultado.dupla_chance['1X']);
+  linha('dupla_chance', 'X2', resultado.dupla_chance.X2);
+  linha('dupla_chance', '12', resultado.dupla_chance['12']);
+
+  linha('btts', 'yes', resultado.btts.yes);
+  linha('btts', 'no', resultado.btts.no);
+
+  for (const [linhaStr, over] of Object.entries(resultado.overUnderGols.total)) {
+    linha(`over_under_${linhaStr}`, 'over', over);
+    linha(`over_under_${linhaStr}`, 'under', 1 - over);
+  }
+  for (const [linhaStr, over] of Object.entries(resultado.overUnderGols.time1)) {
+    linha(`over_under_team_1_${linhaStr}`, 'over', over);
+    linha(`over_under_team_1_${linhaStr}`, 'under', 1 - over);
+  }
+  for (const [linhaStr, over] of Object.entries(resultado.overUnderGols.time2)) {
+    linha(`over_under_team_2_${linhaStr}`, 'over', over);
+    linha(`over_under_team_2_${linhaStr}`, 'under', 1 - over);
+  }
+
+  for (const [linhaStr, { home, away, push }] of Object.entries(resultado.handicap)) {
+    const market = `handicap_${linhaStr}`;
+    linha(market, 'home', home);
+    linha(market, 'away', away);
+    if (push != null) linha(market, 'push', push);
   }
 
   const mercadosOU = [
@@ -240,6 +292,19 @@ function montarLinhasPredicao(matchId, resultado) {
   return linhas;
 }
 
+// Grade completa (15x15 -- HEAT_GRID_SIZE_AUDITORIA) em JSONB, pra auditoria/
+// backtest futuro sem inflar model_predictions com centenas de linhas por
+// partida (ver Fase 6.1 do plano). Chaves `lambda_home`/`lambda_away` seguem
+// a mesma convenção já documentada em `model_match_estimates.params`
+// (migration 20260817120000) usada por `hibrido_gols_v1`.
+function montarLinhaEstimate(matchId, lambda1, lambda2, resultado) {
+  return {
+    match_id: matchId,
+    model_name: MODEL_NAME,
+    params: { lambda_home: lambda1, lambda_away: lambda2, heatGrid: resultado.heatGrid },
+  };
+}
+
 async function gravarLote(supabase, linhas) {
   if (linhas.length === 0) return 0;
   const { error } = await supabase.from('model_predictions').upsert(linhas, { onConflict: 'match_id,model_name,market,selection' });
@@ -247,9 +312,17 @@ async function gravarLote(supabase, linhas) {
   return linhas.length;
 }
 
+async function gravarLoteEstimates(supabase, linhas) {
+  if (linhas.length === 0) return 0;
+  const { error } = await supabase.from('model_match_estimates').upsert(linhas, { onConflict: 'match_id,model_name' });
+  if (error) throw error;
+  return linhas.length;
+}
+
 async function processarLote(supabase, alvos, indices, getParams) {
-  let processadas = 0, escritas = 0;
+  let processadas = 0, escritas = 0, estimativasEscritas = 0;
   let pendentes = [];
+  let pendentesEstimates = [];
 
   for (const alvo of alvos) {
     const match = indices.matchesById.get(alvo.match_id);
@@ -271,20 +344,29 @@ async function processarLote(supabase, alvos, indices, getParams) {
       simCount: SIM_COUNT,
       params,
       linhasOverUnder: { cartoes: LINHAS_CARTOES_OU, escanteios: LINHAS_CORNERS_OU, faltas: LINHAS_FALTAS_OU },
+      linhasOverUnderGols: { total: LINHAS_GOLS_OU, time1: LINHAS_GOLS_TIME, time2: LINHAS_GOLS_TIME },
+      linhasHandicap: LINHAS_HANDICAP_OU,
+      heatGridSize: HEAT_GRID_SIZE_AUDITORIA,
     });
 
     pendentes.push(...montarLinhasPredicao(match.id, resultado));
+    pendentesEstimates.push(montarLinhaEstimate(match.id, lambda1, lambda2, resultado));
     processadas++;
 
     if (pendentes.length >= TAMANHO_LOTE_UPSERT) {
       escritas += await gravarLote(supabase, pendentes);
       pendentes = [];
     }
-    if (processadas % 500 === 0) console.log(`  ${processadas}/${alvos.length} partidas processadas, ${escritas} linhas gravadas...`);
+    if (pendentesEstimates.length >= TAMANHO_LOTE_UPSERT) {
+      estimativasEscritas += await gravarLoteEstimates(supabase, pendentesEstimates);
+      pendentesEstimates = [];
+    }
+    if (processadas % 500 === 0) console.log(`  ${processadas}/${alvos.length} partidas processadas, ${escritas} linhas gravadas, ${estimativasEscritas} estimativas JSONB gravadas...`);
   }
   if (pendentes.length > 0) escritas += await gravarLote(supabase, pendentes);
+  if (pendentesEstimates.length > 0) estimativasEscritas += await gravarLoteEstimates(supabase, pendentesEstimates);
 
-  return { processadas, escritas };
+  return { processadas, escritas, estimativasEscritas };
 }
 
 async function main() {
@@ -309,10 +391,13 @@ async function main() {
   };
 
   const inicio = Date.now();
-  const { processadas, escritas } = await processarLote(supabase, alvos, indices, getParams);
+  const { processadas, escritas, estimativasEscritas } = await processarLote(supabase, alvos, indices, getParams);
   const segundos = ((Date.now() - inicio) / 1000).toFixed(1);
 
-  console.log(`Concluído: ${processadas} partidas processadas, ${escritas} linhas gravadas em model_predictions, em ${segundos}s.`);
+  console.log(
+    `Concluído: ${processadas} partidas processadas, ${escritas} linhas gravadas em model_predictions, ` +
+    `${estimativasEscritas} linhas gravadas em model_match_estimates (heatGrid JSONB de auditoria), em ${segundos}s.`,
+  );
 }
 
 main().catch((erro) => {

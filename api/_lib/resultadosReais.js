@@ -19,6 +19,20 @@
 // (`mercados_de_gols`) e `scripts/rodar_predicoes.py` (`LINHAS_GOLS_TIME`).
 export const LINHAS_GOLS_TIME = [0.5, 1.5, 2.5, 3.5, 4.5];
 
+// Gols TOTAIS (mandante+visitante) -- mesmas linhas default de
+// `src/utils/distribuicoesMercados.js`/`mercadosDeGols` (`linhasOverUnder`).
+// ACHADO REAL (Fase 6 do motor de Markov, ampliando mercados derivados): até
+// esta sessão só a linha 2.5 tinha resultado real resolvido aqui (hardcoded
+// solto no meio do objeto `resultado`, fora do padrão de loop já usado pras
+// outras famílias de linha) -- as demais (0.5/1.5/3.5/4.5) nunca tiveram
+// entrada, mesmo bug já corrigido pras outras famílias.
+export const LINHAS_GOLS_OU = [0.5, 1.5, 2.5, 3.5, 4.5];
+
+// Handicap ASIÁTICO aplicado ao mandante -- mesmas linhas default de
+// `distribuicoesMercados.js`/`mercadosDeGols` (`linhasHandicap`). Linha
+// inteira pode empatar (push, `selection='push'`); linha fracionária nunca.
+export const LINHAS_HANDICAP_OU = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5];
+
 // Linhas de chutes/chutes no gol (TOTAL da partida) -- mesma constante de
 // `LINHAS_POR_STAT` em `arquivos_do_claude/modelo_stats_esperadas.py` e
 // `LINHAS_PADRAO_POR_STAT` em `api/corners-model.js` (duplicada de
@@ -177,7 +191,6 @@ export function calcularResultadosReais(matches, extras = {}) {
     const resultado = {
       league_id: m.league_id,
       '1X2': m.home_goals > m.away_goals ? 'home' : m.home_goals < m.away_goals ? 'away' : 'draw',
-      'over_under_2.5': total > 2.5 ? 'over' : 'under',
       btts: (m.home_goals > 0 && m.away_goals > 0) ? 'yes' : 'no',
       // ACHADO REAL (Fase 6 do motor de Markov): `placar_exato` nunca teve
       // NENHUMA entrada aqui, em nenhum modelo -- mesmo bug de "compara
@@ -189,6 +202,18 @@ export function calcularResultadosReais(matches, extras = {}) {
       // prevista -- mercado esparso normal, não é bug.
       placar_exato: `${m.home_goals}-${m.away_goals}`,
     };
+    // `dupla_chance` (seleções '1X'/'X2'/'12') PROPOSITALMENTE não tem
+    // entrada aqui -- e não é descuido. É estrutural: 2 das 3 seleções
+    // "vencem" em qualquer partida (ex.: mandante ganha -> '1X' E '12'
+    // vencem, só 'X2' perde), então não existe um único
+    // `resultado.dupla_chance` que sirva pro padrão `selection === resultado`
+    // já usado em TODO o resto deste arquivo (e em api/model-stats.js/
+    // api/backtest-betting.js pra log-loss/Brier/backtest). Adicionar uma
+    // entrada de "único vencedor" aqui seria estruturalmente ERRADA (não só
+    // incompleta) -- avaliaria 2 de cada 3 seleções contra o resultado
+    // trocado. Corrigir de verdade exige suporte a "múltiplos vencedores por
+    // mercado" nos consumidores, não só aqui -- ver CONTEXTO_PROJETO.md,
+    // item 10 (achado da Fase 6 do motor de Markov).
     // Gols por time (mandante/visitante separados) -- `home_goals`/
     // `away_goals` já vêm carregados na query de `matches`, então não
     // precisa de join novo (diferente de escanteios/chutes por time, que
@@ -208,6 +233,16 @@ export function calcularResultadosReais(matches, extras = {}) {
       const l = linha.toFixed(1);
       resultado[`over_under_team_1_${l}`] = m.home_goals > linha ? 'over' : 'under';
       resultado[`over_under_team_2_${l}`] = m.away_goals > linha ? 'over' : 'under';
+    }
+    for (const linha of LINHAS_GOLS_OU) {
+      resultado[`over_under_${linha.toFixed(1)}`] = total > linha ? 'over' : 'under';
+    }
+    // Handicap asiático (mesma convenção de `distribuicoesMercados.js`/
+    // `mercadosDeGols`): margem = placar - handicap aplicado ao mandante.
+    // `push` só é possível em linha inteira (margem exatamente 0).
+    for (const linha of LINHAS_HANDICAP_OU) {
+      const margem = (m.home_goals - m.away_goals) + linha;
+      resultado[`handicap_${linha.toFixed(1)}`] = margem > 0 ? 'home' : margem < 0 ? 'away' : 'push';
     }
     porMatch[m.id] = resultado;
   }
