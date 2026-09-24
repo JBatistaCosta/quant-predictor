@@ -38,10 +38,17 @@ jobs:
       - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Node 20
+      - name: Configurar Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # ACHADO REAL (1º run do workflow, falhou em ~14s): `@supabase/
+          # supabase-js@2.110.2` inicializa um RealtimeClient no
+          # `createClient()` que exige `WebSocket` nativo -- ausente no
+          # Node 20 ("Node.js detected but native WebSocket not found"),
+          # nativo só a partir do Node 22. Node 20 funciona pra tudo mais
+          # nesse repo (Vite/frontend, que roda no browser), só este script
+          # instancia o client em Node puro.
+          node-version: "22"
           cache: "npm"
 
       - name: Instalar dependências
