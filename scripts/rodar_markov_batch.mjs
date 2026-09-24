@@ -207,16 +207,18 @@ function clamp(p) {
 }
 
 // Monta as linhas de `model_predictions` pra uma partida a partir da saída
-// de `runMarkovSimulation`. `fair_odds` é calculado a partir da MESMA
-// probabilidade já clampada que vai pra `probability` -- calcular um a
-// partir do valor bruto e o outro do clampado deixaria os dois campos
-// inconsistentes (achado da própria sessão de planejamento desta fase).
+// de `runMarkovSimulation`. `fair_odds` NÃO é enviado: é coluna GERADA
+// (`GENERATED ALWAYS AS (round(1.0/NULLIF(probability,0), 3)) STORED`,
+// migration 20260817023000) -- Postgres calcula sozinho a partir da MESMA
+// `probability` já clampada que é gravada, e rejeita qualquer valor
+// explícito (`428C9 cannot insert a non-DEFAULT value`). Achado real do
+// 1º smoke test desta fase.
 function montarLinhasPredicao(matchId, resultado) {
   const linhas = [];
   const agora = new Date().toISOString();
   const linha = (market, selection, pBruto) => {
     const p = clamp(pBruto);
-    linhas.push({ match_id: matchId, model_name: MODEL_NAME, market, selection, probability: p, fair_odds: +(1 / p).toFixed(4), created_at: agora });
+    linhas.push({ match_id: matchId, model_name: MODEL_NAME, market, selection, probability: p, created_at: agora });
   };
 
   for (let i = 0; i < 7; i++) {
