@@ -281,6 +281,83 @@ describe('runMarkovSimulation -- linhasOverUnder/overUnder (Fase 6, job em lote)
   });
 });
 
+describe('runMarkovSimulation -- escanteioDispR/faltaDispR (Fase 6.2, mistura Poisson-Gamma)', () => {
+  // Reconstrói média e variância da distribuição simulada via diferenças
+  // finitas de P(X>linha) -- P(X=k) = P(X>k-0.5) - P(X>k+0.5) -- mesma
+  // técnica usada na investigação real desta fase (ver plano da sessão).
+  function meanEVariancia(over, kMax) {
+    let mean = 0, meanSq = 0;
+    for (let k = 0; k <= kMax; k++) {
+      const pMaior = k === 0 ? 1 : over[(k - 0.5).toFixed(1)];
+      const pMaiorSeguinte = over[(k + 0.5).toFixed(1)] ?? 0;
+      const pk = pMaior - pMaiorSeguinte;
+      mean += k * pk;
+      meanSq += k * k * pk;
+    }
+    return { mean, variance: meanSq - mean * mean };
+  }
+
+  function rodar(entradaExtra) {
+    const linhasEscanteios = [];
+    for (let l = 0.5; l <= 25.5; l++) linhasEscanteios.push(l);
+    const linhasFaltas = [];
+    for (let l = 0.5; l <= 45.5; l++) linhasFaltas.push(l);
+    const r = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 },
+      escanteio: { taxa1: 5.5, taxa2: 4.5 },
+      falta: { taxa1: 13, taxa2: 12 },
+      dynamics: false,
+      simCount: 30000,
+      linhasOverUnder: { escanteios: linhasEscanteios, faltas: linhasFaltas },
+      ...entradaExtra,
+    });
+    return {
+      escanteio: meanEVariancia(r.overUnder.escanteios, 25),
+      falta: meanEVariancia(r.overUnder.faltas, 45),
+    };
+  }
+
+  it('sem escanteioDispR/faltaDispR, var/mean fica em torno de 1 (Binomial(90,p) de base, sem mistura) -- comportamento idêntico ao de antes desta opção existir', () => {
+    const { escanteio, falta } = rodar({});
+    expect(escanteio.mean).toBeCloseTo(10, 0);
+    expect(escanteio.variance / escanteio.mean).toBeLessThan(1.02);
+    expect(falta.mean).toBeCloseTo(25, 0);
+    expect(falta.variance / falta.mean).toBeLessThan(1.02);
+  });
+
+  it('com escanteioDispR/faltaDispR, a variância aumenta na direção certa sem deslocar a média (mistura de média 1)', () => {
+    const semMistura = rodar({});
+    const comMistura = rodar({ escanteioDispR: 30, faltaDispR: 20 });
+    // Média preservada -- tolerância larga por ser Monte Carlo.
+    expect(comMistura.escanteio.mean).toBeCloseTo(semMistura.escanteio.mean, 0);
+    expect(comMistura.falta.mean).toBeCloseTo(semMistura.falta.mean, 0);
+    // Variância aumenta de verdade -- o ponto inteiro da mudança (Causa 2,
+    // achado da investigação: escanteio/falta reais são overdispersos e o
+    // motor sem mistura produz variância BAIXA DEMAIS pra isso).
+    expect(comMistura.escanteio.variance).toBeGreaterThan(semMistura.escanteio.variance * 1.05);
+    expect(comMistura.falta.variance).toBeGreaterThan(semMistura.falta.variance * 1.1);
+  });
+
+  it('dispR mais baixo (overdispersão real mais forte) produz variância maior que dispR alto (overdispersão fraca) -- monotonicidade do parâmetro', () => {
+    const comDispRAlto = rodar({ escanteioDispR: 100 });
+    const comDispRBaixo = rodar({ escanteioDispR: 10 });
+    expect(comDispRBaixo.escanteio.variance).toBeGreaterThan(comDispRAlto.escanteio.variance);
+  });
+
+  it('escanteioDispR não afeta a distribuição de gols/1X2/outros mercados (isolamento -- só escanteio/falta usam esse multiplicador)', () => {
+    const semDispR = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 }, escanteio: { taxa1: 5.5, taxa2: 4.5 },
+      dynamics: false, simCount: 20000,
+    });
+    const comDispR = runMarkovSimulation({
+      gols: { lambda1: 1.5, lambda2: 1.2 }, escanteio: { taxa1: 5.5, taxa2: 4.5 },
+      dynamics: false, simCount: 20000, escanteioDispR: 15,
+    });
+    expect(comDispR.probWin1 + comDispR.probDraw + comDispR.probWin2).toBeCloseTo(1, 10);
+    expect(Math.abs(comDispR.probWin1 - semDispR.probWin1)).toBeLessThan(0.03);
+  });
+});
+
 describe('runMarkovSimulation -- btts/dupla_chance (sempre computados, precisão total)', () => {
   it('dupla_chance é sempre aritmética exata de 1X2 (soma os pares corretos)', () => {
     const r = runMarkovSimulation({ gols: { lambda1: 1.8, lambda2: 1.1 }, dynamics: false, simCount: 20000 });

@@ -44,6 +44,52 @@ function clamp01(x) {
   return x;
 }
 
+// Amostra de Gamma(shape, rate=shape) por Marsaglia-Tsang (2000) -- válido
+// pra shape>=1 (todo `disp_r` real calibrado neste projeto é >=10, ver
+// DISP_R_PADRAO_POR_STAT em api/corners-model.js: corners=70,57, faltas=40).
+// Usada pra misturar Poisson sobre Gamma(shape=disp_r,rate=disp_r) (média 1)
+// -- resulta em Binomial Negativa(média, disp_r) no agregado, a MESMA família
+// que api/corners-model.js já usa em produção pra escanteio/falta (ver
+// getMultiplicadorDispersao abaixo pro porquê disso ser necessário).
+function amostraGamma(shape, rng) {
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x, v;
+    do {
+      const u1 = rng(), u2 = rng();
+      x = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = rng();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+// Multiplicador de "intensidade da partida" pra escanteio/falta -- sorteado
+// UMA VEZ por simulação (não por minuto), aplicado igual nos 2 times (o
+// disp_r de produção é calibrado sobre o TOTAL da partida, não por time).
+// ACHADO REAL (investigação desta sessão, Fase 6.2): escanteio/falta são
+// sorteados hoje como Bernoulli independente por minuto com taxa FIXA por
+// partida -- isso converge pra Binomial(90,p), que é estruturalmente ≤
+// Poisson em variância (var/mean medido empiricamente ~0,90-0,95), enquanto
+// escanteios/faltas REAIS são overdispersos (var/mean real medido via SQL:
+// ~1,11-1,48 pra escanteio, ~1,04-1,61 pra falta, em TODAS as ligas com
+// amostra grande) -- essa subdispersão estrutural é a Causa 2 do gap de
+// log-loss do motor de Markov vs. hibrido_gols_v1 em corners_over_under_9.5
+// (item 11 de CONTEXTO_PROJETO.md), presente mesmo em ligas domésticas com
+// dado abundante e sem fome de walk-forward. Misturar sobre Gamma(disp_r)
+// aqui reproduz a MESMA Binomial Negativa que api/corners-model.js já
+// calibra em produção pra esses 2 stats -- reaproveita o disp_r já existente
+// em league_model_params, sem calibração nova. `null`/omitido preserva o
+// comportamento de hoje (sem mistura, sem regressão pra quem não passar).
+function multiplicadorDispersao(dispR, rng) {
+  if (!Number.isFinite(dispR) || dispR <= 0) return 1;
+  return amostraGamma(dispR, rng) / dispR;
+}
+
 // Bucket de minuto — ramificação direta em vez de escanear MINUTE_BINS a
 // cada chamada (roda dentro do laço mais quente do motor, uma vez por
 // time por minuto por simulação).
@@ -168,6 +214,8 @@ function proximoUltimoEvento(atual, minuto, { vermelhoProprio, vermelhoContra, g
  * @param {{total?:number[], time1?:number[], time2?:number[]}} [entrada.linhasOverUnderGols] - Linhas O/U de GOLS (total da partida e por time), mesmo padrão/motivo de `linhasOverUnder` acima -- opcional, só pro job em lote.
  * @param {number[]} [entrada.linhasHandicap] - Linhas de handicap ASIÁTICO aplicado ao mandante (`margem = g1-g2+linha`; `margem>0`=mandante cobre, `margem=0`=push, `margem<0`=visitante cobre) -- mesma convenção de `distribuicoesMercados.js`/`mercadosDeGols`. Opcional, só pro job em lote.
  * @param {number} [entrada.heatGridSize] - Tamanho do lado de `heatGrid` (placares de 0 a `heatGridSize-1` por time). Default 7 (placar 0-6, contrato já consumido pela UI) -- o job em lote passa um valor maior pra ter uma grade de auditoria mais completa (ver `scripts/rodar_markov_batch.mjs`); `probWin1`/`probDraw`/`probWin2`/`btts`/`dupla_chance` NUNCA são afetados pelo tamanho da grade (tally direto de `g1`/`g2` por simulação, sem corte).
+ * @param {number} [entrada.escanteioDispR] - `disp_r` calibrado da Binomial Negativa de escanteio (`league_model_params`, `stat='corners'`) -- ver `multiplicadorDispersao` acima pro porquê (Fase 6.2: escanteio real é overdisperso, sorteio por minuto com taxa fixa não reproduz isso). Ausente/omitido = sem mistura, comportamento idêntico ao de antes desta opção existir.
+ * @param {number} [entrada.faltaDispR] - Idem, pra falta (`league_model_params`, `stat='faltas'`).
  * @returns {object} `{ probWin1, probDraw, probWin2, btts, dupla_chance, topScores, minuteDistribution, heatGrid, heatMin, heatMax, cartoes, chutes, escanteios, faltas, overUnder, overUnderGols, handicap }` -- `overUnder`/`overUnderGols`/`handicap` são `null` quando a linha correspondente não foi passada.
  */
 export function runMarkovSimulation(entrada) {
@@ -175,6 +223,7 @@ export function runMarkovSimulation(entrada) {
     gols, chutes = {}, cartaoAmarelo = {}, cartaoVermelho = {}, escanteio = {}, falta = {},
     dynamics = false, simCount, params = {}, minutes = MARKOV_MINUTES, rng = Math.random,
     linhasOverUnder = null, linhasOverUnderGols = null, linhasHandicap = null, heatGridSize = 7,
+    escanteioDispR = null, faltaDispR = null,
   } = entrada;
 
   const { lambda1, lambda2 } = gols;
@@ -235,6 +284,16 @@ export function runMarkovSimulation(entrada) {
     // acumulam o valor esperado através de todas as simulações.
     let cartaoSimTotal = 0, escanteioSimTotal = 0, faltaSimTotal = 0;
 
+    // Multiplicador de intensidade da partida (Fase 6.2) -- sorteado UMA VEZ
+    // por simulação (não por minuto) e aplicado igual nos 2 times durante
+    // toda essa simulação; ver `multiplicadorDispersao` pro porquê. Média 1,
+    // então NÃO desloca `somaEscanteios`/`somaFaltas` (valor esperado
+    // preservado) -- só aumenta a variância entre simulações.
+    const thetaEscanteio = multiplicadorDispersao(escanteioDispR, rng);
+    const thetaFalta = multiplicadorDispersao(faltaDispR, rng);
+    const taxaEscanteioSim = [taxaEscanteio[0] * thetaEscanteio, taxaEscanteio[1] * thetaEscanteio];
+    const taxaFaltaSim = [taxaFalta[0] * thetaFalta, taxaFalta[1] * thetaFalta];
+
     for (let minute = 0; minute < minutes; minute++) {
       const minutoBucket = bucketMinuto(minute);
       const diffPlacar = times[0].gols - times[1].gols;
@@ -281,13 +340,13 @@ export function runMarkovSimulation(entrada) {
         // `getMultiplicador`, então `multiplicadorCombinado` funciona sem
         // ajuste nenhum aqui.
         const multEscanteio = dynamics ? multiplicadorCombinado(params, 'escanteio', ctx) : 1;
-        if (rng() < clamp01(taxaEscanteio[t] * multEscanteio)) {
+        if (rng() < clamp01(taxaEscanteioSim[t] * multEscanteio)) {
           somaEscanteios[t]++;
           escanteioMinuteBins[t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
           escanteioSimTotal++;
         }
         const multFalta = dynamics ? multiplicadorCombinado(params, 'falta', ctx) : 1;
-        if (rng() < clamp01(taxaFalta[t] * multFalta)) {
+        if (rng() < clamp01(taxaFaltaSim[t] * multFalta)) {
           somaFaltas[t]++;
           faltaMinuteBins[t][MINUTE_BINS.findIndex(b => b.label === minutoBucket)]++;
           faltaSimTotal++;

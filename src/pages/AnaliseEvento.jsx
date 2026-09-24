@@ -513,6 +513,10 @@ export default function AnaliseEvento() {
       // no `setMarkovEventRates` (mesmo efeito, sem precisar de um 2º fetch
       // — `stat_esperado` já vem por time nessa resposta, ver Fase 3).
       let escanteioMandante = null, escanteioVisitante = null;
+      // `disp_r` calibrado de escanteio (Fase 6.2) -- mesmo valor já
+      // exibido em `cornersDisp`, capturado aqui de novo pra não depender
+      // do state assíncrono dentro deste mesmo efeito.
+      let escanteioDispRCapturado = null;
 
       const { data: statsData, error: statsErro } = await supabase
         .from('team_stats')
@@ -575,6 +579,7 @@ export default function AnaliseEvento() {
             // de Markov (Fase 3) montar `escanteio` no input — sem 2º fetch.
             escanteioMandante = dadosCorners.escanteios_esperados.mandante;
             escanteioVisitante = dadosCorners.escanteios_esperados.visitante;
+            escanteioDispRCapturado = dadosCorners.modelo.disp_r;
           }
 
           // Modelo misto: λ estimado por ML pra ESTA partida, quando existe.
@@ -637,6 +642,13 @@ export default function AnaliseEvento() {
             escanteio2: escanteioVisitante,
             falta1: dadosFaltas?.stat_esperado?.mandante ?? null,
             falta2: dadosFaltas?.stat_esperado?.visitante ?? null,
+            // Fase 6.2: `disp_r` calibrado de escanteio/falta, pra motor
+            // aplicar a mesma mistura Poisson-Gamma da correção de
+            // subdispersão (ver src/utils/markovEngine.js). `null` = sem
+            // dado calibrado pra esse confronto -- motor cai no
+            // comportamento de antes (sem mistura, sem regressão).
+            escanteioDispR: escanteioDispRCapturado,
+            faltaDispR: dadosFaltas?.modelo?.disp_r ?? null,
           });
           const ligaId = dadosShots?.modelo?.league_id ?? dadosShotsOnTarget?.modelo?.league_id
             ?? dadosAmarelo?.modelo?.league_id ?? dadosVermelho?.modelo?.league_id ?? dadosFaltas?.modelo?.league_id ?? null;
@@ -1247,6 +1259,11 @@ export default function AnaliseEvento() {
       cartaoVermelho: { taxa1: markovEventRates?.cartaoVermelho1 ?? 0, taxa2: markovEventRates?.cartaoVermelho2 ?? 0 },
       escanteio: { taxa1: markovEventRates?.escanteio1 ?? 0, taxa2: markovEventRates?.escanteio2 ?? 0 },
       falta: { taxa1: markovEventRates?.falta1 ?? 0, taxa2: markovEventRates?.falta2 ?? 0 },
+      // Fase 6.2: corrige a subdispersão estrutural do sorteio por minuto
+      // (escanteio/falta reais são overdispersos, ver markovEngine.js) --
+      // `null`/`undefined` preserva o comportamento de antes.
+      escanteioDispR: markovEventRates?.escanteioDispR ?? undefined,
+      faltaDispR: markovEventRates?.faltaDispR ?? undefined,
       dynamics: markovDynamics,
       simCount: markovSimCount,
       params: markovParams,

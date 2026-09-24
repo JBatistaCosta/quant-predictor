@@ -58,6 +58,21 @@ const JANELA_HISTORICO = 10;
 // com 0 ocorrências em 2.000 sims.
 const PROB_MIN = 0.0001, PROB_MAX = 0.9999;
 const TAMANHO_LOTE_UPSERT = 500;
+// Fallback genérico pra liga sem disp_r calibrado -- MESMOS valores de
+// `DISP_R_PADRAO_POR_STAT` em api/corners-model.js (duplicado de propósito,
+// mesmo padrão do resto deste script). Fase 6.2: escanteio/falta são
+// sorteados no motor como Bernoulli independente por minuto, que converge
+// pra Binomial(90,p) -- estruturalmente ≤ Poisson em variância (medido
+// empiricamente var/mean~0,90-0,95). Escanteio/falta REAIS são overdispersos
+// (var/mean real medido via SQL: ~1,11-1,48 escanteio, ~1,04-1,61 falta, em
+// TODAS as ligas com amostra grande) -- essa subdispersão estrutural é a
+// Causa 2 do gap de log-loss do motor vs. hibrido_gols_v1 em
+// corners_over_under_9.5 (item 11 de CONTEXTO_PROJETO.md). `escanteioDispR`/
+// `faltaDispR` (ver markovEngine.js) misturam Poisson sobre Gamma(disp_r)
+// pra reproduzir a MESMA Binomial Negativa que api/corners-model.js já
+// calibra em produção -- reaproveita o disp_r já existente, sem calibração
+// nova.
+const DISP_R_PADRAO_POR_STAT = { corners: 70.57, faltas: 40 };
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -96,21 +111,37 @@ async function buscarTudoPaginado(criarQuery) {
 async function carregarTudo(supabase) {
   console.log('Carregando dados em memória (matches, model_match_estimates, model_stat_estimates, match_stats_fotmob, match_disciplina, league_markov_params)...');
 
-  const [matches, alvos, statEstimates, statsFotmob, disciplina, markovParamsRows] = await Promise.all([
+  const [matches, alvos, statEstimates, statsFotmob, disciplina, markovParamsRows, dispRRows] = await Promise.all([
     buscarTudoPaginado(() => supabase.from('matches').select('id, home_team_id, away_team_id, match_date, league_id, status, home_goals, away_goals')),
     buscarTudoPaginado(() => supabase.from('model_match_estimates').select('match_id, params').eq('model_name', LAMBDA_MODEL_NAME).not('params', 'is', null)),
     buscarTudoPaginado(() => supabase.from('model_stat_estimates').select('match_id, stat, home_expected, away_expected').in('stat', ['corners', 'shots', 'shots_on_target'])),
     buscarTudoPaginado(() => supabase.from('match_stats_fotmob').select('match_id, team_id, corners, total_shots, shots_on_target')),
     buscarTudoPaginado(() => supabase.from('match_disciplina').select('match_id, team_id, faltas_cometidas, cartoes_amarelos, cartoes_vermelhos_equiv, fonte_cartoes')),
     buscarTudoPaginado(() => supabase.from('league_markov_params').select('league_id, evento, tipo, chave, valor')),
+    buscarTudoPaginado(() => supabase.from('league_model_params').select('league_id, stat, param_value').eq('param_name', 'disp_r').in('stat', ['corners', 'faltas'])),
   ]);
 
   console.log(
     `  matches: ${matches.length}, alvos (${LAMBDA_MODEL_NAME}): ${alvos.length}, model_stat_estimates: ${statEstimates.length}, ` +
-    `match_stats_fotmob: ${statsFotmob.length}, match_disciplina: ${disciplina.length}, league_markov_params: ${markovParamsRows.length}`,
+    `match_stats_fotmob: ${statsFotmob.length}, match_disciplina: ${disciplina.length}, league_markov_params: ${markovParamsRows.length}, ` +
+    `league_model_params (disp_r): ${dispRRows.length}`,
   );
 
-  return { matches, alvos, statEstimates, statsFotmob, disciplina, markovParamsRows };
+  return { matches, alvos, statEstimates, statsFotmob, disciplina, markovParamsRows, dispRRows };
+}
+
+// Merge liga-específica + fallback `league_id is null` + fallback genérico
+// hardcoded (DISP_R_PADRAO_POR_STAT) -- mesma prioridade de 3 níveis que
+// `dispRDaLiga()` já usa em api/corners-model.js, replicada aqui (script
+// separado, não importável do endpoint).
+function montarDispRPorLiga(dispRRows) {
+  const porLigaEStat = {};
+  for (const r of dispRRows) porLigaEStat[`${r.league_id}_${r.stat}`] = Number(r.param_value);
+  return function dispR(leagueId, stat) {
+    if (leagueId != null && porLigaEStat[`${leagueId}_${stat}`] != null) return porLigaEStat[`${leagueId}_${stat}`];
+    if (porLigaEStat[`null_${stat}`] != null) return porLigaEStat[`null_${stat}`];
+    return DISP_R_PADRAO_POR_STAT[stat];
+  };
 }
 
 // Stats sem GLM Poisson treinado (fouls/cartão) só têm fonte real
@@ -319,7 +350,7 @@ async function gravarLoteEstimates(supabase, linhas) {
   return linhas.length;
 }
 
-async function processarLote(supabase, alvos, indices, getParams) {
+async function processarLote(supabase, alvos, indices, getParams, getDispR) {
   let processadas = 0, escritas = 0, estimativasEscritas = 0;
   let pendentes = [];
   let pendentesEstimates = [];
@@ -347,6 +378,8 @@ async function processarLote(supabase, alvos, indices, getParams) {
       linhasOverUnderGols: { total: LINHAS_GOLS_OU, time1: LINHAS_GOLS_TIME, time2: LINHAS_GOLS_TIME },
       linhasHandicap: LINHAS_HANDICAP_OU,
       heatGridSize: HEAT_GRID_SIZE_AUDITORIA,
+      escanteioDispR: getDispR(match.league_id, 'corners'),
+      faltaDispR: getDispR(match.league_id, 'faltas'),
     });
 
     pendentes.push(...montarLinhasPredicao(match.id, resultado));
@@ -389,9 +422,10 @@ async function main() {
     if (!paramsCache.has(leagueId)) paramsCache.set(leagueId, montarParamsPorLiga(dados.markovParamsRows, leagueId));
     return paramsCache.get(leagueId);
   };
+  const getDispR = montarDispRPorLiga(dados.dispRRows);
 
   const inicio = Date.now();
-  const { processadas, escritas, estimativasEscritas } = await processarLote(supabase, alvos, indices, getParams);
+  const { processadas, escritas, estimativasEscritas } = await processarLote(supabase, alvos, indices, getParams, getDispR);
   const segundos = ((Date.now() - inicio) / 1000).toFixed(1);
 
   console.log(
