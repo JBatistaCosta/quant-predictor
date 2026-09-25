@@ -67,6 +67,27 @@ LOGGER = logging.getLogger("pricing_pipeline")
 MINUTOS_ESPERADOS_MIN_DEFAULT = 1100.0
 MINUTOS_ESPERADOS_MAX_DEFAULT = 1150.0
 
+# Coeficientes do modulador de força defensiva coletiva do adversário
+# (25/09) -- substitui a GSAx do goleiro (neutralizada, sem sinal, ver
+# `rodar_pricing_pipeline.py`) como fonte de ajuste defensivo da Camada 1.
+# `λ_gols_ajustado = λ_xGOT_ataque · exp(DEF_BETA_XGA·def_residuo_xga_adv +
+# DEF_BETA_XA·def_residuo_xa_adv)` -- log-linear (Dixon-Coles), não aditivo
+# no espaço bruto (a tentativa anterior, aditiva, não sobreviveu fora da
+# amostra). `def_residuo_xga`/`def_residuo_xa` vêm de `dados_historicos.
+# obter_forca_defensiva_atual` (positivo = defesa fraca, concede mais do que
+# o adversário costuma criar). Calibrados via GLM de Poisson com offset
+# (scipy.optimize, log-verossimilhança), treino n=21.895 time-partidas
+# (β_xGA=0,1285 z=6,78; β_xA=0,1685 z=6,39) -- validados FORA da amostra em
+# 4.683 partidas de teste nunca vistas no ajuste: log-loss 1X2 melhora
+# 0,00319 (IC95%=[0,00097;0,00532]), handicap -1,0 melhora 0,00822
+# (IC95%=[0,00567;0,01086]) -- os dois com IC inteiro acima de zero.
+# Handicap -0,5 também significativo; -1,5 melhora mas não é significativo
+# (IC cruza zero). Recalibrar exige rerodar essa validação (script de
+# backtest formal ainda não commitado -- validação feita ad-hoc nesta
+# sessão, ver CONTEXTO_PROJETO.md), não só editar os números abaixo.
+DEF_BETA_XGA = 0.1285
+DEF_BETA_XA = 0.1685
+
 # "5 suplentes mais prováveis de entrar" -- Método 3 (heurística setorial),
 # escolhido entre 3 opções (ver plano da sessão): 1 reserva por papel
 # padrão de substituição, mapeado por `posicao_detalhe` (código FotMob já
@@ -158,6 +179,7 @@ class AgregacaoResultado:
     lambda_alvo_total: float
     lambda_xg_total: float
     lambda_xgot_total: float
+    lambda_xgot_ajustado: float
     lambda_thinning: float
     lambda_gols_xgot: float
     lambda_bottom_up: float
@@ -340,6 +362,23 @@ class PlayerToTeamAggregator:
         lambda_xa = self._coluna_numerica(elenco, "lambda_xa_jogo", avisos)
         return float(np.clip(lambda_xa, 0.0, None).sum())
 
+    # -- modulação pela força defensiva coletiva do adversário -----------------
+    @staticmethod
+    def modular_por_forca_defensiva(lambda_xgot: float, def_residuo_xga: float, def_residuo_xa: float) -> float:
+        """λ_xGOT,ajustado = λ_xGOT · exp(DEF_BETA_XGA·def_residuo_xga +
+        DEF_BETA_XA·def_residuo_xa) -- log-linear (não aditivo no espaço
+        bruto, ver docstring das constantes: a versão aditiva testada antes
+        não sobreviveu fora da amostra). `def_residuo_*` positivo = defesa
+        do adversário mais fraca que a média (concede mais do que times
+        parecidos costumam criar) -> aumenta λ; negativo -> reduz. Sem clip
+        adicional além do `exp` em si (já não deixa o resultado ir a
+        negativo); resíduos observados na validação ficaram em
+        [-3,1; 5,1] (xGA) e [-1,8; 2,8] (xA), então o expoente na prática
+        fica numa faixa segura, mas o resultado é sempre `max(0, ...)` por
+        garantia (mesmo padrão do resto da Camada 1)."""
+        expoente = DEF_BETA_XGA * def_residuo_xga + DEF_BETA_XA * def_residuo_xa
+        return float(max(0.0, lambda_xgot * np.exp(np.clip(expoente, -10.0, 10.0))))
+
     # -- modulação pelo goleiro adversário --------------------------------------
     @staticmethod
     def modular_por_goleiro(lambda_xgot: float, gsax_rate: float) -> float:
@@ -357,9 +396,23 @@ class PlayerToTeamAggregator:
         return float((lambda_chutes * taxa_conversao).sum())
 
     # -- consolidação -----------------------------------------------------------
-    def agregar(self, jogadores: pd.DataFrame, gsax_rate_adversario: float = 0.0) -> AgregacaoResultado:
+    def agregar(
+        self,
+        jogadores: pd.DataFrame,
+        gsax_rate_adversario: float = 0.0,
+        def_residuo_xga_adversario: float = 0.0,
+        def_residuo_xa_adversario: float = 0.0,
+    ) -> AgregacaoResultado:
         """Orquestra as 6 etapas da Camada 1 e devolve
-        λ_bottom-up = 0.5·λ_thinning + 0.5·λ_gols,xGOT."""
+        λ_bottom-up = 0.5·λ_thinning + 0.5·λ_gols,xGOT.
+
+        `def_residuo_xga_adversario`/`def_residuo_xa_adversario` (força
+        defensiva coletiva do time RIVAL, ver `dados_historicos.obter_
+        forca_defensiva_atual` e `modular_por_forca_defensiva`) aplicam
+        ANTES do modulador do goleiro -- o goleiro (`gsax_rate_adversario`,
+        neutralizado/0.0 por padrão desde 25/09, ver `rodar_pricing_
+        pipeline.py`) segue existindo como mecanismo genérico, mas fica
+        inerte quando não passado."""
         elenco = self.selecionar_elenco_provavel(jogadores)
         avisos: list[str] = []
         soma_minutos, minutagem_valida, avisos_minutagem = self.validar_minutagem(elenco)
@@ -367,7 +420,10 @@ class PlayerToTeamAggregator:
 
         lambda_chutes_total, lambda_alvo_total, lambda_xg_total = self.agregar_volume(elenco, avisos)
         lambda_xgot_total = self.agregar_xgot(elenco, avisos)
-        lambda_gols_xgot = self.modular_por_goleiro(lambda_xgot_total, gsax_rate_adversario)
+        lambda_xgot_ajustado = self.modular_por_forca_defensiva(
+            lambda_xgot_total, def_residuo_xga_adversario, def_residuo_xa_adversario
+        )
+        lambda_gols_xgot = self.modular_por_goleiro(lambda_xgot_ajustado, gsax_rate_adversario)
         lambda_thinning = self.afinar_poisson(elenco, avisos)
         lambda_bottom_up = 0.5 * lambda_thinning + 0.5 * lambda_gols_xgot
         lambda_assistencias_total = self.agregar_assistencias(elenco, avisos)
@@ -377,6 +433,7 @@ class PlayerToTeamAggregator:
             lambda_alvo_total=lambda_alvo_total,
             lambda_xg_total=lambda_xg_total,
             lambda_xgot_total=lambda_xgot_total,
+            lambda_xgot_ajustado=lambda_xgot_ajustado,
             lambda_thinning=lambda_thinning,
             lambda_gols_xgot=lambda_gols_xgot,
             lambda_bottom_up=lambda_bottom_up,
