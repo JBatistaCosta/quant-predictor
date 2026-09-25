@@ -1,5 +1,44 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Mercado de assistências — Frente B: a OddsPapi NÃO traz props de jogador de futebol no histórico (6 partidas, 5 competições, 16 casas) nem no sync ao vivo por torneio (bet365, 82 partidas). Último teste pendente: `/v4/odds` por partida, agendado para 09/10 (25/09).** Continuação da entrada logo abaixo (Frente A). Autorização do usuário para 1–2 chamadas pagas; gasta 1 até agora.
+
+- **Ferramenta nova**: `?tarefa=odds-props-descobrir` em `api/model-maintenance.js` (PRs #667/#668). É só diagnóstico: não grava em `odds_market`. Por casa, devolve:
+  - total de mercados, mercados de jogador, jogadores distintos;
+  - tipos/linhas;
+  - amostra do "Player Assists" com o último preço pré-jogo e o `playerName`, este último só para conferência manual do crosswalk.
+
+  Cacheia em `oddspapi_cache` (`props_amostra_*`, `props_ao_vivo_*`, `props_por_partida_*`). Três modos:
+  - `historico` (grátis): `/v4/historical-odds`, 1 partida, casas em lotes de 3.
+  - `ao_vivo` (1 cota): `/v4/odds-by-tournaments`, até 5 torneios × 1 casa.
+  - `por_partida` (1 cota): `/v4/odds`, 1 partida × várias casas.
+- **Qual chamada única traz mais mercados/jogadores** (pergunta do usuário):
+  - Com cota: `/v4/odds-by-tournaments` com 5 torneios × 1 casa. Traz todos os mercados de todas as partidas agendadas de até 5 ligas, mas só 1 casa e só jogo futuro.
+  - O histórico `/v4/historical-odds` é GRÁTIS (não conta na cota), mas vale para 1 partida e no máximo 3 casas por chamada.
+  - Para descobrir cobertura, o histórico ganha: dá para varrer muitas casas sem custo.
+- **Resultado — histórico (grátis): zero mercado de jogador em todas as combinações**:
+
+  | Partida | Casas | Mercados por casa | Mercados de jogador |
+  |---|---|---|---|
+  | Bournemouth × Liverpool (PL, 20/09) | bet365, 1xBet, Unibet, Paddy Power, 888Sport, Ladbrokes, Pinnacle, DraftKings, FanDuel, Coral, Betway, BetMGM (William Hill/SkyBet sem dado) | 34–240 | 0 |
+  | Fulham × Manchester United (PL, 20/09) | bet365, DraftKings, FanDuel | 142–237 | 0 |
+  | Torino × Juventus (Serie A, 24/05) | bet365, DraftKings, FanDuel | 13–116 | 0 |
+  | Lyon × Sparta Praga (UCL, 11/08) | bet365, DraftKings, FanDuel | 77–96 | 0 |
+  | Espanyol × Levante (LaLiga, 16/08) | bet365, 888Sport, Unibet | 85–181 | 0 |
+  | Corinthians × Cruzeiro (Brasileirão, 16/08) | Betano BR, Superbet BR, bet365 | 68–286 | 0 |
+
+  Várias dessas casas (bet365, DraftKings, FanDuel) vendem props de jogador de futebol no próprio site. A OddsPapi guarda centenas de mercados de time delas e nenhum de jogador. **O histórico da OddsPapi não serve para backtest de props de futebol (pelo menos no nosso plano).** Isso contradiz o blog oficial ([Player Props API](https://oddspapi.io/blog/player-props-api-nfl-nba-mlb-odds-python/)), que diz que o histórico traz props. Os exemplos do blog são só de NFL/NBA/MLB.
+- **Resultado — sync ao vivo por torneio (1 chamada de cota)**: bet365 × Premier League, LaLiga, Serie A, Bundesliga e Ligue 1 (`tournamentIds=17,8,23,35,34`) = 82 partidas agendadas, de 62 a 131 mercados cada, **zero mercado de jogador**.
+  - Ressalva: todas as partidas eram de 09/10 em diante (data FIFA), e casas costumam abrir props só 1–2 dias antes do jogo.
+- **Achados operacionais** (já no comentário da tarefa):
+  - `betfair-spb` (Betfair Sportsbook) é **bloqueada no nosso plano** (HTTP 403 "Restricted bookmaker(s)").
+  - O rate-limit de `/v4/historical-odds` pediu ~4s entre chamadas (HTTP 429 com 1,5s); a pausa entre lotes passou para 5s.
+  - O catálogo `markets` lista, para futebol, props de jogador de assistência, chutes, chutes ao gol, gols (anytime/primeiro/último), cartões, faltas, impedimentos, desarmes e defesas. **Estar no catálogo não significa que alguma casa publica.**
+- **Pendente (agendado via `send_later` para 09/10 09:00 UTC)**: 1 chamada paga em `?tarefa=odds-props-descobrir&modo=por_partida&fixture_id=id1000001772221308` (Manchester United × Tottenham, 10/10 16:30 UTC, a partida com mais mercados na bet365: 131), com 10 casas. É o endpoint que o blog oficial usa para props.
+  - **Se vier prop de assistência**: a OddsPapi só serve para coleta AO VIVO. O histórico para backtest terá de ser montado por nós, jogo a jogo, e o backtest da Frente A contra odds reais fica para depois de semanas de coleta. Mais o crosswalk manual `player_id` OddsPapi → `players`.
+  - **Se vier zero**: a OddsPapi sai da Frente B. Próximo passo seria avaliar outra fonte de odds de props (conferir o catálogo antes de gastar cota).
+
+---
+
 **Mercado de assistências — Frente A: P(jogador dá ≥1 assistência), derivada do xA previsto walk-forward, bate 4 baselines fora da amostra com IC95% inteiro abaixo de zero e sai bem calibrada depois de calibrar. Ainda NÃO prova edge contra as casas: isso depende das odds reais (Frente B, não iniciada) (25/09).** Primeiro passo do direcionamento para a PR #656 (entrada abaixo). Script: `arquivos_do_claude/validar_assistencia_jogador_walkforward.py`, rodado de ponta a ponta contra o banco (chave pública, só leitura).
 
 - **Por que por jogador, e não por time**: o catálogo de mercados da OddsPapi já está em cache (`oddspapi_cache`, chave `markets`, sem gastar cota).
