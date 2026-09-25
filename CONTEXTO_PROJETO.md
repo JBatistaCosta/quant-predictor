@@ -1,5 +1,120 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Calibração bivariada do λ da produção (λ* = α·λ^γ·λ_adv^δ·e^{β_mando·is_home}) + interação mando × favoritismo + deriva temporal do mando. Fecha a frente de pós-calibração interna do λ: as transformações globais NÃO corrigem 1X2 nem Handicap -1.0. A versão bivariada SEM mando é a especificação recomendada SÓ para mercados de totais. Nada aplicado em produção (25/09).** Continuação direta da entrada abaixo (calibração de potência univariada). Tudo sai de `arquivos_do_claude/calibrar_potencia_lambda.py`, estendido nesta rodada (`--todos-decis` imprime os 10 decis). Mesma amostra: treino = 21.816 linhas time-partida com λ do adversário (10.908 partidas antes de 2025-06-01; 79 das 21.895 linhas não têm o λ do adversário). Teste = 4.674 partidas. Matriz Dixon-Coles estática com ρ real e bootstrap pareado com 2.000 reamostragens.
+
+- **Ajuste no treino** (GLM de Poisson, `ln λ* = μ + γ·ln λ + δ·ln λ_adv [+ β_mando·is_home]`):
+
+  | Parâmetro | Com mando | Sem mando |
+  |---|---|---|
+  | α = e^μ | 1,1079 | 1,1579 |
+  | γ (λ próprio) | 0,6881 (SE 0,0211) | 0,7067 (SE 0,0209) |
+  | δ (λ do adversário) | -0,1484 (SE 0,0213, z -6,96) | -0,1728 (SE 0,0211, z -8,21) |
+  | β_mando | +0,0834 (SE 0,0122, z +6,85; ×1,087) | — |
+  | **γ−δ** (elasticidade da DIFERENÇA) | **0,8365** [0,797; 0,876], z(=1) -8,17 | 0,8795 [0,842; 0,917], z -6,34 |
+  | **γ+δ** (elasticidade da SOMA) | **0,5397** [0,466; 0,613], z(=1) -12,31 | 0,5339 [0,461; 0,607], z -12,47 |
+
+  **Testes de razão de verossimilhança (LRT):**
+  - δ=0 (bivariada sem mando contra univariada): 67,2 (1 df, p=2·10⁻¹⁶).
+  - Bivariada com mando contra a univariada da PR #664: 114,2 (2 df, p=1,6·10⁻²⁵).
+  - β_mando=0: 47,0 (1 df, p=7·10⁻¹²).
+
+  Leitura: dentro da amostra, o λ da produção exagera a diferença de força (um λ relativo 10% maior vale só ≈8,4% a mais de gols) e exagera mais ainda o nível total do jogo (γ+δ≈0,54).
+- **Fora da amostra — O/E (observado ÷ esperado) nos decis de Δλ, com meta [0,98; 1,02]** (o decil é definido pelo λ da produção):
+
+  | Versão | Decil 1 (mand. / vis.) | Decil 10 (mand. / vis.) | Extremos: favorito / azarão | z do push no Handicap -1.0 |
+  |---|---|---|---|---|
+  | Produção | 1,063 / 0,939 | 0,975 / 1,084 | 0,959 / 1,073 | +2,06 |
+  | Univariada global (PR #664) | 0,988 / 0,999 | 1,078 / 0,971 | 1,042 / 0,980 | +1,98 |
+  | Bivariada com mando | 0,980 / 1,054 | **1,039** / 1,054 | 1,046 / 1,012 | +1,05 |
+  | Bivariada sem mando | 1,037 / 0,994 | **1,057** / 1,034 | 1,029 / 1,036 | +2,00 |
+
+  Nenhuma versão coloca o decil 10 dentro da faixa. Com mando, o mandante fica em 0,89–0,96 nos decis 4 a 9 e sobe para 1,039 no decil 10. Esse padrão irregular é efeito da deriva do mando (abaixo), não de dispersão.
+- **Fora da amostra — Δ perda contra a produção** (IC95%):
+
+  | Mercado | Produção | Univariada (PR #664) | Bivariada com mando | **Bivariada sem mando** |
+  |---|---|---|---|---|
+  | 1X2 | 1,0262 | -0,0006 [-0,003; +0,002] | +0,0000 [-0,002; +0,002] | -0,0002 [-0,002; +0,001] |
+  | Handicap -1.0 | 0,9434 | -0,0011 [-0,003; +0,001] | +0,0016 [-0,0003; +0,0036] | -0,0005 [-0,002; +0,001] |
+  | Over/Under 2.5 | 0,6857 | -0,0020 [-0,0033; -0,0007] | -0,0029 [-0,0057; -0,0003] | **-0,0030** [-0,0057; -0,0004] |
+  | BTTS | 0,6907 | -0,0034 [-0,0047; -0,0022] | -0,0043 [-0,0064; -0,0023] | **-0,0045** [-0,0066; -0,0024] |
+  | Team total O/U 1.5 (média dos 2 lados) | 0,6442 | -0,0021 [-0,0033; -0,0008] | -0,0027 [-0,0043; -0,0011] | **-0,0027** [-0,0042; -0,0013] |
+  | Gols por time (NLL Poisson) | 2,9119 | -0,0065 [-0,0096; -0,0035] | -0,0085 [-0,0124; -0,0046] | **-0,0095** [-0,0131; -0,0061] |
+
+  **Bivariada sem mando contra a univariada da PR #664**, comparação direta (bootstrap pareado):
+  - Só gols por time é significativo: -0,0030 [-0,0050; -0,0009].
+  - O/U 2.5: -0,0011 [-0,0026; +0,0005].
+  - BTTS: -0,0010 [-0,0022; +0,0002].
+  - Team total 1.5: -0,0006 [-0,0015; +0,0002].
+
+  As duas batem a produção nos totais. Nos mercados binários, a bivariada é só marginalmente melhor que a univariada, e a diferença não é significativa.
+
+**1. Deriva temporal do mando (mudança de regime).**
+
+(Σgols/Σλ_prod) do mandante ÷ o mesmo do visitante, por temporada (julho→junho):
+
+| Temporada | 2021/22 | 2022/23 | 2023/24 | 2024/25 | Teste (≥ 2025-06) |
+|---|---|---|---|---|---|
+| Razão mandante ÷ visitante | 1,096 | **1,140** | 1,053 | **0,982** | 0,989 |
+| n de linhas do mandante | 2.023 | 2.553 | 2.782 | 3.593 | 4.700 |
+
+Até 2023/24, o λ da produção subestimava o mandante em 5–14%. A partir de 2024/25, deixou de subestimar. Por isso o β_mando=+0,083 aprendido no treino (média ponderada das temporadas antigas) piora o fora da amostra: é o único motivo de a bivariada com mando perder para a sem mando no Handicap (+0,0016 contra -0,0005) e no decil 10.
+
+A causa da mudança não foi investigada. Há duas candidatas, ainda não testadas:
+- mudança na mistura de ligas por temporada;
+- mudança no próprio `lambda_xg_jogo`, que já tem mando como feature do CatBoost e é re-treinado por temporada.
+
+**Regra de arquitetura (decisão do usuário):**
+- Proibido usar parâmetro ESTÁTICO de vantagem de campo (constante única estimada em janela longa) em qualquer camada de pós-calibração do λ.
+- Se um termo de mando voltar a ser usado, tem de ser adaptativo, por exemplo um EWM do O/E mandante÷visitante defasado (walk-forward, sem vazamento), no mesmo padrão `.ewm()` de `dados_historicos.py`.
+- Nesse caso, precisa ser validado fora da amostra como qualquer outro termo.
+
+**2. Interação mando × favoritismo (teste de saturação) — REJEITADA.**
+
+Modelo: `+ β_inter·is_home·(Δ − média_Δ)`, com Δ = ln λ − ln λ_adv.
+- Nas linhas time-partida empilhadas, Δ é antissimétrico (cada partida entra com +Δ e −Δ), então média_Δ = 0 por construção e exp(β_mando+β_inter·Δ) vale com Δ cru.
+- Para referência, a média de Δ só nos mandantes é +0,196.
+
+Resultado:
+- β_inter = **+0,0139** (SE 0,0202, z +0,69, p=0,49).
+- β_mando = +0,0818 (SE 0,0124).
+- LRT contra a bivariada aditiva com mando (o modelo aninhado de 1 df; a univariada da PR #664 não tem δ nem mando): **0,47 (p=0,49)**.
+
+Multiplicador efetivo de mando e^{β_mando+β_inter·Δ}:
+
+| Δ | -1,0 (super-azarão) | -0,5 | 0,0 (equilibrado) | +0,5 | +1,0 (super-favorito) |
+|---|---|---|---|---|---|
+| Multiplicador | 1,070 [1,018; 1,126] | 1,078 [1,042; 1,115] | 1,085 [1,059; 1,112] | 1,093 [1,062; 1,124] | 1,100 [1,055; 1,148] |
+
+Os ICs se sobrepõem por completo. Dentro da resolução destes dados, o fator campo é multiplicativo e constante: não beneficia desproporcionalmente azarões nem super-favoritos, e não há sinal de saturação.
+
+Pelo protocolo (p<0,05 no LRT), a interação não iria para o fora da amostra. Rodada mesmo assim: é indistinguível da bivariada com mando (1X2 -0,0000; Handicap +0,0016 [-0,0003; +0,0035]; decil 10 do mandante 1,034; extremos 1,045/1,012). Ressalva: o multiplicador ainda carrega a deriva do item 1, porque é o mando MÉDIO das temporadas de treino.
+
+**3. Fronteira das transformações globais de λ — frente ENCERRADA (decisão do usuário).**
+- Potência univariada, bivariada com e sem mando e interação têm todas ganho nulo no 1X2 (todo IC cruza zero, |Δ|≤0,0006) e no Handicap -1.0 (|Δ|≤0,0016, todo IC cruza zero).
+- Isso é coerente com a decomposição nível × forma registrada abaixo (Handicap -1.0, 1.397 partidas com odds reais de fechamento): a distância para o mercado é +0,0317 [+0,022; +0,042] de log-loss no λ da produção (+0,0233 no `hibrido_gols_v1`). A forma da matriz responde por só -0,0026, não significativo.
+- Uma transformação monotônica global de λ (mesma função para todas as partidas) comprime ou expande a dispersão média, mas não reordena partidas nem acrescenta informação de uma partida específica. O gap contra o mercado é justamente de informação partida a partida (ranking de quem é mais forte naquele jogo), que o mercado tem e o λ não.
+- **Não abrir nova tentativa de bater mercados direcionais (1X2, handicap) por pós-calibração puramente interna do λ.** Só volta a valer a pena com INFORMAÇÃO NOVA entrando no λ (não uma função do próprio λ), e sempre validada contra o mercado sem vig com IC95%.
+
+**4. Homologação para mercados de totais (decisão do usuário).**
+- Especificação recomendada, exclusivamente para Over/Under de gols, team totals/gols por time e BTTS: **bivariada sem mando com os parâmetros do SEU PRÓPRIO ajuste — α=1,1579, γ=0,7067, δ=-0,1728, sem β_mando**.
+- ⚠️ Não é "γ=0,688, δ=-0,148 com β_mando=0". Esses valores são do ajuste COM mando. Zerar o β_mando sem re-ajustar tira ≈8,7% do λ do mandante e deixa α/γ/δ fora do ótimo. É outro modelo, nunca avaliado fora da amostra.
+- Ganhos fora da amostra contra a produção (tabela acima), todos com IC inteiro abaixo de zero: O/U 2.5 -0,0030, BTTS -0,0045, team total 1.5 -0,0027, gols por time -0,0095.
+- **Status: recomendada, NÃO aplicada em produção.**
+  - Não entra em 1X2/handicap/placar exato (item 3).
+  - Antes de qualquer uso para aposta, ainda precisa bater as odds reais de O/U/BTTS sem vig com IC95% (o mesmo portão proposto na entrada abaixo). Os ganhos acima são contra a PRÓPRIA produção, não contra o mercado.
+  - Os parâmetros foram estimados até 2025-06. Recalibrar exige rerodar o script, não só editar números.
+
+**5. Direcionamento estratégico (decisão do usuário): foco volta para o mercado de assistências (PR #656).** Contexto factual, para não inflar a evidência:
+- O "104/104" é da **PR #654**: no walk-forward formal, o `lambda_xa_jogo` por jogador bate o baseline EWMA em RMSE em 104 de 104 grupos liga×temporada. Isso prova que a PREVISÃO de xA tem sinal. **Não é** uma medida de assimetria/edge contra casas de aposta.
+- Hoje o mercado de assistências (PR #656) **não tem odds no sistema nem resolução de resultado real ligada** (entrada "GSAx neutralizado…" abaixo). Nenhum edge contra casa recreativa ou sharp foi medido ainda.
+- A premissa estratégica (props de jogador são menos eficientes que o handicap da Pinnacle) é plausível e comum na literatura, mas ainda é hipótese.
+- Próximos passos concretos da frente:
+  1. Fonte de odds de assistência, com 1–2 chamadas de descoberta antes de qualquer parser (convenção de APIs pagas).
+  2. Ligar a resolução em `api/_lib/resultadosReais.js` via `match_player_stats_fotmob.assists`.
+  3. Backtest contra odds reais com IC95%.
+
+---
+
 **Calibração de potência do λ da produção (λ* = α·λ^γ): γ≈0,81, muito abaixo de 1 e estável no tempo — melhora gols por time e Over/Under 2.5 fora da amostra, mas NÃO melhora 1X2 nem Handicap -1.0, e corrige demais o favorito nos decis extremos. Não aplicado em produção (25/09).** Pedido do usuário depois do diagnóstico acima (gap contra o mercado é de nível do λ). Script: `arquivos_do_claude/calibrar_potencia_lambda.py`.
 
 - **Dados**: treino = **21.895 observações time-partida** (10.987 partidas, antes de 2025-06-01 — não 21.895 partidas/43.790 observações, como o pedido supunha); teste = 4.674 partidas a partir de 2025-06-01 com ρ real. λ da produção = λ_xGOT × exp(β_xGA·def_xga_adv + β_xA·def_xa_adv) (PR #657). **Proveniência do λ_xGOT confirmada por SQL**: é exatamente `Σ max(lambda_xg_jogo, 0)` de `player_match_walkforward` com `fonte_titular='previsto'` (6/6 amostras batem até a 4ª casa).
