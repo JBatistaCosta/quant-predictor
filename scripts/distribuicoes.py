@@ -340,6 +340,71 @@ def mercados_de_escanteios(
 
 
 # ---------------------------------------------------------------------------
+# Assistências: Poisson por time, independente entre os lados
+# ---------------------------------------------------------------------------
+MAX_ASSISTENCIAS = 10
+
+
+def mercados_de_assistencias(
+    lambda_mandante: float,
+    lambda_visitante: float,
+    linhas_por_time: tuple[float, ...] = (0.5, 1.5, 2.5),
+    linhas_totais: tuple[float, ...] = (1.5, 2.5, 3.5),
+    max_valor: int = MAX_ASSISTENCIAS,
+) -> dict[tuple[str, str], float]:
+    """Mercado de assistências por time e total, a partir de λ_assistências
+    por time (soma de `lambda_xa_jogo` do elenco provável -- ver
+    `pricing_pipeline.PlayerToTeamAggregator.agregar_assistencias`).
+
+    Mercado NOVO (25/09), sem odds no sistema hoje -- existe pra deixar a
+    previsão pronta e comparável assim que uma fonte de odds de
+    assistência aparecer, mesmo padrão de "gravar mesmo sem poder validar
+    ainda" já usado por `dupla_chance` (ver `CONTEXTO_PROJETO.md`, achado
+    "xA tem sinal real"). `match_player_stats_fotmob.assists` já existe
+    como resultado real -- ao contrário de `dupla_chance`, este mercado
+    TEM como ser resolvido (`api/_lib/resultadosReais.js`), só falta ligar
+    quando/se `backtest-betting.js`/`model-stats.js` forem usados pra
+    avaliar de verdade.
+
+    Poisson puro por time, SEM correlação entre os lados modelada --
+    diferente de gols (ρ de Dixon-Coles) e escanteios (split Beta-
+    Binomial), não há achado no projeto sustentando uma correlação
+    assistência-a-assistência entre os times; tratar como independente é
+    a simplificação honesta até isso ser investigado. Poisson (não
+    Binomial Negativa) porque assistências reais medem var/média ≈ 1,11
+    (52.063 time-partidas via `match_player_stats_fotmob.assists`, SQL
+    exploratório) -- perto o bastante de 1 pra não justificar a dispersão
+    extra que escanteios/faltas precisam (var/média 1,1-1,6 lá).
+    """
+    saida: dict[tuple[str, str], float] = {}
+
+    p_casa = poisson.pmf(np.arange(max_valor + 1), max(lambda_mandante, 0.0))
+    p_casa = p_casa / p_casa.sum()
+    p_fora = poisson.pmf(np.arange(max_valor + 1), max(lambda_visitante, 0.0))
+    p_fora = p_fora / p_fora.sum()
+    acumulado_casa, acumulado_fora = np.cumsum(p_casa), np.cumsum(p_fora)
+    for linha in linhas_por_time:
+        corte = int(np.floor(linha))
+        p_over_casa = float(1.0 - acumulado_casa[corte])
+        p_over_fora = float(1.0 - acumulado_fora[corte])
+        saida[(f"assistencias_team_1_over_under_{rotulo_linha(linha)}", "over")] = p_over_casa
+        saida[(f"assistencias_team_1_over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over_casa
+        saida[(f"assistencias_team_2_over_under_{rotulo_linha(linha)}", "over")] = p_over_fora
+        saida[(f"assistencias_team_2_over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over_fora
+
+    # Soma de duas Poisson é Poisson (exato, sem precisar de convolução).
+    p_total = poisson.pmf(np.arange(max_valor + 1), max(lambda_mandante, 0.0) + max(lambda_visitante, 0.0))
+    p_total = p_total / p_total.sum()
+    acumulado_total = np.cumsum(p_total)
+    for linha in linhas_totais:
+        p_over = float(1.0 - acumulado_total[int(np.floor(linha))])
+        saida[(f"assistencias_over_under_{rotulo_linha(linha)}", "over")] = p_over
+        saida[(f"assistencias_over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over
+
+    return saida
+
+
+# ---------------------------------------------------------------------------
 # Estimação dos parâmetros que o ML NÃO estima
 # ---------------------------------------------------------------------------
 # λ vem do ML (um GBM com perda de Poisson por equipe). ρ, a dispersão e o

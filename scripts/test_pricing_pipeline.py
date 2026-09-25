@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 import backtest_kelly as bk
+import distribuicoes as dist
 import pricing_pipeline as pp
 
 # ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ def _linha_jogador(**kwargs) -> dict:
         "posicao_detalhe": "ST", "minutos_esperados": 90.0,
         "lambda_chutes_jogo": 2.0, "lambda_chutes_no_alvo_jogo": 0.8,
         "lambda_xg_jogo": 0.3, "taxa_conversao_bayesiana": 0.15,
-        "delta_shooting": 0.0,
+        "delta_shooting": 0.0, "lambda_xa_jogo": 0.1,
     }
     base.update(kwargs)
     return base
@@ -186,6 +187,26 @@ class TestPlayerToTeamAggregator:
         resultado = pp.PlayerToTeamAggregator().agregar(elenco)
         esperado = 0.5 * resultado.lambda_thinning + 0.5 * resultado.lambda_gols_xgot
         assert resultado.lambda_bottom_up == pytest.approx(esperado)
+
+    def test_agregar_assistencias_soma_o_elenco_inteiro(self):
+        # 16 jogadores (11 titulares + 5 reservas do Método 3), lambda_xa_jogo=0.1 cada -> soma 1.6.
+        elenco = _elenco_completo()
+        resultado = pp.PlayerToTeamAggregator().agregar(elenco)
+        assert resultado.lambda_assistencias_total == pytest.approx(1.6)
+
+    def test_agregar_assistencias_clipa_valor_negativo(self):
+        elenco = _elenco_completo()
+        elenco.loc[0, "lambda_xa_jogo"] = -0.5
+        avisos: list[str] = []
+        valor = pp.PlayerToTeamAggregator().agregar_assistencias(elenco, avisos)
+        # sem o clip, a soma cairia pra 1.0; com clip em 0 por jogador, o -0.5 vira 0 -> soma continua 1.6.
+        assert valor == pytest.approx(1.6)
+
+    def test_agregar_assistencias_coluna_ausente_vira_zero_com_aviso(self):
+        elenco = _elenco_completo().drop(columns=["lambda_xa_jogo"])
+        resultado = pp.PlayerToTeamAggregator().agregar(elenco)
+        assert resultado.lambda_assistencias_total == 0.0
+        assert any("lambda_xa_jogo" in aviso for aviso in resultado.avisos)
 
 
 # ---------------------------------------------------------------------------
@@ -611,3 +632,47 @@ class TestProcessMatch:
         gk_stats = {"home": {"gsax_rate": 0.0}, "away": {"gsax_rate": 0.0}}
         with pytest.raises(ValueError):
             pp.process_match(jogadores, {}, macro_priors, gk_stats)
+
+
+# ---------------------------------------------------------------------------
+# Mercado de assistências (distribuicoes.mercados_de_assistencias)
+# ---------------------------------------------------------------------------
+class TestMercadosDeAssistencias:
+    def test_over_e_under_somam_1_em_todas_as_linhas(self):
+        mercados = dist.mercados_de_assistencias(1.2, 0.8)
+        vistos = {chave[0] for chave in mercados}
+        for mercado in vistos:
+            assert mercados[(mercado, "over")] + mercados[(mercado, "under")] == pytest.approx(1.0)
+
+    def test_probabilidade_over_decresce_conforme_linha_sobe(self):
+        mercados = dist.mercados_de_assistencias(1.5, 1.0, linhas_por_time=(0.5, 1.5, 2.5))
+        p05 = mercados[("assistencias_team_1_over_under_0.5", "over")]
+        p15 = mercados[("assistencias_team_1_over_under_1.5", "over")]
+        p25 = mercados[("assistencias_team_1_over_under_2.5", "over")]
+        assert p05 > p15 > p25
+
+    def test_lambda_maior_da_mais_probabilidade_de_over(self):
+        mercados_fraco = dist.mercados_de_assistencias(0.3, 0.3)
+        mercados_forte = dist.mercados_de_assistencias(2.0, 0.3)
+        assert (
+            mercados_forte[("assistencias_team_1_over_under_1.5", "over")]
+            > mercados_fraco[("assistencias_team_1_over_under_1.5", "over")]
+        )
+
+    def test_total_e_soma_exata_das_2_poisson(self):
+        # Soma de 2 Poisson independentes é Poisson(lambda1+lambda2) --
+        # conferido contra o cálculo direto pra 1 linha.
+        lam_home, lam_away = 1.1, 0.7
+        mercados = dist.mercados_de_assistencias(lam_home, lam_away, linhas_totais=(1.5,))
+        from scipy.stats import poisson as scipy_poisson
+
+        p_total = scipy_poisson.pmf(np.arange(dist.MAX_ASSISTENCIAS + 1), lam_home + lam_away)
+        p_total = p_total / p_total.sum()
+        esperado_over_1_5 = float(1.0 - np.cumsum(p_total)[1])
+        assert mercados[("assistencias_over_under_1.5", "over")] == pytest.approx(esperado_over_1_5)
+
+    def test_lambda_zero_nao_gera_probabilidade_negativa_ou_nan(self):
+        mercados = dist.mercados_de_assistencias(0.0, 0.0)
+        for valor in mercados.values():
+            assert np.isfinite(valor)
+            assert 0.0 <= valor <= 1.0
