@@ -19,6 +19,18 @@ de 1, estável entre temporadas) — melhora a previsão de gols POR TIME e o
 Over/Under 2.5 fora da amostra, mas NÃO melhora 1X2 nem Handicap -1.0.
 Não aplicado em produção.
 
+Também roda (mesmo painel, mesmo corte):
+  * Calibração BIVARIADA  ln λ* = μ + γ·ln λ + δ·ln λ_adv [+ β_mando·is_home]
+    — separa a elasticidade da diferença (γ−δ) da elasticidade da soma (γ+δ).
+    A variante SEM mando é a especificação recomendada só para mercados de
+    totais (O/U, gols por time, BTTS); não corrige 1X2/handicap.
+  * INTERAÇÃO mando × favoritismo: + β_inter·is_home·(Δ − média_Δ), com
+    Δ = ln λ − ln λ_adv (teste de saturação do fator campo).
+  * Diagnóstico de DERIVA do mando: razão (Σgols/Σλ) mandante ÷ visitante
+    por temporada — o λ da produção deixou de subestimar o mandante a partir
+    de 2024/25, então nenhum parâmetro ESTÁTICO de mando sobrevive fora da
+    amostra.
+
 Uso:
     python arquivos_do_claude/calibrar_potencia_lambda.py            # carrega do banco
     python arquivos_do_claude/calibrar_potencia_lambda.py --entrada painel.pkl
@@ -56,6 +68,7 @@ CORTE_PADRAO = "2025-06-01"
 N_BOOT = 2000
 SEED = 42
 COLUNAS = ["match_id", "data", "team_id", "is_home", "lam_prod", "gols", "rho"]
+DELTAS_TABELA_MANDO = (-1.0, -0.5, 0.0, 0.5, 1.0)
 
 
 # =============================================================================
@@ -109,6 +122,93 @@ def aplicar(lam: np.ndarray, alpha: float, gamma: float) -> np.ndarray:
     return alpha * np.clip(lam, EPS, None) ** gamma
 
 
+def ajustar_glm(X: np.ndarray, y: np.ndarray, nomes: list[str]) -> dict:
+    """GLM de Poisson genérico (ligação log, Newton-CG com hessiana analítica).
+    Devolve coeficientes, erros-padrão assintóticos (inversa da informação de
+    Fisher), a matriz de covariância e o NLL no ótimo."""
+    y = np.asarray(y, dtype=float)
+
+    def nll(b):
+        eta = np.clip(X @ b, -30, 30)
+        return float(np.sum(np.exp(eta) - y * eta))
+
+    def grad(b):
+        return X.T @ (np.exp(np.clip(X @ b, -30, 30)) - y)
+
+    def hess(b):
+        return (X * np.exp(np.clip(X @ b, -30, 30))[:, None]).T @ X
+
+    b0 = np.zeros(X.shape[1])
+    res = minimize(nll, b0, jac=grad, hess=hess, method="Newton-CG", options={"xtol": 1e-12, "maxiter": 1000})
+    cov = np.linalg.inv(hess(res.x))
+    return {"coef": dict(zip(nomes, res.x)), "se": dict(zip(nomes, np.sqrt(np.diag(cov)))),
+            "cov": cov, "nomes": nomes, "nll": nll(res.x), "n": len(y)}
+
+
+def com_lambda_adversario(painel: pd.DataFrame) -> pd.DataFrame:
+    """Acrescenta lam_adv (λ da produção do adversário na mesma partida);
+    descarta linhas cujo adversário não tem λ."""
+    adv = painel[["match_id", "team_id", "lam_prod"]].rename(columns={"team_id": "adv_id", "lam_prod": "lam_adv"})
+    df = painel.merge(adv, on="match_id")
+    return df[df["team_id"] != df["adv_id"]].drop(columns="adv_id").reset_index(drop=True)
+
+
+def _design_bivariado(lam, lam_adv, is_home, com_mando: bool, inter_centro: float | None = None):
+    ll = np.log(np.clip(lam, EPS, None))
+    la = np.log(np.clip(lam_adv, EPS, None))
+    h = np.asarray(is_home, dtype=float)
+    cols, nomes = [np.ones_like(ll), ll, la], ["mu", "gamma", "delta"]
+    if com_mando:
+        cols.append(h)
+        nomes.append("beta_mando")
+    if inter_centro is not None:
+        cols.append(h * (ll - la - inter_centro))
+        nomes.append("beta_inter")
+    return np.column_stack(cols), nomes
+
+
+def ajustar_bivariado(df: pd.DataFrame, com_mando: bool = True, inter_centro: float | None = None) -> dict:
+    """ln λ* = μ + γ·ln λ + δ·ln λ_adv [+ β_mando·is_home] [+ β_inter·is_home·(Δ−centro)]."""
+    X, nomes = _design_bivariado(df["lam_prod"].values, df["lam_adv"].values, df["is_home"].values, com_mando, inter_centro)
+    r = ajustar_glm(X, df["gols"].values, nomes)
+    r["com_mando"], r["inter_centro"] = com_mando, inter_centro
+    return r
+
+
+def aplicar_bivariado(r: dict, lam, lam_adv, is_home) -> np.ndarray:
+    X, nomes = _design_bivariado(lam, lam_adv, is_home, r["com_mando"], r["inter_centro"])
+    return np.exp(X @ np.array([r["coef"][n] for n in nomes]))
+
+
+def combinacao_linear(r: dict, pesos: dict[str, float]) -> tuple[float, float]:
+    """Estimativa e SE de Σ peso·coef (ex.: γ−δ, γ+δ), usando a covariância."""
+    w = np.array([pesos.get(n, 0.0) for n in r["nomes"]])
+    return float(w @ np.array([r["coef"][n] for n in r["nomes"]])), float(np.sqrt(w @ r["cov"] @ w))
+
+
+def lrt(restrito: dict, completo: dict) -> tuple[float, int, float]:
+    """LRT entre dois ajustes aninhados na MESMA amostra."""
+    estat = 2 * (restrito["nll"] - completo["nll"])
+    df = len(completo["nomes"]) - len(restrito["nomes"])
+    return float(estat), df, float(stats.chi2.sf(estat, df))
+
+
+def _temporada(datas: pd.Series) -> pd.Series:
+    """Temporada europeia julho→junho, rotulada pelo ano de início (2023 = 2023/24)."""
+    return np.where(datas.dt.month >= 7, datas.dt.year, datas.dt.year - 1)
+
+
+def deriva_mando_por_temporada(painel: pd.DataFrame, corte: pd.Timestamp) -> pd.DataFrame:
+    """Razão (Σgols/Σλ_prod) mandante ÷ visitante por temporada de treino, mais
+    o período de teste inteiro. >1 = λ da produção subestima o mandante."""
+    df = painel.assign(periodo=np.where(painel["data"] >= corte, "teste", _temporada(painel["data"]).astype(str)))
+    g = df.groupby(["periodo", "is_home"]).agg(gols=("gols", "sum"), lam=("lam_prod", "sum"), n=("gols", "size"))
+    oe = (g["gols"] / g["lam"]).unstack()
+    n = g["n"].unstack()
+    return pd.DataFrame({"n_mandante": n[True], "oe_mandante": oe[True], "oe_visitante": oe[False],
+                         "razao_m_v": oe[True] / oe[False]})
+
+
 def lrt_mando(treino: pd.DataFrame, global_: dict) -> dict:
     """(α_H,γ_H) ≠ (α_A,γ_A)? LRT com 2 df contra o par global."""
     casa = ajustar_potencia(treino.loc[treino["is_home"], "lam_prod"].values, treino.loc[treino["is_home"], "gols"].values)
@@ -135,16 +235,26 @@ def _bootstrap_diff(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
 
 
 def _probabilidades(lh: np.ndarray, la: np.ndarray, rho: np.ndarray) -> dict[str, np.ndarray]:
-    p1x2, phcp, pover = [], [], []
+    p1x2, phcp, pover, pbtts, pt1, pt2 = [], [], [], [], [], []
     for a, b, r in zip(lh, la, rho):
         mk = dist.mercados_de_gols(dist.matriz_placares(a, b, r), linhas_handicap=(-1.0,))
         p1x2.append([mk[("1X2", "home")], mk[("1X2", "draw")], mk[("1X2", "away")]])
         phcp.append([mk[("handicap_-1.0", "home")], mk.get(("handicap_-1.0", "push"), 0.0), mk[("handicap_-1.0", "away")]])
         pover.append(mk[("over_under_2.5", "over")])
-    return {"1x2": np.array(p1x2), "hcp": np.array(phcp), "over": np.clip(np.array(pover), 1e-4, 1 - 1e-4)}
+        pbtts.append(mk[("btts", "yes")])
+        pt1.append(mk[("over_under_team_1_1.5", "over")])
+        pt2.append(mk[("over_under_team_2_1.5", "over")])
+    clip = lambda v: np.clip(np.array(v), 1e-4, 1 - 1e-4)  # noqa: E731
+    return {"1x2": np.array(p1x2), "hcp": np.array(phcp), "over": clip(pover), "btts": clip(pbtts),
+            "t1": clip(pt1), "t2": clip(pt2)}
 
 
-def avaliar_oos(teste: pd.DataFrame, versoes: dict[str, tuple[np.ndarray, np.ndarray]]) -> None:
+def _bin_ll(y: np.ndarray, p: np.ndarray) -> np.ndarray:
+    return -(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+
+def avaliar_oos(teste: pd.DataFrame, versoes: dict[str, tuple[np.ndarray, np.ndarray]],
+                todos_decis: bool = False) -> None:
     hg, ag = teste["home_goals"].values, teste["away_goals"].values
     lh0, la0 = versoes["producao"]
     delta = lh0 - la0
@@ -153,7 +263,7 @@ def avaliar_oos(teste: pd.DataFrame, versoes: dict[str, tuple[np.ndarray, np.nda
 
     logger.info("--- Observado/Esperado por decil de Δλ = λ_M − λ_V (λ da produção define o decil) ---")
     for nome, (lh, la) in versoes.items():
-        for d in (0, 4, 9):
+        for d in (range(10) if todos_decis else (0, 4, 9)):
             m = decil == d
             logger.info("  %-16s decil %2d (Δλ médio %+.2f): O/E mandante=%.3f  O/E visitante=%.3f",
                         nome, d + 1, delta[m].mean(), hg[m].sum() / lh[m].sum(), ag[m].sum() / la[m].sum())
@@ -166,6 +276,8 @@ def avaliar_oos(teste: pd.DataFrame, versoes: dict[str, tuple[np.ndarray, np.nda
     margem = hg - ag - 1
     res_hcp = np.where(margem > 0, 0, np.where(margem == 0, 1, 2))
     over = (hg + ag > 2.5).astype(float)
+    btts = ((hg > 0) & (ag > 0)).astype(float)
+    t1, t2 = (hg > 1.5).astype(float), (ag > 1.5).astype(float)
     idx = np.arange(len(teste))
 
     perdas = {}
@@ -174,7 +286,9 @@ def avaliar_oos(teste: pd.DataFrame, versoes: dict[str, tuple[np.ndarray, np.nda
         perdas[nome] = {
             "1X2": -np.log(np.clip(pr["1x2"][idx, res_1x2], 1e-4, 1)),
             "Handicap -1.0": -np.log(np.clip(pr["hcp"][idx, res_hcp], 1e-4, 1)),
-            "Over/Under 2.5": -(over * np.log(pr["over"]) + (1 - over) * np.log(1 - pr["over"])),
+            "Over/Under 2.5": _bin_ll(over, pr["over"]),
+            "BTTS": _bin_ll(btts, pr["btts"]),
+            "Team total O/U 1.5 (média dos 2 lados)": (_bin_ll(t1, pr["t1"]) + _bin_ll(t2, pr["t2"])) / 2,
             "Gols por time (NLL Poisson)": -(stats.poisson.logpmf(hg, lh) + stats.poisson.logpmf(ag, la)),
         }
         p_push = pr["hcp"][:, 1]
@@ -292,6 +406,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--corte", default=CORTE_PADRAO, help="treino = antes desta data; teste = a partir dela")
     parser.add_argument("--entrada", help="painel time-partida pronto (.pkl ou .csv) em vez de ler do banco")
+    parser.add_argument("--todos-decis", action="store_true", help="O/E fora da amostra nos 10 decis (não só 1, 5 e 10)")
     args = parser.parse_args()
 
     painel = carregar_de_arquivo(args.entrada) if args.entrada else carregar_do_banco()
@@ -312,16 +427,69 @@ def main() -> None:
     logger.info("  LRT mando (2 df): %.2f  p=%.2e -> %s", mando["lrt"], mando["p_valor"],
                 "par por mando" if mando["p_valor"] < 0.05 else "par global")
 
+    # --- Bivariada e interação mando × favoritismo (mesma amostra: linhas com λ do adversário) ---
+    tr = com_lambda_adversario(treino)
+    delta_tr = np.log(np.clip(tr["lam_prod"], EPS, None)) - np.log(np.clip(tr["lam_adv"], EPS, None))
+    # Empilhado time-partida, Δ é antissimétrico (cada partida entra com +Δ e −Δ):
+    # a média é 0 por construção, então exp(β_mando + β_inter·Δ) vale com Δ cru.
+    centro = float(delta_tr.mean())
+    ll_tr = np.log(np.clip(tr["lam_prod"].values, EPS, None))
+    univ = ajustar_glm(np.column_stack([np.ones_like(ll_tr), ll_tr]), tr["gols"].values, ["mu", "gamma"])
+    biv_sem = ajustar_bivariado(tr, com_mando=False)
+    biv = ajustar_bivariado(tr, com_mando=True)
+    inter = ajustar_bivariado(tr, com_mando=True, inter_centro=centro)
+
+    logger.info("=== Bivariada: ln λ* = μ + γ·ln λ + δ·ln λ_adv [+ β_mando·is_home] (n=%d, %d partidas) ===",
+                biv["n"], tr["match_id"].nunique())
+    for rotulo, r in [("com mando", biv), ("sem mando", biv_sem), ("interação", inter)]:
+        partes = [f"{n}={r['coef'][n]:+.4f} (SE {r['se'][n]:.4f}, z {r['coef'][n] / r['se'][n]:+.2f}, "
+                  f"p {2 * stats.norm.sf(abs(r['coef'][n] / r['se'][n])):.1e})" for n in r["nomes"] if n != "mu"]
+        logger.info("  %-10s α=exp(μ)=%.4f  %s", rotulo, np.exp(r["coef"]["mu"]), "  ".join(partes))
+        for nome, pesos in [("γ−δ (diferença)", {"gamma": 1, "delta": -1}), ("γ+δ (soma)", {"gamma": 1, "delta": 1})]:
+            est, se = combinacao_linear(r, pesos)
+            logger.info("      %-16s %.4f  SE %.4f  IC95%%=[%.3f, %.3f]  z(=1)=%+.2f",
+                        nome, est, se, est - 1.96 * se, est + 1.96 * se, (est - 1) / se)
+    for rotulo, (a, b) in [("δ=0 (bivariada sem mando vs. univariada)", (univ, biv_sem)),
+                           ("bivariada com mando vs. univariada (PR #664)", (univ, biv)),
+                           ("β_mando=0 (bivariada)", (biv_sem, biv)),
+                           ("β_inter=0 (interação vs. bivariada aditiva)", (biv, inter))]:
+        est, df_, p = lrt(a, b)
+        logger.info("  LRT %-46s %6.2f (%d df)  p=%.2e", rotulo, est, df_, p)
+
+    logger.info("--- Interação mando × favoritismo: centro Δ (empilhado) = %+.4f; média de Δ só nos mandantes = %+.4f ---",
+                centro, float(delta_tr[tr["is_home"]].mean()))
+    bm, bi = inter["coef"]["beta_mando"], inter["coef"]["beta_inter"]
+    ib, ii = inter["nomes"].index("beta_mando"), inter["nomes"].index("beta_inter")
+    for d in DELTAS_TABELA_MANDO:
+        w = np.zeros(len(inter["nomes"]))
+        w[ib], w[ii] = 1.0, d - centro
+        est, se = float(bm + bi * (d - centro)), float(np.sqrt(w @ inter["cov"] @ w))
+        logger.info("  Δ=%+.1f  multiplicador de mando exp(β_mando+β_inter·Δ)=%.4f  IC95%%=[%.4f, %.4f]",
+                    d, np.exp(est), np.exp(est - 1.96 * se), np.exp(est + 1.96 * se))
+
+    logger.info("=== Deriva do mando: (Σgols/Σλ_prod) mandante ÷ visitante por temporada ===")
+    for periodo, row in deriva_mando_por_temporada(painel, corte).iterrows():
+        logger.info("  %-6s n_mand=%5d  O/E mandante=%.3f  O/E visitante=%.3f  razão=%.3f",
+                    periodo, row["n_mandante"], row["oe_mandante"], row["oe_visitante"], row["razao_m_v"])
+
     partidas = para_partidas(teste)
     logger.info("=== Fora da amostra: %d partidas ===", len(partidas))
     lh, la = partidas["lam_home"].values, partidas["lam_away"].values
+    um, zero = np.ones(len(lh)), np.zeros(len(lh))
+
+    def biv_oos(r):
+        return aplicar_bivariado(r, lh, la, um), aplicar_bivariado(r, la, lh, zero)
+
     versoes = {
         "producao": (lh, la),
         "potencia_global": (aplicar(lh, glob["alpha"], glob["gamma"]), aplicar(la, glob["alpha"], glob["gamma"])),
         "potencia_mando": (aplicar(lh, mando["casa"]["alpha"], mando["casa"]["gamma"]),
                            aplicar(la, mando["fora"]["alpha"], mando["fora"]["gamma"])),
+        "bivariada": biv_oos(biv),
+        "bivariada_s_mando": biv_oos(biv_sem),
+        "interacao": biv_oos(inter),
     }
-    avaliar_oos(partidas, versoes)
+    avaliar_oos(partidas, versoes, todos_decis=args.todos_decis)
 
 
 if __name__ == "__main__":
