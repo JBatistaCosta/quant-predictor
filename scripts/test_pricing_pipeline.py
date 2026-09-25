@@ -182,6 +182,37 @@ class TestPlayerToTeamAggregator:
         assert pp.PlayerToTeamAggregator.modular_por_goleiro(1.0, gsax_rate=5.0) == pytest.approx(0.0)
         assert pp.PlayerToTeamAggregator.modular_por_goleiro(1.0, gsax_rate=-5.0) == pytest.approx(2.0)
 
+    def test_forca_defensiva_neutra_e_no_op(self):
+        assert pp.PlayerToTeamAggregator.modular_por_forca_defensiva(1.5, 0.0, 0.0) == pytest.approx(1.5)
+
+    def test_forca_defensiva_residuo_positivo_aumenta_lambda(self):
+        # residuo positivo = defesa do adversario mais fraca -- deve aumentar o lambda de ataque.
+        base = pp.PlayerToTeamAggregator.modular_por_forca_defensiva(1.5, 0.0, 0.0)
+        com_defesa_fraca = pp.PlayerToTeamAggregator.modular_por_forca_defensiva(1.5, 1.0, 0.0)
+        assert com_defesa_fraca > base
+
+    def test_forca_defensiva_residuo_negativo_reduz_lambda(self):
+        base = pp.PlayerToTeamAggregator.modular_por_forca_defensiva(1.5, 0.0, 0.0)
+        com_defesa_forte = pp.PlayerToTeamAggregator.modular_por_forca_defensiva(1.5, -1.0, 0.0)
+        assert com_defesa_forte < base
+
+    def test_forca_defensiva_bate_com_formula_log_linear(self):
+        lam, xga, xa = 2.0, 0.5, -0.3
+        esperado = lam * np.exp(pp.DEF_BETA_XGA*xga + pp.DEF_BETA_XA*xa)
+        assert pp.PlayerToTeamAggregator.modular_por_forca_defensiva(lam, xga, xa) == pytest.approx(esperado)
+
+    def test_forca_defensiva_nunca_fica_negativa(self):
+        assert pp.PlayerToTeamAggregator.modular_por_forca_defensiva(1.0, -1000.0, -1000.0) >= 0.0
+
+    def test_agregar_aplica_forca_defensiva_antes_do_goleiro(self):
+        elenco = _elenco_completo()
+        agregador = pp.PlayerToTeamAggregator()
+        base = agregador.agregar(elenco)
+        com_defesa_fraca = agregador.agregar(elenco, def_residuo_xga_adversario=1.0, def_residuo_xa_adversario=0.5)
+        assert com_defesa_fraca.lambda_xgot_ajustado > base.lambda_xgot_ajustado
+        assert com_defesa_fraca.lambda_xgot_total == pytest.approx(base.lambda_xgot_total)  # xGOT bruto nao muda
+        assert com_defesa_fraca.lambda_gols_xgot > base.lambda_gols_xgot
+
     def test_lambda_bottom_up_e_media_dos_2_componentes(self):
         elenco = _elenco_completo()
         resultado = pp.PlayerToTeamAggregator().agregar(elenco)

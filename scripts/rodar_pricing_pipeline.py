@@ -56,6 +56,16 @@ existir em `player_match_estimates` -- gap de dado documentado, não bug --
 e `jogadores` continua sem essa coluna (a Camada 1 já trata coluna ausente
 como 0 com aviso, não exceção).
 
+Força defensiva coletiva do adversário (25/09, substitui o papel que a GSAx
+tentava cumprir): `dados_historicos.obter_forca_defensiva_atual` calculada
+em lote pra todos os times da janela (`forca_defensiva`), passada como
+`def_residuo_xga_adversario`/`def_residuo_xa_adversario` em cada `agregar()`
+-- ver `pricing_pipeline.DEF_BETA_XGA`/`DEF_BETA_XA` pra calibração e
+validação (log-loss 1X2/handicap fora da amostra). Time sem residuo
+calculável (histórico insuficiente) cai no default neutro `0.0` de
+`.get(..., {})`, sem modular nada -- mesmo padrão de "gap de dado vira
+aviso/no-op, nunca exceção" do resto da Camada 1.
+
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 rodar_pricing_pipeline.py [--dias N] [--match-ids ID,ID,...]
 
@@ -241,6 +251,13 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
     macro_por_partida = _buscar_macro_priors(supabase, fixture_ids)
     jogadores_todos = _buscar_jogadores(supabase, fixture_ids)
 
+    # Força defensiva coletiva do adversário (25/09, substitui GSAx --
+    # ver docstring de `pricing_pipeline.DEF_BETA_XGA`) -- 1 chamada em
+    # lote pra todos os times da janela, não 1 por partida (mesmo padrão
+    # de `_buscar_macro_priors`/`_buscar_jogadores`).
+    times_da_janela = sorted(set(fixtures["home_team_id"]) | set(fixtures["away_team_id"]))
+    forca_defensiva = dh.obter_forca_defensiva_atual(supabase, [int(t) for t in times_da_janela])
+
     agregador = PlayerToTeamAggregator()
     reconciler = HierarchicalReconciler()
     engine = DixonColesJointEngine()
@@ -274,9 +291,19 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
             if jogadores_home.empty or jogadores_away.empty:
                 continue  # essa fonte não tem elenco dos 2 times ainda -- tenta a outra fonte
 
+            def_away = forca_defensiva.get(away_id, {})
+            def_home = forca_defensiva.get(home_id, {})
             try:
-                agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=0.0)
-                agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=0.0)
+                agregacao_home = agregador.agregar(
+                    jogadores_home, gsax_rate_adversario=0.0,
+                    def_residuo_xga_adversario=def_away.get("def_residuo_xga", 0.0),
+                    def_residuo_xa_adversario=def_away.get("def_residuo_xa", 0.0),
+                )
+                agregacao_away = agregador.agregar(
+                    jogadores_away, gsax_rate_adversario=0.0,
+                    def_residuo_xga_adversario=def_home.get("def_residuo_xga", 0.0),
+                    def_residuo_xa_adversario=def_home.get("def_residuo_xa", 0.0),
+                )
             except ValueError as exc:
                 logger.warning("Partida %s (fonte=%s): falha na Camada 1 (%s) -- pulando essa fonte.", match_id, fonte, exc)
                 continue

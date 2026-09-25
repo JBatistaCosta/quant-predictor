@@ -829,6 +829,208 @@ def obter_gsax_walkforward(
     return resultado
 
 
+# =============================================================================
+# Força defensiva coletiva (xGA/xAA ajustado por adversário, time-decay)
+# =============================================================================
+# Validado empiricamente (25/09, sessão de correção do pricing_pipeline_v1):
+# xG/xA cedidos, ajustados pela taxa de criação PRÓPRIA do adversário (não o
+# valor absoluto) e decaídos por recência (EWM, mesmo padrão já usado em
+# `_janelas_decay_time`/`_janelas_multi_decay_time` deste arquivo pra
+# gols marcados/sofridos), sobrevivem a split temporal 70/30 -- diferente da
+# tentativa anterior (xA do próprio time como modulador de gols), que tinha
+# correlação parcial real mas NÃO sobrevivia fora da amostra. Coeficientes
+# calibrados via GLM de Poisson com offset (log(λ_xGOT), não substitui --
+# soma): ver `pricing_pipeline.DEF_BETA_XGA`/`DEF_BETA_XA`, calibrados numa
+# amostra de treino de 21.895 time-partidas (β_xGA=0,1285 z=6,78; β_xA=0,1685
+# z=6,39), validados em 4.683 partidas de teste nunca vistas no ajuste
+# (log-loss 1X2 melhora 0,00319, IC95%=[0,00097;0,00532]; handicap -1,0
+# melhora 0,00822, IC95%=[0,00567;0,01086] -- ambos com IC inteiro acima de
+# zero). Recalibrar os betas exige rerodar essa validação, não só trocar a
+# fórmula abaixo.
+DEF_SPAN_EWM = 12
+# Teto de partidas por time -- span=12 tem peso residual desprezível depois de
+# ~20 jogos ((1-2/13)^20 ≈ 0,028, ~97% do peso capturado); 60 dá folga larga
+# sem custar uma consulta cara demais (mesmo espírito de `GSAX_N_MAX_PARTIDAS`).
+DEF_N_MAX_PARTIDAS = 60
+
+
+def _carregar_serie_ofensiva_defensiva(supabase: Client, team_ids: list[int]) -> pd.DataFrame:
+    """Carrega, por time-partida (`team_ids` E os adversários que eles
+    enfrentaram nas últimas `DEF_N_MAX_PARTIDAS`), xG/xA marcado e sofrido --
+    base compartilhada por `obter_forca_defensiva_atual`.
+
+    Precisa do histórico do ADVERSÁRIO (não só de `team_ids`) porque o
+    resíduo defensivo de um time é "o que ele sofreu MENOS o que aquele
+    adversário específico costuma criar" -- expansão de 1 nível (adversários
+    dos adversários não entram), simplificação consciente: partidas cujo
+    adversário ficar de fora dessa expansão (raro -- só aconteceria se um
+    adversário específico não aparecer em nenhuma das últimas
+    `DEF_N_MAX_PARTIDAS` de nenhum time em `team_ids`) simplesmente não
+    contam pro resíduo (mesmo tratamento de dado ausente do resto do
+    arquivo, nunca um 0.0 com sentido)."""
+    if not team_ids:
+        return pd.DataFrame()
+    ids = sorted({int(t) for t in team_ids})
+
+    def _carregar_partidas(times: list[int]) -> pd.DataFrame:
+        # 2 queries (`home_team_id`/`away_team_id`) em vez de `.or_()` com
+        # `in.()` aninhado -- evita depender de parsing de vírgula aninhada
+        # do PostgREST pra uma combinação nunca usada antes neste arquivo.
+        colunas = "id, match_date, home_team_id, away_team_id, home_goals, away_goals"
+        linhas_home = _paginar_por_lotes_de_id(
+            lambda lote, inicio, fim: (
+                supabase.table("matches").select(colunas).in_("home_team_id", lote).eq("status", "finished")
+                .order("match_date", desc=True).range(inicio, fim)
+            ),
+            times,
+            tamanho_lote=30,
+        )
+        linhas_away = _paginar_por_lotes_de_id(
+            lambda lote, inicio, fim: (
+                supabase.table("matches").select(colunas).in_("away_team_id", lote).eq("status", "finished")
+                .order("match_date", desc=True).range(inicio, fim)
+            ),
+            times,
+            tamanho_lote=30,
+        )
+        linhas = linhas_home + linhas_away
+        return pd.DataFrame(linhas).drop_duplicates(subset=["id"]) if linhas else pd.DataFrame()
+
+    partidas = _carregar_partidas(ids)
+    if partidas.empty:
+        return pd.DataFrame()
+    partidas["match_date"] = pd.to_datetime(partidas["match_date"], utc=True)
+    partidas = partidas.dropna(subset=["home_goals", "away_goals"])
+
+    # Formato longo (1 linha por time-partida) + teto de DEF_N_MAX_PARTIDAS
+    # mais recentes por time em `ids` -- só pra decidir quais adversários
+    # expandir; a série completa de cada time (incl. adversários) é montada
+    # de novo abaixo, sem o teto, pra não cortar a própria história do
+    # adversário no meio.
+    longo_alvo = pd.concat([
+        partidas.assign(team_id=partidas["home_team_id"], opponent_id=partidas["away_team_id"]),
+        partidas.assign(team_id=partidas["away_team_id"], opponent_id=partidas["home_team_id"]),
+    ])
+    longo_alvo = longo_alvo[longo_alvo["team_id"].isin(ids)]
+    longo_alvo = longo_alvo.sort_values("match_date", ascending=False).groupby("team_id", group_keys=False).head(DEF_N_MAX_PARTIDAS)
+    adversarios = set(longo_alvo["opponent_id"].astype(int).unique()) - set(ids)
+
+    todos_times = ids
+    if adversarios:
+        partidas_adv = _carregar_partidas(sorted(adversarios))
+        if not partidas_adv.empty:
+            partidas_adv["match_date"] = pd.to_datetime(partidas_adv["match_date"], utc=True)
+            partidas_adv = partidas_adv.dropna(subset=["home_goals", "away_goals"])
+            partidas = pd.concat([partidas, partidas_adv]).drop_duplicates(subset=["id"])
+        todos_times = sorted(set(ids) | adversarios)
+
+    longo = pd.concat([
+        partidas.assign(team_id=partidas["home_team_id"], opponent_id=partidas["away_team_id"]),
+        partidas.assign(team_id=partidas["away_team_id"], opponent_id=partidas["home_team_id"]),
+    ])
+    longo = longo[longo["team_id"].isin(todos_times)]
+    longo = longo.sort_values("match_date", ascending=False).groupby("team_id", group_keys=False).head(DEF_N_MAX_PARTIDAS)
+    longo = longo.rename(columns={"id": "match_id"})[["match_id", "team_id", "opponent_id", "match_date"]]
+    if longo.empty:
+        return pd.DataFrame()
+
+    match_ids = longo["match_id"].astype(int).unique().tolist()
+    shots_rows = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("match_shots_fotmob").select("match_id, team_id, xg").in_("match_id", lote).range(inicio, fim)
+        ),
+        match_ids,
+        tamanho_lote=50,
+    )
+    df_xg = (
+        pd.DataFrame(shots_rows).groupby(["match_id", "team_id"])["xg"].apply(lambda s: float(s.dropna().sum())).reset_index(name="xg_marcado")
+        if shots_rows
+        else pd.DataFrame(columns=["match_id", "team_id", "xg_marcado"])
+    )
+
+    xa_rows = _paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("match_player_stats_fotmob").select("match_id, team_id, xa").in_("match_id", lote).range(inicio, fim)
+        ),
+        match_ids,
+        tamanho_lote=50,
+    )
+    df_xa = (
+        pd.DataFrame(xa_rows).groupby(["match_id", "team_id"])["xa"].apply(lambda s: float(s.dropna().sum())).reset_index(name="xa_marcado")
+        if xa_rows
+        else pd.DataFrame(columns=["match_id", "team_id", "xa_marcado"])
+    )
+
+    marcado = df_xg.merge(df_xa, on=["match_id", "team_id"], how="outer")
+    longo = longo.merge(marcado, on=["match_id", "team_id"], how="left")
+    sofrido = marcado.rename(columns={"team_id": "opponent_id", "xg_marcado": "xg_sofrido", "xa_marcado": "xa_sofrido"})
+    longo = longo.merge(sofrido, on=["match_id", "opponent_id"], how="left")
+    return longo.sort_values(["team_id", "match_date"])
+
+
+def _ewm_defasado(serie: pd.Series, shift: bool) -> pd.Series:
+    """EWM(span=DEF_SPAN_EWM, min_periods=1, ignore_na=True) -- `shift=True`
+    (uso walk-forward) usa só valores estritamente ANTERIORES à linha atual;
+    `shift=False` (uso "hoje") inclui a própria linha mais recente, correto
+    pra prever uma partida ainda não jogada."""
+    ewm = serie.ewm(span=DEF_SPAN_EWM, min_periods=1, ignore_na=True).mean()
+    return ewm.shift(1) if shift else ewm
+
+
+def _calcular_forca_defensiva(painel: pd.DataFrame, shift: bool) -> pd.DataFrame:
+    """Núcleo puro (sem I/O) -- recebe o painel de `_carregar_serie_ofensiva_
+    defensiva` (ou um recorte walk-forward dele) e devolve, por linha
+    (time-partida), `def_residuo_xga`/`def_residuo_xa` calculados só com o
+    que veio ANTES daquela linha na ordenação por `team_id`/`match_date`.
+    `shift=True` é o modo walk-forward (não usado ainda em produção, deixado
+    pronto pro futuro script de backtest formal desta métrica)."""
+    df = painel.sort_values(["team_id", "match_date"]).copy()
+    df["ataque_ewm_xg"] = df.groupby("team_id")["xg_marcado"].transform(lambda s: _ewm_defasado(s, shift))
+    df["ataque_ewm_xa"] = df.groupby("team_id")["xa_marcado"].transform(lambda s: _ewm_defasado(s, shift))
+
+    baseline = df[["match_id", "team_id", "ataque_ewm_xg", "ataque_ewm_xa"]].rename(
+        columns={"team_id": "opponent_id", "ataque_ewm_xg": "adv_ataque_ewm_xg", "ataque_ewm_xa": "adv_ataque_ewm_xa"}
+    )
+    df = df.merge(baseline, on=["match_id", "opponent_id"], how="left")
+
+    df["resid_xg"] = df["xg_sofrido"] - df["adv_ataque_ewm_xg"]
+    df["resid_xa"] = df["xa_sofrido"] - df["adv_ataque_ewm_xa"]
+    df["def_residuo_xga"] = df.groupby("team_id")["resid_xg"].transform(lambda s: _ewm_defasado(s, shift))
+    df["def_residuo_xa"] = df.groupby("team_id")["resid_xa"].transform(lambda s: _ewm_defasado(s, shift))
+    return df
+
+
+def obter_forca_defensiva_atual(supabase: Client, team_ids: list[int]) -> dict[int, dict]:
+    """Força defensiva coletiva "hoje" (toda a história disponível até
+    agora, sem corte de data -- caminho de produção, mesmo espírito de
+    `obter_gsax_atual`) pros times em `team_ids`.
+
+    `def_residuo_xga`/`def_residuo_xa`: positivo = time concede MAIS xG/xA
+    do que os adversários que enfrentou costumam criar em média (defesa
+    fraca); negativo = concede menos (defesa forte). Ausente do dict quando
+    não há partida suficiente pra calcular nenhum resíduo (time novo/sem
+    histórico coberto)."""
+    painel = _carregar_serie_ofensiva_defensiva(supabase, team_ids)
+    if painel.empty:
+        return {}
+    calculado = _calcular_forca_defensiva(painel, shift=False)
+
+    ids = {int(t) for t in team_ids}
+    resultado: dict[int, dict] = {}
+    for team_id, grupo in calculado.groupby("team_id"):
+        if int(team_id) not in ids:
+            continue
+        ultima = grupo.sort_values("match_date").iloc[-1]
+        if pd.isna(ultima["def_residuo_xga"]) and pd.isna(ultima["def_residuo_xa"]):
+            continue
+        resultado[int(team_id)] = {
+            "def_residuo_xga": float(ultima["def_residuo_xga"]) if pd.notna(ultima["def_residuo_xga"]) else 0.0,
+            "def_residuo_xa": float(ultima["def_residuo_xa"]) if pd.notna(ultima["def_residuo_xa"]) else 0.0,
+            "n_jogos": int(len(grupo)),
+        }
+    return resultado
+
+
 def _xg_marcado_sofrido(supabase: Client, match_ids: list[int], team_id: int) -> dict[str, float]:
     """xG marcado/sofrido do `team_id` num punhado de partidas (`match_ids`,
     tipicamente os últimos 5 jogos de casa OU de fora de um time só).
