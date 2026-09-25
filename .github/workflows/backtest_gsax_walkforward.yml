@@ -1,0 +1,48 @@
+name: Backtest Walk-Forward de GSAx do Goleiro
+
+# Roda scripts/backtest_gsax_walkforward.py -- valida se o modulador de GSAx
+# do goleiro (pricing_pipeline.py::PlayerToTeamAggregator.modular_por_
+# goleiro) melhora de verdade a previsão de gols sofridos, comparado a
+# assumir goleiro neutro. GSAx calculado walk-forward-safe (só partidas
+# anteriores à data de cada partida-alvo, dados_historicos.obter_gsax_
+# walkforward) contra lambda_xg_jogo walk-forward-safe já populado por
+# backtest_jogador_mercados_walkforward.py -- os dois lados da comparação
+# sem vazamento de futuro. Grava métrica agregada (RMSE + IC95% via
+# bootstrap da diferença de log-verossimilhança de Poisson) em
+# player_market_backtest (mercado='gsax_gols_adversario'). Mesmo espírito de
+# backtest_jogador_mercados_walkforward.yml.
+#
+# Depende de player_match_walkforward.lambda_xg_jogo já estar populado --
+# rodar backtest_jogador_mercados_walkforward.py primeiro se ainda não
+# tiver rodado recentemente.
+#
+# Só workflow_dispatch -- não faz sentido em cron; rodar de novo quando o
+# dado crescer o suficiente ou depois de mudança no script.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backtest-gsax-walkforward:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backtest walk-forward de GSAx do goleiro
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backtest_gsax_walkforward.py
