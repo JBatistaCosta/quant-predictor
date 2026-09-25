@@ -1,5 +1,26 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Backtest financeiro do Handicap -1.0 com `markov_multievento_v1`: perde menos que a produção, mas também perde com significância — o mercado (odds sem vig) é mais preciso que os dois modelos, e o "edge" selecionado pelo Kelly é majoritariamente erro do modelo (25/09).** Pedido do usuário depois do achado acima de que o Markov tem viés de margem ~70% menor que a produção. Mesmo protocolo e mesmas 1.397 partidas OOS do backtest da produção (odds reais de fechamento `european_handicap_-1`, 3 vias, dedup de snapshot da PR #619), usando as probabilidades de `handicap_-1.0` já gravadas em `model_predictions` (`markov_multievento_v1`, 2.000 simulações por partida).
+
+- **Resultado financeiro** (Kelly padrão por seleção, aposta quando `f>0`):
+
+  | | Produção (PR #657) | Markov |
+  |---|---|---|
+  | Yield Kelly 0,125 | -16,85% [IC95% -26,9; -6,4] | **-13,64%** [IC95% -23,1; -2,6] |
+  | Yield Kelly 0,25 | -17,14% | -16,22% |
+  | Banca Kelly 0,125 (100→) | 7,77 | 17,77 |
+  | Max Drawdown Kelly 0,125 | -92,9% | -90,5% |
+  | Brier (3 classes) | 0,5609 | 0,5586 |
+  | Calibração home nas apostas com edge (z) | -6,64 | -5,88 |
+
+  Markov vs. produção, pareado: Brier -0,0023 (IC95% [-0,005; +0,009]) e log-loss -0,0056 (IC95% [-0,005; +0,016]) — **melhora pequena e não significativa**. PnL por faixa de edge do Markov: só as faixas <5% e 5-10% ficam ~no zero (+1,0% e +3,1%); de 10% pra cima, todas perdem (-16% a -22%).
+- **Causa: o mercado sabe mais.** Log-loss nas mesmas partidas: mercado sem vig (devig proporcional, overround médio 3,8%) **0,9214**; Markov 0,9448 (+0,024, IC95% [+0,014; +0,033]); produção 0,9505 (+0,029, IC95% [+0,020; +0,039]). Mesmo resultado no Brier. O mercado bate os dois com IC95% inteiramente a favor dele.
+- **Quando o Markov discorda do mercado, o mercado acerta** (quintis de `p_markov − p_mercado`, lado home): quando o Markov é muito mais pessimista (p 0,238 vs. mercado 0,322), a frequência real é 0,307; quando é muito mais otimista (0,337 vs. 0,239), a real é 0,200. Filtrar apostas por edge positivo seleciona justamente onde o modelo mais erra — por isso a calibração nas apostas selecionadas é ruim mesmo no Markov, que tem pouco viés de margem.
+- **Achados secundários (calibração sem filtro de edge, as 1.397 partidas)**: (1) o push (mandante vence por exatamente 1) é subestimado pelos TRÊS — mercado z=+1,27, produção +1,96, Markov +2,98 (o pior); (2) "mandante cobre o -1" é superestimado até pelo mercado (z=-2,70) — parte do viés da produção nesse lado é característica do período da amostra, não só do modelo.
+- **Conclusão**: trocar a fonte de probabilidade do Handicap -1.0 pro Markov não resolve — nenhum dos dois modelos tem edge contra o mercado neste mercado hoje. **Regra proposta pra próximas tentativas (portão barato antes de qualquer backtest financeiro)**: o modelo precisa bater o mercado sem vig em log-loss, com IC95% inteiramente favorável, nas mesmas partidas. Sem isso, backtest de carteira só vai medir quanto o Kelly amplifica o erro do modelo. Análise feita ad-hoc (pandas local sobre dados puxados via SQL), não foi incorporada ao `scripts/backtest_financeiro_forca_defensiva_handicap.py`.
+
+---
+
 **Causa raiz da má calibração do Handicap -1.0 (achado anterior, 25/09): não é overdispersão, é viés de nível — o lado favorito rende sistematicamente MENOS margem do que o λ pré-jogo prevê, de forma quase constante (não escala com o tamanho do favoritismo) (25/09).** Investigação pedida pelo usuário ("investiga a causa antes de mexer em mais variáveis") depois do achado de que a especificação PR #657 perde dinheiro contra odds reais.
 
 - **Descartada má especificação de variância**: resíduo padronizado `(gol_diff_real−gol_diff_previsto)/√(λ_home+λ_away)` tem variância ≈0,94 (mandante 0,935, visitante 1,015) — perto de 1, gols seguem Poisson razoavelmente bem aqui (diferente do achado de subdispersão em escanteios/faltas da Fase 6.2 do motor de Markov — não é o mesmo mecanismo).
