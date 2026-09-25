@@ -239,18 +239,13 @@ def peso_log_pooling(y: np.ndarray, p_mercado: np.ndarray, p_modelo: np.ndarray)
 
 
 # =============================================================================
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--corte", default=CORTE_PADRAO)
-    parser.add_argument("--entrada", help="painel time-partida de calibrar_potencia_lambda.py")
-    parser.add_argument("--cache-dir", help="pasta pra guardar/reaproveitar os downloads (.pkl)")
-    args = parser.parse_args()
-    corte = pd.Timestamp(args.corte)
-    rng = np.random.default_rng(SEED)
-
-    painel = cp.carregar_de_arquivo(args.entrada) if args.entrada else cp.carregar_do_banco()
+def preparar_painel(entrada: str | None, cache_dir: str | None, corte: pd.Timestamp) -> pd.DataFrame:
+    """Painel time-partida com todas as features e os λ calibrados (bivariada
+    ajustada só no treino) de cada base: lb_prev, lb_real, lb_real_tit, lb_prev_tit.
+    Reaproveitado por validar_desgaste_logistico.py."""
+    painel = cp.carregar_de_arquivo(entrada) if entrada else cp.carregar_do_banco()
     painel = painel.dropna(subset=["lam_prod", "gols"])
-    jogos, wf, titulares = carregar(args.cache_dir)
+    jogos, wf, titulares = carregar(cache_dir)
     jogos = jogos.rename(columns={"id": "match_id"})
     jogos["dt"] = pd.to_datetime(jogos["match_date"], format="ISO8601", utc=True).dt.tz_localize(None).dt.normalize()
 
@@ -286,17 +281,12 @@ def main() -> None:
     idx = pd.MultiIndex.from_frame(p[["match_id", "team_id"]])
     for alvo, col in bases.items():
         p[alvo] = aplicar_bivariada(p, col, ajustar_bivariada(tr, col)).reindex(idx).values
-    tr, te = p[p["data"] < corte], p[p["data"] >= corte]
+    return p
 
-    variantes = {
-        "base (XI previsto)": ("lb_prev", []),
-        "escalação confirmada COMPLETA (vaza)": ("lb_real", []),
-        "só titulares confirmados (limpa)": ("lb_real_tit", []),
-        "previsto × titulares confirmados": ("lb_prev_tit", []),
-        "descanso/sequência": ("lb_prev", ["curto", "curto_adv", "longo", "longo_adv"]),
-        **{f"mando EWM meia-vida {hl}": ("lb_prev", [f"x_mando{hl}"]) for hl in MEIAS_VIDAS_MANDO},
-        "titulares + descanso + mando300": ("lb_real_tit", ["curto", "curto_adv", "longo", "longo_adv", "x_mando300"]),
-    }
+
+def avaliar_variantes(tr, te, variantes: dict, rng, base_nome: str):
+    """Ajusta cada variante (offset + features) no treino e compara fora da
+    amostra contra `base_nome`. Devolve (partidas, perdas, probs_1x2)."""
     print("\n=== Ajuste no treino (offset = ln λ_base) ===")
     lam_te = {}
     for nome, (base, cols) in variantes.items():
@@ -312,7 +302,7 @@ def main() -> None:
 
     casa = te[te["is_home"]].set_index("match_id")
     fora = te[~te["is_home"]].set_index("match_id")
-    partidas = pd.DataFrame({"th": casa["team_id"], "hg": casa["gols"], "rho": casa["rho"],
+    partidas = pd.DataFrame({"th": casa["team_id"], "hg": casa["gols"], "rho": casa["rho"], "data": casa["data"],
                              "ta": fora["team_id"], "ag": fora["gols"]}).dropna(subset=["rho"])
     perdas, probs_1x2 = {}, {}
     for nome, s in lam_te.items():
@@ -320,21 +310,45 @@ def main() -> None:
         la = s.loc[list(zip(partidas.index, partidas["ta"]))].values
         perdas[nome], probs_1x2[nome] = perdas_oos(partidas, lh, la)
 
-    base = "base (XI previsto)"
-    print(f"\n=== Fora da amostra: {len(partidas)} partidas — Δ perda vs base (IC95% bootstrap por partida) ===")
-    for mercado in perdas[base]:
-        print(f"  {mercado}: base={perdas[base][mercado].mean():.4f}")
+    print(f"\n=== Fora da amostra: {len(partidas)} partidas — Δ perda vs '{base_nome}' (IC95% bootstrap por partida) ===")
+    for mercado in perdas[base_nome]:
+        print(f"  {mercado}: base={perdas[base_nome][mercado].mean():.4f}")
         for nome in perdas:
-            if nome == base:
+            if nome == base_nome:
                 continue
-            d = perdas[nome][mercado] - perdas[base][mercado]
+            d = perdas[nome][mercado] - perdas[base_nome][mercado]
             bs = [d[rng.integers(0, len(d), len(d))].mean() for _ in range(N_BOOT)]
             print(f"    {nome:40s} Δ={d.mean():+.5f} [{np.percentile(bs, 2.5):+.5f},{np.percentile(bs, 97.5):+.5f}]")
+    return partidas, perdas, probs_1x2
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--corte", default=CORTE_PADRAO)
+    parser.add_argument("--entrada", help="painel time-partida de calibrar_potencia_lambda.py")
+    parser.add_argument("--cache-dir", help="pasta pra guardar/reaproveitar os downloads (.pkl)")
+    args = parser.parse_args()
+    corte = pd.Timestamp(args.corte)
+    rng = np.random.default_rng(SEED)
+
+    p = preparar_painel(args.entrada, args.cache_dir, corte)
+    tr, te = p[p["data"] < corte], p[p["data"] >= corte]
+    variantes = {
+        "base (XI previsto)": ("lb_prev", []),
+        "escalação confirmada COMPLETA (vaza)": ("lb_real", []),
+        "só titulares confirmados (limpa)": ("lb_real_tit", []),
+        "previsto × titulares confirmados": ("lb_prev_tit", []),
+        "descanso/sequência": ("lb_prev", ["curto", "curto_adv", "longo", "longo_adv"]),
+        **{f"mando EWM meia-vida {hl}": ("lb_prev", [f"x_mando{hl}"]) for hl in MEIAS_VIDAS_MANDO},
+        "titulares + descanso + mando300": ("lb_real_tit", ["curto", "curto_adv", "longo", "longo_adv", "x_mando300"]),
+    }
+    partidas, _, probs_1x2 = avaliar_variantes(tr, te, variantes, rng, "base (XI previsto)")
 
     ids = sorted(int(i) for i in partidas.index)
     odds = _cache(args.cache_dir, "odds_1x2_pinnacle",
                   lambda: odds_1x2_pinnacle(Rest(obter_env("SUPABASE_URL"), obter_env("SUPABASE_KEY")), ids))
     bloco_pinnacle(partidas, probs_1x2, odds, rng)
+    bloco_w_cronologico(partidas, probs_1x2, odds, rng)
 
 
 def bloco_pinnacle(partidas, probs_1x2, odds, rng):
@@ -354,6 +368,34 @@ def bloco_pinnacle(partidas, probs_1x2, odds, rng):
             w, se = peso_log_pooling(y, pp, pm)
             print(f"    {nome:36s} Δ vs Pinnacle={d.mean():+.4f} [{np.percentile(bs, 2.5):+.4f},{np.percentile(bs, 97.5):+.4f}]"
                   f"  w={w:+.3f} (SE {se:.3f}, z {w / se:+.1f})")
+
+
+def bloco_w_cronologico(partidas, probs_1x2, odds, rng, variante="só titulares confirmados (limpa)"):
+    """Validação cronológica do log-pooling: w estimado na 1ª metade (por data)
+    das partidas com Pinnacle, aplicado na 2ª. Mede se a combinação
+    p ∝ p_pin^(1−w)·p_mod^w bate a Pinnacle sozinha em partidas que o w nunca viu."""
+    res = np.where(partidas["hg"] > partidas["ag"], 0, np.where(partidas["hg"] == partidas["ag"], 1, 2))
+    print(f"\n=== Validação cronológica do w (variante: {variante}) — estima na 1ª metade, aplica na 2ª ===")
+    for momento in ("abertura", "fechamento"):
+        pin = pinnacle_sem_vig(odds, momento)
+        ok = np.isin(partidas.index, pin.index)
+        datas = partidas["data"].values[ok]
+        ordem = np.argsort(datas, kind="stable")
+        y = res[ok][ordem]
+        pp = pin.loc[partidas.index[ok], ["home", "draw", "away"]].values[ordem]
+        pm = probs_1x2[variante][ok][ordem]
+        meio = len(y) // 2
+        w, se = peso_log_pooling(y[:meio], pp[:meio], pm[:meio])
+        z = (1 - w) * np.log(np.clip(pp[meio:], 1e-6, 1)) + w * np.log(np.clip(pm[meio:], 1e-6, 1))
+        pc = np.exp(z - np.log(np.exp(z).sum(axis=1, keepdims=True)))
+        yy = y[meio:]
+        idx = np.arange(len(yy))
+        d = -np.log(np.clip(pc[idx, yy], 1e-4, 1)) + np.log(np.clip(pp[meio:][idx, yy], 1e-4, 1))
+        bs = [d[rng.integers(0, len(d), len(d))].mean() for _ in range(N_BOOT)]
+        w2, se2 = peso_log_pooling(yy, pp[meio:], pm[meio:])
+        print(f"  {momento:10s}: 1ª metade n={meio} w={w:+.3f} (z {w / se:+.1f}) | 2ª metade n={len(yy)} "
+              f"combinação − Pinnacle = {d.mean():+.5f} [{np.percentile(bs, 2.5):+.5f},{np.percentile(bs, 97.5):+.5f}] "
+              f"| w reestimado na 2ª metade={w2:+.3f} (z {w2 / se2:+.1f})")
 
 
 if __name__ == "__main__":

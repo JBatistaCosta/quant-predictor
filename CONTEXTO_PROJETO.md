@@ -1,5 +1,61 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**(1) Validação cronológica do log-pooling com os titulares confirmados: w continua POSITIVO nas duas metades, mas o ganho sobre a Pinnacle em partidas não vistas é nulo. (2) Cansaço e desgaste logístico: a distância de viagem tem efeito na direção biológica esperada, sobrevive ao controle de mando e de força e se concentra nas competições de distâncias longas, mas NÃO melhora a previsão fora da amostra. A assimetria de descanso e a carga de minutos do XI têm sinal TROCADO (confusão por força) (25/09).** Continuação direta da entrada abaixo. Scripts:
+- `arquivos_do_claude/validar_informacao_nova_lambda.py`: refatorado, com `preparar_painel`/`avaliar_variantes` reutilizáveis e o bloco novo `bloco_w_cronologico`.
+- `arquivos_do_claude/validar_desgaste_logistico.py`: novo.
+
+- **(1) Log-pooling cronológico** (só titulares confirmados; w estimado na 1ª metade por data, aplicado na 2ª):
+
+  | Pinnacle | w 1ª metade (z) | w reestimado 2ª metade (z) | Combinação − Pinnacle na 2ª metade [IC95%] |
+  |---|---|---|---|
+  | Abertura (859 + 859) | +0,09 (+0,5) | +0,21 (+1,2) | −0,0005 [−0,0017; +0,0006] |
+  | Fechamento (1.700 + 1.700) | +0,21 (+1,6) | +0,16 (+1,2) | −0,0004 [−0,0023; +0,0015] |
+
+  - O sinal é **consistente**: w>0 nas duas metades, não é acaso da amostra inteira.
+  - O ganho prático é **nulo**: −0,0004 de log-loss, IC cruzando zero.
+  - **Não há base para apostar** com a combinação modelo+Pinnacle. A informação dos titulares confirmados que o modelo tem e o fechamento não tem é mínima; o mercado já incorpora a escalação.
+- **(2) Desgaste logístico — protocolo do usuário**:
+  - Base: λ calibrado com os titulares confirmados.
+  - Treino 10.114 / teste 4.534 partidas com distância e carga do XI.
+  - Distância: da "base" do clube (mediana das coordenadas do estádio nos jogos em casa, `match_context_fotmob.stadium_lat/long`, 25.431 partidas com coordenada) até o estádio da partida. Visitante: mediana 359 km, p90 1.513 km.
+  - Grupos (distância mediana do visitante):
+    - longa (Brasileirão A/B, Libertadores, Sul-Americana, Copa do Brasil, MLS): 1.131 km;
+    - compacta (Premier, Championship, Bundesliga, Eredivisie): 189 km;
+    - outras: 399 km.
+  - ΔDescanso = dias próprios − do adversário, em 3 faixas: ≥+3 / neutro / ≤−3. |ΔDescanso|≥3 em 14% dos casos.
+  - Carga logística = ln(1+km)/dias de descanso (dias limitados a 1–14).
+  - Carga do XI = média, nos titulares confirmados, dos minutos nos 14 dias anteriores (em jogos de 90 min; média 1,23).
+  - **⚠️ Confusão achada e corrigida no próprio teste**: a carga logística do mandante é ~0 (não viaja) e a do visitante é sempre >0. Sem controle de mando, ela vira um indicador de "joga fora" e absorve a vantagem de casa que a bivariada (sem mando) não tem. O β caiu de −0,056 (z −4,7) para **−0,044 (z −2,7)** com `is_home` no modelo. Toda variante registrada abaixo inclui o controle.
+- **Ajuste no treino (offset = ln λ_base; efeito multiplicativo nos gols do próprio time)**:
+
+  | Termo | β (z) | Direção esperada | Leitura |
+  |---|---|---|---|
+  | Carga logística própria | **−0,044 (−2,7)**; com controle de força −0,045 (−2,8) | − | ✅ biologicamente coerente, sobrevive aos controles |
+  | Carga logística do adversário | +0,006 (+0,4) | + | nulo |
+  | Descanso: vantagem ampla própria (≥+3) | −0,024 (−0,9) | + | nulo, sinal trocado |
+  | Descanso: desvantagem ampla própria (≤−3) | **+0,068 (+3,0)** | − | ❌ SINAL TROCADO: time com ≥3 dias a menos de descanso marca +7% |
+  | Carga de minutos do XI própria | **+0,035 (+2,7)** | − | ❌ sinal trocado |
+  | Carga de minutos do XI do adversário | **−0,035 (−2,6)** | + | ❌ sinal trocado |
+  | Força relativa ln(λ/λ_adv) | −0,026 (−2,3) | — | resto de força (compressão, PR #665) |
+
+  - **Heterogeneidade da carga logística**:
+
+    | Grupo | β (z) |
+    |---|---|
+    | Distância longa | **−0,046 (−2,8)** |
+    | Outras | −0,046 (−2,1) |
+    | Compacta | −0,014 (−0,6) |
+
+    O efeito existe onde se viaja muito e some nas ligas compactas, **como a hipótese prevê**. Ordem de grandeza: visitante típico de distância longa (1.131 km, 5 dias de descanso: carga ≈ 1,4) marca ≈6% menos gols do que o λ prevê.
+  - **Descanso e carga do XI com sinal trocado mesmo controlando força pelo offset + ln(λ/λ_adv)**: quem joga com menos descanso e com o XI mais rodado é, em média, time de mais qualidade e em mais competições. O λ não captura toda essa diferença. **Não usar essas variáveis**: o efeito medido é confusão, não cansaço.
+- **Fora da amostra (4.528 partidas), Δ perda contra a base**:
+  - Nenhuma variante melhora com IC abaixo de zero em gols por time ou 1X2. Exemplos: desgaste completo com controle de mando e força: 1X2 +0,0002 [−0,0017; +0,0020]; gols por time +0,0009 [−0,0013; +0,0031].
+  - Única exceção: carga logística por grupo no O/U 2.5, −0,0010 [−0,0020; −0,00004]. Está no limite e é uma entre muitas comparações, então **não conta**.
+  - **Jogos extremos** (|ΔDescanso|≥3 ou visitante >2.000 km: 966 partidas): o sinal vai na direção certa, 1X2 −0,0037 [−0,0084; +0,0011] e gols −0,0043 [−0,0104; +0,0018]. Nos demais jogos piora levemente (gols +0,0023 [+0,0001; +0,0045]). O ganho, se existe, está concentrado nos extremos, mas **com IC cruzando zero em ~1.000 jogos**.
+- **Leitura**: o efeito de viagem é real no treino, na direção biológica, sobrevive aos controles e é heterogêneo como esperado. Mas é pequeno demais (≈−4% nos gols do visitante por unidade de carga) para melhorar a previsão fora da amostra. Assimetria de descanso e minutos do XI não medem cansaço aqui: medem força. **Nada disso entra no λ de produção.** Se voltar a ser testado, o recorte promissor é o de jogos extremos com amostra maior (acumular 2026/27).
+
+---
+
 **Informação nova no λ: saber QUEM COMEÇA o jogo (11 titulares confirmados, ~1h antes) é o maior ganho já medido no 1X2 (−0,015 de log-loss) e, pela primeira vez, o modelo passa a ACRESCENTAR informação à Pinnacle de fechamento (peso w=+0,18 no log-pooling, z=+2,0, ainda não validado cronologicamente). Descanso/sequência e mando adaptativo (EWM) não servem fora da amostra. Top-N de xG previsto quase não acrescenta ao total. E um vazamento estrutural em `player_match_walkforward` (25/09).** Item 3 da lista "o que melhorar nos mercados de times". Scripts: `arquivos_do_claude/validar_informacao_nova_lambda.py` e `arquivos_do_claude/validar_topn_xg.py`, ambos validados de ponta a ponta.
 
 - **⚠️ Vazamento estrutural achado (vale para TODA análise que use `player_match_walkforward`)**:
