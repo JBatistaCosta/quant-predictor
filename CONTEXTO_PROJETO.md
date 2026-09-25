@@ -1,5 +1,68 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Informação nova no λ: saber QUEM COMEÇA o jogo (11 titulares confirmados, ~1h antes) é o maior ganho já medido no 1X2 (−0,015 de log-loss) e, pela primeira vez, o modelo passa a ACRESCENTAR informação à Pinnacle de fechamento (peso w=+0,18 no log-pooling, z=+2,0, ainda não validado cronologicamente). Descanso/sequência e mando adaptativo (EWM) não servem fora da amostra. Top-N de xG previsto quase não acrescenta ao total. E um vazamento estrutural em `player_match_walkforward` (25/09).** Item 3 da lista "o que melhorar nos mercados de times". Scripts: `arquivos_do_claude/validar_informacao_nova_lambda.py` e `arquivos_do_claude/validar_topn_xg.py`, ambos validados de ponta a ponta.
+
+- **⚠️ Vazamento estrutural achado (vale para TODA análise que use `player_match_walkforward`)**:
+  - A tabela só tem linhas de jogadores que **entraram em campo**, nas duas fontes (`previsto` e `real`): as mesmas 37.028 linhas de reservas em 2025/26.
+  - Então até o "XI previsto" já sabe quais reservas entraram e quem foi desfalque de última hora.
+  - Na fonte `real`, os minutos esperados batem exatamente com a média real por papel (titular 81,6 × 81,6; reserva 19,4 × 19,9).
+  - **O λ da produção usado nas análises das PRs #657/#660/#664/#665 e da entrada de totais vem daqui**, então carrega parte desse vazamento. Isso não muda as conclusões negativas; se muda algo, o modelo "de verdade" é um pouco pior.
+  - Para prever antes do jogo, o conjunto limpo é: XI titular confirmado (`match_lineup_fotmob.is_starter`), mais o banco como constante.
+- **Desenho**:
+  - λ calibrado (bivariada sem mando, PR #665) como offset; cada fonte nova ajustada SÓ no treino (GLM de Poisson).
+  - Fora da amostra: 4.529 partidas a partir de 2025-06-01, matriz Dixon-Coles estática com ρ real, IC95% bootstrap por partida.
+  - Amostra: time-partidas com ≥10 titulares confirmados que têm λ no walk-forward. Treino: 10.115 partidas.
+- **Fora da amostra — Δ perda contra a base (XI previsto)**:
+
+  | Variante | Gols por time | 1X2 | O/U 2.5 |
+  |---|---|---|---|
+  | Escalação confirmada COMPLETA (vaza: soma quem entrou) | −0,0094 [−0,012; −0,007] | −0,0052 [−0,007; −0,003] | −0,0026 [−0,004; −0,001] |
+  | **Só titulares confirmados (limpa)** | **−0,0182** [−0,023; −0,014] | **−0,0148** [−0,018; −0,012] | **−0,0030** [−0,005; −0,001] |
+  | λ previsto somado só nos titulares | −0,0154 [−0,020; −0,011] | −0,0152 [−0,018; −0,012] | −0,0014 [−0,003; +0,001] |
+  | Descanso/sequência (≤3 / ≥10 dias, time e adversário) | −0,0011 [−0,0022; +0,0000] | +0,0002 | −0,0003 |
+  | Mando EWM (meia-vida 100 / 300) | +0,0005 / −0,0000 | +0,0002 / −0,0004 | **+0,0003 / +0,0003 (pior)** |
+
+  - **O ganho vem de saber quem começa**, não do modelo de minutos: somar o λ `previsto` só nos titulares dá quase o mesmo. Somar as reservas que entraram (versão "completa") atrapalha.
+  - **Descanso**: significativo no treino (LRT 15,9, p=0,003), mas com sinal estranho: time com ≤3 dias de descanso marca +4,8%, provavelmente confusão por força (quem joga no meio da semana é time de copa europeia). Nulo fora da amostra.
+  - **Mando EWM**: fortíssimo no treino (β=0,67, z=6,5) e nulo ou pior fora da amostra. Não acompanha a mudança de regime da PR #665. A regra "mando só adaptativo" continua valendo, mas **esta** forma adaptativa não funcionou.
+- **1X2 contra a Pinnacle sem vig** (w = peso do modelo em p ∝ p_pin^(1−w)·p_mod^w; w>0 significativo = acrescenta informação):
+
+  | Momento | Variante | Δ log-loss vs Pinnacle [IC95%] | w (z) |
+  |---|---|---|---|
+  | Fechamento (3.400 partidas; LL Pinnacle 0,990) | base | +0,029 [+0,023; +0,035] | **−0,35 (−3,6)** |
+  | | **só titulares** | +0,012 [+0,006; +0,018] | **+0,18 (+2,0)** |
+  | | previsto × titulares | +0,011 [+0,005; +0,018] | +0,19 (+2,0) |
+  | 1ª odd pré-jogo (1.718; LL 0,979) | base | +0,031 [+0,023; +0,039] | −0,45 (−3,2) |
+  | | só titulares | +0,013 [+0,004; +0,021] | +0,15 (+1,2) |
+
+  - **Sozinho, o modelo continua pior que a Pinnacle.** Mas o λ antigo tinha peso NEGATIVO (atrapalhava a Pinnacle, coerente com o "w*=0" do log-pooling de 17/09), e com os titulares confirmados o peso passa a ser **positivo**.
+  - **Ressalvas antes de qualquer uso**:
+    1. w foi estimado no próprio período de teste, com várias variantes testadas, e z=2,0 está no limite.
+    2. Contra o fechamento não dá para apostar; a janela realista é entre a divulgação da escalação e o apito.
+    3. Nossas odds pré-jogo são de dias antes, não da janela de 1h.
+  - **Próximo passo**: validar w cronologicamente (estimar na 1ª metade do teste, aplicar na 2ª). Se sobreviver, simular apostas com a probabilidade combinada contra a última odd pré-fechamento, com IC95% e calibração nas apostas escolhidas.
+- **Top-N de xG (previsto e real) contra resultado e gols** (pedido do usuário; 15.733 partidas, mesma amostra nas duas fontes):
+
+  | Métrica | Previsto: corr(diff, saldo) | Previsto: corr(diff, V/E/D) | Previsto: parcial dado total | Real: corr(diff, saldo) | Real: parcial dado total |
+  |---|---|---|---|---|---|
+  | Total do time | 0,361 | 0,294 | — | 0,588 | — |
+  | Top-1 | 0,345 | 0,297 | +0,042 | 0,521 | +0,064 |
+  | Top-3 | **0,363** | **0,310** | +0,028 | 0,595 | +0,105 |
+  | Top-4 | **0,363** | 0,309 | +0,021 | **0,601** | +0,117 |
+  | Top-5 | 0,362 | 0,305 | +0,011 | 0,601 | **+0,123** |
+
+  - **Previsto** (fora da amostra, NLL dos gols do time, 4.718 partidas de teste):
+    - Trocar o total pelo top-N não melhora de forma significativa; o top-1 piora (+0,0035).
+    - Somar a concentração ln(top-N/total) melhora de forma significativa, mas é minúsculo: −0,0007 a −0,0009, IC abaixo de zero de top-2 a top-5, β≈+0,2.
+    - Mesmo padrão do xA: time com as chances concentradas nos melhores finalizadores marca um pouco mais.
+  - **Real** (pós-jogo): a qualidade das melhores chances explica gols além do volume (parcial 0,12 no top-5), mas é informação de depois do jogo. Não serve para prever.
+- **Hipótese secundária futura, sem implementação (pedido do usuário)**: viés favorito-azarão no Over 3.5 da Pinnacle.
+  - Subconjunto só-fechamento: O/E = 0,893 (n=1.241).
+  - Amostra completa: O/E = 0,932 (n=1.508, incluindo última odd pré-fechamento). O efeito enfraquece com a amostra maior.
+  - Para virar teste: under 3.5 sistemático contra a odd real, com IC95% e correção de comparações múltiplas.
+
+---
+
 **Mercados de totais (O/U 1.5/2.5/3.5, BTTS, gols por time O/U 1.5) contra odds reais: a Pinnacle bate todas as versões do λ, o modelo não acrescenta informação ao mercado, nenhuma estratégia de aposta tem IC acima de zero e o CLV na abertura é ≈ 0. A "homologação para totais" da calibração bivariada (entrada abaixo) vale só contra a produção, não contra o mercado (25/09).** Pedido do usuário: item 1 da lista "o que melhorar nos mercados de times" (totais contra odds reais), com quebra por mercado × casa × abertura × fechamento. Script: `arquivos_do_claude/validar_totais_vs_mercado.py`, validado de ponta a ponta (painel de `calibrar_potencia_lambda.py`, odds/λ do híbrido via REST com a chave pública).
 
 - **Desenho**:
