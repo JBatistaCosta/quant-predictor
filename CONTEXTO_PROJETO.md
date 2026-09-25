@@ -1,5 +1,34 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Diagnóstico da geração de placares: a FORMA da matriz Dixon-Coles estática já é boa — o gap contra o mercado é todo de NÍVEL do λ. E os multiplicadores de gol por estado do motor de Markov estão com o sinal trocado (25/09).** Pedido do usuário ("melhorar o mecanismo de geração de placares para maior granularidade") — rodado antes como diagnóstico só leitura, pra saber se granularidade (ex.: modelo de Dixon-Robinson, taxa dependente de placar×minuto) vale o esforço. Corrige uma atribuição errada da entrada "Causa raiz da má calibração do Handicap -1.0" (abaixo).
+
+- **Parte A — taxa real de gols por estado de placar, controlada** (`match_goal_timeline`, 4.390 partidas OOS pós 2025-06-01 com `placar_confere` e contagem de gols batendo com `matches`, 11.948 gols; ordenado por `clock`, sem disputa de pênaltis; duração por partida via soma de `match_team_game_state.minutos`). GLM de Poisson por (time × trecho entre gols × faixa de minuto), offset = λ pré-jogo da produção × fração do tempo, com estado de placar + faixa de minuto + favoritismo `log(λ/λ_adv)` juntos. Relativo a "empatando":
+
+  | Estado de quem marca | Multiplicador | IC95% |
+  |---|---|---|
+  | Perdendo por 2+ | 0,98 | [0,91; 1,05] |
+  | Perdendo por 1 | 1,02 | [0,97; 1,08] |
+  | **Ganhando por 1** | **0,88** | [0,84; 0,93] (z=-4,7) |
+  | **Ganhando por 2+** | **0,91** | [0,86; 0,98] (z=-2,6) |
+
+  Favoritismo: ×0,94 por unidade de `log(λ/λ_adv)` (z=-3,5, LRT=12,3) — o λ da produção exagera o favorito (mesmo viés de nível já registrado). **Armadilha evitada**: sem controlar o minuto, "perdendo" aparece como ×1,11 — é só porque quem está perdendo está em minutos mais tardios, quando sai mais gol. O formato por faixa de minuto (0-14 ×0,74 … 75+ ×1,22) bate com o `mult_minuto_bin` que o Markov já usa.
+- **O Markov usa o oposto**: em `league_markov_params` (evento=`gol`, `mult_estado_placar`, só por liga, 15 ligas, **sem fallback global** — ligas fora delas caem no neutro 1,0, e só 3 estados sem distinguir margem de 1 ou 2), a razão ganhando/empatando é **×1,03 a ×1,31** (ex.: liga 13: 1,2007/0,9138). Os dados controlados dizem ×0,88. É a mesma confusão por força de equipe documentada 3x no projeto (quem está ganhando costuma ser o time melhor) — a calibração original provavelmente não controlou por força.
+- **Correção da entrada anterior**: o viés de margem menor do Markov NÃO vinha dos multiplicadores. Mesmo teste simétrico de viés do favorito (n=4.671): produção λ + matriz estática **-0,111** (p=2·10⁻⁶); `hibrido_gols_v1` λ + matriz estática **-0,0045** (p=0,85); `hibrido_gols_v1` λ + motor Markov **-0,033** (p=0,16). Com o mesmo λ, o motor PIORA o viés — coerente com os multiplicadores invertidos. O λ do `hibrido_gols_v1` não tem viés de margem; o da produção (bottom-up) tem.
+- **Parte B — nível × forma do gap contra o mercado** (Handicap -1.0, 3 vias, 1.397 partidas com odds reais de fechamento de `european_handicap_-1` E de `1X2`, dedup de snapshot da PR #619). Truque: ajustar, por partida, (λ_casa, λ_fora) pra matriz Dixon-Coles estática (ρ real) reproduzir exatamente o 1X2 sem vig do mercado (KL mediano 7·10⁻¹⁵), e usar essa matriz pra prever o handicap — mede o erro de FORMA isolado do erro de nível. Log-loss (IC95% bootstrap pareado):
+
+  | Componente | Δ log-loss | IC95% |
+  |---|---|---|
+  | FORMA: matriz com λ do mercado − handicap do próprio mercado | **-0,0026** | [-0,006; +0,001] |
+  | NÍVEL: λ `hibrido_gols_v1` − λ do mercado | +0,0233 | [+0,014; +0,033] |
+  | NÍVEL: λ produção − λ do mercado | +0,0317 | [+0,022; +0,042] |
+  | MOTOR: Markov − matriz estática (mesmo λ) | +0,0028 | [-0,001; +0,006] |
+
+  Com o λ do mercado, a matriz estática prevê o Handicap -1.0 tão bem quanto o próprio mercado de handicap (até levemente melhor, não significativo), e o push fica bem calibrado (z=+0,57; mercado de handicap +1,27, produção +1,96, Markov +2,98). **O gap de 0,023–0,032 é inteiro de nível do λ (informação pré-jogo sobre força), não da forma da distribuição.**
+- **Conclusão**: granularidade na geração de placares (Dixon-Robinson, estados mais finos) mexe no máximo em ~0,003 de log-loss neste mercado — não é onde está a desvantagem contra o mercado. O esforço de "bater o mercado" deve ir pro NÍVEL do λ (por que a produção exagera o favorito; por que até o `hibrido_gols_v1` fica 0,023 atrás do λ implícito no mercado). Ressalva: testado só no Handicap -1.0; placar exato/totais podem ser mais sensíveis à forma.
+- **Correção pequena pendente (não implementada)**: recalibrar `mult_estado_placar` de gol do Markov controlando pelo λ pré-jogo (GLM acima), separar margem de 1 e 2+, e criar fallback global — corrige um erro conhecido nos mercados que o app exibe via Markov, sem esperar ganho contra o mercado. Os de chute/chute no alvo (mesmos valores, mesma calibração) provavelmente têm o mesmo problema — não verificado. Análise ad-hoc (pandas/scipy local sobre SQL), sem script commitado.
+
+---
+
 **Backtest financeiro do Handicap -1.0 com `markov_multievento_v1`: perde menos que a produção, mas também perde com significância — o mercado (odds sem vig) é mais preciso que os dois modelos, e o "edge" selecionado pelo Kelly é majoritariamente erro do modelo (25/09).** Pedido do usuário depois do achado acima de que o Markov tem viés de margem ~70% menor que a produção. Mesmo protocolo e mesmas 1.397 partidas OOS do backtest da produção (odds reais de fechamento `european_handicap_-1`, 3 vias, dedup de snapshot da PR #619), usando as probabilidades de `handicap_-1.0` já gravadas em `model_predictions` (`markov_multievento_v1`, 2.000 simulações por partida).
 
 - **Resultado financeiro** (Kelly padrão por seleção, aposta quando `f>0`):
@@ -26,6 +55,7 @@
 - **Descartada má especificação de variância**: resíduo padronizado `(gol_diff_real−gol_diff_previsto)/√(λ_home+λ_away)` tem variância ≈0,94 (mandante 0,935, visitante 1,015) — perto de 1, gols seguem Poisson razoavelmente bem aqui (diferente do achado de subdispersão em escanteios/faltas da Fase 6.2 do motor de Markov — não é o mesmo mecanismo).
 - **Achado real**: testando de forma simétrica (sempre o lado favorecido, mandante ou visitante) — `margem_real_do_favorito − margem_prevista` tem média **-0,1114 gols** (n=4.671, t=-4,77, **p=1,9·10⁻⁶**), e essa média **não escala com a magnitude do favoritismo previsto** (correlação r=-0,028, p=0,053 — praticamente constante em -0,08 a -0,21 gols em todos os decis de favoritismo). Simétrico entre mandante/visitante favorito.
 - **Hipótese de causa (ancorada em achado já documentado do projeto)**: o viés é aditivo e não escala com o favoritismo — aponta pra algo que acontece sempre que existe QUALQUER favorito, não uma extrapolação de casos extremos. Bate com o achado já registrado de **estado do jogo** (`match_team_game_state`/`v_game_state_por_forca`, CLAUDE.md): quem está ganhando cria menos, quem está perdendo cria mais — dinâmica que o λ pré-jogo estático (fixo o jogo inteiro) nunca captura, já que só existe depois que o placar abre. Consistente com o viés ser aditivo (entra sempre que abre vantagem) e não multiplicativo (não escala com o tamanho do favoritismo).
+- **⚠️ CORRIGIDO (25/09, ver entrada "Diagnóstico da geração de placares" no topo): a atribuição abaixo está ERRADA.** O viés menor do Markov vem da FONTE do λ (`hibrido_gols_v1`, sem viés de margem: -0,0045 na matriz estática), não dos multiplicadores de estado — com o MESMO λ, o motor Markov AUMENTA o viés (-0,0045 → -0,0328), porque os multiplicadores `mult_estado_placar` de gol estão com o sinal trocado. Texto original mantido abaixo como histórico.
 - **Hipótese CONFIRMADA empiricamente comparando contra o motor de Markov (mesmo dia, pergunta do usuário "Markov não conseguiria reproduzir esse efeito?").** Extraído `E[margem] = Σ(i−j)·P(i,j)` da grade 15×15 (`model_match_estimates.params.heatGrid`, `markov_multievento_v1`, já persistida desde a Fase 6.1) pras mesmas 4.671 partidas, e repetido o teste de viés simétrico:
 
   | Modelo | Viés médio (margem real − prevista do favorito) | p-valor |
