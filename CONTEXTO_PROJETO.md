@@ -1,5 +1,43 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Calibração de potência do λ da produção (λ* = α·λ^γ): γ≈0,81, muito abaixo de 1 e estável no tempo — melhora gols por time e Over/Under 2.5 fora da amostra, mas NÃO melhora 1X2 nem Handicap -1.0, e corrige demais o favorito nos decis extremos. Não aplicado em produção (25/09).** Pedido do usuário depois do diagnóstico acima (gap contra o mercado é de nível do λ). Script: `arquivos_do_claude/calibrar_potencia_lambda.py`.
+
+- **Dados**: treino = **21.895 observações time-partida** (10.987 partidas, antes de 2025-06-01 — não 21.895 partidas/43.790 observações, como o pedido supunha); teste = 4.674 partidas a partir de 2025-06-01 com ρ real. λ da produção = λ_xGOT × exp(β_xGA·def_xga_adv + β_xA·def_xa_adv) (PR #657). **Proveniência do λ_xGOT confirmada por SQL**: é exatamente `Σ max(lambda_xg_jogo, 0)` de `player_match_walkforward` com `fonte_titular='previsto'` (6/6 amostras batem até a 4ª casa).
+- **Ajuste no treino** (GLM de Poisson, ligação log, `ln λ* = ln α + γ·ln λ`):
+
+  | Ajuste | n | α | γ | SE_γ | z (γ=1) | p |
+  |---|---|---|---|---|---|---|
+  | Global | 21.895 | 1,0776 | **0,8066** | 0,0168 | -11,50 | 1,4·10⁻³⁰ |
+  | Mandantes | 10.951 | 1,1256 | 0,7999 | 0,0242 | -8,26 | 1,5·10⁻¹⁶ |
+  | Visitantes | 10.944 | 1,0450 | 0,7345 | 0,0253 | -10,49 | 9,4·10⁻²⁶ |
+
+  Versão restrita (Σλ* ≡ Σgols, `α(γ)=Σy/Σλ^γ`, `minimize_scalar`): **idêntica** ao irrestrito (ΔNLL=0) — esperado, o GLM de Poisson com intercepto já conserva a média no ótimo. LRT potência vs. só nível (γ=1, α livre): 132,0 (p=1,5·10⁻³⁰). LRT mando (2 df): 69,1 (p=10⁻¹⁵) → par por mando pelo protocolo (a diferença é sobretudo de nível: α_H 1,126 vs. α_A 1,045 — o λ da produção subestima o mandante, coerente com a decisão da PR #657 de não ter termo explícito de mando). **γ é estável entre temporadas**: 2021/22 0,82 · 2022/23 0,75 · 2023/24 0,85 · 2024/25 0,82 · período de teste (só diagnóstico) 0,78 — não é sobreajuste nem deriva.
+- **Fora da amostra — O/E por decil de Δλ = λ_M − λ_V** (decil pelo λ da produção):
+
+  | Decil | Produção (mand. / vis.) | Potência global | Potência por mando |
+  |---|---|---|---|
+  | 1 (visitante muito favorito, Δλ -1,01) | 1,063 / 0,939 | 0,988 / 0,999 | 0,946 / 1,084 |
+  | 5 (Δλ +0,25) | 0,974 / 0,967 | 0,967 / 0,926 | 0,928 / 0,966 |
+  | 10 (mandante muito favorito, Δλ +1,64) | 0,975 / 1,084 | 1,078 / 0,971 | 1,039 / 0,988 |
+  | Decis 1+10, favorito / azarão | 0,959 / 1,073 | **1,042 / 0,980** | **1,058 / 0,965** |
+
+  A correção **passa do ponto**: o favorito sai de O/E 0,96 (superestimado) pra 1,04–1,06 (subestimado) — não converge pra [0,98; 1,02]. O "fator ~0,94" do diagnóstico anterior era um coeficiente de favoritismo RELATIVO (`log(λ/λ_adv)`); a potência comprime o λ de cada time isoladamente, que é outra coisa.
+- **Fora da amostra — Δ perda vs. produção** (matriz Dixon-Coles estática, ρ real, IC95% bootstrap pareado 2000×):
+
+  | Mercado | Produção | Potência global | Potência por mando |
+  |---|---|---|---|
+  | 1X2 (log-loss) | 1,0262 | -0,0006 [-0,003; +0,002] | -0,0005 [-0,003; +0,002] |
+  | Handicap -1.0 (log-loss) | 0,9434 | -0,0011 [-0,003; +0,001] | +0,0011 [-0,001; +0,003] |
+  | **Over/Under 2.5** (log-loss) | 0,6857 | **-0,0020** [-0,0033; -0,0007] | **-0,0022** [-0,0038; -0,0007] |
+  | **Gols por time** (NLL Poisson) | 2,9119 | **-0,0065** [-0,0096; -0,0035] | **-0,0064** [-0,0097; -0,0028] |
+
+  Push do Handicap -1.0 (mandante vence por exatamente 1): produção z=+2,06 → global +1,98 → **por mando +0,95** (melhora, mas o log-loss do handicap não).
+- **Leitura**: γ<1 é real e robusto — o λ da produção tem dispersão demais ENTRE times (os fortes ficam fortes demais, os fracos fracos demais). Comprimir o λ de cada time melhora tudo que depende da SOMA ou do nível de cada lado (total de gols, gols por time), mas não o que depende da DIFERENÇA (1X2, handicap), e nos jogos mais desequilibrados passa a subestimar o favorito. Hipótese pra próxima rodada (não testada): separar a compressão do próprio λ da do adversário (ex.: `λ* = α·λ^γ·λ_adv^δ`), já que o viés de favoritismo é relativo.
+- **Não aplicado em produção.** Mesmo nos mercados onde melhora (O/U 2.5, gols por time), falta passar pelo portão proposto acima (bater o mercado sem vig em log-loss com IC95%) antes de qualquer uso pra aposta.
+- **Script** (`arquivos_do_claude/calibrar_potencia_lambda.py`): núcleo puro (ajuste, Wald, restrito, LRT de mando, avaliação OOS) validado de ponta a ponta com `--entrada` (painel time-partida montado dos mesmos dados) — reproduz os números acima. O carregamento direto do banco (sem `--entrada`) **não foi executado** nesta sessão (sandbox sem credenciais do Supabase); ele monta o painel de defesa completo em lote (sem o teto de 60 partidas por time de `_carregar_serie_ofensiva_defensiva`, que perderia o histórico antigo) e aplica `_calcular_forca_defensiva(shift=True)`.
+
+---
+
 **Diagnóstico da geração de placares: a FORMA da matriz Dixon-Coles estática já é boa — o gap contra o mercado é todo de NÍVEL do λ. E os multiplicadores de gol por estado do motor de Markov estão com o sinal trocado (25/09).** Pedido do usuário ("melhorar o mecanismo de geração de placares para maior granularidade") — rodado antes como diagnóstico só leitura, pra saber se granularidade (ex.: modelo de Dixon-Robinson, taxa dependente de placar×minuto) vale o esforço. Corrige uma atribuição errada da entrada "Causa raiz da má calibração do Handicap -1.0" (abaixo).
 
 - **Parte A — taxa real de gols por estado de placar, controlada** (`match_goal_timeline`, 4.390 partidas OOS pós 2025-06-01 com `placar_confere` e contagem de gols batendo com `matches`, 11.948 gols; ordenado por `clock`, sem disputa de pênaltis; duração por partida via soma de `match_team_game_state.minutos`). GLM de Poisson por (time × trecho entre gols × faixa de minuto), offset = λ pré-jogo da produção × fração do tempo, com estado de placar + faixa de minuto + favoritismo `log(λ/λ_adv)` juntos. Relativo a "empatando":
