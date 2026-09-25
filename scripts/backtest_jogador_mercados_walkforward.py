@@ -16,6 +16,11 @@ empírica, não assumida:
    qual bate o baseline com mais folga? Reportado lado a lado, sem
    declarar vencedor fixo no código -- cabe a quem for usar em produção
    olhar `player_market_backtest` e decidir.
+3. **xG/xA** (mesmo tratamento dos dois -- regressor CatBoost RMSE puro,
+   alvo contínuo): bate o baseline EWMA crua de forma sustentada (IC95%),
+   temporada a temporada? xA nunca tinha passado por essa validação walk-
+   forward antes (só existia o split único de `treinar_modelo_jogador_
+   mercados.treinar()`) -- xG já era mercado nativo aqui.
 
 Também roda uma segunda passada `fonte_titular='real'` (além da `'previsto'`
 de sempre) nas partidas onde `match_lineup_fotmob` (escalação oficial
@@ -137,7 +142,8 @@ def _metricas_probabilidade_marcar(lambda_gols: np.ndarray, real_marcou: np.ndar
 def _persistir_previsao_bruta(
     supabase: Client, teste: pd.DataFrame, previsto_chutes: np.ndarray, lambda_gols_thinning: np.ndarray,
     lambda_gols_direto: np.ndarray, temporada: str, lambda_xg: dict[int, float] | None = None,
-    lambda_chutes_no_alvo: np.ndarray | None = None, fonte_titular: str = "previsto",
+    lambda_chutes_no_alvo: np.ndarray | None = None, lambda_xa: dict[int, float] | None = None,
+    fonte_titular: str = "previsto",
 ) -> int:
     """Grava a previsão bruta (1 linha por jogador x partida x fonte_titular)
     em `player_match_walkforward`. `fonte_titular` é 'previsto' (minutos_
@@ -147,15 +153,17 @@ def _persistir_previsao_bruta(
     vem com o valor certo pra essa passada (o CALLER decide qual coluna usar,
     esta função só grava).
 
-    `lambda_xg` é um dict indexado por posição em `teste` (não um array
-    alinhado 1:1 como os demais) porque o subconjunto de xG é filtrado por
-    `dropna(subset=[TARGET_XG])` separadamente de `teste` -- linhas
-    diferentes podem ter xg_partida nulo (ver docstring do módulo). Ausente
-    do dict = xG não avaliado pra essa linha (fica None, não 0.0 -- não
-    inventar previsão pra linha que não passou pelo modelo). `lambda_chutes_
-    no_alvo` já vem alinhado 1:1 com `teste` (chutes_no_alvo_partida nunca é
-    nulo, mesmo tratamento de chutes_partida -- não precisa do dict)."""
+    `lambda_xg`/`lambda_xa` são dicts indexados por posição em `teste` (não
+    um array alinhado 1:1 como os demais) porque os subconjuntos de xG/xA são
+    filtrados por `dropna(subset=[TARGET_XG/TARGET_XA])` separadamente de
+    `teste` -- linhas diferentes podem ter xg_partida/xa_partida nulo (ver
+    docstring do módulo). Ausente do dict = xG/xA não avaliado pra essa linha
+    (fica None, não 0.0 -- não inventar previsão pra linha que não passou
+    pelo modelo). `lambda_chutes_no_alvo` já vem alinhado 1:1 com `teste`
+    (chutes_no_alvo_partida nunca é nulo, mesmo tratamento de
+    chutes_partida -- não precisa do dict)."""
     lambda_xg = lambda_xg or {}
+    lambda_xa = lambda_xa or {}
     if lambda_chutes_no_alvo is None:
         lambda_chutes_no_alvo = [None] * len(teste)
     linhas = []
@@ -164,6 +172,7 @@ def _persistir_previsao_bruta(
         teste["taxa_conversao_bayesiana"], previsto_chutes, lambda_gols_thinning, lambda_gols_direto, lambda_chutes_no_alvo, strict=True,
     ):
         lam_xg = lambda_xg.get(idx)
+        lam_xa = lambda_xa.get(idx)
         linhas.append({
             "match_id": int(match_id), "team_id": int(team_id), "player_id": int(player_id),
             "fonte_titular": fonte_titular, "prob_titular_usada": None, "minutos_esperados": float(minutos_esp),
@@ -171,6 +180,7 @@ def _persistir_previsao_bruta(
             "lambda_gols_jogo_thinning": float(lam_gols_thin), "lambda_gols_jogo_direto": float(lam_gols_dir),
             "lambda_xg_jogo": float(lam_xg) if lam_xg is not None else None,
             "lambda_chutes_no_alvo_jogo": float(lam_no_alvo) if lam_no_alvo is not None else None,
+            "lambda_xa_jogo": float(lam_xa) if lam_xa is not None else None,
             "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
         })
     total = 0
@@ -184,7 +194,7 @@ def _persistir_previsao_bruta(
 
 def _avaliar_e_persistir_passada(
     supabase: Client, teste_pass: pd.DataFrame, temporada: str,
-    modelo_chutes, modelo_gols_direto, modelo_xg, fonte_titular: str,
+    modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, fonte_titular: str,
 ) -> list[dict]:
     """Pontua `teste_pass` com os modelos JÁ TREINADOS pra essa temporada
     (nunca retreina -- treino/teste dependem só de `match_date`, não de
@@ -260,9 +270,28 @@ def _avaliar_e_persistir_passada(
         )
         lambda_xg_por_indice = dict(zip(teste_xg.index, previsto_xg, strict=True))
 
+    # xA por jogador -- mesmo tratamento de xG (alvo contínuo, RMSE puro,
+    # dropna próprio já que xa_partida pode ser nulo independente de xg).
+    teste_xa = teste_pass.dropna(subset=[tmj.TARGET_XA])
+    lambda_xa_por_indice: dict[int, float] = {}
+    metricas_xa = None
+    previsto_xa = baseline_xa = real_xa = None
+    if not teste_xa.empty:
+        previsto_xa = tmj._prever_catboost_regressor_nao_negativo(modelo_xa, None, teste_xa, features=tmj.FEATURES_XA)
+        baseline_xa = (teste_xa["ewma_xa_90"] * teste_xa["minutos_esperados"] / 90.0).clip(lower=0.0).to_numpy()
+        real_xa = teste_xa[tmj.TARGET_XA].to_numpy()
+        metricas_xa = _metricas_regressao_com_ic(previsto_xa, baseline_xa, real_xa)
+        logger.info(
+            f"  [{fonte_titular}] xa: RMSE modelo={metricas_xa['rmse_modelo']:.4f} baseline={metricas_xa['rmse_baseline']:.4f} "
+            f"IC95%(dif)=[{metricas_xa['ic95_inf']:.4f},{metricas_xa['ic95_sup']:.4f}] "
+            f"sustentado={metricas_xa['modelo_melhor_sustentado']}"
+        )
+        lambda_xa_por_indice = dict(zip(teste_xa.index, previsto_xa, strict=True))
+
     n_gravado = _persistir_previsao_bruta(
         supabase, teste_pass, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada,
-        lambda_xg=lambda_xg_por_indice, lambda_chutes_no_alvo=lambda_chutes_no_alvo_thinning, fonte_titular=fonte_titular,
+        lambda_xg=lambda_xg_por_indice, lambda_chutes_no_alvo=lambda_chutes_no_alvo_thinning,
+        lambda_xa=lambda_xa_por_indice, fonte_titular=fonte_titular,
     )
     logger.info(f"  [{fonte_titular}] {n_gravado} previsões por jogador gravadas em player_match_walkforward.")
 
@@ -289,6 +318,11 @@ def _avaliar_e_persistir_passada(
             if mask_xg.sum() >= 30:
                 m_xg = _metricas_regressao_com_ic(previsto_xg[mask_xg], baseline_xg[mask_xg], real_xg[mask_xg])
                 mercados_da_liga.append(("xg", m_xg))
+        if metricas_xa is not None:
+            mask_xa = (teste_xa["league_id"] == league_id).to_numpy()
+            if mask_xa.sum() >= 30:
+                m_xa = _metricas_regressao_com_ic(previsto_xa[mask_xa], baseline_xa[mask_xa], real_xa[mask_xa])
+                mercados_da_liga.append(("xa", m_xa))
         for mercado, metricas in mercados_da_liga:
             linhas_agregado.append({
                 "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
@@ -339,9 +373,11 @@ def rodar(supabase: Client) -> int:
         modelo_gols_direto, _, _ = modelos_ml.treinar_catboost_poisson(params, treino, tmj.TARGET_GOLS, features=tmj.FEATURES_CHUTES)
         treino_xg = treino.dropna(subset=[tmj.TARGET_XG])
         modelo_xg, _, _ = modelos_ml.treinar_catboost_regressor(params, treino_xg, tmj.TARGET_XG, features=tmj.FEATURES_XG)
+        treino_xa = treino.dropna(subset=[tmj.TARGET_XA])
+        modelo_xa, _, _ = modelos_ml.treinar_catboost_regressor(params, treino_xa, tmj.TARGET_XA, features=tmj.FEATURES_XA)
 
         linhas_agregado = _avaliar_e_persistir_passada(
-            supabase, teste_temporada, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, "previsto",
+            supabase, teste_temporada, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, "previsto",
         )
 
         # Passada 'real' -- só nas linhas onde a escalação oficial daquela
@@ -356,7 +392,7 @@ def rodar(supabase: Client) -> int:
         if len(teste_real) >= 30:
             teste_real["minutos_esperados"] = teste_real["minutos_esperados_real"]
             linhas_agregado += _avaliar_e_persistir_passada(
-                supabase, teste_real, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, "real",
+                supabase, teste_real, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, "real",
             )
         else:
             logger.info(
