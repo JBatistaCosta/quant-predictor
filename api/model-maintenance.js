@@ -3247,6 +3247,174 @@ async function tarefaOddsSyncDiagnostico(supabase, apiKey, { tournamentIds, book
 }
 
 // ============================================================
+// TAREFA: odds-props-descobrir — diagnóstico de PROPS DE JOGADOR (assistência,
+// chutes, gols...) na OddsPapi, antes de escrever qualquer parser (regra do
+// projeto: nunca adivinhar formato de resposta de API paga). NÃO grava nada em
+// odds_market; só devolve um resumo e cacheia em oddspapi_cache
+// (`props_amostra_<fixtureId>_<casas>`) a subárvore dos mercados de
+// assistência, pra inspeção sem rechamar a API.
+//
+// Por que existe: o catálogo de mercados (cache `markets`) lista "Player
+// Assists" (marketId 10738) e "Over Under Player Assists" (102598-102605),
+// mas a única amostra real de /v4/historical-odds já cacheada (Brasileirão,
+// pinnacle/bet365/betano) veio com ZERO mercado por jogador. Precisamos saber
+// QUAIS casas publicam props de jogador e em que formato.
+//
+// Dois modos:
+//   * modo=historico (padrão, GRÁTIS): /v4/historical-odds?fixtureId=X —
+//     "always free, calls never increment your request count" (doc oficial,
+//     ver CONTEXTO_PROJETO.md). Máximo de 3 casas por chamada (HTTP 400
+//     acima disso), então `bookmakers` é dividido em lotes de 3, uma chamada
+//     por lote, com pausa entre elas (rate-limit real já visto: 429).
+//     Devolve TODOS os mercados das casas pedidas numa chamada só.
+//   * modo=ao_vivo (PAGO, 1 chamada de cota): /v4/odds-by-tournaments com até
+//     5 torneios e 1 casa — é a chamada única que cobre MAIS partidas e
+//     jogadores de uma vez (todas as partidas agendadas de até 5 ligas, todos
+//     os mercados), mas só para jogo futuro e só 1 casa.
+// ============================================================
+const MARKET_TYPES_ASSIST = new Set(['players-assists', 'playertotals-assists']);
+
+async function catalogoMercadosPorId(supabase) {
+  const { data } = await supabase.from('oddspapi_cache').select('valor').eq('chave', 'markets').maybeSingle();
+  return Object.fromEntries((data?.valor || []).map((m) => [String(m.marketId), m]));
+}
+
+// Último preço de uma lista de pontos, opcionalmente só até o apito (pontos
+// depois do início são cotação ao vivo, não fechamento — achado real do
+// backfill histórico).
+function ultimoPreco(pontos, inicioIso) {
+  const lista = Array.isArray(pontos) ? pontos : [];
+  const limite = inicioIso ? new Date(inicioIso).getTime() : Infinity;
+  const validos = lista.filter((p) => p?.price > 1 && new Date(p.createdAt).getTime() <= limite);
+  const ult = validos[validos.length - 1];
+  return ult ? { price: ult.price, createdAt: ult.createdAt, n_pontos: lista.length } : { price: null, n_pontos: lista.length };
+}
+
+function resumirMercadosDaCasa(markets, catalogo, inicioIso) {
+  const porTipo = {};
+  const jogadores = new Set();
+  const subarvoreAssist = {};
+  let totalMercados = 0, mercadosDeJogador = 0;
+  for (const [marketId, mercado] of Object.entries(markets || {})) {
+    totalMercados++;
+    const info = catalogo[marketId];
+    const outcomes = mercado?.outcomes || {};
+    const idsJogador = new Set();
+    for (const outcome of Object.values(outcomes)) {
+      for (const pid of Object.keys(outcome?.players || {})) if (pid !== '0') idsJogador.add(pid);
+    }
+    const ehProp = info?.playerProp === true || idsJogador.size > 0;
+    if (!ehProp) continue;
+    mercadosDeJogador++;
+    idsJogador.forEach((p) => jogadores.add(p));
+    const tipo = info?.marketType || `desconhecido_${marketId}`;
+    porTipo[tipo] = porTipo[tipo] || { mercados: 0, jogadores: new Set(), linhas: [] };
+    porTipo[tipo].mercados++;
+    idsJogador.forEach((p) => porTipo[tipo].jogadores.add(p));
+    if (info?.handicap != null) porTipo[tipo].linhas.push(info.handicap);
+    if (MARKET_TYPES_ASSIST.has(tipo)) {
+      subarvoreAssist[marketId] = mercado;
+    }
+  }
+
+  // Amostra legível: até 5 jogadores do mercado "Player Assists" (1+), com o
+  // último preço pré-jogo de cada desfecho.
+  let amostraAssist = null;
+  const idAnytime = Object.keys(subarvoreAssist).find((id) => catalogo[id]?.marketType === 'players-assists');
+  if (idAnytime) {
+    const outcomes = subarvoreAssist[idAnytime].outcomes || {};
+    const pids = [...new Set(Object.values(outcomes).flatMap((o) => Object.keys(o?.players || {})))].slice(0, 5);
+    amostraAssist = {
+      marketId: idAnytime,
+      chaves_de_um_outcome: Object.keys(Object.values(outcomes)[0] || {}),
+      jogadores: pids.map((pid) => ({
+        player_id_oddspapi: pid,
+        precos: Object.fromEntries(Object.entries(outcomes).map(([oid, o]) => [
+          catalogo[idAnytime]?.outcomes?.find((x) => String(x.outcomeId) === oid)?.outcomeName || oid,
+          ultimoPreco(o?.players?.[pid], inicioIso),
+        ])),
+      })),
+    };
+  }
+
+  return {
+    resumo: {
+      total_mercados: totalMercados,
+      mercados_de_jogador: mercadosDeJogador,
+      jogadores_distintos: jogadores.size,
+      por_tipo: Object.fromEntries(Object.entries(porTipo).map(([t, v]) => [t, {
+        mercados: v.mercados, jogadores: v.jogadores.size, linhas: [...new Set(v.linhas)].sort((a, b) => a - b),
+      }])),
+      amostra_assistencia: amostraAssist,
+    },
+    subarvoreAssist,
+  };
+}
+
+async function tarefaOddsPropsDescobrir(supabase, apiKey, { modo, fixtureId, bookmakers, inicio, tournamentIds, bookmaker }) {
+  const catalogo = await catalogoMercadosPorId(supabase);
+  const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  if (modo === 'ao_vivo') {
+    if (!tournamentIds || !bookmaker) return { error: 'modo=ao_vivo precisa de ?tournament_ids=A,B (até 5) e ?bookmaker=X (1 casa).' };
+    const resposta = await chamarOddspapi('/v4/odds-by-tournaments', { tournamentIds, bookmaker, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+    if (!Array.isArray(resposta)) return { erro: 'Resposta inesperada (não é array).', resposta_crua: resposta };
+    const porFixture = resposta.map((fx) => ({
+      fixtureId: fx.fixtureId, participantes: [fx.participant1Name, fx.participant2Name], startTime: fx.startTime,
+      ...resumirMercadosDaCasa(fx.bookmakerOdds?.[bookmaker]?.markets, catalogo, null).resumo,
+    }));
+    const resultado = {
+      modo, custo_cota: 1, bookmaker, tournament_ids: tournamentIds, total_fixtures: resposta.length,
+      fixtures_com_props: porFixture.filter((f) => f.mercados_de_jogador > 0).length,
+      fixtures_com_assistencia: porFixture.filter((f) => f.por_tipo['players-assists'] || f.por_tipo['playertotals-assists']).length,
+      jogadores_distintos_total: porFixture.reduce((s, f) => s + f.jogadores_distintos, 0),
+      chaves_do_fixture: resposta[0] ? Object.keys(resposta[0]) : [],
+      por_fixture: porFixture,
+    };
+    await supabase.from('oddspapi_cache').upsert(
+      { chave: `props_ao_vivo_${bookmaker}_${String(tournamentIds).replace(/,/g, '-')}`, valor: resultado, atualizado_em: new Date().toISOString() },
+      { onConflict: 'chave' },
+    );
+    return resultado;
+  }
+
+  if (!fixtureId) return { error: 'modo=historico precisa de ?fixture_id=X (fixtureId da OddsPapi, ex.: do cache fixtures_finalizadas_liga_N).' };
+  const casas = String(bookmakers || 'bet365,williamhill,1xbet').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 12);
+  const porCasa = {};
+  const subarvores = {};
+  const erros = [];
+  let chavesTopo = null;
+  const lotes = loteados(casas, 3);
+  for (let i = 0; i < lotes.length; i++) {
+    if (i > 0) await esperar(1500);
+    try {
+      const dados = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: lotes[i].join(',') }, apiKey);
+      chavesTopo = chavesTopo || Object.keys(dados || {});
+      for (const casa of lotes[i]) {
+        const markets = dados?.bookmakers?.[casa]?.markets;
+        if (!markets) { porCasa[casa] = { sem_dado: true }; continue; }
+        const { resumo, subarvoreAssist } = resumirMercadosDaCasa(markets, catalogo, inicio);
+        porCasa[casa] = resumo;
+        if (Object.keys(subarvoreAssist).length) subarvores[casa] = subarvoreAssist;
+      }
+    } catch (e) {
+      erros.push({ lote: lotes[i], erro: e.message });
+    }
+  }
+
+  const resultado = {
+    modo: 'historico', custo_cota: 0, fixtureId, inicio: inicio || null, casas_pedidas: casas,
+    chaves_topo_da_resposta: chavesTopo, erros, por_casa: porCasa,
+    casas_com_assistencia: Object.keys(subarvores),
+  };
+  await supabase.from('oddspapi_cache').upsert(
+    { chave: `props_amostra_${fixtureId}_${casas.join('-')}`, valor: { ...resultado, subarvore_assistencia: subarvores }, atualizado_em: new Date().toISOString() },
+    { onConflict: 'chave' },
+  );
+  return resultado;
+}
+
+// ============================================================
 // TAREFA: odds-historico-descobrir — FASE 1 do backfill de odds de rodadas
 // JÁ ENCERRADAS (pedido do usuário: "importar odds de todas as rodadas
 // anteriores do Brasileirão").
@@ -6753,6 +6921,17 @@ export default async function handler(req, res) {
       if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
       if (!liga_id) return res.status(400).json({ error: { message: 'tarefa=odds-historico-descobrir precisa de ?liga_id=X.' } });
       const resultado = await tarefaOddsHistoricoDescobrir(supabase, apiKey, Number(liga_id));
+      if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
+      return res.status(200).json(resultado);
+    }
+
+    if (tarefa === 'odds-props-descobrir') {
+      const apiKey = process.env.ODDSPAPI_KEY;
+      if (!apiKey) return res.status(500).json({ error: { message: 'ODDSPAPI_KEY não configurada.' } });
+      const resultado = await tarefaOddsPropsDescobrir(supabase, apiKey, {
+        modo: req.query.modo || 'historico', fixtureId: req.query.fixture_id, bookmakers: req.query.bookmakers,
+        inicio: req.query.inicio, tournamentIds: req.query.tournament_ids, bookmaker: req.query.bookmaker,
+      });
       if (resultado.error) return res.status(400).json({ error: { message: resultado.error } });
       return res.status(200).json(resultado);
     }
