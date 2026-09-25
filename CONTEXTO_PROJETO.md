@@ -1,5 +1,33 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Backtest financeiro do Handicap -1.0 (produção PR #657) contra odds reais: perde dinheiro de forma estatisticamente significativa — modelo overconfident exatamente nas apostas de maior edge aparente (25/09).** Pedido do usuário depois de decidir NÃO re-arquitetar `pricing_pipeline.py` pra `Ataque_Residuo` (handicap não foi significativo nesse teste) — validar se a especificação estabilizada (offset canônico + Defesa via EWM, PR #657, sem Ataque/mando) bate o mercado de verdade, não só outro modelo.
+
+- **Correção de mercado no meio do processo**: a 1ª rodada usou `asian_handicap_-1` (2 vias, push=devolução de stake) — descoberto que `backtest_kelly.py` já mapeia `handicap_-1.0` pra `european_handicap_-1` (3 vias, push/empate com odd PRÓPRIA cotada, validado empiricamente em produção). Refeito com o mercado certo — conclusão se mantém e fica mais forte com o mercado correto.
+- **Dados**: n=1.397 partidas OOS (corte 2025-06-01, odds reais de fechamento `european_handicap_-1`, deduplicadas pelo mesmo fix de snapshot da PR #619 — captura mais recente por casa de aposta antes de comparar entre casas). λ reconstruído localmente (produção não tem backfill histórico do `pricing_pipeline_v1` pra esse período — só 3.294 linhas de `handicap_-1.0`, cobre só partidas recentes pós-merge via cron).
+- **Achado que precede o backtest — calibração enviesada justamente nas apostas selecionadas por edge**: testado via aproximação Poisson-Binomial (Σp previsto vs. contagem real de vitórias). Sem filtro de edge, a calibração já é fraca; **filtrando só as apostas com Kelly>0, o viés piora**: lado `home` esperado=172,9 real=102 (z=**-6,64**); lado `away` esperado=336,9 real=278 (z=**-5,24**); lado `push`/empate bem calibrado (z=-0,76). Quanto maior o "edge" aparente, mais overconfident o modelo — assinatura clássica de ruído sendo confundido com sinal.
+- **Resultado da carteira** (Kelly condicional-padrão por seleção — as 3 seleções têm odd própria, sem mecânica de devolução de stake neste mercado; aposta quando `f_kelly>0`, EV=`p·odds-1`):
+
+  | Kelly fracionário | Nº apostas | Turnover | Yield | Banca (100→) | Max Drawdown |
+  |---|---|---|---|---|---|
+  | 0,125 | 1.579 | 547,3 | **-16,85%** | 7,77 | -92,9% |
+  | 0,250 | 1.579 | 581,1 | **-17,14%** | 0,40 | -99,7% |
+
+  IC95% bootstrap (2000 reamostragens, bet-level) do Yield geral = **[-27,21%; -6,66%]** — inteiramente negativo, não é ruído de amostra pequena. Por lado: `home` [-45,25%;-8,97%] (perde com significância); `away` [-22,83%;3,25%] e `push` [-45,19%;17,31%] cruzam zero (amostra menor, sem perda estatisticamente distinguível de zero, mas nenhum ganha).
+- **PnL por faixa de edge (Kelly 0,125)** — padrão consistente: quanto maior o edge aparente, pior o resultado real (contraintuitivo se o edge fosse real):
+
+  | Edge | n | Yield |
+  |---|---|---|
+  | <5% | 461 | -9,4% |
+  | 5-10% | 269 | -8,3% |
+  | 10-15% | 214 | -6,2% |
+  | 15-25% | 263 | -26,3% |
+  | 25%+ | 372 | -19,8% |
+- **Brier score** (3 classes, mesma amostra) = 0,5609 vs. 0,5895 naïve (melhora modesta e real — o modelo bate a base ingênua) — reconcilia com o achado acima: log-loss/Brier relativo a outro modelo (`hibrido_gols_v1`, PR #657) melhora de verdade, mas isso não implica calibração absoluta suficiente pra bater o mercado com dinheiro real.
+- **Conclusão**: nenhuma estratégia viável hoje neste mercado com esta especificação. O ganho de log-loss da Defesa contra `hibrido_gols_v1` (achado da PR #657) é real, mas "bater outro modelo" ≠ "bater o mercado" — disciplina que o projeto já cobra (`api/backtest-betting.js`) e que este backtest reforça com um caso concreto negativo.
+- **Formalizado em `scripts/backtest_financeiro_forca_defensiva_handicap.py`** (novo, `python scripts/backtest_financeiro_forca_defensiva_handicap.py`, só leitura — `SUPABASE_URL`/`SUPABASE_KEY`) pra reuso quando o modelo for recalibrado: reconstrói λ_xGOT (soma `player_match_walkforward.lambda_xg_jogo`, `fonte_titular='previsto'`) + Defesa (reaproveitando `dados_historicos._calcular_forca_defensiva`, `pricing_pipeline.DEF_BETA_XGA/XA`), roda a matriz real (`distribuicoes.matriz_placares`/`mercados_de_gols`), carrega odds reais via a mesma lógica de dedup de `backtest_kelly._melhores_odds_fechamento_snapshot` (reaproveitada, não duplicada), simula banca com Kelly fracionário (0,125/0,250) e reporta Yield/Max Drawdown/Brier/PnL-por-edge + IC95% bootstrap.
+
+---
+
 **`Ataque_Residuo` (opponent-adjusted, EWM, mesma arquitetura da Defesa validada na PR #657) bate a produção em 1X2 — mas só depois de corrigir dois erros metodológicos achados no processo (25/09).** Continuação direta do teste de interação acima (mesmo dia). Pedido do usuário: unificar Ataque na mesma base econométrica da Defesa (resíduo opponent-adjusted decaído por EWM, não mais razão instantânea).
 
 - **Erro 1 achado e corrigido — vazamento de dado real vs. previsto.** O `Top-3 xA` usado no teste de interação (entrada acima) veio de `match_player_stats_fotmob.xa` — **dado REAL observado pós-jogo**, não uma previsão pré-jogo, apesar de documentado como "previsto". Corrigido usando `player_match_walkforward.lambda_xa_jogo` (`fonte_titular='previsto'`, walk-forward-safe, mesma tabela já validada formalmente na Fase 7/PR #654) — consistente com a proveniência de λ_xGOT (também bottom-up de previsão por jogador). Cobertura 97,0% dos time-partida do painel da Força Defensiva.

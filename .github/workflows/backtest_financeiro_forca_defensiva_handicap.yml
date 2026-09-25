@@ -1,0 +1,52 @@
+name: Backtest Financeiro - Handicap -1.0 (Forca Defensiva PR #657)
+
+# Roda scripts/backtest_financeiro_forca_defensiva_handicap.py -- valida a
+# especificacao de producao (offset log(lambda_xGOT) + Defesa via EWM,
+# SEM Ataque_Residuo/mando) contra odds reais de fechamento do mercado
+# handicap_-1.0. So relatorio no log (nao persiste em tabela nenhuma) --
+# rotina de VALIDACAO/reexecucao quando o modelo for recalibrado, mesmo
+# espirito de backtest_kelly.yml.
+#
+# Achado ja registrado em CONTEXTO_PROJETO.md (25/09): a especificacao
+# atual PERDE dinheiro (Yield IC95% inteiramente negativo). So
+# workflow_dispatch -- nao entra no cron.
+
+on:
+  workflow_dispatch:
+    inputs:
+      corte:
+        description: "Data de corte do conjunto de teste OOS (YYYY-MM-DD)"
+        required: false
+        default: "2025-06-01"
+      kelly_fracoes:
+        description: "Fracoes de Kelly a simular, separadas por virgula"
+        required: false
+        default: "0.125,0.25"
+
+jobs:
+  backtest-financeiro-handicap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backtest financeiro
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/backtest_financeiro_forca_defensiva_handicap.py \
+            --corte "${{ github.event.inputs.corte }}" \
+            --kelly-fracoes "${{ github.event.inputs.kelly_fracoes }}"
