@@ -275,8 +275,8 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
                 continue  # essa fonte não tem elenco dos 2 times ainda -- tenta a outra fonte
 
             try:
-                agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=_gsax_do_goleiro(jogadores_away))
-                agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=_gsax_do_goleiro(jogadores_home))
+                agregacao_home = agregador.agregar(jogadores_home, gsax_rate_adversario=0.0)
+                agregacao_away = agregador.agregar(jogadores_away, gsax_rate_adversario=0.0)
             except ValueError as exc:
                 logger.warning("Partida %s (fonte=%s): falha na Camada 1 (%s) -- pulando essa fonte.", match_id, fonte, exc)
                 continue
