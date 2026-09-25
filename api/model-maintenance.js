@@ -3271,6 +3271,17 @@ async function tarefaOddsSyncDiagnostico(supabase, apiKey, { tournamentIds, book
 //     5 torneios e 1 casa — é a chamada única que cobre MAIS partidas e
 //     jogadores de uma vez (todas as partidas agendadas de até 5 ligas, todos
 //     os mercados), mas só para jogo futuro e só 1 casa.
+//   * modo=por_partida (PAGO, 1 chamada de cota): /v4/odds?fixtureId=X com
+//     várias casas — é o endpoint que o blog oficial da OddsPapi usa para
+//     props de jogador (NFL/NBA/MLB). Formato da resposta ainda não visto:
+//     guarda as chaves e um trecho cru pra inspeção.
+//
+// ACHADO REAL (25/09, registrado em CONTEXTO_PROJETO.md): no modo historico,
+// 13 casas numa partida da Premier League (bet365, DraftKings, FanDuel,
+// Pinnacle...) vieram com ZERO mercado de jogador; no modo ao_vivo, bet365
+// em 82 partidas das 5 grandes ligas também ZERO. betfair-spb é bloqueada no
+// nosso plano (HTTP 403). O rate-limit de /v4/historical-odds pede ~4s entre
+// chamadas — por isso a pausa entre lotes é de 5s.
 // ============================================================
 const MARKET_TYPES_ASSIST = new Set(['players-assists', 'playertotals-assists']);
 
@@ -3283,9 +3294,11 @@ async function catalogoMercadosPorId(supabase) {
 // depois do início são cotação ao vivo, não fechamento — achado real do
 // backfill histórico).
 function ultimoPreco(pontos, inicioIso) {
-  const lista = Array.isArray(pontos) ? pontos : [];
+  // Histórico: lista de pontos. Odds atuais (/v4/odds): um objeto só com
+  // `price` (formato do blog oficial) — tratado como lista de 1 ponto.
+  const lista = Array.isArray(pontos) ? pontos : (pontos && typeof pontos === 'object' ? [pontos] : []);
   const limite = inicioIso ? new Date(inicioIso).getTime() : Infinity;
-  const validos = lista.filter((p) => p?.price > 1 && new Date(p.createdAt).getTime() <= limite);
+  const validos = lista.filter((p) => p?.price > 1 && (!p.createdAt || new Date(p.createdAt).getTime() <= limite));
   const ult = validos[validos.length - 1];
   return ult ? { price: ult.price, createdAt: ult.createdAt, n_pontos: lista.length } : { price: null, n_pontos: lista.length };
 }
@@ -3329,6 +3342,12 @@ function resumirMercadosDaCasa(markets, catalogo, inicioIso) {
       chaves_de_um_outcome: Object.keys(Object.values(outcomes)[0] || {}),
       jogadores: pids.map((pid) => ({
         player_id_oddspapi: pid,
+        // playerName ("Sobrenome, Nome" segundo o blog oficial) — só pra
+        // conferência manual do crosswalk, nunca pra casar por heurística.
+        nome: Object.values(outcomes).map((o) => {
+          const v = o?.players?.[pid];
+          return (Array.isArray(v) ? v.find((x) => x?.playerName)?.playerName : v?.playerName) || null;
+        }).find(Boolean) || null,
         precos: Object.fromEntries(Object.entries(outcomes).map(([oid, o]) => [
           catalogo[idAnytime]?.outcomes?.find((x) => String(x.outcomeId) === oid)?.outcomeName || oid,
           ultimoPreco(o?.players?.[pid], inicioIso),
@@ -3378,6 +3397,35 @@ async function tarefaOddsPropsDescobrir(supabase, apiKey, { modo, fixtureId, boo
     return resultado;
   }
 
+  if (modo === 'por_partida') {
+    if (!fixtureId) return { error: 'modo=por_partida precisa de ?fixture_id=X (partida AGENDADA).' };
+    const casasPedidas = String(bookmakers || 'bet365,draftkings,fanduel,888sport,unibet,betmgm,betway,pinnacle,coral,betano');
+    const resposta = await chamarOddspapi('/v4/odds', { fixtureId, bookmakers: casasPedidas, oddsFormat: 'decimal', verbosity: 3 }, apiKey);
+    const fx = Array.isArray(resposta) ? resposta[0] : resposta;
+    const oddsPorCasa = fx?.bookmakerOdds || fx?.bookmakers || {};
+    const porCasa = {};
+    const subarvores = {};
+    for (const [casa, dadosCasa] of Object.entries(oddsPorCasa)) {
+      const { resumo, subarvoreAssist } = resumirMercadosDaCasa(dadosCasa?.markets, catalogo, null);
+      porCasa[casa] = resumo;
+      if (Object.keys(subarvoreAssist).length) subarvores[casa] = subarvoreAssist;
+    }
+    const resultado = {
+      modo, custo_cota: 1, fixtureId, casas_pedidas: casasPedidas.split(','),
+      chaves_topo_da_resposta: fx ? Object.keys(fx) : null,
+      casas_na_resposta: Object.keys(oddsPorCasa),
+      por_casa: porCasa,
+      casas_com_assistencia: Object.keys(subarvores),
+      // Formato ainda não visto neste projeto: um trecho cru pra conferir o parser.
+      trecho_cru: JSON.stringify(resposta).slice(0, 4000),
+    };
+    await supabase.from('oddspapi_cache').upsert(
+      { chave: `props_por_partida_${fixtureId}`, valor: { ...resultado, subarvore_assistencia: subarvores }, atualizado_em: new Date().toISOString() },
+      { onConflict: 'chave' },
+    );
+    return resultado;
+  }
+
   if (!fixtureId) return { error: 'modo=historico precisa de ?fixture_id=X (fixtureId da OddsPapi, ex.: do cache fixtures_finalizadas_liga_N).' };
   const casas = String(bookmakers || 'bet365,williamhill,1xbet').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 12);
   const porCasa = {};
@@ -3386,7 +3434,7 @@ async function tarefaOddsPropsDescobrir(supabase, apiKey, { modo, fixtureId, boo
   let chavesTopo = null;
   const lotes = loteados(casas, 3);
   for (let i = 0; i < lotes.length; i++) {
-    if (i > 0) await esperar(1500);
+    if (i > 0) await esperar(5000);
     try {
       const dados = await chamarOddspapi('/v4/historical-odds', { fixtureId, bookmakers: lotes[i].join(',') }, apiKey);
       chavesTopo = chavesTopo || Object.keys(dados || {});
