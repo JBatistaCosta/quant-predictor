@@ -1,5 +1,51 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Mercados de totais (O/U 1.5/2.5/3.5, BTTS, gols por time O/U 1.5) contra odds reais: a Pinnacle bate todas as versões do λ, o modelo não acrescenta informação ao mercado, nenhuma estratégia de aposta tem IC acima de zero e o CLV na abertura é ≈ 0. A "homologação para totais" da calibração bivariada (entrada abaixo) vale só contra a produção, não contra o mercado (25/09).** Pedido do usuário: item 1 da lista "o que melhorar nos mercados de times" (totais contra odds reais), com quebra por mercado × casa × abertura × fechamento. Script: `arquivos_do_claude/validar_totais_vs_mercado.py`, validado de ponta a ponta (painel de `calibrar_potencia_lambda.py`, odds/λ do híbrido via REST com a chave pública).
+
+- **Desenho**:
+  - Fora da amostra: partidas a partir de 2025-06-01, matriz Dixon-Coles estática com ρ real.
+  - Quatro λ: produção (PR #657), univariada (PR #664), bivariada sem mando (PR #665: α=1,1579, γ=0,7067, δ=−0,1728, reajustada no treino) e `hibrido_gols_v1`.
+  - Referência: Pinnacle sem vig (proporcional), última odd.
+  - **Teste de "informação a mais"**: logística `y ~ a + b·logit(p_pin) + β·[logit(p_mod) − logit(p_pin)]`. β>0 significativo = o modelo sabe algo que o mercado não sabe.
+  - **Apostas**: 1 unidade no MELHOR preço entre as casas (última odd de cada casa), os dois lados, EV>0/3/6%. Yield com IC95% e calibração DENTRO das apostas escolhidas.
+- **Fechamento — Δ log-loss (modelo bivariado − Pinnacle), IC95% bootstrap**:
+
+  | Mercado | n | Margem Pinnacle | Δ [IC95%] | β informação extra (z) | Yield EV>0 [IC95%] |
+  |---|---|---|---|---|---|
+  | O/U 1.5 | 1.252 | 4,2% | +0,004 [−0,005; +0,013] | +0,11 (+0,3) | +2,7% [−3,0%; +8,5%] |
+  | O/U 2.5 | 2.975 | 3,6% | **+0,012** [+0,007; +0,018] | +0,03 (+0,2) | −0,9% [−5,4%; +3,4%] |
+  | O/U 3.5 | 1.508 | 4,1% | **+0,018** [+0,011; +0,025] | −0,33 (−1,2) | −6,3% [−13,7%; +0,8%] |
+  | BTTS | 1.646 | 3,8% | **+0,007** [+0,001; +0,013] | +0,13 (+0,3) | −1,3% [−7,3%; +4,3%] |
+  | Gols mandante O/U 1.5 | 1.548 | 4,4% | **+0,021** [+0,013; +0,029] | **−0,38 (−2,1)** | **−9,2%** [−15,8%; −2,8%] |
+  | Gols visitante O/U 1.5 | 1.296 | 4,7% | **+0,014** [+0,004; +0,023] | −0,06 (−0,3) | −1,1% [−9,0%; +6,9%] |
+
+  - As outras três versões dão o mesmo quadro. O `hibrido_gols_v1` fica no mesmo nível: só não perde significativamente nos gols do visitante (+0,005 [−0,003; +0,013]), e tem β **negativo** significativo em O/U 2.5 (z=−2,4) e gols do mandante (z=−2,3). Ou seja, quando discorda da Pinnacle, está mais errado que ela.
+  - **Viés nas apostas escolhidas (mesmo mecanismo do Handicap -1.0)**: o modelo superestima o lado que escolhe. Exemplos:
+
+    | Mercado | Prevê | Pinnacle | Real |
+    |---|---|---|---|
+    | O/U 2.5 | 50,2% | 43,2% | 44,0% |
+    | Gols do mandante | 50,4% | 43,4% | 40,4% |
+
+  - O/U 1.5 é o único com yield positivo nos três limiares (+2,7% a +5,6%), mas todos os ICs cruzam zero.
+- **Mercado × casa × abertura (1ª odd) × fechamento (última odd)** — mesmas partidas nos dois momentos:
+  - Abertura só a partir de capturas pré-jogo (`opening`/`pre_closing`); fechamento prioriza o snapshot `closing`.
+  - Na maioria dos mercados, n = 209–298 por casa: as capturas pré-jogo vêm do sync ao vivo (Pinnacle/bet365/Betano), com a 1ª odd em média 4 a 9 dias antes. O/U 2.5 tem mais (Pinnacle 1.192, bet365 1.996) porque inclui o pre-closing do football-data.co.uk.
+  - **As casas melhoram até o fechamento** em todas as combinações (ex.: Pinnacle O/U 2.5 LL 0,677 → 0,674).
+  - **O modelo fica mais perto na abertura, mas não passa.** Δ negativo só em O/U 1.5 e BTTS na bet365/Betano (−0,002 a −0,006), todos com IC cruzando zero.
+  - **CLV** (odd apostada na abertura / odd de fechamento − 1): média de −1,1% a +3,4%, e a odd caiu depois em só 31–53% das apostas. **O modelo não antecipa o movimento da linha.**
+  - Yields de abertura aparentemente bons (gols do visitante bet365 +19,0% [−3,5%; +42,7%], BTTS Pinnacle +8,9% [−6,9%; +23,9%]) com ~180 apostas e 36 combinações testadas: esperado por acaso, **não é evidência**.
+  - Pior caso consistente: gols do mandante O/U 1.5 na Betano, yield −22% [−38%; −6%] no fechamento.
+- **Leitura**: nos totais o modelo não tem vantagem contra o fechamento, e o CLV ≈ 0 indica que também não tem na abertura (amostra de abertura ainda pequena). **O gargalo é o mesmo do 1X2: falta informação partida a partida, não calibração.** A calibração bivariada continua sendo a melhor versão contra a própria produção (entrada abaixo), mas **não há base para apostar em totais com ela**.
+- **Curiosidade não testada**: no subconjunto só-fechamento (n=1.241), a Pinnacle superestimava o over 3.5 (O/E 0,893, viés favorito-azarão). Na amostra completa (n=1.508, com última odd pré-fechamento), o O/E sobe para 0,932. Candidato a teste próprio, com correção de comparações múltiplas.
+- **Dois bugs de dado achados ao formalizar (já tratados no script)**:
+  1. **~29% de `matches.match_date` vêm sem hora** (00:00 UTC). Um filtro `captured_at <= apito` descartava odds válidas.
+  2. **O `captured_at` do football-data.co.uk (pre-closing e closing) é a hora da IMPORTAÇÃO**, não da odd. Tanto que a 1ª versão chegou a mostrar "1ª odd 5.416h DEPOIS do jogo".
+
+  Regra: nunca usar `captured_at` como hora real da odd para fontes importadas; usar o `snapshot`.
+
+---
+
 **Mercado de assistências — Frente B: a OddsPapi NÃO traz props de jogador de futebol no histórico (6 partidas, 5 competições, 16 casas) nem no sync ao vivo por torneio (bet365, 82 partidas). Último teste pendente: `/v4/odds` por partida, agendado para 09/10 (25/09).** Continuação da entrada logo abaixo (Frente A). Autorização do usuário para 1–2 chamadas pagas; gasta 1 até agora.
 
 - **Ferramenta nova**: `?tarefa=odds-props-descobrir` em `api/model-maintenance.js` (PRs #667/#668). É só diagnóstico: não grava em `odds_market`. Por casa, devolve:
