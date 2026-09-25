@@ -1,5 +1,67 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Mercado de assistências — Frente A: P(jogador dá ≥1 assistência), derivada do xA previsto walk-forward, bate 4 baselines fora da amostra com IC95% inteiro abaixo de zero e sai bem calibrada depois de calibrar. Ainda NÃO prova edge contra as casas: isso depende das odds reais (Frente B, não iniciada) (25/09).** Primeiro passo do direcionamento para a PR #656 (entrada abaixo). Script: `arquivos_do_claude/validar_assistencia_jogador_walkforward.py`, rodado de ponta a ponta contra o banco (chave pública, só leitura).
+
+- **Por que por jogador, e não por time**: o catálogo de mercados da OddsPapi já está em cache (`oddspapi_cache`, chave `markets`, sem gastar cota).
+  - Para futebol, ele lista "Player Assists" (marketId 10738: 0/1+/2+/3+/4+) e "Over/Under Player Assists" (102598–102605, linhas 0,5 a 3,5).
+  - Lista também os mesmos tipos de mercado de jogador para chutes, chutes ao gol, gols, cartões, faltas, desarmes e defesas.
+  - **Não existe mercado de assistências por TIME.** O mercado `assistencias_team_*` da PR #656 não tem contraparte nas casas. O que se compara com odds é "jogador dá ≥1 assistência".
+  - Achados sobre as odds já guardadas:
+    - `odds_market` hoje não tem NENHUMA odd de jogador.
+    - A única amostra real de `/v4/historical-odds` em cache (Brasileirão; Pinnacle/bet365/Betano) tem zero mercados por jogador.
+    - As odds de jogador vêm indexadas pelo ID de jogador da própria OddsPapi, então vai ser preciso um crosswalk com `players`, com supervisão manual (nunca por semelhança de nome).
+- **Desenho da validação**:
+  - Amostra: jogador-partida com `minutes_played>0` (a aposta costuma ser anulada se o jogador não joga), sem goleiros, nas 12 ligas de `player_match_walkforward`. As duas fontes de escalação: `real` (confirmada) e `previsto` (XI previsto).
+  - Split temporal: treino antes de 2025-06-01 (219 mil linhas por fonte); teste depois (96.791 `real` / 100.021 `previsto`). Taxa real de ≥1 assistência no teste: 8,0%.
+  - P = 1 − e^(−λ*), com λ* = e^a·λ^b ajustado por Bernoulli com ligação cloglog (é exatamente a forma 1 − e^−λ), só no treino.
+  - Os 4 baselines recebem a MESMA calibração de 2 parâmetros, para a comparação ser justa. Todos são × minutos_esperados/90, só com partidas anteriores e encolhidos para a média:
+    - assistências/90 da carreira (prior de 10 jogos);
+    - assistências/90 dos últimos 10 jogos (prior de 3);
+    - xA real/90 da carreira;
+    - xA real/90 dos últimos 10.
+  - IC95%: bootstrap de partidas inteiras (2.000 reamostragens), porque jogadores da mesma partida não são independentes.
+- **Resultado (escalação confirmada, `real`; o `previsto` é praticamente igual)**:
+
+  | Previsão (calibrada) | Log-loss | Brier | O/E | Δ log-loss modelo − baseline [IC95%] |
+  |---|---|---|---|---|
+  | **Modelo xA (`lambda_xa_jogo`)** | **0,26941** | **0,07213** | 0,985 | — |
+  | xA real/90, carreira (melhor baseline) | 0,27186 | 0,07240 | 0,949 | **-0,00245** [-0,00311; -0,00182] |
+  | Assistências/90, carreira | 0,27227 | 0,07250 | 0,998 | **-0,00287** [-0,00353; -0,00220] |
+  | xA real/90, últimos 10 | 0,27236 | 0,07250 | 0,979 | **-0,00296** [-0,00357; -0,00237] |
+  | Assistências/90, últimos 10 | 0,27529 | 0,07301 | 0,981 | **-0,00588** [-0,00659; -0,00519] |
+  | Probabilidade constante (taxa do treino) | 0,27868 | — | — | — |
+
+  - **Calibração por decil**: prevista × observada de 3,5%→2,9% até 16,8%→16,0%, acompanhando nos 10 decis.
+  - **Discriminação**: AUC = 0,641 (0,633 no `previsto`). O ganho sobre a probabilidade constante é de só 3,3% do log-loss: sinal real, mas modesto, como é típico em assistência.
+  - **Por liga** (modelo contra o melhor baseline, escalação confirmada): IC95% inteiro abaixo de zero em 7 de 12 ligas:
+
+    | Liga | Δ | IC95% |
+    |---|---|---|
+    | Brasileirão A | -0,0034 | [-0,0051; -0,0016] |
+    | La Liga | -0,0024 | [-0,0043; -0,0006] |
+    | Serie A | -0,0028 | [-0,0048; -0,0009] |
+    | Bundesliga | -0,0032 | [-0,0053; -0,0012] |
+    | Championship | -0,0029 | [-0,0046; -0,0012] |
+    | MLS | -0,0038 | [-0,0061; -0,0014] |
+    | Brasileirão B | -0,0035 | [-0,0058; -0,0014] |
+
+    As outras 5 cruzam o zero:
+    - Ligue 1: -0,0014.
+    - Eredivisie: -0,0013.
+    - Primeira Liga: -0,0020.
+    - Libertadores: +0,0020, com n=1.028.
+    - **Premier League: +0,00006 [-0,0020; +0,0021].** Empate exato justo na liga mais estudada/eficiente. Anotar: se houver edge contra as casas, a Premier é o lugar menos provável.
+- **Dois alertas para a Frente B**:
+  1. **O λ cru com escalação confirmada superestima as assistências em ~10%** (O/E 0,903). Calibrado: λ* = e^(−0,270)·λ^0,921. Com o XI previsto, o λ cru já sai quase calibrado (O/E 0,961; a=-0,035, b=0,995). **Nunca precificar odd de assistência com o λ cru da escalação confirmada.**
+  2. **A cauda superior sai levemente otimista na escalação confirmada**: no top 5%, prevê 18,9% e observa 17,6% (n=4.840). No top 1% não: 22,6% × 23,6%. No `previsto`, o top 5% bate (17,8% × 17,6%). Uma estratégia que seleciona apostas por edge concentra justamente esse erro (mesmo mecanismo que afundou o Handicap -1.0). O backtest com odds reais precisa medir a calibração DENTRO das apostas selecionadas, não só no agregado.
+- **Leitura**: bater baselines ingênuos é o requisito MÍNIMO para valer a pena comprar odds, não prova de lucro. As margens das casas em props de assistência costumam ser altas. **Próximo passo (Frente B, aguardando autorização do usuário para gastar cota)**:
+  1. 1–2 chamadas de descoberta na OddsPapi (partida recente de liga grande, casas diferentes das 3 da amostra do Brasileirão), para ver o JSON real das props de assistência e cacheá-lo antes de escrever parser.
+  2. Crosswalk de jogador OddsPapi → `players` com supervisão manual.
+  3. Backtest com IC95%.
+- **Nota técnica**: o cálculo com janelas no SQL (histórico de ~790 mil linhas jogador-partida) estoura o timeout de 60s do `execute_sql`. O script baixa via PostgREST com paginação por id em fatias paralelas (641 mil + 784 mil linhas em ~2 min) e calcula em pandas. `--cache-dir` reaproveita os downloads.
+
+---
+
 **Calibração bivariada do λ da produção (λ* = α·λ^γ·λ_adv^δ·e^{β_mando·is_home}) + interação mando × favoritismo + deriva temporal do mando. Fecha a frente de pós-calibração interna do λ: as transformações globais NÃO corrigem 1X2 nem Handicap -1.0. A versão bivariada SEM mando é a especificação recomendada SÓ para mercados de totais. Nada aplicado em produção (25/09).** Continuação direta da entrada abaixo (calibração de potência univariada). Tudo sai de `arquivos_do_claude/calibrar_potencia_lambda.py`, estendido nesta rodada (`--todos-decis` imprime os 10 decis). Mesma amostra: treino = 21.816 linhas time-partida com λ do adversário (10.908 partidas antes de 2025-06-01; 79 das 21.895 linhas não têm o λ do adversário). Teste = 4.674 partidas. Matriz Dixon-Coles estática com ρ real e bootstrap pareado com 2.000 reamostragens.
 
 - **Ajuste no treino** (GLM de Poisson, `ln λ* = μ + γ·ln λ + δ·ln λ_adv [+ β_mando·is_home]`):
