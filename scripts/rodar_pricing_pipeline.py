@@ -37,19 +37,24 @@ Fontes de dado (todas já existentes, nenhuma tabela nova):
     Partida sem nenhum `model_name` com params utilizáveis é pulada (não há
     macro pra reconciliar contra).
 
-GSAx (goleiro) é lido de `player_match_estimates.gsax_rate` -- calculado por
-`dados_historicos.obter_gsax_atual` e gravado por `rodar_jogador_mercados_
-previsto.py` (mesmo pipeline que já estima chutes/gols individuais; GSAx é
-desempenho individual do goleiro, não uma função ad-hoc deste runner). Este
-runner é só CONSUMIDOR: `_gsax_do_goleiro` lê o `gsax_rate` do goleiro do
-elenco de cada lado (mesma fonte/mesma partida) e usa como
-`gsax_rate_adversario` do time rival -- goleiro sem `gsax_rate` populado
-(sem nenhum chute no alvo classificável na amostra, ver
-`dados_historicos.obter_gsax_atual`/`GSAX_SHRINKAGE_K`) ou ausente do
-elenco cai no default neutro `0.0`, sem modular nada. `delta_shooting`
-(xGOT-xG por jogador) segue sem existir em `player_match_estimates` --
-gap de dado documentado, não bug -- e `jogadores` continua sem essa coluna
-(a Camada 1 já trata coluna ausente como 0 com aviso, não exceção).
+GSAx (goleiro) NEUTRALIZADO (25/09) -- achado desta sessão (Fase 7/Frente B
+do plano + refinamentos, ver `CONTEXTO_PROJETO.md`): validação walk-forward
+formal (`scripts/backtest_gsax_walkforward.py`) mostrou `gsax_rate` como
+ATIVAMENTE PREJUDICIAL à previsão de gols sofridos (RMSE pior que ignorar o
+goleiro, 65% dos grupos liga×temporada com degradação sustentada por
+IC95%). Testado corrigir o viés de nível (relativo à média da liga: RMSE
+melhora mas não fecha o gap) e a diferença de GSAx entre os dois goleiros
+do confronto contra o resultado real (correlação ≈0, n=18.944) -- nenhuma
+correção simples recupera sinal aproveitável. `_gsax_do_goleiro` foi
+removida; os dois lados agora sempre agregam com `gsax_rate_adversario=0.0`
+(default já neutro de `PlayerToTeamAggregator.agregar`, passado explícito
+aqui só pra documentar a decisão no diff). `player_match_estimates.gsax_rate`
+continua sendo calculado/persistido por `rodar_jogador_mercados_previsto.py`
+(não é bug manter -- outros consumidores podem existir/surgir), só este
+runner parou de lê-lo. `delta_shooting` (xGOT-xG por jogador) segue sem
+existir em `player_match_estimates` -- gap de dado documentado, não bug --
+e `jogadores` continua sem essa coluna (a Camada 1 já trata coluna ausente
+como 0 com aviso, não exceção).
 
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 rodar_pricing_pipeline.py [--dias N] [--match-ids ID,ID,...]
@@ -101,6 +106,7 @@ import os
 import pandas as pd
 from supabase import Client, create_client
 
+import distribuicoes as dist
 import dados_historicos as dh
 from pricing_pipeline import DixonColesJointEngine, HierarchicalReconciler, PlayerToTeamAggregator
 from rodar_jogador_mercados_previsto import buscar_fixtures
@@ -108,12 +114,24 @@ from rodar_jogador_mercados_previsto import buscar_fixtures
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+PROB_MIN, PROB_MAX = 0.0001, 0.9999
+
+
+def _clamp_probabilidade(p: float) -> float:
+    """`model_predictions.probability` tem `CHECK(0<probability<1)` --
+    `round(p, 5)` pode zerar/saturar exatamente em 0.0/1.0 pra combinações
+    extremas de λ (ex.: `over 2.5` de um time com λ_assistências baixo),
+    mesmo achado/mesmo fix já feito em `scripts/rodar_markov_batch.mjs`
+    (`PROB_MIN`/`PROB_MAX`, ver `CONTEXTO_PROJETO.md` Fase 6.1)."""
+    return min(max(float(p), PROB_MIN), PROB_MAX)
+
+
 MODEL_NAME_SAIDA = "pricing_pipeline_v1"
 FONTES_RASTREADAS = ("previsto", "real")
 COLUNAS_JOGADOR = [
     "match_id", "team_id", "player_id", "fonte_titular", "is_titular_previsto", "prob_titular_usada",
     "posicao_detalhe", "minutos_esperados", "lambda_chutes_jogo", "lambda_chutes_no_alvo_jogo",
-    "lambda_xg_jogo", "taxa_conversao_bayesiana", "gsax_rate",
+    "lambda_xg_jogo", "taxa_conversao_bayesiana", "lambda_xa_jogo",
 ]
 
 
@@ -180,23 +198,6 @@ def _buscar_jogadores(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
         )
     )
     return pd.DataFrame(linhas, columns=COLUNAS_JOGADOR)
-
-
-def _gsax_do_goleiro(jogadores_time: pd.DataFrame) -> float:
-    """`gsax_rate` do goleiro (`posicao_detalhe='GK'`) dentro do elenco de
-    UM time/UMA fonte já filtrado -- `pricing_pipeline_v2` é consumidor
-    puro do dado (calculado e persistido em `player_match_estimates` por
-    `rodar_jogador_mercados_previsto.py`/`dados_historicos.obter_gsax_
-    atual`), nunca recalcula GSAx aqui. Sem goleiro no elenco, sem
-    `gsax_rate` populado (amostra insuficiente) ou mais de um goleiro na
-    linha (não deveria acontecer, mas não é motivo pra abortar a partida)
-    cai no default neutro `0.0` -- mesmo padrão de "gap de dado vira aviso,
-    não exceção" do resto da Camada 1."""
-    goleiros = jogadores_time[jogadores_time["posicao_detalhe"] == "GK"]
-    if goleiros.empty:
-        return 0.0
-    gsax = pd.to_numeric(goleiros["gsax_rate"], errors="coerce").dropna()
-    return float(gsax.iloc[0]) if not gsax.empty else 0.0
 
 
 def _fonte_melhor_disponivel(fontes_presentes: set[str]) -> str:
@@ -305,6 +306,16 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
 
             resultado = engine.gerar(reconciliacao_home.lambda_final, reconciliacao_away.lambda_final, macro["rho_liga"])
 
+            # Mercado de assistências (25/09, sem odds no sistema ainda --
+            # ver `distribuicoes.mercados_de_assistencias`/`CONTEXTO_
+            # PROJETO.md`) -- λ vem direto da Camada 1 (soma de todo o
+            # elenco, não passa por reconciliação com macro porque não há
+            # modelo macro de assistências pra reconciliar contra).
+            mercados_assistencias = dist.mercados_de_assistencias(
+                agregacao_home.lambda_assistencias_total, agregacao_away.lambda_assistencias_total
+            )
+            todos_mercados = {**resultado.mercados, **mercados_assistencias}
+
             # `pricing_pipeline_{fonte}_v1` sempre; `MODEL_NAME_SAIDA` (nome
             # original) só na fonte "melhor disponível" -- ver docstring do
             # módulo (comparação real vs. prevista).
@@ -313,10 +324,10 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
                 nomes_modelo.append(MODEL_NAME_SAIDA)
 
             for nome_modelo in nomes_modelo:
-                for (mercado, selecao), probabilidade in resultado.mercados.items():
+                for (mercado, selecao), probabilidade in todos_mercados.items():
                     linhas_saida.append({
                         "match_id": match_id, "model_name": nome_modelo, "market": mercado,
-                        "selection": selecao, "probability": round(float(probabilidade), 5),
+                        "selection": selecao, "probability": round(_clamp_probabilidade(probabilidade), 5),
                     })
                 estimativas_saida.append({
                     "match_id": match_id, "model_name": nome_modelo,
@@ -324,6 +335,8 @@ def rodar(supabase: Client, dias: int, match_ids: list[int] | None, backtest: bo
                         "lambda_home": round(reconciliacao_home.lambda_final, 4),
                         "lambda_away": round(reconciliacao_away.lambda_final, 4),
                         "rho": round(float(resultado.rho_efetivo), 4),
+                        "lambda_assistencias_home": round(agregacao_home.lambda_assistencias_total, 4),
+                        "lambda_assistencias_away": round(agregacao_away.lambda_assistencias_total, 4),
                     },
                 })
             processou_alguma_fonte = True

@@ -161,6 +161,7 @@ class AgregacaoResultado:
     lambda_thinning: float
     lambda_gols_xgot: float
     lambda_bottom_up: float
+    lambda_assistencias_total: float
     soma_minutos_esperados: float
     minutagem_valida: bool
     avisos: list[str] = field(default_factory=list)
@@ -321,6 +322,24 @@ class PlayerToTeamAggregator:
         termos = np.clip(lambda_xg + delta_shooting, 0.0, None)
         return float(termos.sum())
 
+    # -- assistências (mercado próprio, não modula gols) -----------------------
+    def agregar_assistencias(self, elenco: pd.DataFrame, avisos: list[str]) -> float:
+        """λ_assistências = Σλ_xA,k (soma do time inteiro, não top-N --
+        diferente do teste de correlação feito em 25/09, que usava top-2/3
+        só pra medir sinal contra diferença de gols; aqui o objetivo é o
+        VALOR ESPERADO de assistências reais do time inteiro na partida,
+        que é uma soma completa, mesmo padrão de `agregar_volume`).
+
+        Testado (25/09, ver `CONTEXTO_PROJETO.md`) como modulador de
+        λ_gols do próprio time via correlação parcial/regressão controlando
+        λ_xGOT -- efeito in-sample real (β≈1,66) mas NÃO generalizou em
+        split temporal 70/30 (RMSE piorou levemente fora da amostra) --
+        por isso xA NÃO modula `lambda_gols_xgot` aqui, só alimenta o
+        mercado de assistências (`distribuicoes.mercados_de_assistencias`),
+        que é uma previsão independente, sem odds no sistema ainda."""
+        lambda_xa = self._coluna_numerica(elenco, "lambda_xa_jogo", avisos)
+        return float(np.clip(lambda_xa, 0.0, None).sum())
+
     # -- modulação pelo goleiro adversário --------------------------------------
     @staticmethod
     def modular_por_goleiro(lambda_xgot: float, gsax_rate: float) -> float:
@@ -351,6 +370,7 @@ class PlayerToTeamAggregator:
         lambda_gols_xgot = self.modular_por_goleiro(lambda_xgot_total, gsax_rate_adversario)
         lambda_thinning = self.afinar_poisson(elenco, avisos)
         lambda_bottom_up = 0.5 * lambda_thinning + 0.5 * lambda_gols_xgot
+        lambda_assistencias_total = self.agregar_assistencias(elenco, avisos)
 
         return AgregacaoResultado(
             lambda_chutes_total=lambda_chutes_total,
@@ -360,6 +380,7 @@ class PlayerToTeamAggregator:
             lambda_thinning=lambda_thinning,
             lambda_gols_xgot=lambda_gols_xgot,
             lambda_bottom_up=lambda_bottom_up,
+            lambda_assistencias_total=lambda_assistencias_total,
             soma_minutos_esperados=soma_minutos,
             minutagem_valida=minutagem_valida,
             avisos=avisos,
