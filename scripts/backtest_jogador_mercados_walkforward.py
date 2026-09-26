@@ -38,6 +38,15 @@ numa temporada quando há pelo menos 30 linhas elegíveis (mesmo piso mínimo j�
 usado nas agregações por liga) -- temporada/liga sem escalação histórica
 capturada ainda simplesmente não gera essa passada, sem erro.
 
+⚠️ 'previsto' e 'real' só têm linha pra quem ENTROU em campo (o dataset
+nasce de match_player_stats_fotmob, minutos > 0). Servem pra avaliar o
+jogador condicionado a ter jogado, mas NUNCA devem ser somadas por time: a
+soma inclui os reservas que entraram, informação pós-jogo (CONTEXTO_PROJETO.md,
+26/09). Pra agregado por time existe a terceira passada, 'relacionados' --
+elenco relacionado inteiro (`xi_titular_walkforward`) com minutos esperados
+= mistura por prob_titular, igual à fonte 'previsto' da produção (ver
+`montar_candidatos_relacionados`).
+
 Uso:
     SUPABASE_URL=... SUPABASE_KEY=... python3 backtest_jogador_mercados_walkforward.py
 """
@@ -65,6 +74,98 @@ MODEL_VERSION = "jogador_mercados_catboost_walkforward_v1"
 # (evento raro por jogador-partida, precisa de mais linhas pra estabilizar).
 MIN_LINHAS_TREINO = 2000
 N_REAMOSTRAGENS_BOOTSTRAP = 1000
+
+
+# Passada 'relacionados' (26/09) -- a única que pode ser SOMADA por time.
+# As passadas 'previsto'/'real' só têm linha pra quem ENTROU em campo (o
+# dataset nasce de match_player_stats_fotmob com minutos > 0): somar o λ
+# delas por (partida, time) inclui os reservas que entraram, informação
+# pós-jogo -- time perdendo põe atacante, e a fração do λ vinda de reservas
+# prevê o resultado além da Pinnacle de fechamento (CONTEXTO_PROJETO.md,
+# 26/09). Aqui os candidatos são o elenco RELACIONADO (titulares + banco,
+# `xi_titular_walkforward`, ~21 por time) com a prob_titular walk-forward, e
+# os minutos esperados seguem a mistura da produção
+# (`rodar_jogador_mercados_previsto.py`, fonte 'previsto'):
+# p × minutos_como_titular + (1 − p) × minutos_como_reserva.
+COLUNAS_HISTORICO_JOGADOR = [
+    "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "xa_90_bayesiano", "chutes_no_alvo_90_bayesiano",
+    "ewma_chutes_90", "ewma_gols_90", "ewma_xg_90", "ewma_xa_90", "ewma_chutes_no_alvo_90",
+    "taxa_conversao_bayesiana", "taxa_no_alvo_bayesiana", "posicao_num",
+    "minutos_esperados_titular", "minutos_esperados_reserva",
+]
+COLUNAS_CONTEXTO_PARTIDA = ["league_id", "season", "liga", "match_date", "elo_diff", "squad_rating_diff", "mando"]
+ALVOS_CONTAGEM = [tmj.TARGET_CHUTES, tmj.TARGET_GOLS, tmj.TARGET_CHUTES_NO_ALVO]
+
+
+def montar_candidatos_relacionados(df: pd.DataFrame, xi: pd.DataFrame, match_ids: set) -> pd.DataFrame:
+    """Uma linha por jogador RELACIONADO (`xi`: match_id, team_id, player_id,
+    prob_titular) das partidas em `match_ids`, com as mesmas colunas que
+    `_avaliar_e_persistir_passada` consome. `df` é o dataset de aparições já
+    featurizado (`tmj.engenharia_features`), com TODAS as temporadas.
+
+    Histórico do jogador (colunas de `COLUNAS_HISTORICO_JOGADOR`):
+      * entrou nessa partida -> a própria linha (features já excluem a partida, shift(1));
+      * não entrou -> a PRÓXIMA aparição dele depois da partida: as features
+        dela usam só as aparições anteriores a ela, que são exatamente as
+        anteriores a esta partida (ele não jogou nesta). Sem próxima
+        aparição, a anterior (defasada em 1 jogo, nunca vaza);
+      * nunca apareceu no dataset -> prior da liga (média das 1as aparições,
+        n_hist = 0), posição desconhecida.
+    Contexto (Elo, rating do elenco, mando, liga) vem do time na partida.
+    Alvos de quem não entrou = 0 (xA só onde o time tem xA capturado)."""
+    cand = xi[xi["match_id"].isin(match_ids)][["match_id", "team_id", "player_id", "prob_titular"]].copy()
+    cand = cand.drop_duplicates(subset=["match_id", "team_id", "player_id"])
+    contexto = df[df["match_id"].isin(match_ids)].groupby(["match_id", "team_id"], as_index=False)[COLUNAS_CONTEXTO_PARTIDA].first()
+    cand = cand.merge(contexto, on=["match_id", "team_id"], how="inner")
+    if cand.empty:
+        return cand
+
+    aparicoes = df[["match_id", "team_id", "player_id", "match_date", "dias_desde_ultimo_jogo", "xg_partida", "xa_partida",
+                    *ALVOS_CONTAGEM, *COLUNAS_HISTORICO_JOGADOR]]
+    cand = cand.merge(aparicoes.drop(columns=["match_date"]), on=["match_id", "team_id", "player_id"], how="left")
+    entrou = cand[tmj.TARGET_CHUTES].notna()
+
+    fora = cand.loc[~entrou, ["match_id", "team_id", "player_id", "match_date"]].reset_index()
+    if not fora.empty:
+        hist = df[["player_id", "match_date", *COLUNAS_HISTORICO_JOGADOR]].sort_values("match_date")
+        fora = fora.sort_values("match_date")
+        proxima = pd.merge_asof(fora, hist, on="match_date", by="player_id", direction="forward", allow_exact_matches=False)
+        anterior = pd.merge_asof(fora, hist, on="match_date", by="player_id", direction="backward", allow_exact_matches=False)
+        ultima_data = pd.merge_asof(
+            fora, df[["player_id", "match_date"]].assign(data_ultima=df["match_date"]).sort_values("match_date"),
+            on="match_date", by="player_id", direction="backward", allow_exact_matches=False,
+        )
+        proxima, anterior, ultima_data = (x.set_index("index").loc[fora["index"]] for x in (proxima, anterior, ultima_data))
+        tem_proxima = proxima["chutes_90_bayesiano"].notna().to_numpy()[:, None]
+        valores = pd.DataFrame(
+            np.where(tem_proxima, proxima[COLUNAS_HISTORICO_JOGADOR].to_numpy(dtype=float), anterior[COLUNAS_HISTORICO_JOGADOR].to_numpy(dtype=float)),
+            columns=COLUNAS_HISTORICO_JOGADOR,
+        )
+
+        estreia = df[df["n_hist"] == 0].groupby("liga")[COLUNAS_HISTORICO_JOGADOR].mean()
+        sem_hist = valores["chutes_90_bayesiano"].isna().to_numpy()
+        if sem_hist.any():
+            ligas = cand.loc[fora["index"].to_numpy()[sem_hist], "liga"].to_numpy()
+            valores.iloc[np.flatnonzero(sem_hist)] = estreia.reindex(ligas)[COLUNAS_HISTORICO_JOGADOR].to_numpy()
+            valores.iloc[np.flatnonzero(sem_hist), valores.columns.get_loc("posicao_num")] = 0
+        idx = fora["index"].to_numpy()
+        cand.loc[idx, COLUNAS_HISTORICO_JOGADOR] = valores.to_numpy()
+        dias = (fora["match_date"].reset_index(drop=True) - ultima_data["data_ultima"].reset_index(drop=True)).dt.days
+        cand.loc[idx, "dias_desde_ultimo_jogo"] = dias.fillna(14).clip(upper=30).to_numpy()
+        for alvo in ALVOS_CONTAGEM:
+            cand.loc[idx, alvo] = 0
+        cand.loc[idx, "xg_partida"] = 0.0
+        tem_xa = cand.loc[entrou].groupby(["match_id", "team_id"])["xa_partida"].apply(lambda s: s.notna().any())
+        chave = pd.MultiIndex.from_frame(cand.loc[idx, ["match_id", "team_id"]])
+        cand.loc[idx, "xa_partida"] = np.where(tem_xa.reindex(chave).fillna(False).to_numpy(), 0.0, np.nan)
+
+    p = cand["prob_titular"].clip(0, 1)
+    cand["minutos_esperados"] = p * cand["minutos_esperados_titular"] + (1 - p) * cand["minutos_esperados_reserva"]
+    cand["posicao_num"] = cand["posicao_num"].astype(int)
+    for alvo in ALVOS_CONTAGEM:
+        cand[alvo] = cand[alvo].astype(int)
+    cand["entrou_em_campo"] = entrou.to_numpy()
+    return cand.reset_index(drop=True)
 
 
 def _rmse(previsto: np.ndarray, real: np.ndarray) -> float:
@@ -147,9 +248,10 @@ def _persistir_previsao_bruta(
 ) -> int:
     """Grava a previsão bruta (1 linha por jogador x partida x fonte_titular)
     em `player_match_walkforward`. `fonte_titular` é 'previsto' (minutos_
-    esperados = média histórica incondicional) ou 'real' (minutos_esperados
-    determinístico por papel confirmado em `match_lineup_fotmob` -- ver
-    docstring do módulo); em ambos os casos `teste["minutos_esperados"]` já
+    esperados = média histórica incondicional), 'real' (minutos_esperados
+    determinístico por papel confirmado em `match_lineup_fotmob`) ou
+    'relacionados' (elenco relacionado, mistura por prob_titular -- ver
+    docstring do módulo); em todos os casos `teste["minutos_esperados"]` já
     vem com o valor certo pra essa passada (o CALLER decide qual coluna usar,
     esta função só grava).
 
@@ -166,16 +268,19 @@ def _persistir_previsao_bruta(
     lambda_xa = lambda_xa or {}
     if lambda_chutes_no_alvo is None:
         lambda_chutes_no_alvo = [None] * len(teste)
+    probs_titular = teste["prob_titular"] if "prob_titular" in teste.columns else [None] * len(teste)
     linhas = []
-    for idx, match_id, team_id, player_id, league_id, minutos_esp, taxa_conv, prev_chutes, lam_gols_thin, lam_gols_dir, lam_no_alvo in zip(
+    for idx, match_id, team_id, player_id, league_id, minutos_esp, taxa_conv, prev_chutes, lam_gols_thin, lam_gols_dir, lam_no_alvo, prob_tit in zip(
         teste.index, teste["match_id"], teste["team_id"], teste["player_id"], teste["league_id"], teste["minutos_esperados"],
-        teste["taxa_conversao_bayesiana"], previsto_chutes, lambda_gols_thinning, lambda_gols_direto, lambda_chutes_no_alvo, strict=True,
+        teste["taxa_conversao_bayesiana"], previsto_chutes, lambda_gols_thinning, lambda_gols_direto, lambda_chutes_no_alvo,
+        probs_titular, strict=True,
     ):
         lam_xg = lambda_xg.get(idx)
         lam_xa = lambda_xa.get(idx)
         linhas.append({
             "match_id": int(match_id), "team_id": int(team_id), "player_id": int(player_id),
-            "fonte_titular": fonte_titular, "prob_titular_usada": None, "minutos_esperados": float(minutos_esp),
+            "fonte_titular": fonte_titular, "prob_titular_usada": float(prob_tit) if prob_tit is not None else None,
+            "minutos_esperados": float(minutos_esp),
             "taxa_conversao_bayesiana": float(taxa_conv), "lambda_chutes_jogo": float(prev_chutes),
             "lambda_gols_jogo_thinning": float(lam_gols_thin), "lambda_gols_jogo_direto": float(lam_gols_dir),
             "lambda_xg_jogo": float(lam_xg) if lam_xg is not None else None,
@@ -353,6 +458,17 @@ def rodar(supabase: Client) -> int:
         f"(match_lineup_fotmob) -- essas também rodam a passada 'real'."
     )
 
+    logger.info("Carregando elenco relacionado com prob_titular walk-forward (xi_titular_walkforward)...")
+    xi = pd.DataFrame(tmj._buscar_por_lotes(
+        supabase, "xi_titular_walkforward", "match_id", sorted(df["match_id"].unique().tolist()),
+        "match_id, team_id, player_id, prob_titular",
+    ))
+    if xi.empty:
+        xi = pd.DataFrame(columns=["match_id", "team_id", "player_id", "prob_titular"])
+    xi[["match_id", "team_id", "player_id"]] = xi[["match_id", "team_id", "player_id"]].astype(int)
+    xi["prob_titular"] = xi["prob_titular"].astype(float)
+    logger.info(f"{len(xi)} relacionados em {xi['match_id'].nunique()} partidas -- alimentam a passada 'relacionados'.")
+
     temporadas = sorted(df["season"].unique())
     logger.info(f"Temporadas encontradas: {temporadas}")
 
@@ -398,6 +514,20 @@ def rodar(supabase: Client) -> int:
             logger.info(
                 f"Temporada {temporada}: só {len(teste_real)} linhas com escalação real confirmada (<30) -- pulando passada 'real'."
             )
+
+        # Passada 'relacionados' -- a única somável por time (ver
+        # montar_candidatos_relacionados). Mesmos modelos, sem retreino.
+        teste_rel = montar_candidatos_relacionados(df, xi, set(teste_temporada["match_id"].unique()))
+        if len(teste_rel) >= 30:
+            logger.info(
+                f"Temporada {temporada}: {len(teste_rel)} relacionados em {teste_rel['match_id'].nunique()} partidas "
+                f"({(~teste_rel['entrou_em_campo']).mean():.0%} não entraram em campo)."
+            )
+            linhas_agregado += _avaliar_e_persistir_passada(
+                supabase, teste_rel, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, "relacionados",
+            )
+        else:
+            logger.info(f"Temporada {temporada}: só {len(teste_rel)} relacionados com prob_titular (<30) -- pulando passada 'relacionados'.")
 
         if linhas_agregado:
             supabase.table("player_market_backtest").upsert(
