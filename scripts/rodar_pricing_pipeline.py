@@ -152,19 +152,27 @@ def _buscar_macro_priors(supabase: Client, match_ids: list[int]) -> dict[int, di
     `model_name` utilizável simplesmente não aparece no dict -- quem chama
     pula (não há macro pra reconciliar contra, ver docstring do módulo).
 
-    Pagina de verdade (`dh._paginar`) -- várias partidas x até 3
-    `model_name` cada facilmente passa do corte silencioso de 1000 linhas
-    do PostgREST (achado real: sem isso, só as primeiras ~1000 linhas
-    retornadas viravam macro_priors, derrubando a cobertura da Camada 3
-    pra uma fração pequena e arbitrária das partidas na janela)."""
-    linhas = dh._paginar(
-        lambda inicio, fim: (
+    Pagina de verdade em lotes de ID (`dh._paginar_por_lotes_de_id`) --
+    várias partidas x até 3 `model_name` cada facilmente passa do corte
+    silencioso de 1000 linhas do PostgREST (achado real: sem isso, só as
+    primeiras ~1000 linhas retornadas viravam macro_priors, derrubando a
+    cobertura da Camada 3 pra uma fração pequena e arbitrária das partidas
+    na janela). Lotear por ID (não só por `.range()`) também evita
+    `httpx.InvalidURL: URL component 'query' too long` quando `match_ids`
+    é grande (achado real: `scripts/backtest_xa_modulador_pipeline.py`
+    passa o histórico inteiro, ~27 mil partidas, de uma vez -- `rodar_
+    pricing_pipeline.py` em si nunca bateu nesse limite porque só processa
+    a janela de `--dias`, mas a função é genérica o bastante pra precisar
+    ser robusta pros dois casos)."""
+    linhas = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
             supabase.table("model_match_estimates")
             .select("match_id, params")
-            .in_("match_id", match_ids)
+            .in_("match_id", lote)
             .not_.is_("params", "null")
             .range(inicio, fim)
-        )
+        ),
+        match_ids,
     )
     saida: dict[int, dict] = {}
     for linha in linhas:
