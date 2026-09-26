@@ -282,11 +282,17 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
     # sem xg registrado" como o mesmo sinal.
     df["xg_partida"] = np.where(df["chutes_partida"] == 0, df["xg_partida"].fillna(0.0), df["xg_partida"])
     # xA já vem pronto por partida em match_player_stats_fotmob.xa (ao
-    # contrário de chutes/gols/xG, não precisa de agregação chute a chute) --
-    # sem gate "0 chutes -> 0" análogo ao de xg_partida (xA não depende de
-    # ter chutado); NaN genuíno (linha sem xA capturado) fica NaN e é
-    # dropado no treino (ver treinar(), mesmo tratamento de xg_partida).
-    df["xa_partida"] = df["xa"]
+    # contrário de chutes/gols/xG, não precisa de agregação chute a chute).
+    # O FotMob OMITE o xA quando ele é zero (26/09: nenhum xA = 0 na base,
+    # mínimo 0,01 = arredondamento a 2 casas; 31,5% dos jogadores que entraram
+    # vêm sem xA dentro de partidas COM xA capturado, e jogam menos -- 49 vs.
+    # 71 min). Tratar esse vazio como "sem dado" jogava fora quem não criou
+    # chance, uma seleção pós-jogo: treino, EWMA/prior de xa_90 e avaliação
+    # ficavam só com quem criou algo. Vazio vira 0 nas partidas com xA
+    # capturado (algum jogador com xA); fica NaN só onde a partida inteira
+    # não tem xA (aí sim é dado ausente, dropado no treino).
+    partida_com_xa = df.groupby("match_id")["xa"].transform(lambda s: s.notna().any())
+    df["xa_partida"] = np.where(partida_com_xa, df["xa"].fillna(0.0), np.nan)
 
     df = df.rename(columns={"match_id": "id_match"}).merge(
         matches[["id", "match_date", "home_team_id", "away_team_id", "league_id", "season", "liga"]].rename(columns={"id": "id_match"}),
