@@ -35,16 +35,27 @@ export const normalizeImageToJpeg = (file, maxWidth = 1400, quality = 0.85) => n
   reader.readAsDataURL(file);
 });
 
-export async function extractJsonFromImage(file, prompt) {
-  const base64Data = await normalizeImageToJpeg(file);
-  const mediaType = 'image/jpeg';
+// Aceita 1+ imagens na MESMA chamada de IA (não N chamadas separadas) --
+// pedido do usuário: um print de tabela longa às vezes vem cortado/quebrado
+// em 2+ capturas (ex.: metade dos jogadores em cada uma), e mandar as duas
+// juntas deixa a própria IA reconciliar num JSON só, em vez do cliente ter
+// que casar/mesclar dois JSONs parciais (que podem ter jogadores repetidos
+// entre as imagens, sem forma confiável de saber isso do lado de fora).
+// Claude e Gemini aceitam múltiplos blocos de imagem numa mensagem só —
+// `api/ocr.js` já manda todas antes do prompt de texto.
+export async function extractJsonFromImages(files, prompt) {
+  const arquivos = Array.from(files || []).filter(Boolean);
+  if (arquivos.length === 0) throw new Error('Nenhuma imagem selecionada.');
+  const images = await Promise.all(
+    arquivos.map(async (file) => ({ data: await normalizeImageToJpeg(file), mediaType: 'image/jpeg' }))
+  );
 
   let response;
   try {
     response = await fetch(apiUrl('/api/ocr'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64Data, mediaType, prompt }),
+      body: JSON.stringify({ images, prompt }),
     });
   } catch (networkErr) {
     throw new Error('Falha de rede ao contactar o servidor. Verifique a conexão e tente novamente.');
@@ -78,4 +89,10 @@ export async function extractJsonFromImage(file, prompt) {
   } catch (e) {
     throw new Error(`A IA não devolveu um JSON válido. Início da resposta: "${cleanText.slice(0, 120)}..."`);
   }
+}
+
+// Compatibilidade: chamadores que ainda mandam 1 arquivo só continuam
+// funcionando sem mudança (delega pra extractJsonFromImages com array de 1).
+export async function extractJsonFromImage(file, prompt) {
+  return extractJsonFromImages([file], prompt);
 }

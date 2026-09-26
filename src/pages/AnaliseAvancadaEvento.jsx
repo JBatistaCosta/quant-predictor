@@ -30,7 +30,7 @@ import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 import { buscarMatrizConfiabilidadeAtual, classificarComMatriz } from '../utils/classificarAposta';
 import { poissonCDF } from '../utils/poisson';
 import { negBinomialCDF } from '../utils/distributions';
-import { extractJsonFromImage } from '../utils/ocr';
+import { extractJsonFromImages } from '../utils/ocr';
 import ModeloCartoesFaltas from '../components/ModeloCartoesFaltas';
 
 // Mercados em que o modelo misto (gols/escanteios) tem probabilidade
@@ -523,6 +523,30 @@ Regras:
 - Odds são números decimais como 1.87, 3.30, 5.25.
 - Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
 
+// Terceiro mercado de jogador (mesmo molde de OCR_ODDS_JOGADOR_PROMPT/
+// OCR_ODDS_CHUTES_PROMPT) -- pedido do usuário: comparar odds reais de
+// assistência contra a odds justa derivada de `lambda_xa_jogo` (já
+// carregado em `estimativas`, mesma fonte que a coluna "xA esp." usa).
+const OCR_ODDS_ASSISTENCIAS_PROMPT = `Você é um extrator de odds do mercado de ASSISTÊNCIAS por jogador de screenshots de casas de apostas (Betano, Bet365, etc.) de uma partida de futebol.
+A imagem mostra o mercado "Assistências" / "Dá assistência" / "To Assist" por jogador -- geralmente só a linha de 1+ assistência, mas às vezes também 2+ ("dobradinha de assistências"). Extraia TODOS os jogadores visíveis e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
+{
+  "casa_de_apostas": "NomeDaCasa",
+  "jogadores": [
+    {
+      "nome": "Nome do jogador exatamente como aparece na imagem",
+      "assistencia_1_mais": null,
+      "assistencia_2_mais": null
+    }
+  ]
+}
+
+Regras:
+- "assistencia_1_mais": odd de "dá 1 ou mais assistências" / "to assist anytime" / "assistência a qualquer momento".
+- "assistencia_2_mais": odd de "dá 2 ou mais assistências" / "dobradinha de assistências" -- só preencha se essa linha estiver visível, a maioria dos prints só tem a de 1+.
+- Se um mercado não estiver visível pra um jogador, deixe null -- não invente valor.
+- Odds são números decimais como 1.87, 3.30, 5.25.
+- Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
+
 // oddsImportadas[player_id][campo] guarda um MAPA por casa de apostas
 // ({ casa: odd }), não um valor único -- é o que permite importar a mesma
 // partida várias vezes (OCR de casas diferentes, ou JSON colado) sem uma
@@ -607,6 +631,15 @@ const MERCADOS_CHUTES_GOLS = [
   { titulo: 'Gols', lambdaKey: 'lambda_gols_jogo_direto', linhas: [1, 2, 3], chaveReal: (linha) => `marcar_${linha}_mais` },
 ];
 
+// Assistências -- mesmo molde de MERCADOS_CHUTES_GOLS, λ via
+// `lambda_xa_jogo` (já carregado em `estimativas`, mesma fonte da coluna
+// "xA esp." já exibida). Poisson puro (sem dispR): dispRParaMercado só
+// tem calibração NB pra chutes/chutes-no-alvo, cai pro default (null) aqui,
+// mesmo tratamento que "Gols" já recebe.
+const MERCADOS_ASSISTENCIAS = [
+  { titulo: 'Assistências', lambdaKey: 'lambda_xa_jogo', linhas: [1, 2], chaveReal: (linha) => `assistencia_${linha}_mais` },
+];
+
 // Chutes totais (não só no alvo) -- linhas +1 até +10, pedido explícito do
 // usuário ("é extensa, por tomar uma tabela à parte"): fica em Secao/tabela
 // separada da de chutes-ao-gol/gols, mesmo componente generalizado.
@@ -619,7 +652,7 @@ const MERCADOS_CHUTES_TOTAIS = [
 // gol, gols, chutes total) -- reusado tanto pelo import de JSON colado
 // (mapeia o "mercado" do JSON pro config certo) quanto pela comparação de
 // EV multi-casas (itera os 3 juntos numa lista só).
-const MERCADOS_EV_JOGADOR = [...MERCADOS_CHUTES_GOLS, ...MERCADOS_CHUTES_TOTAIS];
+const MERCADOS_EV_JOGADOR = [...MERCADOS_CHUTES_GOLS, ...MERCADOS_CHUTES_TOTAIS, ...MERCADOS_ASSISTENCIAS];
 
 // Mapa "mercado" (string livre, como vem no JSON colado pelo usuário) ->
 // config já usado pelas tabelas de odds justas -- normaliza antes de
@@ -631,6 +664,10 @@ const MAPA_MERCADO_JSON = {
   'chutes (total)': MERCADOS_CHUTES_TOTAIS[0],
   'chutes ao gol': MERCADOS_CHUTES_GOLS[0],
   gols: MERCADOS_CHUTES_GOLS[1],
+  assistencia: MERCADOS_ASSISTENCIAS[0],
+  assistencias: MERCADOS_ASSISTENCIAS[0],
+  assistência: MERCADOS_ASSISTENCIAS[0],
+  assistências: MERCADOS_ASSISTENCIAS[0],
 };
 function normalizarMercadoJson(s) {
   return String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -1279,12 +1316,17 @@ function SecaoJogadorMercados({
   const [ocrChutesLoading, setOcrChutesLoading] = useState(false);
   const [ocrChutesMsg, setOcrChutesMsg] = useState('');
   const [ocrChutesErro, setOcrChutesErro] = useState('');
+  // Estado próprio pro import de assistências (mesmo padrão dos 2 acima).
+  const [ocrAssistLoading, setOcrAssistLoading] = useState(false);
+  const [ocrAssistMsg, setOcrAssistMsg] = useState('');
+  const [ocrAssistErro, setOcrAssistErro] = useState('');
 
-  // Casa de apostas compartilhada entre os 3 caminhos de import (2 OCR + 1
+  // Casa de apostas compartilhada entre os 4 caminhos de import (3 OCR + 1
   // JSON colado) -- pro OCR é só o fallback quando a imagem não mostra a
   // marca (o prompt já pede casa_de_apostas pra IA extrair, ver
-  // OCR_ODDS_JOGADOR_PROMPT/OCR_ODDS_CHUTES_PROMPT); pro JSON colado é
-  // obrigatório (o formato do exemplo do usuário não carrega esse campo).
+  // OCR_ODDS_JOGADOR_PROMPT/OCR_ODDS_CHUTES_PROMPT/OCR_ODDS_ASSISTENCIAS_PROMPT);
+  // pro JSON colado é obrigatório (o formato do exemplo do usuário não
+  // carrega esse campo).
   const [casaAtual, setCasaAtual] = useState('');
   const [pasteAberto, setPasteAberto] = useState(false);
   const [pasteTexto, setPasteTexto] = useState('');
@@ -1421,17 +1463,20 @@ function SecaoJogadorMercados({
     );
   };
 
-  // Lê a imagem, extrai jogadores+odds via OCR, casa cada um por nome contra
-  // `estimativas` (as duas fontes/times, então funciona pra qualquer
-  // screenshot) e funde no estado local -- não substitui importações
-  // anteriores de outros jogadores, só atualiza quem apareceu nesta imagem.
+  // Lê 1+ imagens (a mesma tabela pode vir quebrada em 2+ capturas -- a IA
+  // recebe todas juntas e devolve um JSON já reconciliado, ver
+  // extractJsonFromImages), extrai jogadores+odds via OCR, casa cada um por
+  // nome contra `estimativas` (as duas fontes/times, então funciona pra
+  // qualquer screenshot) e funde no estado local -- não substitui
+  // importações anteriores de outros jogadores, só atualiza quem apareceu
+  // nestas imagens.
   const handleOcrOddsJogador = async (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
+    if (files.length === 0) return;
     setOcrLoading(true); setOcrErro(''); setOcrMsg('');
     try {
-      const parsed = await extractJsonFromImage(file, OCR_ODDS_JOGADOR_PROMPT);
+      const parsed = await extractJsonFromImages(files, OCR_ODDS_JOGADOR_PROMPT);
       const casa = (parsed?.casa_de_apostas || casaAtual || 'Casa (OCR)').trim() || 'Casa (OCR)';
       const jogadoresImagem = parsed?.jogadores || [];
       const novos = {};
@@ -1465,17 +1510,17 @@ function SecaoJogadorMercados({
     }
   };
 
-  // Mesmo padrão de handleOcrOddsJogador, prompt/estado próprios (mercado
-  // separado: chutes TOTAIS, não só no alvo) -- funde no mesmo
-  // `oddsImportadas` via mesclarOddsImportadas, sem apagar o que a outra
-  // fonte já importou pro mesmo jogador.
+  // Mesmo padrão de handleOcrOddsJogador (inclusive 1+ imagens), prompt/
+  // estado próprios (mercado separado: chutes TOTAIS, não só no alvo) --
+  // funde no mesmo `oddsImportadas` via mesclarOddsImportadas, sem apagar
+  // o que a outra fonte já importou pro mesmo jogador.
   const handleOcrOddsChutes = async (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
+    if (files.length === 0) return;
     setOcrChutesLoading(true); setOcrChutesErro(''); setOcrChutesMsg('');
     try {
-      const parsed = await extractJsonFromImage(file, OCR_ODDS_CHUTES_PROMPT);
+      const parsed = await extractJsonFromImages(files, OCR_ODDS_CHUTES_PROMPT);
       const casa = (parsed?.casa_de_apostas || casaAtual || 'Casa (OCR)').trim() || 'Casa (OCR)';
       const jogadoresImagem = parsed?.jogadores || [];
       const novos = {};
@@ -1501,6 +1546,44 @@ function SecaoJogadorMercados({
       setOcrChutesErro(err.message || 'Falha ao ler a imagem.');
     } finally {
       setOcrChutesLoading(false);
+    }
+  };
+
+  // Mesmo padrão dos 2 acima (inclusive 1+ imagens) -- mercado de
+  // assistências, único que usa `lambda_xa_jogo` como λ.
+  const handleOcrOddsAssistencia = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    setOcrAssistLoading(true); setOcrAssistErro(''); setOcrAssistMsg('');
+    try {
+      const parsed = await extractJsonFromImages(files, OCR_ODDS_ASSISTENCIAS_PROMPT);
+      const casa = (parsed?.casa_de_apostas || casaAtual || 'Casa (OCR)').trim() || 'Casa (OCR)';
+      const jogadoresImagem = parsed?.jogadores || [];
+      const novos = {};
+      let naoCasados = 0;
+      for (const j of jogadoresImagem) {
+        const match = casarJogadorPorNome(j.nome, estimativas);
+        if (!match) { naoCasados += 1; continue; }
+        const camposValor = {
+          assistencia_1_mais: j.assistencia_1_mais ?? null,
+          assistencia_2_mais: j.assistencia_2_mais ?? null,
+        };
+        novos[match.player_id] = Object.fromEntries(
+          Object.entries(camposValor).map(([campo, valor]) => [campo, { [casa]: valor }])
+        );
+      }
+      setOddsImportadas((atual) => mesclarOddsImportadas(atual, novos));
+      const nCasados = Object.keys(novos).length;
+      if (nCasados === 0 && naoCasados === 0) {
+        setOcrAssistErro('Nenhum jogador com odds reconhecido nessa imagem.');
+      } else {
+        setOcrAssistMsg(`${nCasados} jogador(es) importado(s)${naoCasados ? `, ${naoCasados} não reconhecido(s) (nome não bateu com o elenco)` : ''}.`);
+      }
+    } catch (err) {
+      setOcrAssistErro(err.message || 'Falha ao ler a imagem.');
+    } finally {
+      setOcrAssistLoading(false);
     }
   };
 
@@ -1668,7 +1751,7 @@ function SecaoJogadorMercados({
             className="w-full px-2.5 py-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 placeholder:text-slate-700"
           />
           <div className="flex items-center justify-between mt-2">
-            <p className="text-[10px] text-slate-600">Mercados aceitos: Chutes, Chutes ao gol, Gols.</p>
+            <p className="text-[10px] text-slate-600">Mercados aceitos: Chutes, Chutes ao gol, Gols, Assistências.</p>
             <button
               type="button"
               onClick={handleImportarJson}
@@ -1709,9 +1792,10 @@ function SecaoJogadorMercados({
         >
           {ocrLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
           Importar odds (OCR)
-          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={ocrLoading} onChange={handleOcrOddsJogador} />
+          <input type="file" accept="image/*" capture="environment" multiple className="hidden" disabled={ocrLoading} onChange={handleOcrOddsJogador} />
         </label>
       </div>
+      <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela de jogadores cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
       {(ocrErro || ocrMsg) && (
         <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
           ocrErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
@@ -1747,9 +1831,10 @@ function SecaoJogadorMercados({
         >
           {ocrChutesLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
           Importar odds (OCR)
-          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={ocrChutesLoading} onChange={handleOcrOddsChutes} />
+          <input type="file" accept="image/*" capture="environment" multiple className="hidden" disabled={ocrChutesLoading} onChange={handleOcrOddsChutes} />
         </label>
       </div>
+      <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela de jogadores cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
       {(ocrChutesErro || ocrChutesMsg) && (
         <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
           ocrChutesErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
@@ -1765,6 +1850,44 @@ function SecaoJogadorMercados({
       <TabelaOddsJustasIndividual
         titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas}
         mercados={MERCADOS_CHUTES_TOTAIS} chaveOrdenacao="lambda_chutes_jogo"
+      />
+    </Secao>
+
+    <Secao titulo="Odds justas — assistências" icone={Percent}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-[11px] text-slate-500">
+          Mesmo molde das tabelas de chutes ao gol/gols acima, agora pro mercado de assistências (via{' '}
+          <code className="text-slate-400">lambda_xa_jogo</code>, Poisson puro). Linha +1 é a que a maioria das casas oferece
+          ("dá assistência"); +2 só aparece quando a casa também tem "dobradinha de assistências". Importe uma imagem do mercado
+          "Assistências" da casa (ou cole um JSON com mercado "Assistências" na seção acima) pra comparar lado a lado, mesma
+          coloração (verde = valor, vermelho = sem valor).
+        </p>
+        <label
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
+            ocrAssistLoading ? 'bg-slate-700 text-slate-400 cursor-wait' : 'bg-purple-600 hover:bg-purple-500 text-white'
+          }`}
+        >
+          {ocrAssistLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+          Importar odds (OCR)
+          <input type="file" accept="image/*" capture="environment" multiple className="hidden" disabled={ocrAssistLoading} onChange={handleOcrOddsAssistencia} />
+        </label>
+      </div>
+      <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela de jogadores cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
+      {(ocrAssistErro || ocrAssistMsg) && (
+        <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          ocrAssistErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {ocrAssistErro ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{ocrAssistErro || ocrAssistMsg}</span>
+        </div>
+      )}
+      <TabelaOddsJustasIndividual
+        titulo={homeNome || 'Mandante'} linhas={porTime[homeTeamId] || []} oddsImportadas={oddsImportadas}
+        mercados={MERCADOS_ASSISTENCIAS} chaveOrdenacao="lambda_xa_jogo"
+      />
+      <TabelaOddsJustasIndividual
+        titulo={awayNome || 'Visitante'} linhas={porTime.outro || []} oddsImportadas={oddsImportadas}
+        mercados={MERCADOS_ASSISTENCIAS} chaveOrdenacao="lambda_xa_jogo"
       />
     </Secao>
 

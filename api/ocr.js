@@ -13,7 +13,7 @@
 
 import { applyCors } from './_lib/cors.js';
 
-async function chamarClaude(apiKey, image, mediaType, prompt) {
+async function chamarClaude(apiKey, images, prompt) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -28,7 +28,11 @@ async function chamarClaude(apiKey, image, mediaType, prompt) {
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
+            // Todas as imagens ANTES do texto, na mesma mensagem -- deixa o
+            // modelo reconciliar um print de tabela quebrado em 2+ capturas
+            // (ou uma leitura ambígua numa imagem, confirmada pela outra)
+            // num JSON só, em vez de mesclar respostas parciais no cliente.
+            ...images.map((img) => ({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } })),
             { type: 'text', text: prompt }
           ]
         }
@@ -39,7 +43,7 @@ async function chamarClaude(apiKey, image, mediaType, prompt) {
   return { ok: response.ok, status: response.status, data };
 }
 
-async function chamarGemini(apiKey, image, mediaType, prompt) {
+async function chamarGemini(apiKey, images, prompt) {
   const modelo = 'gemini-2.5-flash'; // rápido e barato, equivalente ao claude-haiku aqui usado
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
@@ -49,7 +53,7 @@ async function chamarGemini(apiKey, image, mediaType, prompt) {
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inline_data: { mime_type: mediaType, data: image } },
+            ...images.map((img) => ({ inline_data: { mime_type: img.mediaType, data: img.data } })),
             { text: prompt }
           ]
         }]
@@ -72,11 +76,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: { message: 'Método não permitido.' } });
   }
 
-  const { image, mediaType, prompt } = req.body || {};
-  if (!image || !prompt) {
+  // Aceita `images: [{data, mediaType}]` (1+ imagens, mesma chamada de IA --
+  // ver src/utils/ocr.js) e, por compatibilidade, o formato antigo de uma
+  // imagem só (`image`/`mediaType`), normalizado pro mesmo array aqui.
+  const { image, mediaType, images: imagensBrutas, prompt } = req.body || {};
+  const images = Array.isArray(imagensBrutas) && imagensBrutas.length > 0
+    ? imagensBrutas.map((img) => ({ data: img.data, mediaType: img.mediaType || 'image/jpeg' }))
+    : image
+      ? [{ data: image, mediaType: mediaType || 'image/jpeg' }]
+      : [];
+  if (images.length === 0 || !prompt) {
     return res.status(400).json({ error: { message: 'Imagem ou prompt ausente na requisição.' } });
   }
-  const tipoDeImagem = mediaType || 'image/jpeg';
 
   const geminiKey = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -89,8 +100,8 @@ export default async function handler(req, res) {
 
   try {
     const resultado = geminiKey
-      ? await chamarGemini(geminiKey, image, tipoDeImagem, prompt)
-      : await chamarClaude(anthropicKey, image, tipoDeImagem, prompt);
+      ? await chamarGemini(geminiKey, images, prompt)
+      : await chamarClaude(anthropicKey, images, prompt);
 
     return res.status(resultado.ok ? 200 : resultado.status).json(resultado.data);
   } catch (err) {

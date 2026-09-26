@@ -12,6 +12,7 @@ import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format'
 import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions';
 import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
 import { apiUrl } from '../utils/apiUrl';
+import { extractJsonFromImages } from '../utils/ocr';
 import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
 import { MARKOV_MINUTES, MINUTE_BINS as MARKOV_MINUTE_BIN_LABELS, runMarkovSimulation as runMarkovSimulationDireto } from '../utils/markovEngine';
 import { carregarMarkovParams } from '../utils/markovParams';
@@ -847,100 +848,15 @@ export default function AnaliseEvento() {
     }, 4000);
   };
 
-  // --- Passo A: normaliza QUALQUER imagem (foto de celular, HEIC, PNG gigante...) ---
-  // Redesenha a imagem num <canvas> e exporta como JPEG redimensionado.
-  // Isso evita falhas por formato incomum e reduz o tamanho do arquivo enviado.
-  const normalizeImageToJpeg = (file, maxWidth = 1400, quality = 0.85) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new window.Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxWidth) {
-          height = Math.round(height * (maxWidth / width));
-          width = maxWidth;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        try {
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
-          resolve(dataUrl.split(',')[1]);
-        } catch (e) {
-          reject(new Error('Não foi possível converter a imagem (canvas bloqueado pelo navegador).'));
-        }
-      };
-      img.onerror = () => reject(new Error('Formato de imagem não suportado pelo navegador. Tente exportar como JPG ou PNG antes de enviar.'));
-      img.src = reader.result;
-    };
-    reader.onerror = () => reject(new Error('Falha ao ler o ficheiro do celular/computador.'));
-    reader.readAsDataURL(file);
-  });
-
-  // --- Núcleo compartilhado do OCR: imagem -> base64 (normalizada) -> /api/ocr -> JSON ---
-  // Repare que aqui NÃO chamamos api.anthropic.com diretamente.
-  // Chamamos nosso próprio endpoint (/api/ocr), que roda no servidor do Vercel
-  // e guarda a chave da API em segredo (arquivo api/ocr.js).
-  const extractJsonFromImage = async (file, prompt) => {
-    // Passo 1: normaliza a imagem (sempre vira JPEG, sempre redimensionada)
-    const base64Data = await normalizeImageToJpeg(file);
-    const mediaType = 'image/jpeg';
-
-    // Passo 2: envia imagem + instruções para o NOSSO backend
-    let response;
-    try {
-      response = await fetch(apiUrl('/api/ocr'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Data, mediaType, prompt })
-      });
-    } catch (networkErr) {
-      throw new Error('Falha de rede ao contactar o servidor. Verifique a conexão e tente novamente.');
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch (e) {
-      throw new Error(`Resposta inválida da API (status ${response.status}).`);
-    }
-
-    // Passo 3: se a API retornou um erro explícito, mostra o motivo real
-    if (!response.ok || data.error) {
-      const msg = data?.error?.message || `status HTTP ${response.status}`;
-      throw new Error(`Erro da API: ${msg}`);
-    }
-
-    // Passo 4: junta os blocos de texto e limpa possíveis cercas de markdown
-    const rawText = (data.content || [])
-      .filter(item => item.type === 'text')
-      .map(item => item.text)
-      .join('\n');
-
-    if (!rawText.trim()) {
-      throw new Error('A IA não devolveu texto. Tente novamente ou use outra imagem.');
-    }
-
-    const cleanText = rawText.replace(/```json|```/g, '').trim();
-
-    try {
-      return JSON.parse(cleanText);
-    } catch (e) {
-      throw new Error(`A IA não devolveu um JSON válido. Início da resposta: "${cleanText.slice(0, 120)}..."`);
-    }
-  };
-
   // --- LEITOR 1: Estatísticas (xG, chutes, escanteios...) ---
   const handleStatsImageUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
     setOcrError(''); setOcrSuccess(''); setOcrJsonPreview(''); setOcrLoading(true);
 
     try {
-      const parsedData = await extractJsonFromImage(file, OCR_STATS_PROMPT);
+      const parsedData = await extractJsonFromImages(files, OCR_STATS_PROMPT);
       setOcrJsonPreview(JSON.stringify(parsedData, null, 2));
       const { matchedT1, matchedT2 } = applyParsedData(parsedData);
 
@@ -960,13 +876,13 @@ export default function AnaliseEvento() {
 
   // --- LEITOR 2: Odds da casa de apostas (para o scanner multi-Kelly) ---
   const handleOddsImageUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
     setOcrError(''); setOcrSuccess(''); setOcrJsonPreview(''); setOcrLoading(true);
 
     try {
-      const parsedData = await extractJsonFromImage(file, OCR_ODDS_PROMPT);
+      const parsedData = await extractJsonFromImages(files, OCR_ODDS_PROMPT);
 
       if (!parsedData.odds) {
         throw new Error('Sem campo odds');
@@ -1561,6 +1477,7 @@ export default function AnaliseEvento() {
                       ref={statsInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       disabled={ocrLoading}
                       onChange={handleStatsImageUpload}
@@ -1575,6 +1492,7 @@ export default function AnaliseEvento() {
                       ref={oddsInputRef}
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       disabled={ocrLoading}
                       onChange={handleOddsImageUpload}
