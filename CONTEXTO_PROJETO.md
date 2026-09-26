@@ -1,5 +1,43 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Mercado de assistências — Frente B ENCERRADA: a OddsPapi não traz props de jogador de futebol nem por partida, nem a menos de 1 dia do jogo, nem em casas brasileiras (26/09).** Fecha o último teste pendente da entrada de 25/09 (logo abaixo).
+- **Troca de plano.** A chamada de Manchester United × Tottenham (09/10) foi cancelada a pedido do usuário. No lugar, rodei o teste na Série B, a única liga com jogos nos dias seguintes (as grandes europeias estavam paradas pela data FIFA). A Série B está em `LIGAS_JOGADOR_MERCADOS`.
+- **Cota:** 2 chamadas pagas, autorizadas pelo usuário. Contando a de 25/09, a Frente B gastou 3 no total.
+- **Chamada 1** — `?tarefa=odds-props-descobrir&modo=ao_vivo&tournament_ids=390&bookmaker=betano.bet.br`:
+  - vieram as 8 partidas da rodada (26 a 29/09), com 112–125 mercados cada;
+  - **zero mercado de jogador**.
+- **Chamada 2** — `modo=por_partida` em Náutico × Sport (`fixture_id=id1000039068823320`, 26/09 19:30 UTC, menos de 19h antes do jogo), com 10 casas. **Zero mercado de jogador em todas**:
+
+  | Casa | Mercados | Mercados de jogador |
+  |---|---|---|
+  | 1xbet | 283 | 0 |
+  | bet365 | 229 | 0 |
+  | Superbet BR | 150 | 0 |
+  | EstrelaBet BR | 130 | 0 |
+  | Betano BR | 125 | 0 |
+  | KTO BR | 110 | 0 |
+  | Sportingbet BR | 109 | 0 |
+  | Pinnacle | 97 | 0 |
+  | Stake BR | 92 | 0 |
+  | Betfair Exchange | 86 | 0 |
+
+  - O contador (`resumirMercadosDaCasa`) conta prop tanto pelo flag `playerProp` do catálogo quanto por qualquer desfecho com `players` ≠ `"0"`.
+  - No JSON cru, todo desfecho vem como `players: {"0": {..., "playerName": null}}`.
+  - Resposta em cache: `oddspapi_cache`, chaves `props_ao_vivo_betano.bet.br_390` e `props_por_partida_id1000039068823320`.
+- **Conclusão.** Os 3 caminhos da OddsPapi dão zero props de futebol no nosso plano:
+  - histórico;
+  - ao vivo por torneio;
+  - por partida perto do jogo.
+
+  Betano, Superbet e bet365 vendem props de jogador no próprio site, mas a OddsPapi só repassa os mercados de time delas. **A OddsPapi sai da Frente B.** Para validar a Frente A contra odds reais, é preciso outra fonte, conferindo o catálogo antes de gastar cota.
+- **Achado lateral, não corrigido: horário de início divergente.**
+  - Náutico × Sport: 19:30 UTC na OddsPapi contra 23:30 UTC no banco (`matches.id` 110244). É provavelmente por isso que a partida estava sem nenhuma odd no banco.
+  - Operário × Ceará (110246): 19:30 contra 19:00.
+  - O `match_date` da Série B pode estar desatualizado para jogos remarcados. Mesma classe do problema de datas remarcadas já corrigido em outras ligas.
+- Os fixtureIds da rodada ficaram no cache acima. A sincronização diária de odds (`odds-todas`) não guarda o fixtureId, por isso a chamada 1 foi necessária para chegar no `/v4/odds`.
+
+---
+
 **⚠️ CLV com o XI confirmado, e um VAZAMENTO que corrige conclusões anteriores (26/09).** Script: `arquivos_do_claude/validar_clv_xi_confirmado.py`.
 
 **1. O λ "base" do painel tem informação pós-jogo.**
@@ -291,7 +329,7 @@
   - `betfair-spb` (Betfair Sportsbook) é **bloqueada no nosso plano** (HTTP 403 "Restricted bookmaker(s)").
   - O rate-limit de `/v4/historical-odds` pediu ~4s entre chamadas (HTTP 429 com 1,5s); a pausa entre lotes passou para 5s.
   - O catálogo `markets` lista, para futebol, props de jogador de assistência, chutes, chutes ao gol, gols (anytime/primeiro/último), cartões, faltas, impedimentos, desarmes e defesas. **Estar no catálogo não significa que alguma casa publica.**
-- **Pendente (agendado via `send_later` para 09/10 09:00 UTC)**: 1 chamada paga em `?tarefa=odds-props-descobrir&modo=por_partida&fixture_id=id1000001772221308` (Manchester United × Tottenham, 10/10 16:30 UTC, a partida com mais mercados na bet365: 131), com 10 casas. É o endpoint que o blog oficial usa para props.
+- **~~Pendente (agendado para 09/10)~~ — CANCELADO em 26/09**, substituído pelo teste na Série B (entrada de 26/09 no topo). Plano original: 1 chamada paga em `?tarefa=odds-props-descobrir&modo=por_partida&fixture_id=id1000001772221308` (Manchester United × Tottenham, 10/10 16:30 UTC, a partida com mais mercados na bet365: 131), com 10 casas. É o endpoint que o blog oficial usa para props.
   - **Se vier prop de assistência**: a OddsPapi só serve para coleta AO VIVO. O histórico para backtest terá de ser montado por nós, jogo a jogo, e o backtest da Frente A contra odds reais fica para depois de semanas de coleta. Mais o crosswalk manual `player_id` OddsPapi → `players`.
   - **Se vier zero**: a OddsPapi sai da Frente B. Próximo passo seria avaliar outra fonte de odds de props (conferir o catálogo antes de gastar cota).
 
