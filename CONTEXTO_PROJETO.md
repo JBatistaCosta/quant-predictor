@@ -1,5 +1,53 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**xA vazio do FotMob = zero, não "sem dado": CORRIGIDO. O modelo de xA superestimava o xA de todo jogador em ~30%, e o achado "top-2/3 bate o time inteiro" (25/09) era artefato disso (26/09).**
+
+**O defeito.** O FotMob OMITE o xA quando ele é zero. Evidência:
+- nenhum xA = 0 na base; o mínimo é 0,01, arredondamento a 2 casas (0,01: 104 mil; 0,02: 49 mil; 0,03: 31 mil…);
+- 31,5% dos jogadores que entraram vêm sem xA, dentro de partidas COM xA capturado, e jogam menos (49 contra 71 min).
+
+Em `treinar_modelo_jogador_mercados.carregar_dados`, `xa_partida = xa` deixava o vazio como NaN, e o `dropna(TARGET_XA)` o descartava. Isso afetava:
+- o treino do modelo de xA (produção e backtest);
+- a EWMA/prior de `xa_90` (média só das aparições em que o jogador criou algo);
+- a avaliação do backtest;
+- o `lambda_xa_jogo` gravado em `player_match_walkforward`, que só existia para quem criou chance: seleção pós-jogo.
+
+**A correção.** O vazio vira 0 nas partidas com algum xA capturado; fica NaN só onde a partida inteira não tem xA. Na base atual, todas as partidas têm xA: 0% de NaN depois da correção.
+
+**Validação local.** Walk-forward por temporada, CatBoost igual ao backtest, avaliado na população COMPLETA de quem entrou (o alvo com zeros):
+
+| Temporada | xA real médio | Previsto antigo | Previsto corrigido | RMSE antigo | RMSE corrigido |
+|---|---|---|---|---|---|
+| 2021 | 0,0611 | 0,0757 | 0,0582 | 0,1113 | **0,1094** |
+| 2022 | 0,0604 | 0,0802 | 0,0616 | 0,1095 | **0,1067** |
+| 2023 | 0,0620 | 0,0795 | 0,0571 | 0,1123 | **0,1098** |
+| 2024 | 0,0611 | 0,0822 | 0,0628 | 0,1135 | **0,1100** |
+| 2025 | 0,0614 | 0,0798 | 0,0615 | 0,1122 | **0,1093** |
+| 2026 | 0,0580 | 0,0746 | 0,0543 | 0,1102 | **0,1079** |
+
+- O modelo antigo superestimava o xA médio em cerca de 30%; o corrigido fica praticamente sem viés.
+- O RMSE melhora nas 6 temporadas.
+- O corrigido continua batendo o próprio baseline (EWMA) em todas.
+
+**No nível de time.** Correlação da diferença de xA previsto (mandante − visitante) com o saldo de gols, somando os relacionados, em 15.089 partidas:
+
+| xA previsto | Time inteiro | Top-2 | Top-3 |
+|---|---|---|---|
+| Modelo antigo | 0,382 | 0,372 | 0,380 |
+| **Modelo corrigido** | **0,403** | 0,381 | 0,389 |
+
+- A soma do time inteiro melhora +0,021, IC95% [+0,017; +0,025].
+- O top-N fica ABAIXO do time inteiro.
+- O achado de 25/09 ("previsto top-3 = 0,367 contra time inteiro 0,285") usava o `lambda_xa_jogo` gravado, que só existia para quem criou chance. Somando todos, a vantagem do top-N some. **A proposta de trocar a agregação do `pricing_pipeline` para top-2/3 fica DESCARTADA**: a soma do elenco inteiro, que já é o que ele faz, está certa.
+- Só no xA REAL (pós-jogo, descritivo) o top-3 bate o time inteiro (+0,026).
+
+**Invalidado ou a refazer depois do re-run do backtest:**
+1. "104/104 grupos batem o baseline" (25/09): avaliado só em quem criou chance. Remedir.
+2. A validação de P(assistência) da Frente A (`validar_assistencia_jogador_walkforward.py`): o `lambda_xa_jogo` gravado selecionava quem criou chance. Refazer a calibração cloglog.
+3. O modelo de xA de produção (`treinar_modelo_jogador_mercados.yml`): retreinar.
+
+---
+
 **Vazamento de reservas no λ base: CORRIGIDO na fonte com a passada `relacionados` do backtest de jogador. Com o base limpo, o "ganho da escalação confirmada" no 1X2 desaparece (26/09).** Continuação da entrada "CLV com o XI confirmado" (26/09, mais abaixo).
 
 **O que mudou no código** (`scripts/backtest_jogador_mercados_walkforward.py`, migration `20260926100000`):
