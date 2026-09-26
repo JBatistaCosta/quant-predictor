@@ -1,6 +1,34 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
-**Correção do xA validada em produção: viés some, chutes/xG confirmados intactos, e mapeado quais modelos de fato dependem de xA/xG individual (26/09).** Continuação da entrada de correção do xA (logo abaixo).
+**Homologação do modelo de xA individual: viés global fechado, decis bem calibrados, chutes/xG confirmados intactos, e mapeado quais modelos de fato dependem de xA/xG individual (26/09).** Continuação da entrada de correção do xA (logo abaixo).
+
+## 1. Homologação do modelo de xA individual
+
+Fonte `previsto` (quem entrou em campo), 470.409 jogador-partida, só partidas com xA capturado, dados baixados já da produção corrigida:
+
+| Métrica | Valor | IC95% (bootstrap, 2000 reamostragens) |
+|---|---|---|
+| Viés (previsto − real) | −0,0009 | [−0,0012; −0,0006] |
+| RMSE | 0,1092 | [0,1085; 0,1099] |
+| MAE | 0,0619 | — |
+| Correlação (previsto × real) | 0,385 | [0,382; 0,389] |
+| R² | 0,148 | — |
+
+- **Viés global fechado**: −0,0009, essencialmente zero. Antes da correção, o modelo superestimava ~30% em toda a faixa de previsão.
+- **Decis bem calibrados, sem distorção sistemática em nenhuma faixa**: do menor previsto ao maior, previsto ≈ real (0,006→0,007 no decil 1; 0,054→0,055 no meio; **0,166 previsto vs. 0,163 real na faixa alta**, decil 10).
+- **Estabilidade 2021–2026**: correlação entre 0,35 e 0,40, R² entre 0,12 e 0,16 em todas as 6 temporadas — sem tendência de piora nos dados recentes.
+- **Por liga**: correlação entre 0,31 e 0,43 — variação normal de estilo de jogo entre campeonatos, não indica problema de dado.
+- **Leitura**: o xA individual tem sinal real, moderado (R²≈0,15, típico de evento raro e ruidoso) e agora sem viés. Homologado para uso como base do mercado de assistências (Frente A) e do `pricing_pipeline_v1`.
+
+## 2. Arquitetura de modelos — quem depende de xA/xG individual
+
+Mapeamento feito para não retreinar à toa:
+
+- **`hibrido_gols_v1`/`hibrido_gols_xg_v1` (`treinar_modelo_hibrido.py`) operam em nível de TIME** — usam xG do time por partida (FotMob), nunca soma por jogador. **Independentes de xA individual**, não afetados por esta correção nem por futuras mudanças na agregação por jogador.
+- **`catboost_v9_xi_agregado`/`catboost_v9_xi_agregado_top11` e `xg_jogador_agregado_walkforward_v1`** somam `lambda_gols_jogo_direto`/`lambda_xg_jogo`/`lambda_chutes_jogo`/`lambda_chutes_no_alvo_jogo` da fonte `previsto` — nunca somam xA, não afetados por esta correção. **Serão atualizados só na transição completa da fonte `previsto` (vaza reservas que entraram) para `relacionados`** (ver entrada da passada `relacionados` abaixo) — retreinar agora seria trabalho em dobro.
+- **`pricing_pipeline_v1` é o único modelo de produção que soma xA por jogador** (`PlayerToTeamAggregator.agregar_assistencias`, a partir de `player_match_estimates.lambda_xa_jogo`). Esse sim precisou do retreino (item 3 abaixo).
+
+## 3. Rodadas disparadas e próximo passo
 
 - **Rodadas de produção disparadas após o merge:** `backtest_jogador_mercados_walkforward.yml` (grava as 3 passadas — `previsto`/`real`/`relacionados` — com xA corrigido) e `treinar_modelo_jogador_mercados.yml` (retreina `jogador_xa_catboost_rmse_v1`). As duas terminaram com sucesso.
 - **Chutes/xG não pioraram** (RMSE ponderado por amostra, todas as ligas, passada `relacionados`, a mais completa):
@@ -14,27 +42,9 @@
 
   O modelo bate a média simples do jogador em tudo, nas 3 passadas — a correção do xA não mexe nessas colunas (são calculadas à parte), só precisava de confirmação.
 
-- **Mapeamento de quem depende de xA/xG por jogador** (para não retreinar à toa):
-  - `hibrido_gols_v1`/`hibrido_gols_xg_v1` (`treinar_modelo_hibrido.py`) usam xG do TIME por partida (FotMob), não soma por jogador. **Não são afetados.**
-  - `catboost_v9_xi_agregado`/`catboost_v9_xi_agregado_top11` e `xg_jogador_agregado_walkforward_v1` somam `lambda_gols_jogo_direto`/`lambda_xg_jogo`/`lambda_chutes_jogo`/`lambda_chutes_no_alvo_jogo` da fonte `previsto` — nunca somam xA. **Não afetados por esta correção.** Continuam usando a fonte `previsto`, que ainda tem o vazamento de reservas (pendência separada, ver entrada de `relacionados` abaixo) — não retreinar agora, senão retreina 2x.
-  - **`pricing_pipeline_v1` é o único modelo de produção que soma xA por jogador** (`PlayerToTeamAggregator.agregar_assistencias`, a partir de `player_match_estimates.lambda_xa_jogo`). Esse sim precisa do retreino.
-- **Disparado `prever_jogador_mercados.yml`** (2 rodadas): uma normal (fixtures agendadas, atualiza `player_match_estimates` com o modelo de xA retreinado) e uma `--backtest 30 dias` + `pricing_pipeline_backtest_dias=30` (corrige o histórico recente usado nas comparações de desempenho do `pricing_pipeline_v1`).
-
-- **Desempenho da previsão de xA por jogador — bateria completa**, 470.409 jogador-partida pareados (fonte `previsto`, quem entrou, só partidas com xA capturado), dados baixados já da produção corrigida:
-
-  | Métrica | Valor | IC95% (bootstrap, 2000 reamostragens) |
-  |---|---|---|
-  | Viés (previsto − real) | −0,0009 | [−0,0012; −0,0006] |
-  | RMSE | 0,1092 | [0,1085; 0,1099] |
-  | MAE | 0,0619 | — |
-  | Correlação (previsto × real) | 0,385 | [0,382; 0,389] |
-  | R² | 0,148 | — |
-
-  - **Calibração por decil de previsão** — sem distorção sistemática em nenhuma faixa (previsto ≈ real do menor ao maior decil: 0,006→0,007 no decil 1, 0,054→0,055 no meio, 0,166→0,163 no decil 10). Antes da correção, o modelo superestimava ~30% em toda a faixa.
-  - **Por temporada** (2021-2026): correlação estável entre 0,35 e 0,40, R² entre 0,12 e 0,16 — sem tendência de piora nos dados recentes.
-  - **Por liga**: correlação entre 0,31 e 0,43 — variação normal de estilo de jogo entre campeonatos, não indica problema de dado.
-
-- **Leitura:** o xA individual tem sinal real, moderado (R²≈0,15, típico de evento raro e ruidoso) e agora sem viés. O gargalo do `pricing_pipeline_v1` contra o `hibrido_gols_v1` (log-loss 1,0135 vs 1,0043, achado da Fase 7) não vinha do xA — o sinal é honesto, só estava com a escala errada. Resta acompanhar se a correção reduz esse gap depois da rodada retroativa de 30 dias.
+- **Disparado `prever_jogador_mercados.yml`** (2 rodadas): uma normal (fixtures agendadas, atualiza `player_match_estimates` com o modelo de xA retreinado) — **concluída com sucesso** — e uma `--backtest 30 dias` + `pricing_pipeline_backtest_dias=30` (corrige o histórico recente usado nas comparações de desempenho do `pricing_pipeline_v1`) — **em andamento**.
+- **Próximo passo (assim que a rodada retroativa terminar): reexecutar a Frente A** (`arquivos_do_claude/validar_assistencia_jogador_walkforward.py`, validação de P(assistência) e calibração cloglog) **com a base limpa de xA**, para extrair os parâmetros finais da calibração antes de qualquer nova chamada paga na OddsPapi (Frente B) — a calibração anterior (25/09) usava o `lambda_xa_jogo` com o viés de ~30% já documentado, então os parâmetros salvos lá ficam obsoletos e precisam ser recalculados nesta base.
+- **Leitura:** o gargalo do `pricing_pipeline_v1` contra o `hibrido_gols_v1` (log-loss 1,0135 vs 1,0043, achado da Fase 7) não vinha do xA — o sinal é honesto, só estava com a escala errada (ver item 1). Resta acompanhar se a correção reduz esse gap depois da rodada retroativa de 30 dias.
 
 ---
 
