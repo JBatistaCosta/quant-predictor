@@ -1792,7 +1792,7 @@ function SecaoJogadorMercados({
         >
           {ocrLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
           Importar odds (OCR)
-          <input type="file" accept="image/*" capture="environment" multiple className="hidden" disabled={ocrLoading} onChange={handleOcrOddsJogador} />
+          <input type="file" accept="image/*" multiple className="hidden" disabled={ocrLoading} onChange={handleOcrOddsJogador} />
         </label>
       </div>
       <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela de jogadores cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
@@ -1831,7 +1831,7 @@ function SecaoJogadorMercados({
         >
           {ocrChutesLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
           Importar odds (OCR)
-          <input type="file" accept="image/*" capture="environment" multiple className="hidden" disabled={ocrChutesLoading} onChange={handleOcrOddsChutes} />
+          <input type="file" accept="image/*" multiple className="hidden" disabled={ocrChutesLoading} onChange={handleOcrOddsChutes} />
         </label>
       </div>
       <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela de jogadores cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
@@ -1869,7 +1869,7 @@ function SecaoJogadorMercados({
         >
           {ocrAssistLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
           Importar odds (OCR)
-          <input type="file" accept="image/*" capture="environment" multiple className="hidden" disabled={ocrAssistLoading} onChange={handleOcrOddsAssistencia} />
+          <input type="file" accept="image/*" multiple className="hidden" disabled={ocrAssistLoading} onChange={handleOcrOddsAssistencia} />
         </label>
       </div>
       <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela de jogadores cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
