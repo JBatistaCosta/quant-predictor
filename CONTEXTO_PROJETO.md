@@ -6,6 +6,34 @@
 - **Causa 2 (a que importa de verdade): mesmo se a atualização aparecesse, o valor de `1X2`/`placar_exato` não muda com o fix de xA — por desenho, não por bug.** Em `scripts/pricing_pipeline.py::PlayerToTeamAggregator`, `agregar_assistencias()` (soma `lambda_xa_jogo` do elenco) alimenta só `lambda_assistencias_total` → mercado de assistências (`distribuicoes.mercados_de_assistencias`), independente. `lambda_bottom_up` — o que vira `1X2`/`placar_exato` via `HierarchicalReconciler` + `DixonColesJointEngine` — usa só `lambda_thinning` e `lambda_gols_xgot`; nenhum dos dois lê `lambda_xa_jogo`. Essa exclusão é deliberada e já documentada (25/09, ver entrada "GSAx neutralizado... xA testado como modulador de λ_gols do próprio time e DESCARTADO" mais abaixo): xA como modulador de gol teve efeito in-sample real (β=1,66) mas não generalizou fora da amostra, então foi excluído de `lambda_bottom_up` — só ficou alimentando o mercado de assistências, que é o único afetado pelo fix de xA de 26/09.
 - **Conclusão prática**: a comparação 1X2 `pricing_pipeline_v1`=1,01477 vs. `hibrido_gols_v1`=1,00433 (diff=+0,01044, IC95%=[-0,00170;+0,02196], não significativo, n=1.075, mesma amostra da comparação original de 25/09) **não é dado obsoleto esperando reprocessamento** — é a resposta certa e definitiva pra essa pergunta. Rodar um backtest histórico completo do `pricing_pipeline_v1` de novo (cogitado antes desta investigação) não mudaria esse número: a arquitetura nunca deixou xA tocar em gols/1X2/placar. **Decisão: não rodar esse backtest** — sem ganho esperado, dado o achado acima.
 
+**Frente A (P(assistência) via xA) reexecutada com a base limpa: o viés de 10% e a cauda otimista, documentados em 25/09, somem — mesma conclusão de edge sobre baselines se mantém, agora com calibração honesta (26/09).** Continuação da entrada da homologação do xA (logo acima) e da entrada original da Frente A (mais abaixo).
+
+- **Não precisou esperar a rodada retroativa do `pricing_pipeline_v1`.** O script (`arquivos_do_claude/validar_assistencia_jogador_walkforward.py`) lê só `player_match_walkforward` e `match_player_stats_fotmob` — nenhuma das duas depende de `player_match_estimates`/`pricing_pipeline_v1`. Bastou limpar o cache local (`/tmp/claude-0/quant_assist/cache_script`, tinha os 3 downloads de antes da correção) e rodar de novo.
+- **Os dois alertas de 25/09 para a Frente B, resolvidos:**
+
+  | | Antes (25/09, xA com viés) | Depois (26/09, xA corrigido) |
+  |---|---|---|
+  | O/E cru, escalação `real` | 0,903 (superestimava ~10%) | **0,959** |
+  | O/E cru, `previsto` | 0,961 | **0,980** |
+  | Top 5%, `real`: previsto × observado | 18,9% × 17,6% (otimista) | **18,1% × 17,5%** |
+  | Top 5%, `previsto`: previsto × observado | 17,8% × 17,6% | **16,1% × 16,1%** (exato) |
+  | Top 1%, `real`: previsto × observado | 22,6% × 23,6% | 22,8% × 22,3% |
+
+  **O alerta "nunca precificar com o λ cru da escalação confirmada" fica revisto**: o cru já sai a 4pp de calibrado, não mais a 10pp. Ainda assim, seguir calibrando antes de precificar (prática padrão do projeto).
+
+- **A conclusão central de 25/09 se mantém**: o modelo bate os 4 baselines fora da amostra, IC95% inteiro abaixo de zero, nas duas fontes:
+
+  | Fonte | Δ log-loss vs. melhor baseline (xA/90 carreira) | IC95% |
+  |---|---|---|
+  | `real` | −0,00181 | [−0,00240; −0,00124] |
+  | `previsto` | −0,00278 | [−0,00330; −0,00226] |
+
+  (Δ absoluto menor que em 25/09 porque a taxa-base do teste também caiu, de 8,0% para ~6,0% — mais partidas 2026 entraram na amostra desde então; log-loss cai junto por causa disso, não é sinal de piora. AUC = 0,692 `real` / 0,669 `previsto`, na mesma faixa de 25/09.)
+- **Por liga**: 5 de 12 significativas em `real` (era 7/12), **9 de 12 significativas em `previsto`** (era 5/12) — o `previsto` passou a ser a fonte mais robusta por liga depois da correção.
+- **Próximo passo**: os parâmetros de calibração acima (`a`, `b` por fonte) são os que valem para precificar contra odds reais, assim que a Frente B tiver uma fonte de props de assistência (a OddsPapi está descartada, ver entrada de 26/09 mais abaixo — falta achar outra fonte antes de gastar cota de novo).
+
+---
+
 **Homologação do modelo de xA individual: viés global fechado, decis bem calibrados, chutes/xG confirmados intactos, e mapeado quais modelos de fato dependem de xA/xG individual (26/09).** Continuação da entrada de correção do xA (logo abaixo).
 
 ## 1. Homologação do modelo de xA individual
