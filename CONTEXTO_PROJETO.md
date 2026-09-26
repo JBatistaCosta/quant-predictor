@@ -1,5 +1,55 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Vazamento de reservas no λ base: CORRIGIDO na fonte com a passada `relacionados` do backtest de jogador. Com o base limpo, o "ganho da escalação confirmada" no 1X2 desaparece (26/09).** Continuação da entrada "CLV com o XI confirmado" (26/09, mais abaixo).
+
+**O que mudou no código** (`scripts/backtest_jogador_mercados_walkforward.py`, migration `20260926100000`):
+- Nova passada `fonte_titular='relacionados'`, a única de `player_match_walkforward` que pode ser somada por time. `previsto`/`real` continuam existindo, mas só têm quem ENTROU em campo; servem para avaliar jogador, NUNCA para somar por time.
+- **Candidatos:** o elenco relacionado da partida (`xi_titular_walkforward`, cerca de 21 por time), com `prob_titular` walk-forward.
+- **Minutos esperados:** p × min_como_titular + (1 − p) × min_como_reserva, a mesma mistura da fonte `previsto` da produção.
+- **Histórico de quem não entrou:** vem da PRÓXIMA aparição dele. As features dela só usam aparições anteriores a ela, que são exatamente as anteriores a esta partida.
+  - Sem próxima aparição: usa a anterior (defasada em 1 jogo).
+  - Nunca apareceu: usa o prior da liga.
+- **Alvos de quem não entrou:** 0.
+- **Testes:** `scripts/test_backtest_jogador_relacionados.py` (6 testes sintéticos), inclusive um de não-vazamento: mudar o desempenho de quem entrou não mexe nas features de quem não entrou.
+
+**Rodada local de conferência** (só leitura; 1 modelo de xG por temporada, igual ao workflow):
+- 2021–2026: 638 mil relacionados em 15,1 mil partidas; **26–29% deles não entraram em campo** (é o que faltava antes).
+- **Soma dos minutos esperados:** cerca de 1.060–1.100 por time, contra 990 reais. Viés de escala herdado da fórmula da produção: `minutos_como_reserva` é a média só de quando o jogador ENTROU, sem descontar a chance de não entrar. A calibração bivariada absorve. Não é vazamento.
+- **Valores vazios nas features:** cerca de 22%, todos de `elo_diff`, a mesma taxa das aparições (22,6%). Já existia; o CatBoost trata.
+
+**Validação** (painel de `validar_informacao_nova_lambda.py`: treino 10.115, teste 4.533 partidas a partir de 2025-06-01; bivariada reajustada no treino; IC95% bootstrap por partida):
+
+- **Fora da amostra**, Δ perda contra o base LIMPO (negativo = melhor que o limpo):
+
+  | Mercado | Base vazado | Só titulares confirmados |
+  |---|---|---|
+  | 1X2 | **+0,0143** [+0,0114; +0,0171] | **−0,0006** [−0,0043; +0,0032] |
+  | Gols por time (NLL) | +0,0070 [+0,0029; +0,0112] | −0,0113 [−0,0169; −0,0059] |
+  | O/U 2.5 | −0,0037 [−0,0058; −0,0015] | −0,0067 [−0,0095; −0,0039] |
+
+- **Contra a Pinnacle de fechamento** (3.400 partidas):
+
+  | Variante | Δ log-loss vs Pinnacle | w (log-pooling) | acerto − pPin ~ (p − pPin) |
+  |---|---|---|---|
+  | Base vazado | +0,0287 | **−0,35 (z −3,6)** | −0,296 [−0,467; −0,114] |
+  | **Base limpo** | +0,0146 [+0,0083; +0,0202] | +0,08 (z +0,9) | +0,124 [−0,053; +0,294] |
+  | Só titulares | +0,0118 [+0,0058; +0,0180] | +0,18 (z +2,0) | +0,217 [+0,042; +0,382] |
+
+**Leitura:**
+1. **O vazamento some:** com o base limpo, w e a inclinação deixam de ser negativos.
+2. **O base limpo é muito melhor que o vazado no 1X2** (−0,014 de log-loss), mas a Pinnacle continua melhor que todos.
+3. **No 1X2, a escalação confirmada não acrescenta nada ao base limpo.** O "−0,015" de 25/09 era inteiro a retirada do vazamento.
+4. **Nos gols** (por time e O/U 2.5) a escalação ainda ajuda: −0,011 e −0,007, com IC abaixo de zero. É a única informação nova que sobrevive, e é pequena.
+5. O base vazado era um pouco melhor no O/U 2.5: reserva atacante entrando se correlaciona com mais gols. É o mesmo vazamento, com outro sinal.
+
+**Pendente, na ordem:**
+- (a) Merge + rodar o workflow `backtest_jogador_mercados_walkforward.yml` para gravar a passada `relacionados` em produção.
+- (b) Trocar os consumidores que SOMAM `player_match_walkforward` por time para `fonte_titular='relacionados'`:
+  - `calibrar_potencia_lambda.carregar_do_banco` (o `lam_prod` do painel);
+  - `dados_historicos._anexar_forca_xi_agregada*` (features `xi_agregado_*`, que hoje somam "o elenco" achando que eram os relacionados: eram só os 15,4 que entraram);
+  - `backfill_xg_agregado_walkforward.py` (o modelo `xg_jogador_agregado_walkforward_v1`, inclusive o que foi comparado como fornecedor de λ do motor de Markov);
+  - `calibrar_kappa_xg_agregado.py`, `backtest_gsax_walkforward.py`, `backtest_financeiro_forca_defensiva_handicap.py`, `walkforward_cv_v9_xi_agregado*`.
+- (c) Refazer bivariada/CLV/totais com o base limpo.
 **Mercado de assistências — Frente B ENCERRADA: a OddsPapi não traz props de jogador de futebol nem por partida, nem a menos de 1 dia do jogo, nem em casas brasileiras (26/09).** Fecha o último teste pendente da entrada de 25/09 (logo abaixo).
 - **Troca de plano.** A chamada de Manchester United × Tottenham (09/10) foi cancelada a pedido do usuário. No lugar, rodei o teste na Série B, a única liga com jogos nos dias seguintes (as grandes europeias estavam paradas pela data FIFA). A Série B está em `LIGAS_JOGADOR_MERCADOS`.
 - **Cota:** 2 chamadas pagas, autorizadas pelo usuário. Contando a de 25/09, a Frente B gastou 3 no total.
