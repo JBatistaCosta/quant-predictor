@@ -1,5 +1,56 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**⚠️ CLV com o XI confirmado, e um VAZAMENTO que corrige conclusões anteriores (26/09).** Script: `arquivos_do_claude/validar_clv_xi_confirmado.py`.
+
+**1. O λ "base" do painel tem informação pós-jogo.**
+- O que é o base: `lam_prod`, gerado por `calibrar_potencia_lambda.py`. É a soma de `player_match_walkforward.lambda_xg_jogo` (previsto) × força defensiva. Ele foi usado como "base (XI previsto)" desde a PR #664.
+- **Não é o λ de produção.** `player_match_walkforward` só tem jogadores que ENTRARAM em campo, então a soma inclui os reservas que entraram.
+  - Em média, 31,9% do λ base vem desses reservas.
+  - Time que está perdendo põe atacante. Por isso a fração de λ vinda de reservas prevê o resultado além da Pinnacle de fechamento (1.718 partidas, IC95% bootstrap por partida).
+- **Prova:** regressão de acerto − p_Pin_fech em (fração_reservas_casa − fração_reservas_fora):
+  - vitória do mandante: **−0,688** [−0,867; −0,511];
+  - vitória do visitante: **+0,528** [+0,363; +0,700].
+- **O vazamento é anti-preditivo** (piora o base em vez de melhorar):
+  - acerto − p_Pin ~ (p_base − p_Pin): inclinação −0,330 [−0,578; −0,100];
+  - w do log-pooling contra o fechamento: **−0,41** (z −3,0).
+- **O λ só-titulares (`lb_real_tit`) é limpo.** Ele vale xg_titulares × e^(defesa): os titulares são informação pré-jogo, e o λ por jogador e a defesa são calculados ponto-no-tempo. Não depende de reserva nenhum. A divisão por `xg_prev` em `preparar_painel` se cancela com o `lam_prod`.
+
+**2. Conclusões anteriores que precisam ser relidas** (todas usaram o base vazado):
+- **"Titulares confirmados: −0,015 no 1X2 fora da amostra"** (25/09): **boa parte é tirar o vazamento do base, não informação da escalação.** Não existe no backtest um "XI previsto" limpo para comparar (a tabela walk-forward não tem o elenco inteiro ponderado por prob_titular).
+- **CLV do base** (entrada abaixo): o yield −19% "pior que o CLV prevê", atribuído à calibração, é em grande parte o vazamento.
+  - Na mesma amostra, o XI limpo tem yield −4,3% [−11,9; +3,7], contra −18,6% do base.
+  - O CLV em si quase não muda (−3,73% contra −3,69%).
+- **Bivariada (γ, δ, PR #665), totais contra o mercado, descanso/mando/desgaste/top-N:** o offset carregava ruído pós-jogo.
+  - As features testadas são pré-jogo, então os nulos provavelmente se mantêm, mas com menos poder estatístico.
+  - γ/δ foram ajustados num λ contaminado. Reajustar antes de usar.
+- **O que continua valendo:** a Pinnacle bate todas as variantes, agora também a limpa.
+
+**3. Armadilha (não implementável):** apostar onde p_titulares − p_base > 2% dá **+19,1% de yield na odd de FECHAMENTO da Pinnacle**, IC [+10,4%; +28,2%], com 1.272 seleções.
+- Com δ > 4%: +23,9%, IC [+12,8%; +35,2%].
+- O resultado é estável nas duas metades cronológicas.
+- **É só o vazamento do p_base** (a seleção usa informação pós-jogo). Fica registrado como o caso-teste de "bom demais para ser verdade".
+
+**4. CLV realista com o XI:**
+- **Janela pós-escalação** (odd capturada 0–75 min antes do jogo): só existe em **20 partidas na Pinnacle** (18 bet365, 15 Betano), todas capturadas a partir de 22/07/2026.
+  - Pinnacle: CLV −2,94% contra −2,93% ao acaso.
+  - bet365: −7,20% contra −6,08%.
+  - Amostra anedótica: **não dá para medir a janela certa com os dados atuais.**
+- **XI limpo contra a Pinnacle de fechamento** (o fechamento ≈ o preço disponível depois da escalação, e é o mais eficiente):
+  - Δ log-loss = **+0,0121** [+0,0031; +0,0209] (a Pinnacle é melhor);
+  - w = +0,174 (z +1,4, não significativo);
+  - acerto − p_Pin ~ (p_tit − p_Pin): +0,229 [−0,020; +0,465].
+- **Apostas EV > 0–10% do XI na odd de fechamento:** acerto − p_Pin entre +0,002 e +0,009 (todos os IC cruzam zero). Yield entre −6,4% e −7,8%; o limite superior do IC fica entre +0,3% e +2,1%.
+- **Oráculo na abertura** (limite superior; o XI não existe na abertura):
+  - Pinnacle: CLV −3,73% contra −4,09% ao acaso; a linha anda +0,034 [+0,022; +0,046] na direção do XI.
+  - bet365: CLV −5,23% contra −5,94%.
+  - Ganho de seleção de 0,4–0,7 ponto, bem abaixo da margem.
+
+**Leitura:** com o XI confirmado não aparece CLV nem edge contra o fechamento. O fechamento da Pinnacle já contém o que o λ-dos-titulares sabe, dentro do que a amostra (n = 1.718) consegue detectar.
+
+**Próximos passos:**
+- **Consertar a fonte:** `backtest_jogador_mercados_walkforward.py` deveria persistir o elenco relacionado inteiro na passada `previsto` (inclusive quem não entrou). Só assim existe um base pré-escalação limpo no backtest, e todo teste "base contra X" volta a ser válido.
+- **Janela de 0–75 min:** medir exige capturar odds da Pinnacle logo depois da escalação sair (cron dedicado). Custo de cota a avaliar antes.
+
 **CLV no 1X2: o λ de produção ANTECIPA um pouco o movimento da linha (a linha fecha ~4–10% da discordância do modelo na abertura, IC acima de zero), mas é pouco demais. O CLV das apostas escolhidas pelo modelo na abertura continua negativo (−3,7% na Pinnacle, −5,7% na bet365), só 0,3–0,4 ponto melhor que apostar ao acaso, e o yield real é muito pior (−19% a −20%). Não existe estratégia de apostar cedo com este λ (26/09).** Item 2 da lista "o que melhorar nos mercados de times". Script: `arquivos_do_claude/validar_clv_1x2.py`, que reaproveita `preparar_painel`/`avaliar_variantes` de `validar_informacao_nova_lambda.py`.
 
 - **Desenho**:
