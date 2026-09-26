@@ -88,6 +88,33 @@ MINUTOS_ESPERADOS_MAX_DEFAULT = 1150.0
 DEF_BETA_XGA = 0.1285
 DEF_BETA_XA = 0.1685
 
+# Modulador de xA PRÓPRIO sobre λ_gols (26/09) -- diferente do modulador de
+# força defensiva acima (que ajusta pelo ADVERSÁRIO), este usa a
+# criatividade do PRÓPRIO time (soma do xA previsto dos 3 maiores criadores
+# do elenco, `agregar_xa_top3` -- concentrar nos maiores criadores é o que
+# sobrevive fora da amostra, achado de 25/09/CONTEXTO_PROJETO.md) como
+# correção sobre o próprio `lambda_gols_xgot`. Forma residual (Frisch-
+# Waugh-Lovell), ADITIVA (não log-linear -- diferente da força defensiva
+# acima, essa forma já sobrevive fora da amostra sem precisar de `exp`):
+# `xA_top3_residuo = xA_top3 - (XA_RESIDUO_A + XA_RESIDUO_B·λ_xGOT_total)`
+# -- a parte do xA_top3 que NÃO é só reflexo do próprio volume de xGOT --
+# e `λ_gols_ajustado = λ_gols_xgot + XA_BETA·xA_top3_residuo` (nunca
+# negativo). Reverte a decisão de 25/09 (mesma tentativa com xA ENVIESADO
+# não generalizava, RMSE piorava 1,1561 vs 1,1466): com xA corrigido (ver
+# CONTEXTO_PROJETO.md, 26/09), a mesma metodologia agora MELHORA RMSE fora
+# da amostra de forma estatisticamente significativa. Calibrado via
+# regressão em TREINO (corte temporal 01/06/2025, n=22.032 time-partidas,
+# elenco com melhor fonte de escalação disponível -- real > previsto),
+# validado em 9.443 time-partidas de teste nunca vistas no ajuste (RMSE
+# 1,13525 com xA vs. 1,13947 sem xA). Validação em log-loss de 1X2/placar_
+# exato via pipeline completo (Camadas 1-3) ainda pendente -- ver
+# `scripts/backtest_xa_modulador_pipeline.py` -- por isso desligado por
+# padrão (`usar_modulador_xa=False` em `agregar()`), recalibrar exige
+# rerodar essa validação, não só editar os números abaixo.
+XA_RESIDUO_A = 0.010713
+XA_RESIDUO_B = 0.272901
+XA_BETA = 0.662426
+
 # "5 suplentes mais prováveis de entrar" -- Método 3 (heurística setorial),
 # escolhido entre 3 opções (ver plano da sessão): 1 reserva por papel
 # padrão de substituição, mapeado por `posicao_detalhe` (código FotMob já
@@ -186,6 +213,7 @@ class AgregacaoResultado:
     lambda_assistencias_total: float
     soma_minutos_esperados: float
     minutagem_valida: bool
+    lambda_xa_top3: float = 0.0
     avisos: list[str] = field(default_factory=list)
 
 
@@ -362,6 +390,19 @@ class PlayerToTeamAggregator:
         lambda_xa = self._coluna_numerica(elenco, "lambda_xa_jogo", avisos)
         return float(np.clip(lambda_xa, 0.0, None).sum())
 
+    def agregar_xa_top3(self, elenco: pd.DataFrame, avisos: list[str]) -> float:
+        """λ_xA_top3 = soma do xA previsto dos 3 jogadores com maior xA no
+        elenco -- usado só pelo modulador de λ_gols (`modular_por_xa_
+        propria`), diferente de `agregar_assistencias` (soma o time
+        inteiro, alimenta o mercado de assistências, independente).
+        Concentrar nos maiores criadores é o que sobrevive fora da amostra
+        (achado de 25/09, Refinamento 3, CONTEXTO_PROJETO.md) -- somar o
+        elenco inteiro dilui o sinal com jogadores de banco/baixa
+        participação."""
+        lambda_xa = np.clip(self._coluna_numerica(elenco, "lambda_xa_jogo", avisos), 0.0, None)
+        top3 = np.sort(lambda_xa)[-3:] if len(lambda_xa) >= 3 else lambda_xa
+        return float(top3.sum())
+
     # -- modulação pela força defensiva coletiva do adversário -----------------
     @staticmethod
     def modular_por_forca_defensiva(lambda_xgot: float, def_residuo_xga: float, def_residuo_xa: float) -> float:
@@ -388,6 +429,20 @@ class PlayerToTeamAggregator:
         gsax_rate = float(np.clip(gsax_rate, -1.0, 1.0))
         return float(max(0.0, lambda_xgot * (1.0 - gsax_rate)))
 
+    # -- modulação pela criatividade do PRÓPRIO elenco (xA) ---------------------
+    @staticmethod
+    def modular_por_xa_propria(lambda_gols_xgot: float, lambda_xgot_total: float, xa_top3: float) -> float:
+        """λ_gols_ajustado = λ_gols_xgot + XA_BETA·xA_top3_residuo, onde
+        `xA_top3_residuo = xA_top3 - (XA_RESIDUO_A + XA_RESIDUO_B·λ_xGOT_
+        total)` é a parte do xA_top3 do PRÓPRIO elenco que não é só reflexo
+        do próprio volume de xGOT (ver docstring das constantes). Forma
+        aditiva (não log-linear, diferente de `modular_por_forca_
+        defensiva`) -- validada nessa forma, não recalibrar como log-linear
+        sem repetir a validação. Resultado nunca negativo."""
+        xa_esperado = XA_RESIDUO_A + XA_RESIDUO_B * lambda_xgot_total
+        residuo = xa_top3 - xa_esperado
+        return float(max(0.0, lambda_gols_xgot + XA_BETA * residuo))
+
     # -- afinamento de Poisson (thinning) --------------------------------------
     def afinar_poisson(self, elenco: pd.DataFrame, avisos: list[str]) -> float:
         """λ_thinning = Σ(λ_chutes,k · θ_conv,k), θ_conv,k clipado a [0,1]."""
@@ -402,6 +457,7 @@ class PlayerToTeamAggregator:
         gsax_rate_adversario: float = 0.0,
         def_residuo_xga_adversario: float = 0.0,
         def_residuo_xa_adversario: float = 0.0,
+        usar_modulador_xa: bool = False,
     ) -> AgregacaoResultado:
         """Orquestra as 6 etapas da Camada 1 e devolve
         λ_bottom-up = 0.5·λ_thinning + 0.5·λ_gols,xGOT.
@@ -412,7 +468,13 @@ class PlayerToTeamAggregator:
         ANTES do modulador do goleiro -- o goleiro (`gsax_rate_adversario`,
         neutralizado/0.0 por padrão desde 25/09, ver `rodar_pricing_
         pipeline.py`) segue existindo como mecanismo genérico, mas fica
-        inerte quando não passado."""
+        inerte quando não passado. `usar_modulador_xa` (default `False`)
+        liga `modular_por_xa_propria` (criatividade do PRÓPRIO elenco, ver
+        docstring das constantes `XA_RESIDUO_*`/`XA_BETA`) DEPOIS do
+        goleiro -- desligado por padrão até a validação em log-loss de
+        1X2/placar_exato via pipeline completo (`scripts/backtest_xa_
+        modulador_pipeline.py`) confirmar o ganho já visto em RMSE de gols
+        isolado (CONTEXTO_PROJETO.md, 26/09)."""
         elenco = self.selecionar_elenco_provavel(jogadores)
         avisos: list[str] = []
         soma_minutos, minutagem_valida, avisos_minutagem = self.validar_minutagem(elenco)
@@ -424,6 +486,9 @@ class PlayerToTeamAggregator:
             lambda_xgot_total, def_residuo_xga_adversario, def_residuo_xa_adversario
         )
         lambda_gols_xgot = self.modular_por_goleiro(lambda_xgot_ajustado, gsax_rate_adversario)
+        lambda_xa_top3 = self.agregar_xa_top3(elenco, avisos)
+        if usar_modulador_xa:
+            lambda_gols_xgot = self.modular_por_xa_propria(lambda_gols_xgot, lambda_xgot_total, lambda_xa_top3)
         lambda_thinning = self.afinar_poisson(elenco, avisos)
         lambda_bottom_up = 0.5 * lambda_thinning + 0.5 * lambda_gols_xgot
         lambda_assistencias_total = self.agregar_assistencias(elenco, avisos)
@@ -440,6 +505,7 @@ class PlayerToTeamAggregator:
             lambda_assistencias_total=lambda_assistencias_total,
             soma_minutos_esperados=soma_minutos,
             minutagem_valida=minutagem_valida,
+            lambda_xa_top3=lambda_xa_top3,
             avisos=avisos,
         )
 

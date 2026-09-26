@@ -1,0 +1,49 @@
+name: Backtest do Modulador de xA (pipeline completo)
+
+# Roda scripts/backtest_xa_modulador_pipeline.py -- valida se o modulador de
+# xA PRÓPRIO do elenco (pricing_pipeline.py::PlayerToTeamAggregator.
+# modular_por_xa_propria) melhora de verdade o log-loss de 1X2 depois de
+# passar pelo pipeline completo (Camada 1 agregação + Camada 2 reconciliação
+# hierárquica + Camada 3 Dixon-Coles), não só o RMSE de gols isolado por
+# time já validado em 26/09 (CONTEXTO_PROJETO.md). Teste de isolamento:
+# força defensiva do adversário e GSAx do goleiro ficam neutros nas duas
+# variantes -- a única diferença é usar_modulador_xa em agregar().
+#
+# Grava métrica agregada (log-loss + IC95% via bootstrap pareado) em
+# player_market_backtest (mercado='xa_modulador_1x2'). Mesmo espírito de
+# backtest_gsax_walkforward.yml.
+#
+# Depende de player_match_walkforward.lambda_xg_jogo/lambda_xa_jogo já
+# estarem populados -- rodar backtest_jogador_mercados_walkforward.py
+# primeiro se ainda não tiver rodado recentemente.
+#
+# Só workflow_dispatch -- não faz sentido em cron; rodar de novo quando o
+# dado crescer o suficiente ou depois de mudança no script/constantes.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  backtest-xa-modulador-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar backtest do modulador de xA (pipeline completo)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/backtest_xa_modulador_pipeline.py

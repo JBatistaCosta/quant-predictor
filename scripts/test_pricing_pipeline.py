@@ -239,6 +239,59 @@ class TestPlayerToTeamAggregator:
         assert resultado.lambda_assistencias_total == 0.0
         assert any("lambda_xa_jogo" in aviso for aviso in resultado.avisos)
 
+    def test_agregar_xa_top3_soma_so_os_3_maiores(self):
+        # 16 jogadores com lambda_xa_jogo=0.1 -- sobe 3 deles pra valores
+        # distintos e maiores; a soma tem que ser só desses 3, não do time
+        # inteiro (que seria agregar_assistencias, mercado separado).
+        elenco = _elenco_completo()
+        elenco.loc[elenco.index[:3], "lambda_xa_jogo"] = [0.5, 0.4, 0.3]
+        avisos: list[str] = []
+        valor = pp.PlayerToTeamAggregator().agregar_xa_top3(elenco, avisos)
+        assert valor == pytest.approx(1.2)
+
+    def test_agregar_xa_top3_clipa_negativo(self):
+        elenco = _elenco_completo()
+        elenco.loc[elenco.index[0], "lambda_xa_jogo"] = -0.9
+        avisos: list[str] = []
+        valor = pp.PlayerToTeamAggregator().agregar_xa_top3(elenco, avisos)
+        # sem o -0.9, os 3 maiores continuam sendo 0.1 (empate, mas nenhum negativo entra).
+        assert valor == pytest.approx(0.3)
+
+    def test_modular_por_xa_propria_bate_com_formula_residual(self):
+        lam_gols, lam_xgot, xa_top3 = 1.2, 2.0, 0.9
+        xa_esperado = pp.XA_RESIDUO_A + pp.XA_RESIDUO_B * lam_xgot
+        esperado = lam_gols + pp.XA_BETA * (xa_top3 - xa_esperado)
+        assert pp.PlayerToTeamAggregator.modular_por_xa_propria(lam_gols, lam_xgot, xa_top3) == pytest.approx(esperado)
+
+    def test_modular_por_xa_propria_nunca_fica_negativa(self):
+        assert pp.PlayerToTeamAggregator.modular_por_xa_propria(0.01, 5.0, -1000.0) == pytest.approx(0.0)
+
+    def test_agregar_usar_modulador_xa_desligado_por_padrao_nao_muda_lambda(self):
+        elenco = _elenco_completo()
+        agregador = pp.PlayerToTeamAggregator()
+        sem_flag = agregador.agregar(elenco)
+        com_flag_falsa = agregador.agregar(elenco, usar_modulador_xa=False)
+        assert com_flag_falsa.lambda_gols_xgot == pytest.approx(sem_flag.lambda_gols_xgot)
+        assert com_flag_falsa.lambda_bottom_up == pytest.approx(sem_flag.lambda_bottom_up)
+
+    def test_agregar_usar_modulador_xa_ligado_bate_com_formula_manual(self):
+        elenco = _elenco_completo()
+        agregador = pp.PlayerToTeamAggregator()
+        base = agregador.agregar(elenco)
+        com_xa = agregador.agregar(elenco, usar_modulador_xa=True)
+        esperado = pp.PlayerToTeamAggregator.modular_por_xa_propria(
+            base.lambda_gols_xgot, base.lambda_xgot_total, base.lambda_xa_top3
+        )
+        assert com_xa.lambda_gols_xgot == pytest.approx(esperado)
+        assert com_xa.lambda_bottom_up == pytest.approx(0.5 * com_xa.lambda_thinning + 0.5 * esperado)
+
+    def test_agregar_expoe_lambda_xa_top3_mesmo_com_modulador_desligado(self):
+        elenco = _elenco_completo()
+        avisos: list[str] = []
+        esperado = pp.PlayerToTeamAggregator().agregar_xa_top3(elenco, avisos)
+        resultado = pp.PlayerToTeamAggregator().agregar(elenco)
+        assert resultado.lambda_xa_top3 == pytest.approx(esperado)
+
 
 # ---------------------------------------------------------------------------
 # Camada 2 -- HierarchicalReconciler
