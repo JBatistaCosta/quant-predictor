@@ -27,7 +27,7 @@ import { ArrowLeft, AlertTriangle, Shield, Loader2, TrendingUp, Target, History,
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { poisson, dixonColesTau, DIXON_COLES_RHO } from '../utils/poisson';
 import { getLambdaFormula } from '../utils/lambdaFormulas';
-import { extractJsonFromImage } from '../utils/ocr';
+import { extractJsonFromImages } from '../utils/ocr';
 import { indexarCalibracao, calibrarProbabilidade } from '../utils/calibration';
 import { negBinomialPMF } from '../utils/distributions';
 import { apiUrl } from '../utils/apiUrl';
@@ -832,7 +832,7 @@ function PainelEstimativaModelo({ estimativa, escanteios, faixasEscanteios, mand
               limpar OCR
             </button>
           )}
-          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onOcrUpload} />
+          <input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={onOcrUpload} />
           <button
             onClick={() => inputRef.current?.click()}
             disabled={ocrLoading}
@@ -1101,11 +1101,11 @@ export default function AnaliseEstatisticaJogo() {
   );
 
   const handleOcrUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
     setOcrError(''); setOcrSuccess(''); setOcrLoading(true);
     try {
-      const parsed = await extractJsonFromImage(file, OCR_STATS_PROMPT);
+      const parsed = await extractJsonFromImages(files, OCR_STATS_PROMPT);
       const mMandante = parsed?.estatistica_media?.mandante?.metricas;
       const mVisitante = parsed?.estatistica_media?.visitante?.metricas;
       if (!mMandante && !mVisitante) throw new Error('Não consegui identificar a tabela de estatísticas nessa imagem.');
