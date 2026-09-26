@@ -1,5 +1,47 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**CLV no 1X2: o λ de produção ANTECIPA um pouco o movimento da linha (a linha fecha ~4–10% da discordância do modelo na abertura, IC acima de zero), mas é pouco demais. O CLV das apostas escolhidas pelo modelo na abertura continua negativo (−3,7% na Pinnacle, −5,7% na bet365), só 0,3–0,4 ponto melhor que apostar ao acaso, e o yield real é muito pior (−19% a −20%). Não existe estratégia de apostar cedo com este λ (26/09).** Item 2 da lista "o que melhorar nos mercados de times". Script: `arquivos_do_claude/validar_clv_1x2.py`, que reaproveita `preparar_painel`/`avaliar_variantes` de `validar_informacao_nova_lambda.py`.
+
+- **Desenho**:
+  - Partidas de teste a partir de 2025-06-01 com titulares confirmados (4.528).
+  - Odds 1X2 de todas as casas: 76.576 capturas em 3.994 partidas.
+  - Só três casas têm capturas pré-jogo (abertura = 1ª captura `opening`/`pre_closing`):
+    - Pinnacle: 1.718 partidas, 1ª captura dias antes, via sync ao vivo;
+    - bet365: 2.474 partidas, incluindo o pre-closing do football-data.co.uk;
+    - Betano: 319 partidas.
+  - Fechamento = snapshot `closing` (senão a última captura).
+  - Modelos válidos na abertura: base (λ produção, XI previsto, bivariada) e `hibrido_gols_v1`. O λ dos titulares confirmados entra só como REFERÊNCIA: usa a escalação, que não existe na abertura.
+- **(1) Movimento da linha**: Δp (fechamento − abertura, sem vig, mesma casa) regredido em (p_modelo − p_abertura), por seleção, com IC95% bootstrap por partida:
+
+  | Modelo | Pinnacle | bet365 | Betano |
+  |---|---|---|---|
+  | Base (XI previsto) | **+0,038** [+0,026; +0,052] | **+0,058** [+0,044; +0,072] | **+0,103** [+0,061; +0,150] |
+  | `hibrido_gols_v1` | +0,005 [−0,010; +0,021] | +0,032 [+0,016; +0,048] | +0,055 [+0,012; +0,104] |
+  | (titulares — referência) | +0,035 | +0,072 | +0,104 |
+
+  - Discordância média |p_mod − p_ab| ≈ 0,045–0,054; movimento médio |Δp| ≈ 0,011–0,015.
+  - A linha anda na direção do λ de produção, mas só ~4% (Pinnacle) a ~10% (Betano) da discordância.
+  - O `hibrido_gols_v1` não antecipa nada da Pinnacle.
+- **(2) CLV das apostas na odd de abertura** (EV_modelo > 0; CLV = odd_abertura × p_Pinnacle_fechamento_sem_vig − 1; referência = CLV médio de TODAS as seleções na abertura, ou seja, aposta ao acaso):
+
+  | Modelo × casa | Apostas | CLV do modelo | CLV ao acaso | Margem na abertura | Odd caiu depois | Yield real |
+  |---|---|---|---|---|---|---|
+  | Base × Pinnacle | 1.998 | −3,69% [−4,04; −3,36] | −4,09% | 4,22% | 35% | **−18,6%** [−25,6; −11,4] |
+  | Base × bet365 | 2.534 | −5,67% [−6,03; −5,30] | −5,94% | 6,18% | 38% | **−20,3%** [−26,6; −13,9] |
+  | Base × Betano | 343 | −4,16% [−5,45; −2,88] | −6,04% | 5,47% | 37% | −6,0% [−22,6; +12,2] |
+  | Híbrido × Pinnacle | 1.917 | −4,32% [−4,66; −3,97] | −4,09% | 4,22% | 33% | −11,1% [−18,1; −4,1] |
+  | Híbrido × bet365 | 2.444 | −5,98% [−6,35; −5,62] | −5,94% | 6,18% | 37% | −13,3% [−19,7; −6,8] |
+
+  - Limiares EV>3%/6% dão o mesmo quadro.
+  - **Ganho de seleção** (CLV do modelo − ao acaso): +0,3 a +0,4 ponto na Pinnacle/bet365 para o λ de produção, e nulo ou negativo para o híbrido. Muito pouco perto da margem de 4–6%.
+  - **O yield real é bem pior que o CLV prevê**: −19% contra ≈ −4%, IC que exclui o esperado. As apostas escolhidas se concentram onde o modelo é confiante demais, o mesmo problema de calibração nas apostas selecionadas do Handicap -1.0 e dos totais.
+- **Leitura**: coerente com o log-pooling (w>0 pequeno). O λ de produção carrega uma lasca de informação que o mercado incorpora até o fechamento, pequena demais para pagar a margem. **Item 2 encerrado: não há estratégia de CLV (apostar cedo) com os λ atuais.** A lista de "melhorar mercados de times" fica assim:
+  - totais contra o mercado: negativo (entrada de 25/09);
+  - CLV: negativo;
+  - informação nova no λ: só os titulares ajudam, e pouco contra o fechamento.
+
+---
+
 **(1) Validação cronológica do log-pooling com os titulares confirmados: w continua POSITIVO nas duas metades, mas o ganho sobre a Pinnacle em partidas não vistas é nulo. (2) Cansaço e desgaste logístico: a distância de viagem tem efeito na direção biológica esperada, sobrevive ao controle de mando e de força e se concentra nas competições de distâncias longas, mas NÃO melhora a previsão fora da amostra. A assimetria de descanso e a carga de minutos do XI têm sinal TROCADO (confusão por força) (25/09).** Continuação direta da entrada abaixo. Scripts:
 - `arquivos_do_claude/validar_informacao_nova_lambda.py`: refatorado, com `preparar_painel`/`avaliar_variantes` reutilizáveis e o bloco novo `bloco_w_cronologico`.
 - `arquivos_do_claude/validar_desgaste_logistico.py`: novo.
