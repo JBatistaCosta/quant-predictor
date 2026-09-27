@@ -89,7 +89,8 @@ N_REAMOSTRAGENS_BOOTSTRAP = 1000
 # p × minutos_como_titular + (1 − p) × minutos_como_reserva.
 COLUNAS_HISTORICO_JOGADOR = [
     "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "xa_90_bayesiano", "chutes_no_alvo_90_bayesiano",
-    "ewma_chutes_90", "ewma_gols_90", "ewma_xg_90", "ewma_xa_90", "ewma_chutes_no_alvo_90",
+    "defesas_90_bayesiano",
+    "ewma_chutes_90", "ewma_gols_90", "ewma_xg_90", "ewma_xa_90", "ewma_chutes_no_alvo_90", "ewma_defesas_90",
     "taxa_conversao_bayesiana", "taxa_no_alvo_bayesiana", "posicao_num",
     "minutos_esperados_titular", "minutos_esperados_reserva",
 ]
@@ -121,7 +122,7 @@ def montar_candidatos_relacionados(df: pd.DataFrame, xi: pd.DataFrame, match_ids
         return cand
 
     aparicoes = df[["match_id", "team_id", "player_id", "match_date", "dias_desde_ultimo_jogo", "xg_partida", "xa_partida",
-                    *ALVOS_CONTAGEM, *COLUNAS_HISTORICO_JOGADOR]]
+                    "defesas_partida", *ALVOS_CONTAGEM, *COLUNAS_HISTORICO_JOGADOR]]
     cand = cand.merge(aparicoes.drop(columns=["match_date"]), on=["match_id", "team_id", "player_id"], how="left")
     entrou = cand[tmj.TARGET_CHUTES].notna()
 
@@ -158,6 +159,13 @@ def montar_candidatos_relacionados(df: pd.DataFrame, xi: pd.DataFrame, match_ids
         tem_xa = cand.loc[entrou].groupby(["match_id", "team_id"])["xa_partida"].apply(lambda s: s.notna().any())
         chave = pd.MultiIndex.from_frame(cand.loc[idx, ["match_id", "team_id"]])
         cand.loc[idx, "xa_partida"] = np.where(tem_xa.reindex(chave).fillna(False).to_numpy(), 0.0, np.nan)
+        # Defesas -- mesmo raciocínio de xa_partida: candidato que não entrou
+        # em campo tem 0 defesas de verdade (não jogou = não defendeu nada),
+        # mas só quando a PARTIDA teve defesas extraídas pra pelo menos um
+        # goleiro (senão vira "sem dado", igual xa quando o time inteiro não
+        # tem xA capturado naquele jogo).
+        tem_defesas = cand.loc[entrou].groupby(["match_id", "team_id"])["defesas_partida"].apply(lambda s: s.notna().any())
+        cand.loc[idx, "defesas_partida"] = np.where(tem_defesas.reindex(chave).fillna(False).to_numpy(), 0.0, np.nan)
 
     p = cand["prob_titular"].clip(0, 1)
     cand["minutos_esperados"] = p * cand["minutos_esperados_titular"] + (1 - p) * cand["minutos_esperados_reserva"]
@@ -244,6 +252,7 @@ def _persistir_previsao_bruta(
     supabase: Client, teste: pd.DataFrame, previsto_chutes: np.ndarray, lambda_gols_thinning: np.ndarray,
     lambda_gols_direto: np.ndarray, temporada: str, lambda_xg: dict[int, float] | None = None,
     lambda_chutes_no_alvo: np.ndarray | None = None, lambda_xa: dict[int, float] | None = None,
+    lambda_defesas: dict[int, float] | None = None,
     fonte_titular: str = "previsto",
 ) -> int:
     """Grava a previsão bruta (1 linha por jogador x partida x fonte_titular)
@@ -266,6 +275,7 @@ def _persistir_previsao_bruta(
     chutes_partida -- não precisa do dict)."""
     lambda_xg = lambda_xg or {}
     lambda_xa = lambda_xa or {}
+    lambda_defesas = lambda_defesas or {}
     if lambda_chutes_no_alvo is None:
         lambda_chutes_no_alvo = [None] * len(teste)
     probs_titular = teste["prob_titular"] if "prob_titular" in teste.columns else [None] * len(teste)
@@ -277,6 +287,7 @@ def _persistir_previsao_bruta(
     ):
         lam_xg = lambda_xg.get(idx)
         lam_xa = lambda_xa.get(idx)
+        lam_defesas = lambda_defesas.get(idx)
         linhas.append({
             "match_id": int(match_id), "team_id": int(team_id), "player_id": int(player_id),
             "fonte_titular": fonte_titular, "prob_titular_usada": float(prob_tit) if prob_tit is not None else None,
@@ -286,6 +297,7 @@ def _persistir_previsao_bruta(
             "lambda_xg_jogo": float(lam_xg) if lam_xg is not None else None,
             "lambda_chutes_no_alvo_jogo": float(lam_no_alvo) if lam_no_alvo is not None else None,
             "lambda_xa_jogo": float(lam_xa) if lam_xa is not None else None,
+            "lambda_defesas_jogo": float(lam_defesas) if lam_defesas is not None else None,
             "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
         })
     total = 0
@@ -299,7 +311,7 @@ def _persistir_previsao_bruta(
 
 def _avaliar_e_persistir_passada(
     supabase: Client, teste_pass: pd.DataFrame, temporada: str,
-    modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, fonte_titular: str,
+    modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, modelo_defesas, fonte_titular: str,
 ) -> list[dict]:
     """Pontua `teste_pass` com os modelos JÁ TREINADOS pra essa temporada
     (nunca retreina -- treino/teste dependem só de `match_date`, não de
@@ -393,10 +405,37 @@ def _avaliar_e_persistir_passada(
         )
         lambda_xa_por_indice = dict(zip(teste_xa.index, previsto_xa, strict=True))
 
+    # Defesas de goleiro -- CONTAGEM (Poisson, como chutes), não RMSE puro
+    # como xG/xA. dropna próprio já que defesas_partida pode ser nulo
+    # independente dos outros alvos (só goleiro tem, ver docstring de
+    # treinar_modelo_jogador_mercados.carregar_dados).
+    teste_defesas = teste_pass.dropna(subset=[tmj.TARGET_DEFESAS])
+    lambda_defesas_por_indice: dict[int, float] = {}
+    metricas_defesas = None
+    previsto_defesas = baseline_defesas = real_defesas = None
+    if modelo_defesas is not None and not teste_defesas.empty:
+        previsto_defesas = modelos_ml.prever_catboost_poisson(modelo_defesas, None, teste_defesas, features=tmj.FEATURES_DEFESAS)
+        # Mesmo gate de rodar_jogador_mercados_previsto.py: o modelo nunca viu
+        # jogador de linha no treino (só goleiro tem defesas_partida não-nulo)
+        # e extrapola de forma arbitrária pra esse perfil -- achado 27/09 via
+        # esta própria passada 'relacionados' (única que avalia candidato de
+        # linha): lambda médio saía ~2,6 pra goleiro E pra linha. Sem o gate,
+        # o RMSE aqui mede a extrapolação ruim, não a qualidade real do modelo.
+        previsto_defesas = np.where(teste_defesas["posicao_num"].to_numpy() == 0, previsto_defesas, 0.0)
+        baseline_defesas = (teste_defesas["ewma_defesas_90"] * teste_defesas["minutos_esperados"] / 90.0).clip(lower=0.01).to_numpy()
+        real_defesas = teste_defesas[tmj.TARGET_DEFESAS].to_numpy()
+        metricas_defesas = _metricas_regressao_com_ic(previsto_defesas, baseline_defesas, real_defesas)
+        logger.info(
+            f"  [{fonte_titular}] defesas: RMSE modelo={metricas_defesas['rmse_modelo']:.4f} baseline={metricas_defesas['rmse_baseline']:.4f} "
+            f"IC95%(dif)=[{metricas_defesas['ic95_inf']:.4f},{metricas_defesas['ic95_sup']:.4f}] "
+            f"sustentado={metricas_defesas['modelo_melhor_sustentado']}"
+        )
+        lambda_defesas_por_indice = dict(zip(teste_defesas.index, previsto_defesas, strict=True))
+
     n_gravado = _persistir_previsao_bruta(
         supabase, teste_pass, previsto_chutes, lambda_gols_thinning, previsto_gols_direto, temporada,
         lambda_xg=lambda_xg_por_indice, lambda_chutes_no_alvo=lambda_chutes_no_alvo_thinning,
-        lambda_xa=lambda_xa_por_indice, fonte_titular=fonte_titular,
+        lambda_xa=lambda_xa_por_indice, lambda_defesas=lambda_defesas_por_indice, fonte_titular=fonte_titular,
     )
     logger.info(f"  [{fonte_titular}] {n_gravado} previsões por jogador gravadas em player_match_walkforward.")
 
@@ -428,6 +467,11 @@ def _avaliar_e_persistir_passada(
             if mask_xa.sum() >= 30:
                 m_xa = _metricas_regressao_com_ic(previsto_xa[mask_xa], baseline_xa[mask_xa], real_xa[mask_xa])
                 mercados_da_liga.append(("xa", m_xa))
+        if metricas_defesas is not None:
+            mask_defesas = (teste_defesas["league_id"] == league_id).to_numpy()
+            if mask_defesas.sum() >= 30:
+                m_defesas = _metricas_regressao_com_ic(previsto_defesas[mask_defesas], baseline_defesas[mask_defesas], real_defesas[mask_defesas])
+                mercados_da_liga.append(("defesas", m_defesas))
         for mercado, metricas in mercados_da_liga:
             linhas_agregado.append({
                 "season": str(temporada), "league_id": int(league_id), "model_version": MODEL_VERSION,
@@ -491,9 +535,15 @@ def rodar(supabase: Client) -> int:
         modelo_xg, _, _ = modelos_ml.treinar_catboost_regressor(params, treino_xg, tmj.TARGET_XG, features=tmj.FEATURES_XG)
         treino_xa = treino.dropna(subset=[tmj.TARGET_XA])
         modelo_xa, _, _ = modelos_ml.treinar_catboost_regressor(params, treino_xa, tmj.TARGET_XA, features=tmj.FEATURES_XA)
+        treino_defesas = treino.dropna(subset=[tmj.TARGET_DEFESAS])
+        modelo_defesas = None
+        if len(treino_defesas) >= MIN_LINHAS_TREINO:
+            modelo_defesas, _, _ = modelos_ml.treinar_catboost_poisson(params, treino_defesas, tmj.TARGET_DEFESAS, features=tmj.FEATURES_DEFESAS)
+        else:
+            logger.info(f"Temporada {temporada}: só {len(treino_defesas)} linhas de goleiro com defesas antes dela (<{MIN_LINHAS_TREINO}) -- pulando modelo de defesas.")
 
         linhas_agregado = _avaliar_e_persistir_passada(
-            supabase, teste_temporada, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, "previsto",
+            supabase, teste_temporada, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, modelo_defesas, "previsto",
         )
 
         # Passada 'real' -- só nas linhas onde a escalação oficial daquela
@@ -508,7 +558,7 @@ def rodar(supabase: Client) -> int:
         if len(teste_real) >= 30:
             teste_real["minutos_esperados"] = teste_real["minutos_esperados_real"]
             linhas_agregado += _avaliar_e_persistir_passada(
-                supabase, teste_real, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, "real",
+                supabase, teste_real, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, modelo_defesas, "real",
             )
         else:
             logger.info(
@@ -524,7 +574,7 @@ def rodar(supabase: Client) -> int:
                 f"({(~teste_rel['entrou_em_campo']).mean():.0%} não entraram em campo)."
             )
             linhas_agregado += _avaliar_e_persistir_passada(
-                supabase, teste_rel, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, "relacionados",
+                supabase, teste_rel, temporada, modelo_chutes, modelo_gols_direto, modelo_xg, modelo_xa, modelo_defesas, "relacionados",
             )
         else:
             logger.info(f"Temporada {temporada}: só {len(teste_rel)} relacionados com prob_titular (<30) -- pulando passada 'relacionados'.")

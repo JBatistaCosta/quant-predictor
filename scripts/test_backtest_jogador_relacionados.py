@@ -20,11 +20,11 @@ import backtest_jogador_mercados_walkforward as bj  # noqa: E402
 H = bj.COLUNAS_HISTORICO_JOGADOR
 
 
-def _linha(match_id, player_id, data, valor_hist, *, team_id=1, liga="L", chutes=1, xa=0.1, n_hist=1):
+def _linha(match_id, player_id, data, valor_hist, *, team_id=1, liga="L", chutes=1, xa=0.1, defesas=np.nan, n_hist=1):
     base = {
         "match_id": match_id, "team_id": team_id, "player_id": player_id, "match_date": pd.Timestamp(data, tz="UTC"),
         "league_id": 9, "season": "2025", "liga": liga, "elo_diff": 10.0, "squad_rating_diff": 0.5, "mando": 1,
-        "dias_desde_ultimo_jogo": 7.0, "xg_partida": 0.3, "xa_partida": xa, "n_hist": n_hist,
+        "dias_desde_ultimo_jogo": 7.0, "xg_partida": 0.3, "xa_partida": xa, "defesas_partida": defesas, "n_hist": n_hist,
         bj.tmj.TARGET_CHUTES: chutes, bj.tmj.TARGET_GOLS: 0, bj.tmj.TARGET_CHUTES_NO_ALVO: 0,
     }
     base.update({c: valor_hist for c in H})
