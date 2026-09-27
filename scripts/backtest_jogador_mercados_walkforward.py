@@ -415,6 +415,13 @@ def _avaliar_e_persistir_passada(
     previsto_defesas = baseline_defesas = real_defesas = None
     if modelo_defesas is not None and not teste_defesas.empty:
         previsto_defesas = modelos_ml.prever_catboost_poisson(modelo_defesas, None, teste_defesas, features=tmj.FEATURES_DEFESAS)
+        # Mesmo gate de rodar_jogador_mercados_previsto.py: o modelo nunca viu
+        # jogador de linha no treino (só goleiro tem defesas_partida não-nulo)
+        # e extrapola de forma arbitrária pra esse perfil -- achado 27/09 via
+        # esta própria passada 'relacionados' (única que avalia candidato de
+        # linha): lambda médio saía ~2,6 pra goleiro E pra linha. Sem o gate,
+        # o RMSE aqui mede a extrapolação ruim, não a qualidade real do modelo.
+        previsto_defesas = np.where(teste_defesas["posicao_num"].to_numpy() == 0, previsto_defesas, 0.0)
         baseline_defesas = (teste_defesas["ewma_defesas_90"] * teste_defesas["minutos_esperados"] / 90.0).clip(lower=0.01).to_numpy()
         real_defesas = teste_defesas[tmj.TARGET_DEFESAS].to_numpy()
         metricas_defesas = _metricas_regressao_com_ic(previsto_defesas, baseline_defesas, real_defesas)

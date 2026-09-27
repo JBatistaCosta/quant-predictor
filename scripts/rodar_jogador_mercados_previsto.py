@@ -701,6 +701,16 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         lambda_xg = modelos_ml_predict_regressor(modelo_xg, df, tmj.FEATURES_XG) if modelo_xg is not None else None
         lambda_xa = modelos_ml_predict_regressor(modelo_xa, df, tmj.FEATURES_XA) if modelo_xa is not None else None
         lambda_defesas = modelos_ml_predict_poisson(modelo_defesas, df, tmj.FEATURES_DEFESAS) if modelo_defesas is not None else None
+        if lambda_defesas is not None:
+            # O modelo de defesas só treina contra Saves real de goleiro
+            # (ver docstring de carregar_dados em treinar_modelo_jogador_
+            # mercados.py) -- nunca viu um jogador de linha no treino, então
+            # extrapola de forma arbitrária (não perto de zero) se alimentado
+            # com as features de um. Achado 27/09 (walk-forward, passada
+            # 'relacionados'): lambda médio saía ~2,6 pra goleiro E pra linha,
+            # basicamente indistinguível. Trava aqui em vez de confiar na
+            # extrapolação do modelo -- só posicao_num==0 (goleiro) passa.
+            lambda_defesas = np.where(df["posicao_num"].to_numpy() == 0, lambda_defesas, 0.0)
         lambda_chutes_no_alvo = lambda_chutes * df["taxa_no_alvo_bayesiana"].to_numpy()
 
         # Fator de matchup zonal (Pricing Pipeline v2, w_i,z · M_j,z^reg) --
