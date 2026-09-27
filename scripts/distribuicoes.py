@@ -405,6 +405,48 @@ def mercados_de_assistencias(
 
 
 # ---------------------------------------------------------------------------
+# Defesas de goleiro: Poisson ou Binomial Negativa (NB2), por jogo
+# ---------------------------------------------------------------------------
+# Máximo real observado no walk-forward (27/09, ~30 mil goleiro-partida)
+# foi 19; 25 dá folga sem custar nada (vetor de 26 posições).
+MAX_DEFESAS = 25
+
+
+def mercados_de_defesas(
+    lambda_goleiro: float,
+    disp_r: float = float("inf"),
+    linhas: tuple[float, ...] = (1.5, 2.5, 3.5, 4.5),
+    max_valor: int = MAX_DEFESAS,
+) -> dict[tuple[str, str], float]:
+    """Mercado de defesas de goleiro (over/under), a partir de λ_defesas do
+    goleiro titular previsto (`lambda_defesas_jogo`, ver
+    `treinar_modelo_jogador_mercados.py`/achado de 27/09: modelo treina só
+    contra `Saves` real de goleiro, e o consumidor precisa travar `disp_r`
+    também só pra goleiro -- passar λ de um jogador de linha aqui não faz
+    sentido e não é filtrado por esta função, quem chama decide isso).
+
+    `disp_r` default `inf` (Poisson pura) -- passe o `r` calibrado
+    (`arquivos_do_claude/analisar_nb2_defesas.py`, persistido em
+    `league_model_params` com `stat='defesas'`/`param_name='disp_r'`) pra
+    usar a Binomial Negativa. `_nb_pmf_vetor` já degrada pra Poisson
+    sozinha se `disp_r` não for finito ou for <= 0 -- é o mesmo "fallback
+    gracioso" que escanteios/faltas já usam, não precisa reimplementar
+    aqui. Mesmo cuidado do resto do módulo: se o alpha estimado for
+    praticamente zero (sem superdispersão real), passar `disp_r=inf`
+    (equivalente a `alpha<=1e-5` -> Poisson) em vez de um `r` gigante e
+    numericamente instável.
+    """
+    saida: dict[tuple[str, str], float] = {}
+    p = _nb_pmf_vetor(max(lambda_goleiro, 0.0), disp_r, max_valor)
+    acumulado = np.cumsum(p)
+    for linha in linhas:
+        p_over = float(1.0 - acumulado[int(np.floor(linha))])
+        saida[(f"defesas_over_under_{rotulo_linha(linha)}", "over")] = p_over
+        saida[(f"defesas_over_under_{rotulo_linha(linha)}", "under")] = 1.0 - p_over
+    return saida
+
+
+# ---------------------------------------------------------------------------
 # Estimação dos parâmetros que o ML NÃO estima
 # ---------------------------------------------------------------------------
 # λ vem do ML (um GBM com perda de Poisson por equipe). ρ, a dispersão e o
