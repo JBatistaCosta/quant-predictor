@@ -1,5 +1,15 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Mercado de defesas de goleiro — Fase 2 (UI): tabela de odds justas + OCR/JSON, mesmo molde de chutes/gols/assistências (27/09).** Depois da Fase 1 (PR #691, modelo + validação walk-forward) confirmar sinal real, implementada a UI completa em `AnaliseAvancadaEvento.jsx`.
+
+- **`mercados_de_defesas`/`MERCADOS_DEFESAS`**: linhas `[2,3,4,5]` na convenção "N+" já usada pelo resto da página (`probPeloMenos(lambda,k,dispR)` = P(X>=k)) — corresponde exatamente às linhas over/under 1.5/2.5/3.5/4.5 validadas em `analisar_nb2_defesas.py` (branch/PR #693, ainda não mergeado). `lambdaKey='lambda_defesas_jogo'`, `dispRParaMercado` já busca `_dispRDefesas` (NB2 por liga, `league_model_params`/`model_name='jogador_defesas_catboost_poisson_v1'`) — cai pra Poisson sozinho enquanto essa calibração não for persistida em produção (mesmo fallback gracioso que chutes/chutes-ao-gol já usam pra liga sem calibração própria).
+- **Só goleiro**: a tabela de odds justas (`goleirosHome`/`goleirosAway`) filtra `players.usual_position_id === 0` antes de renderizar — evita listar 20+ jogadores de linha com odds degenerada (λ=0 pelo gate de posição do PR #691). A tabela principal ("Chutes & gols por jogador") ganhou as colunas "Defesas (λ)"/"P(>1.5 defesas)" pra todo o elenco (mesmo padrão de xG/xA), onde jogador de linha mostra 0 — valor real, não bug.
+- **4º prompt de OCR** (`OCR_ODDS_DEFESAS_PROMPT`) + handler (`handleOcrOddsDefesas`) + entrada em `MAPA_MERCADO_JSON` (`defesa`/`defesas`) pro import por JSON colado — mesmo padrão dos outros 3 mercados de jogador (multi-imagem, merge não-destrutivo em `oddsImportadas`).
+- **Verificado**: `npm run build` limpo, `npm test` 110/110 passando (sem regressão). Sem browser autenticado nesta sessão pra testar a UI de verdade — pedir pro usuário conferir em produção depois do merge (preview bloqueia automação por SSO do Vercel).
+- **Pendente, fora deste PR**: mergear PR #693 (NB2) e rodar `analisar_nb2_defesas.py` com credencial real pra persistir `disp_r` — só depois a tabela de defesas passa a usar Binomial Negativa de fato (hoje cai em Poisson puro em toda liga, dado que nenhum `disp_r` está gravado ainda).
+
+---
+
 **Confirmado: o gate de posição (achado anterior, mesmo dia) reduz drasticamente o RMSE da passada `relacionados`, mas não fecha totalmente a diferença pro baseline — nuance esperada, não bloqueante (27/09).** Re-disparado `backtest_jogador_mercados_walkforward.yml` na branch do PR #691 depois do commit do gate (`posicao_num != 0 -> lambda=0`). Resultado em `player_market_backtest` (mercado='defesas', fonte='relacionados'):
 
 - **RMSE do modelo caiu de 2,2-3,4 (achado original, sem gate) pra 1,2-2,1 (com gate)** — redução de ~40-50% em toda liga/temporada, confirmando que o gate corrigiu a extrapolação descontrolada pra jogador de linha.
