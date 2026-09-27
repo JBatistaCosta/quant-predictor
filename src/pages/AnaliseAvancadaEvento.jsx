@@ -441,6 +441,7 @@ function probPeloMenos(lambda, k, dispR) {
 function dispRParaMercado(l, lambdaKey) {
   if (lambdaKey === 'lambda_chutes_jogo') return l._dispRChutes;
   if (lambdaKey === 'lambda_chutes_no_alvo_jogo') return l._dispRChutesNoAlvo;
+  if (lambdaKey === 'lambda_defesas_jogo') return l._dispRDefesas;
   return null;
 }
 // `lambda_xa_jogo` é o xA PREVISTO (regressor RMSE contra a métrica contínua
@@ -575,6 +576,34 @@ Regras:
 - Odds são números decimais como 1.87, 3.30, 5.25.
 - Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
 
+// Quarto mercado de jogador (mesmo molde dos 3 acima) -- pedido do usuário:
+// mercado de "Defesas" de goleiro (Fase 2, depois da Fase 1 de validação do
+// modelo, `jogador_defesas_catboost_poisson_v1`/`analisar_nb2_defesas.py`,
+// registrada em CONTEXTO_PROJETO.md). Só goleiro tem `lambda_defesas_jogo`
+// não-nulo pra jogador de linha (gate de posição, achado 27/09) -- a tabela
+// de odds justas já filtra pra só exibir goleiro, ver
+// `SecaoJogadorMercados`/goleirosHome/goleirosAway.
+const OCR_ODDS_DEFESAS_PROMPT = `Você é um extrator de odds do mercado de DEFESAS DE GOLEIRO (goalkeeper saves) de screenshots de casas de apostas (Betano, Bet365, etc.) de uma partida de futebol.
+A imagem mostra o mercado "Defesas" / "Defesas do goleiro" / "Goalkeeper Saves" (mais/menos de X defesas) -- normalmente só do(s) goleiro(s) titular(es) dos dois times, pode ter várias linhas (mais de 1.5, 2.5, 3.5, 4.5). Extraia TODOS os goleiros e linhas visíveis e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
+{
+  "casa_de_apostas": "NomeDaCasa",
+  "jogadores": [
+    {
+      "nome": "Nome do goleiro exatamente como aparece na imagem",
+      "defesas_mais_1_5": null,
+      "defesas_mais_2_5": null,
+      "defesas_mais_3_5": null,
+      "defesas_mais_4_5": null
+    }
+  ]
+}
+
+Regras:
+- "defesas_mais_X": odd de "mais de X defesas" (ignore a odd de "menos de"/"under"). Só preencha as linhas realmente visíveis, deixe null as que não aparecerem pra aquele goleiro.
+- Se um goleiro não tiver nenhuma linha visível, não inclua ele no array.
+- Odds são números decimais como 1.87, 3.30, 5.25.
+- Escreva o nome do goleiro exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
+
 // oddsImportadas[player_id][campo] guarda um MAPA por casa de apostas
 // ({ casa: odd }), não um valor único -- é o que permite importar a mesma
 // partida várias vezes (OCR de casas diferentes, ou JSON colado) sem uma
@@ -670,6 +699,20 @@ const MERCADOS_ASSISTENCIAS = [
   { titulo: 'Assistências', lambdaKey: 'lambda_xa_jogo', linhas: [1, 2], chaveReal: (linha) => `assistencia_${linha}_mais` },
 ];
 
+// Defesas de goleiro -- λ via `lambda_defesas_jogo` (regressor CatBoost
+// Poisson treinado contra `Saves` real, ver PR de Fase 1), `linhas: [2,3,4,5]`
+// pra bater exatamente as linhas validadas em `analisar_nb2_defesas.py`
+// (over/under 1.5/2.5/3.5/4.5 -- "+2" nesta convenção de coluna É "over 1.5",
+// já que `probPeloMenos(lambda, k, dispR)` devolve P(X>=k)). `dispRParaMercado`
+// busca `_dispRDefesas` (NB2 calibrado por liga, `league_model_params`,
+// `model_name='jogador_defesas_catboost_poisson_v1'`) quando existir --
+// ainda não persistido em produção nesta sessão (falta rodar o script com
+// credencial real), cai pra Poisson automaticamente enquanto isso (mesmo
+// fallback gracioso que chutes/chutes-ao-gol já usam pra liga sem calibração).
+const MERCADOS_DEFESAS = [
+  { titulo: 'Defesas', lambdaKey: 'lambda_defesas_jogo', linhas: [2, 3, 4, 5], chaveReal: (linha) => `defesas_mais_${linha - 1}_5` },
+];
+
 // Chutes totais (não só no alvo) -- linhas +1 até +10, pedido explícito do
 // usuário ("é extensa, por tomar uma tabela à parte"): fica em Secao/tabela
 // separada da de chutes-ao-gol/gols, mesmo componente generalizado.
@@ -682,7 +725,7 @@ const MERCADOS_CHUTES_TOTAIS = [
 // gol, gols, chutes total) -- reusado tanto pelo import de JSON colado
 // (mapeia o "mercado" do JSON pro config certo) quanto pela comparação de
 // EV multi-casas (itera os 3 juntos numa lista só).
-const MERCADOS_EV_JOGADOR = [...MERCADOS_CHUTES_GOLS, ...MERCADOS_CHUTES_TOTAIS, ...MERCADOS_ASSISTENCIAS];
+const MERCADOS_EV_JOGADOR = [...MERCADOS_CHUTES_GOLS, ...MERCADOS_CHUTES_TOTAIS, ...MERCADOS_ASSISTENCIAS, ...MERCADOS_DEFESAS];
 
 // Mapa "mercado" (string livre, como vem no JSON colado pelo usuário) ->
 // config já usado pelas tabelas de odds justas -- normaliza antes de
@@ -698,6 +741,8 @@ const MAPA_MERCADO_JSON = {
   assistencias: MERCADOS_ASSISTENCIAS[0],
   assistência: MERCADOS_ASSISTENCIAS[0],
   assistências: MERCADOS_ASSISTENCIAS[0],
+  defesa: MERCADOS_DEFESAS[0],
+  defesas: MERCADOS_DEFESAS[0],
 };
 function normalizarMercadoJson(s) {
   return String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
@@ -1259,6 +1304,8 @@ const COLUNAS_JOGADOR_MERCADOS = [
   { chave: 'direto', rotulo: 'Marcar (direto)', tipo: 'numero', valorSort: (l) => probMarcar(l.lambda_gols_jogo_direto) ?? -1 },
   { chave: 'xg', rotulo: 'xG esp.', tipo: 'numero', valorSort: (l) => l.lambda_xg_jogo ?? -1 },
   { chave: 'xa', rotulo: 'xA esp.', tipo: 'numero', valorSort: (l) => l.lambda_xa_jogo ?? -1 },
+  { chave: 'defesas', rotulo: 'Defesas (λ)', tipo: 'numero', valorSort: (l) => l.lambda_defesas_jogo ?? -1 },
+  { chave: 'p15defesas', rotulo: 'P(>1.5 defesas)', tipo: 'numero', valorSort: (l) => probPeloMenos(l.lambda_defesas_jogo, 2, l._dispRDefesas) ?? -1 },
 ];
 
 // Chutes/gols/xG por jogador (player_match_estimates) -- guarda as duas
@@ -1296,10 +1343,13 @@ const COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE = [
   { header: 'xA esp. (λ)', get: (l) => numCSV(l.lambda_xa_jogo) },
   { header: 'xA/90 hist.', get: (l) => numCSV(l.xa_90_bayesiano) },
   { header: 'xA/jogo hist.', get: (l) => numCSV(l.xa_por_jogo) },
+  { header: 'Defesas esp. (λ)', get: (l) => numCSV(l.lambda_defesas_jogo) },
+  { header: 'Defesas/90 hist.', get: (l) => numCSV(l.defesas_90_bayesiano) },
+  { header: 'Defesas/jogo hist.', get: (l) => numCSV(l.defesas_por_jogo) },
 ];
 
 function SecaoJogadorMercados({
-  estimativas, dispRChutes, dispRChutesNoAlvo, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
+  estimativas, dispRChutes, dispRChutesNoAlvo, dispRDefesas, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
   onSincronizarEscalacao, sincronizandoEscalacao, msgSincEscalacao, erroSincEscalacao,
 }) {
   // Anexa disp_r (NB de chutes totais e chutes ao gol, calibrados por liga)
@@ -1309,8 +1359,8 @@ function SecaoJogadorMercados({
   // linha). `null` quando a liga ainda não tem calibração própria --
   // probPeloMenos cai pra Poisson (ver dispRParaMercado).
   const estimativasComDispR = useMemo(
-    () => (estimativas || []).map((e) => ({ ...e, _dispRChutes: dispRChutes, _dispRChutesNoAlvo: dispRChutesNoAlvo })),
-    [estimativas, dispRChutes, dispRChutesNoAlvo]
+    () => (estimativas || []).map((e) => ({ ...e, _dispRChutes: dispRChutes, _dispRChutesNoAlvo: dispRChutesNoAlvo, _dispRDefesas: dispRDefesas })),
+    [estimativas, dispRChutes, dispRChutesNoAlvo, dispRDefesas]
   );
   const fontesDisponiveis = useMemo(
     () => new Set((estimativasComDispR || []).map((e) => e.fonte_titular)),
@@ -1350,6 +1400,10 @@ function SecaoJogadorMercados({
   const [ocrAssistLoading, setOcrAssistLoading] = useState(false);
   const [ocrAssistMsg, setOcrAssistMsg] = useState('');
   const [ocrAssistErro, setOcrAssistErro] = useState('');
+
+  const [ocrDefesasLoading, setOcrDefesasLoading] = useState(false);
+  const [ocrDefesasMsg, setOcrDefesasMsg] = useState('');
+  const [ocrDefesasErro, setOcrDefesasErro] = useState('');
 
   // Casa de apostas compartilhada entre os 4 caminhos de import (3 OCR + 1
   // JSON colado) -- pro OCR é só o fallback quando a imagem não mostra a
@@ -1443,6 +1497,11 @@ function SecaoJogadorMercados({
           classe="text-slate-300" valor={fmtNum(l.lambda_xa_jogo, 2)}
           historico90={l.xa_90_bayesiano} sufixo90="/90" historicoJogo={l.xa_por_jogo} sufixoJogo="/jogo"
         />
+        <CelulaComHistorico
+          classe="text-amber-400" valor={fmtNum(l.lambda_defesas_jogo, 2)}
+          historico90={l.defesas_90_bayesiano} sufixo90="/90" historicoJogo={l.defesas_por_jogo} sufixoJogo="/jogo"
+        />
+        <td className="py-1.5 px-2 text-right font-mono text-amber-400">{fmtPct(probPeloMenos(l.lambda_defesas_jogo, 2, l._dispRDefesas))}</td>
       </tr>
     );
   };
@@ -1617,6 +1676,46 @@ function SecaoJogadorMercados({
     }
   };
 
+  // Mesmo padrão dos 3 acima (inclusive 1+ imagens) -- mercado de defesas de
+  // goleiro, único que usa `lambda_defesas_jogo` como λ. `casarJogadorPorNome`
+  // continua batendo contra `estimativas` (todo o elenco dos dois times) --
+  // não precisa filtrar por goleiro aqui, um nome de jogador de linha
+  // simplesmente não deveria aparecer numa imagem desse mercado.
+  const handleOcrOddsDefesas = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    setOcrDefesasLoading(true); setOcrDefesasErro(''); setOcrDefesasMsg('');
+    try {
+      const parsed = await extractJsonFromImages(files, OCR_ODDS_DEFESAS_PROMPT);
+      const casa = (parsed?.casa_de_apostas || casaAtual || 'Casa (OCR)').trim() || 'Casa (OCR)';
+      const jogadoresImagem = parsed?.jogadores || [];
+      const novos = {};
+      let naoCasados = 0;
+      for (const j of jogadoresImagem) {
+        const match = casarJogadorPorNome(j.nome, estimativas);
+        if (!match) { naoCasados += 1; continue; }
+        const campos = {};
+        for (const linha of MERCADOS_DEFESAS[0].linhas) {
+          const chave = MERCADOS_DEFESAS[0].chaveReal(linha);
+          campos[chave] = { [casa]: j[chave] ?? null };
+        }
+        novos[match.player_id] = campos;
+      }
+      setOddsImportadas((atual) => mesclarOddsImportadas(atual, novos));
+      const nCasados = Object.keys(novos).length;
+      if (nCasados === 0 && naoCasados === 0) {
+        setOcrDefesasErro('Nenhum goleiro com odds reconhecido nessa imagem.');
+      } else {
+        setOcrDefesasMsg(`${nCasados} jogador(es) importado(s)${naoCasados ? `, ${naoCasados} não reconhecido(s) (nome não bateu com o elenco)` : ''}.`);
+      }
+    } catch (err) {
+      setOcrDefesasErro(err.message || 'Falha ao ler a imagem.');
+    } finally {
+      setOcrDefesasLoading(false);
+    }
+  };
+
   // Import por JSON colado -- síncrono (parseOddsJson é função pura, sem
   // I/O), mesmo destino (oddsImportadas) e mesma UX de sucesso/erro dos
   // handlers de OCR acima.
@@ -1671,6 +1770,14 @@ function SecaoJogadorMercados({
   const comparacaoEVVisivel = soEvPositivo ? comparacaoEVLinhas.filter((l) => l.edge > 0) : comparacaoEVLinhas;
   const nomeArquivoEVJogador = `ev_multicasas_jogador_${sanitizarNomeArquivo(homeNome)}_x_${sanitizarNomeArquivo(awayNome)}_${matchDate ? matchDate.slice(0, 10) : sanitizarNomeArquivo('')}.csv`;
   const exportarComparacaoEV = () => exportarCSV(comparacaoEVVisivel, COLUNAS_EXPORT_EV_JOGADOR, nomeArquivoEVJogador);
+
+  // Defesas é mercado só de goleiro -- filtra antes de passar pra
+  // TabelaOddsJustasIndividual (que não filtra por posição sozinha, ver seu
+  // uso pelos outros mercados acima) pra não listar 20+ jogadores de linha
+  // com odds justa degenerada (λ=0 pelo gate de posição, achado 27/09).
+  const ehGoleiro = (l) => l.players?.usual_position_id === 0;
+  const goleirosHome = (porTime[homeTeamId] || []).filter(ehGoleiro);
+  const goleirosAway = (porTime.outro || []).filter(ehGoleiro);
 
   return (
     <>
@@ -1923,6 +2030,56 @@ function SecaoJogadorMercados({
       />
     </Secao>
 
+    <Secao titulo="Odds justas — defesas de goleiro" icone={Percent}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-[11px] text-slate-500">
+          Mesmo molde das tabelas acima, agora pro mercado de defesas de goleiro (via{' '}
+          <code className="text-slate-400">lambda_defesas_jogo</code>, regressor CatBoost Poisson treinado contra o `Saves` real do
+          FotMob — não é derivado de chutes no alvo sofridos menos gols, ver achado registrado em CONTEXTO_PROJETO.md: essa identidade
+          ingênua não bate porque "chute no alvo" neste projeto inclui bloqueio de defensor na linha do gol). Só mostra goleiros — o
+          modelo trava em zero pra jogador de linha (gate de posição). Linhas +2/+3/+4/+5 correspondem às linhas de mercado
+          "mais de 1.5/2.5/3.5/4.5 defesas".{' '}
+          <strong className="text-slate-400">Usa Binomial Negativa</strong> (não Poisson) quando a liga já tem calibração própria —
+          sobredispersão real e forte confirmada nesta sessão (MLE + teste de razão de verossimilhança, todas as 11 ligas com amostra
+          suficiente rejeitam Poisson) — cai pra Poisson puro automaticamente enquanto a calibração real não for gravada em produção.
+          Importe uma imagem do mercado "Defesas"/"Goalkeeper Saves" da casa (ou cole um JSON com mercado "Defesas" na seção acima) pra
+          comparar lado a lado, mesma coloração (verde = valor, vermelho = sem valor).
+        </p>
+        <label
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
+            ocrDefesasLoading ? 'bg-slate-700 text-slate-400 cursor-wait' : 'bg-purple-600 hover:bg-purple-500 text-white'
+          }`}
+        >
+          {ocrDefesasLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+          Importar odds (OCR)
+          <input type="file" accept="image/*" multiple className="hidden" disabled={ocrDefesasLoading} onChange={handleOcrOddsDefesas} />
+        </label>
+      </div>
+      <p className="text-[10px] text-slate-600 -mt-2 mb-3">Dá pra selecionar mais de uma imagem de uma vez (ex.: tabela cortada em 2 prints) — todas vão juntas pra IA numa chamada só.</p>
+      {(ocrDefesasErro || ocrDefesasMsg) && (
+        <div className={`mb-3 px-3 py-2 rounded-lg border text-[11px] flex items-start gap-2 ${
+          ocrDefesasErro ? 'bg-red-950/30 border-red-500/40 text-red-400' : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-400'
+        }`}>
+          {ocrDefesasErro ? <X size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+          <span>{ocrDefesasErro || ocrDefesasMsg}</span>
+        </div>
+      )}
+      {goleirosHome.length === 0 && goleirosAway.length === 0 ? (
+        <p className="text-[11px] text-slate-600 italic">Nenhum goleiro identificado nesta fonte (usual_position_id ausente/desatualizado).</p>
+      ) : (
+        <>
+          <TabelaOddsJustasIndividual
+            titulo={homeNome || 'Mandante'} linhas={goleirosHome} oddsImportadas={oddsImportadas}
+            mercados={MERCADOS_DEFESAS} chaveOrdenacao="lambda_defesas_jogo"
+          />
+          <TabelaOddsJustasIndividual
+            titulo={awayNome || 'Visitante'} linhas={goleirosAway} oddsImportadas={oddsImportadas}
+            mercados={MERCADOS_DEFESAS} chaveOrdenacao="lambda_defesas_jogo"
+          />
+        </>
+      )}
+    </Secao>
+
     <Secao titulo="Comparação de EV multi-casas (jogador)" icone={Scale}>
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <p className="text-[11px] text-slate-500 max-w-2xl">
@@ -2074,6 +2231,7 @@ export default function AnaliseAvancadaEvento() {
   // puro automaticamente -- sem precisar de um valor "padrão genérico" aqui.
   const [dispRChutes, setDispRChutes] = useState(null);
   const [dispRChutesNoAlvo, setDispRChutesNoAlvo] = useState(null);
+  const [dispRDefesas, setDispRDefesas] = useState(null);
   // Esquema tático: formação DESTA partida (só existe depois da escalação
   // oficial sair) + formações recentes dos dois times (existe sempre que
   // eles já jogaram, então é o que serve pra ANTECIPAR o desenho do jogo).
@@ -2147,7 +2305,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }, matrizConfRows] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: dispRDefesasRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }, matrizConfRows] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -2202,7 +2360,7 @@ export default function AnaliseAvancadaEvento() {
           (j.status === 'scheduled' || finalizada)
             ? supabase
                 .from('player_match_estimates')
-                .select('team_id, player_id, fonte_titular, prob_titular_usada, is_titular_previsto, minutos_esperados, taxa_conversao_bayesiana, taxa_no_alvo_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, xa_90_bayesiano, chutes_no_alvo_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, xa_por_jogo, chutes_no_alvo_por_jogo, posicao_detalhe, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, lambda_xa_jogo, lambda_chutes_no_alvo_jogo, players(name, photo_url, usual_position_id)')
+                .select('team_id, player_id, fonte_titular, prob_titular_usada, is_titular_previsto, minutos_esperados, taxa_conversao_bayesiana, taxa_no_alvo_bayesiana, chutes_90_bayesiano, gols_90_bayesiano, xg_90_bayesiano, xa_90_bayesiano, chutes_no_alvo_90_bayesiano, chutes_por_jogo, gols_por_jogo, xg_por_jogo, xa_por_jogo, chutes_no_alvo_por_jogo, posicao_detalhe, lambda_chutes_jogo, lambda_gols_jogo_thinning, lambda_gols_jogo_direto, lambda_xg_jogo, lambda_xa_jogo, lambda_chutes_no_alvo_jogo, defesas_90_bayesiano, defesas_por_jogo, lambda_defesas_jogo, players(name, photo_url, usual_position_id)')
                 .eq('match_id', matchId)
             : Promise.resolve({ data: [] }),
           // disp_r (Binomial Negativa) do mercado de chutes totais, se essa
@@ -2230,6 +2388,22 @@ export default function AnaliseAvancadaEvento() {
                 .eq('league_id', j.league_id)
                 .eq('model_name', 'jogador_chutes_no_alvo_negbin_v1')
                 .eq('stat', 'chutes_no_alvo')
+                .eq('param_name', 'disp_r')
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+          // Mesma coisa pro mercado de DEFESAS de goleiro -- calibração MLE +
+          // LRT (arquivos_do_claude/analisar_nb2_defesas.py, não o método dos
+          // momentos dos outros dois acima), sobredispersão real confirmada
+          // em todas as 11 ligas com amostra suficiente. Ainda não persistido
+          // em produção nesta sessão (falta rodar o script com credencial
+          // real) -- `maybeSingle` devolve null e cai pra Poisson sozinho.
+          j.league_id
+            ? supabase
+                .from('league_model_params')
+                .select('param_value')
+                .eq('league_id', j.league_id)
+                .eq('model_name', 'jogador_defesas_catboost_poisson_v1')
+                .eq('stat', 'defesas')
                 .eq('param_name', 'disp_r')
                 .maybeSingle()
             : Promise.resolve({ data: null }),
@@ -2319,6 +2493,7 @@ export default function AnaliseAvancadaEvento() {
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
         setDispRChutesNoAlvo(dispRNoAlvoRow?.param_value != null ? Number(dispRNoAlvoRow.param_value) : null);
+        setDispRDefesas(dispRDefesasRow?.param_value != null ? Number(dispRDefesasRow.param_value) : null);
         setFormacaoPartida(formPartida || []);
         setFormacoesRecentes(formRecentes || []);
         setGameStateRecente(estadoRecente || []);
@@ -2949,6 +3124,7 @@ export default function AnaliseAvancadaEvento() {
             estimativas={jogadorEstimativas}
             dispRChutes={dispRChutes}
             dispRChutesNoAlvo={dispRChutesNoAlvo}
+            dispRDefesas={dispRDefesas}
             homeTeamId={jogo.home?.id}
             homeNome={jogo.home?.name}
             awayNome={jogo.away?.name}
