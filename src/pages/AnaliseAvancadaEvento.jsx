@@ -443,6 +443,34 @@ function dispRParaMercado(l, lambdaKey) {
   if (lambdaKey === 'lambda_chutes_no_alvo_jogo') return l._dispRChutesNoAlvo;
   return null;
 }
+// `lambda_xa_jogo` é o xA PREVISTO (regressor RMSE contra a métrica contínua
+// de xA, `treinar_modelo_jogador_mercados.py::TARGET_XA`) -- não é, por si
+// só, a média certa de um processo de Poisson de assistências reais (o
+// mesmo tipo de gap que gols já resolve com `lambda_gols_jogo_direto`/
+// `_thinning`, treinados contra gol de verdade, nunca contra xG cru).
+// `arquivos_do_claude/validar_assistencia_jogador_walkforward.py` mediu essa
+// conversão (Bernoulli, ligação cloglog: P(≥1)=1-exp(-λ*), λ*=exp(a)·λ^b) e
+// bate os baselines (assistência/90, xA/90) fora da amostra nas duas fontes
+// de titularidade -- registrado em CONTEXTO_PROJETO.md (26/09, base de xA já
+// corrigida). Coeficientes por `fonte_titular` (escalação confirmada tem
+// mais informação que o XI previsto, calibração fica ligeiramente diferente):
+const CALIBRACAO_XA_ASSISTENCIA = {
+  real: { a: -0.223, b: 0.922 },
+  previsto: { a: -0.189, b: 0.925 },
+};
+function lambdaAssistenciaCalibrado(lambdaXa, fonteTitular) {
+  if (lambdaXa == null || lambdaXa <= 0) return lambdaXa;
+  const { a, b } = CALIBRACAO_XA_ASSISTENCIA[fonteTitular] || CALIBRACAO_XA_ASSISTENCIA.previsto;
+  return Math.exp(a) * Math.pow(lambdaXa, b);
+}
+// Ponto único por onde todo call-site de probPeloMenos busca o λ de um
+// mercado -- só assistências precisa de correção antes de virar Poisson;
+// os demais mercados continuam lendo o campo bruto, sem mudança de
+// comportamento.
+function lambdaEfetivoMercado(l, lambdaKey) {
+  if (lambdaKey === 'lambda_xa_jogo') return lambdaAssistenciaCalibrado(l.lambda_xa_jogo, l.fonte_titular);
+  return l[lambdaKey];
+}
 // Odds justa = 1/probabilidade, SEM margem -- mesma convenção de
 // `model_predictions.fair_odds` (coluna gerada no banco), só replicada aqui
 // pro lado do cliente porque esses λ de jogador nunca passam por essa tabela
@@ -633,9 +661,11 @@ const MERCADOS_CHUTES_GOLS = [
 
 // Assistências -- mesmo molde de MERCADOS_CHUTES_GOLS, λ via
 // `lambda_xa_jogo` (já carregado em `estimativas`, mesma fonte da coluna
-// "xA esp." já exibida). Poisson puro (sem dispR): dispRParaMercado só
-// tem calibração NB pra chutes/chutes-no-alvo, cai pro default (null) aqui,
-// mesmo tratamento que "Gols" já recebe.
+// "xA esp." já exibida), mas passado por `lambdaEfetivoMercado` antes do
+// Poisson: xA previsto por si só não é uma média de assistências calibrada
+// (ver CALIBRACAO_XA_ASSISTENCIA). Sem dispR (Poisson puro depois da
+// correção): dispRParaMercado só tem calibração NB pra chutes/chutes-no-
+// alvo, cai pro default (null) aqui, mesmo tratamento que "Gols" recebe.
 const MERCADOS_ASSISTENCIAS = [
   { titulo: 'Assistências', lambdaKey: 'lambda_xa_jogo', linhas: [1, 2], chaveReal: (linha) => `assistencia_${linha}_mais` },
 ];
@@ -792,7 +822,7 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
                     return (
                       <CelulaOdds
                         key={`${m.titulo}-${linha}`}
-                        fair={oddsJusta(probPeloMenos(l[m.lambdaKey], linha, dispRParaMercado(l, m.lambdaKey)))}
+                        fair={oddsJusta(probPeloMenos(lambdaEfetivoMercado(l, m.lambdaKey), linha, dispRParaMercado(l, m.lambdaKey)))}
                         real={melhor?.odd}
                         casa={melhor?.casa}
                       />
@@ -1615,7 +1645,7 @@ function SecaoJogadorMercados({
     if (!importado) continue;
     for (const mercado of MERCADOS_EV_JOGADOR) {
       for (const linha of mercado.linhas) {
-        const pModelo = probPeloMenos(l[mercado.lambdaKey], linha, dispRParaMercado(l, mercado.lambdaKey));
+        const pModelo = probPeloMenos(lambdaEfetivoMercado(l, mercado.lambdaKey), linha, dispRParaMercado(l, mercado.lambdaKey));
         if (pModelo == null) continue;
         const porCasa = importado[mercado.chaveReal(linha)];
         if (!porCasa) continue;
@@ -1857,7 +1887,9 @@ function SecaoJogadorMercados({
       <div className="flex items-center justify-between gap-2 mb-3">
         <p className="text-[11px] text-slate-500">
           Mesmo molde das tabelas de chutes ao gol/gols acima, agora pro mercado de assistências (via{' '}
-          <code className="text-slate-400">lambda_xa_jogo</code>, Poisson puro). Linha +1 é a que a maioria das casas oferece
+          <code className="text-slate-400">lambda_xa_jogo</code>, calibrado por regressão cloglog contra assistência
+          real antes de virar Poisson — ver <code className="text-slate-400">validar_assistencia_jogador_walkforward.py</code>).
+          Linha +1 é a que a maioria das casas oferece
           ("dá assistência"); +2 só aparece quando a casa também tem "dobradinha de assistências". Importe uma imagem do mercado
           "Assistências" da casa (ou cole um JSON com mercado "Assistências" na seção acima) pra comparar lado a lado, mesma
           coloração (verde = valor, vermelho = sem valor).
