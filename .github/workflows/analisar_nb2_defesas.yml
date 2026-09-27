@@ -1,0 +1,46 @@
+name: Calibrar NB2 do mercado de defesas de goleiro
+
+# Roda arquivos_do_claude/analisar_nb2_defesas.py -- testa sobredispersão
+# (MLE + teste de razão de verossimilhança na fronteira, mais rigoroso que
+# o método dos momentos de calibrar_disp_r_chutes.py/calibrar_disp_r_
+# faltas.py) no mercado de defesas de goleiro (lambda_defesas_jogo vs.
+# Saves real), calibra só em temporadas de treino (< 2025) e valida fora
+# da amostra (>= 2025). Grava disp_r em league_model_params
+# (model_name='jogador_defesas_catboost_poisson_v1', stat='defesas') só
+# pra liga que passa nos 3 critérios (n>=300, LRT rejeita Poisson,
+# alpha>1e-5) -- é o que AnaliseAvancadaEvento.jsx (dispRParaMercado) lê
+# pra usar Binomial Negativa em vez de Poisson.
+#
+# PRÉ-REQUISITO: player_match_walkforward populado com lambda_defesas_jogo
+# (fonte_titular='relacionados') -- já é o caso em produção (PR #691).
+#
+# Idempotente (upsert por league_id+model_name+stat+param_name) --
+# workflow_dispatch manual, sem cron: recalibração é esporádica.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  calibrar-nb2-defesas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Rodar calibração NB2 de defesas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python arquivos_do_claude/analisar_nb2_defesas.py
