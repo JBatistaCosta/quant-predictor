@@ -90,6 +90,7 @@ MODEL_VERSION = "jogador_chutes_catboost_poisson_v1"
 MODEL_VERSION_GOLS_DIRETO = "jogador_gols_direto_catboost_poisson_v1"
 MODEL_VERSION_XG = "jogador_xg_catboost_rmse_v1"
 MODEL_VERSION_XA = "jogador_xa_catboost_rmse_v1"
+MODEL_VERSION_DEFESAS = "jogador_defesas_catboost_poisson_v1"
 
 
 def _dividir_em_lotes(itens: list, tamanho: int = 500):
@@ -140,6 +141,18 @@ def carregar_modelo_xa(supabase: Client):
         return joblib.load(io.BytesIO(conteudo))
     except Exception as e:
         logger.warning(f"Sem artefato de xA ({path}): {e} -- seguindo sem lambda_xa_jogo.")
+        return None
+
+
+def carregar_modelo_defesas(supabase: Client):
+    """Opcional -- se ausente, o script segue sem lambda_defesas_jogo (mesmo
+    espírito não-bloqueante de `carregar_modelo_xg`/`carregar_modelo_xa`)."""
+    path = f"jogador_mercados/{MODEL_VERSION_DEFESAS}.joblib"
+    try:
+        conteudo = supabase.storage.from_(BUCKET_ARTEFATOS).download(path)
+        return joblib.load(io.BytesIO(conteudo))
+    except Exception as e:
+        logger.warning(f"Sem artefato de defesas ({path}): {e} -- seguindo sem lambda_defesas_jogo.")
         return None
 
 
@@ -416,6 +429,31 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     # controla por tempo em campo).
     n_jogos_totais = df_stats.groupby("player_id").size().to_dict()
 
+    # Defesas de goleiro -- mesma extração de treinar_modelo_jogador_
+    # mercados.carregar_dados (stats_raw.top_stats.Saves), reaproveitada via
+    # tmj.extrair_saves_stats_raw. Query separada, filtrada por
+    # is_goalkeeper=true, pra não trazer stats_raw (JSON grande) de todo
+    # mundo à toa -- jogador de linha nunca aparece aqui, entra com 0 abaixo
+    # (valor verdadeiro, não "sem dado": jogador de linha não faz defesa).
+    defesas_rows = dh._paginar_por_lotes_de_id(
+        lambda lote, inicio, fim: (
+            supabase.table("match_player_stats_fotmob")
+            .select("player_id, stats_raw")
+            .eq("is_goalkeeper", True)
+            .in_("player_id", lote)
+            .order("player_id")
+            .range(inicio, fim)
+        ),
+        player_ids,
+        tamanho_lote=50,
+    )
+    df_defesas = pd.DataFrame(defesas_rows) if defesas_rows else pd.DataFrame(columns=["player_id", "stats_raw"])
+    if not df_defesas.empty:
+        df_defesas["_defesas"] = df_defesas["stats_raw"].apply(tmj.extrair_saves_stats_raw)
+        defesas_totais = df_defesas.groupby("player_id")["_defesas"].sum().to_dict()
+    else:
+        defesas_totais = {}
+
     df_shots = pd.DataFrame(shots_rows) if shots_rows else pd.DataFrame(columns=["player_id", "event_type", "is_own_goal", "xg", "is_on_target", "is_blocked"])
     if not df_shots.empty:
         df_shots["_e_gol_proprio"] = (df_shots["event_type"] == "Goal") & (~df_shots["is_own_goal"].fillna(False))
@@ -448,15 +486,17 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
         xg = xg_totais.get(player_id, 0.0) or 0.0
         xa = xa_totais.get(player_id, 0.0) or 0.0
         chutes_no_alvo = chutes_no_alvo_totais.get(player_id, 0)
+        defesas = defesas_totais.get(player_id, 0.0) or 0.0
         chutes_90 = (chutes / (minutos / 90.0)) if minutos > 0 else 0.0
         gols_90 = (gols / (minutos / 90.0)) if minutos > 0 else 0.0
         xg_90 = (xg / (minutos / 90.0)) if minutos > 0 else 0.0
         xa_90 = (xa / (minutos / 90.0)) if minutos > 0 else 0.0
         chutes_no_alvo_90 = (chutes_no_alvo / (minutos / 90.0)) if minutos > 0 else 0.0
+        defesas_90 = (defesas / (minutos / 90.0)) if minutos > 0 else 0.0
         n_hist = int(minutos / 90.0)
         linhas.append({
             "player_id": player_id, "_chutes_90_bruto": chutes_90, "_gols_90_bruto": gols_90, "_xg_90_bruto": xg_90,
-            "_xa_90_bruto": xa_90, "_chutes_no_alvo_90_bruto": chutes_no_alvo_90,
+            "_xa_90_bruto": xa_90, "_chutes_no_alvo_90_bruto": chutes_no_alvo_90, "_defesas_90_bruto": defesas_90,
             "n_hist": n_hist, "posicao_num": int(posicao_por_jogador.get(player_id, 0) or 0),
             # Média CRUA por jogo (sem shrinkage bayesiano, diferente das
             # colunas "_90_bruto" acima que ainda passam por prior/shrinkage
@@ -468,6 +508,7 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
             "xg_por_jogo": (xg / jogos) if jogos > 0 else 0.0,
             "xa_por_jogo": (xa / jogos) if jogos > 0 else 0.0,
             "chutes_no_alvo_por_jogo": (chutes_no_alvo / jogos) if jogos > 0 else 0.0,
+            "defesas_por_jogo": (defesas / jogos) if jogos > 0 else 0.0,
         })
     df = pd.DataFrame(linhas)
     if df.empty:
@@ -481,12 +522,16 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     prior_xg = df.groupby(["posicao_num", "liga"])["_xg_90_bruto"].mean()
     prior_xa = df.groupby(["posicao_num", "liga"])["_xa_90_bruto"].mean()
     prior_no_alvo = df.groupby(["posicao_num", "liga"])["_chutes_no_alvo_90_bruto"].mean()
+    prior_defesas = df.groupby(["posicao_num", "liga"])["_defesas_90_bruto"].mean()
     df["_prior_chutes_90"] = df.apply(lambda r: prior_chutes.get((r["posicao_num"], r["liga"]), df["_chutes_90_bruto"].mean()), axis=1)
     df["_prior_gols_90"] = df.apply(lambda r: prior_gols.get((r["posicao_num"], r["liga"]), df["_gols_90_bruto"].mean()), axis=1)
     df["_prior_xg_90"] = df.apply(lambda r: prior_xg.get((r["posicao_num"], r["liga"]), df["_xg_90_bruto"].mean()), axis=1)
     df["_prior_xa_90"] = df.apply(lambda r: prior_xa.get((r["posicao_num"], r["liga"]), df["_xa_90_bruto"].mean()), axis=1)
     df["_prior_chutes_no_alvo_90"] = df.apply(
         lambda r: prior_no_alvo.get((r["posicao_num"], r["liga"]), df["_chutes_no_alvo_90_bruto"].mean()), axis=1
+    )
+    df["_prior_defesas_90"] = df.apply(
+        lambda r: prior_defesas.get((r["posicao_num"], r["liga"]), df["_defesas_90_bruto"].mean()), axis=1
     )
 
     df["chutes_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_chutes_90_bruto"], df["_prior_chutes_90"], tmj.W_SHRINKAGE)
@@ -495,6 +540,9 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     df["xa_90_bayesiano"] = tmj._shrinkage_bayesiano(df["n_hist"], df["_xa_90_bruto"], df["_prior_xa_90"], tmj.W_SHRINKAGE)
     df["chutes_no_alvo_90_bayesiano"] = tmj._shrinkage_bayesiano(
         df["n_hist"], df["_chutes_no_alvo_90_bruto"], df["_prior_chutes_no_alvo_90"], tmj.W_SHRINKAGE
+    )
+    df["defesas_90_bayesiano"] = tmj._shrinkage_bayesiano(
+        df["n_hist"], df["_defesas_90_bruto"], df["_prior_defesas_90"], tmj.W_SHRINKAGE
     )
     df["taxa_conversao_bayesiana"] = np.where(
         df["chutes_90_bayesiano"] > 0.01, df["gols_90_bayesiano"] / df["chutes_90_bayesiano"], 0.0
@@ -507,9 +555,10 @@ def _bayesiano_atual(supabase: Client, candidatos: pd.DataFrame, nome_liga_por_t
     ).clip(0, 1)
     return df[[
         "player_id", "chutes_90_bayesiano", "gols_90_bayesiano", "xg_90_bayesiano", "xa_90_bayesiano",
-        "chutes_no_alvo_90_bayesiano",
+        "chutes_no_alvo_90_bayesiano", "defesas_90_bayesiano",
         "taxa_conversao_bayesiana", "taxa_no_alvo_bayesiana",
-        "chutes_por_jogo", "gols_por_jogo", "xg_por_jogo", "xa_por_jogo", "chutes_no_alvo_por_jogo", "posicao_num",
+        "chutes_por_jogo", "gols_por_jogo", "xg_por_jogo", "xa_por_jogo", "chutes_no_alvo_por_jogo",
+        "defesas_por_jogo", "posicao_num",
     ]]
 
 
@@ -529,6 +578,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
     modelo_gols_direto = carregar_modelo_gols_direto(supabase)
     modelo_xg = carregar_modelo_xg(supabase)
     modelo_xa = carregar_modelo_xa(supabase)
+    modelo_defesas = carregar_modelo_defesas(supabase)
 
     fixture_ids = [int(m) for m in fixtures["id"].tolist()]
     df_real, df_previsto = _buscar_candidatos_por_fonte(supabase, fixture_ids)
@@ -650,6 +700,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
         lambda_gols_direto = modelos_ml_predict(modelo_gols_direto, df) if modelo_gols_direto is not None else None
         lambda_xg = modelos_ml_predict_regressor(modelo_xg, df, tmj.FEATURES_XG) if modelo_xg is not None else None
         lambda_xa = modelos_ml_predict_regressor(modelo_xa, df, tmj.FEATURES_XA) if modelo_xa is not None else None
+        lambda_defesas = modelos_ml_predict_poisson(modelo_defesas, df, tmj.FEATURES_DEFESAS) if modelo_defesas is not None else None
         lambda_chutes_no_alvo = lambda_chutes * df["taxa_no_alvo_bayesiana"].to_numpy()
 
         # Fator de matchup zonal (Pricing Pipeline v2, w_i,z · M_j,z^reg) --
@@ -717,6 +768,8 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "xg_por_jogo": float(row["xg_por_jogo"]),
                 "xa_por_jogo": float(row["xa_por_jogo"]),
                 "chutes_no_alvo_por_jogo": float(row["chutes_no_alvo_por_jogo"]),
+                "defesas_90_bayesiano": float(row["defesas_90_bayesiano"]),
+                "defesas_por_jogo": float(row["defesas_por_jogo"]),
                 "posicao_detalhe": posicao_detalhe_por_jogador.get(int(row["player_id"])),
                 "gsax_rate": gsax_por_goleiro.get(int(row["player_id"]), {}).get("gsax_rate"),
                 "lambda_chutes_jogo": float(lambda_chutes[i]),
@@ -726,6 +779,7 @@ def rodar(supabase: Client, dias: int = DIAS_JANELA_DEFAULT, match_ids: list[int
                 "lambda_gols_jogo_direto": float(lambda_gols_direto[i]) if lambda_gols_direto is not None else None,
                 "lambda_xg_jogo": float(lambda_xg[i]) if lambda_xg is not None else None,
                 "lambda_xa_jogo": float(lambda_xa[i]) if lambda_xa is not None else None,
+                "lambda_defesas_jogo": float(lambda_defesas[i]) if lambda_defesas is not None else None,
                 "lambda_chutes_no_alvo_jogo": float(lambda_chutes_no_alvo[i]),
                 "model_version": MODEL_VERSION, "gerado_em": agora,
             })
@@ -750,6 +804,15 @@ def modelos_ml_predict(modelo, df: pd.DataFrame) -> np.ndarray:
     df_prep = df.copy()
     df_prep["liga"] = df_prep["liga"].fillna("desconhecida").astype(str)
     return np.maximum(modelo.predict(df_prep[tmj.FEATURES_CHUTES]), 0.01)
+
+
+def modelos_ml_predict_poisson(modelo, df: pd.DataFrame, features: list[str]) -> np.ndarray:
+    """Mesma ideia de `modelos_ml_predict`, mas com `features` parametrizado
+    (o chutes original é fixo em `tmj.FEATURES_CHUTES`) -- usado pelo modelo
+    de defesas (Poisson, feature set próprio, ver `tmj.FEATURES_DEFESAS`)."""
+    df_prep = df.copy()
+    df_prep["liga"] = df_prep["liga"].fillna("desconhecida").astype(str)
+    return np.maximum(modelo.predict(df_prep[features]), 0.01)
 
 
 def modelos_ml_predict_regressor(modelo, df: pd.DataFrame, features: list[str]) -> np.ndarray:

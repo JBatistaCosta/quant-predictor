@@ -144,12 +144,23 @@ FEATURES_XG = [f if f != "chutes_90_bayesiano" else "xg_90_bayesiano" for f in F
 # do PRÓPRIO jogador não é o sinal certo pra quem cria chance pro colega;
 # troca o sinal de volume primário pelo shrinkage bayesiano de xA/90.
 FEATURES_XA = [f if f != "chutes_90_bayesiano" else "xa_90_bayesiano" for f in FEATURES_CHUTES]
+# Defesas de goleiro -- mesmo raciocínio de xG/xA: o volume ofensivo do
+# PRÓPRIO jogador não diz nada (goleiro não chuta), troca pelo shrinkage
+# bayesiano da própria taxa de defesas/90 (que já carrega o sinal certo:
+# quanto o time dele costuma sofrer, não uma habilidade especial de defender
+# -- Fase 7/GSAx já confirmou que habilidade individual acima do esperado
+# não tem sinal real; aqui é só volume). `elo_diff`/`squad_rating_diff`
+# (força própria vs. adversário) e `mando` continuam relevantes pelo mesmo
+# motivo de sempre: time mais fraco/jogando fora sofre mais chutes, logo
+# mais defesas esperadas.
+FEATURES_DEFESAS = [f if f != "chutes_90_bayesiano" else "defesas_90_bayesiano" for f in FEATURES_CHUTES]
 
 TARGET_CHUTES = "chutes_partida"
 TARGET_GOLS = "gols_partida"
 TARGET_XG = "xg_partida"
 TARGET_XA = "xa_partida"
 TARGET_CHUTES_NO_ALVO = "chutes_no_alvo_partida"
+TARGET_DEFESAS = "defesas_partida"
 FRACAO_TESTE = 0.2
 
 MODEL_NAMES = {
@@ -175,6 +186,24 @@ MODEL_NAMES_XG = {
 MODEL_NAMES_XA = {
     "catboost": "jogador_xa_catboost_rmse_v1",
 }
+# Defesas de goleiro -- CONTAGEM (Saves é inteiro), mesmo tratamento Poisson
+# de chutes/gols_direto (ALGORITMOS_POISSON), não RMSE puro como xG/xA.
+MODEL_NAMES_DEFESAS = {
+    "catboost": "jogador_defesas_catboost_poisson_v1",
+    "lightgbm": "jogador_defesas_lightgbm_poisson_v1",
+}
+
+
+def extrair_saves_stats_raw(stats_raw):
+    """`match_player_stats_fotmob.stats_raw.top_stats.Saves.stat.value` --
+    FotMob não tem coluna própria pra defesas de goleiro (ao contrário de
+    xa/total_shots), só o JSON bruto. Nível de módulo pra reaproveitar aqui
+    (treino) e em `rodar_jogador_mercados_previsto.py` (predição ao vivo,
+    mesma extração)."""
+    try:
+        return float(stats_raw[0]["stats"]["Saves"]["stat"]["value"])
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return np.nan
 
 
 def carregar_dados(supabase: Client) -> pd.DataFrame:
@@ -362,6 +391,42 @@ def carregar_dados(supabase: Client) -> pd.DataFrame:
         df["squad_rating_proprio"] = np.nan
         df["squad_rating_oponente"] = np.nan
 
+    # Defesas de goleiro -- FotMob não tem coluna própria pra isso (ao
+    # contrário de xa/total_shots), o número mora dentro de `stats_raw`
+    # (JSON bruto da API, `top_stats.Saves.stat.value`). Só goleiros têm essa
+    # chave -- busca já filtrada por `is_goalkeeper=true` pra não trazer o
+    # `stats_raw` (JSON grande) de todo mundo à toa. Vira NaN (não 0) pra
+    # qualquer linha que não seja goleiro titular de gol confirmado com a
+    # chave presente -- dropado no treino do mercado de defesas (ver
+    # `treinar()`), nunca contaminando os outros mercados (chutes/gols/xG/xA
+    # continuam vendo goleiro normalmente, com defesas_partida = NaN nessas
+    # linhas). Verificado contra produção (27/09): 98% de cobertura em
+    # goleiro com 90 min jogados; a identidade "defesas + gols sofridos =
+    # chutes no alvo sofridos" NÃO bate (defasagem média de ~3,5/jogo) porque
+    # "chute no alvo" neste projeto inclui bloqueio de defensor na linha do
+    # gol, não só o que o goleiro toca -- por isso o alvo usa o `Saves` real
+    # do FotMob direto, nunca derivado algebricamente de chutes no alvo.
+    logger.info("Carregando defesas de goleiro (match_player_stats_fotmob.stats_raw)...")
+    goleiro_rows = _paginar_keyset(
+        lambda cursor: supabase.table("match_player_stats_fotmob")
+        .select("id, match_id, team_id, player_id, stats_raw")
+        .eq("is_goalkeeper", True)
+    )
+    df_goleiro = pd.DataFrame(goleiro_rows)
+    if not df_goleiro.empty:
+        df_goleiro = df_goleiro[df_goleiro["match_id"].isin(match_ids) & df_goleiro["player_id"].notna()].copy()
+        df_goleiro["player_id"] = df_goleiro["player_id"].astype(int)
+        df_goleiro["team_id"] = df_goleiro["team_id"].astype(int)
+
+        df_goleiro["defesas_partida"] = df_goleiro["stats_raw"].apply(extrair_saves_stats_raw)
+        df_goleiro = df_goleiro[["match_id", "team_id", "player_id", "defesas_partida"]].drop_duplicates(
+            subset=["match_id", "team_id", "player_id"]
+        )
+        df = df.merge(df_goleiro, on=["match_id", "team_id", "player_id"], how="left")
+    else:
+        df["defesas_partida"] = np.nan
+    logger.info(f"{df['defesas_partida'].notna().sum()} de {len(df)} linhas têm defesas de goleiro extraídas.")
+
     return df
 
 
@@ -443,6 +508,7 @@ def engenharia_features(df: pd.DataFrame) -> pd.DataFrame:
     for nome, coluna_alvo in (
         ("chutes", "chutes_partida"), ("gols", "gols_partida"), ("xg", "xg_partida"),
         ("chutes_no_alvo", "chutes_no_alvo_partida"), ("xa", "xa_partida"),
+        ("defesas", "defesas_partida"),
     ):
         col_bruto = f"_{nome}_90_bruto"
         col_ewma = f"ewma_{nome}_90"
@@ -629,7 +695,23 @@ def treinar(df: pd.DataFrame, supabase: Client) -> dict:
         algoritmos=ALGORITMOS_REGRESSAO_XG,
     )
 
-    return {"chutes": resultado_chutes, "gols_direto": resultado_gols, "xg": resultado_xg, "xa": resultado_xa}
+    # Defesas de goleiro -- CONTAGEM (Poisson, como chutes/gols_direto), mas
+    # só faz sentido pra quem de fato é goleiro com `defesas_partida`
+    # extraído (ver `carregar_dados`) -- filtra ANTES do baseline, mesmo
+    # cuidado de xg/xa (mistura de goleiro com jogador de linha, que tem
+    # defesas_partida=NaN sempre, quebraria RMSE/baseline sem esse filtro).
+    treino_defesas = treino.dropna(subset=[TARGET_DEFESAS])
+    teste_defesas = teste.dropna(subset=[TARGET_DEFESAS])
+    baseline_defesas = (teste_defesas["ewma_defesas_90"] * teste_defesas["minutos_esperados"] / 90.0).clip(lower=0.01).to_numpy()
+    resultado_defesas = _treinar_regressor(
+        treino_defesas, teste_defesas, supabase, target=TARGET_DEFESAS, features=FEATURES_DEFESAS,
+        market="jogador_defesas", model_names=MODEL_NAMES_DEFESAS, baseline_previsto=baseline_defesas,
+    )
+
+    return {
+        "chutes": resultado_chutes, "gols_direto": resultado_gols, "xg": resultado_xg, "xa": resultado_xa,
+        "defesas": resultado_defesas,
+    }
 
 
 if __name__ == "__main__":
