@@ -1,5 +1,19 @@
 # Contexto do projeto quant-futebol — resumo para Claude Code
 
+**Fase 7 (xA/GSAx) revalidada com dado mais recente — as duas conclusões de 25/09 se confirmam de novo, sem mudança de código (27/09).** Pedido do usuário depois de eu reportar que a Fase 7 já estava concluída (ver entrada original mais abaixo): rodar de novo com dado atualizado pra conferir se as conclusões se mantêm. Disparado `backtest_jogador_mercados_walkforward.yml` (atualiza `lambda_xg_jogo`/`lambda_xa_jogo` walk-forward) seguido de `backtest_gsax_walkforward.yml` (depende do primeiro).
+
+| | 25/09 | 27/09 (revalidado) |
+|---|---|---|
+| xA: grupos que batem o baseline | 104/104 | **156/156** |
+| xA: RMSE modelo vs. baseline | — | 0,105 vs. 0,111 |
+| GSAx: RMSE com GSAx vs. neutro | 1,2944 vs. 1,1747 | 1,2966 vs. 1,1762 |
+| GSAx: grupos com degradação sustentada (IC95%) | 31/48 (65%) | 30/48 (62,5%) |
+| GSAx: grupos com benefício real | 0 | 0 |
+
+Números praticamente idênticos (mais grupos liga×temporada entraram na amostra de xA, mas a taxa de acerto continua 100%; GSAx continua sem nenhum grupo com benefício). **Nenhuma mudança de código** — só reconfirma que `usar xA` (já em produção) e `gsax_rate=0.0` fixo (já em produção) continuam as decisões certas.
+
+---
+
 **CORREÇÃO do achado de 27/09 sobre "chutes (total)": o problema reportado (razão observado/NB até 7,3x) era em boa parte um BUG NA VALIDAÇÃO, não um problema real de calibração — `disp_r` mais rico (por faixa de λ) tentado via MLE e DESCARTADO, não ajuda (27/09).** Pedido do usuário: "corrige o disp_r pra ser mais rico que um único por liga". Antes de mexer em produção, tentei validar um `disp_r(λ)` em lei de potência (`r = exp(c0)·λ^c1`, 2 parâmetros por liga, mesmo estilo já usado pra xA) ajustado por máxima verossimilhança (não só encaixe visual) contra `match_shots_fotmob` — e o ajuste não ajuda: pra "chutes (total)" o MLE converge pra `c1≈0,01` (dispersão praticamente constante — o modelo não encontra benefício em variar `r` com λ) e pra "chutes ao gol" o sinal de `c1` é instável entre ligas (de -0,88 a +0,75 sem padrão), sem melhora material nas razões observado/previsto em nenhum dos dois casos. **Descartado**: não é um problema de "um parâmetro de forma só" — não implementar essa correção.
 
 - **A causa real do achado de 27/09 pra "chutes (total)"**: minha validação ad-hoc daquela sessão usou `match_player_stats_fotmob.total_shots` como "resultado real" — **exatamente o erro que a própria docstring de `calibrar_disp_r_chutes.py` já avisa pra não cometer** ("não `match_player_stats_fotmob.total_shots` (cobertura mais fraca)"). Confirmado via SQL: `total_shots` **nunca é `0`** na tabela inteira (0 linhas com `=0` contra 423.338 linhas `NULL` pra jogador que jogou) — mesmo padrão de bug já corrigido uma vez pro xA ("campo vazio do FotMob = zero, tratado como ausência"). Minha validação, ao filtrar `total_shots is not null`, **excluiu sistematicamente todo jogador com 0 chutes** — e são 53,8% dos jogador-partida, confirmado ao reconstruir corretamente via `match_shots_fotmob` (chute a chute, com zero-fill só pras partidas que o FotMob de fato capturou, mesma regra que `calibrar_disp_r_chutes.py::carregar_chutes_reais` já usa). Essa exclusão inflava artificialmente a "surpresa" nos decis de λ baixo.
