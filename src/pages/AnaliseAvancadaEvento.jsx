@@ -442,10 +442,23 @@ function probPeloMenos(lambda, k, dispR) {
 // arquivos_do_claude/analisar_nb2_assistencias.py) -- Poisson subestimava
 // a linha "2+" em até 5,5x e a "3+" em até 13,4x em certas faixas de λ
 // (calibração por decil OOS), NB2 corrige bem mais perto de 1.
-function dispRParaMercado(l, lambdaKey) {
+//
+// ACHADO 28/09 (verificação numérica pós-deploy, pedido do usuário "confere
+// se a linha +1 continua igual"): sem o `linha` abaixo, a linha "+1" de
+// assistências TAMBÉM ficava sujeita à NB2 (probPeloMenos usa `dispR` pra
+// qualquer k) -- mudava a probabilidade entre -1,6% (Brasileirão) e -10,7%
+// (Eredivisie, r mais baixo) em relação à Poisson pura, SEM QUALQUER
+// EVIDÊNCIA de que isso melhora essa linha especificamente:
+// `analisar_nb2_assistencias.py` testa `LINHAS_MERCADO=(1.5, 2.5, 3.5)`
+// (equivalente às linhas "+2"/"+3"/"+4" desta UI), nunca a "+1" -- essa já
+// tinha validação própria e específica (evento Bernoulli, ligação cloglog,
+// `validar_assistencia_jogador_walkforward.py`, Frente A). Excluída
+// explicitamente aqui pra não alterar uma calibração já validada sem prova
+// de ganho -- só "+2" em diante usa NB2.
+function dispRParaMercado(l, lambdaKey, linha) {
   if (lambdaKey === 'lambda_chutes_jogo') return l._dispRChutes;
   if (lambdaKey === 'lambda_chutes_no_alvo_jogo') return l._dispRChutesNoAlvo;
-  if (lambdaKey === 'lambda_xa_jogo') return l._dispRAssistencias;
+  if (lambdaKey === 'lambda_xa_jogo') return linha === 1 ? null : l._dispRAssistencias;
   return null;
 }
 // `lambda_xa_jogo` é o xA PREVISTO (regressor RMSE contra a métrica contínua
@@ -834,7 +847,7 @@ function TabelaOddsJustasIndividual({ titulo, linhas, oddsImportadas, mercados, 
                     return (
                       <CelulaOdds
                         key={`${m.titulo}-${linha}`}
-                        fair={oddsJusta(probPeloMenos(lambdaEfetivoMercado(l, m.lambdaKey), linha, dispRParaMercado(l, m.lambdaKey)))}
+                        fair={oddsJusta(probPeloMenos(lambdaEfetivoMercado(l, m.lambdaKey), linha, dispRParaMercado(l, m.lambdaKey, linha)))}
                         real={melhor?.odd}
                         casa={melhor?.casa}
                       />
@@ -1658,7 +1671,7 @@ function SecaoJogadorMercados({
     if (!importado) continue;
     for (const mercado of MERCADOS_EV_JOGADOR) {
       for (const linha of mercado.linhas) {
-        const pModelo = probPeloMenos(lambdaEfetivoMercado(l, mercado.lambdaKey), linha, dispRParaMercado(l, mercado.lambdaKey));
+        const pModelo = probPeloMenos(lambdaEfetivoMercado(l, mercado.lambdaKey), linha, dispRParaMercado(l, mercado.lambdaKey, linha));
         if (pModelo == null) continue;
         const porCasa = importado[mercado.chaveReal(linha)];
         if (!porCasa) continue;
