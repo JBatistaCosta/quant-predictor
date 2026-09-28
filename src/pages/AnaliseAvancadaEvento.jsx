@@ -561,14 +561,15 @@ Regras:
 // assistência contra a odds justa derivada de `lambda_xa_jogo` (já
 // carregado em `estimativas`, mesma fonte que a coluna "xA esp." usa).
 const OCR_ODDS_ASSISTENCIAS_PROMPT = `Você é um extrator de odds do mercado de ASSISTÊNCIAS por jogador de screenshots de casas de apostas (Betano, Bet365, etc.) de uma partida de futebol.
-A imagem mostra o mercado "Assistências" / "Dá assistência" / "To Assist" por jogador -- geralmente só a linha de 1+ assistência, mas às vezes também 2+ ("dobradinha de assistências"). Extraia TODOS os jogadores visíveis e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
+A imagem mostra o mercado "Assistências" / "Dá assistência" / "To Assist" por jogador -- geralmente só a linha de 1+ assistência, mas às vezes também 2+/3+ ("dobradinha"/"hat-trick de assistências"). Extraia TODOS os jogadores visíveis e responda APENAS com um JSON válido, sem markdown, sem explicações, exatamente neste formato:
 {
   "casa_de_apostas": "NomeDaCasa",
   "jogadores": [
     {
       "nome": "Nome do jogador exatamente como aparece na imagem",
       "assistencia_1_mais": null,
-      "assistencia_2_mais": null
+      "assistencia_2_mais": null,
+      "assistencia_3_mais": null
     }
   ]
 }
@@ -576,6 +577,7 @@ A imagem mostra o mercado "Assistências" / "Dá assistência" / "To Assist" por
 Regras:
 - "assistencia_1_mais": odd de "dá 1 ou mais assistências" / "to assist anytime" / "assistência a qualquer momento".
 - "assistencia_2_mais": odd de "dá 2 ou mais assistências" / "dobradinha de assistências" -- só preencha se essa linha estiver visível, a maioria dos prints só tem a de 1+.
+- "assistencia_3_mais": odd de "dá 3 ou mais assistências" -- raríssimo de aparecer, só preencha se estiver visível.
 - Se um mercado não estiver visível pra um jogador, deixe null -- não invente valor.
 - Odds são números decimais como 1.87, 3.30, 5.25.
 - Escreva o nome do jogador exatamente como aparece na imagem (não traduza, não abrevie, não corrija grafia).`;
@@ -668,11 +670,16 @@ const MERCADOS_CHUTES_GOLS = [
 // `lambda_xa_jogo` (já carregado em `estimativas`, mesma fonte da coluna
 // "xA esp." já exibida), mas passado por `lambdaEfetivoMercado` antes do
 // Poisson: xA previsto por si só não é uma média de assistências calibrada
-// (ver CALIBRACAO_XA_ASSISTENCIA). Sem dispR (Poisson puro depois da
-// correção): dispRParaMercado só tem calibração NB pra chutes/chutes-no-
-// alvo, cai pro default (null) aqui, mesmo tratamento que "Gols" recebe.
+// (ver CALIBRACAO_XA_ASSISTENCIA). Linhas "+2"/"+3" usam NB2 quando a liga
+// tem `disp_r` calibrado (achado 28/09, arquivos_do_claude/
+// analisar_nb2_assistencias.py -- ver dispRParaMercado); "+1" continua
+// Poisson puro (é o evento Bernoulli que a calibração cloglog já mede
+// direto, NB2 não muda essa linha porque disp_r só afeta o formato da
+// cauda). "+3" liberada só depois de validar que o ganho de calibração
+// (O/E_Poisson até 13,4x -> O/E_NB2 ~3,7x na calibração por decil OOS)
+// também vale pra essa linha, não só a "+2".
 const MERCADOS_ASSISTENCIAS = [
-  { titulo: 'Assistências', lambdaKey: 'lambda_xa_jogo', linhas: [1, 2], chaveReal: (linha) => `assistencia_${linha}_mais` },
+  { titulo: 'Assistências', lambdaKey: 'lambda_xa_jogo', linhas: [1, 2, 3], chaveReal: (linha) => `assistencia_${linha}_mais` },
 ];
 
 // Chutes totais (não só no alvo) -- linhas +1 até +10, pedido explícito do
@@ -1603,6 +1610,7 @@ function SecaoJogadorMercados({
         const camposValor = {
           assistencia_1_mais: j.assistencia_1_mais ?? null,
           assistencia_2_mais: j.assistencia_2_mais ?? null,
+          assistencia_3_mais: j.assistencia_3_mais ?? null,
         };
         novos[match.player_id] = Object.fromEntries(
           Object.entries(camposValor).map(([campo, valor]) => [campo, { [casa]: valor }])
@@ -1894,10 +1902,13 @@ function SecaoJogadorMercados({
           Mesmo molde das tabelas de chutes ao gol/gols acima, agora pro mercado de assistências (via{' '}
           <code className="text-slate-400">lambda_xa_jogo</code>, calibrado por regressão cloglog contra assistência
           real antes de virar Poisson — ver <code className="text-slate-400">validar_assistencia_jogador_walkforward.py</code>).
+          Linhas +2/+3 usam Binomial Negativa nas ligas com <code className="text-slate-400">disp_r</code> calibrado
+          (<code className="text-slate-400">analisar_nb2_assistencias.py</code>) em vez de Poisson pura — Poisson sozinha
+          subestimava essas linhas em até 13x em certas faixas de λ.
           Linha +1 é a que a maioria das casas oferece
-          ("dá assistência"); +2 só aparece quando a casa também tem "dobradinha de assistências". Importe uma imagem do mercado
-          "Assistências" da casa (ou cole um JSON com mercado "Assistências" na seção acima) pra comparar lado a lado, mesma
-          coloração (verde = valor, vermelho = sem valor).
+          ("dá assistência"); +2/+3 só aparecem quando a casa também tem "dobradinha"/"hat-trick de assistências". Importe uma
+          imagem do mercado "Assistências" da casa (ou cole um JSON com mercado "Assistências" na seção acima) pra comparar
+          lado a lado, mesma coloração (verde = valor, vermelho = sem valor).
         </p>
         <label
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors shrink-0 ${
