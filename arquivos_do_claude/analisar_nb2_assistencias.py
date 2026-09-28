@@ -81,7 +81,18 @@ logger = logging.getLogger("analisar_nb2_assistencias")
 MODEL_NAME = "jogador_assistencias_negbin_v1"
 STAT = "assistencias"
 TAMANHO_PAGINA = 1000
-TAMANHO_LOTE_IDS = 500
+# ACHADO 28/09 (rodando este script via workflow_dispatch em produção): com
+# TAMANHO_LOTE_IDS=500 (mesmo valor de analisar_nb2_defesas.py), a query de
+# match_player_stats_fotmob por `match_id IN (...) AND minutes_played > 0`
+# estourou o statement_timeout do PostgREST. Causa raiz real: estatísticas
+# desatualizadas da tabela (ANALYZE trouxe o custo do plano de >1.000.000
+# pra ~30.000, corrigido em produção) -- mas mesmo com o plano certo, 500
+# partidas de uma vez ainda levam ~7s com cache frio (EXPLAIN ANALYZE),
+# perto demais do limite real (~8s). Diferente de defesas, que filtra
+# `is_goalkeeper=True` (poucas linhas por partida) -- aqui o filtro é só
+# `minutes_played>0` (quase todo mundo que jogou), então cada partida traz
+# MUITO mais linhas. Lote menor reduz a margem de risco proporcionalmente.
+TAMANHO_LOTE_IDS = 150
 N_MINIMO_LIGA = 300
 # Mesmo racional de analisar_nb2_defesas.py: split fixo por temporada (não
 # walk-forward incremental) porque o alvo é o parâmetro de FORMA (estável),
