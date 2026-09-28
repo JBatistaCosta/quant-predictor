@@ -436,11 +436,16 @@ function probPeloMenos(lambda, k, dispR) {
   return 1 - poissonCDF(lam, k - 1);
 }
 // Devolve o disp_r certo (já anexado à linha, ver estimativasComDispR) pro
-// λ de um mercado -- só chutes (total) e chutes ao gol têm calibração NB;
-// gols (thinning/direto) devolve null e probPeloMenos cai pra Poisson.
+// λ de um mercado -- chutes (total), chutes ao gol e assistências têm
+// calibração NB; gols (thinning/direto) devolve null e probPeloMenos cai
+// pra Poisson. Assistências: NB2 calibrado via MLE+LRT (achado 28/09,
+// arquivos_do_claude/analisar_nb2_assistencias.py) -- Poisson subestimava
+// a linha "2+" em até 5,5x e a "3+" em até 13,4x em certas faixas de λ
+// (calibração por decil OOS), NB2 corrige bem mais perto de 1.
 function dispRParaMercado(l, lambdaKey) {
   if (lambdaKey === 'lambda_chutes_jogo') return l._dispRChutes;
   if (lambdaKey === 'lambda_chutes_no_alvo_jogo') return l._dispRChutesNoAlvo;
+  if (lambdaKey === 'lambda_xa_jogo') return l._dispRAssistencias;
   return null;
 }
 // `lambda_xa_jogo` é o xA PREVISTO (regressor RMSE contra a métrica contínua
@@ -1299,18 +1304,18 @@ const COLUNAS_EXPORT_JOGADOR_MERCADOS_BASE = [
 ];
 
 function SecaoJogadorMercados({
-  estimativas, dispRChutes, dispRChutesNoAlvo, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
+  estimativas, dispRChutes, dispRChutesNoAlvo, dispRAssistencias, homeTeamId, homeNome, awayNome, matchDate, matchStatus,
   onSincronizarEscalacao, sincronizandoEscalacao, msgSincEscalacao, erroSincEscalacao,
 }) {
-  // Anexa disp_r (NB de chutes totais e chutes ao gol, calibrados por liga)
-  // em cada linha -- mais simples que rotear por prop separada até cada
-  // consumidor (COLUNAS_JOGADOR_MERCADOS é config de módulo,
-  // TabelaOddsJustasIndividual/comparacaoEVLinhas já iteram `l` linha a
-  // linha). `null` quando a liga ainda não tem calibração própria --
+  // Anexa disp_r (NB de chutes totais, chutes ao gol e assistências,
+  // calibrados por liga) em cada linha -- mais simples que rotear por prop
+  // separada até cada consumidor (COLUNAS_JOGADOR_MERCADOS é config de
+  // módulo, TabelaOddsJustasIndividual/comparacaoEVLinhas já iteram `l`
+  // linha a linha). `null` quando a liga ainda não tem calibração própria --
   // probPeloMenos cai pra Poisson (ver dispRParaMercado).
   const estimativasComDispR = useMemo(
-    () => (estimativas || []).map((e) => ({ ...e, _dispRChutes: dispRChutes, _dispRChutesNoAlvo: dispRChutesNoAlvo })),
-    [estimativas, dispRChutes, dispRChutesNoAlvo]
+    () => (estimativas || []).map((e) => ({ ...e, _dispRChutes: dispRChutes, _dispRChutesNoAlvo: dispRChutesNoAlvo, _dispRAssistencias: dispRAssistencias })),
+    [estimativas, dispRChutes, dispRChutesNoAlvo, dispRAssistencias]
   );
   const fontesDisponiveis = useMemo(
     () => new Set((estimativasComDispR || []).map((e) => e.fonte_titular)),
@@ -2074,6 +2079,11 @@ export default function AnaliseAvancadaEvento() {
   // puro automaticamente -- sem precisar de um valor "padrão genérico" aqui.
   const [dispRChutes, setDispRChutes] = useState(null);
   const [dispRChutesNoAlvo, setDispRChutesNoAlvo] = useState(null);
+  // Mesma coisa pro mercado de ASSISTÊNCIAS -- NB2 calibrado via MLE+LRT
+  // (achado 28/09, arquivos_do_claude/analisar_nb2_assistencias.py), não
+  // método dos momentos como chutes/chutes-no-alvo, mas mesmo padrão de
+  // storage/fallback gracioso.
+  const [dispRAssistencias, setDispRAssistencias] = useState(null);
   // Esquema tático: formação DESTA partida (só existe depois da escalação
   // oficial sair) + formações recentes dos dois times (existe sempre que
   // eles já jogaram, então é o que serve pra ANTECIPAR o desenho do jogo).
@@ -2147,7 +2157,7 @@ export default function AnaliseAvancadaEvento() {
         // não precisa de paginação.
         const inicioJanelaTatica = new Date(new Date(j.match_date).getTime() - 730 * 24 * 60 * 60 * 1000).toISOString();
 
-        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }, matrizConfRows] = await Promise.all([
+        const [{ data: est, error: erroEst }, odds, corners, cartoes, { data: cartoesModeloRows }, { data: calib }, { data: jogadorEst }, { data: dispRRow }, { data: dispRNoAlvoRow }, { data: dispRAssistRow }, { data: formPartida }, { data: formRecentes }, { data: estadoRecente }, { data: respEvento }, matrizConfRows] = await Promise.all([
           supabase
             .from('model_match_estimates')
             .select('model_name, params')
@@ -2230,6 +2240,20 @@ export default function AnaliseAvancadaEvento() {
                 .eq('league_id', j.league_id)
                 .eq('model_name', 'jogador_chutes_no_alvo_negbin_v1')
                 .eq('stat', 'chutes_no_alvo')
+                .eq('param_name', 'disp_r')
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+          // Mesma coisa pro mercado de ASSISTÊNCIAS -- calibração NB2 via
+          // MLE+LRT (arquivos_do_claude/analisar_nb2_assistencias.py, achado
+          // 28/09: Poisson subestimava a linha "2+" em até 5,5x em certas
+          // faixas de λ, mesmo já com o λ corrigido pela calibração cloglog).
+          j.league_id
+            ? supabase
+                .from('league_model_params')
+                .select('param_value')
+                .eq('league_id', j.league_id)
+                .eq('model_name', 'jogador_assistencias_negbin_v1')
+                .eq('stat', 'assistencias')
                 .eq('param_name', 'disp_r')
                 .maybeSingle()
             : Promise.resolve({ data: null }),
@@ -2319,6 +2343,7 @@ export default function AnaliseAvancadaEvento() {
         setJogadorEstimativas(jogadorEst || []);
         setDispRChutes(dispRRow?.param_value != null ? Number(dispRRow.param_value) : null);
         setDispRChutesNoAlvo(dispRNoAlvoRow?.param_value != null ? Number(dispRNoAlvoRow.param_value) : null);
+        setDispRAssistencias(dispRAssistRow?.param_value != null ? Number(dispRAssistRow.param_value) : null);
         setFormacaoPartida(formPartida || []);
         setFormacoesRecentes(formRecentes || []);
         setGameStateRecente(estadoRecente || []);
@@ -2949,6 +2974,7 @@ export default function AnaliseAvancadaEvento() {
             estimativas={jogadorEstimativas}
             dispRChutes={dispRChutes}
             dispRChutesNoAlvo={dispRChutesNoAlvo}
+            dispRAssistencias={dispRAssistencias}
             homeTeamId={jogo.home?.id}
             homeNome={jogo.home?.name}
             awayNome={jogo.away?.name}
