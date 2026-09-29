@@ -2,6 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCheck, Target, Zap, AlertTriangle, Crosshair, Activity, Flag, Scale, FileJson, Check, X, Camera, Loader2, PlayCircle, DollarSign, ScanLine, TrendingUp, Grid3x3, Copy, ClipboardPaste, Trash2, Undo2, Save, FolderOpen } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
+import ImportarEquipesBanco from '../components/ImportarEquipesBanco';
+import { carregarFotoEquipe } from '../utils/equipeBanco';
 import {
   factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
   LIGA_MEDIA_MANDANTE, LIGA_MEDIA_VISITANTE, LIGA_MEDIA_GERAL, GAMMA_MANDANTE, GAMMA_VISITANTE,
@@ -123,6 +125,13 @@ export default function AnaliseEvento() {
   // Calculator State
   const [team1Id, setTeam1Id] = useState(36); // Portugal
   const [team2Id, setTeam2Id] = useState(32); // RD Congo
+  // Equipes importadas do banco (qualquer time da tabela `teams`). Quando preenchidas,
+  // têm prioridade sobre a seleção da lista fixa da Copa (team1Id/team2Id).
+  // Formato: { id: 'db-123', teamId: 123, name, rating }.
+  const [equipeBanco1, setEquipeBanco1] = useState(null);
+  const [equipeBanco2, setEquipeBanco2] = useState(null);
+  const [importandoBanco, setImportandoBanco] = useState(false);
+  const [msgImportBanco, setMsgImportBanco] = useState('');
   // Os valores ficam como TEXTO (string) enquanto o usuário digita — isso permite
   // apagar a caixa inteira e ela ficar vazia, em vez de "saltar" para 0 sozinha.
   // A conversão para número só acontece no momento do cálculo (função toNumber).
@@ -269,6 +278,70 @@ export default function AnaliseEvento() {
     setSortConfig({ key, direction });
   };
 
+  const resolverEquipe = (equipeBanco, id) => equipeBanco ?? selecoesData.find(t => t.id === Number(id));
+
+  // Importa Elo + médias das duas equipes do banco, usando só jogos anteriores à data.
+  const importarEquipesDoBanco = async (eqA, eqB, dataRef) => {
+    if (!supabaseAtivo) return;
+    setImportandoBanco(true);
+    setMsgImportBanco('');
+    try {
+      const [fA, fB] = await Promise.all([
+        carregarFotoEquipe(supabase, eqA, dataRef),
+        carregarFotoEquipe(supabase, eqB, dataRef),
+      ]);
+      const fmt = (v, d = 2) => (v != null ? v.toFixed(d) : null);
+      setEquipeBanco1({ id: `db-${eqA.id}`, teamId: eqA.id, name: eqA.name, rating: fA.rating ?? 1500 });
+      setEquipeBanco2({ id: `db-${eqB.id}`, teamId: eqB.id, name: eqB.name, rating: fB.rating ?? 1500 });
+      // Só sobrescreve o campo quando há dado; senão mantém o que já estava (evita "NaN").
+      setMetrics(prev => ({
+        ...prev,
+        xg1: fmt(fA.medias.xg) ?? prev.xg1, xga1: fmt(fA.medias.xga) ?? prev.xga1,
+        shots1: fmt(fA.medias.chutes, 1) ?? prev.shots1, shotsOnTarget1: fmt(fA.medias.chutesNoGol, 1) ?? prev.shotsOnTarget1,
+        corners1: fmt(fA.medias.escanteios) ?? prev.corners1,
+        xg2: fmt(fB.medias.xg) ?? prev.xg2, xga2: fmt(fB.medias.xga) ?? prev.xga2,
+        shots2: fmt(fB.medias.chutes, 1) ?? prev.shots2, shotsOnTarget2: fmt(fB.medias.chutesNoGol, 1) ?? prev.shotsOnTarget2,
+        corners2: fmt(fB.medias.escanteios) ?? prev.corners2,
+        poss1: '50', poss2: '50',
+      }));
+      const paraHist = (h) => Array.from({ length: 5 }, (_, i) => ({
+        xg: h[i]?.xg != null ? String(h[i].xg) : '',
+        xga: h[i]?.xga != null ? String(h[i].xga) : '',
+      }));
+      setHistorico1(paraHist(fA.historico));
+      setHistorico2(paraHist(fB.historico));
+      setMarkovEventRates({
+        chutes1: fA.markov.chutes, chutes2: fB.markov.chutes,
+        chutesNoAlvo1: fA.markov.chutesNoAlvo, chutesNoAlvo2: fB.markov.chutesNoAlvo,
+        cartaoAmarelo1: fA.markov.cartaoAmarelo, cartaoAmarelo2: fB.markov.cartaoAmarelo,
+        cartaoVermelho1: fA.markov.cartaoVermelho, cartaoVermelho2: fB.markov.cartaoVermelho,
+        escanteio1: fA.markov.escanteio, escanteio2: fB.markov.escanteio,
+        falta1: fA.markov.falta, falta2: fB.markov.falta,
+        escanteioDispR: null, faltaDispR: null,
+      });
+      const ligaId = fA.ligaId ?? fB.ligaId ?? null;
+      setMarkovLeagueId(ligaId);
+      setMarkovParams(await carregarMarkovParams(supabase, ligaId));
+      setBookieOddsData(null);
+      setResults(null);
+
+      const aviso = (nome, f) => {
+        if (f.jogos === 0) return `${nome}: nenhum jogo terminado antes de ${dataRef} — dados não importados`;
+        const partes = [`${nome}: ${f.jogos} jogos`];
+        if (f.jogosComXg < f.jogos) partes.push(`xG em ${f.jogosComXg}`);
+        if (f.jogos < 5) partes.push('amostra pequena');
+        if (f.rating == null) partes.push('sem Elo (usando 1500)');
+        else if (f.ratingOrigem?.startsWith('Elo ATUAL')) partes.push('Elo atual, não da data');
+        return partes.join(', ');
+      };
+      setMsgImportBanco(`${aviso(eqA.name, fA)} · ${aviso(eqB.name, fB)}`);
+    } catch (e) {
+      setMsgImportBanco('Erro ao importar: ' + (e.message || e));
+    } finally {
+      setImportandoBanco(false);
+    }
+  };
+
   const filteredAndSortedTeams = useMemo(() => {
     let filtered = selecoesData.filter((t) =>
       t.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -307,11 +380,11 @@ export default function AnaliseEvento() {
 
     if (nameT1) {
       const t1 = selecoesData.find(t => t.name.toLowerCase() === nameT1.toLowerCase());
-      if (t1) { setTeam1Id(t1.id); matchedT1 = true; }
+      if (t1) { setTeam1Id(t1.id); setEquipeBanco1(null); matchedT1 = true; }
     }
     if (nameT2) {
       const t2 = selecoesData.find(t => t.name.toLowerCase() === nameT2.toLowerCase());
-      if (t2) { setTeam2Id(t2.id); matchedT2 = true; }
+      if (t2) { setTeam2Id(t2.id); setEquipeBanco2(null); matchedT2 = true; }
     }
 
     const mStats = parsedData.estatistica_media?.mandante?.metricas;
@@ -411,8 +484,8 @@ export default function AnaliseEvento() {
   const salvarSimulacao = async () => {
     if (!supabaseAtivo) return;
     if (!nomeSimulacao.trim()) { setSimMsg('Dê um nome pra essa simulação antes de salvar.'); return; }
-    const t1 = selecoesData.find(t => t.id === Number(team1Id));
-    const t2 = selecoesData.find(t => t.id === Number(team2Id));
+    const t1 = resolverEquipe(equipeBanco1, team1Id);
+    const t2 = resolverEquipe(equipeBanco2, team2Id);
     const { error } = await supabase.from('simulacoes').insert({
       nome: nomeSimulacao.trim(),
       equipe_mandante: t1?.name || '?',
@@ -503,6 +576,9 @@ export default function AnaliseEvento() {
   // pra colar o JSON de novo. Se já existir algo salvo, preenche sozinho.
   useEffect(() => {
     if (!supabaseAtivo) return;
+    // Equipes importadas do banco já trazem seus próprios dados (as-of a data escolhida);
+    // o auto-load abaixo usa o estado ATUAL por nome e sobrescreveria isso.
+    if (equipeBanco1 || equipeBanco2) return;
     const t1 = selecoesData.find(t => t.id === team1Id);
     const t2 = selecoesData.find(t => t.id === team2Id);
     if (!t1 || !t2) return;
@@ -681,7 +757,7 @@ export default function AnaliseEvento() {
     })();
 
     return () => { cancelado = true; };
-  }, [team1Id, team2Id]);
+  }, [team1Id, team2Id, equipeBanco1, equipeBanco2]);
 
   // Conta quantas "seleções" (linhas de aposta) vieram no JSON de odds, só para feedback visual
   const countOddsMarkets = (parsedData) => {
@@ -904,8 +980,8 @@ export default function AnaliseEvento() {
   };
 
   const runAlgorithm = () => {
-    const t1 = selecoesData.find(t => t.id === Number(team1Id));
-    const t2 = selecoesData.find(t => t.id === Number(team2Id));
+    const t1 = resolverEquipe(equipeBanco1, team1Id);
+    const t2 = resolverEquipe(equipeBanco2, team2Id);
 
     // Converte os campos de texto para números só aqui, no momento do cálculo
     // (campo vazio ou "em digitação" vira 0, sem afetar o que está escrito na tela)
@@ -1615,6 +1691,16 @@ export default function AnaliseEvento() {
                 </div>
               )}
 
+              {supabaseAtivo && (
+                <ImportarEquipesBanco
+                  supabase={supabase}
+                  hoje={new Date().toISOString().slice(0, 10)}
+                  carregando={importandoBanco}
+                  mensagem={msgImportBanco}
+                  onImportar={importarEquipesDoBanco}
+                />
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Seleção 1 */}
                 <div className="space-y-4 bg-slate-900 p-5 rounded-xl border border-emerald-500/30 shadow-lg relative overflow-hidden">
@@ -1622,8 +1708,9 @@ export default function AnaliseEvento() {
                   <label className="block text-sm font-bold text-emerald-400 uppercase tracking-wide relative z-10">Equipa 1 (Mandante/Favorita)</label>
                   <select
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-slate-100 outline-none font-semibold relative z-10"
-                    value={team1Id} onChange={(e) => setTeam1Id(e.target.value)}
+                    value={equipeBanco1 ? 'banco' : team1Id} onChange={(e) => { setEquipeBanco1(null); setTeam1Id(e.target.value); }}
                   >
+                    {equipeBanco1 && <option value="banco">{equipeBanco1.name} (Elo: {equipeBanco1.rating}) — banco</option>}
                     {selecoesData.map(t => <option key={`t1-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
                   </select>
 
@@ -1661,8 +1748,9 @@ export default function AnaliseEvento() {
                   <label className="block text-sm font-bold text-orange-400 uppercase tracking-wide relative z-10">Equipa 2 (Visitante/Azarão)</label>
                   <select
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-slate-100 outline-none font-semibold relative z-10"
-                    value={team2Id} onChange={(e) => setTeam2Id(e.target.value)}
+                    value={equipeBanco2 ? 'banco' : team2Id} onChange={(e) => { setEquipeBanco2(null); setTeam2Id(e.target.value); }}
                   >
+                    {equipeBanco2 && <option value="banco">{equipeBanco2.name} (Elo: {equipeBanco2.rating}) — banco</option>}
                     {selecoesData.map(t => <option key={`t2-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
                   </select>
 
