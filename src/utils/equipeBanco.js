@@ -44,14 +44,37 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef) {
   if (erroPartidas) throw erroPartidas;
 
   const ids = (partidas || []).map((p) => p.id);
+  // Duas fontes de estatística por jogo: `match_stats_fotmob` (cobre a maior parte dos jogos,
+  // inclusive os mais recentes — ~19 mil jogos com xG) e `match_stats` (legado, ~9 mil).
+  // Sem juntar as duas, times cujos jogos recentes só existem no FotMob (ex.: Brasileirão)
+  // voltavam com xG/chutes/escanteios vazios. Por campo, FotMob tem prioridade.
   let stats = [];
   if (ids.length > 0) {
-    const { data, error } = await supabase
-      .from('match_stats')
-      .select('match_id, team_id, shots, shots_on_target, possession, corners, fouls, yellow_cards, red_cards, xg')
-      .in('match_id', ids);
-    if (error) throw error;
-    stats = data || [];
+    const [{ data: legado, error: erroLegado }, { data: fotmob, error: erroFotmob }] = await Promise.all([
+      supabase.from('match_stats')
+        .select('match_id, team_id, shots, shots_on_target, possession, corners, fouls, yellow_cards, red_cards, xg')
+        .in('match_id', ids),
+      supabase.from('match_stats_fotmob')
+        .select('match_id, team_id, total_shots, shots_on_target, possession, corners, fouls_committed, yellow_cards, red_cards, xg')
+        .in('match_id', ids),
+    ]);
+    if (erroLegado) throw erroLegado;
+    if (erroFotmob) throw erroFotmob;
+    const chave = (r) => `${r.match_id}:${r.team_id}`;
+    const mapa = new Map();
+    for (const r of legado || []) mapa.set(chave(r), { ...r });
+    for (const f of fotmob || []) {
+      const normalizado = {
+        match_id: f.match_id, team_id: f.team_id, shots: f.total_shots, shots_on_target: f.shots_on_target,
+        possession: f.possession, corners: f.corners, fouls: f.fouls_committed,
+        yellow_cards: f.yellow_cards, red_cards: f.red_cards, xg: f.xg,
+      };
+      const atual = mapa.get(chave(f)) || {};
+      const fundido = { ...atual };
+      for (const [k, v] of Object.entries(normalizado)) if (v !== null && v !== undefined) fundido[k] = v;
+      mapa.set(chave(f), fundido);
+    }
+    stats = [...mapa.values()];
   }
 
   // Por jogo: linha do próprio time + linha do adversário (xGA = xG do adversário).
@@ -125,5 +148,34 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef) {
       escanteio: medias.escanteios,
       falta: col('fouls'),
     },
+  };
+}
+
+// Procura o jogo REAL entre as duas equipes no dia escolhido (nas duas ordens de mando).
+// Retorna null se não existir — aí a simulação é só um "encontro" hipotético.
+export async function buscarJogoReal(supabase, idMandante, idVisitante, dataRef) {
+  const inicio = `${dataRef}T00:00:00Z`;
+  const fim = new Date(new Date(inicio).getTime() + 24 * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('matches')
+    .select('id, match_date, status, home_team_id, away_team_id, home_goals, away_goals, leagues(name)')
+    .gte('match_date', inicio)
+    .lt('match_date', fim)
+    .or(
+      `and(home_team_id.eq.${idMandante},away_team_id.eq.${idVisitante}),` +
+      `and(home_team_id.eq.${idVisitante},away_team_id.eq.${idMandante})`
+    )
+    .limit(1);
+  if (error) throw error;
+  const m = data?.[0];
+  if (!m) return null;
+  const invertido = Number(m.home_team_id) !== Number(idMandante);
+  return {
+    status: m.status,
+    ligaNome: m.leagues?.name ?? null,
+    data: m.match_date?.slice(0, 10),
+    invertido, // true = na vida real o "visitante" daqui foi o mandante
+    golsMandante: invertido ? m.away_goals : m.home_goals, // sempre do ponto de vista de Equipe 1 x Equipe 2
+    golsVisitante: invertido ? m.home_goals : m.away_goals,
   };
 }
