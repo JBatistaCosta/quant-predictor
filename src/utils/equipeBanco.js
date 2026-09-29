@@ -5,12 +5,39 @@
 // client com a chave anon (RLS de leitura pública), então não cria função
 // serverless nova (limite de 12 do Vercel Hobby).
 
-const JOGOS_JANELA = 10;   // jogos usados na média
-const JOGOS_HISTORICO = 5; // últimos jogos p/ a fórmula "Time Decay" (xG/xGA)
+const JOGOS_JANELA_PADRAO = 10; // janelas oferecidas na UI: 5, 10 ou 20
+const JOGOS_HISTORICO = 5;      // últimos jogos p/ a fórmula "Time Decay" (xG/xGA)
+const XI_DECAIMENTO = 0.2;      // mesmo ξ padrão de lambdaFormulas.js: peso = exp(-ξ·i), i=0 é o jogo mais recente
 
-const media = (valores) => {
-  const v = valores.filter((x) => x !== null && x !== undefined && Number.isFinite(Number(x))).map(Number);
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+// Elasticidade do ajuste por Elo do adversário: variação RELATIVA esperada do valor por +400 de Elo do
+// adversário, medida no próprio banco (27.075 pares jogo-time, desde 2023, efeito fixo por time:
+// cada valor dividido pela média do time e regredido no Elo do adversário antes do jogo). Contra
+// adversário mais forte o time cria menos (xG −45%, chutes −36%, escanteios −42%) e sofre mais (xGA +66%).
+// Posse, faltas e cartões não foram medidos, então só recebem o decaimento, sem ajuste por Elo.
+const ELASTICIDADE_ELO = { xg: -0.45, xga: 0.66, chutes: -0.36, chutesNoGol: -0.36, escanteios: -0.42 };
+const FATOR_MIN = 0.5;
+const FATOR_MAX = 1.5;
+
+// Média ponderada com decaimento exponencial; `itens` = [{ valor, i }] com i=0 mais recente.
+const mediaDecaida = (itens) => {
+  let soma = 0;
+  let pesos = 0;
+  for (const { valor, i } of itens) {
+    if (valor === null || valor === undefined || !Number.isFinite(Number(valor))) continue;
+    const w = Math.exp(-XI_DECAIMENTO * i);
+    soma += w * Number(valor);
+    pesos += w;
+  }
+  return pesos > 0 ? soma / pesos : null;
+};
+
+// Traz o valor de um jogo para a "força de adversário" de referência (Elo do adversário da simulação):
+// valor / (1 + β·(EloAdvPassado − EloRef)/400). Sem Elo do jogo ou sem referência, não mexe.
+const ajustarPorElo = (valor, campo, eloAdvPassado, eloRef) => {
+  const beta = ELASTICIDADE_ELO[campo];
+  if (valor === null || valor === undefined || beta === undefined || eloAdvPassado == null || eloRef == null) return valor;
+  const fator = Math.min(FATOR_MAX, Math.max(FATOR_MIN, 1 + beta * ((eloAdvPassado - eloRef) / 400)));
+  return Number(valor) / fator;
 };
 
 // Busca equipes pelo nome (ou apelido). `ilike` escapa % e _ digitados.
@@ -27,58 +54,9 @@ export async function buscarEquipes(supabase, termo) {
   return data || [];
 }
 
-// Retorna { rating, ratingOrigem, jogos, medias, historico, ligaId, ligaNome, ultimoJogo, markov }.
-// `dataRef` = 'YYYY-MM-DD'; entram só jogos com match_date < início desse dia (UTC).
-export async function carregarFotoEquipe(supabase, equipe, dataRef) {
-  const corte = `${dataRef}T00:00:00Z`;
-
-  // Últimos jogos terminados antes da data (mandante ou visitante).
-  const { data: partidas, error: erroPartidas } = await supabase
-    .from('matches')
-    .select('id, match_date, league_id, home_team_id, away_team_id, leagues(name)')
-    .eq('status', 'finished')
-    .lt('match_date', corte)
-    .or(`home_team_id.eq.${equipe.id},away_team_id.eq.${equipe.id}`)
-    .order('match_date', { ascending: false })
-    .limit(JOGOS_JANELA);
-  if (erroPartidas) throw erroPartidas;
-
-  const ids = (partidas || []).map((p) => p.id);
-  let stats = [];
-  if (ids.length > 0) {
-    const { data, error } = await supabase
-      .from('match_stats')
-      .select('match_id, team_id, shots, shots_on_target, possession, corners, fouls, yellow_cards, red_cards, xg')
-      .in('match_id', ids);
-    if (error) throw error;
-    stats = data || [];
-  }
-
-  // Por jogo: linha do próprio time + linha do adversário (xGA = xG do adversário).
-  const porJogo = (partidas || []).map((p) => {
-    const proprio = stats.find((s) => s.match_id === p.id && Number(s.team_id) === Number(equipe.id)) || null;
-    const adversario = stats.find((s) => s.match_id === p.id && Number(s.team_id) !== Number(equipe.id)) || null;
-    return { partida: p, proprio, adversario };
-  });
-
-  const col = (campo) => media(porJogo.map((j) => j.proprio?.[campo]));
-  const medias = {
-    xg: col('xg'),
-    xga: media(porJogo.map((j) => j.adversario?.xg)),
-    chutes: col('shots'),
-    chutesNoGol: col('shots_on_target'),
-    posse: col('possession'),
-    escanteios: col('corners'),
-  };
-
-  const historico = porJogo.slice(0, JOGOS_HISTORICO).map((j) => ({
-    xg: j.proprio?.xg ?? null,
-    xga: j.adversario?.xg ?? null,
-  }));
-
-  // Elo global ANTES da data: última linha do histórico com match_date < dataRef.
-  let rating = null;
-  let ratingOrigem = null;
+// Elo global da equipe ANTES da data (última linha do histórico com match_date < dataRef).
+// Data futura/hipotética = último Elo conhecido. Sem histórico, cai no Elo atual (`team_elo`) com aviso.
+export async function carregarEloEm(supabase, equipe, dataRef) {
   const { data: eloHist } = await supabase
     .from('team_elo_history')
     .select('rating_depois, match_date')
@@ -89,27 +67,144 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef) {
     .order('match_id', { ascending: false })
     .limit(1);
   if (eloHist?.[0]?.rating_depois != null) {
-    rating = Math.round(Number(eloHist[0].rating_depois));
-    ratingOrigem = `Elo global em ${eloHist[0].match_date}`;
-  } else {
-    // Sem histórico anterior à data: usa o Elo atual, avisando que não é "as-of".
-    const { data: eloAtual } = await supabase
-      .from('team_elo')
-      .select('rating')
-      .eq('team_id', equipe.id)
+    return { rating: Math.round(Number(eloHist[0].rating_depois)), ratingOrigem: `Elo global em ${eloHist[0].match_date}` };
+  }
+  const { data: eloAtual } = await supabase
+    .from('team_elo')
+    .select('rating')
+    .eq('team_id', equipe.id)
+    .eq('escopo', 'global')
+    .limit(1);
+  if (eloAtual?.[0]?.rating != null) {
+    return { rating: Math.round(Number(eloAtual[0].rating)), ratingOrigem: 'Elo ATUAL (sem histórico anterior à data)' };
+  }
+  return { rating: null, ratingOrigem: null };
+}
+
+// Retorna { rating, ratingOrigem, jogos, medias, historico, ligaId, ligaNome, ultimoJogo, markov }.
+// `dataRef` = 'YYYY-MM-DD'; entram só jogos com match_date < início desse dia (UTC).
+// opts: { janela = 10 (5/10/20 jogos), ajusteElo = true, eloReferencia = Elo do adversário da simulação,
+//         elo = resultado já carregado de carregarEloEm (evita repetir a consulta) }.
+// Os jogos usados NÃO precisam ser contra o adversário da simulação: cada valor recebe peso de
+// decaimento exponencial pela recência e, se `ajusteElo`, é normalizado pelo Elo do adversário daquele jogo.
+export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
+  const { janela = JOGOS_JANELA_PADRAO, ajusteElo = true, eloReferencia = null } = opts;
+  const corte = `${dataRef}T00:00:00Z`;
+
+  // Últimos jogos terminados antes da data (mandante ou visitante).
+  const { data: partidas, error: erroPartidas } = await supabase
+    .from('matches')
+    .select('id, match_date, league_id, home_team_id, away_team_id, leagues(name)')
+    .eq('status', 'finished')
+    .lt('match_date', corte)
+    .or(`home_team_id.eq.${equipe.id},away_team_id.eq.${equipe.id}`)
+    .order('match_date', { ascending: false })
+    .limit(janela);
+  if (erroPartidas) throw erroPartidas;
+
+  const ids = (partidas || []).map((p) => p.id);
+  // Duas fontes de estatística por jogo: `match_stats_fotmob` (cobre a maior parte dos jogos,
+  // inclusive os mais recentes — ~19 mil jogos com xG) e `match_stats` (legado, ~9 mil).
+  // Sem juntar as duas, times cujos jogos recentes só existem no FotMob (ex.: Brasileirão)
+  // voltavam com xG/chutes/escanteios vazios. Por campo, FotMob tem prioridade.
+  let stats = [];
+  if (ids.length > 0) {
+    const [{ data: legado, error: erroLegado }, { data: fotmob, error: erroFotmob }] = await Promise.all([
+      supabase.from('match_stats')
+        .select('match_id, team_id, shots, shots_on_target, possession, corners, fouls, yellow_cards, red_cards, xg')
+        .in('match_id', ids),
+      supabase.from('match_stats_fotmob')
+        .select('match_id, team_id, total_shots, shots_on_target, possession, corners, fouls_committed, yellow_cards, red_cards, xg')
+        .in('match_id', ids),
+    ]);
+    if (erroLegado) throw erroLegado;
+    if (erroFotmob) throw erroFotmob;
+    const chave = (r) => `${r.match_id}:${r.team_id}`;
+    const mapa = new Map();
+    for (const r of legado || []) mapa.set(chave(r), { ...r });
+    for (const f of fotmob || []) {
+      const normalizado = {
+        match_id: f.match_id, team_id: f.team_id, shots: f.total_shots, shots_on_target: f.shots_on_target,
+        possession: f.possession, corners: f.corners, fouls: f.fouls_committed,
+        yellow_cards: f.yellow_cards, red_cards: f.red_cards, xg: f.xg,
+      };
+      const atual = mapa.get(chave(f)) || {};
+      const fundido = { ...atual };
+      for (const [k, v] of Object.entries(normalizado)) if (v !== null && v !== undefined) fundido[k] = v;
+      mapa.set(chave(f), fundido);
+    }
+    stats = [...mapa.values()];
+  }
+
+  // Elo (antes do jogo) do adversário de cada partida, para o ajuste por força do adversário.
+  const eloAdvPorJogo = new Map();
+  let jogosEloAproximado = 0;
+  if (ajusteElo && ids.length > 0) {
+    const { data: eloJogos } = await supabase
+      .from('team_elo_history')
+      .select('match_id, team_id, rating_antes')
       .eq('escopo', 'global')
-      .limit(1);
-    if (eloAtual?.[0]?.rating != null) {
-      rating = Math.round(Number(eloAtual[0].rating));
-      ratingOrigem = 'Elo ATUAL (sem histórico anterior à data)';
+      .in('match_id', ids);
+    for (const r of eloJogos || []) {
+      if (Number(r.team_id) !== Number(equipe.id)) eloAdvPorJogo.set(r.match_id, Number(r.rating_antes));
+    }
+    // Jogos sem linha em team_elo_history (o histórico de Elo pode estar defasado em relação aos jogos
+    // mais recentes): usa o último Elo conhecido do adversário (`team_elo`) — aproximação, contada à parte.
+    const semElo = (partidas || []).filter((p) => !eloAdvPorJogo.has(p.id));
+    const idsAdv = [...new Set(semElo.map((p) => (Number(p.home_team_id) === Number(equipe.id) ? p.away_team_id : p.home_team_id)))];
+    if (idsAdv.length > 0) {
+      const { data: eloAtual } = await supabase
+        .from('team_elo').select('team_id, rating').eq('escopo', 'global').in('team_id', idsAdv);
+      const porTime = new Map((eloAtual || []).map((r) => [Number(r.team_id), Number(r.rating)]));
+      for (const p of semElo) {
+        const adv = Number(p.home_team_id) === Number(equipe.id) ? p.away_team_id : p.home_team_id;
+        if (porTime.has(Number(adv))) { eloAdvPorJogo.set(p.id, porTime.get(Number(adv))); jogosEloAproximado += 1; }
+      }
     }
   }
+
+  // Por jogo: linha do próprio time + linha do adversário (xGA = xG do adversário).
+  const porJogo = (partidas || []).map((p) => {
+    const proprio = stats.find((s) => s.match_id === p.id && Number(s.team_id) === Number(equipe.id)) || null;
+    const adversario = stats.find((s) => s.match_id === p.id && Number(s.team_id) !== Number(equipe.id)) || null;
+    return { partida: p, proprio, adversario, eloAdv: eloAdvPorJogo.get(p.id) ?? null };
+  });
+  const jogosComEloAdv = porJogo.filter((j) => j.eloAdv != null).length;
+  const usaAjuste = ajusteElo && eloReferencia != null;
+
+  // Média com decaimento; `campo` de ajuste por Elo só se aplica às métricas com elasticidade medida.
+  const valorDe = (j, extrair, campoElo) => {
+    const v = extrair(j);
+    return usaAjuste && campoElo ? ajustarPorElo(v, campoElo, j.eloAdv, eloReferencia) : v;
+  };
+  const decaida = (extrair, campoElo) =>
+    mediaDecaida(porJogo.map((j, i) => ({ valor: valorDe(j, extrair, campoElo), i })));
+  const col = (campo, campoElo) => decaida((j) => j.proprio?.[campo], campoElo);
+  const medias = {
+    xg: col('xg', 'xg'),
+    xga: decaida((j) => j.adversario?.xg, 'xga'),
+    chutes: col('shots', 'chutes'),
+    chutesNoGol: col('shots_on_target', 'chutesNoGol'),
+    posse: col('possession'),
+    escanteios: col('corners', 'escanteios'),
+  };
+
+  const historico = porJogo.slice(0, JOGOS_HISTORICO).map((j) => ({
+    xg: valorDe(j, (x) => x.proprio?.xg ?? null, 'xg'),
+    xga: valorDe(j, (x) => x.adversario?.xg ?? null, 'xga'),
+  }));
+
+  const { rating, ratingOrigem } = opts.elo ?? await carregarEloEm(supabase, equipe, dataRef);
 
   const ultima = partidas?.[0] || null;
   return {
     rating,
     ratingOrigem,
     jogos: porJogo.length,
+    janela,
+    ajusteEloAplicado: usaAjuste,
+    jogosComEloAdv,
+    jogosEloAproximado,
     jogosComXg: porJogo.filter((j) => j.proprio?.xg != null).length,
     medias,
     historico,
@@ -125,5 +220,34 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef) {
       escanteio: medias.escanteios,
       falta: col('fouls'),
     },
+  };
+}
+
+// Procura o jogo REAL entre as duas equipes no dia escolhido (nas duas ordens de mando).
+// Retorna null se não existir — aí a simulação é só um "encontro" hipotético.
+export async function buscarJogoReal(supabase, idMandante, idVisitante, dataRef) {
+  const inicio = `${dataRef}T00:00:00Z`;
+  const fim = new Date(new Date(inicio).getTime() + 24 * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('matches')
+    .select('id, match_date, status, home_team_id, away_team_id, home_goals, away_goals, leagues(name)')
+    .gte('match_date', inicio)
+    .lt('match_date', fim)
+    .or(
+      `and(home_team_id.eq.${idMandante},away_team_id.eq.${idVisitante}),` +
+      `and(home_team_id.eq.${idVisitante},away_team_id.eq.${idMandante})`
+    )
+    .limit(1);
+  if (error) throw error;
+  const m = data?.[0];
+  if (!m) return null;
+  const invertido = Number(m.home_team_id) !== Number(idMandante);
+  return {
+    status: m.status,
+    ligaNome: m.leagues?.name ?? null,
+    data: m.match_date?.slice(0, 10),
+    invertido, // true = na vida real o "visitante" daqui foi o mandante
+    golsMandante: invertido ? m.away_goals : m.home_goals, // sempre do ponto de vista de Equipe 1 x Equipe 2
+    golsVisitante: invertido ? m.home_goals : m.away_goals,
   };
 }

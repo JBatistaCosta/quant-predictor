@@ -68,6 +68,8 @@ export default function ImportarEquipesBanco({ supabase, hoje, carregando, mensa
   const [eq1, setEq1] = useState(null);
   const [eq2, setEq2] = useState(null);
   const [data, setData] = useState(hoje);
+  const [janela, setJanela] = useState(10);
+  const [ajusteElo, setAjusteElo] = useState(true);
 
   const podeImportar = eq1 && eq2 && eq1.id !== eq2.id && data && !carregando;
 
@@ -77,8 +79,9 @@ export default function ImportarEquipesBanco({ supabase, hoje, carregando, mensa
         <Database size={16} /> Importar do banco (qualquer equipe)
       </div>
       <p className="text-xs text-slate-400">
-        Busque duas equipes e uma data. Elo e médias (xG, xGA, chutes, escanteios…) vêm dos últimos 10 jogos terminados
-        <strong> antes </strong>da data — sem usar informação do futuro. Equipe 1 = mandante.
+        Busque duas equipes e uma data (pode ser uma data futura/hipotética). Cada parâmetro (xG, xGA, chutes, escanteios…) é a
+        média dos últimos jogos <strong>anteriores à data</strong>, com peso maior nos mais recentes (time-decay), contra
+        quaisquer adversários — não só entre as duas equipes. Equipe 1 = mandante.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <BuscaEquipe supabase={supabase} rotulo="Equipe 1 (mandante)" cor="text-emerald-400" selecionada={eq1} onSelecionar={setEq1} />
@@ -88,10 +91,24 @@ export default function ImportarEquipesBanco({ supabase, hoje, carregando, mensa
           <input type="date" value={data} onChange={(e) => setData(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-100" />
         </div>
       </div>
+      <div className="flex items-center gap-5 flex-wrap text-xs text-slate-300">
+        <label className="flex items-center gap-2">
+          Últimos
+          <select value={janela} onChange={(e) => setJanela(Number(e.target.value))} className="bg-slate-800 border border-slate-600 rounded-md p-1.5 text-slate-100">
+            <option value={5}>5 jogos</option>
+            <option value={10}>10 jogos</option>
+            <option value={20}>20 jogos</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer" title="Cada jogo passado é normalizado pelo Elo do adversário daquele dia, tomando como referência o Elo do adversário da simulação.">
+          <input type="checkbox" checked={ajusteElo} onChange={(e) => setAjusteElo(e.target.checked)} />
+          Ajustar pelo Elo do adversário de cada jogo
+        </label>
+      </div>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <span className="text-xs text-slate-300">{mensagem}</span>
         <button
-          type="button" disabled={!podeImportar} onClick={() => onImportar(eq1, eq2, data)}
+          type="button" disabled={!podeImportar} onClick={() => onImportar(eq1, eq2, data, { janela, ajusteElo })}
           className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2"
         >
           {carregando && <Loader2 size={14} className="animate-spin" />} Importar dados

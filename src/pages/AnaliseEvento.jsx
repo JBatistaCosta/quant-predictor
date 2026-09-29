@@ -3,7 +3,7 @@ import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCh
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
 import ImportarEquipesBanco from '../components/ImportarEquipesBanco';
-import { carregarFotoEquipe } from '../utils/equipeBanco';
+import { carregarFotoEquipe, carregarEloEm, buscarJogoReal } from '../utils/equipeBanco';
 import {
   factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
   LIGA_MEDIA_MANDANTE, LIGA_MEDIA_VISITANTE, LIGA_MEDIA_GERAL, GAMMA_MANDANTE, GAMMA_VISITANTE,
@@ -132,6 +132,8 @@ export default function AnaliseEvento() {
   const [equipeBanco2, setEquipeBanco2] = useState(null);
   const [importandoBanco, setImportandoBanco] = useState(false);
   const [msgImportBanco, setMsgImportBanco] = useState('');
+  // Jogo real (se existir) entre as duas equipes importadas na data escolhida.
+  const [jogoReal, setJogoReal] = useState(null);
   // Os valores ficam como TEXTO (string) enquanto o usuário digita — isso permite
   // apagar a caixa inteira e ela ficar vazia, em vez de "saltar" para 0 sozinha.
   // A conversão para número só acontece no momento do cálculo (função toNumber).
@@ -281,15 +283,22 @@ export default function AnaliseEvento() {
   const resolverEquipe = (equipeBanco, id) => equipeBanco ?? selecoesData.find(t => t.id === Number(id));
 
   // Importa Elo + médias das duas equipes do banco, usando só jogos anteriores à data.
-  const importarEquipesDoBanco = async (eqA, eqB, dataRef) => {
+  const importarEquipesDoBanco = async (eqA, eqB, dataRef, opcoes = {}) => {
     if (!supabaseAtivo) return;
     setImportandoBanco(true);
     setMsgImportBanco('');
     try {
-      const [fA, fB] = await Promise.all([
-        carregarFotoEquipe(supabase, eqA, dataRef),
-        carregarFotoEquipe(supabase, eqB, dataRef),
+      // Elo dos dois primeiro: cada lado é ajustado tomando o Elo do adversário da simulação como referência.
+      const [eloA, eloB] = await Promise.all([
+        carregarEloEm(supabase, eqA, dataRef),
+        carregarEloEm(supabase, eqB, dataRef),
       ]);
+      const [fA, fB, real] = await Promise.all([
+        carregarFotoEquipe(supabase, eqA, dataRef, { ...opcoes, elo: eloA, eloReferencia: eloB.rating }),
+        carregarFotoEquipe(supabase, eqB, dataRef, { ...opcoes, elo: eloB, eloReferencia: eloA.rating }),
+        buscarJogoReal(supabase, eqA.id, eqB.id, dataRef).catch(() => null),
+      ]);
+      setJogoReal(real ? { ...real, nome1: eqA.name, nome2: eqB.name } : null);
       const fmt = (v, d = 2) => (v != null ? v.toFixed(d) : null);
       setEquipeBanco1({ id: `db-${eqA.id}`, teamId: eqA.id, name: eqA.name, rating: fA.rating ?? 1500 });
       setEquipeBanco2({ id: `db-${eqB.id}`, teamId: eqB.id, name: eqB.name, rating: fB.rating ?? 1500 });
@@ -327,14 +336,17 @@ export default function AnaliseEvento() {
 
       const aviso = (nome, f) => {
         if (f.jogos === 0) return `${nome}: nenhum jogo terminado antes de ${dataRef} — dados não importados`;
-        const partes = [`${nome}: ${f.jogos} jogos`];
+        const partes = [`${nome}: ${f.jogos} jogos (time-decay${f.ajusteEloAplicado ? `, ajuste Elo em ${f.jogosComEloAdv}${f.jogosEloAproximado ? `, ${f.jogosEloAproximado} com Elo atual do adversário` : ''}` : ', sem ajuste Elo'})`];
         if (f.jogosComXg < f.jogos) partes.push(`xG em ${f.jogosComXg}`);
         if (f.jogos < 5) partes.push('amostra pequena');
         if (f.rating == null) partes.push('sem Elo (usando 1500)');
         else if (f.ratingOrigem?.startsWith('Elo ATUAL')) partes.push('Elo atual, não da data');
         return partes.join(', ');
       };
-      setMsgImportBanco(`${aviso(eqA.name, fA)} · ${aviso(eqB.name, fB)}`);
+      const avisoReal = real
+        ? (real.status === 'finished' ? ' · jogo real encontrado (placar aparece ao lado da simulação)' : ' · jogo real encontrado, ainda não disputado')
+        : ' · sem jogo real nessa data (encontro hipotético)';
+      setMsgImportBanco(`${aviso(eqA.name, fA)} · ${aviso(eqB.name, fB)}${avisoReal}`);
     } catch (e) {
       setMsgImportBanco('Erro ao importar: ' + (e.message || e));
     } finally {
@@ -1708,7 +1720,7 @@ export default function AnaliseEvento() {
                   <label className="block text-sm font-bold text-emerald-400 uppercase tracking-wide relative z-10">Equipa 1 (Mandante/Favorita)</label>
                   <select
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-slate-100 outline-none font-semibold relative z-10"
-                    value={equipeBanco1 ? 'banco' : team1Id} onChange={(e) => { setEquipeBanco1(null); setTeam1Id(e.target.value); }}
+                    value={equipeBanco1 ? 'banco' : team1Id} onChange={(e) => { setEquipeBanco1(null); setJogoReal(null); setTeam1Id(e.target.value); }}
                   >
                     {equipeBanco1 && <option value="banco">{equipeBanco1.name} (Elo: {equipeBanco1.rating}) — banco</option>}
                     {selecoesData.map(t => <option key={`t1-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
@@ -1748,7 +1760,7 @@ export default function AnaliseEvento() {
                   <label className="block text-sm font-bold text-orange-400 uppercase tracking-wide relative z-10">Equipa 2 (Visitante/Azarão)</label>
                   <select
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-slate-100 outline-none font-semibold relative z-10"
-                    value={equipeBanco2 ? 'banco' : team2Id} onChange={(e) => { setEquipeBanco2(null); setTeam2Id(e.target.value); }}
+                    value={equipeBanco2 ? 'banco' : team2Id} onChange={(e) => { setEquipeBanco2(null); setJogoReal(null); setTeam2Id(e.target.value); }}
                   >
                     {equipeBanco2 && <option value="banco">{equipeBanco2.name} (Elo: {equipeBanco2.rating}) — banco</option>}
                     {selecoesData.map(t => <option key={`t2-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
@@ -2012,6 +2024,25 @@ export default function AnaliseEvento() {
                       <span className="text-emerald-400">{results.lambda1.toFixed(2)}</span> vs <span className="text-orange-400">{results.lambda2.toFixed(2)}</span>
                     </span>
                   </div>
+
+                  {jogoReal && jogoReal.nome1 === results.t1.name && jogoReal.nome2 === results.t2.name && (
+                    <div className="col-span-3 bg-slate-900 p-4 rounded-xl border border-blue-500/40 flex flex-wrap justify-between items-center gap-2">
+                      <span className="text-sm font-semibold text-blue-400 uppercase">
+                        Jogo real{jogoReal.ligaNome ? ` · ${jogoReal.ligaNome}` : ''} · {jogoReal.data}
+                      </span>
+                      {jogoReal.status === 'finished' && jogoReal.golsMandante != null ? (
+                        <span className="text-lg font-mono text-white">
+                          {results.t1.name} <strong>{jogoReal.golsMandante} x {jogoReal.golsVisitante}</strong> {results.t2.name}
+                          <span className="ml-3 text-xs text-slate-400">
+                            {jogoReal.golsMandante > jogoReal.golsVisitante ? 'Vitória Equipe 1' : jogoReal.golsMandante < jogoReal.golsVisitante ? 'Vitória Equipe 2' : 'Empate'}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-sm text-slate-400">Jogo ainda não disputado (status: {jogoReal.status})</span>
+                      )}
+                      {jogoReal.invertido && <span className="w-full text-[11px] text-yellow-400">Na vida real o mando foi invertido (Equipe 2 jogou em casa); o placar acima já está na ordem Equipe 1 x Equipe 2.</span>}
+                    </div>
+                  )}
 
                   <div className="bg-slate-900 border-t-4 border-emerald-500 p-5 rounded-xl border border-slate-700 flex flex-col items-center justify-center text-center">
                     <span className="text-slate-400 text-[10px] uppercase tracking-wider mb-2 line-clamp-1">{results.t1.name}</span>
