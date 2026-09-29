@@ -3,7 +3,7 @@ import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCh
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
 import ImportarEquipesBanco from '../components/ImportarEquipesBanco';
-import { carregarFotoEquipe, buscarJogoReal } from '../utils/equipeBanco';
+import { carregarFotoEquipe, carregarEloEm, buscarJogoReal } from '../utils/equipeBanco';
 import {
   factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
   LIGA_MEDIA_MANDANTE, LIGA_MEDIA_VISITANTE, LIGA_MEDIA_GERAL, GAMMA_MANDANTE, GAMMA_VISITANTE,
@@ -283,14 +283,19 @@ export default function AnaliseEvento() {
   const resolverEquipe = (equipeBanco, id) => equipeBanco ?? selecoesData.find(t => t.id === Number(id));
 
   // Importa Elo + médias das duas equipes do banco, usando só jogos anteriores à data.
-  const importarEquipesDoBanco = async (eqA, eqB, dataRef) => {
+  const importarEquipesDoBanco = async (eqA, eqB, dataRef, opcoes = {}) => {
     if (!supabaseAtivo) return;
     setImportandoBanco(true);
     setMsgImportBanco('');
     try {
+      // Elo dos dois primeiro: cada lado é ajustado tomando o Elo do adversário da simulação como referência.
+      const [eloA, eloB] = await Promise.all([
+        carregarEloEm(supabase, eqA, dataRef),
+        carregarEloEm(supabase, eqB, dataRef),
+      ]);
       const [fA, fB, real] = await Promise.all([
-        carregarFotoEquipe(supabase, eqA, dataRef),
-        carregarFotoEquipe(supabase, eqB, dataRef),
+        carregarFotoEquipe(supabase, eqA, dataRef, { ...opcoes, elo: eloA, eloReferencia: eloB.rating }),
+        carregarFotoEquipe(supabase, eqB, dataRef, { ...opcoes, elo: eloB, eloReferencia: eloA.rating }),
         buscarJogoReal(supabase, eqA.id, eqB.id, dataRef).catch(() => null),
       ]);
       setJogoReal(real ? { ...real, nome1: eqA.name, nome2: eqB.name } : null);
@@ -331,7 +336,7 @@ export default function AnaliseEvento() {
 
       const aviso = (nome, f) => {
         if (f.jogos === 0) return `${nome}: nenhum jogo terminado antes de ${dataRef} — dados não importados`;
-        const partes = [`${nome}: ${f.jogos} jogos`];
+        const partes = [`${nome}: ${f.jogos} jogos (time-decay${f.ajusteEloAplicado ? `, ajuste Elo em ${f.jogosComEloAdv}${f.jogosEloAproximado ? `, ${f.jogosEloAproximado} com Elo atual do adversário` : ''}` : ', sem ajuste Elo'})`];
         if (f.jogosComXg < f.jogos) partes.push(`xG em ${f.jogosComXg}`);
         if (f.jogos < 5) partes.push('amostra pequena');
         if (f.rating == null) partes.push('sem Elo (usando 1500)');
