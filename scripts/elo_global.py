@@ -44,8 +44,17 @@ Dois modos (--modo):
     seguinte), aborta com erro em vez de aplicar fora de ordem — nesse caso
     rode --modo completo.
 
+  - automatico (usado pelo cron diário): tenta o incremental e, SÓ se ele
+    detectar a condição acima (partida nova com data anterior à mais recente
+    já processada), roda o completo no lugar. Motivo: em 09/2026 duas
+    temporadas antigas de La Liga entraram no banco depois do último
+    recompute e o incremental abortou todos os dias por ~1 mês sem que
+    ninguém percebesse (Elo global parado em 30/08). Qualquer OUTRO erro
+    (banco fora do ar, credencial errada...) continua falhando, sem disparar
+    um recompute completo por engano.
+
 Uso:
-    python scripts/elo_global.py [--modo completo|incremental]
+    python scripts/elo_global.py [--modo completo|incremental|automatico]
 """
 
 import argparse
@@ -203,6 +212,11 @@ def registrar_elo_lote(supabase, rating, contagem, historico, times_para_gravar=
     return len(linhas_elo)
 
 
+class IncrementalForaDeOrdem(Exception):
+    """Há partida nova com data anterior à mais recente já processada: o incremental
+    não pode aplicá-la (ficaria fora da ordem cronológica) e só o completo resolve."""
+
+
 def processar_completo(supabase):
     print("Carregando partidas finalizadas de TODAS as competições...")
     partidas = carregar_partidas_finalizadas(supabase)
@@ -253,7 +267,7 @@ def processar_incremental(supabase):
         data_mais_recente_existente = max(p["match_date"] for p in partidas_existentes)
         data_mais_antiga_nova = min(p["match_date"] for p in partidas_novas)
         if data_mais_antiga_nova < data_mais_recente_existente:
-            sys.exit(
+            raise IncrementalForaDeOrdem(
                 "Partida(s) nova(s) com data ANTERIOR à mais recente já processada "
                 f"({data_mais_antiga_nova} < {data_mais_recente_existente}) -- provável liga/temporada nova "
                 "adicionada com jogos no passado, não um simples acréscimo do dia. "
@@ -270,11 +284,22 @@ def processar_incremental(supabase):
     print(f"OK (incremental): {n_times} times atualizados, {len(partidas_novas)} partidas novas processadas.")
 
 
+def processar_automatico(supabase):
+    """Incremental; se ele recusar por ordem cronológica, faz o completo."""
+    try:
+        processar_incremental(supabase)
+    except IncrementalForaDeOrdem as e:
+        print(f"AVISO: {e}")
+        print("Modo automático: caindo para --modo completo.")
+        processar_completo(supabase)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--modo", choices=["completo", "incremental"], default="completo",
+    ap.add_argument("--modo", choices=["completo", "incremental", "automatico"], default="completo",
                     help="completo = recalcula tudo do zero (usar ao adicionar liga/temporada nova); "
-                         "incremental = só aplica as partidas novas por cima do rating atual")
+                         "incremental = só aplica as partidas novas por cima do rating atual; "
+                         "automatico = incremental, caindo para completo se houver partida fora de ordem")
     args = ap.parse_args()
 
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -284,8 +309,13 @@ def main():
 
     if args.modo == "completo":
         processar_completo(supabase)
+    elif args.modo == "automatico":
+        processar_automatico(supabase)
     else:
-        processar_incremental(supabase)
+        try:
+            processar_incremental(supabase)
+        except IncrementalForaDeOrdem as e:
+            sys.exit(str(e))
 
 
 if __name__ == "__main__":

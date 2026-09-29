@@ -6,15 +6,17 @@ name: Recalcular Elo Global (todas as competições)
 # painel /ratings (RatingClubes.jsx), não alimenta o pipeline de ML (que
 # continua consumindo escopo='liga', isolado por competição, sem mudança).
 #
-# Dois modos (ver docstring do script pro detalhe de quando usar cada um):
-#   - incremental (cron diário): só aplica as partidas novas por cima do
-#     rating atual -- mais barato, certo pro dia a dia (jogos novos das
-#     ligas que já estavam na base).
-#   - completo (só manual, workflow_dispatch): recalcula tudo do zero.
-#     OBRIGATÓRIO rodar depois de adicionar uma liga ou temporada nova —
-#     partidas históricas "novas" (com data no passado) só entram na ordem
-#     cronológica certa com um recompute completo; o modo incremental
-#     detecta esse caso e aborta sozinho pedindo pra rodar completo.
+# Modos (ver docstring do script pro detalhe de quando usar cada um):
+#   - automatico (cron diário): tenta o incremental e, SÓ se ele recusar por
+#     haver partida nova com data no passado (liga/temporada histórica nova),
+#     roda o completo no lugar. Antes disso o cron usava incremental puro e
+#     ficou ~1 mês falhando sem ninguém perceber (Elo global parado em 30/08).
+#   - incremental (manual): só aplica as partidas novas por cima do rating
+#     atual; aborta se detectar partida fora de ordem cronológica.
+#   - completo (manual): recalcula tudo do zero.
+#
+# Se o job falhar por QUALQUER motivo, o último passo abre uma issue no GitHub
+# (ou comenta na que já estiver aberta), pra a falha não passar despercebida.
 #
 # Sem custo de cota externa (não chama nenhuma API de terceiros) — ~30 mil
 # partidas processam em segundos, bem longe do timeout de 30min do job.
@@ -28,13 +30,18 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: "completo = recalcula tudo (usar ao adicionar liga/temporada nova) | incremental = só as partidas novas"
+        description: "automatico = incremental, com fallback p/ completo | completo = recalcula tudo | incremental = só as partidas novas (aborta se houver jogo fora de ordem)"
         required: false
         type: choice
         options:
+          - automatico
           - incremental
           - completo
-        default: incremental
+        default: automatico
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   elo-global:
@@ -61,5 +68,27 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           MODO="${{ inputs.modo }}"
-          if [ -z "$MODO" ]; then MODO="incremental"; fi
+          if [ -z "$MODO" ]; then MODO="automatico"; fi
           python scripts/elo_global.py --modo "$MODO"
+
+      - name: Avisar falha (abre ou comenta numa issue)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const titulo = "Elo global: workflow elo_global falhou";
+            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const corpo = `O workflow **Recalcular Elo Global** falhou em ${new Date().toISOString()}.\n\nExecução: ${url}\n\nEnquanto isso o Elo global (escopo \`global\`) fica defasado, e o ajuste por Elo da Análise de Evento passa a usar o Elo atual do adversário como aproximação.`;
+            const abertas = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo, state: "open", per_page: 100,
+            });
+            const existente = abertas.find((i) => !i.pull_request && i.title === titulo);
+            if (existente) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: existente.number, body: corpo,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title: titulo, body: corpo,
+              });
+            }
