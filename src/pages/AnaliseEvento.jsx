@@ -350,6 +350,10 @@ export default function AnaliseEvento() {
         const partes = [`${nome}: ${f.jogos} jogos (time-decay${f.ajusteEloAplicado ? `, ajuste Elo em ${f.jogosComEloAdv}${f.jogosEloAproximado ? `, ${f.jogosEloAproximado} com Elo atual do adversário` : ''}` : ', sem ajuste Elo'})`];
         if (f.jogosComXg < f.jogos) partes.push(`xG em ${f.jogosComXg}`);
         if (f.jogos < 5) partes.push('amostra pequena');
+        // Faltas/cartões vêm de `match_disciplina` (cartão só com fonte confiável): se não houver dado,
+        // o motor de Markov usa taxa zero — avisa em vez de deixar o zero passar em silêncio.
+        if (f.markov.falta == null) partes.push('sem dado de faltas');
+        if (f.markov.cartaoAmarelo == null) partes.push('sem dado confiável de cartões');
         if (f.rating == null) partes.push('sem Elo (usando 1500)');
         else if (f.ratingOrigem?.startsWith('Elo ATUAL')) partes.push('Elo atual, não da data');
         return partes.join(', ');

@@ -109,29 +109,48 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
   // voltavam com xG/chutes/escanteios vazios. Por campo, FotMob tem prioridade.
   let stats = [];
   if (ids.length > 0) {
-    const [{ data: legado, error: erroLegado }, { data: fotmob, error: erroFotmob }] = await Promise.all([
+    const [{ data: legado, error: erroLegado }, { data: fotmob, error: erroFotmob }, { data: disciplina, error: erroDisciplina }] = await Promise.all([
       supabase.from('match_stats')
         .select('match_id, team_id, shots, shots_on_target, possession, corners, fouls, yellow_cards, red_cards, xg')
         .in('match_id', ids),
       supabase.from('match_stats_fotmob')
-        .select('match_id, team_id, total_shots, shots_on_target, possession, corners, fouls_committed, yellow_cards, red_cards, xg')
+        .select('match_id, team_id, total_shots, shots_on_target, possession, corners, fouls_committed, xg')
+        .in('match_id', ids),
+      // Faltas e cartões: fonte designada pelo projeto (mesma de api/corners-model.js).
+      supabase.from('match_disciplina')
+        .select('match_id, team_id, faltas_cometidas, cartoes_amarelos, cartoes_vermelhos_equiv, fonte_cartoes')
         .in('match_id', ids),
     ]);
     if (erroLegado) throw erroLegado;
     if (erroFotmob) throw erroFotmob;
+    if (erroDisciplina) throw erroDisciplina;
     const chave = (r) => `${r.match_id}:${r.team_id}`;
     const mapa = new Map();
-    for (const r of legado || []) mapa.set(chave(r), { ...r });
+    // Cartões de `match_stats`/`match_stats_fotmob` NÃO são confiáveis (bug documentado: contagem zerada
+    // em boa parte dos jogos — medido: 100% dos amarelos de Palmeiras e Fluminense nos últimos 20 jogos
+    // vêm 0 no FotMob). Descartados aqui; cartões vêm só de `match_disciplina`, filtrados por `fonte_cartoes`.
+    for (const r of legado || []) mapa.set(chave(r), { ...r, yellow_cards: null, red_cards: null });
     for (const f of fotmob || []) {
       const normalizado = {
         match_id: f.match_id, team_id: f.team_id, shots: f.total_shots, shots_on_target: f.shots_on_target,
         possession: f.possession, corners: f.corners, fouls: f.fouls_committed,
-        yellow_cards: f.yellow_cards, red_cards: f.red_cards, xg: f.xg,
+        xg: f.xg,
       };
       const atual = mapa.get(chave(f)) || {};
       const fundido = { ...atual };
       for (const [k, v] of Object.entries(normalizado)) if (v !== null && v !== undefined) fundido[k] = v;
       mapa.set(chave(f), fundido);
+    }
+    // Disciplina: faltas sempre (sem filtro, como a API); cartões só com fonte confiável.
+    const FONTES_CARTAO_OK = new Set(['match_events', 'fallback_fotmob']);
+    for (const d of disciplina || []) {
+      const atual = mapa.get(chave(d)) || { match_id: d.match_id, team_id: d.team_id };
+      if (d.faltas_cometidas !== null && d.faltas_cometidas !== undefined) atual.fouls = d.faltas_cometidas;
+      if (FONTES_CARTAO_OK.has(d.fonte_cartoes)) {
+        atual.yellow_cards = d.cartoes_amarelos;
+        atual.red_cards = d.cartoes_vermelhos_equiv;
+      }
+      mapa.set(chave(d), atual);
     }
     stats = [...mapa.values()];
   }
