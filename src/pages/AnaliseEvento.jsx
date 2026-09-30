@@ -19,7 +19,8 @@ import { extractJsonFromImages } from '../utils/ocr';
 import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
 import { MARKOV_MINUTES, MINUTE_BINS as MARKOV_MINUTE_BIN_LABELS, runMarkovSimulation as runMarkovSimulationDireto } from '../utils/markovEngine';
 import { carregarMarkovParams } from '../utils/markovParams';
-import { ZONAS, simularOrigemChutes } from '../utils/zoneTransitionMatrix';
+import { simularOrigemChutes } from '../utils/zoneTransitionMatrix';
+import MapaZonasChute from '../components/MapaZonasChute';
 
 // --- Funções Matemáticas Auxiliares (Poisson) ---
 
@@ -3018,7 +3019,8 @@ export default function AnaliseEvento() {
                       </span>
                       <span className="text-xs text-slate-500">
                         Simulação separada do motor acima, baseada numa matriz de transição de bola entre 9 zonas do
-                        campo (Achado 15 — StatsBomb, La Liga 2015/16, 552 mil ações). É uma constante universal, igual
+                        campo (Achado 15 — StatsBomb, La Liga 2015/16, 552 mil ações); o chute é então localizado em 14
+                        zonas polares com a distribuição real de ~477 mil chutes do FotMob. É uma constante universal, igual
                         pra qualquer confronto — não foi calibrada pra este jogo, nem por liga, nem por time.
                       </span>
                     </div>
@@ -3028,29 +3030,9 @@ export default function AnaliseEvento() {
                     <div className="mt-4">
                       <p className="text-[11px] text-slate-500 mb-4">
                         De 20.000 posses simuladas, {(zonaResultado.taxaChutePorPosse * 100).toFixed(1)}% terminaram em
-                        chute. Abaixo, de onde veio o chute nessas posses (% do total de chutes simulados).
+                        chute. Abaixo, de onde veio o chute nessas posses (% do total de chutes simulados), em 14 zonas polares sobre o campo (7 anéis de distância ao gol × cone central de ±30° ou aberto).
                       </p>
-                      <div className="grid grid-cols-3 gap-2 max-w-sm mx-auto">
-                        {ZONAS.map((z, idx) => {
-                          const p = zonaResultado.distribuicaoPorZona[idx];
-                          const { background, color } = heatColor(
-                            p,
-                            Math.min(...zonaResultado.distribuicaoPorZona),
-                            Math.max(...zonaResultado.distribuicaoPorZona)
-                          );
-                          return (
-                            <div
-                              key={z.id}
-                              className="aspect-square rounded-lg flex flex-col items-center justify-center text-center p-1"
-                              style={{ background, color }}
-                              title={z.label}
-                            >
-                              <span className="text-[9px] font-bold uppercase leading-tight">{z.label}</span>
-                              <span className="text-sm font-black font-mono mt-1">{(p * 100).toFixed(1)}%</span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <MapaZonasChute distribuicao={zonaResultado.distribuicaoPorZonaFina} />
                       <p className="text-[11px] text-yellow-400/80 mt-4 flex items-start gap-1.5">
                         <AlertTriangle size={12} className="mt-0.5 shrink-0"/>
                         Descritivo, sem IC 95% — amostra externa de uma liga/temporada, sem validação contra o dado do
