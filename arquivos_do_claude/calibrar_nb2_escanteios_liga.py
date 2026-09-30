@@ -24,6 +24,12 @@ Uso (leitura pública; chave anon basta para ler):
     set SUPABASE_KEY=<anon ou service_role>
     python calibrar_nb2_escanteios_liga.py --liga-id 1
     python calibrar_nb2_escanteios_liga.py --liga-id 1 --gravar   # exige service_role; grava só se passar nos critérios
+    python calibrar_nb2_escanteios_liga.py --liga-id 28 --historico todas   # copas: μ com o histórico dos times em QUALQUER competição
+
+`--historico liga` (padrão) só usa jogos anteriores DA PRÓPRIA liga para montar o μ. Em copas (poucos
+jogos por time por ano) isso deixa a maioria dos jogos de fora (Copa do Brasil: 133 de 371 utilizáveis).
+`--historico todas` usa, para cada time, os jogos anteriores em todas as competições do banco, o que
+deixa quase todos utilizáveis. Os dois modos emitem linhas só para jogos da liga-alvo.
 """
 
 from __future__ import annotations
@@ -96,6 +102,35 @@ def carregar_jogos(api: Api, liga_id: int) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
+def carregar_pool_todas(api: Api, liga_id: int) -> pd.DataFrame:
+    """Jogos com escanteios de TODAS as competições em que os times da liga-alvo jogaram (coluna `alvo`
+    marca os da liga-alvo). Serve só para alimentar o histórico dos times; o μ continua walk-forward."""
+    alvo = api.get_all("matches", {"select": "home_team_id,away_team_id", "league_id": f"eq.{liga_id}", "status": "eq.finished"})
+    times = sorted({t for p in alvo for t in (p["home_team_id"], p["away_team_id"])})
+    partidas: dict[int, dict] = {}
+    for i in range(0, len(times), 40):
+        lote = ",".join(map(str, times[i:i + 40]))
+        for p in api.get_all("matches", {
+                "select": "id,match_date,season,league_id,home_team_id,away_team_id", "status": "eq.finished",
+                "or": f"(home_team_id.in.({lote}),away_team_id.in.({lote}))", "order": "id.asc"}):
+            partidas[p["id"]] = p
+    ids = sorted(partidas)
+    escanteios: dict[tuple[int, int], int] = {}
+    for i in range(0, len(ids), TAMANHO_LOTE_IDS):
+        lote = ids[i:i + TAMANHO_LOTE_IDS]
+        for r in api.get_all("match_stats_fotmob", {
+                "select": "match_id,team_id,corners", "match_id": f"in.({','.join(map(str, lote))})", "order": "id.asc"}):
+            if r["corners"] is not None:
+                escanteios[(r["match_id"], r["team_id"])] = int(r["corners"])
+    linhas = []
+    for pid in ids:
+        p = partidas[pid]
+        h, a = escanteios.get((pid, p["home_team_id"])), escanteios.get((pid, p["away_team_id"]))
+        if h is not None and a is not None:
+            linhas.append({**p, "c_casa": h, "c_fora": a, "alvo": p["league_id"] == liga_id})
+    return pd.DataFrame(linhas).sort_values(["match_date", "id"]).reset_index(drop=True)
+
+
 def montar_mu_walkforward(jogos: pd.DataFrame, k: int, prior: float) -> pd.DataFrame:
     """μ_total por jogo usando SÓ jogos anteriores (ordem cronológica já garantida pela query)."""
     fez: dict[int, deque] = defaultdict(lambda: deque(maxlen=k))
@@ -112,7 +147,8 @@ def montar_mu_walkforward(jogos: pd.DataFrame, k: int, prior: float) -> pd.DataF
 
             mu_casa = encolhida(fez[casa]) * encolhida(sofreu[fora]) / media
             mu_fora = encolhida(fez[fora]) * encolhida(sofreu[casa]) / media
-            saida.append({"season": str(r.season), "mu_bruto": mu_casa + mu_fora, "y": r.c_casa + r.c_fora})
+            if getattr(r, "alvo", True):  # no pool multi-competição só os jogos da liga-alvo viram observação
+                saida.append({"season": str(r.season), "mu_bruto": mu_casa + mu_fora, "y": r.c_casa + r.c_fora})
         fez[casa].append(r.c_casa); sofreu[casa].append(r.c_fora)
         fez[fora].append(r.c_fora); sofreu[fora].append(r.c_casa)
         soma_liga += r.c_casa + r.c_fora; n_liga += 2
@@ -167,12 +203,19 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--liga-id", type=int, default=1)
     ap.add_argument("--bootstrap", type=int, default=1000)
+    ap.add_argument("--historico", choices=["liga", "todas"], default="liga",
+                    help="liga = μ só com jogos da própria liga (padrão); todas = histórico dos times em qualquer competição")
     ap.add_argument("--gravar", action="store_true", help="grava disp_r em league_model_params (exige service_role)")
     args = ap.parse_args()
 
     api = Api(env_obrigatoria("SUPABASE_URL"), env_obrigatoria("SUPABASE_KEY"))
-    jogos = carregar_jogos(api, args.liga_id)
-    print(f"Liga {args.liga_id}: {len(jogos)} jogos terminados com escanteios dos dois times.\n")
+    if args.historico == "todas":
+        jogos = carregar_pool_todas(api, args.liga_id)
+        print(f"Liga {args.liga_id} (histórico: todas as competições): {int(jogos.alvo.sum())} jogos da liga e "
+              f"{int((~jogos.alvo).sum())} de outras competições, todos com escanteios dos dois times.\n")
+    else:
+        jogos = carregar_jogos(api, args.liga_id)
+        print(f"Liga {args.liga_id}: {len(jogos)} jogos terminados com escanteios dos dois times.\n")
 
     # --- sensibilidade do μ (K, encolhimento): o r só é confiável se estável
     print("Sensibilidade ao μ walk-forward (α, r sobre TODAS as temporadas; c = viés médio):")
