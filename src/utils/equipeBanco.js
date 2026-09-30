@@ -251,3 +251,24 @@ export async function buscarJogoReal(supabase, idMandante, idVisitante, dataRef)
     golsVisitante: invertido ? m.home_goals : m.away_goals,
   };
 }
+
+// r (dispersão) da Binomial Negativa de escanteios, calibrado por liga em `league_model_params`
+// (stat='corners', param_name='disp_r') — mesma fonte de `api/corners-model.js`. Tenta as ligas
+// candidatas na ordem (mandante primeiro) e devolve a primeira com calibração; senão `null`, e quem
+// chama mantém o padrão do app. Hoje só as 5 grandes ligas europeias têm calibração.
+export async function carregarDispRCorners(supabase, ligaIds) {
+  const ids = [...new Set((ligaIds || []).filter((x) => x != null))];
+  if (ids.length === 0) return null;
+  const { data, error } = await supabase
+    .from('league_model_params')
+    .select('league_id, param_value')
+    .eq('stat', 'corners')
+    .eq('param_name', 'disp_r')
+    .in('league_id', ids);
+  if (error || !data?.length) return null;
+  for (const id of ids) {
+    const linha = data.find((r) => Number(r.league_id) === Number(id));
+    if (linha && Number(linha.param_value) > 0) return { valor: Number(linha.param_value), ligaId: id };
+  }
+  return null;
+}
