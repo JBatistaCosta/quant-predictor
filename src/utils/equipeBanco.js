@@ -157,6 +157,7 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
 
   // Elo (antes do jogo) do adversário de cada partida, para o ajuste por força do adversário.
   const eloAdvPorJogo = new Map();
+  const eloAproximadoIds = new Set();
   let jogosEloAproximado = 0;
   if (ajusteElo && ids.length > 0) {
     const { data: eloJogos } = await supabase
@@ -177,7 +178,7 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
       const porTime = new Map((eloAtual || []).map((r) => [Number(r.team_id), Number(r.rating)]));
       for (const p of semElo) {
         const adv = Number(p.home_team_id) === Number(equipe.id) ? p.away_team_id : p.home_team_id;
-        if (porTime.has(Number(adv))) { eloAdvPorJogo.set(p.id, porTime.get(Number(adv))); jogosEloAproximado += 1; }
+        if (porTime.has(Number(adv))) { eloAdvPorJogo.set(p.id, porTime.get(Number(adv))); eloAproximadoIds.add(p.id); jogosEloAproximado += 1; }
       }
     }
   }
@@ -213,37 +214,50 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
     xga: valorDe(j, (x) => x.adversario?.xg ?? null, 'xga'),
   }));
 
-  // Histórico jogo a jogo de faltas e cartões (mesmas fontes e mesmo peso de decaimento que alimentam o
-  // motor de Markov), com média simples e média com time-decay lado a lado. Faltas/cartões não levam
-  // ajuste por Elo, então a média com time-decay aqui é exatamente a taxa usada na simulação.
+  // Tabela de dados importados, jogo a jogo, com TODOS os parâmetros (mesmas fontes e mesmo peso de
+  // decaimento que alimentam a simulação). Para cada parâmetro: média simples, média com time-decay e
+  // média com time-decay AJUSTADA POR ELO (a que de fato vai para os campos/simulação; igual à anterior
+  // nos parâmetros sem ajuste — posse, faltas e cartões — ou quando o ajuste está desligado).
+  const CAMPOS_TABELA = [
+    { id: 'xg', get: (j) => j.proprio?.xg, elo: 'xg' },
+    { id: 'xga', get: (j) => j.adversario?.xg, elo: 'xga' },
+    { id: 'chutes', get: (j) => j.proprio?.shots, elo: 'chutes' },
+    { id: 'chutesNoGol', get: (j) => j.proprio?.shots_on_target, elo: 'chutesNoGol' },
+    { id: 'posse', get: (j) => j.proprio?.possession },
+    { id: 'escanteios', get: (j) => j.proprio?.corners, elo: 'escanteios' },
+    { id: 'faltas', get: (j) => j.proprio?.fouls },
+    { id: 'amarelos', get: (j) => j.proprio?.yellow_cards },
+    { id: 'vermelhos', get: (j) => j.proprio?.red_cards },
+  ];
+  const numOuNull = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v));
   const pesosBrutos = porJogo.map((_, i) => Math.exp(-XI_DECAIMENTO * i));
   const somaPesos = pesosBrutos.reduce((a, b) => a + b, 0) || 1;
-  const jogosDisciplina = porJogo.map((j, i) => {
+  const jogosTabela = porJogo.map((j, i) => {
     const p = j.partida;
     const emCasa = Number(p.home_team_id) === Number(equipe.id);
-    return {
+    const linha = {
       data: p.match_date?.slice(0, 10) ?? null,
       local: emCasa ? 'C' : 'F',
       adversario: (emCasa ? p.away?.name : p.home?.name) ?? '?',
-      faltas: j.proprio?.fouls ?? null,
-      amarelos: j.proprio?.yellow_cards ?? null,
-      vermelhos: j.proprio?.red_cards ?? null,
+      eloAdv: j.eloAdv != null ? Math.round(j.eloAdv) : null,
+      eloAproximado: eloAproximadoIds.has(p.id),
       pesoPct: (100 * pesosBrutos[i]) / somaPesos,
     };
+    for (const c of CAMPOS_TABELA) linha[c.id] = numOuNull(c.get(j));
+    return linha;
   });
-  const resumir = (campo) => {
-    const itens = jogosDisciplina.map((g, i) => ({ valor: g[campo], i }));
-    const validos = itens.filter((x) => x.valor !== null && x.valor !== undefined);
-    return {
+  const resumo = {};
+  for (const c of CAMPOS_TABELA) {
+    const itens = jogosTabela.map((g, i) => ({ valor: g[c.id], i }));
+    const validos = itens.filter((x) => x.valor !== null);
+    resumo[c.id] = {
       n: validos.length,
-      simples: validos.length ? validos.reduce((a, x) => a + Number(x.valor), 0) / validos.length : null,
+      simples: validos.length ? validos.reduce((a, x) => a + x.valor, 0) / validos.length : null,
       decay: mediaDecaida(itens),
+      decayUsado: decaida(c.get, c.elo),
     };
-  };
-  const disciplina = {
-    jogos: jogosDisciplina,
-    resumo: { faltas: resumir('faltas'), amarelos: resumir('amarelos'), vermelhos: resumir('vermelhos') },
-  };
+  }
+  const dadosImportados = { jogos: jogosTabela, resumo, ajusteElo: usaAjuste, eloReferencia: usaAjuste ? eloReferencia : null };
 
   const { rating, ratingOrigem } = opts.elo ?? await carregarEloEm(supabase, equipe, dataRef);
 
@@ -259,7 +273,7 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
     jogosComXg: porJogo.filter((j) => j.proprio?.xg != null).length,
     medias,
     historico,
-    disciplina,
+    dadosImportados,
     ligaId: ultima?.league_id ?? null,
     ligaNome: ultima?.leagues?.name ?? null,
     ultimoJogo: ultima?.match_date?.slice(0, 10) ?? null,

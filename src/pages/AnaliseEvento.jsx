@@ -3,7 +3,7 @@ import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCh
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
 import ImportarEquipesBanco from '../components/ImportarEquipesBanco';
-import HistoricoDisciplina from '../components/HistoricoDisciplina';
+import HistoricoImportado from '../components/HistoricoImportado';
 import { carregarFotoEquipe, carregarEloEm, buscarJogoReal, carregarDispRCorners } from '../utils/equipeBanco';
 import {
   factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
@@ -135,7 +135,7 @@ export default function AnaliseEvento() {
   const [msgImportBanco, setMsgImportBanco] = useState('');
   // Jogo real (se existir) entre as duas equipes importadas na data escolhida.
   const [jogoReal, setJogoReal] = useState(null);
-  // Histórico jogo a jogo de faltas/cartões das duas equipes importadas (médias simples e time-decay).
+  // Histórico jogo a jogo de todos os parâmetros importados das duas equipes (médias simples, time-decay e ajustada por Elo).
   const [historicoImportado, setHistoricoImportado] = useState(null);
   // Os valores ficam como TEXTO (string) enquanto o usuário digita — isso permite
   // apagar a caixa inteira e ela ficar vazia, em vez de "saltar" para 0 sozinha.
@@ -302,7 +302,7 @@ export default function AnaliseEvento() {
         buscarJogoReal(supabase, eqA.id, eqB.id, dataRef).catch(() => null),
       ]);
       setJogoReal(real ? { ...real, nome1: eqA.name, nome2: eqB.name } : null);
-      setHistoricoImportado({ eq1: { nome: eqA.name, ...fA.disciplina }, eq2: { nome: eqB.name, ...fB.disciplina } });
+      setHistoricoImportado({ eq1: { nome: eqA.name, ...fA.dadosImportados }, eq2: { nome: eqB.name, ...fB.dadosImportados } });
       const fmt = (v, d = 2) => (v != null ? v.toFixed(d) : null);
       setEquipeBanco1({ id: `db-${eqA.id}`, teamId: eqA.id, name: eqA.name, rating: fA.rating ?? 1500 });
       setEquipeBanco2({ id: `db-${eqB.id}`, teamId: eqB.id, name: eqB.name, rating: fB.rating ?? 1500 });
@@ -1732,7 +1732,7 @@ export default function AnaliseEvento() {
                 />
               )}
 
-              {supabaseAtivo && equipeBanco1 && equipeBanco2 && <HistoricoDisciplina dados={historicoImportado} />}
+              {supabaseAtivo && equipeBanco1 && equipeBanco2 && <HistoricoImportado dados={historicoImportado} />}
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Seleção 1 */}
