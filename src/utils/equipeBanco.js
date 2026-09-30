@@ -94,7 +94,7 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
   // Últimos jogos terminados antes da data (mandante ou visitante).
   const { data: partidas, error: erroPartidas } = await supabase
     .from('matches')
-    .select('id, match_date, league_id, home_team_id, away_team_id, leagues(name)')
+    .select('id, match_date, league_id, home_team_id, away_team_id, leagues(name), home:teams!matches_home_team_id_fkey(name), away:teams!matches_away_team_id_fkey(name)')
     .eq('status', 'finished')
     .lt('match_date', corte)
     .or(`home_team_id.eq.${equipe.id},away_team_id.eq.${equipe.id}`)
@@ -109,29 +109,48 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
   // voltavam com xG/chutes/escanteios vazios. Por campo, FotMob tem prioridade.
   let stats = [];
   if (ids.length > 0) {
-    const [{ data: legado, error: erroLegado }, { data: fotmob, error: erroFotmob }] = await Promise.all([
+    const [{ data: legado, error: erroLegado }, { data: fotmob, error: erroFotmob }, { data: disciplina, error: erroDisciplina }] = await Promise.all([
       supabase.from('match_stats')
         .select('match_id, team_id, shots, shots_on_target, possession, corners, fouls, yellow_cards, red_cards, xg')
         .in('match_id', ids),
       supabase.from('match_stats_fotmob')
-        .select('match_id, team_id, total_shots, shots_on_target, possession, corners, fouls_committed, yellow_cards, red_cards, xg')
+        .select('match_id, team_id, total_shots, shots_on_target, possession, corners, fouls_committed, xg')
+        .in('match_id', ids),
+      // Faltas e cartões: fonte designada pelo projeto (mesma de api/corners-model.js).
+      supabase.from('match_disciplina')
+        .select('match_id, team_id, faltas_cometidas, cartoes_amarelos, cartoes_vermelhos_equiv, fonte_cartoes')
         .in('match_id', ids),
     ]);
     if (erroLegado) throw erroLegado;
     if (erroFotmob) throw erroFotmob;
+    if (erroDisciplina) throw erroDisciplina;
     const chave = (r) => `${r.match_id}:${r.team_id}`;
     const mapa = new Map();
-    for (const r of legado || []) mapa.set(chave(r), { ...r });
+    // Cartões de `match_stats`/`match_stats_fotmob` NÃO são confiáveis (bug documentado: contagem zerada
+    // em boa parte dos jogos — medido: 100% dos amarelos de Palmeiras e Fluminense nos últimos 20 jogos
+    // vêm 0 no FotMob). Descartados aqui; cartões vêm só de `match_disciplina`, filtrados por `fonte_cartoes`.
+    for (const r of legado || []) mapa.set(chave(r), { ...r, yellow_cards: null, red_cards: null });
     for (const f of fotmob || []) {
       const normalizado = {
         match_id: f.match_id, team_id: f.team_id, shots: f.total_shots, shots_on_target: f.shots_on_target,
         possession: f.possession, corners: f.corners, fouls: f.fouls_committed,
-        yellow_cards: f.yellow_cards, red_cards: f.red_cards, xg: f.xg,
+        xg: f.xg,
       };
       const atual = mapa.get(chave(f)) || {};
       const fundido = { ...atual };
       for (const [k, v] of Object.entries(normalizado)) if (v !== null && v !== undefined) fundido[k] = v;
       mapa.set(chave(f), fundido);
+    }
+    // Disciplina: faltas sempre (sem filtro, como a API); cartões só com fonte confiável.
+    const FONTES_CARTAO_OK = new Set(['match_events', 'fallback_fotmob']);
+    for (const d of disciplina || []) {
+      const atual = mapa.get(chave(d)) || { match_id: d.match_id, team_id: d.team_id };
+      if (d.faltas_cometidas !== null && d.faltas_cometidas !== undefined) atual.fouls = d.faltas_cometidas;
+      if (FONTES_CARTAO_OK.has(d.fonte_cartoes)) {
+        atual.yellow_cards = d.cartoes_amarelos;
+        atual.red_cards = d.cartoes_vermelhos_equiv;
+      }
+      mapa.set(chave(d), atual);
     }
     stats = [...mapa.values()];
   }
@@ -194,6 +213,38 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
     xga: valorDe(j, (x) => x.adversario?.xg ?? null, 'xga'),
   }));
 
+  // Histórico jogo a jogo de faltas e cartões (mesmas fontes e mesmo peso de decaimento que alimentam o
+  // motor de Markov), com média simples e média com time-decay lado a lado. Faltas/cartões não levam
+  // ajuste por Elo, então a média com time-decay aqui é exatamente a taxa usada na simulação.
+  const pesosBrutos = porJogo.map((_, i) => Math.exp(-XI_DECAIMENTO * i));
+  const somaPesos = pesosBrutos.reduce((a, b) => a + b, 0) || 1;
+  const jogosDisciplina = porJogo.map((j, i) => {
+    const p = j.partida;
+    const emCasa = Number(p.home_team_id) === Number(equipe.id);
+    return {
+      data: p.match_date?.slice(0, 10) ?? null,
+      local: emCasa ? 'C' : 'F',
+      adversario: (emCasa ? p.away?.name : p.home?.name) ?? '?',
+      faltas: j.proprio?.fouls ?? null,
+      amarelos: j.proprio?.yellow_cards ?? null,
+      vermelhos: j.proprio?.red_cards ?? null,
+      pesoPct: (100 * pesosBrutos[i]) / somaPesos,
+    };
+  });
+  const resumir = (campo) => {
+    const itens = jogosDisciplina.map((g, i) => ({ valor: g[campo], i }));
+    const validos = itens.filter((x) => x.valor !== null && x.valor !== undefined);
+    return {
+      n: validos.length,
+      simples: validos.length ? validos.reduce((a, x) => a + Number(x.valor), 0) / validos.length : null,
+      decay: mediaDecaida(itens),
+    };
+  };
+  const disciplina = {
+    jogos: jogosDisciplina,
+    resumo: { faltas: resumir('faltas'), amarelos: resumir('amarelos'), vermelhos: resumir('vermelhos') },
+  };
+
   const { rating, ratingOrigem } = opts.elo ?? await carregarEloEm(supabase, equipe, dataRef);
 
   const ultima = partidas?.[0] || null;
@@ -208,6 +259,7 @@ export async function carregarFotoEquipe(supabase, equipe, dataRef, opts = {}) {
     jogosComXg: porJogo.filter((j) => j.proprio?.xg != null).length,
     medias,
     historico,
+    disciplina,
     ligaId: ultima?.league_id ?? null,
     ligaNome: ultima?.leagues?.name ?? null,
     ultimoJogo: ultima?.match_date?.slice(0, 10) ?? null,

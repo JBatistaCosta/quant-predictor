@@ -3,6 +3,7 @@ import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCh
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
 import ImportarEquipesBanco from '../components/ImportarEquipesBanco';
+import HistoricoDisciplina from '../components/HistoricoDisciplina';
 import { carregarFotoEquipe, carregarEloEm, buscarJogoReal, carregarDispRCorners } from '../utils/equipeBanco';
 import {
   factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
@@ -134,6 +135,8 @@ export default function AnaliseEvento() {
   const [msgImportBanco, setMsgImportBanco] = useState('');
   // Jogo real (se existir) entre as duas equipes importadas na data escolhida.
   const [jogoReal, setJogoReal] = useState(null);
+  // Histórico jogo a jogo de faltas/cartões das duas equipes importadas (médias simples e time-decay).
+  const [historicoImportado, setHistoricoImportado] = useState(null);
   // Os valores ficam como TEXTO (string) enquanto o usuário digita — isso permite
   // apagar a caixa inteira e ela ficar vazia, em vez de "saltar" para 0 sozinha.
   // A conversão para número só acontece no momento do cálculo (função toNumber).
@@ -299,6 +302,7 @@ export default function AnaliseEvento() {
         buscarJogoReal(supabase, eqA.id, eqB.id, dataRef).catch(() => null),
       ]);
       setJogoReal(real ? { ...real, nome1: eqA.name, nome2: eqB.name } : null);
+      setHistoricoImportado({ eq1: { nome: eqA.name, ...fA.disciplina }, eq2: { nome: eqB.name, ...fB.disciplina } });
       const fmt = (v, d = 2) => (v != null ? v.toFixed(d) : null);
       setEquipeBanco1({ id: `db-${eqA.id}`, teamId: eqA.id, name: eqA.name, rating: fA.rating ?? 1500 });
       setEquipeBanco2({ id: `db-${eqB.id}`, teamId: eqB.id, name: eqB.name, rating: fB.rating ?? 1500 });
@@ -350,6 +354,10 @@ export default function AnaliseEvento() {
         const partes = [`${nome}: ${f.jogos} jogos (time-decay${f.ajusteEloAplicado ? `, ajuste Elo em ${f.jogosComEloAdv}${f.jogosEloAproximado ? `, ${f.jogosEloAproximado} com Elo atual do adversário` : ''}` : ', sem ajuste Elo'})`];
         if (f.jogosComXg < f.jogos) partes.push(`xG em ${f.jogosComXg}`);
         if (f.jogos < 5) partes.push('amostra pequena');
+        // Faltas/cartões vêm de `match_disciplina` (cartão só com fonte confiável): se não houver dado,
+        // o motor de Markov usa taxa zero — avisa em vez de deixar o zero passar em silêncio.
+        if (f.markov.falta == null) partes.push('sem dado de faltas');
+        if (f.markov.cartaoAmarelo == null) partes.push('sem dado confiável de cartões');
         if (f.rating == null) partes.push('sem Elo (usando 1500)');
         else if (f.ratingOrigem?.startsWith('Elo ATUAL')) partes.push('Elo atual, não da data');
         return partes.join(', ');
@@ -1724,6 +1732,8 @@ export default function AnaliseEvento() {
                 />
               )}
 
+              {supabaseAtivo && equipeBanco1 && equipeBanco2 && <HistoricoDisciplina dados={historicoImportado} />}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Seleção 1 */}
                 <div className="space-y-4 bg-slate-900 p-5 rounded-xl border border-emerald-500/30 shadow-lg relative overflow-hidden">
@@ -1731,7 +1741,7 @@ export default function AnaliseEvento() {
                   <label className="block text-sm font-bold text-emerald-400 uppercase tracking-wide relative z-10">Equipa 1 (Mandante/Favorita)</label>
                   <select
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-slate-100 outline-none font-semibold relative z-10"
-                    value={equipeBanco1 ? 'banco' : team1Id} onChange={(e) => { setEquipeBanco1(null); setJogoReal(null); setTeam1Id(e.target.value); }}
+                    value={equipeBanco1 ? 'banco' : team1Id} onChange={(e) => { setEquipeBanco1(null); setJogoReal(null); setHistoricoImportado(null); setTeam1Id(e.target.value); }}
                   >
                     {equipeBanco1 && <option value="banco">{equipeBanco1.name} (Elo: {equipeBanco1.rating}) — banco</option>}
                     {selecoesData.map(t => <option key={`t1-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
@@ -1771,7 +1781,7 @@ export default function AnaliseEvento() {
                   <label className="block text-sm font-bold text-orange-400 uppercase tracking-wide relative z-10">Equipa 2 (Visitante/Azarão)</label>
                   <select
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-3 text-slate-100 outline-none font-semibold relative z-10"
-                    value={equipeBanco2 ? 'banco' : team2Id} onChange={(e) => { setEquipeBanco2(null); setJogoReal(null); setTeam2Id(e.target.value); }}
+                    value={equipeBanco2 ? 'banco' : team2Id} onChange={(e) => { setEquipeBanco2(null); setJogoReal(null); setHistoricoImportado(null); setTeam2Id(e.target.value); }}
                   >
                     {equipeBanco2 && <option value="banco">{equipeBanco2.name} (Elo: {equipeBanco2.rating}) — banco</option>}
                     {selecoesData.map(t => <option key={`t2-${t.id}`} value={t.id}>{t.name} (Elo: {t.rating})</option>)}
