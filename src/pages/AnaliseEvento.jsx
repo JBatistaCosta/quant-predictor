@@ -3,7 +3,7 @@ import { Search, Filter, ChevronUp, ChevronDown, Calculator, BarChart3, ShieldCh
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { selecoesData } from '../data/selecoes';
 import ImportarEquipesBanco from '../components/ImportarEquipesBanco';
-import { carregarFotoEquipe, carregarEloEm, buscarJogoReal } from '../utils/equipeBanco';
+import { carregarFotoEquipe, carregarEloEm, buscarJogoReal, carregarDispRCorners } from '../utils/equipeBanco';
 import {
   factorial, poisson, poissonCDF, DIXON_COLES_RHO, dixonColesTau,
   LIGA_MEDIA_MANDANTE, LIGA_MEDIA_VISITANTE, LIGA_MEDIA_GERAL, GAMMA_MANDANTE, GAMMA_VISITANTE,
@@ -329,6 +329,17 @@ export default function AnaliseEvento() {
         escanteioDispR: null, faltaDispR: null,
       });
       const ligaId = fA.ligaId ?? fB.ligaId ?? null;
+      // r (dispersão) dos escanteios: calibrado da liga quando existe; senão mantém o valor atual do campo.
+      const dispCalibrado = await carregarDispRCorners(supabase, [fA.ligaId, fB.ligaId]).catch(() => null);
+      let textoDisp;
+      if (dispCalibrado) {
+        setCornersModel('negbin');
+        setCornersDisp(dispCalibrado.valor);
+        setMarkovEventRates(prev => (prev ? { ...prev, escanteioDispR: dispCalibrado.valor } : prev));
+        textoDisp = `r de escanteios = ${dispCalibrado.valor.toFixed(1)} (calibrado da liga)`;
+      } else {
+        textoDisp = 'r de escanteios mantido (liga sem calibração — ajuste à mão se quiser)';
+      }
       setMarkovLeagueId(ligaId);
       setMarkovParams(await carregarMarkovParams(supabase, ligaId));
       setBookieOddsData(null);
@@ -346,7 +357,7 @@ export default function AnaliseEvento() {
       const avisoReal = real
         ? (real.status === 'finished' ? ' · jogo real encontrado (placar aparece ao lado da simulação)' : ' · jogo real encontrado, ainda não disputado')
         : ' · sem jogo real nessa data (encontro hipotético)';
-      setMsgImportBanco(`${aviso(eqA.name, fA)} · ${aviso(eqB.name, fB)}${avisoReal}`);
+      setMsgImportBanco(`${aviso(eqA.name, fA)} · ${aviso(eqB.name, fB)}${avisoReal} · ${textoDisp}`);
     } catch (e) {
       setMsgImportBanco('Erro ao importar: ' + (e.message || e));
     } finally {
