@@ -12,6 +12,7 @@ import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Shield, Loader2, UserRound, Landmark, Calendar, Zap, TrendingUp, Trophy, Briefcase, RefreshCw, Ruler, Footprints, FileClock, Tag, BarChart3, Coins } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
+import FichaChutesJogador from '../components/FichaChutesJogador';
 
 const OPCOES_N = [10, 20, 40];
 
@@ -423,6 +424,8 @@ export default function JogadorDetalhe() {
           </div>
         )}
       </div>
+
+      <FichaChutesJogador playerId={id} />
 
       <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 mb-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
