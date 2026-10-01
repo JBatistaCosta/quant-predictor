@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Shield, Calendar, ArrowLeft, AlertTriangle, MapPin, Flag, BarChart3, History, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
+import FichaDefesaTime from '../components/FichaDefesaTime';
 
 const CATEGORIAS_ROTULO = {
   masculino_profissional: 'Masculino Profissional',
@@ -282,6 +283,9 @@ export default function TimeDetalhe() {
           )}
         </div>
       )}
+
+      {/* Fragilidade defensiva por zona de chute (ficha_defesa_time) */}
+      {equipe.pipeline_team_id && <FichaDefesaTime teamId={equipe.pipeline_team_id} />}
 
       {/* Histórico de jogos reais (public.matches), quando o time está vinculado ao pipeline */}
       {equipe.pipeline_team_id && (
