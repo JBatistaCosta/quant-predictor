@@ -37,16 +37,36 @@ function cor(t) {
   return `rgb(${r},${g},${b})`;
 }
 
+// Escala divergente em torno de `centro`: azul-esverdeado (abaixo) <- cinza claro -> vermelho (acima).
+function corDiv(v, centro, dominio) {
+  const t = Math.max(-1, Math.min(1, (v - centro) / (dominio || 1)));
+  const a = Math.abs(t);
+  const alvo = t >= 0 ? [220, 38, 38] : [13, 148, 136];
+  const base = [241, 245, 249];
+  const m = (i) => Math.round(base[i] + (alvo[i] - base[i]) * a);
+  return `rgb(${m(0)},${m(1)},${m(2)})`;
+}
+
 const ic3 = (v, ic) => `${v.toFixed(3)} ± ${ic.toFixed(3)}`;
 const pctIc = (v, ic) => `${(v * 100).toFixed(2)}% ± ${(ic * 100).toFixed(2)}`;
 
-// `tabela=false` e `alternarMetrica=false` = modo ficha de jogador (só mapa + linhas do campo).
-export default function MapaZonasChute({ distribuicao, tabela = true, alternarMetrica = true }) {
+// `tabela=false` e `alternarMetrica=false` = modo ficha (só mapa + linhas do campo).
+// Modo personalizado (ficha defensiva): `valoresCustom` (14 valores), `formatoCustom(v)`,
+// `centro` (escala divergente em torno dele, ex.: 1 = igual ao esperado), `tituloZona(i)`, `legendaCustom`.
+export default function MapaZonasChute({
+  distribuicao, tabela = true, alternarMetrica = true,
+  valoresCustom = null, formatoCustom = null, centro = null, tituloZona = null, legendaCustom = null,
+}) {
   const [metrica, setMetrica] = useState('pct'); // 'pct' | 'xg'
   const [linhas, setLinhas] = useState(true);
-  const valores = metrica === 'pct' ? distribuicao : XG_MEDIO_ZONA_CHUTE;
+  const custom = Array.isArray(valoresCustom);
+  const valores = custom ? valoresCustom : (metrica === 'pct' ? distribuicao : XG_MEDIO_ZONA_CHUTE);
   const max = Math.max(...valores, 1e-9);
-  const fmt = (v) => (metrica === 'pct' ? `${(v * 100).toFixed(1)}%` : v.toFixed(3));
+  const dominio = centro != null ? Math.max(...valores.map((v) => Math.abs(v - centro)), 1e-9) : 1;
+  const fmt = custom && formatoCustom
+    ? formatoCustom
+    : (v) => (metrica === 'pct' ? `${(v * 100).toFixed(1)}%` : v.toFixed(3));
+  const corZona = (v) => (centro != null ? corDiv(v, centro, dominio) : cor(v / max));
 
   const raios = ANEIS_CHUTE_M.map((r) => (Number.isFinite(r) ? r : RAIO_MAX));
   const W = LARG * ESC;
@@ -94,13 +114,13 @@ export default function MapaZonasChute({ distribuicao, tabela = true, alternarMe
           {ZONAS_CHUTE.map((z, i) => {
             const r0 = raios[z.anel];
             const r1 = raios[z.anel + 1];
-            const fill = cor(valores[i] / max);
+            const fill = corZona(valores[i]);
             const caminhos = z.setor === 'central'
               ? [caminhoSetor(r0, r1, -ANGULO_CONE_GRAUS, ANGULO_CONE_GRAUS)]
               : [caminhoSetor(r0, r1, ANGULO_CONE_GRAUS, 90), caminhoSetor(r0, r1, -ANGULO_CONE_GRAUS, -90)];
             return (
               <g key={z.id}>
-                <title>{`${z.label} — simulado ${(distribuicao[i] * 100).toFixed(1)}% dos chutes · real ${pctIc(ESTATISTICA_ZONA_CHUTE[i].pct, ESTATISTICA_ZONA_CHUTE[i].pctIc)} · xG ${ic3(ESTATISTICA_ZONA_CHUTE[i].xg, ESTATISTICA_ZONA_CHUTE[i].xgIc)} · gol/chute ${ic3(ESTATISTICA_ZONA_CHUTE[i].gol, ESTATISTICA_ZONA_CHUTE[i].golIc)}`}</title>
+                <title>{custom && tituloZona ? tituloZona(i) : `${z.label} — simulado ${(distribuicao[i] * 100).toFixed(1)}% dos chutes · real ${pctIc(ESTATISTICA_ZONA_CHUTE[i].pct, ESTATISTICA_ZONA_CHUTE[i].pctIc)} · xG ${ic3(ESTATISTICA_ZONA_CHUTE[i].xg, ESTATISTICA_ZONA_CHUTE[i].xgIc)} · gol/chute ${ic3(ESTATISTICA_ZONA_CHUTE[i].gol, ESTATISTICA_ZONA_CHUTE[i].golIc)}`}</title>
                 {caminhos.map((d, k) => (
                   <path key={k} d={d} fill={fill} stroke="rgba(15,23,42,0.55)" strokeWidth="1" />
                 ))}
@@ -165,9 +185,14 @@ export default function MapaZonasChute({ distribuicao, tabela = true, alternarMe
       </svg>
 
       <div className="flex items-center justify-center gap-2 mt-3 text-[10px] text-slate-400">
-        <span>menos</span>
-        <div className="h-2 w-40 rounded" style={{ background: `linear-gradient(to right, ${cor(0)}, ${cor(0.5)}, ${cor(1)})` }} />
-        <span>mais ({metrica === 'pct' ? '% dos chutes' : 'xG/chute'})</span>
+        <span>{centro != null ? 'menos que o esperado' : 'menos'}</span>
+        <div
+          className="h-2 w-40 rounded"
+          style={{ background: centro != null
+            ? `linear-gradient(to right, ${corDiv(centro - 1, centro, 1)}, ${corDiv(centro, centro, 1)}, ${corDiv(centro + 1, centro, 1)})`
+            : `linear-gradient(to right, ${cor(0)}, ${cor(0.5)}, ${cor(1)})` }}
+        />
+        <span>{centro != null ? 'mais' : 'mais'} ({custom ? (legendaCustom || '') : (metrica === 'pct' ? '% dos chutes' : 'xG/chute')})</span>
       </div>
       {tabela && (
       <div className="overflow-x-auto mt-5">
