@@ -7,7 +7,11 @@
 // produzir (esperado = ataque médio do adversário por zona ANTES do jogo, mín. 10 jogos --
 // controla a força do adversário). O volume é estável (confiabilidade por metades 0,82);
 // já "no alvo/gol acima do esperado" é fraco (0,16/0,24: goleiro e sorte), por isso encolhido.
-// NÃO controla estado do jogo (quem lidera sofre mais chutes) nem mando de campo.
+// Mando de campo: o esperado é multiplicado pelo fator do mando do DEFENSOR (em casa sofre 0,91x,
+// fora 1,13x). Estado do jogo: testado e NÃO corrigido -- quem lidera sofre ~17% mais chutes, mas o
+// ranking dos times é o mesmo olhando só o jogo empatado (r = 0,88): viés de segunda ordem. O índice
+// mede "chutes permitidos" (estrutura defensiva + domínio de jogo), não habilidade defensiva pura.
+// Meia-vida de 2 anos testada em walk-forward (2023/24/25): melhor ou empatada com 6 meses a 4 anos.
 import { useEffect, useState } from 'react';
 import { ShieldAlert, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
@@ -254,11 +258,13 @@ export default function FichaDefesaTime({ teamId }) {
 
       <p className="text-[10px] text-slate-500 mt-4 leading-relaxed">
         Razão = chutes sofridos ÷ chutes que os adversários costumam produzir naquela zona (média do ataque deles
-        antes do jogo, mín. 10 jogos): controla a força do adversário, mas NÃO o estado do jogo (quem lidera sofre mais
-        chutes) nem o mando de campo. Verde/vermelho só quando o intervalo não cobre 1. "Gols esperados" = o que a
-        qualidade média dos chutes sofridos (zona, parte do corpo, tipo de jogada) renderia. A razão é encolhida em
-        direção a 1 (variância entre times estimada na base: 232 times com ≥40 jogos). Só ligas bem cobertas pelo FotMob.
-        A fotografia da base é atualizada manualmente (<code>recalcular_chute_def()</code>).
+        antes do jogo, mín. 10 jogos), já ajustada pelo mando de campo do defensor: controla a força do adversário e
+        o mando. O estado do jogo não é corrigido (quem lidera sofre mais chutes, mas o ranking é o mesmo só no jogo
+        empatado). O índice mede chutes PERMITIDOS — mistura estrutura defensiva e domínio de jogo (time que fica com a
+        bola sofre menos chutes), não é habilidade defensiva pura. Verde/vermelho só quando o intervalo não cobre 1.
+        "Gols esperados" = o que a qualidade média dos chutes sofridos (zona, parte do corpo, tipo de jogada) renderia.
+        A razão é encolhida em direção a 1 (variância entre times estimada na base: 232 times com ≥40 jogos). Só ligas
+        bem cobertas pelo FotMob. A base é recalculada todo dia às 08:00 UTC (pg_cron).
       </p>
     </>
   );
