@@ -1496,6 +1496,61 @@ def _carregar_elo_pre_jogo(supabase: Client, league_ids: list[int]) -> pd.DataFr
     return pd.DataFrame(linhas)
 
 
+def _carregar_elo_xg_pre_jogo(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
+    """`team_elo_xg_history.rating_antes` -- rating do Elo global por xG
+    (`scripts/elo_global_xg.py`) de cada time ANTES de cada partida. Mesma
+    garantia de ponto-no-tempo de `_carregar_elo_pre_jogo` (o rating de
+    "antes" não enxerga o resultado do próprio jogo nem de jogos futuros),
+    mas é um Elo GLOBAL (um único pool de times de todas as competições),
+    atualizado por uma mistura de resultado e xG, e não o Elo isolado por
+    liga que alimenta `elo_home`/`elo_away`. Teste de 01/10/2026 (ver
+    CONTEXTO_PROJETO.md): acrescentar estas variáveis ao catboost_v9 melhora o
+    Brier do 1X2 em +0,0017 +- 0,0005 no walk-forward 2023-2025."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "team_id", "rating_antes"])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("team_elo_xg_history")
+            .select("match_id, team_id, rating_antes")
+            .in_("match_id", lote)
+            .order("match_id")
+            .range(inicio, fim)
+        )
+
+    return pd.DataFrame(_paginar_por_lotes_de_id(factory, match_ids))
+
+
+def acrescentar_elo_xg(dataset: pd.DataFrame, elo_xg: pd.DataFrame) -> pd.DataFrame:
+    """Acrescenta `elo_xg_home`/`elo_xg_away`/`elo_xg_diff` ao dataset (uma
+    linha por partida, colunas `id`, `home_team_id`, `away_team_id`).
+    `elo_xg`: colunas `match_id`, `team_id`, `rating_antes`. Partida sem
+    rating (ex.: ainda não processada) fica NaN -- os modelos de árvore lidam
+    com NaN numérico nativamente. Não altera nenhuma coluna existente."""
+    if elo_xg is None or elo_xg.empty:
+        for coluna in FEATURES_NUMERICAS_ELO_XG:
+            dataset[coluna] = float("nan")
+        return dataset
+    base = elo_xg.drop_duplicates(["match_id", "team_id"])[["match_id", "team_id", "rating_antes"]]
+    casa = base.rename(columns={"match_id": "id", "team_id": "home_team_id", "rating_antes": "elo_xg_home"})
+    fora = base.rename(columns={"match_id": "id", "team_id": "away_team_id", "rating_antes": "elo_xg_away"})
+    dataset = dataset.merge(casa, on=["id", "home_team_id"], how="left")
+    dataset = dataset.merge(fora, on=["id", "away_team_id"], how="left")
+    dataset["elo_xg_diff"] = dataset["elo_xg_home"] - dataset["elo_xg_away"]
+    return dataset
+
+
+def obter_elo_xg_atual(supabase: Client, team_ids: list[int]) -> dict[int, float]:
+    """Rating ATUAL do Elo por xG de cada time (`team_elo_xg`) -- o análogo de
+    `obter_elo_atual` pra montar as features de um jogo que ainda vai
+    acontecer. Ainda NÃO é usado por `rodar_predicoes.montar_features_fixtures`
+    (passo seguinte, só depois de confirmar o ganho no walk-forward oficial)."""
+    if not team_ids:
+        return {}
+    resposta = supabase.table("team_elo_xg").select("team_id, rating").in_("team_id", team_ids).execute()
+    return {linha["team_id"]: linha["rating"] for linha in (resposta.data or [])}
+
+
 def _carregar_squad_rating_pre_jogo(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
     """Força do ELENCO que efetivamente jogou cada partida histórica (v2,
     feature `squad_rating_home`/`_away`) -- média do rating Elo-like de
@@ -4449,6 +4504,15 @@ FEATURES_NUMERICAS_V9_XG_CORRIGIDO = [
 ]
 FEATURES_V9_XG_CORRIGIDO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + CAT_FEATURES
 
+# Elo global por xG (scripts/elo_global_xg.py): rating pre-jogo de cada time e
+# a diferenca (mandante - visitante). Nao entra em nenhuma lista de features de
+# producao ainda -- so em FEATURES_V9_ELO_XG, usada pelo teste comparativo
+# `scripts/comparar_catboost_v9_elo_xg.py` (workflow_dispatch). Resultado do teste
+# local de 01/10/2026 (walk-forward 2023-2025, 6.473 jogos): Brier do 1X2
+# 0,15496 -> 0,15325 (+0,00171 +- 0,00045), igual ao Elo por xG sozinho.
+FEATURES_NUMERICAS_ELO_XG = ["elo_xg_home", "elo_xg_away", "elo_xg_diff"]
+FEATURES_V9_ELO_XG = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + FEATURES_NUMERICAS_ELO_XG + CAT_FEATURES
+
 # v10 — tudo da v9 + features do XI titular expandidas:
 #   • titular_avg_age_home/away: idade média dos titulares NA DATA DA PARTIDA,
 #     calculada de players.birth_date (novo campo, migração 20260729120000).
@@ -5093,6 +5157,9 @@ def montar_dataset_ml_empilhado(
     dataset["resultado_faixa_gols"] = (dataset["home_goals"] + dataset["away_goals"]).apply(codigo_faixa_gols)
     dataset = dataset.merge(elo_home[["id", "home_team_id", "elo_home"]], on=["id", "home_team_id"], how="left")
     dataset = dataset.merge(elo_away[["id", "away_team_id", "elo_away"]], on=["id", "away_team_id"], how="left")
+    # Elo global por xG (ver `_carregar_elo_xg_pre_jogo`) -- colunas novas, fora de
+    # qualquer lista de features de producao; so o teste comparativo as usa.
+    dataset = acrescentar_elo_xg(dataset, _carregar_elo_xg_pre_jogo(supabase, [int(i) for i in dataset["id"].tolist()]))
     dataset = dataset.join(forma_gols, on="id")
     dataset = dataset.join(forma_gols_mesma_liga, on="id")
     dataset = dataset.join(forma_xg, on="id")
@@ -5411,6 +5478,8 @@ def montar_dataset_ml_empilhado(
         "match_id", "match_date", "liga",
         # Elo
         "elo_home", "elo_away",
+        # Elo global por xG (nao e feature de producao ainda)
+        *FEATURES_NUMERICAS_ELO_XG,
         # Forma de gols (5j, mando separado)
         *COLUNAS_FORMA_GOLS.values(),
         # xG e xGOT multi-janela (5j / 10j / 20j + EWMA)
