@@ -40,7 +40,8 @@ function cor(t) {
 const ic3 = (v, ic) => `${v.toFixed(3)} ± ${ic.toFixed(3)}`;
 const pctIc = (v, ic) => `${(v * 100).toFixed(2)}% ± ${(ic * 100).toFixed(2)}`;
 
-export default function MapaZonasChute({ distribuicao }) {
+// `tabela=false` e `alternarMetrica=false` = modo ficha de jogador (só mapa + linhas do campo).
+export default function MapaZonasChute({ distribuicao, tabela = true, alternarMetrica = true }) {
   const [metrica, setMetrica] = useState('pct'); // 'pct' | 'xg'
   const [linhas, setLinhas] = useState(true);
   const valores = metrica === 'pct' ? distribuicao : XG_MEDIO_ZONA_CHUTE;
@@ -62,12 +63,14 @@ export default function MapaZonasChute({ distribuicao }) {
   return (
     <div>
       <div className="flex flex-wrap gap-2 justify-center mb-3">
-        <button
-          onClick={() => setMetrica(metrica === 'pct' ? 'xg' : 'pct')}
-          className="text-xs bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-slate-200"
-        >
-          Mostrar {metrica === 'pct' ? 'xG médio por chute' : '% dos chutes'}
-        </button>
+        {alternarMetrica && (
+          <button
+            onClick={() => setMetrica(metrica === 'pct' ? 'xg' : 'pct')}
+            className="text-xs bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-slate-200"
+          >
+            Mostrar {metrica === 'pct' ? 'xG médio por chute' : '% dos chutes'}
+          </button>
+        )}
         <button
           onClick={() => setLinhas(!linhas)}
           className="text-xs bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-slate-200"
@@ -166,42 +169,44 @@ export default function MapaZonasChute({ distribuicao }) {
         <div className="h-2 w-40 rounded" style={{ background: `linear-gradient(to right, ${cor(0)}, ${cor(0.5)}, ${cor(1)})` }} />
         <span>mais ({metrica === 'pct' ? '% dos chutes' : 'xG/chute'})</span>
       </div>
+      {tabela && (
       <div className="overflow-x-auto mt-5">
-        <table className="w-full text-[11px] text-slate-300 border-collapse">
-          <thead>
-            <tr className="text-slate-400 border-b border-slate-700">
-              <th className="text-left py-1.5 pr-2 font-semibold">Zona</th>
-              <th className="text-right px-2 font-semibold">Chutes</th>
-              <th className="text-right px-2 font-semibold">% simulado</th>
-              <th className="text-right px-2 font-semibold">% real ± IC95</th>
-              <th className="text-right px-2 font-semibold">xG/chute ± IC95</th>
-              <th className="text-right pl-2 font-semibold">Gols/chute ± IC95</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ZONAS_CHUTE.map((z, i) => {
-              const e = ESTATISTICA_ZONA_CHUTE[i];
-              const diverge = Math.abs(e.gol - e.xg) > e.golIc + e.xgIc;
-              return (
-                <tr key={z.id} className="border-b border-slate-800">
-                  <td className="py-1 pr-2">{z.label}</td>
-                  <td className="text-right px-2 font-mono">{e.n.toLocaleString('pt-BR')}</td>
-                  <td className="text-right px-2 font-mono">{(distribuicao[i] * 100).toFixed(1)}%</td>
-                  <td className="text-right px-2 font-mono">{pctIc(e.pct, e.pctIc)}</td>
-                  <td className="text-right px-2 font-mono">{ic3(e.xg, e.xgIc)}</td>
-                  <td className={`text-right pl-2 font-mono ${diverge ? 'text-yellow-400' : ''}`}>{ic3(e.gol, e.golIc)}{diverge ? ' *' : ''}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="text-[10px] text-slate-500 mt-2">
-          IC 95% por partida (chutes do mesmo jogo não são independentes; ~480 mil chutes em ~18 mil jogos do FotMob,
-          sem pênaltis). O IC do xG mede a precisão da média do xG do FotMob (saída de modelo), não a conversão verdadeira.
-          * = gol/chute real fora do IC do xG (os intervalos não se sobrepõem). O % simulado vem da matriz de passes do
-          StatsBomb (uma liga, uma temporada) e não tem IC calculável — compare com o % real.
-        </p>
-      </div>
+          <table className="w-full text-[11px] text-slate-300 border-collapse">
+            <thead>
+              <tr className="text-slate-400 border-b border-slate-700">
+                <th className="text-left py-1.5 pr-2 font-semibold">Zona</th>
+                <th className="text-right px-2 font-semibold">Chutes</th>
+                <th className="text-right px-2 font-semibold">% simulado</th>
+                <th className="text-right px-2 font-semibold">% real ± IC95</th>
+                <th className="text-right px-2 font-semibold">xG/chute ± IC95</th>
+                <th className="text-right pl-2 font-semibold">Gols/chute ± IC95</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ZONAS_CHUTE.map((z, i) => {
+                const e = ESTATISTICA_ZONA_CHUTE[i];
+                const diverge = Math.abs(e.gol - e.xg) > e.golIc + e.xgIc;
+                return (
+                  <tr key={z.id} className="border-b border-slate-800">
+                    <td className="py-1 pr-2">{z.label}</td>
+                    <td className="text-right px-2 font-mono">{e.n.toLocaleString('pt-BR')}</td>
+                    <td className="text-right px-2 font-mono">{(distribuicao[i] * 100).toFixed(1)}%</td>
+                    <td className="text-right px-2 font-mono">{pctIc(e.pct, e.pctIc)}</td>
+                    <td className="text-right px-2 font-mono">{ic3(e.xg, e.xgIc)}</td>
+                    <td className={`text-right pl-2 font-mono ${diverge ? 'text-yellow-400' : ''}`}>{ic3(e.gol, e.golIc)}{diverge ? ' *' : ''}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-[10px] text-slate-500 mt-2">
+            IC 95% por partida (chutes do mesmo jogo não são independentes; ~480 mil chutes em ~18 mil jogos do FotMob,
+            sem pênaltis). O IC do xG mede a precisão da média do xG do FotMob (saída de modelo), não a conversão verdadeira.
+            * = gol/chute real fora do IC do xG (os intervalos não se sobrepõem). O % simulado vem da matriz de passes do
+            StatsBomb (uma liga, uma temporada) e não tem IC calculável — compare com o % real.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
