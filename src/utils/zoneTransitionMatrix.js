@@ -122,6 +122,33 @@ export const XG_MEDIO_ZONA_CHUTE = [
   0.0928, 0.0651, 0.0443, 0.0316, 0.0280, 0.0202, 0.0222,
 ];
 
+// Estatística REAL por zona (mesma base e mesmo filtro acima), com IC 95% por
+// aproximação de razão com agrupamento por PARTIDA (chutes do mesmo jogo não são
+// independentes; ~18 mil jogos). `xg`/`gol` = média por chute, `pct` = % de todos
+// os chutes que caem na zona -- todos em fração (0-1); `*Ic` = meia-largura do
+// IC 95% (estimativa ± ic). CUIDADO ao ler: o IC do xG mede a precisão da média
+// do xG DO FOTMOB (que é uma saída de modelo), não prova que o xG seja a
+// conversão verdadeira -- por isso o gol/chute real vem ao lado. As duas séries
+// divergem significativamente em várias zonas (xG acima do gol perto do gol; só
+// >30 m aberto tem gol ACIMA do xG, 4,1% vs 2,2%).
+// Fotografia da base em 01/10/2026; refazer se a base crescer muito.
+export const ESTATISTICA_ZONA_CHUTE = [
+  { n: 11106, xg: 0.4433, xgIc: 0.0044, gol: 0.4014, golIc: 0.0092, pct: 0.0232, pctIc: 0.0004 },
+  { n: 11933, xg: 0.4043, xgIc: 0.0043, gol: 0.3881, golIc: 0.0088, pct: 0.0249, pctIc: 0.0005 },
+  { n: 36627, xg: 0.1968, xgIc: 0.0017, gol: 0.1934, golIc: 0.0040, pct: 0.0764, pctIc: 0.0008 },
+  { n: 19843, xg: 0.1624, xgIc: 0.0018, gol: 0.1386, golIc: 0.0048, pct: 0.0414, pctIc: 0.0006 },
+  { n: 37745, xg: 0.1292, xgIc: 0.0014, gol: 0.1256, golIc: 0.0034, pct: 0.0787, pctIc: 0.0008 },
+  { n: 26095, xg: 0.1183, xgIc: 0.0015, gol: 0.1120, golIc: 0.0039, pct: 0.0544, pctIc: 0.0007 },
+  { n: 49005, xg: 0.1158, xgIc: 0.0010, gol: 0.1167, golIc: 0.0029, pct: 0.1022, pctIc: 0.0009 },
+  { n: 59889, xg: 0.0928, xgIc: 0.0007, gol: 0.0933, golIc: 0.0024, pct: 0.1249, pctIc: 0.0010 },
+  { n: 43273, xg: 0.0651, xgIc: 0.0005, gol: 0.0670, golIc: 0.0024, pct: 0.0902, pctIc: 0.0008 },
+  { n: 48285, xg: 0.0443, xgIc: 0.0003, gol: 0.0423, golIc: 0.0018, pct: 0.1007, pctIc: 0.0009 },
+  { n: 82226, xg: 0.0316, xgIc: 0.0002, gol: 0.0319, golIc: 0.0012, pct: 0.1714, pctIc: 0.0011 },
+  { n: 29188, xg: 0.0280, xgIc: 0.0003, gol: 0.0283, golIc: 0.0019, pct: 0.0609, pctIc: 0.0007 },
+  { n: 19773, xg: 0.0202, xgIc: 0.0003, gol: 0.0163, golIc: 0.0018, pct: 0.0412, pctIc: 0.0007 },
+  { n: 4623, xg: 0.0222, xgIc: 0.0008, gol: 0.0411, golIc: 0.0057, pct: 0.0096, pctIc: 0.0003 },
+];
+
 // Dado a zona 3×3 onde a posse terminou em chute (mesmo índice de ZONAS), a
 // distribuição do chute pelas 14 zonas. Cada linha soma ~1. Zonas defensivas e
 // de meio raramente chutam (TAXA_DESFECHO ~0): o chute de longe cai em >30 m.
