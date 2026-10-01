@@ -85,6 +85,58 @@ export const MATRIZ_TRANSICAO = [
   [0.000, 0.000, 0.000, 0.001, 0.013, 0.072, 0.013, 0.098, 0.802],
 ];
 
+// =============================================================================
+// CAMADA FINA DE CHUTE -- 14 zonas polares (dado do PRÓPRIO projeto)
+// =============================================================================
+// A grade 3×3 acima decide ONDE a posse termina em chute (constante externa do
+// StatsBomb). Mas 3×3 é grossa demais pro chute em si: junta a pequena área com
+// a entrada da grande (R² do xG médio por zona = 6%). Esta camada resolve o
+// chute em 14 zonas polares centradas no gol: 7 anéis de distância × 2 setores
+// de ângulo (central ≤30° do eixo do campo; aberto >30°) -- R² = 43,8%.
+// Testado contra esquemas anatômicos (11/14 zonas: 34-35%) e grade uniforme
+// 12×8 (30%); cruzar as zonas polares com os limites das áreas dá 44,0% com 21
+// zonas (+0,2 p.p.), então os limites anatômicos entram só como linhas de
+// referência no desenho, não como cortes.
+//
+// ORIGEM: `match_shots_fotmob` (chutes com x,y,xG; sem pênaltis, gols contra e
+// disputa de pênaltis), coordenadas FotMob x∈[0,105] (gol em x=105), y∈[0,68].
+// Distância = até o CENTRO do gol; ângulo = do eixo do campo. XG_MEDIO_ZONA_CHUTE
+// e DISTRIBUICAO_ZONA_CHUTE são fotografias desse dado (não recalculadas em
+// runtime); refazer se a base crescer muito.
+export const ANEIS_CHUTE_M = [0, 6, 9, 12, 16.5, 22, 30, Infinity];
+export const ANGULO_CONE_GRAUS = 30;
+
+// Índice = anel*2 + setor (0 = central, 1 = aberto). NUNCA reordenar.
+export const ZONAS_CHUTE = Array.from({ length: 14 }, (_, i) => {
+  const anel = Math.floor(i / 2);
+  const setor = i % 2 === 0 ? 'central' : 'aberto';
+  const de = ANEIS_CHUTE_M[anel];
+  const ate = ANEIS_CHUTE_M[anel + 1];
+  const faixa = Number.isFinite(ate) ? `${de}–${ate} m` : `> ${de} m`;
+  return { id: `a${anel}_${setor}`, anel, setor, de, ate, label: `${faixa} · ${setor}` };
+});
+
+// xG médio por chute em cada uma das 14 zonas (chutes de bola rolando e bola parada, sem pênalti).
+export const XG_MEDIO_ZONA_CHUTE = [
+  0.4433, 0.4043, 0.1968, 0.1624, 0.1292, 0.1183, 0.1158,
+  0.0928, 0.0651, 0.0443, 0.0316, 0.0280, 0.0202, 0.0222,
+];
+
+// Dado a zona 3×3 onde a posse terminou em chute (mesmo índice de ZONAS), a
+// distribuição do chute pelas 14 zonas. Cada linha soma ~1. Zonas defensivas e
+// de meio raramente chutam (TAXA_DESFECHO ~0): o chute de longe cai em >30 m.
+export const DISTRIBUICAO_ZONA_CHUTE = [
+  /* def_esq  */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+  /* def_cen  */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+  /* def_dir  */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+  /* meio_esq */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.8429, 0.1571],
+  /* meio_cen */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+  /* meio_dir */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.8717, 0.1283],
+  /* atq_esq  */ [0, 0, 0, 0, 0, 0.0023, 0, 0.2092, 0, 0.3495, 0.0903, 0.2629, 0.0473, 0.0385],
+  /* atq_cen  */ [0.0301, 0.0323, 0.0993, 0.0538, 0.1023, 0.0701, 0.1328, 0.1031, 0.1173, 0.0307, 0.1971, 0.0003, 0.031, 0],
+  /* atq_dir  */ [0, 0, 0, 0, 0, 0.002, 0, 0.198, 0, 0.3387, 0.0867, 0.277, 0.0536, 0.0439],
+];
+
 // Sorteia um índice de `pesos` (não precisa somar exatamente 1 -- normaliza
 // pelo total, tolera o arredondamento de 4 casas da fonte). Último índice é
 // sempre o fallback se o RNG bater no limite (evita `undefined` por erro de
@@ -120,7 +172,8 @@ const ZONAS_INICIO_DEFAULT = [0, 1, 2];
  * @param {number[]} [opcoes.zonasInicio] - Índices (0-8) elegíveis pra começar a posse.
  * @param {() => number} [opcoes.rng] - Injeção de RNG (testes determinísticos); default `Math.random`.
  * @param {number} [opcoes.maxPasses] - Default 40.
- * @returns {{ desfecho: 'chute'|'perda'|'max_passes', zonaChute: number|null, passes: number }}
+ * @returns {{ desfecho: 'chute'|'perda'|'max_passes', zonaChute: number|null, zonaChuteFina: number|null, passes: number }}
+ *   `zonaChute` = zona 3×3 (0-8); `zonaChuteFina` = zona polar do chute (0-13, ver ZONAS_CHUTE).
  */
 export function simularPosse(opcoes = {}) {
   const { zonasInicio = ZONAS_INICIO_DEFAULT, rng = Math.random, maxPasses = 40 } = opcoes;
@@ -129,11 +182,14 @@ export function simularPosse(opcoes = {}) {
   for (let passo = 0; passo < maxPasses; passo++) {
     const { chute, perda, continua } = TAXA_DESFECHO_POR_ZONA[zona];
     const desfechoIdx = sortearIndice([chute, perda, continua], rng);
-    if (desfechoIdx === 0) return { desfecho: 'chute', zonaChute: zona, passes: passo + 1 };
-    if (desfechoIdx === 1) return { desfecho: 'perda', zonaChute: null, passes: passo + 1 };
+    if (desfechoIdx === 0) {
+      const zonaChuteFina = sortearIndice(DISTRIBUICAO_ZONA_CHUTE[zona], rng);
+      return { desfecho: 'chute', zonaChute: zona, zonaChuteFina, passes: passo + 1 };
+    }
+    if (desfechoIdx === 1) return { desfecho: 'perda', zonaChute: null, zonaChuteFina: null, passes: passo + 1 };
     zona = sortearIndice(MATRIZ_TRANSICAO[zona], rng);
   }
-  return { desfecho: 'max_passes', zonaChute: null, passes: maxPasses };
+  return { desfecho: 'max_passes', zonaChute: null, zonaChuteFina: null, passes: maxPasses };
 }
 
 /**
@@ -143,20 +199,23 @@ export function simularPosse(opcoes = {}) {
  *
  * @param {number} nPosses
  * @param {object} [opcoes] - Mesmas opções de `simularPosse`.
- * @returns {{ distribuicaoPorZona: number[], taxaChutePorPosse: number, nPosses: number }}
+ * @returns {{ distribuicaoPorZona: number[], distribuicaoPorZonaFina: number[], taxaChutePorPosse: number, nPosses: number }}
  */
 export function simularOrigemChutes(nPosses, opcoes = {}) {
   const contagem = ZONAS.map(() => 0);
+  const contagemFina = ZONAS_CHUTE.map(() => 0);
   let totalChutes = 0;
   for (let i = 0; i < nPosses; i++) {
-    const { desfecho, zonaChute } = simularPosse(opcoes);
+    const { desfecho, zonaChute, zonaChuteFina } = simularPosse(opcoes);
     if (desfecho === 'chute') {
       contagem[zonaChute]++;
+      contagemFina[zonaChuteFina]++;
       totalChutes++;
     }
   }
   return {
     distribuicaoPorZona: contagem.map(c => (totalChutes > 0 ? c / totalChutes : 0)),
+    distribuicaoPorZonaFina: contagemFina.map(c => (totalChutes > 0 ? c / totalChutes : 0)),
     taxaChutePorPosse: nPosses > 0 ? totalChutes / nPosses : 0,
     nPosses,
   };

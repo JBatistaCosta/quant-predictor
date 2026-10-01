@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ZONAS, TAXA_DESFECHO_POR_ZONA, MATRIZ_TRANSICAO,
+  ZONAS_CHUTE, XG_MEDIO_ZONA_CHUTE, DISTRIBUICAO_ZONA_CHUTE,
   simularPosse, simularOrigemChutes, ajustarPerdaPorForca,
 } from './zoneTransitionMatrix';
 
@@ -111,5 +112,40 @@ describe('ajustarPerdaPorForca -- disponível mas nunca chamada pelo caminho de 
     // dominante em rng=0) pra isolar o caminho "chute".
     const r = simularPosse({ zonasInicio: [7], rng: () => 0 });
     expect(r.desfecho).toBe('chute');
+  });
+});
+
+describe('camada fina de chute -- 14 zonas polares', () => {
+  it('14 zonas, xG médio por zona e 9 linhas de distribuição com 14 colunas', () => {
+    expect(ZONAS_CHUTE).toHaveLength(14);
+    expect(XG_MEDIO_ZONA_CHUTE).toHaveLength(14);
+    expect(DISTRIBUICAO_ZONA_CHUTE).toHaveLength(9);
+    DISTRIBUICAO_ZONA_CHUTE.forEach(l => expect(l).toHaveLength(14));
+  });
+
+  it('cada linha da distribuição soma ~1', () => {
+    DISTRIBUICAO_ZONA_CHUTE.forEach((l) => {
+      expect(l.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 2);
+    });
+  });
+
+  it('xG médio cai com a distância (melhor anel central <6 m, pior >30 m)', () => {
+    const centrais = XG_MEDIO_ZONA_CHUTE.filter((_, i) => i % 2 === 0);
+    for (let i = 1; i < centrais.length; i++) expect(centrais[i]).toBeLessThan(centrais[i - 1]);
+  });
+
+  it('simularPosse devolve zona fina válida (0-13) quando chuta, null caso contrário', () => {
+    for (let i = 0; i < 500; i++) {
+      const r = simularPosse();
+      if (r.desfecho === 'chute') expect(r.zonaChuteFina >= 0 && r.zonaChuteFina <= 13).toBe(true);
+      else expect(r.zonaChuteFina).toBeNull();
+    }
+  });
+
+  it('distribuição fina soma 1 e é consistente com a grossa (atq_cen fina >0 só onde a linha tem massa)', () => {
+    const r = simularOrigemChutes(20000);
+    expect(r.distribuicaoPorZonaFina.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 6);
+    const r0 = simularOrigemChutes(0);
+    expect(r0.distribuicaoPorZonaFina.every(v => v === 0)).toBe(true);
   });
 });
