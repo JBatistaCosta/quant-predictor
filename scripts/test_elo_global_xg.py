@@ -16,8 +16,28 @@ def _p(id_, data, casa, fora, gc, gf, neutro=False):
 
 
 def test_escore_sem_xg_e_so_resultado_com_k_de_resultado():
-    assert ex.escore_atualizacao(2, 1, None, None) == (1.0, ex.K_RES, False)
+    assert ex.escore_atualizacao(2, 1, None, None) == (1.0, ex.K_RES, False)  # dif 1: multiplicador 1
     assert ex.escore_atualizacao(1, 1, 1.0, None) == (0.5, ex.K_RES, False)  # xG de um lado só = fallback
+
+
+def test_multiplicador_de_gols_segue_a_formula_classica():
+    assert ex.multiplicador_diferenca(0) == 1 and ex.multiplicador_diferenca(1) == 1
+    assert ex.multiplicador_diferenca(-2) == 1.5 and ex.multiplicador_diferenca(2) == 1.5
+    assert ex.multiplicador_diferenca(3) == (11 + 3) / 8
+    assert ex.multiplicador_diferenca(-5) == (11 + 5) / 8
+
+
+def test_multiplicador_so_vale_sem_xg():
+    _, k_goleada_sem_xg, _ = ex.escore_atualizacao(4, 0, None, None)
+    assert k_goleada_sem_xg == ex.K_RES * (11 + 4) / 8
+    _, k_goleada_com_xg, usou = ex.escore_atualizacao(4, 0, 2.0, 0.5)
+    assert usou and k_goleada_com_xg == ex.K_XG  # com xG o K não ganha multiplicador
+
+
+def test_goleada_sem_xg_move_mais_que_vitoria_magra():
+    magra, *_ = ex.processar_partidas([_p(1, "2024-01-01", 1, 2, 1, 0)], {})
+    goleada, *_ = ex.processar_partidas([_p(1, "2024-01-01", 1, 2, 4, 0)], {})
+    assert goleada[1] > magra[1] > ex.RATING_INICIAL
 
 
 def test_escore_com_xg_mistura_e_usa_k_de_xg():
