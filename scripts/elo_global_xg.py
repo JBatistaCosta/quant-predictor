@@ -16,9 +16,16 @@ de 08/2022 a 09/2026; Brier do escore esperado 0,1580-0,1584 contra 0,1610 do El
   W_RES=0,25, A_XG=1,6, K_XG=40, HFA=60. O platô é plano (W_RES 0,2-0,3; A_XG 1,2-2,2; K 32-56):
   não é "o" ótimo, é o centro da região onde o Brier não se distingue do melhor.
 
+PARTIDAS SEM xG (ligas não cobertas, época pré-2020; 10 mil das 29 mil): atualizam só por resultado,
+  delta = K_RES * mult(diferença de gols) * (resultado - esperado), K_RES=24 e
+  mult = 1 se |dif| <= 1, 1,5 se 2, (11 + |dif|)/8 se >= 3 (mesma fórmula do Elo por resultado do projeto).
+  Teste de 01/10/2026 (todas as partidas desde 2014; K e multiplicador no grupo sem xG; teste ago/2022+,
+  3.797 jogos sem xG): Brier 0,1553 -> 0,1539 com o multiplicador, melhora pareada +0,00141 ± 0,00036;
+  na validação (1.253 jogos) ficou neutra (0,15588 -> 0,15586). K=24 segue o melhor com multiplicador
+  (entre 14 e 32). O ganho nos jogos sem xG não vem de graça: os jogos COM xG pioram ~0,0001 (ruído).
+  Pontos iniciais do ClubElo (33 de 711 times) testados e NÃO adotados: +0,0003 ± 0,0004, ruído.
+
 O QUE NÃO FOI VALIDADO (escolhas deste script, ainda não testadas):
-  - Partidas SEM xG (ligas não cobertas, época pré-2020) atualizam só por resultado, com
-    K_RES=24 (o melhor K do Elo por resultado no experimento), mesmo HFA e sem multiplicador.
   - Campo neutro: HFA=0 (o experimento excluiu jogos neutros).
   - Todos os times começam em 1500 em 2014 (o Elo por resultado do projeto usa seeds do
     ClubElo, HFA 65, K 20 e multiplicador de diferença de gols -- por isso as escalas dos
@@ -49,7 +56,7 @@ HFA = 60.0
 W_RES = 0.25     # peso do resultado no escore; o resto (0,75) vem do xG
 A_XG = 1.6       # inclinação da logística xG -> escore
 K_XG = 40.0      # K quando a partida tem xG dos dois lados
-K_RES = 24.0     # K quando só há resultado (fallback)
+K_RES = 24.0     # K quando só há resultado (fallback), aplicado junto do multiplicador de gols
 TAMANHO_LOTE = 5000
 
 
@@ -66,11 +73,22 @@ def escore_resultado(gols_casa, gols_fora):
     return 0.5
 
 
+def multiplicador_diferenca(diferenca):
+    """Multiplicador de diferença de gols do Elo clássico (e do Elo por resultado do projeto)."""
+    d = abs(diferenca)
+    if d <= 1:
+        return 1.0
+    if d == 2:
+        return 1.5
+    return (11 + d) / 8
+
+
 def escore_atualizacao(gols_casa, gols_fora, xg_casa, xg_fora):
-    """Devolve (S, K, usou_xg). Com xG dos dois lados mistura resultado e xG; senão só resultado."""
+    """Devolve (S, K efetivo, usou_xg). Com xG dos dois lados mistura resultado e xG (K_XG, sem
+    multiplicador); senão só resultado, com K_RES multiplicado pela diferença de gols."""
     s_res = escore_resultado(gols_casa, gols_fora)
     if xg_casa is None or xg_fora is None:
-        return s_res, K_RES, False
+        return s_res, K_RES * multiplicador_diferenca(gols_casa - gols_fora), False
     s_xg = 1 / (1 + math.exp(-A_XG * (xg_casa - xg_fora)))
     return W_RES * s_res + (1 - W_RES) * s_xg, K_XG, True
 
