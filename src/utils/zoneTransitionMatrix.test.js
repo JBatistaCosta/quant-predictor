@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ZONAS, TAXA_DESFECHO_POR_ZONA, MATRIZ_TRANSICAO,
-  ZONAS_CHUTE, XG_MEDIO_ZONA_CHUTE, DISTRIBUICAO_ZONA_CHUTE,
+  ZONAS_CHUTE, XG_MEDIO_ZONA_CHUTE, ESTATISTICA_ZONA_CHUTE, DISTRIBUICAO_ZONA_CHUTE,
   simularPosse, simularOrigemChutes, ajustarPerdaPorForca,
 } from './zoneTransitionMatrix';
 
@@ -147,5 +147,28 @@ describe('camada fina de chute -- 14 zonas polares', () => {
     expect(r.distribuicaoPorZonaFina.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 6);
     const r0 = simularOrigemChutes(0);
     expect(r0.distribuicaoPorZonaFina.every(v => v === 0)).toBe(true);
+  });
+});
+
+describe('estatística real por zona (IC 95% agrupado por partida)', () => {
+  it('14 linhas, IC positivo e xG médio consistente com XG_MEDIO_ZONA_CHUTE', () => {
+    expect(ESTATISTICA_ZONA_CHUTE).toHaveLength(14);
+    ESTATISTICA_ZONA_CHUTE.forEach((z, i) => {
+      expect(z.xgIc).toBeGreaterThan(0);
+      expect(z.golIc).toBeGreaterThan(0);
+      expect(z.pctIc).toBeGreaterThan(0);
+      expect(z.xg).toBeCloseTo(XG_MEDIO_ZONA_CHUTE[i], 4);
+    });
+  });
+
+  it('% real das zonas soma ~1 e n bate com o total de chutes', () => {
+    const soma = ESTATISTICA_ZONA_CHUTE.reduce((a, z) => a + z.pct, 0);
+    expect(soma).toBeCloseTo(1, 2);
+    const total = ESTATISTICA_ZONA_CHUTE.reduce((a, z) => a + z.n, 0);
+    ESTATISTICA_ZONA_CHUTE.forEach(z => expect(z.pct).toBeCloseTo(z.n / total, 3));
+  });
+
+  it('IC do gol/chute é maior que o do xG (gol é binário, xG é suave)', () => {
+    ESTATISTICA_ZONA_CHUTE.forEach(z => expect(z.golIc).toBeGreaterThan(z.xgIc));
   });
 });
