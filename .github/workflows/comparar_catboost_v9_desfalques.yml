@@ -1,0 +1,37 @@
+name: catboost_v9 - Comparar com desfalques pela lista do jogo (validação)
+
+# Roda scripts/comparar_catboost_v9_desfalques.py: o catboost_v9 + Elo global por xG com e sem as
+# variaveis `desf_fora_*`/`desf_peso_*` (regulares do time fora da lista do jogo, de
+# `match_lineup_fotmob`). 3 folds anuais (teste 2023/2024/2025), parada antecipada so na validacao.
+#
+# So LE do banco e imprime o resultado nos logs (linhas JSON:fold:/JSON:agregado:/RESUMO:) -- nao
+# grava nada, nao registra modelo novo, nao mexe no cron diario. So workflow_dispatch.
+# Tempo estimado: ~50-80 min (montagem do dataset empilhado + download da lista do jogo).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  comparar-catboost-v9-desfalques:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r scripts/requirements.txt
+
+      - name: Comparar catboost_v9 + Elo xG com e sem desfalques
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/comparar_catboost_v9_desfalques.py

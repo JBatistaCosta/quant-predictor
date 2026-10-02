@@ -39,10 +39,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import elo_xg_tres_vias as modelo
+from desfalques_lista import regulares_fora_por_partida  # noqa: F401  (a lógica mora em desfalques_lista.py; reexportada p/ testes)
 
-JANELA_REGULAR = 10          # partidas anteriores do time olhadas para definir "regular"
-MIN_TITULARIDADES = 5        # titularidades nessas partidas para ser "regular"
-HORIZONTE_RETORNO = 30       # jogos para o jogador reaparecer (variante retrospectiva)
 EP_ELO_POR_PONTO = 0.00144   # d(escore esperado)/d(ponto de Elo) perto do equilíbrio
 
 
@@ -163,30 +161,6 @@ def nova_ausencia(L: pd.DataFrame, ev: pd.DataFrame) -> dict:
     controle = L[(L.missed <= 1) & (L.prev_reg == 1) & (L.prev_bst >= 0.4) & L.reabs.notna()]
     e2 = L.loc[ev.index][L.loc[ev.index].reabs.notna()]
     return {"controle": 100 * controle.reabs.mean(), "n_controle": int(len(controle)), "retornos": 100 * e2.reabs.mean(), "n_retornos": int(len(e2))}
-
-
-def regulares_fora_por_partida(L: pd.DataFrame, TM: pd.DataFrame, janela: int = JANELA_REGULAR, min_tit: int = MIN_TITULARIDADES,
-                               horizonte: int = HORIZONTE_RETORNO) -> pd.DataFrame:
-    """Por (jogo, time): `n_reg` regulares (>= min_tit titularidades nas `janela` partidas anteriores do time),
-    `n_fora` os que não estão na lista do jogo, `n_fora_ret` os que reaparecem em <= `horizonte` jogos
-    (RETROSPECTIVO) e `peso_fora` = soma de (titularidades/janela) dos ausentes."""
-    keys = ["fotmob_player_id", "team_id"]
-    st = L[L.st == 1][keys + ["tn"]]
-    X = pd.concat([st.assign(tn_alvo=st.tn + off)[keys + ["tn_alvo"]] for off in range(1, janela + 1)])
-    cnt = X.groupby(keys + ["tn_alvo"]).size().rename("n_tit").reset_index()
-    reg = cnt[cnt.n_tit >= min_tit]
-    lista = L[keys + ["tn"]].assign(na_lista=1).rename(columns={"tn": "tn_alvo"})
-    reg = reg.merge(lista, on=keys + ["tn_alvo"], how="left")
-    reg["fora"] = reg.na_lista.isna().astype(int)
-    reg = reg.merge(TM[["team_id", "tn", "match_id"]].rename(columns={"tn": "tn_alvo"}), on=["team_id", "tn_alvo"])
-    prox = L[keys + ["tn"]].rename(columns={"tn": "tn_vol"})
-    reg = reg.merge(prox, on=keys, how="left")
-    reg["vol"] = ((reg.tn_vol > reg.tn_alvo) & (reg.tn_vol <= reg.tn_alvo + horizonte)).astype(int)
-    reg = reg.groupby(keys + ["tn_alvo", "match_id", "fora", "n_tit"], as_index=False).vol.max()
-    agg = reg.groupby(["match_id", "team_id"]).agg(n_reg=("fora", "size"), n_fora=("fora", "sum")).reset_index()
-    ret = reg[(reg.fora == 1) & (reg.vol == 1)].groupby(["match_id", "team_id"]).size().rename("n_fora_ret").reset_index()
-    pes = reg[reg.fora == 1].assign(w=lambda d: d.n_tit / janela).groupby(["match_id", "team_id"]).w.sum().rename("peso_fora").reset_index()
-    return agg.merge(ret, on=["match_id", "team_id"], how="left").merge(pes, on=["match_id", "team_id"], how="left").fillna({"n_fora_ret": 0, "peso_fora": 0})
 
 
 # --------------------------------------------------------------------------- resíduo e regressão
