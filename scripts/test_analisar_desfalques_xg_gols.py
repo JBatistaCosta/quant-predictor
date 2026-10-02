@@ -91,3 +91,16 @@ def test_padronizar_deixa_desvio_padrao_unitario():
     T = ax.padronizar(T)
     for q in ax.QUALIDADES:
         assert math.isclose(T[q + "_own_z"].std(), 1.0, rel_tol=1e-6)
+
+
+def test_efeito_por_faixa_recupera_efeito_so_nos_casos_agudos():
+    rng = np.random.default_rng(2)
+    n = 6000
+    T = pd.DataFrame({"f": rng.integers(0, 6, n), "f_op": rng.integers(0, 6, n), "team_id": rng.integers(0, 50, n),
+                      "league_id": rng.integers(0, 3, n)})
+    for c in ax.CONTROLES:
+        T[c] = rng.normal(size=n)
+    T["y"] = -0.25 * (T.f >= 4) + 0.2 * (T.f_op >= 4) + rng.normal(scale=0.05, size=n)
+    e = ax.efeito_por_faixa(T, "y")
+    assert abs(e["f4"][0] + 0.25) < 0.02 and abs(e["f_op4"][0] - 0.2) < 0.02
+    assert abs(e["f1"][0]) < 0.02

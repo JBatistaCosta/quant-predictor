@@ -185,6 +185,19 @@ def juntar_qualidade(T: pd.DataFrame, A: pd.DataFrame) -> pd.DataFrame:
     return padronizar(T)
 
 
+def efeito_por_faixa(T: pd.DataFrame, y: str) -> dict:
+    """Efeito não linear: dummies de 1, 2, 3 e 4+ regulares fora do próprio time (contra 0) e de 4+ no adversário,
+    com os mesmos controles. Os casos agudos (4+) são ~12% dos jogos e concentram o efeito."""
+    T = T.copy()
+    for k in (1, 2, 3):
+        T[f"f{k}"] = (T.f == k).astype(float)
+    T["f4"] = (T.f >= 4).astype(float)
+    T["f_op4"] = (T.f_op >= 4).astype(float)
+    cols = ["f1", "f2", "f3", "f4", "f_op4"]
+    o = ols_agrupado(T, y, cols + CONTROLES)
+    return {c: o[c] for c in cols}
+
+
 # --------------------------------------------------------------------------- relatório
 DESFECHOS = [("xg", "xG criado"), ("xg_c", "xG sofrido"), ("dif_xg", "Saldo de xG"),
              ("gols", "Gols marcados"), ("gols_c", "Gols sofridos"), ("dif_gols", "Saldo de gols")]
@@ -195,6 +208,10 @@ def relatorio(T: pd.DataFrame, Tq: pd.DataFrame) -> None:
     for y, nome in DESFECHOS:
         o = ols_agrupado(T, y, ["f", "f_op"] + CONTROLES)
         print(f"{nome:15s} f {o['f'][0]:+.4f} ± {o['f'][1]:.4f} | adversário {o['f_op'][0]:+.4f} ± {o['f_op'][1]:.4f}")
+    print("\n=== Efeito por faixa de regulares fora (contra 0 fora; +4 no adversário) ===")
+    for y, nome in (("dif_xg", "Saldo de xG"), ("dif_gols", "Saldo de gols")):
+        e = efeito_por_faixa(T, y)
+        print(f"{nome:14s} " + " | ".join(f"{c} {b:+.3f} ± {se:.3f}" for c, (b, se) in e.items()))
     Zq = [q + s + "_z" for s in ("_own", "_opp") for q in QUALIDADES]
     print(f"\n=== Qualidade dos ausentes ({len(Tq)} time x jogo; efeito por +1 desvio-padrão) ===")
     for y, nome in DESFECHOS:
