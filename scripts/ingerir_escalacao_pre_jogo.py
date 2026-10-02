@@ -47,6 +47,18 @@ em /analise-avancada/:matchId (via tarefa=sincronizar-escalacao-real em
 api/model-maintenance.js) -- inclusive pra corrigir partida que perdeu a
 janela pré-jogo de 90min (ex. lineup nunca foi capturada a tempo).
 
+Indisponíveis (lesão/suspensão) -- captura PROSPECTIVA: o mesmo payload traz
+`content.lineup.{homeTeam,awayTeam}.unavailable` (jogador, `unavailability.type`/
+`injuryId`/`expectedReturn`). Essa lista reflete a data da COLETA, não a do
+jogo (jogo antigo lista jogadores que nem estavam no clube), por isso só é
+gravada para partida que AINDA NÃO COMEÇOU (match_date no futuro) -- nunca no
+modo `--match-ids` de partida encerrada. Vai para `team_unavailable_fotmob`
+(último retrato por jogo+jogador) e `match_unavailable_coleta_fotmob` (registra
+que a lista foi coletada, mesmo vazia). Roda a cada checagem da janela pré-jogo,
+inclusive antes da escalação sair (a lista costuma existir dias antes). Falha
+aqui (ex.: migration 20261002120000 ainda não aplicada) só avisa -- nunca
+derruba a captura da escalação. Ver CONTEXTO_PROJETO.md (02/10/2026).
+
 Uso:
     python scripts/ingerir_escalacao_pre_jogo.py [--janela-min 90] [--league-id ID]
     python scripts/ingerir_escalacao_pre_jogo.py --match-ids 123,456
@@ -140,6 +152,68 @@ def _extrair_lineup(d: dict, match_id: int, fotmob_to_internal: dict) -> tuple[l
                         "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                     })
     return player_dim_rows, lineup_rows
+
+
+def _extrair_indisponiveis(d: dict, match_id: int, fotmob_to_internal: dict, capturado_em: str) -> tuple[list, list]:
+    """Extrai a lista de indisponíveis de um payload matchDetails.
+
+    Devolve (linhas, coletas): `linhas` = uma por jogador indisponível;
+    `coletas` = uma por lado cujo bloco `unavailable` EXISTE no payload (lista,
+    mesmo vazia) -- bloco ausente (liga sem esse dado) não vira coleta, para não
+    confundir "ninguém indisponível" com "FotMob não informa"."""
+    lineup = (d.get("content") or {}).get("lineup") or {}
+    linhas: dict = {}
+    coletas: list = []
+    for side in ("homeTeam", "awayTeam"):
+        team = lineup.get(side) or {}
+        team_id = fotmob_to_internal.get(str(team.get("id")))
+        lista = team.get("unavailable")
+        if team_id is None or not isinstance(lista, list):
+            continue
+        coletas.append({"match_id": match_id, "team_id": team_id, "n_indisponiveis": len(lista), "captured_at": capturado_em})
+        for p in lista:
+            pid = p.get("id")
+            if pid in (None, 0, -1):
+                continue
+            u = p.get("unavailability") or {}
+            linhas[(match_id, str(pid))] = {
+                "match_id": match_id,
+                "team_id": team_id,
+                "fotmob_player_id": str(pid),
+                "player_name": p.get("name"),
+                "injury_id": u.get("injuryId"),
+                "type": u.get("type"),
+                "expected_return": u.get("expectedReturn"),
+                "captured_at": capturado_em,
+            }
+    return list(linhas.values()), coletas
+
+
+def _salvar_indisponiveis(supabase, match_id: int, linhas: list, coletas: list, capturado_em: str) -> int:
+    """Grava o retrato atual e apaga, POR TIME coletado, as linhas de coletas anteriores
+    que sumiram da lista (jogador que se recuperou). Ordem: grava primeiro, apaga depois --
+    se a gravação falhar, o retrato anterior continua intacto. Devolve nº de linhas gravadas."""
+    if not coletas:
+        return 0
+    if linhas:
+        ids = [l["fotmob_player_id"] for l in linhas]
+        resp = supabase.table("players").select("id, fotmob_player_id").in_("fotmob_player_id", ids).execute()
+        mapa = {r["fotmob_player_id"]: r["id"] for r in (resp.data or [])}
+        for l in linhas:
+            l["player_id"] = mapa.get(l["fotmob_player_id"])
+        supabase.table("team_unavailable_fotmob").upsert(linhas, on_conflict="match_id,fotmob_player_id").execute()
+    supabase.table("match_unavailable_coleta_fotmob").upsert(coletas, on_conflict="match_id,team_id").execute()
+    for c in coletas:
+        supabase.table("team_unavailable_fotmob").delete().eq("match_id", match_id).eq("team_id", c["team_id"]).lt("captured_at", capturado_em).execute()
+    return len(linhas)
+
+
+def _partida_ainda_nao_comecou(match_date, agora: dt.datetime) -> bool:
+    """True só se o jogo ainda não começou: a lista de indisponíveis é o retrato de AGORA."""
+    try:
+        return dt.datetime.fromisoformat(str(match_date).replace("Z", "+00:00")) > agora
+    except (TypeError, ValueError):
+        return False
 
 
 def main():
@@ -293,6 +367,7 @@ def main():
 
     n_capturadas, n_ainda_sem_escalacao, n_sem_id, n_falha, n_sem_liga_fotmob = 0, 0, 0, 0, 0
     n_formacoes = 0  # linhas gravadas em match_formation_fotmob (2 por partida quando os dois lados são deriváveis)
+    n_indisponiveis = 0  # linhas gravadas em team_unavailable_fotmob (retrato pré-jogo de lesão/suspensão)
 
     for m in candidatas:
         match_id = m["id"]
@@ -324,6 +399,16 @@ def main():
             continue
 
         player_dim_rows, lineup_rows = _extrair_lineup(d, match_id, fotmob_to_internal)
+
+        # Indisponíveis: retrato de AGORA, só para partida que ainda não começou, e antes do
+        # "sem escalação" abaixo (a lista costuma existir antes de a escalação ser publicada).
+        if _partida_ainda_nao_comecou(m.get("match_date"), agora):
+            try:
+                capturado_em = dt.datetime.now(dt.timezone.utc).isoformat()
+                ind_linhas, ind_coletas = _extrair_indisponiveis(d, match_id, fotmob_to_internal, capturado_em)
+                n_indisponiveis += _salvar_indisponiveis(supabase, match_id, ind_linhas, ind_coletas, capturado_em)
+            except Exception as exc:
+                print(f"  Aviso: indisponíveis match_id={match_id}: {exc}")
 
         if not lineup_rows:
             n_ainda_sem_escalacao += 1
@@ -371,7 +456,7 @@ def main():
 
     print(f"\nOK: {n_capturadas} escalação(ões) capturada(s), {n_ainda_sem_escalacao} ainda sem escalação oficial publicada, "
           f"{n_sem_id} sem ID FotMob identificado, {n_sem_liga_fotmob} sem liga mapeada no FotMob, {n_falha} falhas, "
-          f"{n_formacoes} formação(ões) derivada(s).")
+          f"{n_formacoes} formação(ões) derivada(s), {n_indisponiveis} indisponível(is) registrado(s).")
 
 
 if __name__ == "__main__":
