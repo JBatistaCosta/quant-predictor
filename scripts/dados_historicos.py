@@ -34,6 +34,7 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
+import desfalques_lista as _desfalques_lista
 from supabase import Client
 
 logger = logging.getLogger("dados_historicos")
@@ -1549,6 +1550,52 @@ def obter_elo_xg_atual(supabase: Client, team_ids: list[int]) -> dict[int, float
         return {}
     resposta = supabase.table("team_elo_xg").select("team_id, rating").in_("team_id", team_ids).execute()
     return {linha["team_id"]: linha["rating"] for linha in (resposta.data or [])}
+
+
+def _carregar_lista_jogo(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
+    """Lista do jogo (titulares + reservas, ~20 por time) de `match_lineup_fotmob`:
+    colunas `match_id`, `team_id`, `fotmob_player_id`, `is_starter`. Base dos desfalques
+    por lista (`desfalques_lista.py`). Tabela com ~40 linhas por partida: lote pequeno de
+    IDs (menos páginas por lote -> OFFSET menor), paginação por `id` (único)."""
+    if not match_ids:
+        return pd.DataFrame(columns=["match_id", "team_id", "fotmob_player_id", "is_starter"])
+
+    def factory(lote, inicio, fim):
+        return (
+            supabase.table("match_lineup_fotmob")
+            .select("match_id, team_id, fotmob_player_id, is_starter")
+            .in_("match_id", lote)
+            .order("id")
+            .range(inicio, fim)
+        )
+
+    return pd.DataFrame(_paginar_por_lotes_de_id(factory, match_ids, tamanho_lote=100))
+
+
+def acrescentar_desfalques_lista(dataset: pd.DataFrame, lista_jogo: pd.DataFrame) -> pd.DataFrame:
+    """Acrescenta `desf_fora_*`/`desf_peso_*` (casa, fora e diferença casa - fora): nº de REGULARES
+    do time (>= 5 titularidades nas 10 partidas anteriores) que NÃO estão na lista do jogo e o seu
+    peso (soma das frações de titularidade). Ver `desfalques_lista.py`.
+
+    `dataset`: colunas `id`, `match_date`, `home_team_id`, `away_team_id`. `lista_jogo`: a lista de CADA
+    jogo (inclusive as partidas anteriores que definem os regulares). Partida sem lista, ou time sem
+    histórico suficiente, fica NaN -- NaN significa 'desconhecido', não 'zero desfalques'. Só usa
+    partidas anteriores para definir 'regular'; a lista do PRÓPRIO jogo (conhecida ~60-75 min antes do
+    apito) é a informação nova. Não altera nenhuma coluna existente."""
+    colunas = FEATURES_NUMERICAS_DESFALQUES
+    if lista_jogo is None or lista_jogo.empty:
+        for coluna in colunas:
+            dataset[coluna] = float("nan")
+        return dataset
+    d = _desfalques_lista.desfalques_por_partida(lista_jogo, dataset[["id", "match_date"]])
+    d = d[["match_id", "team_id", "n_fora", "peso_fora"]]
+    casa = d.rename(columns={"match_id": "id", "team_id": "home_team_id", "n_fora": "desf_fora_home", "peso_fora": "desf_peso_home"})
+    fora = d.rename(columns={"match_id": "id", "team_id": "away_team_id", "n_fora": "desf_fora_away", "peso_fora": "desf_peso_away"})
+    dataset = dataset.merge(casa, on=["id", "home_team_id"], how="left")
+    dataset = dataset.merge(fora, on=["id", "away_team_id"], how="left")
+    dataset["desf_fora_diff"] = dataset["desf_fora_home"] - dataset["desf_fora_away"]
+    dataset["desf_peso_diff"] = dataset["desf_peso_home"] - dataset["desf_peso_away"]
+    return dataset
 
 
 def _carregar_squad_rating_pre_jogo(supabase: Client, match_ids: list[int]) -> pd.DataFrame:
@@ -4513,6 +4560,17 @@ FEATURES_V9_XG_CORRIGIDO = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + CAT_FEATURES
 FEATURES_NUMERICAS_ELO_XG = ["elo_xg_home", "elo_xg_away", "elo_xg_diff"]
 FEATURES_V9_ELO_XG = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + FEATURES_NUMERICAS_ELO_XG + CAT_FEATURES
 
+# Desfalques pela LISTA DO JOGO (scripts/desfalques_lista.py): regulares do time que nao estao entre os
+# ~20 convocados do jogo. Nao entra em nenhuma lista de features de producao -- so em
+# FEATURES_V9_ELO_XG_DESFALQUES, usada pelo teste `scripts/comparar_catboost_v9_desfalques.py`.
+# REQUER a lista do jogo (publicada ~60-75 min antes do apito): NaN antes disso. Sinal univariado de
+# 02/10/2026: -16 pontos de Elo por dp sobre o Elo por xG (t = -7,9), mas ~-2 sobre a Pinnacle de fechamento.
+FEATURES_NUMERICAS_DESFALQUES = [
+    "desf_fora_home", "desf_fora_away", "desf_fora_diff",
+    "desf_peso_home", "desf_peso_away", "desf_peso_diff",
+]
+FEATURES_V9_ELO_XG_DESFALQUES = FEATURES_NUMERICAS_V9_XG_CORRIGIDO + FEATURES_NUMERICAS_ELO_XG + FEATURES_NUMERICAS_DESFALQUES + CAT_FEATURES
+
 # v10 — tudo da v9 + features do XI titular expandidas:
 #   • titular_avg_age_home/away: idade média dos titulares NA DATA DA PARTIDA,
 #     calculada de players.birth_date (novo campo, migração 20260729120000).
@@ -5160,6 +5218,9 @@ def montar_dataset_ml_empilhado(
     # Elo global por xG (ver `_carregar_elo_xg_pre_jogo`) -- colunas novas, fora de
     # qualquer lista de features de producao; so o teste comparativo as usa.
     dataset = acrescentar_elo_xg(dataset, _carregar_elo_xg_pre_jogo(supabase, [int(i) for i in dataset["id"].tolist()]))
+    # Desfalques pela lista do jogo (ver `acrescentar_desfalques_lista`) -- colunas novas, fora de
+    # qualquer lista de features de producao; so o teste comparativo as usa.
+    dataset = acrescentar_desfalques_lista(dataset, _carregar_lista_jogo(supabase, [int(i) for i in dataset["id"].tolist()]))
     dataset = dataset.join(forma_gols, on="id")
     dataset = dataset.join(forma_gols_mesma_liga, on="id")
     dataset = dataset.join(forma_xg, on="id")
@@ -5480,6 +5541,8 @@ def montar_dataset_ml_empilhado(
         "elo_home", "elo_away",
         # Elo global por xG (nao e feature de producao ainda)
         *FEATURES_NUMERICAS_ELO_XG,
+        # Desfalques pela lista do jogo (nao e feature de producao ainda)
+        *FEATURES_NUMERICAS_DESFALQUES,
         # Forma de gols (5j, mando separado)
         *COLUNAS_FORMA_GOLS.values(),
         # xG e xGOT multi-janela (5j / 10j / 20j + EWMA)
