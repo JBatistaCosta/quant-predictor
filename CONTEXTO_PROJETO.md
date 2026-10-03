@@ -5,9 +5,19 @@
 
 
 
+
+
 ---
 
-**Volume de cruzamentos por time e jogo (03/10) -- Achado 21 em `ACHADOS_COMPORTAMENTO.md`.** Média 17,6 (p10/p50/p90 = 5/17/31), precisão 24%; variância ~5,8x a de Poisson (usar binomial negativa). Casa 19,9 x fora 15,4; só o time muito mais fraco (Elo) cruza menos (12,4 contra ~18-19); o time explica ~30% da variância. Na Série B, mais tempo perdendo = mais cruzamentos (17,8 -> 25,1) e mais tempo ganhando = menos (22,5 -> 14,8), **mas sem controle de força de equipe** (mesma armadilha da fase 2 do estado do jogo). **Copa Libertadores (liga 23) com 6,9 cruzamentos/jogo e só 2,9 jogadores com cruzamento é provável lacuna de cobertura do FotMob** -- não usar o volume dessa liga sem checar. Armadilha de SQL registrada: `CASE WHEN x/y < k` com `x` NULL cai no `ELSE`; usar `coalesce`.
+**Fraqueza aérea do adversário não muda o volume de cruzamentos (03/10) -- Achado 23 em `ACHADOS_COMPORTAMENTO.md`.** Brasileirão A e B (3.588 time-jogos, 44 times), características do adversário na média dos 8 jogos anteriores, controlando mando x Elo relativo: chutes de cabeça sofridos 0,045, xG de cabeça sofrido 0,035, fração de cabeça sofrida 0,002, cortes de cabeça 0,077 (positivo: mede exposição, não força), cruzamentos sofridos 0,106 (único com algum peso, igual ao do histórico do próprio time). Zaga forte ou fraca no jogo aéreo não muda os cruzamentos de forma detectável; falta uma medida por zagueiro escalado para um teste mais limpo.
+
+---
+
+**Cabeceio x cruzamento e correção do Achado 21 (03/10) -- Achado 22 em `ACHADOS_COMPORTAMENTO.md`.** Não há "índice de cabeceio" pronto; fontes: chutes de cabeça (`match_shots_fotmob.shot_type`), xG de cabeça e `duelos_aereos_total` (sem taxa de ganho). No mesmo jogo, chutes de cabeça e cruzamentos têm correlação 0,56 (mecânica: cruzar gera cabeceio), mas a média dos 8 jogos anteriores de cabeceio prevê o cruzamento do próximo jogo com correlação de só 0,04-0,07 (controlando mando e Elo), e os próprios cruzamentos anteriores só 0,10: a hipótese "bons cabeceadores cruzam mais" não se sustenta como preditor. **Correção:** o ICC de 0,31 do Achado 21 estava inflado pela Libertadores (cobertura baixa do FotMob); nas ligas brasileiras (54 times, 10.915 time-jogos) é **0,13**. Para o simulador, o histórico do time deve pesar pouco no volume de cruzamentos.
+
+---
+
+**Volume de cruzamentos por time e jogo (03/10) -- Achado 21 em `ACHADOS_COMPORTAMENTO.md`.** Média 17,6 (p10/p50/p90 = 5/17/31), precisão 24%; variância ~5,8x a de Poisson (usar binomial negativa). Casa 19,9 x fora 15,4; só o time muito mais fraco (Elo) cruza menos (12,4 contra ~18-19); o time explicaria ~30% da variância (CORRIGIDO no Achado 22: 13% só nas ligas brasileiras; os 30% vinham da Libertadores). Na Série B, mais tempo perdendo = mais cruzamentos (17,8 -> 25,1) e mais tempo ganhando = menos (22,5 -> 14,8), **mas sem controle de força de equipe** (mesma armadilha da fase 2 do estado do jogo). **Copa Libertadores (liga 23) com 6,9 cruzamentos/jogo e só 2,9 jogadores com cruzamento é provável lacuna de cobertura do FotMob** -- não usar o volume dessa liga sem checar. Armadilha de SQL registrada: `CASE WHEN x/y < k` com `x` NULL cai no `ELSE`; usar `coalesce`.
 
 ---
 
