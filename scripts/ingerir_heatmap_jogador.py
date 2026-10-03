@@ -92,6 +92,24 @@ def montar_linhas(match_id: int, heatmap: dict, opta_para_fotmob: dict[str, str]
     return linhas, sem_ponte
 
 
+def combinar_time_jogador(lineup_rows: list[dict], stats_rows: list[dict]) -> dict[str, dict]:
+    """{fotmob_player_id: {"team_id", "player_id"}} da partida. A escalação (`match_lineup_fotmob`) manda; onde ela não tem o
+    jogador, ou tem sem time/`player_id`, completa com as estatísticas do jogo (`match_player_stats_fotmob`). Achado
+    03/10/2026: 5,9% dos jogadores do mapa de calor (133 partidas) não estavam na escalação guardada, e quase todos
+    existiam nas estatísticas."""
+    saida: dict[str, dict] = {}
+    for fonte in (lineup_rows, stats_rows):
+        for r in fonte:
+            fid = r.get("fotmob_player_id")
+            if not fid:
+                continue
+            atual = saida.setdefault(fid, {"team_id": None, "player_id": None})
+            for campo in ("team_id", "player_id"):
+                if atual[campo] is None and r.get(campo) is not None:
+                    atual[campo] = r[campo]
+    return saida
+
+
 def deve_retentar(coleta: dict | None, match_date: datetime, agora: datetime) -> bool:
     """Partida sem registro entra; 'ok' nunca volta; 'indisponivel'/'erro' voltam até MAX_TENTATIVAS, só se o jogo é recente."""
     if coleta is None:
@@ -165,8 +183,10 @@ def processar(supabase, requests, c: dict) -> str:
     det = requests.get(f"{BASE}/matchDetails?matchId={c['fotmob_match_id']}", headers=HEADERS, timeout=30)
     det.raise_for_status()
     ponte = mapa_opta_para_fotmob(det.json())
-    lineup = {l["fotmob_player_id"]: l for l in _exec_retry(supabase.table("match_lineup_fotmob").select("fotmob_player_id,team_id,player_id").eq("match_id", c["match_id"])).data}
-    ids = sorted({f for f in ponte.values() if f not in lineup or not lineup[f].get("player_id")})
+    lineup = combinar_time_jogador(
+        _exec_retry(supabase.table("match_lineup_fotmob").select("fotmob_player_id,team_id,player_id").eq("match_id", c["match_id"])).data,
+        _exec_retry(supabase.table("match_player_stats_fotmob").select("fotmob_player_id,team_id,player_id").eq("match_id", c["match_id"])).data)
+    ids = sorted({f for f in ponte.values() if not lineup.get(f, {}).get("player_id")})
     jogadores = {}
     for i in range(0, len(ids), 100):
         jogadores.update({j["fotmob_player_id"]: j["id"] for j in _exec_retry(supabase.table("players").select("id,fotmob_player_id").in_("fotmob_player_id", ids[i:i + 100])).data})
