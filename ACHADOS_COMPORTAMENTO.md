@@ -1595,3 +1595,30 @@ Inclinações (cruzamentos do time por unidade da variável do adversário): cru
 **Para o simulador:** taxa geral por zona para todos; ajuste por Elo global apenas na perda (e nos chutes dos times bem mais fracos); sem matriz por time.
 
 **Limites:** o mapa de calor é de março/2026 em diante e mistura campeonatos (testes 1 a 3) ou só Brasileirão A e B (teste 4, 505 jogos; perdas com 175 time-jogos no teste); sem IC 95%, ganhos desta ordem podem ser ruído (o ganho do Elo em chutes foi de +0,0020 em uma amostra e +0,0012 em outra); faixas de Elo escolhidas por mim (100 em 100 pontos nos testes 2 e 3; quintis no 4); Poisson sem sobredispersão (as perdas variam mais do que isso); a perda não tem posição (a taxa de perda POR ZONA só existe no StatsBomb, La Liga 2015/16); atribuição de toques por zona via mapa de calor, que é aproximação.
+
+
+### Achado 24 (continuação) — toques permitidos no último terço e média com decaimento no tempo
+
+**Toques permitidos** (os toques do ADVERSÁRIO na zona de ataque dele, contra o time que defende; mapa de calor; Brasileirão A e B, 878 time-jogos, 40 times, >= 5 jogos anteriores). "Último terço" = x >= 70 m (os últimos 35 m do campo adversário); "grande área" = x >= 88,5 m e 13,85 <= y <= 54,15 m. Média de 170 toques permitidos no último terço por jogo (desvio 61; 23,6% dos toques do adversário) e 29 na grande área. Correlação no MESMO jogo com o xG sofrido: 0,33 (último terço) e **0,51** (grande área).
+
+**Estabilidade e previsão com janela fixa de 8 jogos** (descontado o mando): o histórico prevê o próprio valor do jogo seguinte com correlação 0,22 (último terço), 0,20 (grande área) e 0,14 (xG sofrido); e prevê o xG sofrido do jogo seguinte com 0,154 (toques na grande área), 0,142 (xG sofrido anterior) e 0,125 (último terço).
+
+**Média com decaimento (EWMA).** Peso de cada jogo anterior = 0,5 elevado a (distância em jogos − 1) / meia-vida. Correlações com o jogo seguinte (mesmos 878 time-jogos):
+
+| Alvo (histórico → jogo seguinte) | meia-vida 2 | 4 | 8 | 16 | janela fixa 8 | todos os jogos anteriores (sem peso) |
+|---|---|---|---|---|---|---|
+| toques último terço → próprios | 0,196 | 0,229 | 0,247 | 0,253 | 0,221 | 0,257 |
+| toques grande área → próprios | 0,191 | 0,216 | 0,227 | 0,229 | 0,203 | 0,227 |
+| xG sofrido → próprio | 0,163 | 0,171 | 0,172 | 0,170 | 0,142 | 0,166 |
+| toques grande área → xG sofrido | 0,148 | 0,163 | 0,165 | 0,162 | 0,154 | 0,155 |
+| toques último terço → xG sofrido | 0,110 | 0,127 | 0,131 | 0,131 | 0,125 | 0,129 |
+
+**Leitura:**
+- Meia-vida **curta (2 jogos) é a pior**: dá peso demais a poucos jogos e perde sinal.
+- Meia-vida de **8 a 16 jogos** é a melhor e **empata com a média de todos os jogos anteriores**: o decaimento no tempo não acrescenta nada além de "usar mais histórico". As características defensivas do time são estáveis ao longo da temporada.
+- A janela fixa de 8 jogos fica **abaixo** da EWMA de meia-vida 8 em quase tudo (0,221 contra 0,247 nos toques do último terço; 0,142 contra 0,172 no xG sofrido): o corte brusco joga fora informação útil.
+- O ganho de todas essas escolhas é de 0,01 a 0,03 em correlação; o erro-padrão de uma correlação com n = 878 é ~0,034, então só a diferença "meia-vida 2 pior" e "janela fixa de 8 um pouco pior" tem alguma sustentação, e mesmo assim fraca.
+
+**Consequência (vale para os achados 21 a 24):** onde usamos a média dos 8 jogos anteriores como "histórico do time", trocar por EWMA com meia-vida de 8 a 16 jogos (ou pela média de todos os jogos anteriores da temporada) é o ajuste simples e correto; não vale uma meia-vida curta. A conclusão geral continua: toda característica de time tem estabilidade baixa (0,14 a 0,26), então o histórico entra com peso pequeno.
+
+**Limites:** só Brasileirão A e B, sem intervalo de confiança; o "histórico" só inclui jogos com mapa de calor (março/2026 em diante); meias-vidas medidas em número de jogos, não em dias; correlações simples sem controlar a força do adversário.
