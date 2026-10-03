@@ -5,7 +5,7 @@
 // La Liga 2015/16, 380 partidas). CONSTANTE UNIVERSAL EXTERNA, não calibrada por liga/confronto, sem IC 95% -- mesmas
 // ressalvas de zoneTransitionMatrix.js (3x3). Módulo à parte: não alimenta nenhuma simulação em produção.
 // Índice do array = zona do banco - 1 (zona 1 = defesa/lado_y_baixo ... 18 = grande_area_adversaria/lado_y_alto).
-// O corredor 1 do banco é `lado_y_baixo` (no StatsBomb = lado esquerdo de quem ataca); a correspondência com o FotMob NÃO foi verificada.
+// Lateralidade (verificada com dados em 03/10/2026, StatsBomb e FotMob): corredor 1 = `lado_y_baixo` = ESQUERDA de quem ataca; corredor 3 = `lado_y_alto` = DIREITA.
 // Base: 667415 ações (continua=552934, chute=9168, perda=105313).
 
 export const ZONAS_18 = [

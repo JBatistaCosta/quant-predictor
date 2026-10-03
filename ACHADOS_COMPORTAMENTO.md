@@ -1408,7 +1408,7 @@ Mantém os padrões do Achado 15: a diagonal é o maior valor de cada linha (50-
 ### Ressalvas
 - **Mesmas do Achado 15:** uma liga, uma temporada, sem IC 95%, sem validação contra o dado do projeto, nem por liga/confronto; não deve ser apresentada como específica de nenhuma liga.
 - Taxa de chute é **por ação que começa na zona**, não por chegada da bola na zona.
-- Corredor 1 do banco = `lado_y_baixo` = lado esquerdo de quem ataca no StatsBomb; a correspondência com o FotMob NÃO foi verificada (mesma ressalva dos toques por jogador).
+- Lateralidade: corredor 1 do banco = `lado_y_baixo` = ESQUERDA de quem ataca, corredor 3 = `lado_y_alto` = DIREITA. Verificado com dados em 03/10/2026 nas duas fontes (ver Achado 19, seção "Lateralidade").
 - Combinar com os toques por jogador (`match_player_heatmap_fotmob`) exige cuidado: a matriz descreve o que acontece com a bola, os toques descrevem onde cada jogador a toca; uma não gera a outra.
 - Próxima etapa combinada com o usuário: migrar para 18 zonas (6 faixas x 3 corredores) e COMPARAR com esta de 12. O gerador recebe a grade como parâmetro, então é acrescentar uma função de zona.
 
@@ -1448,4 +1448,26 @@ O ganho tem o mesmo sinal nos 5 blocos. O teste FINO favorece o 18 por construç
 - **Toques por jogador (FotMob):** ~46 toques por jogador e jogo caem em 18 zonas, ~2,6 por zona (contra ~3,9 em 12). Por jogo isso é muito esparso; por jogador ao longo da temporada (dezenas de jogos) é viável, mas exige encolhimento para a média da linha. A grade nova NÃO exige coletar de novo: os pontos estão em décimos de metro e `v_toques_zona18` os reclassifica.
 
 ### Ressalvas
-Mesmas do Achado 15/18: uma liga, uma temporada, sem IC 95% por célula (o erro-padrão acima é entre blocos de partidas, não por zona); a taxa de chute é por ação que começa na zona; a correspondência esquerda/direita com o FotMob continua não verificada. A escolha das duas faixas divididas usou o mesmo conjunto que depois foi usado na comparação (dentro da amostra, para escolher; fora da amostra, só no desempenho dos blocos): o ganho da divisão em si foi enorme (milhares de nats) frente ao custo de parâmetros (~230), então a escolha é robusta, mas uma terceira divisão (defesa) ainda não foi avaliada fora da amostra.
+Mesmas do Achado 15/18: uma liga, uma temporada, sem IC 95% por célula (o erro-padrão acima é entre blocos de partidas, não por zona); a taxa de chute é por ação que começa na zona; a lateralidade (esquerda/direita) está verificada nas duas fontes (seção "Lateralidade" abaixo). A escolha das duas faixas divididas usou o mesmo conjunto que depois foi usado na comparação (dentro da amostra, para escolher; fora da amostra, só no desempenho dos blocos): o ganho da divisão em si foi enorme (milhares de nats) frente ao custo de parâmetros (~230), então a escolha é robusta, mas uma terceira divisão (defesa) ainda não foi avaliada fora da amostra.
+
+### Lateralidade: `lado_y_baixo` é a esquerda de quem ataca (verificado nas duas fontes)
+Pergunta do usuário: a lateralidade foi definida? Até aqui era uma dedução (StatsBomb) e um ponto aberto (FotMob). Verificado em 03/10/2026 cruzando a posição conhecida do jogador com a média do `y` dos seus toques:
+
+| Posição | StatsBomb (50 jogos, `y` de 0 a 80) | FotMob (`y` de 0 a 68, ~1.900 jogadores) |
+|---|---|---|
+| Lateral esquerdo | 11,9 | 13,2 |
+| Lateral direito | 68,7 | 53,1 |
+| Ala esquerdo / direito | 10,8 / 68,4 | 16,9 / 53,5 |
+| Ponta/meia esquerdo | 21,0 / 22,9 | 23,9 / 22,1 |
+| Ponta/meia direito | 54,7 / 56,9 | 44,6 / 48,0 |
+
+Nas duas fontes o lado esquerdo tem `y` baixo e o direito `y` alto, com o time sempre atacando rumo ao x máximo. Logo **`lado_y_baixo` = esquerda de quem ataca e `lado_y_alto` = direita**, e as matrizes do StatsBomb (Achados 18 e 19) valem para os toques do FotMob sem espelhar. Detalhe: a posição usada no FotMob é a principal do jogador (`player_details_fotmob.primary_position`), não o papel em cada jogo, o que só dilui o efeito (os pontas esquerdos ficam em 24, não em 13). Os nomes das zonas no banco não mudam (`lado_y_*`), para não quebrar nada; o significado está documentado aqui e nos módulos gerados.
+
+### O mapa de calor informa o instante da ação? Não o minuto, mas a lista vem em ordem cronológica
+Pergunta do usuário. Cada ponto do mapa de calor do FotMob tem só `cx`, `cy` e `r` (nenhum campo de tempo), mas a **ordem dos pontos de cada jogador é cronológica**, o que `match_player_heatmap_fotmob.pontos` preserva. Duas provas independentes (03/10/2026):
+- **Pontapé inicial:** o ponto exato do centro do campo (52,5; 34) aparece na **primeira posição** da lista em 86,1% dos casos (783 de 909), contra 1,9% se a ordem fosse aleatória.
+- **Chutes com minuto conhecido** (1.112 chutes de `match_shots_fotmob` casados com exatamente um ponto): correlação de **0,695** entre o minuto do chute e a posição relativa do ponto na lista; posição média 0,26 para chutes até os 30', 0,54 de 30' a 60' e 0,74 depois dos 60'.
+
+**Precisão de estimar o minuto pela posição** (jogadores que jogaram os 90 minutos; minuto estimado = posição relativa x 90; 634 chutes): erro mediano **5,5 min**, médio 9,8 min, 72,9% dentro de 10 min e 88,5% dentro de 20 min. Serve para fases do jogo (terços, primeiro/segundo tempo, antes/depois de um gol), não para minuto exato; os toques não são uniformes no tempo, e quem entrou do banco ou saiu antes precisa usar entrada/saída (`match_lineup_fotmob`) em vez de 0 a 90.
+
+**O que isso NÃO dá:** não há relógio comum entre jogadores; cada lista é ordenada só dentro do próprio jogador. Não dá para intercalar os toques de jogadores diferentes e reconstruir a sequência de posse da partida (quem tocou depois de quem) nem pares "bola saiu do jogador A e chegou ao B". A transição entre zonas continua vindo do StatsBomb.

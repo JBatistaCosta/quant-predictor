@@ -22,8 +22,10 @@ Definições (por ação do time com a bola, a partir da zona onde a ação COME
     (548) ficam FORA -- contá-los aumentaria a perda em 1-2 pontos percentuais em toda zona.
 `taxa_desfecho[z]` = fração de chute/perda/continua entre as ações que começam em z;
 `transicao[z][w]` = P(próxima zona = w | a ação continua).
-Orientação: o StatsBomb já entrega cada time atacando rumo a x=120; y=0 é o lado ESQUERDO de quem ataca. No banco o corredor 1
-é `lado_y_baixo`, e a correspondência com esquerda/direita do FotMob NÃO foi verificada.
+Orientação (VERIFICADA com dados em 03/10/2026): o StatsBomb entrega cada time atacando rumo a x=120 e y=0 é o lado ESQUERDO de quem
+ataca (lateral esquerdo: y médio 11,9; direito: 68,7; campo 0..80). O FotMob (mapa de calor, campo 105 x 68, também atacando rumo a
+x=105) segue a MESMA convenção (lateral esquerdo: y médio 13,2; direito: 53,1; ponta esquerdo 23,9; direito 44,6; ~1.900 jogadores).
+Logo, no banco `lado_y_baixo` (corredor 1) = ESQUERDA de quem ataca, `lado_y_alto` (corredor 3) = DIREITA, nas duas fontes.
 
 Uso:
     python scripts/gerar_matriz_transicao_statsbomb.py --cache-dir /tmp/sb --saida /tmp/matriz.json
@@ -159,7 +161,7 @@ def escrever_modulo_js(r: dict, caminho: str) -> None:
               "// La Liga 2015/16, 380 partidas). CONSTANTE UNIVERSAL EXTERNA, não calibrada por liga/confronto, sem IC 95% -- mesmas",
               "// ressalvas de zoneTransitionMatrix.js (3x3). Módulo à parte: não alimenta nenhuma simulação em produção.",
               f"// Índice do array = zona do banco - 1 (zona 1 = {nomes[0]} ... {n} = {nomes[-1]}).",
-              "// O corredor 1 do banco é `lado_y_baixo` (no StatsBomb = lado esquerdo de quem ataca); a correspondência com o FotMob NÃO foi verificada.",
+              "// Lateralidade (verificada com dados em 03/10/2026, StatsBomb e FotMob): corredor 1 = `lado_y_baixo` = ESQUERDA de quem ataca; corredor 3 = `lado_y_alto` = DIREITA.",
               f"// Base: {r['n_acoes']} ações (continua={sum(r['contagem']['continua'])}, chute={sum(r['contagem']['chute'])}, perda={sum(r['contagem']['perda'])}).",
               "",
               f"export const ZONAS_{n} = ["]
