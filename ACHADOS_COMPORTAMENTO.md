@@ -1622,3 +1622,50 @@ Inclinações (cruzamentos do time por unidade da variável do adversário): cru
 **Consequência (vale para os achados 21 a 24):** onde usamos a média dos 8 jogos anteriores como "histórico do time", trocar por EWMA com meia-vida de 8 a 16 jogos (ou pela média de todos os jogos anteriores da temporada) é o ajuste simples e correto; não vale uma meia-vida curta. A conclusão geral continua: toda característica de time tem estabilidade baixa (0,14 a 0,26), então o histórico entra com peso pequeno.
 
 **Limites:** só Brasileirão A e B, sem intervalo de confiança; o "histórico" só inclui jogos com mapa de calor (março/2026 em diante); meias-vidas medidas em número de jogos, não em dias; correlações simples sem controlar a força do adversário.
+
+
+## Achado 25 — o cabeceio é do jogador (estável), não do time; e de onde saem os escanteios
+
+### Parte A — índice de cabeceio por jogador (FotMob, banco)
+
+**Método:** jogos desde 2025, só jogadores de linha (`usual_position_id` 1 a 3). Cada jogador: primeiros 70% dos jogos treinam, últimos 30% testam; só jogadores com >= 15 jogos, >= 900 minutos no treino e >= 300 no teste. Chute de cabeça = `match_shots_fotmob.shot_type` com "head"; duelos aéreos e cortes de cabeça vêm de `match_player_stats_detalhe_fotmob`. O índice individual é a taxa por minuto do jogador encolhida para a média da posição (peso de 300, 900 ou 2.700 minutos).
+
+| Posição | Jogadores | Chutes de cabeça por 90 | Estabilidade treino → teste | xG de cabeça por 90 (estabilidade) | Duelos aéreos por 90 → chutes de cabeça futuros | Ganho do índice (peso 300 / 900 / 2.700 min) |
+|---|---|---|---|---|---|---|
+| Defesa | 1.390 | 0,217 | **0,603** | 0,383 | 0,544 | +0,243 / +0,238 / +0,190 |
+| Meio | 1.272 | 0,122 | **0,597** | 0,457 | 0,468 | +0,303 / +0,330 / +0,285 |
+| Ataque | 860 | 0,356 | **0,717** | 0,569 | 0,637 | +0,297 / +0,282 / +0,218 |
+
+Ganho = log-verossimilhança de Poisson do índice individual menos a da média da posição, por chute de cabeça (nats). Cortes de cabeça por 90 prevêem os chutes de cabeça futuros com 0,214 a 0,501 (cabeceio defensivo é um sinal mais fraco do ofensivo).
+
+**Leitura:** o cabeceio é uma característica **estável do jogador** (correlação 0,60 a 0,72 entre treino e teste) e o índice individual supera a média da posição com folga (0,19 a 0,33 nats por cabeceio). Isso é de 50 a 100 vezes o ganho que qualquer ajuste por TIME, Elo ou xG deu (0,001 a 0,007, Achado 24): a informação mora no jogador, não na equipe. Duelos aéreos por 90 minutos são um bom substituto quando o jogador tem poucos chutes.
+
+**Do jogador para o time** (4.149 time-jogos de 2026; índice de cada jogador calculado só com dados até 30/11/2025; índice da escalação = soma da taxa por 90 dos titulares com >= 60 min; 89% dos titulares eram conhecidos; os demais entram com a média da posição; correlações descontando o mando):
+
+| Previsor | Chutes de cabeça do time no jogo | Cruzamentos do time (3.916 jogos) |
+|---|---|---|
+| índice da escalação | 0,143 | 0,088 |
+| média dos 8 jogos anteriores do time | **0,230** | 0,097 |
+
+A escalação prevê os cabeceios do time **pior** que o histórico recente do próprio time: o volume de cabeceio de um time no jogo depende de tática, do adversário e dos cruzamentos, não só de quem joga. Para os **cruzamentos**, nenhum dos dois ajuda, o que reforça o Achado 22 (cabecear bem não faz o time cruzar mais). A inclinação do índice da escalação sobre os cabeceios do time é de 0,64 cabeceio por unidade do índice (desvio-padrão do índice: 0,42).
+
+**Limites da parte A:** posição pela posição habitual do jogador (não a posição que jogou naquele jogo); goleiros fora; sem intervalo de confiança; o teste do time usa um único corte temporal (treino até 30/11/2025, teste a partir de 01/01/2026) e mistura competições; não foi testado um modelo combinando índice da escalação e histórico do time.
+
+### Parte B — de onde saem os escanteios (StatsBomb, La Liga 2015/16)
+
+**Método:** `scripts/analisar_origem_escanteios_statsbomb.py`. No StatsBomb o evento imediatamente anterior a um escanteio é do time que DEFENDE (bloqueio 24,8%, corte 24,3%, disputa 13,3%, defesa do goleiro 23,3%); a causa é o **último lance do time que atacava** (procurado até 25 eventos antes). 3.841 escanteios em 380 jogos = **10,1 por jogo** (dois times).
+
+| Último lance do time que atacou | % dos escanteios | Escanteios por 100 lances desse tipo |
+|---|---|---|
+| passe errado | 42,0% | 0,46 |
+| chute | 26,4% | **11,06** |
+| cruzamento errado | 14,7% | 5,95 (por 100 cruzamentos, certos ou errados) |
+| drible | 7,7% | — |
+| desarme sofrido (`Dispossessed`) | 7,2% | — |
+| `Miscontrol` | 1,9% | — |
+
+**Por zona de 18 onde começou o último lance** (escanteios por 100 ações que começam ali): grande área adversária 6,4 (centro) a 8,2 (lados); ataque fora da área alto 2,2 a 2,3; ataque fora da área baixo 0,2 a 0,4; meio 0,02 a 0,06; defesa 0,01. **Cerca de 91% dos escanteios** saem de ações nas duas faixas de ataque mais avançadas.
+
+**Uso no simulador:** o escanteio é um **quarto desfecho** da ação (além de continua, chute e perda), com taxa por zona da tabela acima, relevante só nas duas faixas de ataque; o volume por time continua vindo do modelo de produção (`api/corners-model.js`, binomial negativa, calibrada sobre `match_stats`). Depois do escanteio, a bola reaparece na grande área; onde cai a cobrança (posição final do passe de escanteio) ainda NÃO foi medido.
+
+**Limites da parte B:** uma liga e uma temporada, sem IC 95%; a atribuição ao "último lance do atacante" é aproximação (um desvio de defensor pode ser a causa real); a taxa de 11,06 por 100 chutes soma chutes de qualquer resultado; as taxas por tipo de lance excluem dribles e desarmes (a matriz do Achado 15 não os conta como ação); o FotMob não dá a posição de onde sai o escanteio (só chutes bloqueados e defendidos por zona, que daria para cruzar com os totais por time).
