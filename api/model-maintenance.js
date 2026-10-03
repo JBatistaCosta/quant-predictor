@@ -92,6 +92,12 @@
 //                                   cronológica, idempotente (retoma sozinho de onde parou).
 //                                   Pesos configuráveis via model_config (ver config-get/set);
 //                                   default é um chute inicial, não calibrado.
+//   ?tarefa=derivar-detalhe-jogador[&match_id=X|&dias=N&limite=N]
+//                               -> rede de segurança: extrai as ~45 estatísticas por jogador que
+//                                   estão no stats_raw (e não viraram colunas) para
+//                                   match_player_stats_detalhe_fotmob, via RPC
+//                                   derivar_detalhe_jogador_fotmob. Só partidas recentes (backfill
+//                                   histórico = arquivos_do_claude/backfill_detalhe_jogador.sql).
 //   ?tarefa=player-elo-reset    -> zera player_ratings/player_rating_history pra reprocessar
 //                                   do zero (necessário depois de mudar pesos na config).
 //   ?tarefa=config-get&model_name=X -> lê a config de um modelo em model_config.
@@ -1105,6 +1111,63 @@ async function tarefaDerivarFormacoes(supabase, { match_id, dias, limite } = {})
   const { data, error } = await supabase.rpc('derivar_formacoes_fotmob', { p_match_ids: pendentes });
   if (error) return { status: 500, error: `Falha ao derivar formações: ${error.message}` };
   return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_formacoes_gravadas: data ?? 0 };
+}
+
+const DIAS_DETALHE_JOGADOR_PADRAO = 7;
+const LIMITE_DETALHE_JOGADOR_POR_CHAMADA = 150; // ~42 jogadores por partida, cada um com ~35 estatísticas achatadas do JSON: derivação mais pesada que a de formações
+
+// Deriva match_player_stats_detalhe_fotmob das partidas recentes que já têm estatísticas de jogador mas ainda não têm
+// detalhe. Rede de segurança do caminho automático (a ingestão FotMob já chama a RPC partida a partida), mesmo padrão de
+// derivar-formacoes/derivar-game-state. Partidas cujo stats_raw é todo vazio nunca ganham linha de detalhe e
+// reaparecem como "pendentes" -- inofensivo (a RPC grava 0 linhas), só gasta uma fatia do teto. O backfill
+// histórico completo NÃO é feito aqui (estoura o timeout): arquivos_do_claude/backfill_detalhe_jogador.sql.
+async function tarefaDerivarDetalheJogador(supabase, { match_id, dias, limite } = {}) {
+  if (match_id) {
+    const matchId = Number(match_id);
+    if (!Number.isInteger(matchId) || matchId <= 0) return { status: 400, error: 'match_id inválido.' };
+    const { data, error } = await supabase.rpc('derivar_detalhe_jogador_fotmob', { p_match_ids: [matchId] });
+    if (error) return { status: 500, error: `Falha ao derivar detalhe do jogador: ${error.message}` };
+    return { status: 200, escopo: `partida ${matchId}`, n_linhas_gravadas: data ?? 0 };
+  }
+
+  const janelaDias = Number(dias) || DIAS_DETALHE_JOGADOR_PADRAO;
+  const teto = Math.min(Number(limite) || LIMITE_DETALHE_JOGADOR_POR_CHAMADA, LIMITE_DETALHE_JOGADOR_POR_CHAMADA);
+  const desde = new Date(Date.now() - janelaDias * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: recentes, error: erroRecentes } = await supabase
+    .from('matches')
+    .select('id')
+    .gte('match_date', desde)
+    .order('match_date', { ascending: false })
+    .limit(1000);
+  if (erroRecentes) return { status: 500, error: `Falha ao buscar partidas recentes: ${erroRecentes.message}` };
+  if (!recentes?.length) return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0 };
+
+  const ids = recentes.map((m) => m.id);
+  const comStats = new Set();
+  const comDetalhe = new Set();
+  // ~42 linhas de jogador por partida e o PostgREST corta respostas em 1000 linhas: lote de 20 partidas (~840
+  // linhas) pra nunca truncar a lista de match_id (um lote maior esconderia partidas pendentes sem erro).
+  const lotes = [];
+  for (let i = 0; i < ids.length; i += 20) lotes.push(ids.slice(i, i + 20));
+  for (let i = 0; i < lotes.length; i += 5) {
+    await Promise.all(lotes.slice(i, i + 5).map(async (lote) => {
+      const [{ data: st }, { data: dt }] = await Promise.all([
+        supabase.from('match_player_stats_fotmob').select('match_id').in('match_id', lote).limit(1000),
+        supabase.from('match_player_stats_detalhe_fotmob').select('match_id').in('match_id', lote).limit(1000),
+      ]);
+      for (const r of st || []) comStats.add(r.match_id);
+      for (const r of dt || []) comDetalhe.add(r.match_id);
+    }));
+  }
+  const pendentes = ids.filter((id) => comStats.has(id) && !comDetalhe.has(id)).slice(0, teto);
+  if (!pendentes.length) {
+    return { status: 200, escopo: `últimos ${janelaDias} dias`, n_linhas_gravadas: 0, n_pendentes: 0, mensagem: 'Nenhuma partida com estatísticas de jogador e sem detalhe na janela.' };
+  }
+
+  const { data, error } = await supabase.rpc('derivar_detalhe_jogador_fotmob', { p_match_ids: pendentes });
+  if (error) return { status: 500, error: `Falha ao derivar detalhe do jogador: ${error.message}` };
+  return { status: 200, escopo: `últimos ${janelaDias} dias`, n_partidas_processadas: pendentes.length, n_linhas_gravadas: data ?? 0 };
 }
 
 const DIAS_GAME_STATE_PADRAO = 7;
@@ -5421,6 +5484,13 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
         const linhasJogadores = montarLinhasPlayerStats(jogo.id, content.playerStats, crosswalk, mapaPlayerIdInterno);
         if (linhasJogadores.length) {
           await supabase.from('match_player_stats_fotmob').upsert(linhasJogadores, { onConflict: 'match_id,fotmob_player_id' });
+
+          // Detalhe por jogador (fase 1 da granularidade, migration
+          // 20261003140000): a regra "stats_raw -> colunas" mora SÓ na função
+          // SQL. Falha só avisa -- é derivado, regerável por
+          // ?tarefa=derivar-detalhe-jogador.
+          const { error: erroDetalhe } = await supabase.rpc('derivar_detalhe_jogador_fotmob', { p_match_ids: [jogo.id] });
+          if (erroDetalhe) console.warn(`[detalhe-jogador] partida ${jogo.id}: ${erroDetalhe.message}`);
         }
 
         if (lineupRows.length) {
@@ -7122,6 +7192,12 @@ export default async function handler(req, res) {
 
     if (tarefa === 'derivar-cartoes-estado') {
       const resultado = await tarefaDerivarCartoesEstado(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
+      const { status, ...corpo } = resultado;
+      return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
+    }
+
+    if (tarefa === 'derivar-detalhe-jogador') {
+      const resultado = await tarefaDerivarDetalheJogador(supabase, { match_id: req.query.match_id, dias: req.query.dias, limite: req.query.limite });
       const { status, ...corpo } = resultado;
       return res.status(status).json(status === 200 ? corpo : { error: { message: corpo.error } });
     }
