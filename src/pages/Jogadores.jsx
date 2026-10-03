@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom';
 import { UserRound, Search, Loader2, AlertTriangle, ChevronLeft, ChevronRight, Shield, ArrowUpDown, RotateCcw, UploadCloud, Star, Globe } from 'lucide-react';
 import { supabase, supabaseAtivo } from '../supabaseClient';
 import { apiUrl } from '../utils/apiUrl';
+import { normalizarBusca, ordenarJogadores, TERMO_MINIMO, LIMITE_BUSCA } from '../utils/buscaJogadores';
 
 const TAMANHO_PAGINA = 24;
 
@@ -22,6 +23,11 @@ const ORDENACOES = [
   { valor: 'age.asc', rotulo: 'Idade (menor)', coluna: 'age', asc: true },
   { valor: 'age.desc', rotulo: 'Idade (maior)', coluna: 'age', asc: false },
 ];
+
+// Só aparece (e vira o padrão) quando há texto na busca: ordena pelo score de semelhança da RPC `buscar_jogadores`.
+const ORDENACAO_RELEVANCIA = { valor: 'relevancia', rotulo: 'Relevância (busca)', coluna: null, asc: false };
+
+const COLUNAS_VIEW = 'id, name, photo_url, age, country_name, country_code, market_value, rating, n_partidas, team_name, team_crest_url, equipe_id';
 
 const LOTES_IMPORTACAO = [20, 50, 100, 200];
 const PACING_IMPORTACAO_MS = 1300; // mesmo espaçamento usado nos scripts de backfill, evita bloqueio de IP pelo FotMob
@@ -91,6 +97,8 @@ export default function Jogadores() {
   const [ratingMin, setRatingMin] = useState('');
   const [valorMinDigitado, setValorMinDigitado] = useState('');
   const [valorMin, setValorMin] = useState('');
+  const [apelidos, setApelidos] = useState(new Map()); // id -> apelido que casou com a busca (só quando foi por apelido)
+  const [buscaIndisponivel, setBuscaIndisponivel] = useState(false); // RPC ausente: caiu no ILIKE antigo
   const [versao, setVersao] = useState(0); // incrementa pra forçar re-fetch após reset/importação
 
   const [resetando, setResetando] = useState(false);
@@ -107,7 +115,16 @@ export default function Jogadores() {
   const [erroBio, setErroBio] = useState('');
 
   useEffect(() => {
-    const timer = setTimeout(() => { setBusca(buscaDigitada); setPagina(0); }, 400);
+    const timer = setTimeout(() => {
+      const termo = normalizarBusca(buscaDigitada);
+      setBusca(termo);
+      // Com texto na busca o padrão é ordenar por relevância; ao limpar, volta ao padrão de antes.
+      setOrdenacao(atual => {
+        if (termo.length >= TERMO_MINIMO) return atual === ORDENACOES[0].valor ? ORDENACAO_RELEVANCIA.valor : atual;
+        return atual === ORDENACAO_RELEVANCIA.valor ? ORDENACOES[0].valor : atual;
+      });
+      setPagina(0);
+    }, 400);
     return () => clearTimeout(timer);
   }, [buscaDigitada]);
 
@@ -126,17 +143,55 @@ export default function Jogadores() {
       setCarregando(true);
       setErro('');
       const config = ORDENACOES.find(o => o.valor === ordenacao) || ORDENACOES[0];
+      const inicio = pagina * TAMANHO_PAGINA;
+      const termo = normalizarBusca(busca);
+      let achadosPorBusca = null; // Map(id -> { score, apelido }) quando a RPC respondeu
 
+      if (termo.length >= TERMO_MINIMO) {
+        const { data: achados, error: erroRpc } = await supabase.rpc('buscar_jogadores', { p_termo: termo, p_limite: LIMITE_BUSCA });
+        if (!erroRpc && Array.isArray(achados)) {
+          achadosPorBusca = new Map(achados.map(a => [a.player_id, { score: a.score, apelido: a.apelido }]));
+        } else {
+          console.warn('buscar_jogadores indisponível, usando ILIKE:', erroRpc?.message);
+        }
+      }
+      setBuscaIndisponivel(termo.length >= TERMO_MINIMO && achadosPorBusca === null);
+
+      if (achadosPorBusca) {
+        // Busca por apelido/semelhança: pega as linhas da view só dos ids achados (no máximo LIMITE_BUSCA), aplica os
+        // filtros de rating/valor e ordena/pagina aqui mesmo (o score de relevância não existe na view).
+        const ids = [...achadosPorBusca.keys()];
+        let linhas = [];
+        if (ids.length > 0) {
+          let q = supabase.from('vw_jogadores_lista').select(COLUNAS_VIEW).in('id', ids);
+          if (ratingMin !== '') q = q.gte('rating', Number(ratingMin));
+          if (valorMin !== '') q = q.gte('market_value', Number(valorMin) * 1_000_000);
+          const { data, error } = await q;
+          if (error) { setErro(error.message); setCarregando(false); return; }
+          linhas = data || [];
+        }
+        const relevancia = new Map([...achadosPorBusca].map(([id, v]) => [id, v.score]));
+        const ordenadas = ordenarJogadores(linhas, {
+          coluna: config.coluna, asc: config.asc, relevancia: ordenacao === ORDENACAO_RELEVANCIA.valor || !ORDENACOES.some(o => o.valor === ordenacao) ? relevancia : null,
+        });
+        setApelidos(new Map([...achadosPorBusca].filter(([, v]) => v.apelido).map(([id, v]) => [id, v.apelido])));
+        setJogadores(ordenadas.slice(inicio, inicio + TAMANHO_PAGINA));
+        setTotalRegistros(ordenadas.length);
+        setCarregando(false);
+        return;
+      }
+
+      setApelidos(new Map());
       let query = supabase
         .from('vw_jogadores_lista')
-        .select('id, name, photo_url, age, country_name, country_code, market_value, rating, n_partidas, team_name, team_crest_url, equipe_id', { count: 'exact' });
+        .select(COLUNAS_VIEW, { count: 'exact' });
 
-      if (busca) query = query.ilike('name', `%${busca}%`);
+      if (termo) query = query.ilike('name', `%${termo}%`);
       if (ratingMin !== '') query = query.gte('rating', Number(ratingMin));
       if (valorMin !== '') query = query.gte('market_value', Number(valorMin) * 1_000_000);
       query = query
-        .order(config.coluna, { ascending: config.asc, nullsFirst: false })
-        .range(pagina * TAMANHO_PAGINA, pagina * TAMANHO_PAGINA + TAMANHO_PAGINA - 1);
+        .order(config.coluna || ORDENACOES[0].coluna, { ascending: config.coluna ? config.asc : ORDENACOES[0].asc, nullsFirst: false })
+        .range(inicio, inicio + TAMANHO_PAGINA - 1);
 
       const { data, error, count } = await query;
       if (error) setErro(error.message);
@@ -339,6 +394,12 @@ export default function Jogadores() {
         </div>
       )}
 
+      {buscaIndisponivel && (
+        <div className="bg-amber-950/30 border border-amber-600/40 text-amber-300 text-xs px-4 py-2 rounded-xl mb-4">
+          Busca por apelido e semelhança ainda não está ativa no banco (falta aplicar a migration 20261003120000); usando a busca simples por nome.
+        </div>
+      )}
+
       {erro && (
         <div className="bg-red-950/30 border border-red-600/40 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">{erro}</div>
       )}
@@ -380,7 +441,7 @@ export default function Jogadores() {
             onChange={(e) => { setOrdenacao(e.target.value); setPagina(0); }}
             className="bg-slate-900 border border-slate-600 rounded-lg pl-8 pr-3 py-2 text-sm text-slate-100 appearance-none"
           >
-            {ORDENACOES.map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
+            {(busca.length >= TERMO_MINIMO ? [ORDENACAO_RELEVANCIA, ...ORDENACOES] : ORDENACOES).map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
           </select>
         </div>
       </div>
@@ -412,6 +473,11 @@ export default function Jogadores() {
                       <Link to={`/jogadores/${j.id}`} className="flex items-center gap-2.5 hover:text-emerald-400 hover:underline w-fit">
                         <FotoJogador url={j.photo_url} nome={j.name} />
                         <span className="truncate">{j.name || '(sem nome)'}</span>
+                        {apelidos.get(j.id) && (
+                          <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30" title="Encontrado pelo apelido">
+                            {apelidos.get(j.id)}
+                          </span>
+                        )}
                       </Link>
                     </td>
                     <td className="p-3 text-slate-400">
