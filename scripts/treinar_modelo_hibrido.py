@@ -104,7 +104,13 @@ VARIANTES_GOLS = {
     # dados_historicos.py. Comparada out-of-sample (log-verossimilhança do
     # placar/log-loss/Brier no Test Set, mesma disciplina das outras
     # variantes) pra decidir empiricamente se esse sinal ajuda o λ de gols.
-    "hibrido_gols_xg_v2_estado": {"home": "xg_home", "away": "xg_away"},
+    #
+    # RETIRADA do treino diário em 03/10/2026: a decisão de 18/09 (CONTEXTO_PROJETO.md)
+    # concluiu que não há edge sobre o mercado, e o treino diário seguia gravando
+    # ~900 mil linhas em `model_predictions` (~400 MB) que o usuário mandou apagar.
+    # Para reativar, descomente a linha abaixo (as features seguem definidas em
+    # modelos_ml.py/dados_historicos.py, e os scripts de walk-forward continuam no repo):
+    # "hibrido_gols_xg_v2_estado": {"home": "xg_home", "away": "xg_away"},
 }
 MODELO_CORNERS = "hibrido_corners_v1"
 
