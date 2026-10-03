@@ -1374,3 +1374,40 @@ Consequência prática: um replay limpo (Supabase Preview branch) reconstrói o 
 - ~~Perfil temporal por faixa de minuto~~ — **FEITO em 05/09 pro formato de gols, chutes, chutes ao gol e cartões entre ligas (Achados 8 e 9)**, e no processo apareceu um problema de cobertura de dado por liga-temporada não documentado antes (ver achado 8). Falta ainda o perfil temporal condicionado a estado de placar (achado 3/4) — essa parte específica foi começada e interrompida quando expôs o bug do Achado 5, e não foi refeita depois da correção do relógio.
 - **Tempo efetivo de bola rolando**, que é o que permitiria separar a parte tática da parte mecânica no Achado 4.
 - **Timeline de escanteio e falta como coluna permanente no banco.** O achado 9 mostrou que não existe hoje — só total por partida (`match_stats`). O achado 11 confirma o padrão temporal (salto no intervalo) usando uma temporada completa do StatsBomb Open Data (La Liga 2015/16, fonte externa, evento a evento), mas isso foi uma consulta pontual, não virou pipeline: continua em aberto decidir se vale ingerir isso de verdade (StatsBomb só cobre essa temporada de La Liga por completo — não dá pra generalizar pras outras ligas do projeto) ou confirmar se o payload do FotMob já capturado tem escanteio/falta por minuto (não verificado).
+
+---
+
+## Achado 18 — a matriz de transição do Achado 15 refeita na grade de 12 zonas do banco (4 faixas x 3 corredores)
+
+Pergunta: a matriz de bola entre zonas (Achado 15, grade 3x3) refeita na MESMA grade de 12 zonas usada para os toques por jogador (`public.zona_campo12`, migration 20261003140000), para o simulador de Markov usar uma única definição de zona. Base: a mesma do Achado 15 (StatsBomb Open Data, La Liga 2015/16, 380 partidas, 552.934 ações que continuam). Código: `scripts/gerar_matriz_transicao_statsbomb.py` (gera `src/utils/zoneTransitionMatrix12.js`, que não deve ser editado à mão). Coordenadas do StatsBomb (120 x 80 jardas) convertidas para 105 x 68 m antes de aplicar a regra de zona do banco.
+
+### Checagem do método: o 3x3 refeito reproduz o Achado 15
+Refeito na grade 3x3 o script bate com o publicado: erro máximo **0,0004** nas taxas de desfecho e **0,0005** na matriz (só arredondamento), e o mesmo N (552.934). Isso só foi possível depois de achar a definição EXATA de "perda": testadas todas as combinações de subtipos, só `Dispossessed` + `Miscontrol` + passe `Incomplete`/`Out`/`Pass Offside` reproduz o publicado. **Drible incompleto (6.524), passe `Unknown` (2.465) e `Injury Clearance` (548) NÃO contam**; contá-los infla a perda em 1-2 pontos percentuais em toda zona.
+
+### O que acontece quando o time tem a bola em cada uma das 12 zonas
+| Zona (banco) | Ações que começam ali | % chute | % perda | % continua |
+|---|---|---|---|---|
+| 1 defesa / lado baixo | 47.949 | 0,0 | 15,7 | 84,3 |
+| 2 defesa / centro | 66.345 | 0,0 | 18,0 | 82,0 |
+| 3 defesa / lado alto | 45.068 | 0,0 | 16,9 | 83,1 |
+| 4 meio / lado baixo | 122.588 | 0,0 | 12,8 | 87,2 |
+| 5 meio / centro | 96.942 | 0,0 | 10,9 | 89,1 |
+| 6 meio / lado alto | 118.101 | 0,0 | 13,8 | 86,2 |
+| 7 ataque fora da área / lado baixo | 60.040 | 0,7 | 20,3 | 79,0 |
+| 8 ataque fora da área / centro | 25.903 | **9,4** | 17,9 | 72,8 |
+| 9 ataque fora da área / lado alto | 62.222 | 0,6 | 20,8 | 78,6 |
+| 10 grande área / lado baixo | 5.682 | 8,5 | **33,5** | 58,0 |
+| **11 grande área / centro** | 10.809 | **45,2** | 19,3 | 35,5 |
+| 12 grande área / lado alto | 5.766 | 8,4 | **34,5** | 57,2 |
+
+**O que a grade fina revela e a 3x3 escondia:** a "Ataque-Centro" (19,9% de chute) misturava duas coisas muito diferentes. Dentro da grande área, pelo centro, **45% das ações viram chute**; na faixa logo antes da área, pelo centro, só 9,4%; pelos lados da área, 8,5%. E a PERDA dentro da grande área pelos lados é a maior do campo (33-35%, contra 18-19% pelo centro): a bola que chega ao lado da área é recuperada pelo adversário uma em cada três vezes. Menor amostra por zona: 5.682 ações (as zonas da grande área).
+
+### Para onde a bola vai (condicional a continuar)
+Mantém os padrões do Achado 15: a diagonal é o maior valor de cada linha (50-77%) e nenhuma célula defesa -> grande área passa de 0,5%. Novidade da grade fina: da grande área pelos lados, ~20% das continuações voltam para o ataque fora da área do MESMO lado (cruzar/recuar) e ~21% vão para o centro da área.
+
+### Ressalvas
+- **Mesmas do Achado 15:** uma liga, uma temporada, sem IC 95%, sem validação contra o dado do projeto, nem por liga/confronto; não deve ser apresentada como específica de nenhuma liga.
+- Taxa de chute é **por ação que começa na zona**, não por chegada da bola na zona.
+- Corredor 1 do banco = `lado_y_baixo` = lado esquerdo de quem ataca no StatsBomb; a correspondência com o FotMob NÃO foi verificada (mesma ressalva dos toques por jogador).
+- Combinar com os toques por jogador (`match_player_heatmap_fotmob`) exige cuidado: a matriz descreve o que acontece com a bola, os toques descrevem onde cada jogador a toca; uma não gera a outra.
+- Próxima etapa combinada com o usuário: migrar para 18 zonas (6 faixas x 3 corredores) e COMPARAR com esta de 12. O gerador recebe a grade como parâmetro, então é acrescentar uma função de zona.
