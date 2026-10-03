@@ -1508,7 +1508,7 @@ Pergunta do usuário. Cada ponto do mapa de calor do FotMob tem só `cx`, `cy` e
 **De que depende** (médias por time e jogo):
 - **Mando:** casa 19,9 x fora 15,4 (+4,5 por jogo; 988 de cada).
 - **Elo relativo (`elo_dif`):** muito mais fraco 12,4 | mais fraco 16,4 | equilibrado 18,4 | mais forte 19,0 | muito mais forte 18,4. O efeito aparece só em quem é MAIS FRACO; acima do equilíbrio o volume praticamente não sobe.
-- **Identidade do time:** variância entre médias de times 41,6 (68 times com >= 6 jogos), dentro do time 84,8; descontado o ruído amostral (~3,1), o time explica cerca de **30%** da variância (ICC ~ 0,31). Há "estilo de cruzar", mas não é a maior parte.
+- **Identidade do time:** variância entre médias de times 41,6 (68 times com >= 6 jogos), dentro do time 84,8; descontado o ruído amostral (~3,1), o time explicaria cerca de 30% da variância (ICC ~ 0,31). **CORREÇÃO (Achado 22):** esse 30% estava INFLADO pela Copa Libertadores (cobertura baixa do FotMob, 6,9 cruzamentos/jogo), que separava times de forma artificial. Só nas ligas brasileiras (A e B; 54 times, 10.915 time-jogos) a variância entre times é 12,2 contra 81,2 dentro: **ICC = 0,13**. O "estilo de cruzar" do time é bem menos estável do que o texto original dizia.
 - **Estado do jogo** (só Brasileirão Série B, 1.260 time-jogos, tempo em `match_team_game_state`): quanto mais tempo PERDENDO, mais cruzamentos (nunca perdeu 17,8 | < 25% do tempo 18,3 | 25-50% 21,9 | >= 50% 25,1); quanto mais tempo GANHANDO, menos (nunca 22,5 | < 25% 22,2 | 25-50% 17,7 | >= 50% 14,8). **NÃO controlado por força de equipe** -- é exatamente a armadilha de ACHADOS (fase 2): quem passa o jogo ganhando é, em média, o time melhor. Só vale como hipótese; falta agregar por `faixa_forca` (e `is_home`) antes de dizer que "quem perde cruza mais".
 
 **Ressalvas de qualidade do dado:**
@@ -1518,3 +1518,33 @@ Pergunta do usuário. Cada ponto do mapa de calor do FotMob tem só `cx`, `cy` e
 - O primeiro corte por estado do jogo saiu ERRADO por NULL: `CASE WHEN mp/mt < x` com `mp` NULL (jogo sem tempo perdendo, ex.: 0 x 0) cai no `ELSE`, inflando a faixa ">= 50%". Sempre `coalesce(..., 0)` antes de comparar.
 
 **Uso sugerido:** volume de cruzamentos = base do time + mando (+4,5) + ajuste para quem é bem mais fraco que o adversário, com dispersão de binomial negativa; destino e taxa de perda do cruzamento vêm do Achado 20 (StatsBomb), como constantes externas. Posição do cruzamento (zonas laterais) só pode ser estimada pelo mapa de calor do jogador, e só em jogos desde março/2026.
+
+
+## Achado 22 — cabeceio e cruzamento: andam juntos no mesmo jogo, mas o histórico de cabeceio quase não prevê o próximo jogo
+
+**Pergunta:** times que cabeceiam muito (ou bem) tendem a cruzar mais? Há um "índice de cabeceio"?
+
+**Fontes de índice (no banco):** chutes de cabeça (`match_shots_fotmob.shot_type` com "head": 19% dos chutes na amostra recente) e seu xG; duelos aéreos totais (`duelos_aereos_total`, sem o número de ganhos, então só volume); `cortes_cabeca` (defensivo, só em 37% das linhas porque o FotMob omite o zero). Usei: chutes de cabeça por jogo, xG de cabeça, fração de chutes que são de cabeça e duelos aéreos, sempre da MÉDIA DOS 8 JOGOS ANTERIORES do time (a janela exclui o jogo previsto).
+
+**Amostra:** Brasileirão A e B, 3.719 time-jogos (44 times) com >= 5 jogos anteriores e Elo conhecido. Controle: cada variável é residualizada pela média do grupo (mando x faixa de Elo relativo: < -100, -100..100, > 100), para não confundir com "time forte faz tudo mais" nem com mando.
+
+| Relação | Correlação |
+|---|---|
+| cruzamentos do jogo x chutes de cabeça do MESMO jogo | **0,557** |
+| chutes de cabeça (8 jogos anteriores) x cruzamentos do time, no nível "estilo" (ambos médias anteriores) | **0,546** |
+| cruzamentos do jogo x chutes de cabeça ANTERIORES (bruta) | 0,045 |
+| idem, controlando mando e Elo | 0,055 |
+| idem, com xG de cabeça anterior | 0,072 |
+| idem, com duelos aéreos anteriores | 0,064 |
+| idem, com fração de chutes de cabeça anterior | 0,044 |
+| cruzamentos do jogo x PRÓPRIOS cruzamentos anteriores (controlado) | 0,100 |
+
+**Leitura:**
+- No mesmo jogo, cruzar e cabecear caminham juntos (0,56): o cruzamento é a principal origem do chute de cabeça, então isso é em boa parte mecânico (causalidade provável: cruzar -> cabecear, não "bons cabeceadores -> cruzar").
+- Como característica estável do time, o "estilo" também se alinha (0,55 entre as duas médias anteriores), mas **o histórico de cabeceio quase não prevê o volume do próximo jogo** (0,04 a 0,07; mesmo o histórico de cruzamentos prevê só 0,10). O jogo a jogo é dominado por ruído e adversário.
+- Inclinação (controlada): ~0,6 cruzamento a mais por chute de cabeça a mais na média anterior -- pequena e sem folga estatística real (observações repetidas do mesmo time, janelas sobrepostas: o erro-padrão ingênuo de ~0,016 subestima).
+- **A hipótese "bons cabeceadores cruzam mais" NÃO se sustenta como preditor**; o que existe é co-ocorrência, com a seta provável no sentido contrário.
+
+**CORREÇÃO ao Achado 21:** o ICC de 0,31 (identidade do time explica ~30% da variância do volume de cruzamentos) estava inflado pela Libertadores. Só nas ligas brasileiras (54 times, 10.915 time-jogos): variância entre times 12,2, dentro 81,2, **ICC = 0,13**. Isso é coerente com a correlação baixa (0,10) entre cruzamentos anteriores e o próximo jogo. Consequência para o simulador: o volume de cruzamentos de um jogo é pouco previsível pelo histórico do time; usar média da liga + mando + dispersão de binomial negativa e dar peso pequeno ao histórico do time.
+
+**Limites:** só Brasil (A e B) e janela de 8 jogos; sem IC 95% (série temporal por time, observações dependentes); "bom cabeceador" aqui é volume de chutes de cabeça, não habilidade individual (não se separou cabeceador de cruzador); duelos aéreos sem taxa de ganho.
