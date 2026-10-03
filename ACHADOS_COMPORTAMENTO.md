@@ -1548,3 +1548,29 @@ Pergunta do usuário. Cada ponto do mapa de calor do FotMob tem só `cx`, `cy` e
 **CORREÇÃO ao Achado 21:** o ICC de 0,31 (identidade do time explica ~30% da variância do volume de cruzamentos) estava inflado pela Libertadores. Só nas ligas brasileiras (54 times, 10.915 time-jogos): variância entre times 12,2, dentro 81,2, **ICC = 0,13**. Isso é coerente com a correlação baixa (0,10) entre cruzamentos anteriores e o próximo jogo. Consequência para o simulador: o volume de cruzamentos de um jogo é pouco previsível pelo histórico do time; usar média da liga + mando + dispersão de binomial negativa e dar peso pequeno ao histórico do time.
 
 **Limites:** só Brasil (A e B) e janela de 8 jogos; sem IC 95% (série temporal por time, observações dependentes); "bom cabeceador" aqui é volume de chutes de cabeça, não habilidade individual (não se separou cabeceador de cruzador); duelos aéreos sem taxa de ganho.
+
+
+## Achado 23 — a fraqueza aérea do adversário (ou uma zaga forte) não muda quanto o time cruza
+
+**Pergunta:** o histórico aéreo do time ADVERSÁRIO interfere no volume de cruzamentos de um time? Uma proteção central mais forte reduz os cruzamentos?
+
+**Método:** mesma amostra do Achado 22 (Brasileirão A e B; 3.588 time-jogos, 44 times, >= 5 jogos anteriores dos dois lados, Elo conhecido). Para cada time-jogo, características do ADVERSÁRIO na média dos 8 jogos anteriores a este (janela exclui o jogo): chutes de cabeça sofridos, xG de cabeça sofrido, fração dos chutes sofridos que são de cabeça, cortes de cabeça (`cortes_cabeca`) e cruzamentos sofridos. Controle: tudo residualizado por mando x faixa de Elo relativo (< -100, -100..100, > 100).
+
+| Característica do adversário (8 jogos anteriores) | Correlação com os cruzamentos do time |
+|---|---|
+| cruzamentos sofridos por jogo | 0,106 |
+| cortes de cabeça por jogo | 0,077 |
+| chutes de cabeça sofridos | 0,045 |
+| xG de cabeça sofrido | 0,035 |
+| fração dos chutes sofridos que são de cabeça | 0,002 |
+
+Inclinações (cruzamentos do time por unidade da variável do adversário): cruzamentos sofridos 0,25; chutes de cabeça sofridos 0,51 (1 desvio-padrão, 0,75 chute, vale ~0,4 cruzamento em ~17: ~2%); o histórico do PRÓPRIO time também pesa 0,25.
+
+**Leitura:**
+- **Não há efeito aéreo detectável**: quem sofre mais chutes de cabeça (zaga aérea fraca) não recebe mais cruzamentos de forma relevante, e quem tem zaga que corta muito não recebe menos.
+- O sinal "cortes de cabeça" é **positivo**: zagas que cortam muito de cabeça são as que mais recebem cruzamentos. Mede **exposição**, não força, e vai no mesmo sentido do sinal de "cruzamentos sofridos" (0,106), o único com algum peso (mesmo peso do histórico do próprio time).
+- Não há na base uma medida limpa de "força da zaga central": chutes de cabeça sofridos dependem de quantos cruzamentos o adversário recebe (circular) e `cortes_cabeca` só existe quando o FotMob não omite. Medida por zagueiro escalado (cruzando `match_lineup_fotmob` com o histórico de cada zagueiro) seria o teste que falta.
+
+**Limites:** só Brasil (A e B), janela de 8 jogos, observações dependentes (mesmo time repetido, janelas sobrepostas: o erro-padrão ingênuo subestima), sem IC 95%. `cortes_cabeca` ausente foi tratado como zero.
+
+**Consequência para o simulador:** reforça o Achado 22. O volume de cruzamentos é pouco previsível por histórico, do time ou do adversário; base = média da liga + mando (+4,5) + dispersão de binomial negativa, com ajuste mínimo por cruzamentos sofridos do adversário.

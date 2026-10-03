@@ -6,6 +6,11 @@
 
 
 
+
+---
+
+**Fraqueza aérea do adversário não muda o volume de cruzamentos (03/10) -- Achado 23 em `ACHADOS_COMPORTAMENTO.md`.** Brasileirão A e B (3.588 time-jogos, 44 times), características do adversário na média dos 8 jogos anteriores, controlando mando x Elo relativo: chutes de cabeça sofridos 0,045, xG de cabeça sofrido 0,035, fração de cabeça sofrida 0,002, cortes de cabeça 0,077 (positivo: mede exposição, não força), cruzamentos sofridos 0,106 (único com algum peso, igual ao do histórico do próprio time). Zaga forte ou fraca no jogo aéreo não muda os cruzamentos de forma detectável; falta uma medida por zagueiro escalado para um teste mais limpo.
+
 ---
 
 **Cabeceio x cruzamento e correção do Achado 21 (03/10) -- Achado 22 em `ACHADOS_COMPORTAMENTO.md`.** Não há "índice de cabeceio" pronto; fontes: chutes de cabeça (`match_shots_fotmob.shot_type`), xG de cabeça e `duelos_aereos_total` (sem taxa de ganho). No mesmo jogo, chutes de cabeça e cruzamentos têm correlação 0,56 (mecânica: cruzar gera cabeceio), mas a média dos 8 jogos anteriores de cabeceio prevê o cruzamento do próximo jogo com correlação de só 0,04-0,07 (controlando mando e Elo), e os próprios cruzamentos anteriores só 0,10: a hipótese "bons cabeceadores cruzam mais" não se sustenta como preditor. **Correção:** o ICC de 0,31 do Achado 21 estava inflado pela Libertadores (cobertura baixa do FotMob); nas ligas brasileiras (54 times, 10.915 time-jogos) é **0,13**. Para o simulador, o histórico do time deve pesar pouco no volume de cruzamentos.
