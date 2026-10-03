@@ -55,3 +55,20 @@ def test_deve_retentar():
 
 def test_url_heatmap():
     assert h.url_heatmap("5103566").endswith("/heatmap/match/5103566/heatmaps?heatmapUrl=https%3A%2F%2Fpub.fotmob.com%2Fprod%2Fdb%2Fapi%2Fheatmap%2Fmatch%2F5103566")
+
+
+def test_combinar_time_jogador_usa_estatisticas_onde_a_escalacao_nao_tem():
+    lineup = [{"fotmob_player_id": "1", "team_id": 7, "player_id": 11}, {"fotmob_player_id": "2", "team_id": None, "player_id": 22}]
+    stats = [{"fotmob_player_id": "1", "team_id": 99, "player_id": 99},     # escalação manda: não sobrescreve
+             {"fotmob_player_id": "2", "team_id": 8, "player_id": None},    # completa só o time que faltava
+             {"fotmob_player_id": "3", "team_id": 9, "player_id": 33},      # jogador ausente da escalação
+             {"fotmob_player_id": None, "team_id": 1, "player_id": 1}]      # sem id: ignorado
+    r = h.combinar_time_jogador(lineup, stats)
+    assert r == {"1": {"team_id": 7, "player_id": 11}, "2": {"team_id": 8, "player_id": 22}, "3": {"team_id": 9, "player_id": 33}}
+
+
+def test_combinar_time_jogador_vazio_e_montar_linhas_aceita_o_resultado():
+    assert h.combinar_time_jogador([], []) == {}
+    lin = h.combinar_time_jogador([], [{"fotmob_player_id": "5", "team_id": 4, "player_id": 44}])
+    linhas, _ = h.montar_linhas(1, {"players": {"p9": SVG}}, {"9": "5"}, lin, {})
+    assert (linhas[0]["team_id"], linhas[0]["player_id"]) == (4, 44)
