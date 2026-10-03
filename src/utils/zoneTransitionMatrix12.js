@@ -1,10 +1,10 @@
 // src/utils/zoneTransitionMatrix12.js
 // ARQUIVO GERADO por scripts/gerar_matriz_transicao_statsbomb.py -- NÃO editar à mão (rode o script de novo).
 //
-// Matriz de transição de bola entre as 12 zonas de `public.zona_campo12` (4 faixas de profundidade x 3 corredores),
-// refeita do Achado 15 (StatsBomb Open Data, La Liga 2015/16, 380 partidas). CONSTANTE UNIVERSAL EXTERNA, não calibrada
-// por liga/confronto, sem IC 95% -- mesmas ressalvas de zoneTransitionMatrix.js (3x3). Módulo à parte: não alimenta
-// nenhuma simulação em produção. Índice do array = zona do banco - 1 (zona 1 = defesa/lado_y_baixo ... 12 = grande área/lado_y_alto).
+// Matriz de transição de bola entre as 12 zonas de `public.zona_campo12`, refeita do Achado 15 (StatsBomb Open Data,
+// La Liga 2015/16, 380 partidas). CONSTANTE UNIVERSAL EXTERNA, não calibrada por liga/confronto, sem IC 95% -- mesmas
+// ressalvas de zoneTransitionMatrix.js (3x3). Módulo à parte: não alimenta nenhuma simulação em produção.
+// Índice do array = zona do banco - 1 (zona 1 = defesa/lado_y_baixo ... 12 = grande_area_adversaria/lado_y_alto).
 // O corredor 1 do banco é `lado_y_baixo` (no StatsBomb = lado esquerdo de quem ataca); a correspondência com o FotMob NÃO foi verificada.
 // Base: 667415 ações (continua=552934, chute=9168, perda=105313).
 

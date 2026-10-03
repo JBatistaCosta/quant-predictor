@@ -7,6 +7,12 @@ Refaz o Achado 15 (ACHADOS_COMPORTAMENTO.md) numa grade parametrizável. Grades 
              adversária, x 3 corredores. As coordenadas do StatsBomb (120 x 80 jardas) são convertidas para 105 x 68 m
              antes de aplicar a MESMA regra de zona do banco.
 
+  - "18"   : refinamento EXATO da grade de 12 (cada zona de 18 cabe dentro de uma de 12): as faixas `meio` e `ataque_fora_da_area`
+             são divididas ao meio (cortes em x=52,5 m e x=79,25 m), as outras duas ficam inteiras -> 6 faixas x 3 corredores. Foram
+             essas duas porque, testando dividir cada faixa ao meio, são as que mais separam o comportamento da bola (ganho de
+             log-verossimilhança de 19.409 e 8.476 nats, contra 4.678 da defesa e 644 da grande área). `comparar_12_vs_18` mede,
+             por validação cruzada, se a divisão ajuda a prever a próxima ação fora da amostra.
+
 Definições (por ação do time com a bola, a partir da zona onde a ação COMEÇA):
   - continua : Pass completo (sem `outcome`) ou Carry -> a bola vai para a zona de `end_location`;
   - chute    : Shot;
@@ -42,6 +48,11 @@ EVENTOS_PERDA = {"Dispossessed", "Miscontrol"}
 
 NOMES_12 = [f"{f}/{c}" for f in ("defesa", "meio", "ataque_fora_da_area", "grande_area_adversaria")
             for c in ("lado_y_baixo", "centro", "lado_y_alto")]
+NOMES_18 = [f"{f}/{c}" for f in ("defesa", "meio_baixo", "meio_alto", "ataque_fora_da_area_baixo", "ataque_fora_da_area_alto",
+                                 "grande_area_adversaria") for c in ("lado_y_baixo", "centro", "lado_y_alto")]
+CORTE_MEIO_M, CORTE_ATAQUE_M = 52.5, 79.25
+# zona de 18 (0..17) -> zona de 12 (0..11) que a contém
+PAI_12_DE_18 = [{0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3}[z18 // 3] * 3 + z18 % 3 for z18 in range(18)]
 NOMES_3X3 = [f"{f}/{c}" for f in ("def", "meio", "atq") for c in ("esq", "cen", "dir")]
 
 
@@ -63,13 +74,26 @@ def zona_12(x_m: float, y_m: float) -> int:
     return faixa * 3 + corredor
 
 
+def zona_18(x_m: float, y_m: float) -> int:
+    """Mesma regra de `public.zona_campo18` (0..17; no banco é 1..18): a de 12 com `meio` e `ataque_fora_da_area` divididas ao meio."""
+    z12 = zona_12(x_m, y_m)
+    faixa, corredor = z12 // 3, z12 % 3
+    if faixa == 1:
+        faixa18 = 1 if x_m < CORTE_MEIO_M else 2
+    elif faixa == 2:
+        faixa18 = 3 if x_m < CORTE_ATAQUE_M else 4
+    else:
+        faixa18 = {0: 0, 3: 5}[faixa]
+    return faixa18 * 3 + corredor
+
+
 def zona_3x3(x_m: float, y_m: float) -> int:
     faixa = min(int(x_m / (CAMPO_X / 3)), 2)
     corredor = min(int(y_m / (CAMPO_Y / 3)), 2)
     return faixa * 3 + corredor
 
 
-GRADES = {"12": (zona_12, NOMES_12), "3x3": (zona_3x3, NOMES_3X3)}
+GRADES = {"12": (zona_12, NOMES_12), "18": (zona_18, NOMES_18), "3x3": (zona_3x3, NOMES_3X3)}
 
 
 def acoes_da_partida(eventos: list[dict]) -> list[tuple]:
@@ -121,33 +145,99 @@ def _linha_js(valores: list[float], casas: int = 4) -> str:
     return "[" + ", ".join(f"{v:.{casas}f}" for v in valores) + "]"
 
 
-def escrever_modulo_js(r12: dict, caminho: str) -> None:
-    """Grava `src/utils/zoneTransitionMatrix12.js` a partir do resultado da grade "12". Arquivo GERADO: não editar à mão."""
-    nomes = r12["zonas"]
-    linhas = ["// src/utils/zoneTransitionMatrix12.js",
+def escrever_modulo_js(r: dict, caminho: str) -> None:
+    """Grava o módulo JavaScript de uma grade ("12" -> zoneTransitionMatrix12.js, "18" -> zoneTransitionMatrix18.js).
+    Arquivo GERADO: não editar à mão."""
+    n = len(r["zonas"])
+    nomes = r["zonas"]
+    arquivo = os.path.basename(caminho)
+    banco = "zona_campo12" if n == 12 else f"zona_campo{n}"
+    linhas = [f"// src/utils/{arquivo}",
               "// ARQUIVO GERADO por scripts/gerar_matriz_transicao_statsbomb.py -- NÃO editar à mão (rode o script de novo).",
               "//",
-              "// Matriz de transição de bola entre as 12 zonas de `public.zona_campo12` (4 faixas de profundidade x 3 corredores),",
-              "// refeita do Achado 15 (StatsBomb Open Data, La Liga 2015/16, 380 partidas). CONSTANTE UNIVERSAL EXTERNA, não calibrada",
-              "// por liga/confronto, sem IC 95% -- mesmas ressalvas de zoneTransitionMatrix.js (3x3). Módulo à parte: não alimenta",
-              "// nenhuma simulação em produção. Índice do array = zona do banco - 1 (zona 1 = defesa/lado_y_baixo ... 12 = grande área/lado_y_alto).",
+              f"// Matriz de transição de bola entre as {n} zonas de `public.{banco}`, refeita do Achado 15 (StatsBomb Open Data,",
+              "// La Liga 2015/16, 380 partidas). CONSTANTE UNIVERSAL EXTERNA, não calibrada por liga/confronto, sem IC 95% -- mesmas",
+              "// ressalvas de zoneTransitionMatrix.js (3x3). Módulo à parte: não alimenta nenhuma simulação em produção.",
+              f"// Índice do array = zona do banco - 1 (zona 1 = {nomes[0]} ... {n} = {nomes[-1]}).",
               "// O corredor 1 do banco é `lado_y_baixo` (no StatsBomb = lado esquerdo de quem ataca); a correspondência com o FotMob NÃO foi verificada.",
-              f"// Base: {r12['n_acoes']} ações (continua={sum(r12['contagem']['continua'])}, chute={sum(r12['contagem']['chute'])}, perda={sum(r12['contagem']['perda'])}).",
+              f"// Base: {r['n_acoes']} ações (continua={sum(r['contagem']['continua'])}, chute={sum(r['contagem']['chute'])}, perda={sum(r['contagem']['perda'])}).",
               "",
-              "export const ZONAS_12 = ["]
+              f"export const ZONAS_{n} = ["]
     for i, nome in enumerate(nomes):
         faixa, corredor = nome.split("/")
         linhas.append(f"  {{ zona: {i + 1}, faixa: '{faixa}', corredor: '{corredor}' }},")
-    linhas += ["];", "", "// Fração de chute/perda/continua entre as ações que COMEÇAM em cada zona.", "export const TAXA_DESFECHO_12 = ["]
-    for i, d in enumerate(r12["taxa_desfecho"]):
+    linhas += ["];", "", "// Fração de chute/perda/continua entre as ações que COMEÇAM em cada zona.", f"export const TAXA_DESFECHO_{n} = ["]
+    for i, d in enumerate(r["taxa_desfecho"]):
         linhas.append(f"  {{ chute: {d['chute']:.4f}, perda: {d['perda']:.4f}, continua: {d['continua']:.4f} }}, // {nomes[i]}")
-    linhas += ["];", "", "// P(próxima zona | a ação continua). Cada linha soma 1 (±0,0005 de arredondamento).", "export const MATRIZ_TRANSICAO_12 = ["]
-    for i, linha in enumerate(r12["transicao"]):
+    linhas += ["];", "", "// P(próxima zona | a ação continua). Cada linha soma 1 (±0,0005 de arredondamento).", f"export const MATRIZ_TRANSICAO_{n} = ["]
+    for i, linha in enumerate(r["transicao"]):
         linhas.append(f"  {_linha_js(linha)}, // de {nomes[i]}")
     linhas += ["];", "", "// Ações observadas que começam em cada zona: quanto menor, menos confiável a linha correspondente.",
-               f"export const ACOES_POR_ZONA_12 = {json.dumps(r12['acoes_por_zona'])};", ""]
+               f"export const ACOES_POR_ZONA_{n} = {json.dumps(r['acoes_por_zona'])};", ""]
     with open(caminho, "w", encoding="utf-8") as f:
         f.write("\n".join(linhas))
+
+
+def comparar_12_vs_18(acoes: list[tuple], blocos: int = 5, alfa: float = 0.5) -> dict:
+    """Valida por BLOCOS (as ações vêm em ordem de partida, então blocos contíguos ~ grupos de partidas) se a grade de 18 prevê
+    melhor a próxima ação do que a de 12, fora da amostra. Ambos os modelos são avaliados no MESMO alvo, o espaço fino (origem de
+    18 zonas; desfecho = chute | perda | zona de destino de 18): o de 18 usa P(desfecho18 | origem18); o de 12 usa
+    P(desfecho12 | origem12) x P(destino18 | destino12), com a divisão dentro do destino aprendida no treino. Suavização de Laplace `alfa`.
+    Devolve a log-verossimilhança média por ação (nats) de cada modelo em cada bloco e a diferença 18 - 12."""
+    import math
+
+    def codifica(a):
+        tipo, x0, y0, x1, y1 = a
+        o18 = zona_18(*para_metros(x0, y0))
+        if tipo == "continua":
+            d18 = zona_18(*para_metros(x1, y1))
+            return o18, d18
+        return o18, 18 if tipo == "chute" else 19
+
+    dados = [codifica(a) for a in acoes]
+    n = len(dados)
+    pai = PAI_12_DE_18
+    pai_sim = lambda s: pai[s] if s < 18 else 12 + (s - 18)           # símbolos de 12: 0..11 destinos, 12 chute, 13 perda
+    por_bloco = []
+    for b in range(blocos):
+        ini, fim = b * n // blocos, (b + 1) * n // blocos
+        treino = dados[:ini] + dados[fim:]
+        teste = dados[ini:fim]
+        c18 = [[alfa] * 20 for _ in range(18)]
+        c12 = [[alfa] * 14 for _ in range(12)]
+        chegadas = [alfa] * 18                                         # destinos de 18 observados (para dividir o destino de 12)
+        for o, s in treino:
+            c18[o][s] += 1
+            c12[pai[o]][pai_sim(s)] += 1
+            if s < 18:
+                chegadas[s] += 1
+        tot12_destino = [sum(chegadas[z] for z in range(18) if pai[z] == p) for p in range(12)]
+        ll18 = ll12 = 0.0
+        g18 = g12 = 0.0                                                # alvo GROSSO: desfecho/destino em 12 zonas
+        filhos = [[z for z in range(18) if pai[z] == p] for p in range(12)]
+        for o, s in teste:
+            s12 = pai_sim(s)
+            tot18 = sum(c18[o])
+            massa = (sum(c18[o][z] for z in filhos[s12]) if s12 < 12 else c18[o][18 + (s12 - 12)]) / tot18
+            g18 += math.log(massa)
+            g12 += math.log(c12[pai[o]][s12] / sum(c12[pai[o]]))
+            ll18 += math.log(c18[o][s] / sum(c18[o]))
+            p12 = c12[pai[o]][pai_sim(s)] / sum(c12[pai[o]])
+            if s < 18:
+                p12 *= chegadas[s] / tot12_destino[pai[s]]
+            ll12 += math.log(p12)
+        por_bloco.append({"n_teste": len(teste), "ll18": ll18 / len(teste), "ll12": ll12 / len(teste),
+                          "g18": g18 / len(teste), "g12": g12 / len(teste)})
+    dif = [b["ll18"] - b["ll12"] for b in por_bloco]
+    media = sum(dif) / blocos
+    dp = (sum((d - media) ** 2 for d in dif) / (blocos - 1)) ** 0.5
+    difg = [b["g18"] - b["g12"] for b in por_bloco]
+    mg = sum(difg) / blocos
+    dpg = (sum((d - mg) ** 2 for d in difg) / (blocos - 1)) ** 0.5
+    return {"blocos": por_bloco, "ganho_medio_nats_por_acao": media, "erro_padrao": dp / blocos ** 0.5,
+            "ganho_alvo_grosso_nats_por_acao": mg, "erro_padrao_alvo_grosso": dpg / blocos ** 0.5,
+            "g18_medio": sum(b["g18"] for b in por_bloco) / blocos, "g12_medio": sum(b["g12"] for b in por_bloco) / blocos,
+            "ll18_medio": sum(b["ll18"] for b in por_bloco) / blocos, "ll12_medio": sum(b["ll12"] for b in por_bloco) / blocos}
 
 
 def baixar_json(url: str, tentativas: int = 5):
@@ -191,6 +281,8 @@ def main() -> None:
     ap.add_argument("--cache-dir", default=None)
     ap.add_argument("--saida", default=None, help="grava o JSON com as duas grades")
     ap.add_argument("--js", default=None, help="grava o módulo JavaScript da grade de 12 zonas (src/utils/zoneTransitionMatrix12.js)")
+    ap.add_argument("--js18", default=None, help="grava o módulo JavaScript da grade de 18 zonas (src/utils/zoneTransitionMatrix18.js)")
+    ap.add_argument("--comparar", action="store_true", help="compara 12 x 18 zonas por validação cruzada em blocos")
     args = ap.parse_args()
     acoes = acoes_da_temporada(args.cache_dir)
     res = {g: calcular(acoes, g) for g in GRADES}
@@ -202,6 +294,17 @@ def main() -> None:
     if args.js:
         escrever_modulo_js(res["12"], args.js)
         print("módulo gravado em", args.js)
+    if args.js18:
+        escrever_modulo_js(res["18"], args.js18)
+        print("módulo gravado em", args.js18)
+    if args.comparar:
+        c = comparar_12_vs_18(acoes)
+        print(f"12 x 18 (log-verossimilhança média por ação, fora da amostra): 12={c['ll12_medio']:.4f}  18={c['ll18_medio']:.4f}  "
+              f"ganho do 18 = {c['ganho_medio_nats_por_acao']:+.4f} ± {c['erro_padrao']:.4f} nats/ação")
+        print(f"alvo GROSSO (desfecho/destino em 12 zonas; o teste conservador): 12={c['g12_medio']:.4f}  18={c['g18_medio']:.4f}  "
+              f"ganho do 18 = {c['ganho_alvo_grosso_nats_por_acao']:+.4f} ± {c['erro_padrao_alvo_grosso']:.4f} nats/ação")
+        for i, b in enumerate(c["blocos"], 1):
+            print(f"  bloco {i}: n={b['n_teste']}  12={b['ll12']:.4f}  18={b['ll18']:.4f}  dif={b['ll18'] - b['ll12']:+.4f}")
 
 
 if __name__ == "__main__":

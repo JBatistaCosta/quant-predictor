@@ -1411,3 +1411,41 @@ Mantém os padrões do Achado 15: a diagonal é o maior valor de cada linha (50-
 - Corredor 1 do banco = `lado_y_baixo` = lado esquerdo de quem ataca no StatsBomb; a correspondência com o FotMob NÃO foi verificada (mesma ressalva dos toques por jogador).
 - Combinar com os toques por jogador (`match_player_heatmap_fotmob`) exige cuidado: a matriz descreve o que acontece com a bola, os toques descrevem onde cada jogador a toca; uma não gera a outra.
 - Próxima etapa combinada com o usuário: migrar para 18 zonas (6 faixas x 3 corredores) e COMPARAR com esta de 12. O gerador recebe a grade como parâmetro, então é acrescentar uma função de zona.
+
+---
+
+## Achado 19 — 18 zonas contra 12: a grade fina prevê melhor a bola, e onde isso vem
+
+Pergunta (combinada com o usuário no Achado 18): migrar a grade de 12 zonas (`zona_campo12`) para 18 e comparar. Mesma base: StatsBomb Open Data, La Liga 2015/16, 380 partidas, 667.415 ações (552.934 que continuam). Código: `scripts/gerar_matriz_transicao_statsbomb.py` (`--comparar`, `--js18`); migration `20261004120000_zona_campo18.sql`; módulo gerado `src/utils/zoneTransitionMatrix18.js`.
+
+### Como as 18 zonas foram definidas
+Um **refinamento exato** da grade de 12 (cada zona de 18 cabe dentro de uma de 12; dá para agregar de volta sem perda): 6 faixas x 3 corredores. Para escolher quais faixas dividir ao meio, testei dividir cada uma e medi o ganho de log-verossimilhança do destino/desfecho da bola (soma dos 3 corredores): **meio** 19.409 nats (corte em x=52,5 m), **ataque fora da área** 8.476 (corte em x=79,25 m), defesa 4.678, grande área 644. Foram divididas as duas primeiras; defesa e grande área ficam inteiras.
+
+| Faixa | Região (x, metros) |
+|---|---|
+| defesa | 0 a 35 |
+| meio baixo | 35 a 52,5 |
+| meio alto | 52,5 a 70 |
+| ataque fora da área, baixo | 70 a 79,25 |
+| ataque fora da área, alto | a partir de 79,25, fora da grande área |
+| grande área adversária | x >= 88,5 e 13,85 <= y <= 54,15 |
+
+### Comparação fora da amostra (5 blocos contíguos de partidas, suavização de Laplace 0,5)
+| Alvo da previsão | 12 zonas | 18 zonas | Ganho do 18 (nats por ação) |
+|---|---|---|---|
+| Fino: desfecho com destino em 18 zonas | -1,8874 | -1,7196 | **+0,1679 ± 0,0024** |
+| Grosso: desfecho com destino em 12 zonas (conservador) | -1,4553 | -1,4136 | **+0,0417 ± 0,0003** |
+
+O ganho tem o mesmo sinal nos 5 blocos. O teste FINO favorece o 18 por construção (a origem fina denuncia o destino fino); o **GROSSO** é o honesto: mesmo para prever só em 12 zonas, saber a origem em 18 reduz a perda de log-verossimilhança em ~2,9%. Isso mostra que a bola **não é "lumpable"** na grade de 12: o comportamento depende de onde dentro da zona ela está.
+
+### O que a grade fina enxerga
+- **Logo antes da área, pelo centro:** o centro "alto" (79,25 m a 88,5 m) converte **17,4%** das ações em chute; o "baixo" (70 a 79,25 m), **3,2%**. A zona de 12 (ataque fora da área / centro, 9,4%) misturava as duas. Nos lados, o "alto" perde muito mais a bola (24-25%) que o "baixo" (15%).
+- **No meio-campo** as taxas de perda são praticamente iguais nas duas metades (10-14%); o ganho vem de **para onde a bola vai**: a metade alta joga mais para frente, a baixa mais para trás. Por isso o meio rende o maior ganho de verossimilhança.
+- Defesa e grande área: ficam como no Achado 18 (grande área central 45,2% de chute; lados 8,5% e ~34% de perda).
+
+### Custo
+- Menor amostra por zona: 5.682 ações (igual à de 12; as zonas da grande área não foram divididas). Mais células de transição (324 contra 144): a diagonal média cai de 0,63 para 0,55, e a menor, de 0,50 para 0,43.
+- **Toques por jogador (FotMob):** ~46 toques por jogador e jogo caem em 18 zonas, ~2,6 por zona (contra ~3,9 em 12). Por jogo isso é muito esparso; por jogador ao longo da temporada (dezenas de jogos) é viável, mas exige encolhimento para a média da linha. A grade nova NÃO exige coletar de novo: os pontos estão em décimos de metro e `v_toques_zona18` os reclassifica.
+
+### Ressalvas
+Mesmas do Achado 15/18: uma liga, uma temporada, sem IC 95% por célula (o erro-padrão acima é entre blocos de partidas, não por zona); a taxa de chute é por ação que começa na zona; a correspondência esquerda/direita com o FotMob continua não verificada. A escolha das duas faixas divididas usou o mesmo conjunto que depois foi usado na comparação (dentro da amostra, para escolher; fora da amostra, só no desempenho dos blocos): o ganho da divisão em si foi enorme (milhares de nats) frente ao custo de parâmetros (~230), então a escolha é robusta, mas uma terceira divisão (defesa) ainda não foi avaliada fora da amostra.
