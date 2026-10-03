@@ -4,6 +4,11 @@
 
 
 
+
+---
+
+**Volume de cruzamentos por time e jogo (03/10) -- Achado 21 em `ACHADOS_COMPORTAMENTO.md`.** Média 17,6 (p10/p50/p90 = 5/17/31), precisão 24%; variância ~5,8x a de Poisson (usar binomial negativa). Casa 19,9 x fora 15,4; só o time muito mais fraco (Elo) cruza menos (12,4 contra ~18-19); o time explica ~30% da variância. Na Série B, mais tempo perdendo = mais cruzamentos (17,8 -> 25,1) e mais tempo ganhando = menos (22,5 -> 14,8), **mas sem controle de força de equipe** (mesma armadilha da fase 2 do estado do jogo). **Copa Libertadores (liga 23) com 6,9 cruzamentos/jogo e só 2,9 jogadores com cruzamento é provável lacuna de cobertura do FotMob** -- não usar o volume dessa liga sem checar. Armadilha de SQL registrada: `CASE WHEN x/y < k` com `x` NULL cai no `ELSE`; usar `coalesce`.
+
 ---
 
 **Cruzamento separado do passe na matriz de transição (03/10) -- Achado 20 em `ACHADOS_COMPORTAMENTO.md`.** `acoes_da_partida` passou a devolver a **origem** da ação (cruzamento/passe/condução/chute/falha) como 6º elemento; a matriz **não muda** (módulos JS de 12 e 18 zonas idênticos aos commitados) e o cache do script passou a se chamar `acoes_v2.json` (o teste opcional com `SB_CACHE_DIR` usa o novo nome). Novo `--cruzamento`: 9.461 cruzamentos (2,6% dos passes, 28% completos), só em 7 das 18 zonas; nas laterais do ataque fora da área alto o cruzamento tem **73% de perda** e 77-78% de chegada ao centro da grande área, contra 28% e 6-7% do passe comum -- a matriz atual mistura os dois (36% e 11-12%) e não descreve nenhum. Escanteio cobrado não conta como cruzamento (verificado: 0 de 266 com `cross`); falta cobrada conta (~7% dos cruzamentos). A validação cruzada "separar melhora a previsão" foi descartada por ser vazia por construção (alvo sem o rótulo).
