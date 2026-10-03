@@ -1574,3 +1574,24 @@ Inclinações (cruzamentos do time por unidade da variável do adversário): cru
 **Limites:** só Brasil (A e B), janela de 8 jogos, observações dependentes (mesmo time repetido, janelas sobrepostas: o erro-padrão ingênuo subestima), sem IC 95%. `cortes_cabeca` ausente foi tratado como zero.
 
 **Consequência para o simulador:** reforça o Achado 22. O volume de cruzamentos é pouco previsível por histórico, do time ou do adversário; base = média da liga + mando (+4,5) + dispersão de binomial negativa, com ajuste mínimo por cruzamentos sofridos do adversário.
+
+
+## Achado 24 — taxas de chute e de perda por zona: o time e o Elo quase não melhoram a previsão (quatro testes)
+
+**Pergunta:** para o simulador de bola por zonas, vale ter taxas de transição por time? Ajustar pelo Elo? Por qual Elo? E por xG, ataque e defesa?
+
+**Dados e método (todos fora da amostra, cronológico).** Mapa de calor do FotMob (desde março/2026) dá os TOQUES por time, jogo e zona de 12; `match_shots_fotmob` dá os chutes (12 zonas com a mesma regra); a "perda" é por time e jogo (sem posição): passes errados (`passes_total - accurate_passes`) + `perdas_posse`, ~10,6 por 100 toques. Para cada time, os 70% mais antigos dos jogos treinam e os 30% mais recentes testam; só times com >= 15 jogos (>= 12 nos testes de xG). Métrica: log-verossimilhança de Poisson (chutes ou perdas dados os toques) menos a da taxa ÚNICA de toda a amostra, dividida pelos eventos (nats por chute/perda). Positivo = melhor que a taxa única.
+
+**1. Taxa por time (encolhimento para a taxa geral).** 163 times, 14.882 chutes de teste. Peso da média geral em toques: 5 = -0,043; 25 = -0,027; 100 = -0,011; 400 = +0,001; **1.600 = +0,005**; 6.400 = +0,003. Pouco encolhimento PIORA (ruído de poucos jogos); o melhor ganho é minúsculo. Para perda (911 time-jogos, 72.322 perdas), a taxa do time com encolhimento (3.000 toques) dá +0,007.
+
+**2. Ajuste por Elo global (diferença time - adversário, 5 faixas).** Chutes: +0,0020 por chute (14.774). Chutes por 100 toques: 1,76 | 1,84 | 2,26 | 2,18 | 2,28 do muito mais fraco ao muito mais forte -- o efeito está só nos mais fracos (~20% menos). Perda por 100 toques: 11,96 | 11,40 | 10,89 | 10,43 | **8,72** (o muito mais forte perde 27% menos); ganho +0,0042 por perda. **Armadilha corrigida:** a estatística `perdas_posse` isolada dá só ~1 perda por 100 toques (é o "desarmado", não a perda de bola); a medida certa soma os passes errados.
+
+**3. Qual Elo** (jogos com as escalas global e liga, 1.258 jogos). Chutes (10.476): diferença global +0,0012, diferença da liga +0,0011, nível do time no Elo global +0,0020. Perdas (737 time-jogos): +0,0039 / +0,0037 / +0,0037; taxa do próprio time +0,0058. **Diferenças entre os Elos dentro do ruído.** A escala `geral` tem só 66 linhas com mapa de calor e ficou fora.
+
+**4. Elo xG, ataque e defesa** (Brasileirão A e B, 505 jogos; quintis de cada medida). Chutes (4.764): Elo global +0,0012 | ataque + defesa do adversário +0,0000 | Elo xG -0,0004 | defesa (xG sofrido, 8 jogos) -0,0022 | ataque (xG criado, 8 jogos) -0,0050. Perdas (175 time-jogos, 14.075 perdas): Elo global +0,0011 | Elo xG +0,0004 | ataque +0,0000 | ataque + defesa do adversário -0,0003 | defesa -0,0005. **`team_strengths` (Dixon-Coles ataque/defesa) está VAZIA no banco**; ataque e defesa foram montados como média móvel do xG dos 8 jogos anteriores. Nenhuma medida de xG supera o Elo global.
+
+**Leitura.** (a) As taxas de chute e de perda por zona são quase as mesmas para todos os times: o ganho máximo de qualquer ajuste é de 0,1% a 0,7% de verossimilhança, bem abaixo do que a grade fina de zonas deu (0,04 a 0,17 por ação, Achado 19). (b) O único ajuste com cara de real é a perda: cai de forma contínua com o nível do time (11,96 -> 8,72 por 100 toques); nos chutes só os times bem mais fracos se desviam. (c) Elo global, da liga ou nível do time são equivalentes; Elo xG e médias de xG de 8 jogos não ajudam (ruído da janela curta + sobreposição com o que chute por toque já mede).
+
+**Para o simulador:** taxa geral por zona para todos; ajuste por Elo global apenas na perda (e nos chutes dos times bem mais fracos); sem matriz por time.
+
+**Limites:** o mapa de calor é de março/2026 em diante e mistura campeonatos (testes 1 a 3) ou só Brasileirão A e B (teste 4, 505 jogos; perdas com 175 time-jogos no teste); sem IC 95%, ganhos desta ordem podem ser ruído (o ganho do Elo em chutes foi de +0,0020 em uma amostra e +0,0012 em outra); faixas de Elo escolhidas por mim (100 em 100 pontos nos testes 2 e 3; quintis no 4); Poisson sem sobredispersão (as perdas variam mais do que isso); a perda não tem posição (a taxa de perda POR ZONA só existe no StatsBomb, La Liga 2015/16); atribuição de toques por zona via mapa de calor, que é aproximação.
