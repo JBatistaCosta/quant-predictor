@@ -1471,3 +1471,29 @@ Pergunta do usuário. Cada ponto do mapa de calor do FotMob tem só `cx`, `cy` e
 **Precisão de estimar o minuto pela posição** (jogadores que jogaram os 90 minutos; minuto estimado = posição relativa x 90; 634 chutes): erro mediano **5,5 min**, médio 9,8 min, 72,9% dentro de 10 min e 88,5% dentro de 20 min. Serve para fases do jogo (terços, primeiro/segundo tempo, antes/depois de um gol), não para minuto exato; os toques não são uniformes no tempo, e quem entrou do banco ou saiu antes precisa usar entrada/saída (`match_lineup_fotmob`) em vez de 0 a 90.
 
 **O que isso NÃO dá:** não há relógio comum entre jogadores; cada lista é ordenada só dentro do próprio jogador. Não dá para intercalar os toques de jogadores diferentes e reconstruir a sequência de posse da partida (quem tocou depois de quem) nem pares "bola saiu do jogador A e chegou ao B". A transição entre zonas continua vindo do StatsBomb.
+
+
+## Achado 20 — o cruzamento separado do passe comum (StatsBomb, La Liga 2015/16, 18 zonas)
+
+**Pergunta:** a matriz tratava o cruzamento (`pass.cross`) como passe comum. Isso esconde alguma coisa?
+
+**Método:** `scripts/gerar_matriz_transicao_statsbomb.py --cruzamento` (cache `acoes_v2.json`, com a origem de cada ação: cruzamento / passe / condução / chute / falha). A matriz **não muda**: as contagens e os módulos JS de 12 e 18 zonas saem idênticos aos commitados (N = 667.415 ações; 552.934 continuações, como no Achado 15). Só se acrescentou o rótulo.
+
+**Resultado:** 9.461 cruzamentos em 362.275 passes (2,6%); só 28,0% completos. Comparação por zona de origem:
+
+| Zona de origem | Ação | n | Perda | Destino "grande área, centro" (entre completas) |
+|---|---|---|---|---|
+| ataque fora da área alto, lado | passe comum | ~15.400 / 16.500 | 28–29% | 6–7% |
+| ataque fora da área alto, lado | **cruzamento** | ~3.100 / 3.400 | **73–74%** | **77–78%** |
+| ataque fora da área alto, lado | junto (matriz atual) | ~18.500 / 19.900 | 36–37% | 11–12% |
+| grande área, lado | passe comum | ~1.500 | 48–51% | 25–27% |
+| grande área, lado | **cruzamento** | ~1.050 | 67–68% | **84%** |
+| grande área, lado | junto (matriz atual) | ~2.600 | 56–58% | 43–45% |
+
+- Cruzamento só aparece em 7 das 18 zonas (laterais da faixa de ataque e da grande área). Nas outras o rótulo não muda nada.
+- Nas laterais do ataque fora da área alto, o cruzamento é ~17% dos passes e tem **perda de 73%** (contra 28% do passe comum) e quase sempre vai parar no centro da grande área. A matriz atual mistura os dois: perda de 36% e só 11–12% de chegada ao centro da área, valores que **não descrevem nenhuma das duas ações**.
+- Cruzamento vindo de zona 10/12 (ataque baixo, lados) é raro (~400 em cada lado) mas igualmente arriscado (72% de perda, 71–75% de chegada ao centro da área).
+
+**O que NÃO se concluiu:** testar por validação cruzada se "separar melhora a previsão" é vazio quando o alvo não informa se foi cruzamento: a mistura ponderada dos dois modelos reproduz a matriz junta (é a lei da probabilidade total). O ganho existe quando o simulador **decide** entre cruzar e passar (ação com custo e destino próprios), não como pura previsão da próxima ação. Não foi testado se a decisão de cruzar depende de contexto (placar, força), o que seria a parte realmente útil.
+
+**Limites:** uma liga, uma temporada, sem IC 95%. Verificado em 25 partidas: o escanteio cobrado **não** é marcado como `cross` (266 de 266 com `cross` falso), então não entra nos números. Entram cruzamentos de **falta cobrada** (44 em 25 jogos, ~7% dos cruzamentos) e de bola rolando (569); separar por `pass.type` ficaria para uma versão futura.
