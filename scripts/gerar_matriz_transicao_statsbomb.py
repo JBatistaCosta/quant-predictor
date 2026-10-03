@@ -99,7 +99,9 @@ GRADES = {"12": (zona_12, NOMES_12), "18": (zona_18, NOMES_18), "3x3": (zona_3x3
 
 
 def acoes_da_partida(eventos: list[dict]) -> list[tuple]:
-    """Eventos de uma partida -> [(tipo, x_ini, y_ini, x_fim, y_fim)] com tipo em {'continua','chute','perda'}; coordenadas em jardas."""
+    """Eventos de uma partida -> [(tipo, x_ini, y_ini, x_fim, y_fim, origem)] com tipo em {'continua','chute','perda'}; coordenadas em jardas.
+    `origem` diz de que evento a ação veio: 'cruzamento' (Pass com `pass.cross`), 'passe', 'conducao' (Carry), 'chute' ou 'falha'
+    (Dispossessed/Miscontrol). Não altera a matriz (que só usa `tipo`); serve para separar o cruzamento do passe comum."""
     saida = []
     for e in eventos:
         tipo = (e.get("type") or {}).get("name")
@@ -108,20 +110,21 @@ def acoes_da_partida(eventos: list[dict]) -> list[tuple]:
             continue
         if tipo == "Pass":
             p = e.get("pass") or {}
+            origem = "cruzamento" if p.get("cross") else "passe"
             fim = p.get("end_location")
             resultado = (p.get("outcome") or {}).get("name")
             if resultado is None and fim:
-                saida.append(("continua", loc[0], loc[1], fim[0], fim[1]))
+                saida.append(("continua", loc[0], loc[1], fim[0], fim[1], origem))
             elif resultado in PERDAS_PASSE:
-                saida.append(("perda", loc[0], loc[1], None, None))
+                saida.append(("perda", loc[0], loc[1], None, None, origem))
         elif tipo == "Carry":
             fim = (e.get("carry") or {}).get("end_location")
             if fim:
-                saida.append(("continua", loc[0], loc[1], fim[0], fim[1]))
+                saida.append(("continua", loc[0], loc[1], fim[0], fim[1], "conducao"))
         elif tipo == "Shot":
-            saida.append(("chute", loc[0], loc[1], None, None))
+            saida.append(("chute", loc[0], loc[1], None, None, "chute"))
         elif tipo in EVENTOS_PERDA:
-            saida.append(("perda", loc[0], loc[1], None, None))
+            saida.append(("perda", loc[0], loc[1], None, None, "falha"))
     return saida
 
 
@@ -131,7 +134,7 @@ def calcular(acoes: list[tuple], grade: str) -> dict:
     n = len(nomes)
     contagem = {k: [0] * n for k in ("chute", "perda", "continua")}
     trans = [[0] * n for _ in range(n)]
-    for tipo, x0, y0, x1, y1 in acoes:
+    for tipo, x0, y0, x1, y1, *_ in acoes:
         z0 = zona(*para_metros(x0, y0))
         contagem[tipo][z0] += 1
         if tipo == "continua":
@@ -189,7 +192,7 @@ def comparar_12_vs_18(acoes: list[tuple], blocos: int = 5, alfa: float = 0.5) ->
     import math
 
     def codifica(a):
-        tipo, x0, y0, x1, y1 = a
+        tipo, x0, y0, x1, y1, *_ = a
         o18 = zona_18(*para_metros(x0, y0))
         if tipo == "continua":
             d18 = zona_18(*para_metros(x1, y1))
@@ -242,6 +245,24 @@ def comparar_12_vs_18(acoes: list[tuple], blocos: int = 5, alfa: float = 0.5) ->
             "ll18_medio": sum(b["ll18"] for b in por_bloco) / blocos, "ll12_medio": sum(b["ll12"] for b in por_bloco) / blocos}
 
 
+def analisar_cruzamento(acoes: list[tuple], grade: str = "18") -> dict:
+    """Separa o cruzamento do passe comum (sexto elemento da ação, cache `acoes_v2.json`) e mede, por zona de origem: nº de ações,
+    taxa de perda e distribuição do destino quando completa. Passe e cruzamento são comparados entre si (condução e falhas ficam fora)."""
+    zona, nomes = GRADES[grade]
+    n = len(nomes)
+    z = {k: [{"continua": 0, "perda": 0, "destino": [0] * n} for _ in range(n)] for k in ("cruzamento", "passe")}
+    for tipo, x0, y0, x1, y1, origem in acoes:
+        if origem not in z:
+            continue
+        o = zona(*para_metros(x0, y0))
+        if tipo == "continua":
+            z[origem][o]["continua"] += 1
+            z[origem][o]["destino"][zona(*para_metros(x1, y1))] += 1
+        else:
+            z[origem][o]["perda"] += 1
+    return {"zonas": nomes, "por_zona": z}
+
+
 def baixar_json(url: str, tentativas: int = 5):
     import requests
     for t in range(tentativas):
@@ -256,7 +277,7 @@ def baixar_json(url: str, tentativas: int = 5):
 
 
 def acoes_da_temporada(cache_dir: str | None, workers: int = 6) -> list[tuple]:
-    caminho = os.path.join(cache_dir, "acoes.json") if cache_dir else None
+    caminho = os.path.join(cache_dir, "acoes_v2.json") if cache_dir else None
     if caminho and os.path.exists(caminho):
         return [tuple(a) for a in json.load(open(caminho))]
     partidas = baixar_json(f"{BASE}/matches/{COMPETICAO}/{TEMPORADA}.json")
@@ -278,12 +299,30 @@ def acoes_da_temporada(cache_dir: str | None, workers: int = 6) -> list[tuple]:
     return acoes
 
 
+def imprimir_cruzamento(acoes: list[tuple]) -> None:
+    r = analisar_cruzamento(acoes)
+    print("cruzamento x passe comum, por zona de origem (18 zonas): n, % perda, destino mais frequente (% das completas)")
+    for i, nome in enumerate(r["zonas"]):
+        linha = []
+        for k in ("cruzamento", "passe"):
+            d = r["por_zona"][k][i]
+            tot = d["continua"] + d["perda"]
+            if tot == 0:
+                linha.append(f"{k}: -")
+                continue
+            top = max(range(len(d["destino"])), key=lambda w: d["destino"][w])
+            pct = 100 * d["destino"][top] / d["continua"] if d["continua"] else 0
+            linha.append(f"{k}: n={tot} perda={100 * d['perda'] / tot:.1f}% -> {r['zonas'][top]} {pct:.0f}%")
+        print(f"  {nome:36s} " + " | ".join(linha))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cache-dir", default=None)
     ap.add_argument("--saida", default=None, help="grava o JSON com as duas grades")
     ap.add_argument("--js", default=None, help="grava o módulo JavaScript da grade de 12 zonas (src/utils/zoneTransitionMatrix12.js)")
     ap.add_argument("--js18", default=None, help="grava o módulo JavaScript da grade de 18 zonas (src/utils/zoneTransitionMatrix18.js)")
+    ap.add_argument("--cruzamento", action="store_true", help="separa o cruzamento do passe e mede a diferença (precisa do cache acoes_v2.json)")
     ap.add_argument("--comparar", action="store_true", help="compara 12 x 18 zonas por validação cruzada em blocos")
     args = ap.parse_args()
     acoes = acoes_da_temporada(args.cache_dir)
@@ -299,6 +338,8 @@ def main() -> None:
     if args.js18:
         escrever_modulo_js(res["18"], args.js18)
         print("módulo gravado em", args.js18)
+    if args.cruzamento:
+        imprimir_cruzamento(acoes)
     if args.comparar:
         c = comparar_12_vs_18(acoes)
         print(f"12 x 18 (log-verossimilhança média por ação, fora da amostra): 12={c['ll12_medio']:.4f}  18={c['ll18_medio']:.4f}  "

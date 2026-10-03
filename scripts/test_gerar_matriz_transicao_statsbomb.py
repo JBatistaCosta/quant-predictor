@@ -63,13 +63,13 @@ def test_calcular_taxas_e_matriz_somam_um():
         assert sum(linha) == pytest.approx(1.0) or sum(linha) == 0
 
 
-@pytest.mark.skipif(not os.environ.get("SB_CACHE_DIR"), reason="defina SB_CACHE_DIR (pasta com acoes.json gerado pelo script) para a validação contra o Achado 15")
+@pytest.mark.skipif(not os.environ.get("SB_CACHE_DIR"), reason="defina SB_CACHE_DIR (pasta com acoes_v2.json gerado pelo script) para a validação contra o Achado 15")
 def test_grade_3x3_reproduz_a_matriz_publicada_no_achado_15():
     """Checagem do MÉTODO: refeita na grade do Achado 15, a matriz tem de bater com a publicada (zoneTransitionMatrix.js)."""
     import json
     import re
     import pathlib
-    acoes = [tuple(a) for a in json.load(open(os.path.join(os.environ["SB_CACHE_DIR"], "acoes.json")))]
+    acoes = [tuple(a) for a in json.load(open(os.path.join(os.environ["SB_CACHE_DIR"], "acoes_v2.json")))]
     r = g.calcular(acoes, "3x3")
     assert sum(r["contagem"]["continua"]) == 552934                      # o N do Achado 15
     js = (pathlib.Path(__file__).resolve().parent.parent / "src" / "utils" / "zoneTransitionMatrix.js").read_text(encoding="utf-8")
@@ -124,3 +124,31 @@ def test_comparar_12_vs_18_nao_inventa_ganho_quando_nao_ha_diferenca():
              for _ in range(40000)]            # as duas metades do meio têm o mesmo comportamento
     c = g.comparar_12_vs_18(acoes, blocos=4)
     assert abs(c["ganho_alvo_grosso_nats_por_acao"]) < 0.01
+
+
+def test_acoes_marcam_a_origem_e_cruzamento_nao_altera_a_matriz():
+    eventos = [
+        ev("Pass", [100, 10], **{"pass": {"end_location": [110, 40], "cross": True}}),                               # cruzamento certo
+        ev("Pass", [100, 10], **{"pass": {"end_location": [110, 40], "cross": True, "outcome": {"name": "Incomplete"}}}),
+        ev("Pass", [100, 10], **{"pass": {"end_location": [90, 10]}}),
+        ev("Carry", [20, 40], carry={"end_location": [40, 40]}),
+        ev("Shot", [110, 40]),
+        ev("Dispossessed", [60, 40]),
+    ]
+    acoes = g.acoes_da_partida(eventos)
+    assert [a[5] for a in acoes] == ["cruzamento", "cruzamento", "passe", "conducao", "chute", "falha"]
+    sem_origem = [a[:5] for a in acoes]
+    assert g.calcular(acoes, "18")["transicao"] == g.calcular(sem_origem, "18")["transicao"]
+    assert g.calcular(acoes, "18")["contagem"] == g.calcular(sem_origem, "18")["contagem"]
+
+
+def test_analisar_cruzamento_separa_perda_e_destino():
+    acoes = [("continua", 100, 10, 110, 40, "cruzamento")] + [("perda", 100, 10, None, None, "cruzamento")] * 3 \
+        + [("continua", 100, 10, 90, 10, "passe")] * 3 + [("perda", 100, 10, None, None, "passe")] \
+        + [("continua", 20, 40, 40, 40, "conducao"), ("chute", 110, 40, None, None, "chute")]
+    r = g.analisar_cruzamento(acoes, "18")
+    o = g.zona_18(*g.para_metros(100, 10))
+    c, p = r["por_zona"]["cruzamento"][o], r["por_zona"]["passe"][o]
+    assert (c["continua"], c["perda"]) == (1, 3) and (p["continua"], p["perda"]) == (3, 1)
+    assert c["destino"][g.zona_18(*g.para_metros(110, 40))] == 1
+    assert sum(sum(d["destino"]) + d["perda"] for d in r["por_zona"]["passe"]) == 4   # condução e chute ficam fora
