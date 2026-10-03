@@ -3,7 +3,7 @@
 
 Por que existe: base de posição para uma futura simulação de jogo por cadeia de Markov (fase 2 da granularidade de
 jogador, CONTEXTO_PROJETO.md 03/10/2026). O FotMob serve, por partida, um SVG com um <circle cx cy> por ponto, em
-coordenadas 105 x 68 (time sempre atacando rumo a x = 105); o nº de pontos acompanha os toques do jogador. Só existe
+coordenadas 105 x 68 (time sempre atacando rumo a x = 105); o nº de pontos acompanha os toques do jogador. Cada ponto traz só cx/cy/r (sem minuto), mas a lista de cada jogador vem em ORDEM CRONOLÓGICA (verificado em 03/10/2026); `pontos` guarda essa ordem. Só existe
 para jogos de ~março/2026 em diante (antes: 404).
 
 Fluxo por partida (2 chamadas, FotMob é grátis; pacing de 1,3 s como os demais ingestores):

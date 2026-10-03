@@ -81,3 +81,46 @@ def test_grade_3x3_reproduz_a_matriz_publicada_no_achado_15():
             assert abs(r["taxa_desfecho"][z][k] - taxa[z][i]) < 0.0006
         for w in range(9):
             assert abs(r["transicao"][z][w] - matriz[z][w]) < 0.0006
+
+
+def test_zona_18_refina_a_de_12_em_qualquer_ponto():
+    """Cada zona de 18 cabe dentro de uma de 12 (PAI_12_DE_18), em todo o campo."""
+    for x in range(0, 211):
+        for y in range(0, 137):
+            xm, ym = x / 2, y / 2
+            z18 = g.zona_18(xm, ym)
+            assert 0 <= z18 < 18 and g.PAI_12_DE_18[z18] == g.zona_12(xm, ym)
+
+
+@pytest.mark.parametrize("x,y,zona", [(10, 5, 0), (40, 34, 4), (60, 34, 7), (75, 34, 10), (85, 34, 13), (95, 34, 16),
+                                      (52.5, 34, 7), (52.49, 34, 4), (79.25, 34, 13), (79.24, 34, 10), (95, 5, 12)])
+def test_zona_18_casos_de_fronteira(x, y, zona):
+    assert g.zona_18(x, y) == zona
+
+
+def test_pai_12_de_18_tem_3_filhos_nas_faixas_divididas():
+    from collections import Counter
+    filhos = Counter(g.PAI_12_DE_18)
+    assert sorted(filhos) == list(range(12))
+    assert [filhos[z] for z in range(12)] == [1, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1]      # meio e ataque_fora_da_area têm 2 filhos
+
+
+def test_comparar_12_vs_18_acha_ganho_quando_a_metade_alta_se_comporta_diferente():
+    import random
+    rnd = random.Random(0)
+    acoes = []
+    for _ in range(4000):                      # faixa do meio: a metade alta (x>=52,5 m ~ 60 jardas) só continua para frente; a baixa só perde
+        acoes.append(("continua", 62, 40, 100, 40))
+        acoes.append(("perda", 50, 40, None, None))
+        acoes.append(("continua", 50, 40, 52, 40) if rnd.random() < 0.5 else ("perda", 50, 40, None, None))
+    c = g.comparar_12_vs_18(acoes, blocos=4)
+    assert c["ganho_medio_nats_por_acao"] > 0.05 and c["ganho_alvo_grosso_nats_por_acao"] > 0
+
+
+def test_comparar_12_vs_18_nao_inventa_ganho_quando_nao_ha_diferenca():
+    import random
+    rnd = random.Random(1)
+    acoes = [("perda", 62 if rnd.random() < 0.5 else 50, 40, None, None) if rnd.random() < 0.3 else ("continua", 62 if rnd.random() < 0.5 else 50, 40, 100, 40)
+             for _ in range(40000)]            # as duas metades do meio têm o mesmo comportamento
+    c = g.comparar_12_vs_18(acoes, blocos=4)
+    assert abs(c["ganho_alvo_grosso_nats_por_acao"]) < 0.01
