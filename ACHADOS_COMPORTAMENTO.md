@@ -1497,3 +1497,24 @@ Pergunta do usuário. Cada ponto do mapa de calor do FotMob tem só `cx`, `cy` e
 **O que NÃO se concluiu:** testar por validação cruzada se "separar melhora a previsão" é vazio quando o alvo não informa se foi cruzamento: a mistura ponderada dos dois modelos reproduz a matriz junta (é a lei da probabilidade total). O ganho existe quando o simulador **decide** entre cruzar e passar (ação com custo e destino próprios), não como pura previsão da próxima ação. Não foi testado se a decisão de cruzar depende de contexto (placar, força), o que seria a parte realmente útil.
 
 **Limites:** uma liga, uma temporada, sem IC 95%. Verificado em 25 partidas: o escanteio cobrado **não** é marcado como `cross` (266 de 266 com `cross` falso), então não entra nos números. Entram cruzamentos de **falta cobrada** (44 em 25 jogos, ~7% dos cruzamentos) e de bola rolando (569); separar por `pass.type` ficaria para uma versão futura.
+
+
+## Achado 21 — volume de cruzamentos por time e jogo (FotMob): quanto é, de que depende, e o que não dá para concluir
+
+**Pergunta:** o volume de cruzamentos que um time tenta num jogo (soma de `cruzamentos_total` dos jogadores, `match_player_stats_detalhe_fotmob`) é estável o bastante para ser entrada de um simulador? Amostra: 1.976 linhas time-jogo (988 partidas, 68 times, 5 competições; últimos jogos com `placar_confere` e >= 11 jogadores com estatística).
+
+**Volume e dispersão.** Média 17,6 por time e jogo (percentis 10/50/90 = 5/17/31; máximo 81); precisão 24% (certos/total). Variância 102,6 contra 17,6 se fosse Poisson (~5,8x); mesmo **dentro do mesmo time** a variância é 84,8 (~4,8x). Uma binomial negativa (como a de escanteios) é o ponto de partida; Poisson subestima muito a cauda.
+
+**De que depende** (médias por time e jogo):
+- **Mando:** casa 19,9 x fora 15,4 (+4,5 por jogo; 988 de cada).
+- **Elo relativo (`elo_dif`):** muito mais fraco 12,4 | mais fraco 16,4 | equilibrado 18,4 | mais forte 19,0 | muito mais forte 18,4. O efeito aparece só em quem é MAIS FRACO; acima do equilíbrio o volume praticamente não sobe.
+- **Identidade do time:** variância entre médias de times 41,6 (68 times com >= 6 jogos), dentro do time 84,8; descontado o ruído amostral (~3,1), o time explica cerca de **30%** da variância (ICC ~ 0,31). Há "estilo de cruzar", mas não é a maior parte.
+- **Estado do jogo** (só Brasileirão Série B, 1.260 time-jogos, tempo em `match_team_game_state`): quanto mais tempo PERDENDO, mais cruzamentos (nunca perdeu 17,8 | < 25% do tempo 18,3 | 25-50% 21,9 | >= 50% 25,1); quanto mais tempo GANHANDO, menos (nunca 22,5 | < 25% 22,2 | 25-50% 17,7 | >= 50% 14,8). **NÃO controlado por força de equipe** -- é exatamente a armadilha de ACHADOS (fase 2): quem passa o jogo ganhando é, em média, o time melhor. Só vale como hipótese; falta agregar por `faixa_forca` (e `is_home`) antes de dizer que "quem perde cruza mais".
+
+**Ressalvas de qualidade do dado:**
+- **Copa Libertadores (liga 23) destoa**: 6,9 cruzamentos por time-jogo (as outras: 13,7-20,1), com apenas 2,9 jogadores com cruzamento por jogo (contra 5,3-7,0) e 10,5% dos time-jogos com zero. Hipótese: cobertura incompleta do FotMob nessa competição (a estatística é omitida quando é zero ou ausente, não dá para separar). **Não usar o volume dessa liga sem checar.**
+- A amostra é dominada pela Série B brasileira (64% das linhas); sem intervalo de confiança.
+- Zero em `cruzamentos_total` ausente foi tratado como 0 (`coalesce`); só a Libertadores tem zeros significativos (0% nas demais).
+- O primeiro corte por estado do jogo saiu ERRADO por NULL: `CASE WHEN mp/mt < x` com `mp` NULL (jogo sem tempo perdendo, ex.: 0 x 0) cai no `ELSE`, inflando a faixa ">= 50%". Sempre `coalesce(..., 0)` antes de comparar.
+
+**Uso sugerido:** volume de cruzamentos = base do time + mando (+4,5) + ajuste para quem é bem mais fraco que o adversário, com dispersão de binomial negativa; destino e taxa de perda do cruzamento vêm do Achado 20 (StatsBomb), como constantes externas. Posição do cruzamento (zonas laterais) só pode ser estimada pelo mapa de calor do jogador, e só em jogos desde março/2026.
