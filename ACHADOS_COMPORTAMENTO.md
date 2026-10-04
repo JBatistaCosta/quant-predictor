@@ -1784,3 +1784,62 @@ Por liga 2015/16 (total do jogo): La Liga média 10,11, mediana 10, variância 1
 - **Para o simulador:** matriz única, com um **relógio que desloca a probabilidade de destino para zonas avançadas** (multiplicador de avanço de 1,0 a 1,4 ao longo dos 90 minutos) e o ritmo de ações por janela do Achado 27. Uma matriz inteira por janela não compensa a complexidade.
 
 **Limites:** quatro ligas de 2015/16 somadas (a matriz das ligas é a mesma em termos do Achado 26); só 90 minutos (sem acréscimos); janela definida pelo início da ação; **não separa estado do jogo (placar), nível dos times nem substituições**, que mudam o ritmo e provavelmente explicam parte do deslocamento (um time perdendo avança mais): a análise por placar exige controlar a força da equipe (Achados 15 a 18) e ficou para depois; sem intervalo de confiança além do erro-padrão entre blocos.
+
+
+## Achado 29 — tempo morto de cada reinício e recuperação da bola depois de uma perda (as duas peças que fecham o relógio e a troca de posse)
+
+**Para quê.** Numa simulação semi-Markov a bola não anda o tempo todo: depois de uma bola fora, falta ou gol há um tempo morto até o reinício, e depois de uma perda em jogo a bola tem de ir para algum lugar do campo do adversário. `scripts/analisar_reinicios_e_recuperacoes_statsbomb.py` mede as duas coisas nos EVENTOS COMPLETOS versionados (`dados_referencia/statsbomb/completo`, sem rede) das quatro ligas de 2015/16 (1.517 jogos). Resumo e a matriz completa de 18 por 18 em `dados_referencia/statsbomb/reinicios_e_recuperacoes_ligas_2015_16.json`.
+
+**Método.** Tempo morto = `timestamp` do primeiro evento da posse de um reinício (`play_pattern` da posse) menos o fim (`timestamp` + `duration`) do último evento da posse anterior, ignorando ruído (pressão, substituição, paralisação por lesão, câmera). Recuperação = primeiro evento do ADVERSÁRIO depois de cada perda (definição do Achado 15: passe incompleto, fora ou impedimento, `Dispossessed`, `Miscontrol`), com seu atraso e sua zona de 18 no referencial dele.
+
+**Tempo morto por tipo de reinício** (segundos; por jogo, os dois times):
+
+| Reinício | Por jogo | Mediana | Média | p10 | p90 | Minutos por jogo |
+|---|---|---|---|---|---|---|
+| Lateral | 46,3 | 11,5 | 14,1 | 4,9 | 23,4 | 10,9 |
+| Falta cobrada | 30,6 | 24,9 | 29,3 | 8,1 | 56,1 | 14,9 |
+| Tiro de meta | 16,7 | 24,8 | 25,8 | 12,6 | 36,4 | 7,2 |
+| Escanteio | 10,2 | 26,3 | 27,9 | 17,2 | 38,5 | 4,7 |
+| Saída de bola depois de gol | 2,6 | 55,0 | 56,3 | 40,0 | 71,6 | 2,4 |
+| Reposição do goleiro | 6,6 | 0,0 | 4,9 | 0,0 | 16,3 | 0,5 |
+
+- **O tempo morto dos reinícios soma 40,7 minutos por jogo.** Junto dos ~47 minutos de ações (Achado 27), dão ~88 dos ~94 minutos até o último evento: o relógio fecha com ~93%. Os ~6 minutos que faltam são pausas dentro da posse e paralisações (lesão, substituição) que a conta não pega.
+- **A distribuição é assimétrica** (média acima da mediana; lateral p90 = 23 s, falta p90 = 56 s): um modelo lognormal ou gama por tipo de reinício serve melhor que a média.
+- **A falta cobrada é o maior consumidor de tempo** (14,9 de 40,7 minutos), depois lateral (10,9).
+- **A reposição do goleiro quase não tem tempo morto** (mediana 0): é continuidade de jogo (defesa seguida de reposição), e entra como posse comum.
+
+**Causa do reinício (as mais frequentes; mediana em segundos):** falta cobrada depois de `Foul Won` 25,8 (n = 37.701); lateral depois de recepção 10,9, depois de corte 11,6, depois de disputa 11,4, depois de bloqueio 11,7, depois de passe fora 10,6; tiro de meta depois do goleiro 25,4; escanteio depois do goleiro 27,5 e depois de corte 25,7. O tempo morto depende pouco da causa dentro do mesmo tipo de reinício.
+
+**O que acontece depois de uma perda** (417.332 perdas):
+
+| Primeiro evento do adversário | % |
+|---|---|
+| Recuperação em jogo: passe | 25,3 |
+| Recuperação em jogo: `Ball Recovery` | 17,5 |
+| Recuperação em jogo: corte (`Clearance`) | 14,1 |
+| Recuperação em jogo: disputa (`Duel`) | 12,1 |
+| Recuperação em jogo: bloqueio | 9,3 |
+| Recuperação em jogo: interceptação | 8,6 |
+| Recuperação em jogo: goleiro | 1,9 |
+| Reinício: lateral | 6,5 |
+| Reinício: tiro de meta | 2,2 |
+| Reinício: falta cobrada | 1,8 |
+| Reinício: escanteio | 0,1 |
+
+- **89,5% das perdas viram recuperação em jogo, com atraso praticamente zero** (mediana 0,0 s, média 0,2 s): a posse muda de lado no mesmo instante, sem tempo morto. Só 10,5% das perdas viram reinício, com os mesmos tempos mortos da tabela (lateral mediana 11,0 s; tiro de meta 23,6 s; falta 22,7 s; escanteio 26,6 s).
+- **Onde o adversário fica com a bola** (recuperação em jogo; faixa no referencial dele, % por linha, dada a faixa em que a ação de perda COMEÇOU, que é onde o passe saiu):
+
+| Perda começou em (referencial de quem perdeu) | Adversário: defesa | meio baixo | meio alto | ataque fora da área baixo | ataque fora da área alto | grande área | n |
+|---|---|---|---|---|---|---|---|
+| defesa | 14,7 | 32,7 | 26,3 | 14,1 | 10,6 | 1,4 | 92.348 |
+| meio baixo | 25,7 | 32,3 | 40,5 | 1,3 | 0,1 | 0,0 | 73.871 |
+| meio alto | 45,7 | 52,0 | 2,3 | 0,0 | 0,0 | 0,0 | 76.653 |
+| ataque fora da área baixo | 94,8 | 5,1 | 0,1 | 0,0 | 0,0 | 0,0 | 36.661 |
+| ataque fora da área alto | 99,8 | 0,2 | 0,0 | 0,0 | 0,0 | 0,0 | 72.843 |
+| grande área | 99,9 | 0,0 | 0,0 | 0,0 | 0,0 | 0,0 | 21.021 |
+
+**Leitura da matriz de recuperação:** a posição do evento de perda é a ORIGEM do passe, não onde a bola acabou. Por isso uma perda que começa na defesa do time quase nunca é recuperada em cima do gol (só 26% nas faixas de ataque do adversário): são passes longos interceptados no meio. Já uma perda que começa no ataque (faixas de ataque e grande área) vira recuperação do adversário na defesa dele em 95 a 100% dos casos. A matriz de 18 por 18 completa está no JSON.
+
+**Consequência para a cadeia:** (a) depois de uma perda em jogo (89,5%), troca a posse com tempo zero e a zona do adversário é sorteada dessa matriz (dada a zona de origem da perda); (b) nos outros 10,5%, o relógio avança o tempo morto do reinício (lognormal ou gama por tipo, valores da tabela) e a posse recomeça pela zona do reinício; (c) escanteio e falta cobrada são os reinícios que mais gastam relógio; (d) gol: ~56 s de saída de bola.
+
+**Limites:** quatro ligas de 2015/16 somadas; o StatsBomb não tem evento "bola fora" explícito, então o tempo morto parte do fim do último evento (inclui paralisações por lesão e substituição que caiam entre os dois); o primeiro evento do adversário depois da perda pode ser um corte ou bloqueio que não encerra a jogada (a bola continua em disputa), então a "zona de recuperação" é aproximada; não separa o tempo morto por janela do jogo, por placar nem por nível dos times (o tempo gasto com falta cobrada tende a crescer no fim do jogo); sem intervalo de confiança.
