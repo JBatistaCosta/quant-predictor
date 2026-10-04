@@ -2124,3 +2124,34 @@ Por torneio, a razão de xG é 1,26 (Euro 2024), 1,25 (Euro 2020) e **1,49** (Co
 **Leitura.** (1) Os fatos discretos (gols, escanteios) são os mesmos nas duas fontes; chutes e passes diferem pouco por definição de evento. (2) **O xG do FotMob é 26 a 49% maior que o do StatsBomb nos mesmos jogos e a correlação por jogo é só 0,33 a 0,55**: não são o mesmo modelo, e somar ou misturar as duas escalas distorce. Isso se aplica ao simulador: a tabela polar do FotMob usada para o xG do chute está na escala do FotMob (xG simulado 2,65 contra 2,47 do StatsBomb em 2015/16), e em torneios a diferença é maior que nas ligas. (3) Para dado de seleções com mapa de chutes, as edições de 2012, 2016, 2019, 2021 e 2015 só existem no FotMob.
 
 **Não feito:** a tabela polar (14 zonas) refeita só com os chutes de seleções, e o casamento das seleções com `teams` para a carga no banco (precisa do crosswalk supervisionado e da chave de escrita).
+
+## Achado 37 — tabela polar de seleções (FotMob) e a hipótese de mudança no xG da Opta: a distribuição dos chutes é a de clubes; a conversão é 11% menor; o xG por local é estável, mas os gols/xG caem ~8% de 2021 para 2023
+
+**Dados.** `scripts/analisar_zonas_polares_selecoes_fotmob.py` (+ teste; saída em `dados_referencia/fotmob/zonas_polares_selecoes.json`). Dos 330 jogos baixados no Achado 36, **só 3 edições têm mapa de chutes no FotMob: Euro 2024 (1.300 chutes), Euro 2020 (1.226) e Copa América 2024 (739)**; Euro 2012 e 2016 e Copa América 2015, 2016, 2019 e 2021 vêm com o mapa vazio. Total: 3.265 chutes de 134 jogos, sem pênaltis, disputa de pênaltis e gol contra, mesma regra das 14 zonas polares da Análise de Evento. IC 95% por bootstrap de partidas.
+
+| zona | chutes | % seleções ± IC | % clubes | xG/chute seleções ± IC | clubes | gol/chute seleções ± IC | clubes |
+|---|---|---|---|---|---|---|---|
+| 0–6 m central | 77 | 2,36 ± 0,56 | 2,32 | 0,418 ± 0,060 | 0,443 | 0,338 ± 0,105 | 0,401 |
+| 0–6 m aberto | 81 | 2,48 ± 0,52 | 2,49 | 0,379 ± 0,044 | 0,404 | 0,346 ± 0,103 | 0,388 |
+| 6–9 m central | 265 | 8,12 ± 0,97 | 7,64 | 0,197 ± 0,017 | 0,197 | 0,177 ± 0,045 | 0,193 |
+| 6–9 m aberto | 117 | 3,58 ± 0,68 | 4,14 | 0,141 ± 0,018 | 0,162 | 0,111 ± 0,054 | 0,139 |
+| 9–12 m central | 277 | 8,48 ± 1,10 | 7,87 | 0,123 ± 0,015 | 0,129 | 0,116 ± 0,040 | 0,126 |
+| 9–12 m aberto | 166 | 5,08 ± 0,84 | 5,44 | 0,106 ± 0,015 | 0,118 | 0,114 ± 0,050 | 0,112 |
+| 12–16,5 m central | 330 | 10,11 ± 0,96 | 10,22 | 0,123 ± 0,012 | 0,116 | 0,103 ± 0,034 | 0,117 |
+| 12–16,5 m aberto | 371 | 11,36 ± 1,12 | 12,49 | 0,096 ± 0,009 | 0,093 | 0,073 ± 0,024 | 0,093 |
+| 16,5–22 m central | 288 | 8,82 ± 1,02 | 9,02 | 0,065 ± 0,005 | 0,065 | 0,062 ± 0,032 | 0,067 |
+| 16,5–22 m aberto | 304 | 9,31 ± 0,97 | 10,07 | 0,039 ± 0,003 | 0,044 | 0,036 ± 0,021 | 0,042 |
+| 22–30 m central | 600 | 18,38 ± 1,35 | 17,14 | 0,032 ± 0,003 | 0,032 | 0,028 ± 0,014 | 0,032 |
+| 22–30 m aberto | 211 | 6,46 ± 0,87 | 6,09 | 0,025 ± 0,002 | 0,028 | 0,028 ± 0,021 | 0,028 |
+| > 30 m central | 146 | 4,47 ± 0,68 | 4,12 | 0,025 ± 0,008 | 0,020 | 0,034 ± 0,029 | 0,016 |
+| > 30 m aberto | 32 | 0,98 ± 0,40 | 0,96 | 0,019 ± 0,004 | 0,022 | 0,031 ± 0,057 | 0,041 |
+
+**Leitura da comparação.** (1) A **distribuição dos chutes pelas 14 zonas é a de clubes**: todas as fatias das seleções ficam dentro do IC de 95% das de clubes, exceto 12–16,5 m aberto e 16,5–22 m aberto, ligeiramente menores. (2) O **xG por chute em cada zona também**: as 14 zonas caem dentro do IC ou a menos de 0,02 (a única fora do IC é 6–9 m aberto, 0,141 contra 0,162). (3) A **conversão** é menor: 0,0870 gol por chute contra 0,0976 de clubes (-11%), com xG por chute 0,0978 contra 0,1007 (-3%); a diferença está nas zonas abertas e próximas (0–6 m central 0,338 contra 0,401; 6–9 m aberto 0,111 contra 0,139; 12–16,5 m aberto 0,073 contra 0,093), com ICs largos (amostra de 3,3 mil chutes). **Conclusão: a tabela de clubes serve de aproximação da distribuição de chutes de seleções, mas superestima os gols de seleções em ~11%, o que coincide com os gols simulados acima do real em torneios (Achado 35).**
+
+**Hipótese: o xG que a Opta calcula para os chutes mudou?** O FotMob usa o xG da Opta. Testes com o que o banco e os dados têm:
+1. **xG por local, em clubes (banco, `match_shots_fotmob`, 6 a 16,5 m em cone central, sem pênalti, só chutes extraídos antes de 08/2026):** xG médio por chute fica estável entre 2020 e 2026 (0,143 / 0,141 / 0,142 / 0,142 / 0,142 / 0,144 / 0,145 nos anos de 2020 a 2026), uma variação de +2%.
+2. **Mas os gols por chute caem:** 0,151 (2020), 0,149 (2021), 0,144 (2022), 0,140 (2023), 0,139 (2024), 0,141 (2025), 0,142 (2026), e **gols/xG vai de 1,06 / 1,06 em 2020-21 para 1,01 em 2022 e 0,98 de 2023 em diante** (n de ~14 mil chutes por ano, erro-padrão ~2%): uma queda de ~8%, concentrada entre 2021 e 2023, com xG por local constante.
+3. **Seleções (amostras pequenas):** gols/xG 0,99 (Euro 2020), 0,79 (Euro 2024), 0,89 (Copa América 2024); na faixa 0-12 m, 1,05 contra 0,75 e 0,88; a diferença entre as duas Euros (~0,2) está a ~1,5 erro-padrão, não é conclusiva.
+4. **Contra o StatsBomb nos mesmos jogos (Achado 36):** FotMob/StatsBomb 1,25 (Euro 2020) e 1,26 (Euro 2024): sem mudança relativa entre as duas edições, mas 1,49 na Copa América 2024.
+
+**O que isso permite dizer.** O xG por local do FotMob **não deu salto** entre 2020 e 2026 (mesmos locais, mesmo xG médio), então não há sinal de recalibração do tamanho que o xG precisaria ter. O que aparece é uma **queda gradual da conversão em relação ao xG** (~8%) entre 2021 e 2023. Duas explicações compatíveis: o xG passou a refletir mais do que a posição (por exemplo, tipo de passe, pressão, goleiro) e ficou mais generoso sem mudar a média por local, ou a conversão real caiu (ou o registro dos chutes/gols mudou). Dois dados do próprio FotMob não bastam para separar as duas: é preciso uma referência externa estável (o StatsBomb de 2015/16, que só tem ligas antigas, e a Copa 2022 inteira, que está no StatsBomb mas não no FotMob do banco). **Cautela para o simulador:** a tabela polar de clubes que ele usa mistura 2020-2026 e embute essa deriva; seu gols/xG médio é ~1,0 e deve ser recalculado por período se o simulador for usado para uma temporada específica.

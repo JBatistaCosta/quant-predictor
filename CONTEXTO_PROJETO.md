@@ -9,6 +9,10 @@
 
 ---
 
+**Tabela polar de seleções e teste da mudança no xG da Opta (04/10) -- Achado 37.** Só Euro 2020, Euro 2024 e Copa América 2024 têm mapa de chutes no FotMob (3.265 chutes sem pênaltis; as outras 6 edições vêm vazias). Distribuição de chutes e xG por zona polar = as de clubes (dentro do IC); conversão de seleções 0,0870 gol/chute contra 0,0976 (-11%). Hipótese de mudança no xG: xG médio por local estável de 2020 a 2026 nos clubes do banco (6-16,5 m central: 0,143 -> 0,145), mas gols/xG cai de 1,06 (2020-21) para ~0,98 (2023-26), -8%: deriva gradual entre 2021 e 2023, sem salto no xG; não dá para separar mudança de modelo de queda real da conversão só com dados do FotMob. Script: `scripts/analisar_zonas_polares_selecoes_fotmob.py`.
+
+---
+
 **FotMob da Eurocopa e da Copa América (04/10) -- Achado 36.** 330 jogos baixados (Euro 2024/2020/2016/2012; Copa América 2024/2021/2019/2016/2015) para `dados_referencia/fotmob/` (2,2 MB; `scripts/baixar_fotmob_torneios.py`), SEM carga no banco (falta `SUPABASE_KEY` service_role no ambiente e crosswalk de seleções). Cruzamento com o StatsBomb: 134 de 134 jogos casaram; gols e escanteios idênticos, chutes +3%, passes -8%, xG do FotMob 26-49% maior (correlação 0,33-0,55): escalas diferentes, não misturar. Para carregar no banco: definir `SUPABASE_URL` e `SUPABASE_KEY` como segredos do ambiente (ver docs `environment.secrets`), criar `leagues`/`teams` das seleções com crosswalk confirmado e rodar `ingestao_fotmob.py`.
 
 ---
