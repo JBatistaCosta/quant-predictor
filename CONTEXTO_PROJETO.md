@@ -9,6 +9,10 @@
 
 ---
 
+**Conferência dos Achados 36-42 após as contaminações (04/10).** Nenhum é afetado pelos erros de `team_id` da Inglaterra e da Costa Rica: 36, 37, 38 e 41 não usam o banco; o 39 filtra por nome de liga; o 40 não filtra por time. Descoberta lateral: a 'tabela polar de clubes' do Achado 40 inclui ~4.100 chutes de torneios de seleções (0,9%), com efeito desprezível (xG por chute 0,1002 sem e com elas no quarto decimal); nada a recalcular, só ler o rótulo como 'todos os chutes do banco desde 01/08/2021'. Detalhes no fim do Achado 43 em `ACHADOS_COMPORTAMENTO.md`.
+
+---
+
 **Marcador de seleção garantido (04/10, a pedido: "as seleções têm de ter marcador de seleção").** `teams.is_national_team` agora vale `true` para os 78 times que jogam ligas com `leagues.type='international'` (Eurocopa, Copa do Mundo, Copa América); 12 seleções da Copa 2026 estavam sem ele (Argélia, Bósnia, Cabo Verde, RD Congo, Curaçao, Iraque, Costa do Marfim, Jordânia, Nova Zelândia, Noruega, África do Sul, Uzbequistão). **Garantia permanente:** gatilho `trg_marcar_selecoes_por_liga` em `matches` (função `marcar_selecoes_por_liga`, `security definer`): toda partida gravada ou alterada numa liga de seleções marca os dois times, por qualquer importador. Testado com desfazimento: sem marcador -> com marcador após jogo de seleção; clube não ganha marcador por jogo de liga comum. Além disso `resolverOuCriarTimeFotmob` marca a seleção reconhecida que ainda estava com valor nulo. Migration `20261005100300_garante_marcador_selecao.sql`. Efeito colateral a saber: um clube que entrasse por engano numa partida de liga de seleções passaria a ser marcado como seleção (o erro de dados continua visível pelo vínculo, mas o marcador não o denuncia). A consulta de conserto com `EXISTS` correlacionado estourou 60 s e foi reescrita partindo só dos jogos das ligas de seleções.
 
 ---
