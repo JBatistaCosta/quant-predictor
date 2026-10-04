@@ -254,14 +254,15 @@ def partidas_do_grupo(grupo: str) -> list[tuple[str, dict]]:
     return saida
 
 
-def baixar_completo(grupo: str, pasta: str, workers: int = 6) -> None:
+def baixar_completo(grupo: str, pasta: str, workers: int = 6, so: str | None = None) -> None:
     """Baixa eventos completos (sem `id`/`related_events`), escalações e metadados das partidas do grupo e grava em blocos de 25 partidas
     (`<pasta>/<grupo>/<slug>/parte-NNN.json.xz` + `INDICE.json`). Escreve bloco a bloco (não segura o grupo inteiro na memória) e pula a competição-
     temporada cujo `INDICE.json` já existe (retomada)."""
     import lzma
     por_rotulo: dict[str, list[dict]] = collections.defaultdict(list)
     for rotulo, m in partidas_do_grupo(grupo):
-        por_rotulo[rotulo].append(m)
+        if so is None or so.lower() in rotulo.lower():
+            por_rotulo[rotulo].append(m)
 
     def uma(m: dict) -> dict:
         mid = m["match_id"]
@@ -525,6 +526,8 @@ def corners_por_competicao(cache: str, grupos: list[str]) -> dict[str, dict]:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir", "reconstruir", "completo"])
+    ap.add_argument("--so", default=None, help="só as competições cujo rótulo contém este texto (completo; permite rodar em paralelo)")
+    ap.add_argument("--workers", type=int, default=6, help="downloads simultâneos (completo)")
     ap.add_argument("--fracionado", default=None, help="pasta dos dados reduzidos fracionados (baixar grava; reconstruir lê)")
     ap.add_argument("--cache", default=None)
     ap.add_argument("--saida", default="dados_referencia/statsbomb", help="pasta dos resumos versionados (resumir/conferir)")
@@ -539,7 +542,7 @@ def main() -> None:
         if not args.fracionado:
             raise SystemExit("--fracionado é obrigatório para completo")
         for gr in grupos:
-            baixar_completo(gr, args.fracionado)
+            baixar_completo(gr, args.fracionado, workers=args.workers, so=args.so)
         return
     if args.cache is None:
         raise SystemExit("--cache é obrigatório para esta ação")
