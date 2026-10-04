@@ -2736,7 +2736,7 @@ O nível de gols que o simulador erra é diferente em cada liga (a Bundesliga é
 
 **Leitura.**
 - O "empate técnico" do Achado 51 era da Premier League: lá o intervalo incluía zero e a amostra era de 342 jogos. Com 1.533 jogos em cinco ligas, o simulador é pior que o Dixon-Coles no 1X2 (cerca de +0,04) e igual no over/under. Para decisões de aposta o simulador ainda não bate nenhuma das duas referências no 1X2.
-- Como o gols/xG, o nível de gols e a estrutura de quebra entram só pelo 1X2, os ajustes pequenos (-0,003 cada) não fecham uma diferença de +0,038. A diferença vem de outro lugar (força dos times, que é o que o Dixon-Coles estima direto do histórico de gols e o simulador estima pelo canal dos chutes).
+- Cada ajuste testado aqui (quebra e nível de gols) vale cerca de -0,003 no 1X2 e não fecha uma diferença de +0,038 contra o Dixon-Coles. O que falta provavelmente está em outro lugar: a força dos times, que o Dixon-Coles estima direto dos gols do histórico e o simulador estima só pelo canal dos chutes (hipótese, não testada aqui).
 - No over/under, o simulador acompanha o Dixon-Coles, mas ambos perdem para o mercado (e na Bundesliga e Ligue 1 o simulador perde significativamente).
 
 **O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada; os jogos da mesma liga e do mesmo time se repetem, então os IC são otimistas. (2) Só os jogos com previsão do Dixon-Coles entram (271 a 342 de 306 a 380): é o conjunto em que se pode comparar, não a temporada inteira. (3) A janela de 200 jogos, o piso e o teto do fator móvel não foram otimizados; o expoente 1,0 deixa parte do viés. (4) Quebra e fator móvel foram testados separados, não combinados.
