@@ -118,3 +118,13 @@ def test_memoria_normalizada_mantem_a_media_do_multiplicador_em_1_em_cada_zona()
     for z in range(18):
         if med.get(f"mem|{z}|n"):
             assert abs(med[f"mem|{z}|p"] / med[f"mem|{z}|n"] - 1) < 0.05
+
+
+def test_conversao_neutra_nao_muda_o_jogo_e_conversao_alta_faz_mais_gols():
+    neutro = s.simular_partida(P, random.Random(5))
+    explicito = s.simular_partida(P, random.Random(5), times=(s.Multiplicadores(conversao_ataque=1.0, conversao_defesa=1.0), s.NEUTRO))
+    assert neutro == explicito
+    alto = (s.Multiplicadores(conversao_ataque=1.6), s.Multiplicadores(conversao_defesa=1.6))      # time 0 converte mais; time 1 sofre mais gols
+    base = sum(s.simular_partida(P, random.Random(i)).get("gols_0", 0) for i in range(300))
+    com = sum(s.simular_partida(P, random.Random(i), times=alto).get("gols_0", 0) for i in range(300))
+    assert com > 1.3 * base
