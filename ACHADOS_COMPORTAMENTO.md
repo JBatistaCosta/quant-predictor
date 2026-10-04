@@ -2577,3 +2577,32 @@ Diferenças pareadas (negativo = melhora), IC 95%:
 **Limites.** (1) Uma liga e uma temporada. (2) A elasticidade foi medida com times médios e magnitudes de 1,06 a 1,25; vale supor o mesmo expoente para forças mais extremas, sem teste. (3) O nível de gols piorou com a amplificação (2,66 contra 2,79 reais) porque `gols_nivel` usa a constante do simulador neutro (0,1017); recalibrá-la para a configuração amplificada é o ajuste natural para o over/under. (4) Dixon-Coles com a mesma ressalva do Achado 46 (não verifiquei se foi gerado fora da amostra para esses jogos).
 
 **Próximos testes (propostos):** recalibrar `gols_nivel` sob a amplificação; camada de estado do jogo (Achado 50); repetir em outras ligas e temporadas, que é o que decide se o expoente 2 se mantém.
+
+
+---
+
+## Achado 52 — resposta ao placar por saldo exato de gols: o volume de chutes sobe e a qualidade cai de quem perde, e a curva é a mesma em todos os contextos de liga
+
+**Pergunta (do usuário).** Como o placar altera a probabilidade de chute, a qualidade do chute e a permissão de toques no último terço, e como entra o "placar desejado" de cada time (vitória simples, empate, vitória por 2, aceitar perder por 1 em jogo de volta; empate fora, vitória em casa, empate em casa contra um time muito superior)?
+
+**Método** (consultas somente de leitura, mesma regra de relógio da `derivar_game_state`, com `clock`). 5 ligas, temporadas 2022 a 2024 (a avaliação fica para 2025/26, sem vazamento), estado = saldo de gols de quem chuta, truncado em -2 e +2. Separado por perfil de força (sinal da diferença de Elo antes do jogo: fraco <= -100, forte >= +100) e por mando. Multiplicador = taxa do estado dividida pela taxa do empate do mesmo grupo.
+
+**Resultado agrupado (ponderado por minutos; volume = chutes por 90 minutos; qualidade = xG por chute):**
+
+| saldo de quem chuta | volume | qualidade |
+|---|---|---|
+| -2 ou menos | x1,231 | x0,966 |
+| -1 | x1,185 | x0,979 |
+| 0 | 1,000 | 1,000 |
+| +1 | x0,883 | x1,148 |
+| +2 ou mais | x0,941 | x1,235 |
+
+- Quem perde chuta 18% a 23% mais, com qualidade 2% a 3% menor; quem ganha por 1 chuta 12% menos e com qualidade 15% maior; ganhando por 2 ou mais, a qualidade sobe 24%.
+- A qualidade piora pouco para quem perde em relação ao empate (a queda grande do Achado 50 é contra quem ganha); o que sobe forte é a qualidade de quem ganha (contra-ataques em campo aberto).
+- **Sem controlar força, a curva engana:** o volume de quem ganha por 2 ou mais parece subir (12,2 chutes por 90 minutos contra 10,9 ganhando por 1) porque quem está duas bolas na frente costuma ser o time melhor; dentro de cada perfil a curva é limpa e igual.
+
+**A curva é a mesma em casa e fora, em fraco, parelho e forte.** Volume com saldo -1: x1,16 a x1,24; com +1: x0,86 a x0,89; qualidade com +1: x1,13 a x1,20; entre os seis grupos (casa/fora x perfil) a variação cabe no ruído. O time fraco jogando fora, candidato a jogar pelo empate, não mostra curva deslocada. **Conclusão: em liga não aparece objetivo diferente por contexto no nível de detalhe disponível**; o objetivo padrão pode ser o mesmo para todos.
+
+**Placar desejado como parâmetro.** Cada time recebe um alvo = saldo final que considera satisfatório (padrão +1, "ganhar"). A resposta usa o saldo efetivo = saldo atual + (1 - alvo), truncado em -2 e +2: empate satisfatório (alvo 0) faz o 0 a 0 valer como +1; vitória por 2 (alvo +2) faz o 1 a 0 valer como 0 a 0; aceitar perder por 1 (alvo -1) faz o 0 a 1 valer como +1. Em jogo de volta com vantagem do agregado L trazida da ida, alvo = 1 - L.
+
+**Limites.** (1) O placar desejado só pode ser verificado em jogos de volta de mata-mata, e `aggregate_advantage` está vazio nos 32.307 jogos; reconstruído pelo pareamento das partidas há 89 confrontos com chutes nas duas partidas (Libertadores 54, Champions 35; a Copa do Brasil não tem chutes): pouco poder estatístico, então o efeito do alvo fica como parâmetro, não como estimativa. (2) "Empatando" mistura o início cauteloso dos jogos; a comparação limpa é entre os estados de placar, pareada no tempo. (3) A permissão de toques no último terço por placar ainda NÃO foi medida: o FotMob só tem chutes por estado; precisa dos eventos do StatsBomb (La Liga e ligas recentes, torneios), com o placar reconstruído pelos gols.

@@ -9,6 +9,10 @@
 
 ---
 
+**Resposta ao placar por saldo exato -- Achado 52 (04/10).** 5 ligas, 2022-2024, por perfil de força e mando: quem perde chuta +18% a +23% mais com qualidade -2% a -3%; quem ganha por 1 chuta -12% com qualidade +15%, ganhando por 2+ qualidade +24%. Curva igual em casa/fora e fraco/parelho/forte (sem objetivo distinto detectável por contexto). Placar desejado = parâmetro explícito (saldo efetivo = saldo + (1 - alvo)); só verificável em jogo de volta (89 confrontos com chutes, pouco poder; `aggregate_advantage` vazio). Toques no último terço por placar: pendente (precisa de eventos StatsBomb). Detalhes em ACHADOS_COMPORTAMENTO.md.
+
+---
+
 **Expoente de amplificação dos multiplicadores de chute -- Achado 51 (04/10).** Calibração no próprio simulador: ele realiza só ~50% (em log) da razão de chutes pedida (elasticidade 0,49, igual para ataque e defesa), então o expoente que compensa é ~2, fixado antes do teste e parametrizado (`--exp-mando`, `--exp-forca`, `--cfg-extra`, entradas do workflow). Premier League 2025/26 (342 jogos): **força dos times amplificada melhora o 1X2 em -0,0186 [-0,0279; -0,0096]** e leva o simulador a empate técnico com o Dixon-Coles (+0,0134 [-0,0172; +0,0421]); mando amplificado não ajuda; contra o mercado segue pior (+0,0496 [+0,0201; +0,0770]). Nível de gols piorou (2,66 contra 2,79 reais): recalibrar `gols_nivel`. Pendente de repetir em outras ligas. Detalhes em ACHADOS_COMPORTAMENTO.md.
 
 ---
