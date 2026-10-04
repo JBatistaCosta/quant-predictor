@@ -142,3 +142,13 @@ def test_estado_neutro_nao_muda_o_jogo_e_alvo_desloca_o_saldo_efetivo():
     # time que perde por 2 (saldo efetivo -2) chuta mais que o que está empatado, com a tabela real
     tabela = cam.montar_estado(volume=True, qualidade=False)["tabela"]
     assert tabela[-2][0] > 1.0 > tabela[1][0]
+
+
+def test_quebra_corrigida_separa_quebra_de_continuacao_e_reverte():
+    p = s.Parametros()
+    assert all(abs(x - 1.0) < 1e-9 for x in p.p_quebra)                           # legado: rótulo antigo faz toda linha que continua virar "quebra"
+    p.usar_quebra_corrigida()
+    assert all(0.0 < x < 0.1 for x in p.p_quebra)                                 # corrigido: só falta, lateral, escanteio, recuperação do adversário (~1,5% a 4%)
+    p.usar_quebra_corrigida(False)
+    assert all(abs(x - 1.0) < 1e-9 for x in p.p_quebra)                           # volta ao legado sem recarregar
+    assert s.simular_partida(p, random.Random(3)) == s.simular_partida(s.Parametros(), random.Random(3))

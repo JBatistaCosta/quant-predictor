@@ -148,8 +148,14 @@ class Parametros:
             self.p_perda_zona.append(pesos[19] / tot)
             self.destino_continua.append(Amostrador(pesos[:18]))
 
-    def _definir_nucleo(self, nucleo: dict) -> None:
-        """Núcleo empírico da próxima linha (chaves 'continua|z', 'perda|z', 'chute|z' -> {'quem|classe|zona': n})."""
+    def _definir_nucleo(self, nucleo: dict, quebra_corrigida: bool = False) -> None:
+        """Núcleo empírico da próxima linha (chaves 'continua|z', 'perda|z', 'chute|z' -> {'quem|classe|zona': n}).
+        `quebra_corrigida=False` (padrão, comportamento dos Achados 41-54): o filtro de "quebra" usa o rótulo antigo 'mesma|recuperação|', que não existe mais nos dados;
+        então TODA linha que continua conta como quebra (p_quebra = 100% em toda zona) e o destino de quem continua sai do núcleo em 95% das vezes (teto) e da matriz
+        18 x 20 em 5%. `quebra_corrigida=True`: quebra = só o que não é 'mesma|continua|' (falta, lateral, escanteio, recuperação do adversário, ~3%); quem continua usa a matriz."""
+        self._nucleo = nucleo
+        self._quebra_corrigida = quebra_corrigida
+        prefixo_continua = "mesma|continua|" if quebra_corrigida else "mesma|recuperação|"
 
         def da_zona(tipo: str, z: int) -> dict:
             """Contagens da zona; zonas com menos de 30 linhas (chute na defesa, por exemplo) usam o agregado de todo o campo."""
@@ -169,9 +175,15 @@ class Parametros:
             self.apos_chute.append(amostrador_de_chaves(da_zona("chute", z)))
             cz = da_zona("continua", z)
             total = sum(cz.values())
-            quebra = {k: v for k, v in cz.items() if not k.startswith("mesma|recuperação|")}
+            quebra = {k: v for k, v in cz.items() if not k.startswith(prefixo_continua)}
             self.p_quebra.append(sum(quebra.values()) / total if total else 0.0)
             self.apos_quebra.append(amostrador_de_chaves(quebra) if quebra else None)
+
+    def usar_quebra_corrigida(self, ligada: bool = True) -> "Parametros":
+        """Liga/desliga a correção do rótulo de quebra (ver `_definir_nucleo`); devolve o próprio objeto."""
+        if ligada != self._quebra_corrigida:
+            self._definir_nucleo(self._nucleo, ligada)
+        return self
 
     def _definir_pool(self, chutes: list) -> None:
         """Chutes reais por zona de 18 ([zona, xg, gol, tipo, cabeça, distância, ângulo]); pênalti (tipo 2) em conjunto à parte."""

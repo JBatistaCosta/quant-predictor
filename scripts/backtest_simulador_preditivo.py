@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import hashlib
 import json
 import math
 import multiprocessing as mp
@@ -54,28 +55,37 @@ VARIANTES = {
     "estado_q": {"camadas": KEEP, "semente": 12, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": False, "qualidade": True}}, "padrao": True},
     "estado_ctx": {"camadas": KEEP, "semente": 14, "ref": "estado_vq", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True, "ctx": True}}, "padrao": True},
     "estado_vq": {"camadas": KEEP, "semente": 13, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True}}, "padrao": True},
+    # Achado 55: (a) rótulo de quebra corrigido (simulador: Parametros.usar_quebra_corrigida); (b) fator de gols MÓVEL: razão gols reais / gols simulados dos últimos `janela` jogos
+    # ANTERIORES (base em --base-gols, gerada com --extrair-base a partir de uma rodada sem fator). Mesmas sementes de exp_forca: a diferença pareada é só o efeito da mudança.
+    "exp_forca_quebra": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "quebra_corrigida": True}, "padrao": False},
+    "exp_forca_movel": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_forca", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
 }
-_P = None
+_P = {}
 
 
 def _iniciar():
-    global _P
     os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-    _P = s.Parametros()
+
+
+def _parametros(quebra_corrigida):
+    if quebra_corrigida not in _P:
+        _P[quebra_corrigida] = s.Parametros().usar_quebra_corrigida(quebra_corrigida)
+    return _P[quebra_corrigida]
 
 
 def _simular_jogo(args):
-    jid, mult_casa, mult_fora, n, semente, estado = args
+    jid, mult_casa, mult_fora, n, semente, estado, quebra = args
     rng = random.Random(semente)
+    pa = _parametros(quebra)
     casa = s.Multiplicadores(**mult_casa)
     fora = s.Multiplicadores(**mult_fora)
     h = d = a = over = 0
     gc = gf = ch = cf = 0
     for _ in range(n):
-        r = s.simular_partida(_P, rng, times=(casa, fora), estado=estado)
+        r = s.simular_partida(pa, rng, times=(casa, fora), estado=estado)
         g0, g1 = r.get("gols_0", 0), r.get("gols_1", 0)
         h += g0 > g1
         d += g0 == g1
@@ -96,6 +106,28 @@ def ler(caminho):
         out.append(j)
     out.sort(key=lambda j: (j["date"], j["id"]))
     return out
+
+
+def fator_gols_movel(base, data, cfg):
+    """Fator de gols de um jogo na `data`: gols reais / gols simulados (sem fator) dos últimos `janela` jogos da base com data ESTRITAMENTE anterior.
+    base = [(id, data, gols_reais, gols_simulados)] ordenada. Menos de `minimo_jogos` jogos anteriores -> 1,0 (sem informação). `expoente` (1 = razão pura) eleva a razão;
+    o resultado é limitado a [piso, teto]."""
+    ant = [b for b in base if b[1] < data][-cfg["janela"]:]
+    if len(ant) < cfg["minimo_jogos"]:
+        return 1.0
+    razao = sum(b[2] for b in ant) / sum(b[3] for b in ant)
+    return min(max(razao ** cfg["expoente"], cfg["piso"]), cfg["teto"])
+
+
+def ler_base_gols(caminhos, variante, jogos):
+    """Junta arquivos compactos de --extrair-base ({variante: [[id, data, gols_simulados]]}) com os gols reais do CSV."""
+    reais = {j["id"]: j["hg"] + j["ag"] for j in jogos}
+    base = {}
+    for c in caminhos:
+        for jid, data, gols in json.load(open(c)).get(variante, []):
+            if jid in reais:
+                base[jid] = (jid, data, reais[jid], gols)
+    return sorted(base.values(), key=lambda b: (b[1], b[0]))
 
 
 def devig(odds):
@@ -122,7 +154,7 @@ def bootstrap_ic(dif, B=5000, semente=7):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", required=True)
+    ap.add_argument("--csv", default="")
     ap.add_argument("--temporada", default="2025")
     ap.add_argument("--sims", type=int, default=1000)
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 1)
@@ -136,12 +168,22 @@ def main():
     ap.add_argument("--alvo-fora", type=float, default=1.0, help="placar desejado do visitante (idem)")
     ap.add_argument("--alvo-ctx", default="{}", help='JSON {"local|perfil": alvo} que substitui o placar desejado do time com esse contexto na variante estado_ctx, ex.: \'{"fora|fraco": 0, "casa|fraco": 0.5}\' (local: casa/fora/neutro; perfil: forte/parelho/fraco)')
     ap.add_argument("--cfg-extra", default="{}", help='JSON com overrides de camadas_simulador.CONFIG aplicados a TODAS as variantes escolhidas, ex.: \'{"k_time": 12, "teto": [0.5, 2.0]}\'')
+    ap.add_argument("--base-gols", default="", help="arquivos compactos (separados por vírgula) com os gols simulados SEM fator de rodadas anteriores, para a variante exp_forca_movel (gerar com --extrair-base)")
+    ap.add_argument("--extrair-base", default="", help="resultado.json: grava em --saida o arquivo compacto {variante: [[id, data, gols_simulados]]} e para (use em rodadas sem gols_fator)")
     ap.add_argument("--fatia", default="", help="K/N: simula só as tarefas de índice ≡ K (mod N) e grava o progresso (para dividir entre jobs)")
     ap.add_argument("--so-simular", action="store_true", help="simula a fatia e para, sem agregar")
     ap.add_argument("--agregar", action="store_true", help="não simula nada: junta os arquivos de progresso e calcula; erra se faltar tarefa")
     ap.add_argument("--parciais", default="", help="glob dos .jsonl de progresso a juntar (padrão: <saida>.parcial.jsonl)")
     a = ap.parse_args()
+    if a.extrair_base:
+        r = json.load(open(a.extrair_base))["jogos"]
+        nomes = [k for k in r[0] if k not in ("id", "data", "res", "over", "dc", "mercado") and not k.startswith("fator_")]
+        json.dump({v: [[l["id"], l["data"], round(l[v]["gols"], 4)] for l in r] for v in nomes}, open(a.saida, "w"))
+        print(f"base de gols de {nomes} ({len(r)} jogos) gravada em {a.saida}")
+        return
 
+    if not a.csv:
+        sys.exit("--csv é obrigatório (exceto com --extrair-base)")
     global VARIANTES
     escolhidas = list(VARIANTES) if a.variantes == "todas" else (a.variantes.split(",") if a.variantes else [k for k, v in VARIANTES.items() if v["padrao"]])
     VARIANTES = {k: {**VARIANTES[k], "cfg": dict(VARIANTES[k].get("cfg", {}))} for k in escolhidas}
@@ -154,13 +196,21 @@ def main():
         if "estado" in v["cfg"]:
             v["cfg"]["estado"] = {**v["cfg"]["estado"], "exp_volume": a.exp_estado, "alvo": [a.alvo_casa, a.alvo_fora], "alvo_ctx": json.loads(a.alvo_ctx)}
     # "impressão digital" dos parâmetros de cada variante: o arquivo de progresso só é reaproveitado se for idêntica (mudar um expoente não mistura resultados)
-    digital = {n: json.dumps({"camadas": v["camadas"], "cfg": {**cam.CONFIG, **v["cfg"]}, "semente": v["semente"], "sims": a.sims}, sort_keys=True, default=list) for n, v in VARIANTES.items()}
     estados = {}
     for nome, v in VARIANTES.items():
         e = v["cfg"].get("estado")
         estados[nome] = cam.montar_estado(volume=e["volume"], qualidade=e["qualidade"], exp_volume=e["exp_volume"], alvo=tuple(e["alvo"])) if e and not e.get("ctx") else None
     jogos = ler(a.csv)
-    hist, tarefas, meta = cam.Historia(), [], {}
+    bases = {}                                                  # variante com fator móvel -> base de gols anteriores
+    for nome, v in VARIANTES.items():
+        fm = v["cfg"].get("fator_movel")
+        if fm:
+            if not a.base_gols:
+                sys.exit(f"{nome} precisa de --base-gols (arquivos de --extrair-base de uma rodada sem fator)")
+            bases[nome] = ler_base_gols(a.base_gols.split(","), fm["base"], jogos)
+            v["cfg"]["fator_movel"] = {**fm, "base_sha": hashlib.sha1(json.dumps(bases[nome]).encode()).hexdigest()[:12]}   # entra na impressão digital: outra base, outro resultado
+    digital = {n: json.dumps({"camadas": v["camadas"], "cfg": {**cam.CONFIG, **v["cfg"]}, "semente": v["semente"], "sims": a.sims}, sort_keys=True, default=list) for n, v in VARIANTES.items()}
+    hist, tarefas, meta, fatores = cam.Historia(), [], {}, {}
     teste = 0
     for j in jogos:
         if j["season"] == a.temporada and hist.jogos >= 100 and (not a.limite or teste < a.limite):
@@ -169,8 +219,12 @@ def main():
                 e = v["cfg"].get("estado")
                 if e and e.get("ctx"):                              # estado ajustado por mando e favoritismo (Elo) deste jogo
                     estados[nome] = cam.montar_estado_jogo(j["elod"], j["neutro"], e["volume"], e["qualidade"], e["exp_volume"], tuple(e["alvo"]), e.get("alvo_ctx") or None, cam.CONFIG["elo_corte"])
-                mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"], {**cam.CONFIG, **v.get("cfg", {})})
-                tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"], estados[nome]))
+                cfg_jogo = {**cam.CONFIG, **v.get("cfg", {})}
+                if nome in bases:                                   # fator de gols móvel: só jogos com data anterior à deste
+                    cfg_jogo["gols_fator"] = fator_gols_movel(bases[nome], j["date"], v["cfg"]["fator_movel"])
+                    fatores[(j["id"], nome)] = cfg_jogo["gols_fator"]
+                mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"], cfg_jogo)
+                tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"], estados[nome], bool(v["cfg"].get("quebra_corrigida"))))
             meta[j["id"]] = j
         hist.add(j)
 
@@ -192,7 +246,7 @@ def main():
             k, n_f = (int(x) for x in a.fatia.split("/"))
             indice = {t[0]: i for i, t in enumerate(tarefas)}
             pendentes = [t for t in pendentes if indice[t[0]] % n_f == k]
-        args = [(t[0], t[1], t[2], t[3], t[4], t[5]) for t in pendentes]
+        args = [(t[0], t[1], t[2], t[3], t[4], t[5], t[6]) for t in pendentes]
         print(f"simulando {len(args)}", flush=True)
         with mp.Pool(a.workers, initializer=_iniciar) as pool, open(parcial, "a") as arq:
             for i, (jid, r) in enumerate(pool.imap_unordered(_simular_jogo, args, chunksize=2), 1):
@@ -215,6 +269,8 @@ def main():
         for v in VARIANTES:
             r = resultados[(jid, v)]
             n = r["n"]
+            if (jid, v) in fatores:
+                lin[f"fator_{v}"] = fatores[(jid, v)]
             lin[v] = {"p1x2": [(r["h"] + 1) / (n + 3), (r["d"] + 1) / (n + 3), (r["a"] + 1) / (n + 3)], "pover": (r["over"] + 1) / (n + 2),
                       "gols": r["gols_casa"] + r["gols_fora"], "chutes": r["chutes_casa"] + r["chutes_fora"]}
         if j["dc_h"] is not None:

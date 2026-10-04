@@ -1,6 +1,6 @@
 name: Backtest do simulador como previsor (em fatias)
 
-# Simula cada jogo da Premier League 2025/26 N vezes (scripts/backtest_simulador_preditivo.py), com variantes que ligam camadas de ajuste (scripts/camadas_simulador.py), e
+# Simula cada jogo de uma liga (entrada `csv`; padrão Premier League 2025/26) N vezes (scripts/backtest_simulador_preditivo.py), com variantes que ligam camadas de ajuste (scripts/camadas_simulador.py), e
 # compara 1X2 e over/under 2,5 contra o Dixon-Coles e as odds de fechamento, com IC 95% por bootstrap.
 # O trabalho (jogos de teste x variantes, 1.000 partidas cada) é dividido em 8 jobs em paralelo; o job final junta os
 # arquivos de progresso e agrega. Cada simulação tem semente fixa, então o resultado não depende de como
@@ -11,6 +11,12 @@ name: Backtest do simulador como previsor (em fatias)
 on:
   workflow_dispatch:
     inputs:
+      csv:
+        description: "Arquivo de jogos em dados_referencia/backtest_simulador/ (premier_league_2024_25.csv, la_liga_2024_25.csv, serie_a_2024_25.csv, bundesliga_2024_25.csv, ligue_1_2024_25.csv)"
+        default: "premier_league_2024_25.csv"
+      base_gols:
+        description: "Arquivos de gols simulados sem fator (--extrair-base), separados por vírgula, em dados_referencia/backtest_simulador/base_gols/; só para a variante exp_forca_movel"
+        default: ""
       sims:
         description: "Partidas simuladas por jogo"
         default: "1000"
@@ -70,9 +76,17 @@ jobs:
           VARIANTES: ${{ inputs.variantes || '' }}
           TEMPORADA: ${{ inputs.temporada || '2025' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
+          CSV: ${{ inputs.csv || 'premier_league_2024_25.csv' }}
+          BASE_GOLS: ${{ inputs.base_gols || '' }}
         run: |
+          CSV_CAMINHO="dados_referencia/backtest_simulador/$(basename "$CSV")"
+          BASES=""
+          if [ -n "$BASE_GOLS" ]; then
+            for b in ${BASE_GOLS//,/ }; do BASES="$BASES,dados_referencia/backtest_simulador/base_gols/$(basename "$b")"; done
+            BASES="${BASES#,}"
+          fi
           python scripts/backtest_simulador_preditivo.py \
-            --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
+            --csv "$CSV_CAMINHO" --base-gols "$BASES" \
             --sims "$SIMS" --workers "$(nproc)" \
             --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" \
             --fatia ${{ matrix.fatia }}/8 --so-simular \
@@ -108,13 +122,21 @@ jobs:
           VARIANTES: ${{ inputs.variantes || '' }}
           TEMPORADA: ${{ inputs.temporada || '2025' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
+          CSV: ${{ inputs.csv || 'premier_league_2024_25.csv' }}
+          BASE_GOLS: ${{ inputs.base_gols || '' }}
         run: |
+          CSV_CAMINHO="dados_referencia/backtest_simulador/$(basename "$CSV")"
+          BASES=""
+          if [ -n "$BASE_GOLS" ]; then
+            for b in ${BASE_GOLS//,/ }; do BASES="$BASES,dados_referencia/backtest_simulador/base_gols/$(basename "$b")"; done
+            BASES="${BASES#,}"
+          fi
           python scripts/backtest_simulador_preditivo.py \
-            --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
+            --csv "$CSV_CAMINHO" --base-gols "$BASES" \
             --sims "$SIMS" --agregar \
             --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" \
             --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
-          { echo '## Backtest do simulador (Premier League 2025/26)'; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "## Backtest do simulador ($CSV, temporada $TEMPORADA)"; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: resultado-backtest-simulador
