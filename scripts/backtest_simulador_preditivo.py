@@ -154,12 +154,21 @@ def main():
         hist.add(j)
 
     print(f"{teste} jogos de teste, {len(tarefas)} simulações de {a.sims} partidas, {a.workers} processos", flush=True)
-    args = [(t[0], t[1], t[2], t[3], t[4]) for t in tarefas]
+    # progresso gravado a cada simulação concluída: se o processo morrer (contêiner reiniciado), a próxima execução retoma daqui
+    parcial = a.saida + ".parcial.jsonl"
     resultados = {}
-    with mp.Pool(a.workers, initializer=_iniciar) as pool:
+    if os.path.exists(parcial):
+        for linha in open(parcial):
+            jid, variante, r = json.loads(linha)
+            resultados[(jid, variante)] = r
+        print(f"retomando: {len(resultados)} simulações já prontas", flush=True)
+    args = [(t[0], t[1], t[2], t[3], t[4]) for t in tarefas if t[0] not in resultados]
+    with mp.Pool(a.workers, initializer=_iniciar) as pool, open(parcial, "a") as arq:
         for i, (jid, r) in enumerate(pool.imap_unordered(_simular_jogo, args, chunksize=2), 1):
             resultados[jid] = r
-            if i % 100 == 0:
+            arq.write(json.dumps([jid[0], jid[1], r]) + "\n")
+            arq.flush()
+            if i % 50 == 0:
                 print(f"  {i}/{len(args)}", flush=True)
 
     linhas = []
