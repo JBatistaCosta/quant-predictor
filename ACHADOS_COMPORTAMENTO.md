@@ -1843,3 +1843,70 @@ Por liga 2015/16 (total do jogo): La Liga média 10,11, mediana 10, variância 1
 **Consequência para a cadeia:** (a) depois de uma perda em jogo (89,5%), troca a posse com tempo zero e a zona do adversário é sorteada dessa matriz (dada a zona de origem da perda); (b) nos outros 10,5%, o relógio avança o tempo morto do reinício (lognormal ou gama por tipo, valores da tabela) e a posse recomeça pela zona do reinício; (c) escanteio e falta cobrada são os reinícios que mais gastam relógio; (d) gol: ~56 s de saída de bola.
 
 **Limites:** quatro ligas de 2015/16 somadas; o StatsBomb não tem evento "bola fora" explícito, então o tempo morto parte do fim do último evento (inclui paralisações por lesão e substituição que caiam entre os dois); o primeiro evento do adversário depois da perda pode ser um corte ou bloqueio que não encerra a jogada (a bola continua em disputa), então a "zona de recuperação" é aproximada; não separa o tempo morto por janela do jogo, por placar nem por nível dos times (o tempo gasto com falta cobrada tende a crescer no fim do jogo); sem intervalo de confiança.
+
+
+## Achado 30 — resultado do chute por zona, o que vem depois do chute, destino do lateral e do escanteio, falta e bola fora por zona
+
+**O que foi medido** (`scripts/analisar_chutes_laterais_escanteios_faltas_statsbomb.py`, sem rede, a partir dos eventos completos das quatro ligas de 2015/16, 1.517 jogos; resumo em `dados_referencia/statsbomb/chutes_laterais_escanteios_faltas_ligas_2015_16.json`). Completa, com o Achado 29, as peças da cadeia semi-Markov: o que acontece DEPOIS de um chute, para onde vão os reinícios e onde ficam as faltas.
+
+**1. Resultado do chute por faixa do campo** (37.888 chutes, 25,0 por jogo; % de cada resultado):
+
+| Faixa de quem chuta | Chutes | Gol | Defendido | Bloqueado | Para fora | Sem direção | Trave | xG médio | De cabeça |
+|---|---|---|---|---|---|---|---|---|---|
+| meio alto (x 52,5 a 70 m) | 206 | 1,5 | 19,4 | 8,7 | 52,9 | 12,1 | 1,0 | 0,006 | 0% |
+| ataque fora da área, baixo | 2.931 | 1,4 | 20,5 | 25,6 | 47,0 | 3,8 | 1,0 | 0,017 | 0% |
+| ataque fora da área, alto | 11.682 | 3,7 | 22,7 | 32,0 | 36,0 | 3,7 | 1,4 | 0,037 | 0,1% |
+| grande área | 23.025 | **14,7** | 23,8 | 21,6 | 30,1 | 6,8 | 2,3 | **0,142** | 26,5% |
+
+(Na defesa e no meio baixo há 2 e 42 chutes: ignorados.) 61% dos chutes saem da grande área e geram 14,7% de gols; fora da área, 36 a 47% vão para fora e 26 a 32% são bloqueados. O xG médio por chute concorda com a taxa de gol dentro da área (0,142 contra 14,7%).
+
+**2. O que vem depois do chute** (primeira posse diferente; `play_pattern` da nova posse e se ela continua com quem chutou):
+
+| Resultado | n | Jogo corrido | Tiro de meta | Escanteio | Goleiro | Saída de bola | Lateral | Falta | Mesma equipe |
+|---|---|---|---|---|---|---|---|---|---|
+| Gol | 3.869 | 5,4 | 0 | 0 | 0 | **93,2** | 0 | 0 | 0,1% |
+| Defendido | 8.783 | 38,7 | 3,6 | **23,2** | **20,3** | 2,4 | 6,7 | 3,2 | 30,7% |
+| Bloqueado | 9.472 | 27,4 | 9,8 | **29,1** | 2,0 | 2,0 | 15,6 | 8,4 | 46,4% |
+| Para fora | 12.637 | 0 | **98,7** | 0,1 | 0 | 0 | 0,1 | 0 | 0,2% |
+| Sem direção | 2.154 | 26,2 | 26,8 | 6,9 | 2,6 | 3,3 | 17,8 | 10,6 | 18,5% |
+| Trave | 710 | 23,4 | 36,5 | 8,3 | 1,3 | 5,8 | 12,3 | 8,0 | 20,7% |
+
+Chute para fora termina em tiro de meta (98,7%), e gol em saída de bola (93,2%). Chute defendido ou bloqueado é o que gera escanteio (23% e 29%) ou deixa a bola em jogo (39% e 27%, com a equipe que chutou mantendo a posse em 31% e 46%).
+
+**3. Lateral** (70.260 laterais, 46,3 por jogo; 83,2% completos; comprimento médio 18,4 jardas). Destino por faixa de origem (% por linha, zona onde a bola chega):
+
+| Origem | n | Completos | defesa | meio baixo | meio alto | ataque baixo | ataque alto | grande área |
+|---|---|---|---|---|---|---|---|---|
+| defesa | 15.535 | 73,8% | 54,8 | 37,9 | 6,8 | 0,3 | 0 | 0 |
+| meio baixo | 14.349 | 82,2% | 21,1 | 36,7 | 36,2 | 4,9 | 1,1 | 0 |
+| meio alto | 15.481 | 84,9% | 2,1 | 18,7 | 41,7 | 22,3 | 14,5 | 0,8 |
+| ataque fora baixo | 7.403 | 88,7% | 0,1 | 3,5 | 26,6 | 26,0 | 40,7 | 3,1 |
+| ataque fora alto | 17.492 | 88,4% | 0 | 0,2 | 5,5 | 14,0 | 65,9 | 14,4 |
+
+O lateral é um passe curto: a bola chega perto da origem (na mesma faixa ou na vizinha); só 14% dos laterais do ataque alto chegam à grande área.
+
+**4. Escanteio cobrado** (15.475, 10,2 por jogo; só 42,3% chegam completos):
+- **Onde a bola chega:** 77,1% na grande área central (no corredor do meio da grade de 18 zonas, que cobre a área toda), 16,3% no ataque fora da área alto pelos lados (escanteio curto ou bola afastada), 5,0% nos corredores laterais da grande área.
+- **Técnica:** inswinging 39%, outswinging 37%, sem informação 17%, reto 6%.
+- **O que gera:** **34,6% dos escanteios geram um chute da mesma equipe na mesma posse**; xG por escanteio **0,028**; **2,63% dos escanteios viram gol** (cerca de 0,27 gol por jogo).
+
+**5. Falta e bola fora por zona** (45.517 faltas, 30,0 por jogo; **12,9% com cartão**; **23,0% são faltas de ataque**, cometidas por quem tem a bola). A zona é a de quem TINHA a bola (a falta de defesa é espelhada para o referencial dele; a de ataque não):
+
+| Faixa | % das faltas | Faltas por 100 ações | Passes fora por 100 ações |
+|---|---|---|---|
+| defesa | 13,3 | 0,93 | 1,08 |
+| meio baixo | 23,6 | 1,52 | 0,62 |
+| meio alto | 30,2 | 2,05 | 0,67 |
+| ataque fora baixo | 12,6 | 2,17 | 0,80 |
+| ataque fora alto | 14,2 | 1,93 | 1,17 |
+| grande área | 6,2 | **3,31** | 1,16 |
+
+A taxa de falta por ação **sobe do primeiro terço (0,9 por 100 ações) até a grande área (3,3 por 100)**: quanto mais perto do gol adversário, mais a ação termina em falta. Passe fora (1,0 a 1,2 por 100 ações) é mais comum na defesa e no ataque do que no meio.
+
+**Consequência para a cadeia** (completa as peças do Achado 29):
+- **Resolução do chute:** gol, defendido, bloqueado, para fora, sem direção e trave com as probabilidades por faixa acima (na grande área: 14,7 / 23,8 / 21,6 / 30,1 / 6,8 / 2,3 por cento).
+- **Depois do chute:** gol -> saída de bola (tempo morto ~56 s); para fora -> tiro de meta (~25 s); defendido -> escanteio (23%), reposição do goleiro (20%) ou bola em jogo; bloqueado -> escanteio (29%) ou bola em jogo (27%) ou lateral (16%).
+- **Reinícios:** lateral é um passe curto de 83% de acerto que mantém a bola perto da origem; o escanteio chega à grande área em 77% das vezes, gera chute em 35% e gol em 2,6%.
+- **Falta:** sorteada junto com a ação, com taxa que sobe de 0,9 para 3,3 por 100 ações do primeiro terço à grande área; 23% são faltas de ataque (a posse passa ao adversário no ponto da falta); 12,9% geram cartão.
+
+**Limites:** quatro ligas de 2015/16 somadas; faixas de 6 do campo (as 18 zonas completas estão no JSON só para os escanteios); chutes defendidos incluem os que o goleiro segura e os que desvia (o `play_pattern` seguinte já separa); o `play_pattern` da próxima posse é o do StatsBomb e mistura causas (um lateral depois de chute bloqueado é um desvio para fora); a falta é atribuída à zona onde o evento foi marcado (o local da falta, não do contato); sem intervalo de confiança nem divisão por janela do jogo, placar ou nível dos times.
