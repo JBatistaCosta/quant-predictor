@@ -1622,3 +1622,618 @@ Inclinações (cruzamentos do time por unidade da variável do adversário): cru
 **Consequência (vale para os achados 21 a 24):** onde usamos a média dos 8 jogos anteriores como "histórico do time", trocar por EWMA com meia-vida de 8 a 16 jogos (ou pela média de todos os jogos anteriores da temporada) é o ajuste simples e correto; não vale uma meia-vida curta. A conclusão geral continua: toda característica de time tem estabilidade baixa (0,14 a 0,26), então o histórico entra com peso pequeno.
 
 **Limites:** só Brasileirão A e B, sem intervalo de confiança; o "histórico" só inclui jogos com mapa de calor (março/2026 em diante); meias-vidas medidas em número de jogos, não em dias; correlações simples sem controlar a força do adversário.
+
+
+## Achado 25 — o cabeceio é do jogador (estável), não do time; e de onde saem os escanteios
+
+### Parte A — índice de cabeceio por jogador (FotMob, banco)
+
+**Método:** jogos desde 2025, só jogadores de linha (`usual_position_id` 1 a 3). Cada jogador: primeiros 70% dos jogos treinam, últimos 30% testam; só jogadores com >= 15 jogos, >= 900 minutos no treino e >= 300 no teste. Chute de cabeça = `match_shots_fotmob.shot_type` com "head"; duelos aéreos e cortes de cabeça vêm de `match_player_stats_detalhe_fotmob`. O índice individual é a taxa por minuto do jogador encolhida para a média da posição (peso de 300, 900 ou 2.700 minutos).
+
+| Posição | Jogadores | Chutes de cabeça por 90 | Estabilidade treino → teste | xG de cabeça por 90 (estabilidade) | Duelos aéreos por 90 → chutes de cabeça futuros | Ganho do índice (peso 300 / 900 / 2.700 min) |
+|---|---|---|---|---|---|---|
+| Defesa | 1.390 | 0,217 | **0,603** | 0,383 | 0,544 | +0,243 / +0,238 / +0,190 |
+| Meio | 1.272 | 0,122 | **0,597** | 0,457 | 0,468 | +0,303 / +0,330 / +0,285 |
+| Ataque | 860 | 0,356 | **0,717** | 0,569 | 0,637 | +0,297 / +0,282 / +0,218 |
+
+Ganho = log-verossimilhança de Poisson do índice individual menos a da média da posição, por chute de cabeça (nats). Cortes de cabeça por 90 prevêem os chutes de cabeça futuros com 0,214 a 0,501 (cabeceio defensivo é um sinal mais fraco do ofensivo).
+
+**Leitura:** o cabeceio é uma característica **estável do jogador** (correlação 0,60 a 0,72 entre treino e teste) e o índice individual supera a média da posição com folga (0,19 a 0,33 nats por cabeceio). Isso é de 50 a 100 vezes o ganho que qualquer ajuste por TIME, Elo ou xG deu (0,001 a 0,007, Achado 24): a informação mora no jogador, não na equipe. Duelos aéreos por 90 minutos são um bom substituto quando o jogador tem poucos chutes.
+
+**Do jogador para o time** (4.149 time-jogos de 2026; índice de cada jogador calculado só com dados até 30/11/2025; índice da escalação = soma da taxa por 90 dos titulares com >= 60 min; 89% dos titulares eram conhecidos; os demais entram com a média da posição; correlações descontando o mando):
+
+| Previsor | Chutes de cabeça do time no jogo | Cruzamentos do time (3.916 jogos) |
+|---|---|---|
+| índice da escalação | 0,143 | 0,088 |
+| média dos 8 jogos anteriores do time | **0,230** | 0,097 |
+
+A escalação prevê os cabeceios do time **pior** que o histórico recente do próprio time: o volume de cabeceio de um time no jogo depende de tática, do adversário e dos cruzamentos, não só de quem joga. Para os **cruzamentos**, nenhum dos dois ajuda, o que reforça o Achado 22 (cabecear bem não faz o time cruzar mais). A inclinação do índice da escalação sobre os cabeceios do time é de 0,64 cabeceio por unidade do índice (desvio-padrão do índice: 0,42).
+
+**Limites da parte A:** posição pela posição habitual do jogador (não a posição que jogou naquele jogo); goleiros fora; sem intervalo de confiança; o teste do time usa um único corte temporal (treino até 30/11/2025, teste a partir de 01/01/2026) e mistura competições; não foi testado um modelo combinando índice da escalação e histórico do time.
+
+### Parte B — de onde saem os escanteios (StatsBomb, La Liga 2015/16)
+
+**Método:** `scripts/analisar_origem_escanteios_statsbomb.py`. No StatsBomb o evento imediatamente anterior a um escanteio é do time que DEFENDE (bloqueio 24,8%, corte 24,3%, disputa 13,3%, defesa do goleiro 23,3%); a causa é o **último lance do time que atacava** (procurado até 25 eventos antes). 3.841 escanteios em 380 jogos = **10,1 por jogo** (dois times).
+
+| Último lance do time que atacou | % dos escanteios | Escanteios por 100 lances desse tipo |
+|---|---|---|
+| passe errado | 42,0% | 0,46 |
+| chute | 26,4% | **11,06** |
+| cruzamento errado | 14,7% | 5,95 (por 100 cruzamentos, certos ou errados) |
+| drible | 7,7% | — |
+| desarme sofrido (`Dispossessed`) | 7,2% | — |
+| `Miscontrol` | 1,9% | — |
+
+**Por zona de 18 onde começou o último lance** (escanteios por 100 ações que começam ali): grande área adversária 6,4 (centro) a 8,2 (lados); ataque fora da área alto 2,2 a 2,3; ataque fora da área baixo 0,2 a 0,4; meio 0,02 a 0,06; defesa 0,01. **Cerca de 91% dos escanteios** saem de ações nas duas faixas de ataque mais avançadas.
+
+**Uso no simulador:** o escanteio é um **quarto desfecho** da ação (além de continua, chute e perda), com taxa por zona da tabela acima, relevante só nas duas faixas de ataque; o volume por time continua vindo do modelo de produção (`api/corners-model.js`, binomial negativa, calibrada sobre `match_stats`). Depois do escanteio, a bola reaparece na grande área; onde cai a cobrança (posição final do passe de escanteio) ainda NÃO foi medido.
+
+**Limites da parte B:** uma liga e uma temporada, sem IC 95%; a atribuição ao "último lance do atacante" é aproximação (um desvio de defensor pode ser a causa real); a taxa de 11,06 por 100 chutes soma chutes de qualquer resultado; as taxas por tipo de lance excluem dribles e desarmes (a matriz do Achado 15 não os conta como ação); o FotMob não dá a posição de onde sai o escanteio (só chutes bloqueados e defendidos por zona, que daria para cruzar com os totais por time).
+
+
+## Achado 26 — a matriz de transição entre ligas, ligas recentes e torneios de seleções; mediana e variância dos escanteios
+
+**O que foi feito.** StatsBomb Open Data masculino gratuito, baixado com `scripts/comparar_competicoes_statsbomb.py`: Premier League, Serie A e Ligue 1 de 2015/16 (temporadas completas), La Liga 2015/16 (a baseline do Achado 18/19), Copa do Mundo (8 edições), Euro 2020 e 2024, Copa América 2024 e ligas recentes. **A Copa Africana de Nações foi excluída por pedido.** Como o StatsBomb pode mudar o que oferece de graça, o repositório guarda o RESTANTE completo de cada partida (todos os eventos e campos, escalações e metadados; `dados_referencia/statsbomb/completo/`, 163 MB, 2.152 partidas, fracionado em arquivos `.json.xz` de até 25 partidas, sem a Copa Africana de Nações e sem a Indian Super League), os dados REDUZIDOS de cada partida (`brutos/`, 28 MB, 56 arquivos) e também os resumos (contagens, escanteios por jogo, ids dos jogos) em `dados_referencia/statsbomb/`. `reconstruir` refaz o cache e os resumos SEM rede (verificado: os cinco resumos saem idênticos byte a byte), e `conferir` refaz as contas dos resumos.
+
+**Método.** Matriz de 18 zonas (mesma regra dos Achados 18/19). Para cada competição, o ganho = log-verossimilhança média por ação (nats) do modelo PRÓPRIO treinado por validação cruzada em 5 blocos contíguos, menos a do modelo da La Liga 2015/16 inteira. Positivo = a matriz da La Liga serve pior para aquela competição.
+
+| Competição | Jogos | Chute | Perda | Centro da grande área: chute / perda | Ganho próprio − La Liga |
+|---|---|---|---|---|---|
+| La Liga 2015/16 (base; conferência) | 380 | 1,37% | 15,8% | 45,2% / 19,3% | −0,0010 |
+| Premier League 2015/16 | 380 | 1,47% | 15,6% | 45,4% / 19,5% | +0,0009 |
+| Serie A 2015/16 | 380 | 1,47% | 14,9% | 47,5% / 18,9% | +0,0020 |
+| Ligue 1 2015/16 | 377 | 1,28% | 15,4% | 48,1% / 20,1% | +0,0025 |
+| Indian Super League 2021/22 | 115 | 1,78% | 17,5% | 50,5% / 16,3% | +0,0051 |
+| Copa América 2024 | 32 | 1,53% | 13,9% | 50,4% / 17,4% | +0,0050 |
+| Copa do Mundo 2018 | 64 | 1,45% | 12,7% | 50,7% / 15,6% | +0,0070 |
+| Copa do Mundo 2022 | 64 | 1,18% | 11,8% | 49,1% / 18,5% | +0,0129 |
+| Euro 2020 | 51 | 1,26% | 10,8% | 48,3% / 17,0% | +0,0142 |
+| Euro 2024 | 51 | 1,32% | 10,2% | 49,3% / 17,1% | +0,0207 |
+| La Liga 2018/19, 2019/20, 2020/21 (só Barcelona) | 34, 33, 35 | 1,25%, 1,08%, 1,11% | 10,2%, 9,6%, 9,2% | 45,2%, 42,5%, 42,9% / 15,7%, 17,6%, 17,1% | +0,0208, +0,0257, +0,0290 |
+| Ligue 1 2021/22, 2022/23 (só PSG) | 26, 32 | 1,23%, 1,21% | 8,5%, 8,1% | 45,8%, 43,2% / 17,8%, 17,1% | +0,0308, +0,0400 |
+| Bundesliga 2023/24 (só Bayer Leverkusen) | 34 | 1,24% | 10,0% | 42,4% / 18,3% | +0,0209 |
+
+As Copas do Mundo de 1958 a 1990 têm 1 a 6 jogos cada (19 no total): os números oscilam muito (ganhos de −0,072 a +0,048) e não valem nada.
+
+**Leitura.**
+- **Entre ligas completas de 2015/16 a matriz da La Liga serve:** ganhos de +0,001 a +0,0025 nats por ação, dentro do que o próprio erro de amostragem permite. Premier League, Serie A e Ligue 1 se comportam como a La Liga.
+- **O que muda é a taxa de perda:** 15 a 16% nas ligas de 2015/16, 10 a 14% nos torneios de seleções e 8 a 10% nas amostras de clube de elite (Barcelona, PSG, Leverkusen). O ganho da baseline própria acompanha: +0,005 a +0,021 nos torneios e +0,021 a +0,040 nas amostras de clube de elite. É de metade a quase o total do que a grade de 18 zonas ganhou sobre a de 12 no teste conservador (+0,042, Achado 19) e de 10 a 40 vezes o ganho de ajustar por Elo ou por time (Achado 24).
+- **Época dos dados ou nível do time? Não se separa com estes dados.** As ligas parciais recentes são todas as partidas de UM clube de elite com muita posse (Barcelona, PSG, Leverkusen, com os adversários comuns); os torneios têm seleções de nível alto. A Indian Super League 2021/22, de época recente e com 11 times, tem perda de 17,5%, tão alta quanto (ou maior que) as ligas de 2015/16: isso é um indício contra "a marcação da época explica tudo" e a favor do nível do time (que cai de forma contínua com o Elo, 11,96 a 8,72 perdas por 100 toques, Achado 24), mas não é prova. Para separar de verdade faltam ligas recentes COMPLETAS, que o StatsBomb gratuito não tem.
+- **Consequência para o simulador:** usar a matriz da La Liga como base e ajustar a taxa de perda pelo nível do time e do contexto (clube de elite ou seleção: perda de 8 a 14%; liga média: 15 a 16%). A estrutura de destino (para onde a bola vai a partir de cada zona) pode ficar a mesma.
+
+**Mediana e variância dos escanteios (StatsBomb, total do jogo = os dois times).**
+
+| Grupo | Jogos | Média | Mediana | Intervalo interquartil | Variância | Variância / média | r (NB, método bruto) |
+|---|---|---|---|---|---|---|---|
+| Ligas 2015/16 (4 ligas) | 1.517 | 10,20 | 10 | 8 a 12 | 12,23 | 1,20 | 51 |
+| Torneios de seleções modernos (Copa 2018/22, Euro 2020/24, Copa América 2024) | 262 | 9,11 | 9 | 7 a 11 | 12,12 | 1,33 | 28 |
+| Ligas recentes (clubes de elite e Indian Super League) | 309 | 9,45 | 9 | 7 a 11 | 11,85 | 1,25 | 37 |
+| Copas do Mundo 1958 a 1990 (19 jogos; só para registro) | 19 | 11,32 | 10 | 9 a 13,5 | 18,89 | 1,67 | 17 |
+
+Por time (um valor por time e jogo): ligas 2015/16 média 5,10, mediana 5, variância 8,00 (razão 1,57); torneios modernos média 4,56, mediana 4, variância 7,69 (razão 1,69); ligas recentes média 4,72, mediana 4, variância 7,65 (razão 1,62).
+
+Por liga 2015/16 (total do jogo): La Liga média 10,11, mediana 10, variância 11,68 (r bruto 65); Premier League 10,81, 10, 12,99 (54); Serie A 10,37, 10, 11,57 (89); Ligue 1 9,52, 9, 11,89 (38). Ligas atuais (banco, 2021 a 2025, mesma conta): média de 9,29 (Serie A) a 10,31 (Premier League), mediana 9 a 10, variância 10,9 a 11,5 (razão 1,12 a 1,23). O r bruto é `média² / (variância − média)`: **sem condicionar no λ de cada partida**, é um teto de dispersão (r menor = mais dispersão), diferente do r de `league_model_params` (calibrado pelo resíduo de Pearson condicionado, `api/corners-model.js`), que vale 188 (Premier League), 68 (Serie A), 51 (Brasileirão A), 41 (La Liga), 30 (Bundesliga) e 25 (Ligue 1).
+
+**Leitura dos escanteios.** A mediana do total é 9 a 10 em todos os grupos modernos; os torneios têm 1 escanteio a menos por jogo (9,1 contra 10,2) e dispersão um pouco maior (razão 1,33 contra 1,20), mas com 262 jogos a diferença de variância não é separável do ruído. A razão variância/média de 1,2 a 1,3 significa quase Poisson: com média de 10, r de 40 a 50 já descreve o total do jogo. A taxa de escanteios por chute e por cruzamento é parecida entre competições (11 a 14 por 100 chutes; 5 a 8 por 100 cruzamentos; 26% a 41% dos escanteios saem de um chute como último lance do atacante).
+
+**Limites:** uma temporada por liga em 2015/16; ligas recentes parciais com um clube de elite cada (viés de seleção forte); torneios com 32 a 64 jogos cada e sem intervalo de confiança; variância bruta de total do jogo com poucas dezenas de jogos oscila muito (razões de 0,82 a 1,96 nos torneios isolados); StatsBomb pode ter mudado a marcação de passes errados entre 2015/16 e 2018+ (não verificável aqui).
+
+
+## Achado 27 — as taxas dos eventos ao longo do jogo e a duração das ações (para simular a bola no tempo)
+
+**Para quê.** Uma simulação no tempo (cadeia semi-Markov) precisa de duas peças que a matriz de transição não tem: o ritmo dos eventos por janela do jogo e quanto dura cada ação (o tempo de permanência na zona). `scripts/analisar_tempo_eventos_statsbomb.py` mede as duas no StatsBomb (La Liga 2015/16, 380 jogos, os dois times somados); o resumo versionado está em `dados_referencia/statsbomb/tempo_la_liga_2015_16.json` e a análise também roda a partir dos dados reduzidos versionados (`--brutos`, sem rede; as durações guardadas são arredondadas a 0,01 s). Os chutes e gols por janela também foram medidos no banco (FotMob, Premier League, La Liga, Serie A, Ligue 1 e Bundesliga, 2021 a 2025).
+
+**Por janela (StatsBomb, por minuto de jogo; os acréscimos usam a duração média até o último evento: 0,8 min no 1º tempo e 3,3 min no 2º, aproximação):**
+
+| Janela | Ações/min | Chutes/min | Gols/min | % perda | Faltas/min | Escanteios/min | Cruzamentos/min |
+|---|---|---|---|---|---|---|---|
+| 1-15 | 20,76 | 0,216 | 0,0258 | 16,0 | 0,312 | 0,098 | 0,243 |
+| 16-30 | 19,26 | 0,244 | 0,0274 | 15,6 | 0,336 | 0,104 | 0,273 |
+| 31-45 | 18,61 | 0,245 | 0,0256 | 15,6 | 0,357 | 0,102 | 0,266 |
+| acréscimo 1º tempo | 15,41 | 0,305 | 0,0350 | 16,8 | 0,327 | 0,207 | 0,280 |
+| 46-60 | 19,50 | 0,278 | 0,0295 | 15,9 | 0,345 | 0,111 | 0,291 |
+| 61-75 | 17,71 | 0,267 | 0,0263 | 15,4 | 0,334 | 0,113 | 0,266 |
+| 76-90 | 17,55 | 0,274 | 0,0339 | 15,2 | 0,340 | 0,110 | 0,272 |
+| acréscimo 2º tempo | 15,45 | 0,303 | 0,0345 | 18,6 | 0,396 | 0,113 | 0,269 |
+
+**Chutes, gols e qualidade por janela (banco, FotMob, 5 grandes ligas 2021 a 2025; por jogo, os dois times):** chutes 3,31 (1-15), 3,67 (16-30), 3,86 (31-45), 0,75 (acréscimo 1T), 4,11 (46-60), 4,00 (61-75), 3,99 (76-90), 1,66 (acréscimo 2T); gols 0,363, 0,394, 0,417, 0,084, 0,452, 0,454, 0,450, 0,197 (total 2,81 por jogo); xG por chute 0,108 a 0,113 em todas as janelas regulares e 0,120 no acréscimo do 2T.
+
+**Duração das ações (campo `duration`, segundos):** passe média 1,60 (mediana 1,39; p90 2,85); condução 1,73 (1,32; p90 3,67); cruzamento 1,75 (1,50; p90 2,92); chute 0,91 (0,67; p90 1,36); drible, `Dispossessed` e `Miscontrol` são eventos instantâneos (duração ~0). **Posses:** 195 por jogo, duração média 14,2 s (mediana 9,0; p90 34), ações por posse média 9,2 (mediana 6; p90 21). Somando as durações das posses, o time em posse ocupa ~46 dos ~94 minutos até o último evento: o resto é bola parada, bola fora e transição.
+
+**Leitura.**
+- **O ritmo de ações cai ao longo do jogo** (20,8 por minuto nos primeiros 15 minutos, 17,6 nos últimos), mas **o ritmo de chutes sobe** (0,216 a 0,274 por minuto, +27%) e o de gols também (0,026 a 0,030 a 0,034): cada ação que sobra termina mais em chute. A taxa de perda é estável (15 a 16%, com 18,6% no acréscimo do 2T), faltas e escanteios sobem devagar (+15%). A qualidade por chute é constante (xG por chute de 0,108 a 0,113), então o aumento de gols vem de mais chutes e não de chutes melhores.
+- **Os acréscimos são densos:** 0,30 chute por minuto e 0,035 gol por minuto, o maior de todas as janelas (amostra pequena e janela de duração aproximada).
+- **Para o simulador:** relógio = ações com tempo de permanência de ~1,6 s (gama ou lognormal ajustável aos quantis acima), com os multiplicadores por janela acima aplicados às taxas de chute, perda de bola, falta e escanteio; a duração do jogo (45,8 e 93,3 minutos até o último evento) define os acréscimos. As taxas por janela são descritivas: não separam estado do jogo (placar), nível dos times nem substituições, que mudam o ritmo (Achados 15 a 18).
+
+**Limites:** uma liga e uma temporada (La Liga 2015/16, StatsBomb) para o ritmo de ações e as durações; as taxas por minuto dos acréscimos dependem da duração média usada (até o último evento, não até o apito); a duração das posses conta só ações definidas no Achado 15 (não inclui recuperações, faltas e bolas paradas); chutes e gols por janela do banco juntam cinco ligas e cinco temporadas sem separar placar; sem intervalo de confiança.
+
+
+## Achado 28 — a matriz de transição por zona ao longo do jogo: muda pouco, e o que muda é onde a bola está
+
+**Pergunta:** os estados por zona (chute, perda, continua, para onde vai) têm as mesmas taxas nos primeiros 15 minutos e nos últimos 15? Há uma matriz diferente por janela do jogo?
+
+**Método** (`scripts/analisar_matriz_no_tempo_statsbomb.py`, sem rede, a partir dos dados reduzidos versionados): quatro ligas de 2015/16 (La Liga, Premier League, Serie A, Ligue 1; 1.517 jogos; 2.586.996 ações). Cada ação, na definição do Achado 15 e nas 18 zonas, entra na janela de 15 minutos em que COMEÇA (1T: 0-15, 15-30, 30-45; 2T: 45-60, 60-75, 75-90; acréscimos e prorrogação ficam fora). Fora da amostra: 5 blocos contíguos de partidas por competição (20 blocos), treino nos outros 4, matriz por janela contra matriz única, em nats por ação.
+
+**Por janela (todas as zonas):**
+
+| Janela | Ações | Chute | Perda | Avanço médio de quem continua |
+|---|---|---|---|---|
+| 0-15 | 477.935 | 1,059% | 15,41% | 2,50 m |
+| 15-30 | 441.320 | 1,297% | 14,96% | 2,92 m |
+| 30-45 | 422.871 | 1,389% | 15,19% | 3,06 m |
+| 45-60 | 442.220 | 1,399% | 15,64% | 3,02 m |
+| 60-75 | 405.095 | 1,541% | 15,10% | 3,30 m |
+| 75-90 | 397.555 | 1,618% | 15,34% | 3,43 m |
+
+**Onde estão as ações (% das ações da janela, por faixa do campo de quem tem a bola):** defesa 26,5 → 24,1 → 23,5 → 23,6 → 22,8 → 22,3; meio 52,5 → 49,9; ataque fora da área 18,7 → 20,9 → 22,2 → 22,3 → 23,6 → 24,2; grande área 2,33 → 2,79 → 3,07 → 3,25 → 3,52 → 3,65.
+
+**Taxas por faixa e janela** (chute % | perda %; as janelas na ordem 0-15 a 75-90):
+- **Grande área:** chute 27,3 | 27,7 | 26,9 | 26,6 | 26,8 | 27,5 e perda 27,9 | 28,3 | 28,0 | 27,2 | 27,5 | 26,7: **praticamente constantes**.
+- **Ataque fora da área:** chute 2,23 | 2,48 | 2,51 | 2,36 | 2,51 | 2,50; perda 22,0 → 19,5 (cai ao longo do jogo).
+- **Meio:** perda 12,8 | 11,9 | 11,8 | 12,4 | 11,6 | 11,8 (estável, chute ~0,02).
+- **Defesa:** perda 14,8 → 16,9 (sobe).
+- **Avanço de quem continua:** cresce em todas as faixas (defesa 5,2 → 7,2 m, meio 1,7 → 3,0 m, ataque fora da área 0,8 → 1,1 m).
+
+**Decomposição do chute por ação** (a) com a ocupação da janela e as taxas por zona de TODO o jogo e (b) com a ocupação de TODO o jogo e as taxas por zona da janela: (a) 1,029% → 1,633% (acompanha o chute observado); (b) 1,413% → 1,359% (**praticamente constante**). **O aumento de chutes por ação ao longo do jogo (+53%) vem de a bola estar em zonas mais avançadas, não de a taxa de chute DENTRO de cada zona subir.**
+
+**Matriz por janela contra matriz única, fora da amostra: ganho de +0,00092 ± 0,00006 nats por ação** (20 blocos): real, mas pequeno (2% do que a grade de 18 zonas ganhou sobre a de 12 no teste conservador, +0,042, e da ordem do ajuste por Elo da perda, Achado 24).
+
+**Leitura:**
+- **A dinâmica ao longo do jogo é um deslocamento da bola rumo ao gol adversário** (menos ações na defesa e mais no ataque; jogadas que avançam mais metros), não uma mudança das taxas de chute e perda dentro de cada zona. A grande área é quase estacionária.
+- **Exceções:** perda no ataque fora da área cai 2,5 pontos e perda na defesa sobe 2 pontos (mais bolas longas e entregas; time que ataca em bloco alto e defende com mais risco no fim do jogo), e a janela inicial tem chute um pouco menor no ataque (2,23% contra ~2,5%).
+- **Para o simulador:** matriz única, com um **relógio que desloca a probabilidade de destino para zonas avançadas** (multiplicador de avanço de 1,0 a 1,4 ao longo dos 90 minutos) e o ritmo de ações por janela do Achado 27. Uma matriz inteira por janela não compensa a complexidade.
+
+**Limites:** quatro ligas de 2015/16 somadas (a matriz das ligas é a mesma em termos do Achado 26); só 90 minutos (sem acréscimos); janela definida pelo início da ação; **não separa estado do jogo (placar), nível dos times nem substituições**, que mudam o ritmo e provavelmente explicam parte do deslocamento (um time perdendo avança mais): a análise por placar exige controlar a força da equipe (Achados 15 a 18) e ficou para depois; sem intervalo de confiança além do erro-padrão entre blocos.
+
+
+## Achado 29 — tempo morto de cada reinício e recuperação da bola depois de uma perda (as duas peças que fecham o relógio e a troca de posse)
+
+**Para quê.** Numa simulação semi-Markov a bola não anda o tempo todo: depois de uma bola fora, falta ou gol há um tempo morto até o reinício, e depois de uma perda em jogo a bola tem de ir para algum lugar do campo do adversário. `scripts/analisar_reinicios_e_recuperacoes_statsbomb.py` mede as duas coisas nos EVENTOS COMPLETOS versionados (`dados_referencia/statsbomb/completo`, sem rede) das quatro ligas de 2015/16 (1.517 jogos). Resumo e a matriz completa de 18 por 18 em `dados_referencia/statsbomb/reinicios_e_recuperacoes_ligas_2015_16.json`.
+
+**Método.** Tempo morto = `timestamp` do primeiro evento da posse de um reinício (`play_pattern` da posse) menos o fim (`timestamp` + `duration`) do último evento da posse anterior, ignorando ruído (pressão, substituição, paralisação por lesão, câmera). Recuperação = primeiro evento do ADVERSÁRIO depois de cada perda (definição do Achado 15: passe incompleto, fora ou impedimento, `Dispossessed`, `Miscontrol`), com seu atraso e sua zona de 18 no referencial dele.
+
+**Tempo morto por tipo de reinício** (segundos; por jogo, os dois times):
+
+| Reinício | Por jogo | Mediana | Média | p10 | p90 | Minutos por jogo |
+|---|---|---|---|---|---|---|
+| Lateral | 46,3 | 11,5 | 14,1 | 4,9 | 23,4 | 10,9 |
+| Falta cobrada | 30,6 | 24,9 | 29,3 | 8,1 | 56,1 | 14,9 |
+| Tiro de meta | 16,7 | 24,8 | 25,8 | 12,6 | 36,4 | 7,2 |
+| Escanteio | 10,2 | 26,3 | 27,9 | 17,2 | 38,5 | 4,7 |
+| Saída de bola depois de gol | 2,6 | 55,0 | 56,3 | 40,0 | 71,6 | 2,4 |
+| Reposição do goleiro | 6,6 | 0,0 | 4,9 | 0,0 | 16,3 | 0,5 |
+
+- **O tempo morto dos reinícios soma 40,7 minutos por jogo.** Junto dos ~47 minutos de ações (Achado 27), dão ~88 dos ~94 minutos até o último evento: o relógio fecha com ~93%. Os ~6 minutos que faltam são pausas dentro da posse e paralisações (lesão, substituição) que a conta não pega.
+- **A distribuição é assimétrica** (média acima da mediana; lateral p90 = 23 s, falta p90 = 56 s): um modelo lognormal ou gama por tipo de reinício serve melhor que a média.
+- **A falta cobrada é o maior consumidor de tempo** (14,9 de 40,7 minutos), depois lateral (10,9).
+- **A reposição do goleiro quase não tem tempo morto** (mediana 0): é continuidade de jogo (defesa seguida de reposição), e entra como posse comum.
+
+**Causa do reinício (as mais frequentes; mediana em segundos):** falta cobrada depois de `Foul Won` 25,8 (n = 37.701); lateral depois de recepção 10,9, depois de corte 11,6, depois de disputa 11,4, depois de bloqueio 11,7, depois de passe fora 10,6; tiro de meta depois do goleiro 25,4; escanteio depois do goleiro 27,5 e depois de corte 25,7. O tempo morto depende pouco da causa dentro do mesmo tipo de reinício.
+
+**O que acontece depois de uma perda** (417.332 perdas):
+
+| Primeiro evento do adversário | % |
+|---|---|
+| Recuperação em jogo: passe | 25,3 |
+| Recuperação em jogo: `Ball Recovery` | 17,5 |
+| Recuperação em jogo: corte (`Clearance`) | 14,1 |
+| Recuperação em jogo: disputa (`Duel`) | 12,1 |
+| Recuperação em jogo: bloqueio | 9,3 |
+| Recuperação em jogo: interceptação | 8,6 |
+| Recuperação em jogo: goleiro | 1,9 |
+| Reinício: lateral | 6,5 |
+| Reinício: tiro de meta | 2,2 |
+| Reinício: falta cobrada | 1,8 |
+| Reinício: escanteio | 0,1 |
+
+- **89,5% das perdas viram recuperação em jogo, com atraso praticamente zero** (mediana 0,0 s, média 0,2 s): a posse muda de lado no mesmo instante, sem tempo morto. Só 10,5% das perdas viram reinício, com os mesmos tempos mortos da tabela (lateral mediana 11,0 s; tiro de meta 23,6 s; falta 22,7 s; escanteio 26,6 s).
+- **Onde o adversário fica com a bola** (recuperação em jogo; faixa no referencial dele, % por linha, dada a faixa em que a ação de perda COMEÇOU, que é onde o passe saiu):
+
+| Perda começou em (referencial de quem perdeu) | Adversário: defesa | meio baixo | meio alto | ataque fora da área baixo | ataque fora da área alto | grande área | n |
+|---|---|---|---|---|---|---|---|
+| defesa | 14,7 | 32,7 | 26,3 | 14,1 | 10,6 | 1,4 | 92.348 |
+| meio baixo | 25,7 | 32,3 | 40,5 | 1,3 | 0,1 | 0,0 | 73.871 |
+| meio alto | 45,7 | 52,0 | 2,3 | 0,0 | 0,0 | 0,0 | 76.653 |
+| ataque fora da área baixo | 94,8 | 5,1 | 0,1 | 0,0 | 0,0 | 0,0 | 36.661 |
+| ataque fora da área alto | 99,8 | 0,2 | 0,0 | 0,0 | 0,0 | 0,0 | 72.843 |
+| grande área | 99,9 | 0,0 | 0,0 | 0,0 | 0,0 | 0,0 | 21.021 |
+
+**Leitura da matriz de recuperação:** a posição do evento de perda é a ORIGEM do passe, não onde a bola acabou. Por isso uma perda que começa na defesa do time quase nunca é recuperada em cima do gol (só 26% nas faixas de ataque do adversário): são passes longos interceptados no meio. Já uma perda que começa no ataque (faixas de ataque e grande área) vira recuperação do adversário na defesa dele em 95 a 100% dos casos. A matriz de 18 por 18 completa está no JSON.
+
+**Consequência para a cadeia:** (a) depois de uma perda em jogo (89,5%), troca a posse com tempo zero e a zona do adversário é sorteada dessa matriz (dada a zona de origem da perda); (b) nos outros 10,5%, o relógio avança o tempo morto do reinício (lognormal ou gama por tipo, valores da tabela) e a posse recomeça pela zona do reinício; (c) escanteio e falta cobrada são os reinícios que mais gastam relógio; (d) gol: ~56 s de saída de bola.
+
+**Limites:** quatro ligas de 2015/16 somadas; o StatsBomb não tem evento "bola fora" explícito, então o tempo morto parte do fim do último evento (inclui paralisações por lesão e substituição que caiam entre os dois); o primeiro evento do adversário depois da perda pode ser um corte ou bloqueio que não encerra a jogada (a bola continua em disputa), então a "zona de recuperação" é aproximada; não separa o tempo morto por janela do jogo, por placar nem por nível dos times (o tempo gasto com falta cobrada tende a crescer no fim do jogo); sem intervalo de confiança.
+
+
+## Achado 30 — resultado do chute por zona, o que vem depois do chute, destino do lateral e do escanteio, falta e bola fora por zona
+
+**O que foi medido** (`scripts/analisar_chutes_laterais_escanteios_faltas_statsbomb.py`, sem rede, a partir dos eventos completos das quatro ligas de 2015/16, 1.517 jogos; resumo em `dados_referencia/statsbomb/chutes_laterais_escanteios_faltas_ligas_2015_16.json`). Completa, com o Achado 29, as peças da cadeia semi-Markov: o que acontece DEPOIS de um chute, para onde vão os reinícios e onde ficam as faltas.
+
+**1. Resultado do chute por faixa do campo** (37.888 chutes, 25,0 por jogo; % de cada resultado):
+
+| Faixa de quem chuta | Chutes | Gol | Defendido | Bloqueado | Para fora | Sem direção | Trave | xG médio | De cabeça |
+|---|---|---|---|---|---|---|---|---|---|
+| meio alto (x 52,5 a 70 m) | 206 | 1,5 | 19,4 | 8,7 | 52,9 | 12,1 | 1,0 | 0,006 | 0% |
+| ataque fora da área, baixo | 2.931 | 1,4 | 20,5 | 25,6 | 47,0 | 3,8 | 1,0 | 0,017 | 0% |
+| ataque fora da área, alto | 11.682 | 3,7 | 22,7 | 32,0 | 36,0 | 3,7 | 1,4 | 0,037 | 0,1% |
+| grande área | 23.025 | **14,7** | 23,8 | 21,6 | 30,1 | 6,8 | 2,3 | **0,142** | 26,5% |
+
+(Na defesa e no meio baixo há 2 e 42 chutes: ignorados.) 61% dos chutes saem da grande área e geram 14,7% de gols; fora da área, 36 a 47% vão para fora e 26 a 32% são bloqueados. O xG médio por chute concorda com a taxa de gol dentro da área (0,142 contra 14,7%).
+
+**2. O que vem depois do chute** (primeira posse diferente; `play_pattern` da nova posse e se ela continua com quem chutou):
+
+| Resultado | n | Jogo corrido | Tiro de meta | Escanteio | Goleiro | Saída de bola | Lateral | Falta | Mesma equipe |
+|---|---|---|---|---|---|---|---|---|---|
+| Gol | 3.869 | 5,4 | 0 | 0 | 0 | **93,2** | 0 | 0 | 0,1% |
+| Defendido | 8.783 | 38,7 | 3,6 | **23,2** | **20,3** | 2,4 | 6,7 | 3,2 | 30,7% |
+| Bloqueado | 9.472 | 27,4 | 9,8 | **29,1** | 2,0 | 2,0 | 15,6 | 8,4 | 46,4% |
+| Para fora | 12.637 | 0 | **98,7** | 0,1 | 0 | 0 | 0,1 | 0 | 0,2% |
+| Sem direção | 2.154 | 26,2 | 26,8 | 6,9 | 2,6 | 3,3 | 17,8 | 10,6 | 18,5% |
+| Trave | 710 | 23,4 | 36,5 | 8,3 | 1,3 | 5,8 | 12,3 | 8,0 | 20,7% |
+
+Chute para fora termina em tiro de meta (98,7%), e gol em saída de bola (93,2%). Chute defendido ou bloqueado é o que gera escanteio (23% e 29%) ou deixa a bola em jogo (39% e 27%, com a equipe que chutou mantendo a posse em 31% e 46%).
+
+**3. Lateral** (70.260 laterais, 46,3 por jogo; 83,2% completos; comprimento médio 18,4 jardas). Destino por faixa de origem (% por linha, zona onde a bola chega):
+
+| Origem | n | Completos | defesa | meio baixo | meio alto | ataque baixo | ataque alto | grande área |
+|---|---|---|---|---|---|---|---|---|
+| defesa | 15.535 | 73,8% | 54,8 | 37,9 | 6,8 | 0,3 | 0 | 0 |
+| meio baixo | 14.349 | 82,2% | 21,1 | 36,7 | 36,2 | 4,9 | 1,1 | 0 |
+| meio alto | 15.481 | 84,9% | 2,1 | 18,7 | 41,7 | 22,3 | 14,5 | 0,8 |
+| ataque fora baixo | 7.403 | 88,7% | 0,1 | 3,5 | 26,6 | 26,0 | 40,7 | 3,1 |
+| ataque fora alto | 17.492 | 88,4% | 0 | 0,2 | 5,5 | 14,0 | 65,9 | 14,4 |
+
+O lateral é um passe curto: a bola chega perto da origem (na mesma faixa ou na vizinha); só 14% dos laterais do ataque alto chegam à grande área.
+
+**4. Escanteio cobrado** (15.475, 10,2 por jogo; só 42,3% chegam completos):
+- **Onde a bola chega:** 77,1% na grande área central (no corredor do meio da grade de 18 zonas, que cobre a área toda), 16,3% no ataque fora da área alto pelos lados (escanteio curto ou bola afastada), 5,0% nos corredores laterais da grande área.
+- **Técnica:** inswinging 39%, outswinging 37%, sem informação 17%, reto 6%.
+- **O que gera:** **34,6% dos escanteios geram um chute da mesma equipe na mesma posse**; xG por escanteio **0,028**; **2,63% dos escanteios viram gol** (cerca de 0,27 gol por jogo).
+
+**5. Falta e bola fora por zona** (45.517 faltas, 30,0 por jogo; **12,9% com cartão**; **23,0% são faltas de ataque**, cometidas por quem tem a bola). A zona é a de quem TINHA a bola (a falta de defesa é espelhada para o referencial dele; a de ataque não):
+
+| Faixa | % das faltas | Faltas por 100 ações | Passes fora por 100 ações |
+|---|---|---|---|
+| defesa | 13,3 | 0,93 | 1,08 |
+| meio baixo | 23,6 | 1,52 | 0,62 |
+| meio alto | 30,2 | 2,05 | 0,67 |
+| ataque fora baixo | 12,6 | 2,17 | 0,80 |
+| ataque fora alto | 14,2 | 1,93 | 1,17 |
+| grande área | 6,2 | **3,31** | 1,16 |
+
+A taxa de falta por ação **sobe do primeiro terço (0,9 por 100 ações) até a grande área (3,3 por 100)**: quanto mais perto do gol adversário, mais a ação termina em falta. Passe fora (1,0 a 1,2 por 100 ações) é mais comum na defesa e no ataque do que no meio.
+
+**Consequência para a cadeia** (completa as peças do Achado 29):
+- **Resolução do chute:** gol, defendido, bloqueado, para fora, sem direção e trave com as probabilidades por faixa acima (na grande área: 14,7 / 23,8 / 21,6 / 30,1 / 6,8 / 2,3 por cento).
+- **Depois do chute:** gol -> saída de bola (tempo morto ~56 s); para fora -> tiro de meta (~25 s); defendido -> escanteio (23%), reposição do goleiro (20%) ou bola em jogo; bloqueado -> escanteio (29%) ou bola em jogo (27%) ou lateral (16%).
+- **Reinícios:** lateral é um passe curto de 83% de acerto que mantém a bola perto da origem; o escanteio chega à grande área em 77% das vezes, gera chute em 35% e gol em 2,6%.
+- **Falta:** sorteada junto com a ação, com taxa que sobe de 0,9 para 3,3 por 100 ações do primeiro terço à grande área; 23% são faltas de ataque (a posse passa ao adversário no ponto da falta); 12,9% geram cartão.
+
+**Limites:** quatro ligas de 2015/16 somadas; faixas de 6 do campo (as 18 zonas completas estão no JSON só para os escanteios); chutes defendidos incluem os que o goleiro segura e os que desvia (o `play_pattern` seguinte já separa); o `play_pattern` da próxima posse é o do StatsBomb e mistura causas (um lateral depois de chute bloqueado é um desvio para fora); a falta é atribuída à zona onde o evento foi marcado (o local da falta, não do contato); sem intervalo de confiança nem divisão por janela do jogo, placar ou nível dos times.
+
+## Achado 31 — protótipo v0 do simulador semi-Markov da bola: reproduz o volume de chutes e gols, mas falha em lateral, tempo e posses
+
+`scripts/simulador_cadeia_bola.py` junta as peças dos Achados 18–30 (4 ligas de 2015/16) e simula partidas; `test_simulador_cadeia_bola.py` (5 testes) cobre determinismo, normalização e estados válidos. 3.000 jogos, semente 2, contra o observado por jogo:
+
+| por jogo | simulado | observado |
+|---|---|---|
+| chutes | 25,0 | 25,0 |
+| gols / xG | 2,45 / 2,55 | 2,55 / 2,47 |
+| tiros de meta / saídas de bola | 16,5 / 2,45 | 16,7 / 2,60 |
+| faltas | 29,4 | 30,0 |
+| escanteios | 9,4 | 10,2 |
+| tiros livres | 35,8 | 30,6 |
+| **laterais** | **21,8** | **46,3** |
+| tempo morto (min) | 36,8 | 40,7 |
+| tempo em ação (min) | 57,3 | 46,1 |
+| ações | 2.092 | 1.786 |
+| posses (trocas) | 341 | 195 (definição StatsBomb) |
+
+**Leitura:** o essencial do jogo (chute, gol, xG, tiro de meta, falta) sai da cadeia sem ajuste. As falhas são concentradas e têm causa conhecida:
+- **Laterais pela metade:** só os laterais que seguem uma perda (6,5% das perdas) entram; os outros ~25 por jogo seguem bola desviada pelo adversário/chute e não estão modelados. Isso explica ~4 min de tempo morto faltando e, como o relógio é preenchido por ações, ~17% a mais de ações.
+- **Escanteios 8% abaixo e tiros livres 17% acima:** o encaminhamento depois do chute/perda precisa de calibração conjunta.
+- **Posses:** a simulação conta cada troca (275 perdas/jogo); StatsBomb agrupa em 195 sequências. Definições diferentes, não é erro do modelo.
+- Chutes por janela de 15 min ficam planos (3,6–4,2), como esperado de um protótipo estático; falta a inclinação por janela (Achado 28).
+Próximo passo natural: modelar o lateral que mantém a posse (com tempo morto), recalibrar escanteio/tiro livre e então inserir janela e força dos times.
+
+### Achado 31 — v1: lateral mantido, tiro livre sem contagem dupla, e o que sobrou (a cadeia sub-ocupa o terço final)
+
+Mudanças do v1 em `simulador_cadeia_bola.py` (3.000 jogos, semente 2): (1) tiro livre saiu dos reinícios depois da perda, pois as faltas já são sorteadas por faixa (era contagem dupla: 35,8 -> 29,3 contra 30,6 observados); (2) entrou o **lateral que mantém a posse** (`P_LATERAL_MESMA = 0,085` por perda, CALIBRADO para fechar 46,3 laterais, não medido): laterais 21,8 -> 44,7; tempo morto 36,8 -> 38,8 min.
+
+| por jogo | v0 | v1 | observado |
+|---|---|---|---|
+| laterais | 21,8 | 44,7 | 46,3 |
+| tiros livres | 35,8 | 29,3 | 30,6 |
+| escanteios | 9,4 | 9,6 | 10,2 |
+| chutes / gols | 25,0 / 2,45 | 25,2 / 2,46 | 25,0 / 2,55 |
+| ações | 2.092 | 2.019 | 1.786 |
+
+**Falha que sobra e a causa:** as ações ainda são 13% acima e o tempo em ação é 55 min contra 46. Uma folga de 0,21 s entre ações (testada e descartada) fechou o relógio, mas derrubou chutes, gols e escanteios em ~10%. A razão: a ocupação de zonas da simulação não bate com a observada. Participação nas ações: grande área 2,4% contra 3,1%; ataque fora alto 9,2% contra 12,3%; ataque fora baixo 8,7% contra 9,7%; defesa 26,7% contra 23,8%; meio baixo 28,5% contra 26,2%. Ou seja, a cadeia (matriz de desfecho + recuperação + reinícios) **sub-ocupa o terço final** e por isso chuta 1,25% das ações contra 1,40% observado. Candidatos a investigar: destino dos reinícios fixado em zona de defesa/saída, escanteio e chute cortado voltando sempre à defesa, e a distribuição estacionária da matriz sem o efeito de quem ataca mais (força dos times).
+
+### Achado 31 — v2: por que o terço final fica sub-ocupado (a cadeia só com fluxos em jogo não chega lá)
+
+**Teste decisivo (sem simulação, resolvendo a distribuição estacionária da cadeia):** usando as matrizes observadas exatas (continua + perda->recuperação em jogo + chute reentrando na defesa), a cadeia converge para grande área 2,3% das ações e ataque fora alto 9,0%, contra 3,1% e 12,3% observados — o mesmo erro que a simulação tinha. Logo o defeito **não é bug do simulador nem ruído**: é estrutural.
+
+**Contabilidade das entradas por zona (por jogo):** cada ação observada começa numa zona que veio de (a) ação que continua, (b) recuperação em jogo do adversário ou (c) um resíduo = linhas de ação que não vieram de nenhuma das duas (reinícios, saídas, bola mantida depois de desvio). O resíduo positivo é ~61 entradas por jogo (3,4% das ações) e **concentra-se no ataque**: ataque fora alto 25,1, meio alto 17,1, ataque fora baixo 8,7, meio baixo 6,6, grande área 3,6, defesa 0 (a recuperação em jogo até superestima os corredores da defesa: resíduo negativo nas zonas 0 a 2). Acrescentando esse resíduo à cadeia, a estacionária sobe para grande área 2,8% e ataque fora alto 11,3% (observado 3,1% e 12,3%): **fecha 70% do erro**.
+
+**O que o v2 do simulador fez:** lateral (de reinício, depois de chute ou mantido) agora cai na linha lateral na faixa medida (Achado 30), tiro de meta na defesa central. Efeito pequeno: ataque fora alto 9,2% -> 10,0%, grande área 2,4% -> 2,5%; ações 2.012 (+13%), chutes 25,3, gols 2,46, escanteios 9,8 (-4%), laterais 44,7 e tiros livres 29,3. Pouco, porque o lateral ainda **substitui** uma recuperação em vez de somar à entrada em jogo, que é o que o resíduo observado mostra.
+
+**Próximo passo:** modelar o resíduo como entradas adicionais por zona (distribuição acima), sem tirá-las das perdas — e checar com o StatsBomb de que evento vem cada linha de resíduo (lateral, tiro livre, escanteio) em vez de supor.
+
+### Achado 31 — v3: o resíduo é bola parada, a recuperação do v2 estava no lugar errado, e o simulador passa a fechar sem constante de lateral/escanteio
+
+`scripts/analisar_residuo_entradas_statsbomb.py` classifica TODA linha da matriz pela forma como a bola chegou (1.517 jogos, 4 ligas de 2015/16; saída em `dados_referencia/statsbomb/residuo_entradas_ligas_2015_16.json`). Por jogo:
+
+| classe de entrada | linhas/jogo | faixas (defesa / meio baixo / meio alto / ataque baixo / ataque alto / grande área, %) |
+|---|---|---|
+| continua | 1.449,8 | 20,3 / 27,0 / 26,2 / 10,5 / 12,6 / 3,4 |
+| recuperação em jogo | 229,5 | 40,9 / 26,1 / 17,9 / 6,4 / 6,1 / 2,5 |
+| lateral | 45,6 | 22,1 / 20,4 / 22,0 / 10,5 / 25,0 / 0 |
+| tiro livre | 30,1 | 35,0 / 25,1 / 22,0 / 8,9 / 8,8 / 0,3 |
+| tiro de meta | 16,2 | 100% defesa |
+| escanteio | 10,0 | 100% ataque fora alto (bandeirinha) |
+| saída de bola | 4,6 | 100% meio alto/centro |
+
+**Duas causas do v2, ambas corrigidas:** (1) o resíduo do Achado 31 v2 são as **bolas paradas** (≈106 linhas por jogo: lateral, tiro livre, tiro de meta, escanteio, saída de bola), e elas começam bem mais à frente do que uma recuperação; (2) a recuperação em jogo do v2 usava a zona do PRIMEIRO EVENTO do adversário (bloqueio, corte, duelo), mas a próxima linha de ação dele começa mais à frente: no v2 só 3,1% das recuperações caíam em ataque fora alto e 0,4% na grande área, contra 6,1% e 2,5% reais.
+
+**Núcleo empírico (substitui 4 peças e 2 constantes calibradas à mão):** para cada linha que começa na zona z e termina em continua, perda ou chute, a próxima linha é sorteada diretamente dos dados: quem a tem (mesma equipe ou adversário), a classe e a zona. Isso inclui o lateral que fica com a mesma equipe (7,8% das perdas), a bola que a mesma equipe retoma em jogo (14,6% das perdas), o escanteio depois de perda (2,3%) e a falta depois de ação que continua. `P_LATERAL_MESMA`, `ESCALA_ESCANTEIO`, `PROB_CHUTE_NO_ESCANTEIO` e o modelo de falta por faixa saíram do código. A bola parada ganha o tempo morto lognormal do Achado 29. Restou **uma** constante calibrada: folga de 0,2 s entre linhas (os 46,1 min em ação + 40,7 de tempo morto somam só 86,8 dos ~94 min de relógio).
+
+| por jogo (3.000 jogos simulados) | v2 | **v3** | observado |
+|---|---|---|---|
+| ações | 2.012 | **1.782** | 1.786 |
+| chutes / gols / xG | 25,3 / 2,46 / 2,59 | **24,8 / 2,55 / 2,46** | 25,0 / 2,55 / 2,47 |
+| escanteios | 9,8 | **10,0** | 10,2 |
+| laterais / tiros livres | 44,7 / 29,3 | **45,6 / 30,3** | 46,3 / 30,6 |
+| tiros de meta / saídas de bola | 15,8 / 2,46 | **16,1 / 2,55** | 16,7 / 2,60 |
+| tempo morto (min) | 38,8 | **39,4** | 40,7 |
+| ocupação grande área / ataque alto (%) | 2,5 / 10,0 | **3,1 / 12,2** | 3,1 / 12,3 |
+
+**Todos os totais ficam a menos de 3,5% do observado e a ocupação do campo bate a menos de 0,6 ponto percentual por faixa** (testes automáticos exigem < 1 ponto). **Limites que continuam valendo:** (a) é dentro da amostra (mesmos jogos que geraram o núcleo), não prova de previsão; (b) a variância por jogo é só a de acaso: escanteios var/média 1,03 contra ~1,2 observado, gols 0,97, chutes 0,95, porque não há força dos times nem estado do jogo (falta de heterogeneidade entre jogos); (c) chutes por janela de 15 min continuam planos (3,9 a 4,1; a última janela sobe só porque o 2T dura 48 min); (d) posses (237 trocas) não são comparáveis às 195 sequências do StatsBomb; (e) 'Goalkeeper' reposições do tipo From Keeper (0,5 min/jogo) não têm tempo morto próprio. **Próximo passo:** inclinação por janela (Achado 28) e força/Elo dos times nas taxas de perda e chute, que é onde a variância por jogo deve aparecer.
+
+## Achado 32 — força dos times e janela do jogo no simulador: a diferença de ataque é real, a de defesa é mais frágil, e o ganho fora da amostra é modesto
+
+**Como a força é medida (sem Elo e sem casar nomes de clube).** `scripts/analisar_forca_e_janela_statsbomb.py` conta, para cada um dos 80 times das 4 ligas de 2015/16 e para cada papel (ATAQUE: linhas de ação em que ele tem a bola; DEFESA: linhas do adversário contra ele), quantas linhas terminam em chute e em perda. A razão observado/esperado de um time médio dá 4 números por time: `ataque_chute`, `ataque_perda`, `defesa_chute`, `defesa_perda`. Cada um é encolhido em direção a 1 com o peso de confiabilidade (correlação entre duas metades dos jogos, Spearman-Brown): `1 + w x (razão - 1)`. Os jogos são divididos em 4 quartos (jogo % 4) para medir a confiabilidade e para validar fora da amostra. No simulador o chute e a perda de cada linha viram `taxa da zona x ataque do time x defesa do adversário x janela`.
+
+**Confiabilidade (quanto da diferença entre times se repete entre metades):**
+
+| razão | ataque | defesa |
+|---|---|---|
+| chute (todos os jogos) | 0,67 | 0,68 |
+| perda (todos os jogos) | **0,93** | 0,66 |
+| chute (só treino, usada na validação) | 0,52 | 0,52 |
+| perda (só treino, usada na validação) | 0,88 | 0,46 |
+
+A tendência de perder a bola (estilo de jogo: Barcelona 0,59, PSG 0,56, Real Madrid 0,66 contra Eibar, West Bromwich e Carpi em torno de 1,39) é muito estável; o que o time cede ou força na defesa é bem mais ruído.
+
+**Decisão de medida: razão por linha, SEM descontar a zona.** Descontar a mistura de zonas do time (primeiro teste) fazia o simulador exagerar o time forte, porque o simulador não dá ao time uma mistura de zonas própria. No nível do time (80 pontos, treino): sem descontar, correlação com o observado em chutes contra 0,83 e inclinação 1,00 (dispersão correta); descontando, 0,59 e 0,78.
+
+**Janela do jogo (6 janelas de 15 min, razão por linha sem descontar zona):** chute 0,76 / 0,93 / 1,01 / 1,00 / 1,10 / 1,21 e quebra de jogo (falta, bola parada) 0,84 / 0,91 / 1,07 / 0,99 / 1,01 / 1,18; perda praticamente plana (0,97 a 1,04). Ou seja, a taxa de chute por linha sobe 60% da primeira à última janela. No Achado 28, descontando a zona, isso era plano: o aumento vem do avanço da bola no campo (mais linhas em zonas de chute), e aqui ele entra como multiplicador porque o simulador não tem inclinação de zona.
+
+**Calibração do amortecimento, só no treino** (expoente sobre a razão; 1 = como medido):
+
+| expoente da perda | linhas por jogo: corr / inclinação | chutes a favor: corr / inclinação | chutes contra: corr / inclinação |
+|---|---|---|---|
+| 1,0 | 0,97 / 1,81 | 0,76 / 0,58 | 0,83 / 1,00 |
+| 1,5 | 0,97 / 1,21 | 0,73 / 0,36 | 0,75 / 0,63 |
+| 2,0 | 0,97 / 0,93 | 0,70 / 0,26 | 0,70 / 0,46 |
+
+(inclinação = observado sobre previsto entre os 80 times; 1 = dispersão certa, menor que 1 = o simulador exagera as diferenças). Subir o expoente da perda acerta a posse mas piora muito os chutes, então ficou **1,0, como medido, sem ajuste**.
+
+**Validação fora da amostra** (razões estimadas nos quartos 0 e 2; 758 jogos dos quartos 1 e 3 simulados 30 vezes entre os dois times reais; erro quadrático contra o palpite "todo time igual" = média do treino):
+
+| por time-jogo | correlação | ganho no erro quadrático |
+|---|---|---|
+| chutes | +0,37 | **+6,0%** |
+| gols | +0,25 | **+5,5%** |
+| escanteios | +0,18 | **+2,1%** |
+
+A força dos times melhora a previsão de forma real mas pequena (o chute de um time num jogo tem muito acaso: desvio-padrão observado 5,1 contra 3,3 previsto).
+
+**Limites que continuam valendo:** (a) mandante e visitante têm a mesma força (a vantagem de jogar em casa não está no modelo); (b) a posse fica sub-dispersa entre times (inclinação 1,81: a diferença de tempo de posse real é maior, em parte porque times de posse também passam mais rápido e a duração das ações é igual para todos) e os chutes a favor ficam super-dispersos (0,58): dominar a posse não vira chute na proporção que o simulador gera; (c) escanteios por jogo ainda têm variância só de acaso (observado var/média 1,2); (d) dentro da amostra de 4 ligas de 2015/16; (e) o teste com Elo do ClubElo, para estimar a força de times com poucos jogos e de outras ligas, ainda não foi feito.
+
+## Achado 33 — posse, xT e momentum no simulador: a posse bate, o xT bate dentro de ±7% e o momentum existe e vem da MEMÓRIA DA POSSE; o Elo prevê o estilo de posse
+
+`scripts/metricas_posse_xt_momentum.py` mede a MESMA coisa nos eventos reais e nas partidas simuladas (`scripts/comparar_posse_xt_momentum.py observar|comparar`; saída real em `posse_xt_momentum_observado_ligas_2015_16.json`). Corrida = linhas consecutivas da mesma equipe na mesma metade; o tempo morto de um reinício entra na corrida de quem perdeu a bola (como na posse do StatsBomb).
+
+**1. Posse de bola (v3, sem memória): replicada em volume, subdispersa entre times.** Corridas por jogo 237,1 real contra 237,1 simulado (os "195" do StatsBomb eram outra definição de posse, não erro do simulador); duração média 24,0 s real, 23,7 simulado; linhas por corrida 7,53 contra 7,55. Dispersão da posse do mandante (dp): real 0,083 por tempo e 0,106 por linhas; neutro 0,035 / 0,028; com a força dos times 0,067 / 0,070. A força explica cerca de 60% da dispersão por tempo e 2/3 da por linhas.
+
+**2. Momentum: existe, e é memória da posse.** Risco observado/esperado dada a zona, por posição da linha dentro da corrida:
+
+| posição na corrida | 1 | 2 | 3 | 4-5 | 6-8 | 9-14 | 15+ |
+|---|---|---|---|---|---|---|---|
+| perda real | 1,32 | 1,40 | 1,12 | 1,04 | 0,92 | 0,82 | 0,75 |
+| perda simulada sem memória (força) | 1,03 | 1,02 | 1,02 | 1,02 | 1,00 | 0,99 | 0,94 |
+
+Quem acabou de ganhar a bola a perde com 32 a 40% mais chance do que a zona explica; quem a segura há 15 ou mais linhas, com 25% menos. O simulador sem memória não tem isso (e as razões de força de time quase não o produzem). Consequências medidas sem memória: autocorrelação dos chutes em janelas consecutivas de 5 min 0,056 real contra 0,037 (com força) e 0,000 (neutro), e chutes dentro de 60 s do anterior da mesma equipe 15,8% real contra 14,6% e 14,1%.
+
+**3. Correção (v4): multiplicador de perda e de chute por posição na corrida**, medido no real (`risco_por_posicao_na_corrida` do arquivo observado; `memoria=True` no simulador, `--sem-memoria` desliga). Efeito: risco de perda simulado 1,24 / 1,34 / 1,10 / 1,03 / 0,93 / 0,83 / 0,75 (real 1,32 / 1,40 / 1,12 / 1,04 / 0,92 / 0,82 / 0,75); autocorrelação 0,046 (real 0,056); chutes até 60 s / 120 s / 300 s do anterior 15,0 / 25,6 / 48,8% (real 15,8 / 26,2 / 49,2%). Com a memória ligada o simulador passou a chutar ~9% a mais e a empurrar a bola para o ataque; uma constante global, `ESCALA_CHUTE_COM_MEMORIA = 0,88` (CALIBRADA, não medida), recupera os totais por jogo (chutes 25,3 contra 25,0; gols 2,63 contra 2,55; ações 1.788 contra 1.786).
+
+**4. xT empírico por zona** (probabilidade de haver chute depois, na mesma corrida, a partir de uma linha na zona): sem memória o simulador ficava 10 a 17% abaixo do real nas zonas do meio (zona 4: 0,100 contra 0,122; zona 7: 0,139 contra 0,168). Com a memória ficou dentro de ±7% em quase todas as zonas (zona 4: 0,116; zona 7: 0,159; zona 10: 0,269 contra 0,289; zona 16: 0,669 contra 0,689). **O xG depois da linha ainda erra nas zonas da grande área e nos corredores do ataque:** zona 16 (centro da área) 0,101 simulado contra 0,126 real, enquanto os corredores sobem (zona 12: 0,032 contra 0,026), porque o simulador usa o xG médio da FAIXA e não da zona.
+
+**5. Limites novos:** a ocupação do ataque passou a exagerar (grande área 3,7% contra 3,1%; ataque fora alto 13,2% contra 12,3%) e a defesa a ficar baixa (22,7% contra 23,8%); a validação fora da amostra da força dos times, refeita com a memória ligada, deu ganho de erro quadrático de +2,4% em chutes (antes +6,0%), +5,8% em gols e +2,9% em escanteios (correlação em chutes 0,37). O ganho de chutes caiu porque a memória aumenta a dispersão prevista entre times sem aumentar a correlação.
+
+**6. ClubElo / Elo na força dos times.** O site do ClubElo está bloqueado na rede desta sessão (o proxy devolve 502 para `api.clubelo.com`); para liberar, o ambiente precisa de `api.clubelo.com` em Allowed domains (Network access do ambiente na nuvem). O banco só tem Elo de 2015/16 para uma liga (La Liga, 20 times, Elo interno do projeto, 3 promovidos no padrão 1500), então o teste foi feito ali: correlação entre o Elo do início da temporada e as razões de força medidas na temporada, 20 times (17 sem os promovidos com 1500):
+
+| razão | correlação (20 / 17 times) | por 100 pontos de Elo |
+|---|---|---|
+| ataque_perda | **-0,74 / -0,79** | -0,13 |
+| defesa_perda | -0,16 / -0,20 | -0,01 |
+| ataque_chute | -0,13 / -0,21 | -0,01 |
+| defesa_chute | +0,04 / +0,07 | +0,01 |
+
+O Elo conhecido ANTES da temporada prevê bem o estilo de posse (quem tem Elo alto perde menos a bola, o mesmo resultado do Achado 24) e quase nada do resto. Serve, portanto, como informação a priori da razão `ataque_perda` (a mais estável, confiabilidade 0,93) para times sem histórico de jogos, mas não substitui a medida nos eventos para chute e defesa. Só 20 times de uma liga: a conclusão é um indício, não prova.
+
+## Achado 34 — xG por zona polar e ocupação do ataque: o desvio de ocupação vinha da memória da posse, não do chute
+
+**1. O xG deve vir das zonas polares (as da calculadora), não da zona de 18.** Com os 37.888 chutes do StatsBomb (4 ligas, 2015/16), R² do xG fora da amostra (treino = chutes pares, teste = ímpares; `scripts/analisar_xg_polar_vs_zona.py`): média da zona de 18: **0,22**; caixas de distância x ângulo: 0,48; árvores em (distância, ângulo): **0,61**; zona + cabeça + tipo de bola parada: 0,47; distância + ângulo + cabeça + tipo: **0,73**. A zona de 18 é grossa demais para o chute: a grande área central (zona 16) concentra 51% dos chutes e tem desvio-padrão de xG de 0,17. A calibração é boa onde há dados: gols/xG de 0,92 a 1,04 nas zonas 13 a 17.
+
+**2. Fonte escolhida: a tabela polar do estudo do frontend.** A tela "Zona-a-zona: de onde vêm os chutes" da Análise de Evento usa 14 zonas polares (7 anéis: 0-6, 6-9, 9-12, 12-16,5, 16,5-22, 22-30, > 30 m x cone central de +-30 graus ou aberto) com ~477 mil chutes do FotMob sem pênaltis. Comparação com o StatsBomb nas mesmas 14 zonas (`scripts/zonas_polares.py`): fatias de chute dentro de ~2 p.p. na maioria das zonas (maior diferença: 16,5-22 m central, 13,0% StatsBomb contra 9,0% FotMob); xG por chute parecido (por exemplo 12-16,5 m central 0,121 contra 0,116) e o FotMob um pouco maior nos extremos (0-6 m central 0,443 contra 0,362; > 30 m 0,020 contra 0,009); total 0,1007 contra 0,0916 de xG por chute e 0,0976 contra 0,0952 gol por chute.
+
+**3. Como o simulador usa as duas.** O chute simulado é um chute real do StatsBomb sorteado da zona de 18 em que a cadeia está (traz distância, ângulo, cabeça e tipo; pênalti fora do conjunto, e a linha de pênalti força um chute de pênalti); sua ZONA POLAR define o xG e a probabilidade de gol pela tabela do FotMob (`--fonte-xg fotmob`, padrão) ou usa o xG e o gol do próprio chute (`--fonte-xg statsbomb`). 4.000 jogos: com a tabela FotMob, gols 2,55 (observado 2,55), xG 2,65 (na escala do xG do FotMob; o alvo do StatsBomb é 2,47); com o chute do StatsBomb, gols 2,59 e xG 2,46. A escolha do padrão é pela amostra grande e pela consistência com o resto do projeto; o custo é misturar eras (FotMob recente, StatsBomb 2015/16) e perder a variância do xG dentro da zona polar.
+
+**4. A ocupação exagerada do ataque era da memória da posse, não do chute.** Experimento (2.500 jogos cada): memória só do chute = ocupação intacta (grande área 3,1%); memória da perda (sozinha ou com a do chute) = grande área 3,5-3,7% (real 3,1%), ataque fora alto 13,0-13,1% (real 12,3%), defesa 22,7-22,9% (real 23,8%). Causa: o multiplicador foi medido contra a taxa esperada da zona, mas a distribuição de posições que o simulador gera em cada zona difere da real, e a média efetiva do multiplicador não ficava em 1 (1,14-1,17 na defesa, 0,86-0,87 na grande área). **Correção:** `scripts/calibrar_memoria_posse.py` divide o multiplicador, por zona, pela média efetiva que o simulador produz, em 3 iterações (convergiu para 1,00 +- 0,003 em todas as zonas); a taxa de perda e de chute DE CADA ZONA volta à da matriz e a memória só redistribui entre posições. Com isso a constante calibrada do Achado 33 (`ESCALA_CHUTE_COM_MEMORIA = 0,88`) saiu do código: chutes 24,9 (observado 25,0), ações 1.794 (1.786) e ocupação 23,8 / 26,8 / 24,3 / 9,7 / 12,2 / 3,1% contra 23,8 / 26,2 / 24,7 / 9,7 / 12,3 / 3,1% reais.
+
+**5. Posse, xT e momentum depois da correção** (comparação com os eventos reais, `comparar_posse_xt_momentum.py`): risco de perda por posição 1,26 / 1,36 / 1,10 / 1,04 / 0,93 / 0,84 / 0,75 contra 1,32 / 1,40 / 1,12 / 1,04 / 0,92 / 0,82 / 0,75; autocorrelação dos chutes 0,052 (real 0,056); chutes a <= 60 / 120 / 300 s do anterior 14,6 / 25,2 / 48,5% (real 15,8 / 26,2 / 49,2%); xT (P de chute depois) dentro de +-8% nas zonas com muitos chutes. O xG depois da jogada nas zonas 12 e 14 ainda fica ~15% acima do real e na 15 e 17 ~14% abaixo.
+
+**6. Força dos times fora da amostra, refeita com a memória normalizada:** ganho de erro quadrático +1,1% em chutes, +5,6% em gols, +2,5% em escanteios (correlação em chutes 0,36). O ganho de chutes continua baixo porque a memória aumenta a dispersão prevista entre times sem aumentar a correlação.
+
+**7. Pendente:** a progressão da bola não muda com a posição na posse (avanço médio de faixa +0,25 nas primeiras linhas contra +0,13 nas longas, igual ao esperado dado a origem; arquivo `chutes_e_progressao_ligas_2015_16.json`), então não precisa de memória de destino; a validação em outra liga/temporada (ligas recentes e torneios) e o ClubElo (API do ClubElo respondendo 502 do próprio servidor) seguem em aberto.
+
+## Achado 35 — validação do simulador em ligas recentes e torneios que ele não viu: chutes e ocupação do campo se transferem, o ritmo e a estrutura da posse não
+
+`scripts/validar_simulador_outras_competicoes.py` (+ teste; saída em `dados_referencia/statsbomb/validacao_outras_competicoes.json`). Parâmetros só de La Liga, Premier League, Serie A e Ligue 1 de 2015/16; times neutros; 3.000 jogos simulados contra os eventos completos de cada conjunto. Diferença > 2 erros-padrão (EP) da média real marcada com *.
+
+| por jogo (real ± EP -> simulado) | Ligas recentes, 1 clube (194 jogos) | Euro 2020 e 2024 (102) | Copa América 2024 (32) | Copas 2018 e 2022 (128) |
+|---|---|---|---|---|
+| chutes | 25,4 -> 24,9 | 23,8 ± 0,6 -> 24,9 | 23,2 ± 0,9 -> 24,9 | 23,7 ± 0,6 -> 24,9 * |
+| gols | 3,20 ± 0,13 -> 2,55 * | 2,25 ± 0,14 -> 2,55 * | 2,12 ± 0,28 -> 2,55 | 2,49 ± 0,15 -> 2,55 |
+| escanteios | 9,1 -> 10,0 * | 9,2 -> 10,0 * | 8,4 -> 10,0 * | 8,8 -> 10,0 * |
+| laterais | 29,3 -> 45,6 * | 35,0 -> 45,6 * | 39,0 -> 45,6 * | 37,2 -> 45,6 * |
+| tiros livres | 26,0 -> 29,4 * | 25,4 -> 29,4 * | 28,7 -> 29,4 | 23,9 -> 29,4 * |
+| tiros de meta | 13,7 -> 16,3 * | 14,9 -> 16,3 * | 15,4 -> 16,3 | 12,9 -> 16,3 * |
+| linhas de ação | 2.140 -> 1.790 * | 1.991 -> 1.790 * | 1.617 -> 1.790 * | 1.905 -> 1.790 * |
+| corridas (posses) | 178 -> 237 | 171 -> 237 | 192 -> 237 | 198 -> 237 |
+| linhas por corrida | 12,0 -> 7,6 | 11,2 -> 7,6 | 8,3 -> 7,6 | 9,4 -> 7,6 |
+
+**O que se transfere:** o volume de chutes (de -2% a +7%) e a ocupação do campo por faixa (dentro de ~2 pontos percentuais; exceção: defesa da Copa América, 30,1% contra 23,9% simulado, com 32 jogos); os gols nas Copas (2,49 contra 2,55) e na Copa América (diferença dentro do erro).
+
+**O que NÃO se transfere:** (1) o **ritmo**: o número de linhas de ação por jogo varia de 1.617 a 2.140 entre conjuntos, contra 1.786 em 2015/16 (as ligas recentes têm 20% mais ações por jogo); (2) a **estrutura da posse**: nas outras competições a posse é mais longa e menos fragmentada (9 a 12 linhas por corrida e 171 a 198 corridas por jogo, contra 7,6 e 237); (3) **laterais**, 22 a 36% menos que em 2015/16 em todos os conjuntos (29 a 39 contra 46), e tiros de meta e escanteios de 6 a 26% menores; (4) os **gols de clubes de elite** (3,20 contra 2,55) e de torneios de seleções (Euro 2,25) saem do que a média da amostra de 2015/16 prevê.
+
+**A força dos times explica parte do que falha:** o simulador com a força de Barcelona ou PSG (medida em 2015/16) contra um adversário médio move as medidas na direção certa (corridas 237 -> 192-201 contra 178 reais; linhas por corrida 7,6 -> 9,1-9,7 contra 12,0; laterais 46 -> 36-38 contra 29), mas não chega ao real, pois os clubes de 2018 a 2024 jogam com mais posse e mais passes do que os de 2015/16. A autocorrelação dos chutes (momentum) é maior que a simulada nos quatro conjuntos (0,059 a 0,079 contra -0,001 do simulador neutro e 0,05 do com times), consistente com times de força muito desigual (clubes de elite e seleções) no mesmo jogo.
+
+**Conclusão e uso:** os parâmetros de 2015/16 valem para o volume de chutes e para a ocupação do campo em qualquer competição testada; o ritmo, a estrutura da posse, as bolas paradas e os gols precisam de calibração por competição/época (por exemplo, núcleo da próxima linha e razão de perdas estimados dentro do próprio conjunto, como os `forca_dos_times` já fazem para times). **Não usar o simulador como está para prever gols de torneios de seleções ou de clubes de elite.** Amostras pequenas (Copa América, 32 jogos) têm erro-padrão grande.
+
+**O que o banco tem do FotMob (pergunta do usuário):** Europa League (id 48) e Conference League (id 49) estão cadastradas em `leagues`, mas com 0 jogos em `matches` e portanto sem chutes em `match_shots_fotmob`; a Champions League (id 19) tem 647 jogos, 319 deles com chutes do FotMob (8.616 chutes, 19/09/2023 a 10/09/2026); a Eurocopa de seleções não está em `leagues` (nem a Copa América); a Copa Africana de Nações (id 61) está cadastrada com 0 jogos.
+
+## Achado 36 — FotMob da Eurocopa e da Copa América importado e cruzado com o StatsBomb: gols e escanteios idênticos, chutes +3%, passes -8%, xG do FotMob 26 a 49% maior
+
+**O que foi importado.** `scripts/baixar_fotmob_torneios.py` baixou do FotMob 330 jogos encerrados: Eurocopa 2024 (51), 2020 (51), 2016 (51) e 2012 (31); Copa América 2024 (32), 2021 (28), 2019 (26), 2016 (34) e 2015 (26). Cada jogo traz placar, eventos, estatísticas de time e de jogador, escalação, momentum e o mapa de chutes com xG e xGOT. Ficou versionado em `dados_referencia/fotmob/` (2,2 MB comprimido; ver o `LEIA-ME.md` da pasta), **sem gravar no banco**: a carga usual (`ingestao_fotmob.py`) exige a chave service_role do Supabase, que não existe no ambiente desta sessão, e as seleções ainda não têm linha em `teams`/`leagues`.
+
+**Cruzamento com o StatsBomb** (`scripts/cruzar_fotmob_statsbomb_torneios.py`; casamento por par de seleções + placar, com tabela de apelidos explícita; **198 de 198 jogos casaram** em Euro 2020, Euro 2024, Copa América 2024 e Copa do Mundo 2022, esta baixada depois; o par Argentina x Canadá se repete na Copa América 2024 com o mesmo placar e foi desempatado pela ordem cronológica). Totais por jogo, razão FotMob/StatsBomb e correlação por jogo (valores CORRIGIDOS, ver abaixo):
+
+| medida | FotMob | StatsBomb | razão | correlação por jogo |
+|---|---|---|---|---|
+| gols | 2,53 | 2,53 | **1,000** | 1,000 |
+| escanteios | 9,16 | 9,14 | 1,003 | 0,999 |
+| chutes | 24,16 | 24,10 | 1,003 | 0,996 |
+| passes (FotMob = certos / taxa de acerto) | 956 | 1.036 | 0,923 | 0,993 |
+| xG | 2,66 | 2,44 | **1,087** | 0,940 |
+
+**CORREÇÃO (04/10, ao baixar a Copa de 2022).** A primeira versão desta seção dizia que o xG do FotMob era 26 a 49% maior que o do StatsBomb, com correlação de 0,33 a 0,55, e que chutes tinham razão 1,03. **Estava errado:** o mapa de chutes do FotMob inclui as cobranças da disputa de pênaltis (`period = PenaltyShootout`) e o StatsBomb as guarda em outro período; somá-las inflava o xG e os chutes do FotMob nos jogos decididos nos pênaltis. Sem elas, chutes batem (razão 1,003; correlação 0,996) e o xG fica 3 a 13% acima (correlação 0,94 a 0,96). O erro foi meu (não excluí a disputa no cruzamento, embora tivesse excluído na tabela polar do Achado 37). O teste `test_resumo_fotmob_ignora_a_disputa_de_penaltis_nos_chutes_e_no_xg` cobre.
+
+**Leitura.** Gols, escanteios e chutes são os mesmos nas duas fontes; passes do FotMob são 8% menores (definição de passe); **o xG do FotMob é cerca de 9% maior que o do StatsBomb nos mesmos jogos** (modelos diferentes, correlação alta). As edições de 2012, 2016 (Euro) e 2015, 2016, 2019, 2021 (Copa América) só existem no FotMob e sem mapa de chutes.
+
+**Não feito:** a tabela polar (14 zonas) refeita só com os chutes de seleções, e o casamento das seleções com `teams` para a carga no banco (precisa do crosswalk supervisionado e da chave de escrita).
+
+## Achado 37 — tabela polar de seleções (FotMob) e a hipótese de mudança no xG da Opta: a distribuição dos chutes é a de clubes; a conversão é 11% menor; o xG por local é estável, mas os gols/xG caem ~8% de 2021 para 2023
+
+**Dados.** `scripts/analisar_zonas_polares_selecoes_fotmob.py` (+ teste; saída em `dados_referencia/fotmob/zonas_polares_selecoes.json`). Dos 330 jogos baixados no Achado 36, **só 3 edições têm mapa de chutes no FotMob: Euro 2024 (1.300 chutes), Euro 2020 (1.226) e Copa América 2024 (739)**; Euro 2012 e 2016 e Copa América 2015, 2016, 2019 e 2021 vêm com o mapa vazio. Total: 3.265 chutes de 134 jogos, sem pênaltis, disputa de pênaltis e gol contra, mesma regra das 14 zonas polares da Análise de Evento. IC 95% por bootstrap de partidas.
+
+| zona | chutes | % seleções ± IC | % clubes | xG/chute seleções ± IC | clubes | gol/chute seleções ± IC | clubes |
+|---|---|---|---|---|---|---|---|
+| 0–6 m central | 77 | 2,36 ± 0,56 | 2,32 | 0,418 ± 0,060 | 0,443 | 0,338 ± 0,105 | 0,401 |
+| 0–6 m aberto | 81 | 2,48 ± 0,52 | 2,49 | 0,379 ± 0,044 | 0,404 | 0,346 ± 0,103 | 0,388 |
+| 6–9 m central | 265 | 8,12 ± 0,97 | 7,64 | 0,197 ± 0,017 | 0,197 | 0,177 ± 0,045 | 0,193 |
+| 6–9 m aberto | 117 | 3,58 ± 0,68 | 4,14 | 0,141 ± 0,018 | 0,162 | 0,111 ± 0,054 | 0,139 |
+| 9–12 m central | 277 | 8,48 ± 1,10 | 7,87 | 0,123 ± 0,015 | 0,129 | 0,116 ± 0,040 | 0,126 |
+| 9–12 m aberto | 166 | 5,08 ± 0,84 | 5,44 | 0,106 ± 0,015 | 0,118 | 0,114 ± 0,050 | 0,112 |
+| 12–16,5 m central | 330 | 10,11 ± 0,96 | 10,22 | 0,123 ± 0,012 | 0,116 | 0,103 ± 0,034 | 0,117 |
+| 12–16,5 m aberto | 371 | 11,36 ± 1,12 | 12,49 | 0,096 ± 0,009 | 0,093 | 0,073 ± 0,024 | 0,093 |
+| 16,5–22 m central | 288 | 8,82 ± 1,02 | 9,02 | 0,065 ± 0,005 | 0,065 | 0,062 ± 0,032 | 0,067 |
+| 16,5–22 m aberto | 304 | 9,31 ± 0,97 | 10,07 | 0,039 ± 0,003 | 0,044 | 0,036 ± 0,021 | 0,042 |
+| 22–30 m central | 600 | 18,38 ± 1,35 | 17,14 | 0,032 ± 0,003 | 0,032 | 0,028 ± 0,014 | 0,032 |
+| 22–30 m aberto | 211 | 6,46 ± 0,87 | 6,09 | 0,025 ± 0,002 | 0,028 | 0,028 ± 0,021 | 0,028 |
+| > 30 m central | 146 | 4,47 ± 0,68 | 4,12 | 0,025 ± 0,008 | 0,020 | 0,034 ± 0,029 | 0,016 |
+| > 30 m aberto | 32 | 0,98 ± 0,40 | 0,96 | 0,019 ± 0,004 | 0,022 | 0,031 ± 0,057 | 0,041 |
+
+**Leitura da comparação.** (1) A **distribuição dos chutes pelas 14 zonas é a de clubes**: todas as fatias das seleções ficam dentro do IC de 95% das de clubes, exceto 12–16,5 m aberto e 16,5–22 m aberto, ligeiramente menores. (2) O **xG por chute em cada zona também**: as 14 zonas caem dentro do IC ou a menos de 0,02 (a única fora do IC é 6–9 m aberto, 0,141 contra 0,162). (3) A **conversão** é menor: 0,0870 gol por chute contra 0,0976 de clubes (-11%), com xG por chute 0,0978 contra 0,1007 (-3%); a diferença está nas zonas abertas e próximas (0–6 m central 0,338 contra 0,401; 6–9 m aberto 0,111 contra 0,139; 12–16,5 m aberto 0,073 contra 0,093), com ICs largos (amostra de 3,3 mil chutes). **Conclusão: a tabela de clubes serve de aproximação da distribuição de chutes de seleções, mas superestima os gols de seleções em ~11%, o que coincide com os gols simulados acima do real em torneios (Achado 35).**
+
+**Hipótese: o xG que a Opta calcula para os chutes mudou?** O FotMob usa o xG da Opta. Testes com o que o banco e os dados têm:
+1. **xG por local, em clubes (banco, `match_shots_fotmob`, 6 a 16,5 m em cone central, sem pênalti, só chutes extraídos antes de 08/2026):** xG médio por chute fica estável entre 2020 e 2026 (0,143 / 0,141 / 0,142 / 0,142 / 0,142 / 0,144 / 0,145 nos anos de 2020 a 2026), uma variação de +2%.
+2. **Mas os gols por chute caem:** 0,151 (2020), 0,149 (2021), 0,144 (2022), 0,140 (2023), 0,139 (2024), 0,141 (2025), 0,142 (2026), e **gols/xG vai de 1,06 / 1,06 em 2020-21 para 1,01 em 2022 e 0,98 de 2023 em diante** (n de ~14 mil chutes por ano, erro-padrão ~2%): uma queda de ~8%, concentrada entre 2021 e 2023, com xG por local constante.
+3. **Seleções (amostras pequenas):** gols/xG 0,99 (Euro 2020), 0,79 (Euro 2024), 0,89 (Copa América 2024); na faixa 0-12 m, 1,05 contra 0,75 e 0,88; a diferença entre as duas Euros (~0,2) está a ~1,5 erro-padrão, não é conclusiva.
+4. **Contra o StatsBomb nos mesmos jogos:** ver o Achado 38 (a razão do Achado 36 que estava aqui foi corrigida: sem as cobranças da disputa de pênaltis, os valores são 1,03 na Euro 2020 e 1,11 na Euro 2024).
+
+**[REVISADO NO ACHADO 39: houve, sim, um degrau no xG por local, em jul/ago de 2021; a queda de ~8% abaixo era também efeito da mistura de ligas.]** **O que isso permite dizer.** O xG por local do FotMob **não deu salto** entre 2020 e 2026 (mesmos locais, mesmo xG médio), então não há sinal de recalibração do tamanho que o xG precisaria ter. O que aparece é uma **queda gradual da conversão em relação ao xG** (~8%) entre 2021 e 2023. Duas explicações compatíveis: o xG passou a refletir mais do que a posição (por exemplo, tipo de passe, pressão, goleiro) e ficou mais generoso sem mudar a média por local, ou a conversão real caiu (ou o registro dos chutes/gols mudou). Dois dados do próprio FotMob não bastam para separar as duas: é preciso uma referência externa estável (o StatsBomb de 2015/16, que só tem ligas antigas, e a Copa 2022 inteira, que está no StatsBomb mas não no FotMob do banco). **Cautela para o simulador:** a tabela polar de clubes que ele usa mistura 2020-2026 e embute essa deriva; seu gols/xG médio é ~1,0 e deve ser recalculado por período se o simulador for usado para uma temporada específica.
+
+
+## Achado 38 — Copa do Mundo de 2022 do FotMob e a hipótese de mudança no xG da Opta: o xG do FotMob subiu ~8% em relação ao StatsBomb entre a Euro 2020 e 2022, mas o xG por distância do FotMob não mudou
+
+**Dados.** `baixar_fotmob_torneios.py` agora inclui a Copa do Mundo de 2022 (FotMob 77): 64 jogos em `dados_referencia/fotmob/copa_mundo/2022/`, todos casados com o StatsBomb (`FIFA World Cup 2022`).
+
+**Razão do xG FotMob / StatsBomb por edição** (sem disputa de pênaltis; IC 95% por bootstrap de jogos):
+
+| edição | razão | IC 95% | jogos |
+|---|---|---|---|
+| Euro 2020 (jun-jul 2021) | **1,026** | 0,994 a 1,060 | 51 |
+| Copa do Mundo 2022 (nov-dez 2022) | 1,128 | 1,088 a 1,176 | 64 |
+| Euro 2024 | 1,106 | 1,076 a 1,137 | 51 |
+| Copa América 2024 | 1,076 | 1,034 a 1,125 | 32 |
+| 2022 a 2024 juntas | **1,110** | 1,085 a 1,134 | 147 |
+
+Os ICs da Euro 2020 e do conjunto 2022-2024 **não se sobrepõem**: o xG do FotMob subiu ~8% em relação ao do StatsBomb entre meados de 2021 e novembro de 2022 e ficou estável depois. É a mesma ordem de grandeza e o mesmo período da queda de ~8% nos gols/xG dos clubes do banco entre 2021 e 2023 (Achado 37).
+
+**Mas não dá para atribuir à Opta.** Em faixas de distância fixas, xG por chute do FotMob (sem pênaltis) em 0-12 m: 0,197 (Euro 2020), **0,215 (Copa 2022)**, 0,180 (Euro 2024), 0,180 (Copa América 2024); em 12-22 m: 0,080 / 0,089 / 0,080 / 0,092; em >= 22 m: 0,029 / 0,030 / 0,030 / 0,028. Não há degrau monótono (a Copa de 2022 é a mais alta, não a mais recente) e, nos clubes do banco, o xG por local é estável de 2020 a 2026. O xG do StatsBomb em 0-12 m: 0,180 (Euro 2020), 0,181 (Copa 2022), 0,179 (Copa 2018), **0,154 (Euro 2024) e 0,164 (Copa América 2024)** — caiu cerca de 10% em 2024. A variação do xG de uma faixa de 0-12 m entre torneios (erro-padrão da média de ~0,008 por edição) mistura xG do local e mistura de chutes dentro da faixa (0-6 m contra 6-12 m). **[REVISADO NO ACHADO 39: o teste só com o banco, em recortes fixos de distância e ângulo, mostra um degrau nítido no xG do FotMob entre 12/07 e 02/08/2021; a hipótese de mudança no modelo de xG está CONFIRMADA para os chutes de clubes.]** ~~A evidência não sustenta uma mudança no cálculo do xG da Opta: a razão FotMob/StatsBomb subiu em 2022-2024 porque o xG do StatsBomb por distância caiu nos torneios de 2024 e o do FotMob variou sem tendência; a origem mais provável está no lado do StatsBomb ou na composição dos chutes.** A queda da conversão em relação ao xG nos clubes (Achado 37) fica sem explicação por mudança de modelo do FotMob.
+
+**Atualização da tabela polar de seleções (Achado 37) com a Copa de 2022:** 4.698 chutes (sem pênaltis); xG por chute 0,1015 contra 0,1007 de clubes (+1%); **gols por chute 0,0930 contra 0,0976 (-5%)**, ou seja, a defasagem de conversão de seleções cai de -11% (Euro 2024 e Copa América 2024, 3.265 chutes) para -5% com a Copa de 2022, que converte 0,1068 por chute (gols/xG 0,97). O saldo menor de gols de seleções em 2024 não se repete em 2022; a tabela completa recalculada está em `dados_referencia/fotmob/zonas_polares_selecoes.json`.
+
+**Limites:** cada torneio tem 1,2 a 1,6 mil chutes (IC largo por faixa de distância); o StatsBomb Open Data não carrega a versão do modelo de xG; a Copa de 2018 do StatsBomb não foi baixada do FotMob (um teste a mais: 64 jogos, 2 min).
+
+**Copa do Mundo de 2018 do FotMob (baixada em seguida, 64 jogos, todos casados com o StatsBomb): o teste do xG não é possível com ela.** O FotMob não tem mapa de chutes nem xG de time para essa edição (0 chutes em 64 jogos; as estatísticas do jogo não trazem `expected_goals`); o cruzamento fica restrito ao que existe: gols idênticos (2,64), escanteios 9,41 contra 9,05 (razão 1,04; correlação 0,955), passes 0,92 e chutes da estatística `total_shots` 25,55 contra 26,05 (razão 0,98; correlação 0,97). Pelo registro do FotMob, o xG com mapa de chutes só existe a partir da Euro 2020 (junho de 2021), de modo que **não há como medir a mudança de 2021 a 2022 contra uma base anterior dentro do FotMob**; a hipótese continua sem teste direto. O que resta para ela: comparar contra um xG externo estável (StatsBomb, já feito: Achado 38) ou usar a Copa Africana de Nações de 2021/2023 ou a Eurocopa feminina, se tiverem mapa de chutes.
+
+
+## Achado 39 — o xG que o FotMob serve mudou no começo da temporada 2021/22: degrau de +29% no xG de chutes centrais de 14-22 m e de -20% nos chutes abertos e de longe, com o gol por chute igual
+
+**Revisa os Achados 37 e 38**, que concluíam que o xG por local era estável. Aqueles testes usavam zonas largas (6-16,5 m em cone central) e todas as ligas juntas, e a mistura de ligas (o banco passa de 3-7 mil chutes por mês em 2020-21 para ~10 mil depois) escondia o degrau e produzia uma "queda de 8% nos gols/xG" que na verdade não existe nas cinco grandes ligas.
+
+**Desenho que isola o modelo.** Só as 5 grandes ligas (as presentes desde o início), jogo corrido (`situation = RegularPlay`), chute de pé, sem pênalti e sem gol contra, em faixas fixas de distância e ângulo ao centro do gol. Nesse recorte o xG médio é saída do modelo, sem ruído de acerto: um degrau nele só pode ser mudança do modelo (ou de quais chutes entram, o que o recorte fixo controla). Consultas em `arquivos_do_claude/analise_mudanca_xg_fotmob.sql`.
+
+**1. Degrau no trimestre 2021-T3 (jul-set de 2021).** xG médio por chute, 14-22 m em cone central: 0,0645 / 0,0640 / 0,0632 / 0,0640 em 2020-T3 a 2021-T2, depois **0,0823** (2021-T3), 0,0807, 0,0836, 0,0837 e estável em 0,080 a 0,086 até 2026. Os gols por chute não se mexem (0,09 a 0,10), então os gols/xG caem de 1,43-1,61 para 0,94-1,2 (SE ~0,10-0,14 por trimestre).
+
+**2. A data.** Por semana (todas as ligas): 12/04 a 17/05/2021, big 5: 0,061 a 0,075; 12/07 (Libertadores, n=14): 0,063; 02/08 em diante: 0,080 a 0,085 de forma contínua. O degrau está **entre 12/07 e 02/08/2021**, o início da temporada 2021/22. A Eurocopa 2020 (11/06 a 11/07/2021) ficou do lado antigo: o xG do FotMob em relação ao do StatsBomb é 1,026 nela e 1,11 em 2022-2024 (Achado 38). **Os jogos já gravados não foram recalculados**: o banco guarda xG do modelo antigo até julho de 2021 e do novo depois (cerca de 10% dos chutes, 46,6 mil de ~477 mil, são do modelo antigo).
+
+**3. O degrau não é uniforme: redistribui o xG pelo campo.** xG médio por chute, big 5, jogo corrido, chute de pé, antes (2021-T1 e T2) contra depois (2021-T4 e 2022-T1):
+
+| zona | antes | depois | variação |
+|---|---|---|---|
+| central 10-14 m | 0,152 | 0,184 | **+21%** |
+| central 14-22 m | 0,064 | 0,082 | **+29%** |
+| central 6-10 m | 0,318 | 0,306 | -4% |
+| central 22-30 m | 0,030 | 0,028 | -7% |
+| aberto 12-22 m | 0,077 | 0,071 | -8% |
+| aberto 22-30 m | 0,030 | 0,025 | **-17%** |
+| aberto 0-12 m | 0,299 | 0,230 | **-23%** |
+| central 0-6 m | 0,648 | 0,570 | **-12%** |
+
+A calibração melhorou: antes, os gols/xG ficavam em 1,4 a 1,6 nos chutes centrais de 14-22 m (xG baixo demais) e em 0,73 a 0,89 nos abertos de 0-12 m (xG alto demais); depois ficam em torno de 1,0.
+
+**4. O que isso explica.** (a) A razão FotMob/StatsBomb subir de 1,03 (Euro 2020) para 1,11 (2022-2024) é este degrau, não o StatsBomb (Achado 38). (b) A queda de 6 a 8% nos gols/xG que apareceu nos clubes é em boa parte mistura de ligas e deste recálculo: nas 5 grandes ligas juntas, o xG médio por chute passa de 0,1053 (2020-09 a 2021-06) para 0,1005 (2021-07 em diante), -4,6%, e os gols/xG ficam em 0,99 antes de 2023 e ~0,96 depois, sem degrau.
+
+**5. Consequências para o projeto.** (1) A tabela polar da Análise de Evento mistura os dois modelos (≈10% dos chutes são do antigo): para refletir o modelo atual deve usar só jogos a partir de 01/08/2021. (2) Qualquer coisa calculada com xG de time ou de chute que atravesse julho de 2021 (por exemplo, o Elo por xG e regressões que usam o xG do FotMob) tem um degrau de nível: o xG total por jogo cai ~4,6% na média e o de jogadas centrais de 10-22 m sobe 20 a 30%. Deve-se fixar o início da amostra em agosto de 2021 ou tratar o período antigo à parte. (3) O simulador, que usa a tabela polar de clubes para o xG e o gol do chute, herda a mistura.
+
+**Limites.** O recorte de pé e jogo corrido deixa de fora cabeçadas e bolas paradas (o xG delas pode ter mudado de outra forma); não foi testada a hipótese de que o FotMob simplesmente trocou de provedor (o dado diz só que o modelo mudou); a data exata está numa janela de três semanas por falta de jogos de grandes ligas entre maio e agosto de 2021.
+
+## Achado 40 — tabela polar de clubes recalculada só com jogos desde 01/08/2021 (modelo de xG atual): a da tela muda pouco (-3% a +2% no xG por zona), porque 90% dos chutes já são do modelo novo
+
+**Consulta.** `match_shots_fotmob` x `matches` no banco, sem pênaltis, gol contra e disputa de pênaltis, mesmas 14 zonas polares da Análise de Evento (7 anéis de distância ao centro do gol x cone central de 30 graus ou aberto), IC 95% pelo erro-padrão robusto a agrupamento por partida. Dois regimes, separados em 01/08/2021 (Achado 39): **novo** (17.095 jogos, 432.218 chutes) e **antigo** (até 31/07/2021, 2.032 jogos, 47.647 chutes). A soma dos dois (479.865) reproduz os ~479,6 mil chutes da tela. Tabela completa com ICs em `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json`.
+
+| zona | % chutes (novo) | xG/chute tela | xG/chute **novo** ± IC | xG/chute antigo | gol/chute novo ± IC | gols/xG novo |
+|---|---|---|---|---|---|---|
+| 0-6 m central | 2,34 | 0,443 | **0,4391** ± 0,0046 | 0,4856 | 0,3974 ± 0,0096 | 0,91 |
+| 0-6 m aberto | 2,49 | 0,404 | **0,3978** ± 0,0045 | 0,4638 | 0,3848 ± 0,0092 | 0,97 |
+| 6-9 m central | 7,64 | 0,197 | **0,1961** ± 0,0018 | 0,2027 | 0,1912 ± 0,0042 | 0,97 |
+| 6-9 m aberto | 4,15 | 0,162 | **0,1586** ± 0,0018 | 0,1981 | 0,1375 ± 0,0051 | 0,87 |
+| 9-12 m central | 7,82 | 0,129 | **0,1288** ± 0,0015 | 0,1324 | 0,1256 ± 0,0036 | 0,98 |
+| 9-12 m aberto | 5,44 | 0,118 | **0,1161** ± 0,0015 | 0,1380 | 0,1107 ± 0,0041 | 0,95 |
+| 12-16,5 m central | 10,22 | 0,116 | **0,1177** ± 0,0011 | 0,0985 | 0,1159 ± 0,0030 | 0,98 |
+| 12-16,5 m aberto | 12,50 | 0,093 | **0,0923** ± 0,0008 | 0,0963 | 0,0926 ± 0,0025 | 1,00 |
+| 16,5-22 m central | 9,06 | 0,065 | **0,0663** ± 0,0005 | 0,0538 | 0,0664 ± 0,0025 | 1,00 |
+| 16,5-22 m aberto | 10,14 | 0,044 | **0,0438** ± 0,0004 | 0,0496 | 0,0420 ± 0,0019 | 0,96 |
+| 22-30 m central | 17,03 | 0,032 | **0,0315** ± 0,0002 | 0,0326 | 0,0320 ± 0,0013 | 1,02 |
+| 22-30 m aberto | 6,09 | 0,028 | **0,0274** ± 0,0003 | 0,0335 | 0,0285 ± 0,0020 | 1,04 |
+| > 30 m central | 4,11 | 0,020 | **0,0198** ± 0,0004 | 0,0235 | 0,0169 ± 0,0019 | 0,85 |
+| > 30 m aberto | 0,96 | 0,022 | **0,0217** ± 0,0009 | 0,0260 | 0,0416 ± 0,0061 | 1,92 |
+
+**Leitura.** (1) A tabela da tela é uma boa aproximação do modelo atual: a mudança no xG por zona vai de -3% a +2% (a maior é -2% em 0-6 m aberto e em 6-9 m aberto), e as fatias de chute não mudam (no máximo 0,1 ponto percentual). (2) O que o modelo antigo fazia de diferente é grande (de -20% a +23% por zona, coluna "antigo") e fica nos ~10% dos chutes mais antigos. (3) O xG atual está calibrado: gols/xG entre 0,95 e 1,04 na maior parte das zonas. Exceções: 0-6 m central (0,91), 6-9 m aberto (0,87) e > 30 m central (0,85), em que o xG novo ainda é generoso, e > 30 m aberto (1,92, só 4,2 mil chutes), em que é baixo. (4) Totais: xG por chute 0,1002 (tela 0,1007; antigo 0,1040) e gols por chute 0,0970 (tela 0,0976; antigo 0,1024).
+
+**Mudanças no repositório.** `scripts/zonas_polares.py`: `FOTMOB` passa a ser a tabela do regime novo (usada pelo simulador, `--fonte-xg fotmob`) e a copiada da tela fica em `FOTMOB_TELA`. Efeito no simulador (4.000 jogos): gols 2,52 (observado 2,55), xG 2,63 na escala do FotMob. **O frontend não foi alterado:** `ESTATISTICA_ZONA_CHUTE` em `src/utils/zoneTransitionMatrix.js` e o texto de `MapaZonasChute.jsx` continuam com a tabela antiga (todas as datas); atualizar depende de decisão do usuário, pois muda números exibidos.

@@ -1,0 +1,15 @@
+{
+ "rotulo": "FIFA World Cup 1986",
+ "grupo": "copa_mundo",
+ "jogos": 3,
+ "partes": [
+  {
+   "arquivo": "parte-001.json.xz",
+   "match_ids": [
+    3750191,
+    3889148,
+    3889149
+   ]
+  }
+ ]
+}

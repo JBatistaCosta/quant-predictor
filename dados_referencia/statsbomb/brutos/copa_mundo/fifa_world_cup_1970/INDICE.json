@@ -1,0 +1,18 @@
+{
+ "rotulo": "FIFA World Cup 1970",
+ "grupo": "copa_mundo",
+ "jogos": 6,
+ "partes": [
+  {
+   "arquivo": "parte-001.json.xz",
+   "match_ids": [
+    3888699,
+    3888700,
+    3888701,
+    3888702,
+    3889217,
+    3889218
+   ]
+  }
+ ]
+}

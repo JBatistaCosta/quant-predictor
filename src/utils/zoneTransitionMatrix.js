@@ -102,7 +102,10 @@ export const MATRIZ_TRANSICAO = [
 // disputa de pênaltis), coordenadas FotMob x∈[0,105] (gol em x=105), y∈[0,68].
 // Distância = até o CENTRO do gol; ângulo = do eixo do campo. XG_MEDIO_ZONA_CHUTE
 // e DISTRIBUICAO_ZONA_CHUTE são fotografias desse dado (não recalculadas em
-// runtime); refazer se a base crescer muito.
+// runtime); refazer se a base crescer muito. XG_MEDIO_ZONA_CHUTE e
+// ESTATISTICA_ZONA_CHUTE usam só jogos desde 01/08/2021 (Achado 40);
+// DISTRIBUICAO_ZONA_CHUTE segue a fotografia de 01/10/2026 com todas as datas (a fatia
+// de cada zona difere em no máximo 0,11 ponto percentual entre as duas bases).
 export const ANEIS_CHUTE_M = [0, 6, 9, 12, 16.5, 22, 30, Infinity];
 export const ANGULO_CONE_GRAUS = 30;
 
@@ -118,35 +121,39 @@ export const ZONAS_CHUTE = Array.from({ length: 14 }, (_, i) => {
 
 // xG médio por chute em cada uma das 14 zonas (chutes de bola rolando e bola parada, sem pênalti).
 export const XG_MEDIO_ZONA_CHUTE = [
-  0.4433, 0.4043, 0.1968, 0.1624, 0.1292, 0.1183, 0.1158,
-  0.0928, 0.0651, 0.0443, 0.0316, 0.0280, 0.0202, 0.0222,
+  0.4391, 0.3978, 0.1961, 0.1586, 0.1288, 0.1161, 0.1177,
+  0.0923, 0.0663, 0.0438, 0.0315, 0.0274, 0.0198, 0.0217,
 ];
 
 // Estatística REAL por zona (mesma base e mesmo filtro acima), com IC 95% por
 // aproximação de razão com agrupamento por PARTIDA (chutes do mesmo jogo não são
-// independentes; ~18 mil jogos). `xg`/`gol` = média por chute, `pct` = % de todos
+// independentes; ~17 mil jogos). `xg`/`gol` = média por chute, `pct` = % de todos
 // os chutes que caem na zona -- todos em fração (0-1); `*Ic` = meia-largura do
 // IC 95% (estimativa ± ic). CUIDADO ao ler: o IC do xG mede a precisão da média
 // do xG DO FOTMOB (que é uma saída de modelo), não prova que o xG seja a
 // conversão verdadeira -- por isso o gol/chute real vem ao lado. As duas séries
 // divergem significativamente em várias zonas (xG acima do gol perto do gol; só
-// >30 m aberto tem gol ACIMA do xG, 4,1% vs 2,2%).
-// Fotografia da base em 01/10/2026; refazer se a base crescer muito.
+// >30 m aberto tem gol claramente ACIMA do xG, 4,2% vs 2,2%).
+// REGIME DO xG: só jogos a partir de 01/08/2021 (17.095 jogos, 432.218 chutes). O
+// FotMob trocou o modelo de xG entre 12/07 e 02/08/2021 (Achado 39) e não recalculou
+// os jogos antigos; misturar os dois deslocava o xG por zona de -3% a +2% (a de 01/10
+// usava todas as datas, ~479,6 mil chutes). Fotografia de 05/10/2026; refazer se a
+// base crescer muito (consulta em arquivos_do_claude/analise_mudanca_xg_fotmob.sql).
 export const ESTATISTICA_ZONA_CHUTE = [
-  { n: 11106, xg: 0.4433, xgIc: 0.0044, gol: 0.4014, golIc: 0.0092, pct: 0.0232, pctIc: 0.0004 },
-  { n: 11933, xg: 0.4043, xgIc: 0.0043, gol: 0.3881, golIc: 0.0088, pct: 0.0249, pctIc: 0.0005 },
-  { n: 36627, xg: 0.1968, xgIc: 0.0017, gol: 0.1934, golIc: 0.0040, pct: 0.0764, pctIc: 0.0008 },
-  { n: 19843, xg: 0.1624, xgIc: 0.0018, gol: 0.1386, golIc: 0.0048, pct: 0.0414, pctIc: 0.0006 },
-  { n: 37745, xg: 0.1292, xgIc: 0.0014, gol: 0.1256, golIc: 0.0034, pct: 0.0787, pctIc: 0.0008 },
-  { n: 26095, xg: 0.1183, xgIc: 0.0015, gol: 0.1120, golIc: 0.0039, pct: 0.0544, pctIc: 0.0007 },
-  { n: 49005, xg: 0.1158, xgIc: 0.0010, gol: 0.1167, golIc: 0.0029, pct: 0.1022, pctIc: 0.0009 },
-  { n: 59889, xg: 0.0928, xgIc: 0.0007, gol: 0.0933, golIc: 0.0024, pct: 0.1249, pctIc: 0.0010 },
-  { n: 43273, xg: 0.0651, xgIc: 0.0005, gol: 0.0670, golIc: 0.0024, pct: 0.0902, pctIc: 0.0008 },
-  { n: 48285, xg: 0.0443, xgIc: 0.0003, gol: 0.0423, golIc: 0.0018, pct: 0.1007, pctIc: 0.0009 },
-  { n: 82226, xg: 0.0316, xgIc: 0.0002, gol: 0.0319, golIc: 0.0012, pct: 0.1714, pctIc: 0.0011 },
-  { n: 29188, xg: 0.0280, xgIc: 0.0003, gol: 0.0283, golIc: 0.0019, pct: 0.0609, pctIc: 0.0007 },
-  { n: 19773, xg: 0.0202, xgIc: 0.0003, gol: 0.0163, golIc: 0.0018, pct: 0.0412, pctIc: 0.0007 },
-  { n: 4623, xg: 0.0222, xgIc: 0.0008, gol: 0.0411, golIc: 0.0057, pct: 0.0096, pctIc: 0.0003 },
+  { n: 10097, xg: 0.4391, xgIc: 0.0046, gol: 0.3974, golIc: 0.0096, pct: 0.0234, pctIc: 0.0005 },
+  { n: 10783, xg: 0.3978, xgIc: 0.0045, gol: 0.3848, golIc: 0.0092, pct: 0.0249, pctIc: 0.0005 },
+  { n: 33012, xg: 0.1961, xgIc: 0.0018, gol: 0.1912, golIc: 0.0042, pct: 0.0764, pctIc: 0.0008 },
+  { n: 17934, xg: 0.1586, xgIc: 0.0018, gol: 0.1375, golIc: 0.0051, pct: 0.0415, pctIc: 0.0006 },
+  { n: 33813, xg: 0.1288, xgIc: 0.0015, gol: 0.1256, golIc: 0.0036, pct: 0.0782, pctIc: 0.0008 },
+  { n: 23513, xg: 0.1161, xgIc: 0.0015, gol: 0.1107, golIc: 0.0041, pct: 0.0544, pctIc: 0.0007 },
+  { n: 44157, xg: 0.1177, xgIc: 0.0011, gol: 0.1159, golIc: 0.0030, pct: 0.1022, pctIc: 0.0009 },
+  { n: 54028, xg: 0.0923, xgIc: 0.0008, gol: 0.0926, golIc: 0.0025, pct: 0.1250, pctIc: 0.0010 },
+  { n: 39180, xg: 0.0663, xgIc: 0.0005, gol: 0.0664, golIc: 0.0025, pct: 0.0906, pctIc: 0.0009 },
+  { n: 43832, xg: 0.0438, xgIc: 0.0004, gol: 0.0420, golIc: 0.0019, pct: 0.1014, pctIc: 0.0009 },
+  { n: 73623, xg: 0.0315, xgIc: 0.0002, gol: 0.0320, golIc: 0.0013, pct: 0.1703, pctIc: 0.0012 },
+  { n: 26316, xg: 0.0274, xgIc: 0.0003, gol: 0.0285, golIc: 0.0020, pct: 0.0609, pctIc: 0.0007 },
+  { n: 17772, xg: 0.0198, xgIc: 0.0004, gol: 0.0169, golIc: 0.0019, pct: 0.0411, pctIc: 0.0007 },
+  { n: 4158, xg: 0.0217, xgIc: 0.0009, gol: 0.0416, golIc: 0.0061, pct: 0.0096, pctIc: 0.0003 },
 ];
 
 // Dado a zona 3×3 onde a posse terminou em chute (mesmo índice de ZONAS), a
