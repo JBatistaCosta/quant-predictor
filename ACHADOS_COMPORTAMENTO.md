@@ -1746,3 +1746,41 @@ Por liga 2015/16 (total do jogo): La Liga média 10,11, mediana 10, variância 1
 - **Para o simulador:** relógio = ações com tempo de permanência de ~1,6 s (gama ou lognormal ajustável aos quantis acima), com os multiplicadores por janela acima aplicados às taxas de chute, perda de bola, falta e escanteio; a duração do jogo (45,8 e 93,3 minutos até o último evento) define os acréscimos. As taxas por janela são descritivas: não separam estado do jogo (placar), nível dos times nem substituições, que mudam o ritmo (Achados 15 a 18).
 
 **Limites:** uma liga e uma temporada (La Liga 2015/16, StatsBomb) para o ritmo de ações e as durações; as taxas por minuto dos acréscimos dependem da duração média usada (até o último evento, não até o apito); a duração das posses conta só ações definidas no Achado 15 (não inclui recuperações, faltas e bolas paradas); chutes e gols por janela do banco juntam cinco ligas e cinco temporadas sem separar placar; sem intervalo de confiança.
+
+
+## Achado 28 — a matriz de transição por zona ao longo do jogo: muda pouco, e o que muda é onde a bola está
+
+**Pergunta:** os estados por zona (chute, perda, continua, para onde vai) têm as mesmas taxas nos primeiros 15 minutos e nos últimos 15? Há uma matriz diferente por janela do jogo?
+
+**Método** (`scripts/analisar_matriz_no_tempo_statsbomb.py`, sem rede, a partir dos dados reduzidos versionados): quatro ligas de 2015/16 (La Liga, Premier League, Serie A, Ligue 1; 1.517 jogos; 2.586.996 ações). Cada ação, na definição do Achado 15 e nas 18 zonas, entra na janela de 15 minutos em que COMEÇA (1T: 0-15, 15-30, 30-45; 2T: 45-60, 60-75, 75-90; acréscimos e prorrogação ficam fora). Fora da amostra: 5 blocos contíguos de partidas por competição (20 blocos), treino nos outros 4, matriz por janela contra matriz única, em nats por ação.
+
+**Por janela (todas as zonas):**
+
+| Janela | Ações | Chute | Perda | Avanço médio de quem continua |
+|---|---|---|---|---|
+| 0-15 | 477.935 | 1,059% | 15,41% | 2,50 m |
+| 15-30 | 441.320 | 1,297% | 14,96% | 2,92 m |
+| 30-45 | 422.871 | 1,389% | 15,19% | 3,06 m |
+| 45-60 | 442.220 | 1,399% | 15,64% | 3,02 m |
+| 60-75 | 405.095 | 1,541% | 15,10% | 3,30 m |
+| 75-90 | 397.555 | 1,618% | 15,34% | 3,43 m |
+
+**Onde estão as ações (% das ações da janela, por faixa do campo de quem tem a bola):** defesa 26,5 → 24,1 → 23,5 → 23,6 → 22,8 → 22,3; meio 52,5 → 49,9; ataque fora da área 18,7 → 20,9 → 22,2 → 22,3 → 23,6 → 24,2; grande área 2,33 → 2,79 → 3,07 → 3,25 → 3,52 → 3,65.
+
+**Taxas por faixa e janela** (chute % | perda %; as janelas na ordem 0-15 a 75-90):
+- **Grande área:** chute 27,3 | 27,7 | 26,9 | 26,6 | 26,8 | 27,5 e perda 27,9 | 28,3 | 28,0 | 27,2 | 27,5 | 26,7: **praticamente constantes**.
+- **Ataque fora da área:** chute 2,23 | 2,48 | 2,51 | 2,36 | 2,51 | 2,50; perda 22,0 → 19,5 (cai ao longo do jogo).
+- **Meio:** perda 12,8 | 11,9 | 11,8 | 12,4 | 11,6 | 11,8 (estável, chute ~0,02).
+- **Defesa:** perda 14,8 → 16,9 (sobe).
+- **Avanço de quem continua:** cresce em todas as faixas (defesa 5,2 → 7,2 m, meio 1,7 → 3,0 m, ataque fora da área 0,8 → 1,1 m).
+
+**Decomposição do chute por ação** (a) com a ocupação da janela e as taxas por zona de TODO o jogo e (b) com a ocupação de TODO o jogo e as taxas por zona da janela: (a) 1,029% → 1,633% (acompanha o chute observado); (b) 1,413% → 1,359% (**praticamente constante**). **O aumento de chutes por ação ao longo do jogo (+53%) vem de a bola estar em zonas mais avançadas, não de a taxa de chute DENTRO de cada zona subir.**
+
+**Matriz por janela contra matriz única, fora da amostra: ganho de +0,00092 ± 0,00006 nats por ação** (20 blocos): real, mas pequeno (2% do que a grade de 18 zonas ganhou sobre a de 12 no teste conservador, +0,042, e da ordem do ajuste por Elo da perda, Achado 24).
+
+**Leitura:**
+- **A dinâmica ao longo do jogo é um deslocamento da bola rumo ao gol adversário** (menos ações na defesa e mais no ataque; jogadas que avançam mais metros), não uma mudança das taxas de chute e perda dentro de cada zona. A grande área é quase estacionária.
+- **Exceções:** perda no ataque fora da área cai 2,5 pontos e perda na defesa sobe 2 pontos (mais bolas longas e entregas; time que ataca em bloco alto e defende com mais risco no fim do jogo), e a janela inicial tem chute um pouco menor no ataque (2,23% contra ~2,5%).
+- **Para o simulador:** matriz única, com um **relógio que desloca a probabilidade de destino para zonas avançadas** (multiplicador de avanço de 1,0 a 1,4 ao longo dos 90 minutos) e o ritmo de ações por janela do Achado 27. Uma matriz inteira por janela não compensa a complexidade.
+
+**Limites:** quatro ligas de 2015/16 somadas (a matriz das ligas é a mesma em termos do Achado 26); só 90 minutos (sem acréscimos); janela definida pelo início da ação; **não separa estado do jogo (placar), nível dos times nem substituições**, que mudam o ritmo e provavelmente explicam parte do deslocamento (um time perdendo avança mais): a análise por placar exige controlar a força da equipe (Achados 15 a 18) e ficou para depois; sem intervalo de confiança além do erro-padrão entre blocos.

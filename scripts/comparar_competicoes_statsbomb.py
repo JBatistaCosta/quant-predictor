@@ -25,7 +25,10 @@ partida): só os tipos de evento que as análises usam (passe, condução, chute
 a origem de cada escanteio já calculada. `reconstruir` refaz o cache e `resumir`/`comparar`/`escanteios` rodam a partir dele, SEM rede.
     python scripts/comparar_competicoes_statsbomb.py baixar      --cache /tmp/sb_comp --fracionado dados_referencia/statsbomb/brutos
     python scripts/comparar_competicoes_statsbomb.py reconstruir --cache /tmp/sb_comp --fracionado dados_referencia/statsbomb/brutos
-Os resumos (matriz de contagens 18 x 20 etc.) continuam em `dados_referencia/statsbomb/<grupo>.json`. O StatsBomb Open Data é público (citar a fonte ao usar).
+Os resumos (matriz de contagens 18 x 20 etc.) continuam em `dados_referencia/statsbomb/<grupo>.json`.
+O RESTANTE (todos os tipos de evento e todos os campos, mais escalações e metadados da partida) fica em `dados_referencia/statsbomb/completo/`:
+    python scripts/comparar_competicoes_statsbomb.py completo --fracionado dados_referencia/statsbomb/completo [--grupos euro]
+    # cada parte = até 25 partidas {match_id, partida, escalacoes, eventos}; só `id` e `related_events` (UUIDs que não comprimem) são removidos. O StatsBomb Open Data é público (citar a fonte ao usar).
 """
 
 from __future__ import annotations
@@ -225,6 +228,85 @@ def reconstruir(pasta: str, cache: str, grupos: list[str]) -> None:
         json.dump(res, open(os.path.join(cache, f"{gr}.json"), "w"))
         for k, v in res.items():
             print(f"  {k}: {v['jogos']} jogos, {len(v['acoes'])} acoes, {len(v['escanteios'])} escanteios")
+
+
+# --------------------------------------------------------------------------------- dados COMPLETOS (o restante)
+PARTIDAS_POR_ARQUIVO_COMPLETO = 25
+CAMPOS_REMOVIDOS = ("id", "related_events")      # UUIDs: não comprimem e não são usados; `index` (ordem) fica
+
+
+def limpar_evento(e: dict) -> dict:
+    return {k: v for k, v in e.items() if k not in CAMPOS_REMOVIDOS}
+
+
+def partidas_do_grupo(grupo: str) -> list[tuple[str, dict]]:
+    """[(rótulo, entrada de matches/<competição>/<temporada>.json)] do grupo, em ordem de match_id. Competições excluídas nunca entram."""
+    comps = g.baixar_json(f"{g.BASE}/competitions.json")
+    saida = []
+    for cid, temporada in GRUPOS[grupo]:
+        if cid in EXCLUIDAS:
+            continue
+        for c in comps:
+            if c["competition_id"] == cid and c["season_name"] == temporada and c.get("competition_gender") == "male":
+                rotulo = f'{c["competition_name"]} {c["season_name"]}'
+                for m in sorted(g.baixar_json(f"{g.BASE}/matches/{cid}/{c['season_id']}.json"), key=lambda x: x["match_id"]):
+                    saida.append((rotulo, m))
+    return saida
+
+
+def baixar_completo(grupo: str, pasta: str, workers: int = 6) -> None:
+    """Baixa eventos completos (sem `id`/`related_events`), escalações e metadados das partidas do grupo e grava em blocos de 25 partidas
+    (`<pasta>/<grupo>/<slug>/parte-NNN.json.xz` + `INDICE.json`). Escreve bloco a bloco (não segura o grupo inteiro na memória) e pula a competição-
+    temporada cujo `INDICE.json` já existe (retomada)."""
+    import lzma
+    por_rotulo: dict[str, list[dict]] = collections.defaultdict(list)
+    for rotulo, m in partidas_do_grupo(grupo):
+        por_rotulo[rotulo].append(m)
+
+    def uma(m: dict) -> dict:
+        mid = m["match_id"]
+        return {"match_id": mid, "partida": m, "escalacoes": g.baixar_json(f"{g.BASE}/lineups/{mid}.json"),
+                "eventos": [limpar_evento(e) for e in g.baixar_json(f"{g.BASE}/events/{mid}.json")]}
+
+    for rotulo, partidas in por_rotulo.items():
+        destino = os.path.join(pasta, grupo, slug(rotulo))
+        if os.path.exists(os.path.join(destino, "INDICE.json")):
+            print(f"{rotulo}: já existe, pulando")
+            continue
+        os.makedirs(destino, exist_ok=True)
+        indice, bloco, n_parte = [], [], 0
+
+        def grava():
+            nonlocal bloco, n_parte
+            if not bloco:
+                return
+            n_parte += 1
+            nome = f"parte-{n_parte:03d}.json.xz"
+            with lzma.open(os.path.join(destino, nome), "wt", preset=9 | lzma.PRESET_EXTREME) as f:
+                json.dump(bloco, f, separators=(",", ":"), ensure_ascii=False)
+            indice.append({"arquivo": nome, "match_ids": [r["match_id"] for r in bloco]})
+            bloco = []
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for k, reg in enumerate(ex.map(uma, partidas), 1):
+                bloco.append(reg)
+                if len(bloco) >= PARTIDAS_POR_ARQUIVO_COMPLETO:
+                    grava()
+                if k % 100 == 0:
+                    print(f"  {rotulo}: {k}/{len(partidas)}")
+        grava()
+        with open(os.path.join(destino, "INDICE.json"), "w") as f:
+            json.dump({"rotulo": rotulo, "grupo": grupo, "jogos": len(partidas), "partes": indice,
+                       "campos_removidos": list(CAMPOS_REMOVIDOS)}, f, ensure_ascii=False, indent=1)
+        print(f"{rotulo}: {len(partidas)} jogos em {n_parte} arquivos")
+
+
+def carregar_completo(pasta: str, grupo: str, rotulo: str):
+    """Gera, em ordem, os registros {match_id, partida, escalacoes, eventos} de uma competição-temporada guardada por `baixar_completo` (sem rede)."""
+    import lzma
+    d = os.path.join(pasta, grupo, slug(rotulo))
+    for parte in json.load(open(os.path.join(d, "INDICE.json")))["partes"]:
+        with lzma.open(os.path.join(d, parte["arquivo"]), "rt") as f:
+            yield from json.load(f)
 
 
 def jogos_do_grupo(grupo: str) -> list[tuple[int, str]]:
@@ -442,7 +524,7 @@ def corners_por_competicao(cache: str, grupos: list[str]) -> dict[str, dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir", "reconstruir"])
+    ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir", "reconstruir", "completo"])
     ap.add_argument("--fracionado", default=None, help="pasta dos dados reduzidos fracionados (baixar grava; reconstruir lê)")
     ap.add_argument("--cache", default=None)
     ap.add_argument("--saida", default="dados_referencia/statsbomb", help="pasta dos resumos versionados (resumir/conferir)")
@@ -452,6 +534,12 @@ def main() -> None:
     grupos = [x for x in args.grupos.split(",") if x]
     if args.acao == "conferir":
         conferir(args.saida)
+        return
+    if args.acao == "completo":
+        if not args.fracionado:
+            raise SystemExit("--fracionado é obrigatório para completo")
+        for gr in grupos:
+            baixar_completo(gr, args.fracionado)
         return
     if args.cache is None:
         raise SystemExit("--cache é obrigatório para esta ação")

@@ -158,3 +158,15 @@ def test_analise_de_tempo_e_igual_nos_eventos_brutos_e_nos_reconstruidos():
     import analisar_tempo_eventos_statsbomb as t
     bruto = _partida_sintetica()
     assert t.analisar_partida(c.eventos_reconstruidos(c.reduzir_partida(bruto)))["cont"] == t.analisar_partida(bruto)["cont"]
+
+
+def test_limpar_evento_remove_so_os_uuids():
+    e = {"id": "abc", "related_events": ["x"], "index": 4, "type": {"name": "Pass"}, "pass": {"height": {"name": "Ground Pass"}}}
+    assert c.limpar_evento(e) == {"index": 4, "type": {"name": "Pass"}, "pass": {"height": {"name": "Ground Pass"}}}
+    assert "id" in e                                     # não altera o original
+
+
+def test_completo_reduzido_a_partir_do_completo_e_igual_ao_reduzido_do_bruto():
+    bruto = _partida_sintetica()
+    completo = [c.limpar_evento(e) for e in bruto]
+    assert c.reduzir_partida(completo) == c.reduzir_partida(bruto)

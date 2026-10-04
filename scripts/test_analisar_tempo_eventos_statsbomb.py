@@ -42,3 +42,22 @@ def test_resumo_agrega_partidas():
     r = a.resumo(res)
     assert r["totais_por_janela_e_evento"]["0|chute"] == 60 and r["duracao_acoes_s"]["Shot"]["n"] == 60
     assert r["posses_por_jogo"] == 1.0 and r["acoes_por_posse"]["mediana"] == 30
+
+
+def test_matriz_no_tempo_janelas_e_faixas():
+    import analisar_matriz_no_tempo_statsbomb as m
+    assert [m.janela(1, x) for x in (0, 14, 15, 44, 45, 47)] == [0, 0, 1, 2, None, None]
+    assert [m.janela(2, x) for x in (45, 59, 60, 89, 90, 95)] == [3, 3, 4, 5, None, None]
+    assert m.janela(3, 100) is None
+    assert [m.faixa_da_zona(z) for z in (0, 2, 3, 8, 9, 14, 15, 17)] == [0, 0, 1, 1, 2, 2, 3, 3]
+
+
+def test_matriz_no_tempo_acoes_com_janela_so_dentro_dos_90_minutos():
+    import analisar_matriz_no_tempo_statsbomb as m
+    eventos = [
+        {"type": {"name": "Pass"}, "team": {"id": 0}, "period": 1, "minute": 10, "second": 0, "location": [60, 40], "pass": {"end_location": [75, 40]}},
+        {"type": {"name": "Shot"}, "team": {"id": 0}, "period": 2, "minute": 80, "second": 0, "location": [110, 40], "shot": {}},
+        {"type": {"name": "Pass"}, "team": {"id": 0}, "period": 2, "minute": 93, "second": 0, "location": [60, 40], "pass": {"end_location": [75, 40]}},   # acréscimo: fora
+    ]
+    r = list(m.acoes_com_janela(eventos))
+    assert [x[0] for x in r] == [0, 5] and r[0][3] > 0 and r[1][2] == 18 and r[1][3] is None
