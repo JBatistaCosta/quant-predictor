@@ -9,6 +9,10 @@
 
 ---
 
+**Validação do simulador fora das 4 ligas de 2015/16 (04/10) -- Achado 35.** Em ligas recentes (clube único), Euro 2020/24, Copa América 2024 e Copas 2018/22: chutes por jogo dentro de -2% a +7%, ocupação do campo dentro de ~2 p.p., gols só nas Copas e Copa América; NÃO se transferem o ritmo (1.617 a 2.140 linhas de ação por jogo contra 1.786), a estrutura da posse (9-12 linhas por corrida contra 7,6), laterais (29-39 contra 46), tiros de meta, escanteios (-6 a -26%) e os gols de clubes de elite. Não usar o simulador sem calibrar por competição/época. Banco FotMob: Europa League (48) e Conference (49) cadastradas com 0 jogos; Champions (19) tem 647 jogos, 319 com chutes (8.616); Euro/Copa América de seleções não estão em `leagues`. Script: `scripts/validar_simulador_outras_competicoes.py`.
+
+---
+
 **xG por zona polar e ocupação do ataque corrigida (04/10) -- Achado 34.** O R² do xG fora da amostra é 0,22 pela zona de 18 e 0,61 por distância+ângulo (0,73 com cabeça e tipo): o chute simulado agora é um chute real do StatsBomb sorteado da zona e seu xG/gol vem da zona polar da calculadora (tabela do FotMob, `scripts/zonas_polares.py`; `--fonte-xg statsbomb` usa o chute real). A ocupação exagerada vinha da memória da perda: `scripts/calibrar_memoria_posse.py` normaliza o multiplicador por zona (média efetiva 1,00) e a constante `ESCALA_CHUTE_COM_MEMORIA` foi removida; ocupação por faixa fecha em <= 0,6 p.p. e chutes 24,9/25,0, gols 2,55/2,55 (FotMob). Força dos times fora da amostra: +1,1% chutes, +5,6% gols, +2,5% escanteios. Progressão da bola não depende da posição na posse. Pendente: outras ligas/temporadas, ClubElo (502 do servidor deles), xG do FotMob (escala) contra StatsBomb.
 
 ---

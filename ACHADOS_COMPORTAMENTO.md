@@ -2078,3 +2078,29 @@ O Elo conhecido ANTES da temporada prevê bem o estilo de posse (quem tem Elo al
 **6. Força dos times fora da amostra, refeita com a memória normalizada:** ganho de erro quadrático +1,1% em chutes, +5,6% em gols, +2,5% em escanteios (correlação em chutes 0,36). O ganho de chutes continua baixo porque a memória aumenta a dispersão prevista entre times sem aumentar a correlação.
 
 **7. Pendente:** a progressão da bola não muda com a posição na posse (avanço médio de faixa +0,25 nas primeiras linhas contra +0,13 nas longas, igual ao esperado dado a origem; arquivo `chutes_e_progressao_ligas_2015_16.json`), então não precisa de memória de destino; a validação em outra liga/temporada (ligas recentes e torneios) e o ClubElo (API do ClubElo respondendo 502 do próprio servidor) seguem em aberto.
+
+## Achado 35 — validação do simulador em ligas recentes e torneios que ele não viu: chutes e ocupação do campo se transferem, o ritmo e a estrutura da posse não
+
+`scripts/validar_simulador_outras_competicoes.py` (+ teste; saída em `dados_referencia/statsbomb/validacao_outras_competicoes.json`). Parâmetros só de La Liga, Premier League, Serie A e Ligue 1 de 2015/16; times neutros; 3.000 jogos simulados contra os eventos completos de cada conjunto. Diferença > 2 erros-padrão (EP) da média real marcada com *.
+
+| por jogo (real ± EP -> simulado) | Ligas recentes, 1 clube (194 jogos) | Euro 2020 e 2024 (102) | Copa América 2024 (32) | Copas 2018 e 2022 (128) |
+|---|---|---|---|---|
+| chutes | 25,4 -> 24,9 | 23,8 ± 0,6 -> 24,9 | 23,2 ± 0,9 -> 24,9 | 23,7 ± 0,6 -> 24,9 * |
+| gols | 3,20 ± 0,13 -> 2,55 * | 2,25 ± 0,14 -> 2,55 * | 2,12 ± 0,28 -> 2,55 | 2,49 ± 0,15 -> 2,55 |
+| escanteios | 9,1 -> 10,0 * | 9,2 -> 10,0 * | 8,4 -> 10,0 * | 8,8 -> 10,0 * |
+| laterais | 29,3 -> 45,6 * | 35,0 -> 45,6 * | 39,0 -> 45,6 * | 37,2 -> 45,6 * |
+| tiros livres | 26,0 -> 29,4 * | 25,4 -> 29,4 * | 28,7 -> 29,4 | 23,9 -> 29,4 * |
+| tiros de meta | 13,7 -> 16,3 * | 14,9 -> 16,3 * | 15,4 -> 16,3 | 12,9 -> 16,3 * |
+| linhas de ação | 2.140 -> 1.790 * | 1.991 -> 1.790 * | 1.617 -> 1.790 * | 1.905 -> 1.790 * |
+| corridas (posses) | 178 -> 237 | 171 -> 237 | 192 -> 237 | 198 -> 237 |
+| linhas por corrida | 12,0 -> 7,6 | 11,2 -> 7,6 | 8,3 -> 7,6 | 9,4 -> 7,6 |
+
+**O que se transfere:** o volume de chutes (de -2% a +7%) e a ocupação do campo por faixa (dentro de ~2 pontos percentuais; exceção: defesa da Copa América, 30,1% contra 23,9% simulado, com 32 jogos); os gols nas Copas (2,49 contra 2,55) e na Copa América (diferença dentro do erro).
+
+**O que NÃO se transfere:** (1) o **ritmo**: o número de linhas de ação por jogo varia de 1.617 a 2.140 entre conjuntos, contra 1.786 em 2015/16 (as ligas recentes têm 20% mais ações por jogo); (2) a **estrutura da posse**: nas outras competições a posse é mais longa e menos fragmentada (9 a 12 linhas por corrida e 171 a 198 corridas por jogo, contra 7,6 e 237); (3) **laterais**, 22 a 36% menos que em 2015/16 em todos os conjuntos (29 a 39 contra 46), e tiros de meta e escanteios de 6 a 26% menores; (4) os **gols de clubes de elite** (3,20 contra 2,55) e de torneios de seleções (Euro 2,25) saem do que a média da amostra de 2015/16 prevê.
+
+**A força dos times explica parte do que falha:** o simulador com a força de Barcelona ou PSG (medida em 2015/16) contra um adversário médio move as medidas na direção certa (corridas 237 -> 192-201 contra 178 reais; linhas por corrida 7,6 -> 9,1-9,7 contra 12,0; laterais 46 -> 36-38 contra 29), mas não chega ao real, pois os clubes de 2018 a 2024 jogam com mais posse e mais passes do que os de 2015/16. A autocorrelação dos chutes (momentum) é maior que a simulada nos quatro conjuntos (0,059 a 0,079 contra -0,001 do simulador neutro e 0,05 do com times), consistente com times de força muito desigual (clubes de elite e seleções) no mesmo jogo.
+
+**Conclusão e uso:** os parâmetros de 2015/16 valem para o volume de chutes e para a ocupação do campo em qualquer competição testada; o ritmo, a estrutura da posse, as bolas paradas e os gols precisam de calibração por competição/época (por exemplo, núcleo da próxima linha e razão de perdas estimados dentro do próprio conjunto, como os `forca_dos_times` já fazem para times). **Não usar o simulador como está para prever gols de torneios de seleções ou de clubes de elite.** Amostras pequenas (Copa América, 32 jogos) têm erro-padrão grande.
+
+**O que o banco tem do FotMob (pergunta do usuário):** Europa League (id 48) e Conference League (id 49) estão cadastradas em `leagues`, mas com 0 jogos em `matches` e portanto sem chutes em `match_shots_fotmob`; a Champions League (id 19) tem 647 jogos, 319 deles com chutes do FotMob (8.616 chutes, 19/09/2023 a 10/09/2026); a Eurocopa de seleções não está em `leagues` (nem a Copa América); a Copa Africana de Nações (id 61) está cadastrada com 0 jogos.
