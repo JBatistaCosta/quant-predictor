@@ -21,6 +21,19 @@ CHUTES_POR_TIME_SIM_NEUTRO = 12.68      # simulador padrão, 400 jogos, semente 
 GOLS_POR_CHUTE_SIM_NEUTRO = 0.1017      # simulador padrão, 2.500 jogos, semente 11 (2,536 gols / 24,94 chutes)
 CHAVES = ("ataque_chute", "defesa_chute", "conversao_ataque", "conversao_defesa")
 
+# Resposta ao placar (Achado 52): por saldo de gols de QUEM CHUTA, truncado em -2..+2, relativa ao empate: (multiplicador de volume de chutes, multiplicador de qualidade).
+# Estimada em 5 ligas, temporadas 2022-2024 (fora do teste de 2025/26). Volume = chutes por 90 min; qualidade = xG por chute. Ponderada por minutos entre perfis de força.
+ESTADO_TABELA = {-2: (1.231, 0.966), -1: (1.185, 0.979), 0: (1.0, 1.0), 1: (0.883, 1.148), 2: (0.941, 1.235)}
+
+
+def montar_estado(tabela=None, volume=True, qualidade=True, exp_volume=1.0, alvo=(1, 1)):
+    """dict `estado` para simular_partida. `volume`/`qualidade` ligam cada efeito; `exp_volume` amplifica o multiplicador de volume (o simulador realiza só ~50% em log
+    do multiplicador de chute, Achado 51; a qualidade age direto na chance de gol e não precisa); `alvo` = placar desejado (saldo final satisfatório) de cada time."""
+    tabela = tabela or ESTADO_TABELA
+    return {"tabela": {int(s): ((v ** exp_volume) if volume else 1.0, q if qualidade else 1.0) for s, (v, q) in tabela.items()},
+            "desvio": (1 - alvo[0], 1 - alvo[1])}
+
+
 CONFIG = {
     "k_time": 8.0,            # pseudo-jogos que puxam a força de um time para 1,0
     "k_mando_gols": 50.0,     # pseudo-jogos que puxam o mando da conversão para 1,0

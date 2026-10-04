@@ -12,7 +12,7 @@ Regras que mantêm o teste honesto:
   * Controle obrigatório: a mesma simulação com todos os times iguais (só nível e mando) -- é o piso que a força dos times precisa bater.
 Camadas: ver scripts/camadas_simulador.py; cada variante liga uma camada a mais e é comparada com a anterior.
 Comparação: log-loss e Brier por jogo, apenas nos jogos que têm Dixon-Coles E odds; diferença pareada com IC 95% por bootstrap sobre jogos.
-Parâmetros ajustáveis SEM mexer no código: --exp-mando / --exp-forca (expoentes de amplificação dos multiplicadores de chute) e --cfg-extra (JSON com
+Parâmetros ajustáveis SEM mexer no código: --exp-mando / --exp-forca / --exp-estado (expoentes de amplificação dos multiplicadores de chute), --alvo-casa / --alvo-fora (placar desejado) e --cfg-extra (JSON com
 overrides de camadas_simulador.CONFIG para todas as variantes). Os valores usados ficam gravados em resumo["parametros"] do JSON de saída.
 Uso: python scripts/backtest_simulador_preditivo.py --csv jogos.csv --temporada 2025 --sims 1000 --saida resultado.json
 CSV: id,season,date,home,away,hg,ag,hs,as,hxg,axg,hc,ac,dc_h,dc_d,dc_a,dc_over,o_h,o_d,o_a,o_over,o_under
@@ -46,9 +46,13 @@ VARIANTES = {
     "forca_gols_nivel_mando": {"camadas": KEEP + ["gols_mando"], "semente": 4, "ref": "forca_gols_nivel", "padrao": False},
     # Achado 48: o mando do chute (e depois o da conversão) olhando só os últimos N jogos, no lugar da história inteira
     # Achado 51: expoente de amplificação (calibrado em scripts/calibrar_elasticidade_chute.py, fixado em 2 antes de olhar o teste); teto mais largo porque o produto amplificado passa de 1,6
-    "exp_mando": {"camadas": KEEP, "semente": 8, "ref": "forca_gols_nivel", "cfg": {"exp_mando": 2.0, "teto": (0.5, 2.0)}, "padrao": True},
+    "exp_mando": {"camadas": KEEP, "semente": 8, "ref": "forca_gols_nivel", "cfg": {"exp_mando": 2.0, "teto": (0.5, 2.0)}, "padrao": False},
     "exp_forca": {"camadas": KEEP, "semente": 9, "ref": "forca_gols_nivel", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0)}, "padrao": True},
-    "exp_ambos": {"camadas": KEEP, "semente": 10, "ref": "forca_gols_nivel", "cfg": {"exp_mando": 2.0, "exp_forca": 2.0, "teto": (0.5, 2.0)}, "padrao": True},
+    "exp_ambos": {"camadas": KEEP, "semente": 10, "ref": "forca_gols_nivel", "cfg": {"exp_mando": 2.0, "exp_forca": 2.0, "teto": (0.5, 2.0)}, "padrao": False},
+    # Achado 52: reação ao placar (volume de chutes e qualidade), tabela estimada em 2022-2024; referência = a melhor configuração do Achado 51 (força amplificada)
+    "estado_v": {"camadas": KEEP, "semente": 11, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": False}}, "padrao": True},
+    "estado_q": {"camadas": KEEP, "semente": 12, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": False, "qualidade": True}}, "padrao": True},
+    "estado_vq": {"camadas": KEEP, "semente": 13, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True}}, "padrao": True},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
@@ -63,14 +67,14 @@ def _iniciar():
 
 
 def _simular_jogo(args):
-    jid, mult_casa, mult_fora, n, semente = args
+    jid, mult_casa, mult_fora, n, semente, estado = args
     rng = random.Random(semente)
     casa = s.Multiplicadores(**mult_casa)
     fora = s.Multiplicadores(**mult_fora)
     h = d = a = over = 0
     gc = gf = ch = cf = 0
     for _ in range(n):
-        r = s.simular_partida(_P, rng, times=(casa, fora))
+        r = s.simular_partida(_P, rng, times=(casa, fora), estado=estado)
         g0, g1 = r.get("gols_0", 0), r.get("gols_1", 0)
         h += g0 > g1
         d += g0 == g1
@@ -125,6 +129,9 @@ def main():
     ap.add_argument("--variantes", default="", help="lista separada por vírgula, ou 'todas'; padrão: as marcadas como padrão em VARIANTES")
     ap.add_argument("--exp-mando", type=float, default=2.0, help="expoente de amplificação do mando de chutes nas variantes exp_mando/exp_ambos (1 = sem amplificar; calibrado em 2: ver calibrar_elasticidade_chute.py)")
     ap.add_argument("--exp-forca", type=float, default=2.0, help="idem, para a força dos times (ataque e defesa) nas variantes exp_forca/exp_ambos")
+    ap.add_argument("--exp-estado", type=float, default=2.0, help="expoente do multiplicador de VOLUME da reação ao placar nas variantes estado_* (1 = sem amplificar)")
+    ap.add_argument("--alvo-casa", type=float, default=1.0, help="placar desejado do mandante (saldo final satisfatório; 1 = ganhar, 0 = empate basta, 2 = vencer por 2, -1 = aceita perder por 1)")
+    ap.add_argument("--alvo-fora", type=float, default=1.0, help="placar desejado do visitante (idem)")
     ap.add_argument("--cfg-extra", default="{}", help='JSON com overrides de camadas_simulador.CONFIG aplicados a TODAS as variantes escolhidas, ex.: \'{"k_time": 12, "teto": [0.5, 2.0]}\'')
     ap.add_argument("--fatia", default="", help="K/N: simula só as tarefas de índice ≡ K (mod N) e grava o progresso (para dividir entre jobs)")
     ap.add_argument("--so-simular", action="store_true", help="simula a fatia e para, sem agregar")
@@ -141,8 +148,14 @@ def main():
         if "exp_forca" in v["cfg"]:
             v["cfg"]["exp_forca"] = a.exp_forca
         v["cfg"].update({k: (tuple(x) if isinstance(x, list) else x) for k, x in json.loads(a.cfg_extra).items()})
+        if "estado" in v["cfg"]:
+            v["cfg"]["estado"] = {**v["cfg"]["estado"], "exp_volume": a.exp_estado, "alvo": [a.alvo_casa, a.alvo_fora]}
     # "impressão digital" dos parâmetros de cada variante: o arquivo de progresso só é reaproveitado se for idêntica (mudar um expoente não mistura resultados)
     digital = {n: json.dumps({"camadas": v["camadas"], "cfg": {**cam.CONFIG, **v["cfg"]}, "semente": v["semente"], "sims": a.sims}, sort_keys=True, default=list) for n, v in VARIANTES.items()}
+    estados = {}
+    for nome, v in VARIANTES.items():
+        e = v["cfg"].get("estado")
+        estados[nome] = cam.montar_estado(volume=e["volume"], qualidade=e["qualidade"], exp_volume=e["exp_volume"], alvo=tuple(e["alvo"])) if e else None
     jogos = ler(a.csv)
     hist, tarefas, meta = cam.Historia(), [], {}
     teste = 0
@@ -151,7 +164,7 @@ def main():
             teste += 1
             for nome, v in VARIANTES.items():
                 mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"], {**cam.CONFIG, **v.get("cfg", {})})
-                tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"]))
+                tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"], estados[nome]))
             meta[j["id"]] = j
         hist.add(j)
 
@@ -173,7 +186,7 @@ def main():
             k, n_f = (int(x) for x in a.fatia.split("/"))
             indice = {t[0]: i for i, t in enumerate(tarefas)}
             pendentes = [t for t in pendentes if indice[t[0]] % n_f == k]
-        args = [(t[0], t[1], t[2], t[3], t[4]) for t in pendentes]
+        args = [(t[0], t[1], t[2], t[3], t[4], t[5]) for t in pendentes]
         print(f"simulando {len(args)}", flush=True)
         with mp.Pool(a.workers, initializer=_iniciar) as pool, open(parcial, "a") as arq:
             for i, (jid, r) in enumerate(pool.imap_unordered(_simular_jogo, args, chunksize=2), 1):
@@ -207,7 +220,7 @@ def main():
     comuns = [l for l in linhas if "dc" in l and "mercado" in l]
     modelos = list(VARIANTES) + ["dc", "mercado"]
     resumo = {"jogos_teste": len(linhas), "jogos_comuns": len(comuns), "sims_por_jogo": a.sims,
-              "parametros": {"exp_mando": a.exp_mando, "exp_forca": a.exp_forca, "cfg_extra": json.loads(a.cfg_extra),
+              "parametros": {"exp_mando": a.exp_mando, "exp_forca": a.exp_forca, "exp_estado": a.exp_estado, "alvo_casa": a.alvo_casa, "alvo_fora": a.alvo_fora, "cfg_extra": json.loads(a.cfg_extra),
                              "variantes": {n: {"camadas": v["camadas"], "cfg": {k: x for k, x in v["cfg"].items()}} for n, v in VARIANTES.items()}}}
     perdas = {m: {"ll": [], "br": [], "ll_ou": [], "br_ou": []} for m in modelos}
     for l in comuns:

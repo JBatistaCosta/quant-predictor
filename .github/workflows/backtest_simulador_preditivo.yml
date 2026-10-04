@@ -20,6 +20,15 @@ on:
       exp_forca:
         description: "Expoente de amplificação da força dos times nos chutes (1 = sem amplificar; 2 = calibrado, Achado 51)"
         default: "2.0"
+      exp_estado:
+        description: "Expoente do volume de chutes da reação ao placar (1 = sem amplificar; 2 = calibrado, Achado 51)"
+        default: "2.0"
+      alvo_casa:
+        description: "Placar desejado do mandante (saldo final satisfatório: 1 = ganhar, 0 = empate basta, 2 = vencer por 2, -1 = aceita perder por 1)"
+        default: "1"
+      alvo_fora:
+        description: "Placar desejado do visitante (idem)"
+        default: "1"
       cfg_extra:
         description: 'JSON com overrides de camadas_simulador.CONFIG para todas as variantes, ex.: {"k_time": 12}'
         default: "{}"
@@ -45,12 +54,15 @@ jobs:
           SIMS: ${{ inputs.sims || '1000' }}
           EXP_MANDO: ${{ inputs.exp_mando || '2.0' }}
           EXP_FORCA: ${{ inputs.exp_forca || '2.0' }}
+          EXP_ESTADO: ${{ inputs.exp_estado || '2.0' }}
+          ALVO_CASA: ${{ inputs.alvo_casa || '1' }}
+          ALVO_FORA: ${{ inputs.alvo_fora || '1' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
             --sims "$SIMS" --workers "$(nproc)" \
-            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --cfg-extra "$CFG_EXTRA" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --cfg-extra "$CFG_EXTRA" \
             --fatia ${{ matrix.fatia }}/8 --so-simular \
             --saida parcial_${{ matrix.fatia }}.json
       - uses: actions/upload-artifact@v4
@@ -77,12 +89,15 @@ jobs:
           SIMS: ${{ inputs.sims || '1000' }}
           EXP_MANDO: ${{ inputs.exp_mando || '2.0' }}
           EXP_FORCA: ${{ inputs.exp_forca || '2.0' }}
+          EXP_ESTADO: ${{ inputs.exp_estado || '2.0' }}
+          ALVO_CASA: ${{ inputs.alvo_casa || '1' }}
+          ALVO_FORA: ${{ inputs.alvo_fora || '1' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
             --sims "$SIMS" --agregar \
-            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --cfg-extra "$CFG_EXTRA" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --cfg-extra "$CFG_EXTRA" \
             --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
           { echo '## Backtest do simulador (Premier League 2025/26)'; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

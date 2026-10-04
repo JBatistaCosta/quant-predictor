@@ -270,9 +270,12 @@ def proxima_linha(p: Parametros, rng: random.Random, amostra: tuple[list, Amostr
     return quem, classe, int(zona)
 
 
-def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA, registro: list | None = None, memoria: bool = True) -> dict:
+def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA, registro: list | None = None, memoria: bool = True, estado: dict | None = None) -> dict:
     """Uma partida entre `times[0]` (começa o 1T) e `times[1]`. Devolve contagens (ações, chutes, gols, bolas paradas, tempo morto, posses, chutes por
     janela de 15 min, e por equipe: chutes_0/1, gols_0/1, escanteios_0/1) e a ocupação por classe/faixa.
+    `estado` (opcional, Achado 52): reação ao placar de quem tem a bola. dict com `tabela` {saldo efetivo -2..2: (mult. de chance de chute, mult. de chance de o chute virar gol)} e
+    `desvio` (d0, d1) = 1 - placar desejado de cada time (padrão (0, 0) com alvo +1: "ganhar"). Saldo efetivo = saldo atual + desvio, truncado em [-2, 2]. `None` = o jogo não reage ao placar
+    (idêntico ao de antes). Alvo: 0 = empate basta, +2 = quer vencer por 2, -1 = aceita perder por 1; em jogo de volta, alvo = 1 - vantagem do agregado trazida da ida.
     Se `registro` for uma lista, cada linha de ação é anexada como (equipe, zona, tipo, metade 0/1, xG, gol, segundos desde o início da metade)."""
     m: collections.Counter = collections.Counter()
     janela = [0] * 6                                     # chutes por janela de 15 min de relógio (0-15, 15-30, 30-45+, 45-60, 60-75, 75-90+)
@@ -298,7 +301,11 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                 m[f"mem|{zona}|n"] += 1
                 m[f"mem|{zona}|p"] += mem_perda
                 m[f"mem|{zona}|c"] += mem_chute
-            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"] * mem_chute, 0.5)
+            v_est = q_est = 1.0
+            if estado is not None:
+                ef = max(-2, min(2, m[f"gols_{equipe}"] - m[f"gols_{1 - equipe}"] + estado["desvio"][equipe]))
+                v_est, q_est = estado["tabela"][ef]
+            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"] * mem_chute * v_est, 0.5)
             pl = min(p.p_perda_zona[zona] * atk.ataque_perda * dfs.defesa_perda * jm["perda"] * mem_perda, 0.95 - ps)
             penalti = classe == "pênalti" and p.pool_penalti
             if penalti:
@@ -317,11 +324,11 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                     rec = rng.choice(p.pool_penalti) if penalti else rng.choice(p.pool_chute[zona])
                     if p.fonte_xg == "fotmob" and not penalti:
                         _, _, xg_pz, gol_pz = zp.FOTMOB[rec[6]]
-                        xg_linha, gol_linha = xg_pz, 1 if rng.random() < min(gol_pz * atk.conversao_ataque * dfs.conversao_defesa, 1.0) else 0
+                        xg_linha, gol_linha = xg_pz, 1 if rng.random() < min(gol_pz * atk.conversao_ataque * dfs.conversao_defesa * q_est, 1.0) else 0
                     else:
                         xg_linha, gol_linha = rec[0], rec[1]
                 else:
-                    xg_linha, gol_linha = p.xg_faixa[b], 1 if rng.random() < min(p.p_gol[b] * atk.conversao_ataque * dfs.conversao_defesa, 1.0) else 0
+                    xg_linha, gol_linha = p.xg_faixa[b], 1 if rng.random() < min(p.p_gol[b] * atk.conversao_ataque * dfs.conversao_defesa * q_est, 1.0) else 0
                 m["xG"] += xg_linha
                 if gol_linha:
                     m["gols"] += 1
