@@ -1935,3 +1935,17 @@ A taxa de falta por ação **sobe do primeiro terço (0,9 por 100 ações) até 
 - **Posses:** a simulação conta cada troca (275 perdas/jogo); StatsBomb agrupa em 195 sequências. Definições diferentes, não é erro do modelo.
 - Chutes por janela de 15 min ficam planos (3,6–4,2), como esperado de um protótipo estático; falta a inclinação por janela (Achado 28).
 Próximo passo natural: modelar o lateral que mantém a posse (com tempo morto), recalibrar escanteio/tiro livre e então inserir janela e força dos times.
+
+### Achado 31 — v1: lateral mantido, tiro livre sem contagem dupla, e o que sobrou (a cadeia sub-ocupa o terço final)
+
+Mudanças do v1 em `simulador_cadeia_bola.py` (3.000 jogos, semente 2): (1) tiro livre saiu dos reinícios depois da perda, pois as faltas já são sorteadas por faixa (era contagem dupla: 35,8 -> 29,3 contra 30,6 observados); (2) entrou o **lateral que mantém a posse** (`P_LATERAL_MESMA = 0,085` por perda, CALIBRADO para fechar 46,3 laterais, não medido): laterais 21,8 -> 44,7; tempo morto 36,8 -> 38,8 min.
+
+| por jogo | v0 | v1 | observado |
+|---|---|---|---|
+| laterais | 21,8 | 44,7 | 46,3 |
+| tiros livres | 35,8 | 29,3 | 30,6 |
+| escanteios | 9,4 | 9,6 | 10,2 |
+| chutes / gols | 25,0 / 2,45 | 25,2 / 2,46 | 25,0 / 2,55 |
+| ações | 2.092 | 2.019 | 1.786 |
+
+**Falha que sobra e a causa:** as ações ainda são 13% acima e o tempo em ação é 55 min contra 46. Uma folga de 0,21 s entre ações (testada e descartada) fechou o relógio, mas derrubou chutes, gols e escanteios em ~10%. A razão: a ocupação de zonas da simulação não bate com a observada. Participação nas ações: grande área 2,4% contra 3,1%; ataque fora alto 9,2% contra 12,3%; ataque fora baixo 8,7% contra 9,7%; defesa 26,7% contra 23,8%; meio baixo 28,5% contra 26,2%. Ou seja, a cadeia (matriz de desfecho + recuperação + reinícios) **sub-ocupa o terço final** e por isso chuta 1,25% das ações contra 1,40% observado. Candidatos a investigar: destino dos reinícios fixado em zona de defesa/saída, escanteio e chute cortado voltando sempre à defesa, e a distribuição estacionária da matriz sem o efeito de quem ataca mais (força dos times).

@@ -9,6 +9,10 @@
 
 ---
 
+**Simulador v1 (04/10) -- continuação do Achado 31.** Tiro livre removido dos reinícios pós-perda (contagem dupla com as faltas), lateral mantido com `P_LATERAL_MESMA=0,085` (calibrado, não medido): laterais 44,7/46,3, tiros livres 29,3/30,6. Pendência aberta: a simulação sub-ocupa o terço final (grande área 2,4% das ações contra 3,1%; ataque fora alto 9,2% contra 12,3%), por isso ações +13% e escanteios -6%; folga entre ações de 0,21 s foi testada e descartada. Próximo passo: achar de onde vem a perda de ocupação (destinos fixos dos reinícios/escanteio cortado, recuperação).
+
+---
+
 **Protótipo v0 do simulador semi-Markov da bola (04/10) -- Achado 31 em `ACHADOS_COMPORTAMENTO.md`.** `scripts/simulador_cadeia_bola.py` (+ `test_simulador_cadeia_bola.py`, 5 testes) simula jogos com as matrizes e tempos dos Achados 18–30. Reproduz chutes (25,0), gols (2,45), xG, tiros de meta, saídas de bola e faltas; falha em laterais (21,8 contra 46,3: faltam os que seguem bola desviada), tempo em ação (57 contra 46 min), escanteios (-8%) e tiros livres (+17%). Convenção do código: cada resolvedor devolve `(quem, zona, tempo morto, motivo)` com `quem` = `"mesma"` ou `"adv"`. Posses do simulador (trocas) não são comparáveis às 195 sequências do StatsBomb.
 
 ---

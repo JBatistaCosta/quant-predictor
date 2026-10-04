@@ -37,6 +37,12 @@ DURACAO_TEMPO_S = (45.828 * 60, (93.283 - 45.0) * 60)        # 1T e 2T em segund
 ZONA_SAIDA = 4                                                # meio baixo, centro
 ZONA_DEFESA_CENTRO = 1
 FALTA_DE_ATAQUE = 0.23                                       # fração das faltas cometidas por quem tem a bola (Achado 30)
+# CALIBRADOS no v1 (não medidos): o v0 gerava 21,8 laterais contra 46,3 e 9,4 escanteios contra 10,2 por jogo.
+# Lateral que mantém a posse: bola desviada pelo adversário que sai e volta para quem a tinha (seguia uma "perda" em jogo).
+P_LATERAL_MESMA = 0.085
+ESCALA_ESCANTEIO = 1.0
+# Folga entre o fim de uma ação e o início da seguinte (a duração do StatsBomb não cobre o intervalo todo): testado com 0,21 s e DESCARTADO (v1): derrubou chutes, gols e escanteios em ~10% porque as ações caíam em zonas menos ofensivas; ver Achado 31.
+FOLGA_ENTRE_ACOES_S = 0.0
 PROB_CHUTE_NO_ESCANTEIO = 0.346
 PROB_GOL_CHUTE_ESCANTEIO = 0.0263 / 0.346
 
@@ -107,9 +113,10 @@ class Parametros:
         self.recup = [Amostrador([v + 0.5 for v in m[z]]) for z in range(18)]
         pe = rein["primeiro_evento_do_adversario_apos_perda"]
         n_perdas = sum(pe.values())
-        self.p_reinicio = sum(v for k, v in pe.items() if k.startswith("reinício")) / n_perdas
-        tipos = ["From Throw In", "From Goal Kick", "From Free Kick"]
-        nomes = {"From Throw In": "reinício: Throw-in", "From Goal Kick": "reinício: Goal Kick", "From Free Kick": "reinício: Free Kick"}
+        self.p_reinicio = sum(v for k, v in pe.items() if k.startswith("reinício") and "Free Kick" not in k and "Corner" not in k) / n_perdas
+        # tiro livre fica de fora: as faltas já são sorteadas por faixa depois de cada ação (senão contaria duas vezes; v0 dava 35,8 contra 30,6 por jogo)
+        tipos = ["From Throw In", "From Goal Kick"]
+        nomes = {"From Throw In": "reinício: Throw-in", "From Goal Kick": "reinício: Goal Kick"}
         self.tipo_reinicio = (tipos, Amostrador([pe.get(nomes[t] + "|", 0) for t in tipos]))
         morto = rein["tempo_morto_por_reinicio_s"]
         self.morto = {k: (lognormal_de(v["mediana"], v["media"]) if v["mediana"] > 0.5 else (None, v["media"])) for k, v in morto.items()}
@@ -119,7 +126,8 @@ class Parametros:
                 if tipo.startswith(("Passe/", "Cruzamento/")) or tipo in ("Dispossessed", "Miscontrol"):
                     acc = esc.setdefault("perda", [0] * 19)
                     acc[:] = [a + b for a, b in zip(acc, v)]
-        self.q_escanteio_perda = [min(1.0, esc["perda"][z] / max(cont[z][19], 1)) for z in range(18)]
+        self.q_escanteio_perda = [min(1.0, ESCALA_ESCANTEIO * esc["perda"][z] / max(cont[z][19], 1)) for z in range(18)]
+        self.p_lateral_mesma = P_LATERAL_MESMA
         # 6. laterais: origem por faixa
         self.lateral_faixa = Amostrador([chu["laterais"].get(f, {"n": 0})["n"] for f in FAIXAS])
         # alvos observados por jogo
@@ -167,11 +175,11 @@ def simular_partida(p: Parametros, rng: random.Random) -> dict:
             m["acoes"] += 1
             antes = m["chutes"]
             if s == 18:                                  # chute
-                t += lognorm(rng, p.dur_chute)
+                t += lognorm(rng, p.dur_chute) + FOLGA_ENTRE_ACOES_S
                 troca = resolver_chute(p, rng, m, zona)
             else:
                 d = lognorm(rng, p.dur_acao)
-                t += d
+                t += d + FOLGA_ENTRE_ACOES_S
                 m["tempo_em_acao"] += d
                 if s == 19:                              # perda
                     troca = resolver_perda(p, rng, m, zona)
@@ -248,6 +256,9 @@ def resolver_escanteio(p: Parametros, rng: random.Random, m: collections.Counter
 def resolver_perda(p: Parametros, rng: random.Random, m: collections.Counter, zona: int):
     if rng.random() < p.q_escanteio_perda[zona]:         # a bola sai pela linha de fundo depois de a defesa tocá-la: escanteio da MESMA equipe
         return resolver_escanteio(p, rng, m)
+    if rng.random() < p.p_lateral_mesma:                 # a bola desviada sai e o lateral é de quem a perdeu na ação: posse mantida, tempo morto de lateral
+        m["laterais"] += 1
+        return ("mesma", zona, dead(rng, p, "From Throw In"), "lateral mantido")
     z_adv = p.recup[zona].sortear(rng)
     if rng.random() < p.p_reinicio:
         tipos, amostra = p.tipo_reinicio
