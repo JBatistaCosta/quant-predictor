@@ -9,6 +9,10 @@
 
 ---
 
+**Simulador recalibrado por competição e época -- Achado 41 (05/10).** `scripts/calibrar_simulador_por_competicao.py` re-estima matriz de desfecho, núcleo da próxima linha, memória da posse, tempo morto, durações, **folga (agora medida: 0,192 s na La Liga 2015/16 = a constante 0,2 antes ajustada à mão)**, duração dos tempos e chutes por conjunto, com encolhimento k em direção a 2015/16, e valida em 2 dobras fora da amostra. Por conjunto: ligas recentes 23,8%/22,7% -> 1,9%/1,8% de erro; torneios 16,9%/16,6% -> 3,6%/3,2%; La Liga 2015/16 (controle) sem ganho. Por época (leave-one-out no conjunto), média das 11 épocas: 21,4% (2015/16) -> 8,6% (perfil do conjunto) -> 6,7% (conjunto + calibração da época; melhora em 8 de 11). Ritmo, posse, laterais e tiros livres passam a bater; chutes e gols ficam no piso do ruído (metades de 13-18 jogos). `Parametros.aplicar_perfil`, `--perfil` e perfis em `dados_referencia/statsbomb/perfil_*.json`. Limites: ligas recentes são clubes únicos; sem força por time dentro do perfil.
+
+---
+
 **Frontend atualizado para o regime atual do xG (05/10) -- continuação do Achado 40.** `src/utils/zoneTransitionMatrix.js`: `ESTATISTICA_ZONA_CHUTE` e `XG_MEDIO_ZONA_CHUTE` agora vêm de jogos desde 01/08/2021 (17.095 jogos, 432.218 chutes; xG por zona -3% a +2% contra a anterior); comentários e textos de `MapaZonasChute.jsx` e `AnaliseEvento.jsx` ("~432 mil chutes ... desde 01/08/2021, modelo de xG atual") ajustados. `DISTRIBUICAO_ZONA_CHUTE` NÃO foi refeita (segue a fotografia de 01/10/2026 com todas as datas; fatia por zona difere <= 0,11 p.p.). Testes: `npx vitest run` 118 passam (3 arquivos `.test.mjs` sem suíte já falhavam antes); `npm run build` ok. Só entra em produção com o merge do PR #765.
 
 ---
