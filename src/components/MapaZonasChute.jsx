@@ -225,8 +225,8 @@ export default function MapaZonasChute({
             </tbody>
           </table>
           <p className="text-[10px] text-slate-500 mt-2">
-            IC 95% por partida (chutes do mesmo jogo não são independentes; ~480 mil chutes em ~18 mil jogos do FotMob,
-            sem pênaltis). O IC do xG mede a precisão da média do xG do FotMob (saída de modelo), não a conversão verdadeira.
+            IC 95% por partida (chutes do mesmo jogo não são independentes; ~432 mil chutes em ~17 mil jogos do FotMob
+            desde 01/08/2021, o período do modelo de xG atual, sem pênaltis). O IC do xG mede a precisão da média do xG do FotMob (saída de modelo), não a conversão verdadeira.
             * = gol/chute real fora do IC do xG (os intervalos não se sobrepõem). O % simulado vem da matriz de passes do
             StatsBomb (uma liga, uma temporada) e não tem IC calculável — compare com o % real.
           </p>

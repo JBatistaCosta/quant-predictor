@@ -9,6 +9,10 @@
 
 ---
 
+**Frontend atualizado para o regime atual do xG (05/10) -- continuação do Achado 40.** `src/utils/zoneTransitionMatrix.js`: `ESTATISTICA_ZONA_CHUTE` e `XG_MEDIO_ZONA_CHUTE` agora vêm de jogos desde 01/08/2021 (17.095 jogos, 432.218 chutes; xG por zona -3% a +2% contra a anterior); comentários e textos de `MapaZonasChute.jsx` e `AnaliseEvento.jsx` ("~432 mil chutes ... desde 01/08/2021, modelo de xG atual") ajustados. `DISTRIBUICAO_ZONA_CHUTE` NÃO foi refeita (segue a fotografia de 01/10/2026 com todas as datas; fatia por zona difere <= 0,11 p.p.). Testes: `npx vitest run` 118 passam (3 arquivos `.test.mjs` sem suíte já falhavam antes); `npm run build` ok. Só entra em produção com o merge do PR #765.
+
+---
+
 **Tabela polar de clubes recalculada desde 01/08/2021 (05/10) -- Achado 40.** 17.095 jogos / 432.218 chutes do modelo de xG atual (a tela mistura ~10% do antigo): xG por zona muda só de -3% a +2%, fatias de chute iguais (<= 0,1 p.p.); o modelo antigo diferia de -20% a +23% por zona. `scripts/zonas_polares.py`: `FOTMOB` = regime novo (simulador), `FOTMOB_TELA` = a da tela; JSON com ICs em `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json`. Frontend NÃO alterado: `ESTATISTICA_ZONA_CHUTE` em `src/utils/zoneTransitionMatrix.js` e o texto de `src/components/MapaZonasChute.jsx` seguem com a tabela de todas as datas; atualizar é decisão do usuário.
 
 ---
