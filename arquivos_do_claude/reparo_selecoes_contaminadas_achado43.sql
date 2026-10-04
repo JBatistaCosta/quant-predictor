@@ -62,3 +62,21 @@ update team_elo set team_id=1046 where id=11862 and team_id=466 and escopo='liga
 update team_transfers_fotmob set team_id=1046 where team_id=466;       -- 25 transferências, todas do New England
 update player_availability_fotmob set team_id=1047 where team_id=744;  -- 36 jogadores da seleção
 -- elenco_atual_fotmob da seleção: copiado de 744 para 1047 (com "team_id" interno reescrito) e zerado em 744.
+
+
+-- =====================================================================
+-- TURQUIA DUPLICADA (executado em 2026-10-04, depois da revisão dos nomes)
+-- Mesmo país com dois team_id: 473 'Turkey' (football-data 803; Eurocopa 2024
+-- e Copa do Mundo 2026) e 1017 'Turkiye' (FotMob 6595; Eurocopa 2016 e 2020,
+-- 6 jogos). Mantido o 473; tudo do 1017 foi levado para ele:
+--   * vínculo:  update team_source_ids set team_id=473 where source='fotmob' and source_id='6595';
+--   * jogos:    matches id in (294045,294061,294072,293990,294003,294015): home/away 1017 -> 473
+--   * 30 linhas de player_availability_fotmob e o elenco_atual_fotmob (com "team_id" interno
+--     reescrito) passaram para o 473; o 473 recebeu display_name/name_pt/name_en/name_native
+--     ('Turquia'/'Turquia'/'Türkiye'/'Türkiye') e o alias 'Turkiye'.
+--   * linhas por jogo nas tabelas listadas em (3), só para esses 6 jogos; contagens antes = depois
+--     (match_events 14, match_stats_fotmob 6, match_stats_fotmob_periodo 6, match_shots_fotmob 41,
+--     match_lineup_fotmob 138, match_player_stats_fotmob 138, team_elo_history 6, team_elo_xg_history 6).
+--   * Elo global e de xG: reconstruídos pelos workflows elo_global.yml (completo) e elo_global_xg.yml.
+-- Atenção: duas CTEs que alteram a MESMA linha na mesma instrução só aplicam uma delas;
+-- por isso nome e elenco do 473 foram atualizados em instruções separadas.

@@ -4720,6 +4720,12 @@ async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, time
   let teamId;
   if (candidato) {
     teamId = candidato.id;
+    // Seleção reconhecida mas ainda sem o marcador (valor nulo em dado antigo):
+    // marca na hora. Toda seleção precisa de is_national_team = true.
+    if (estrito && candidato.is_national_team !== true) {
+      await supabase.from('teams').update({ is_national_team: true }).eq('id', teamId);
+      candidato.is_national_team = true;
+    }
   } else {
     const { data: novo, error } = await supabase.from('teams').insert({ name: timeFm.name, crest_url: `https://images.fotmob.com/image_resources/logo/teamlogo/${fmId}_xsmall.png`, country: paisEsperado || null, ...(estrito ? { is_national_team: true } : {}) }).select('id').single();
     if (error || !novo) return null;
