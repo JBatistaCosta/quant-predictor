@@ -2458,3 +2458,287 @@ Diferenças pareadas (positivo = o primeiro é pior), IC 95%:
 **Próximas camadas a testar (cada uma por ablação, nenhuma ajustada com dados do teste):** (a) mando com janela recente ou ponderada pelo tempo, para seguir mudanças entre temporadas (hipótese acima); (b) Elo de xG (`team_elo_xg`) como força geral; (c) fragilidade defensiva em chutes sofridos e xG sofrido por chute (`conversao_defesa` já existe e não foi usada); (d) jogadores, só quando houver cobertura (hoje 66 jogos da Premier League 2025/26 em `player_match_estimates`).
 
 **Limites.** Uma liga e uma temporada, 342 jogos: os IC são largos e várias diferenças "sem efeito" aqui podem ser efeitos pequenos não detectáveis. O ajuste de nível usa a constante do simulador neutro (0,1017) medida com ruído de ~±1,5%. Dixon-Coles com a mesma ressalva do Achado 46 (não verifiquei se foi gerado fora da amostra para esses jogos).
+
+
+---
+
+## Achado 48 — xG e xA previstos por jogador: top-2 a top-5 não batem o elenco inteiro, e quase tudo que se correlaciona com o saldo do jogo é a força do time
+
+**Pergunta.** Somar só os N jogadores de maior xG (ou xA) previsto, em vez do elenco inteiro, correlaciona melhor com o saldo do jogo? E isso é sinal dos jogadores ou da força do time?
+
+**Método** (`scripts/analisar_topn_jogadores.py`, consulta em `arquivos_do_claude/topn_jogadores_previsto.sql`). Cinco ligas (Premier League, La Liga, Serie A, Bundesliga, Ligue 1), temporadas 2024 e 2025, 3.504 partidas com Elo. λ de `player_match_walkforward` (walk-forward) na fonte `previsto` (XI previsto, anterior ao jogo). Para cada partida, D_N = soma do λ dos N maiores do mandante menos a do visitante (N = 2, 3, 4, 5 e elenco inteiro); o ranking usa só o λ previsto. Alvos: saldo de gols e saldo de xG reais. Como a força do time confunde (armadilha já vista 3x no projeto), reporta também a **correlação parcial controlando pela diferença de Elo** (`team_elo_history`, escopo global, rating antes do jogo) e o IC 95% por bootstrap sobre partidas da diferença top-N menos elenco inteiro. λ nulo vira 0 (nunca selecionar por "existe λ", o viés pós-jogo do Achado 25/09).
+
+**Resultado: correlação r com o saldo de xG (alvo menos ruidoso).**
+
+| | r | r parcial (Elo) | top-N menos elenco inteiro [IC95%] |
+|---|---|---|---|
+| Elo sozinho | 0,506 | — | — |
+| xG previsto top-2 / 3 / 4 / 5 / inteiro | 0,477 / 0,481 / 0,483 / 0,484 / 0,494 | 0,104 / 0,105 / 0,107 / 0,109 / 0,127 | -0,017 [-0,027; -0,007] / -0,013 / -0,011 / -0,010 [-0,015; -0,004] |
+| xA previsto top-2 / 3 / 4 / 5 / inteiro | 0,478 / 0,492 / 0,497 / 0,500 / 0,510 | 0,105 / 0,121 / 0,127 / 0,131 / 0,149 | -0,032 [-0,041; -0,021] / -0,018 / -0,013 / -0,009 [-0,015; -0,004] |
+
+Contra o saldo de **gols**: Elo sozinho 0,430; xG top-2/3/4/5/inteiro 0,412 / 0,411 / 0,409 / 0,406 / 0,405 (top-N sobre o inteiro +0,006 [-0,004; +0,016] no top-2, sem efeito); xA 0,410 / 0,421 / 0,425 / 0,427 / 0,430 (top-2 -0,020 [-0,029; -0,010], top-3 -0,009 [-0,017; -0,001], top-4 e 5 sem diferença). Correlação parcial com gols: 0,07 a 0,11.
+
+**Leitura.**
+1. **Somar o elenco inteiro é igual ou melhor que qualquer top-N.** Contra o saldo de xG todos os top-N ficam abaixo, de forma monotônica (quanto menos jogadores, pior) e com IC fora de zero. Contra gols só o xA top-2 e top-3 ficam abaixo; o xG top-2/3 parece ligeiramente acima, mas dentro do ruído. Confirma, com xG incluído e em 3.504 partidas, o que o projeto já tinha para xA (elenco inteiro 0,403, top-3 0,389, top-2 0,381 em 15.089 partidas) e o descarte do top-N como agregação.
+2. **O Elo sozinho já correlaciona tanto quanto os jogadores** (0,430 e 0,506 contra 0,405-0,430 e 0,477-0,510). O que os jogadores trazem **além do Elo** é pequeno: correlação parcial de 0,07 a 0,15, ou seja, 0,5% a 2% da variância do saldo. É o mesmo padrão do rating de jogador do projeto (sinal real, pequeno, e o Elo explica a maior parte).
+3. **Por que o top-N perde:** descartar jogadores joga fora informação de profundidade do elenco e de quem entra; somar mais jogadores dilui o acaso individual (cada xG por jogador explica só ~24% da variação, ver acima).
+
+**Limites.** Cinco ligas empilhadas e duas temporadas: diferenças entre ligas podem se misturar. A correlação parcial é linear. Elo de resultado, não o de xG. Bundesliga e Ligue 1 têm 612 partidas cada (18 times). Não rodei `relacionados` (convocados), só `previsto`. Correlação com o saldo não é o mesmo que ganho de previsão em log-loss: o ganho de log-loss de jogadores (saber quem começa, -0,015 no 1X2) está registrado à parte.
+
+
+---
+
+## Achado 49 — mando por janela recente não ajuda, e o motivo é outro: o simulador entrega só ~55% da razão de chutes que o multiplicador pede
+
+**Pergunta.** A hipótese do Achado 47: o mando estimado pela história inteira fica atrasado quando o mando muda de temporada (razão de chutes casa/fora 1,13 em 2024/25, 1,24 em 2025/26). Olhar só os últimos N jogos resolve?
+
+**Método.** Mesmo teste do Achado 47 (Premier League 2025/26, 342 jogos, 1.000 simulações por jogo, IC 95% por bootstrap pareado). Referência = `forca_gols_nivel` (mando pela história inteira). Variantes: `mando_j200` e `mando_j100` trocam o mando dos chutes pelos últimos 200 / 100 jogos; `mando_j200_gols` soma o mando da conversão pela janela de 200. Camadas em `scripts/camadas_simulador.py` (`mando_chutes_janela`, `gols_mando_janela`), três testes novos.
+
+**Resultado: nulo.** Log-loss 1X2 / over-under: referência 1,0667 / 0,6868; `mando_j200` 1,0655 / 0,6865 (1X2 -0,0012 [-0,0078; +0,0054]); `mando_j100` 1,0672 / 0,6888 (+0,0005 [-0,0062; +0,0071]); `mando_j200_gols` 1,0665 / 0,6878 (sobre `mando_j200` +0,0010 [-0,0070; +0,0092]). Todos os IC incluem zero. Vitória do mandante simulada: 38,6% (referência), 38,8% (j200), 39,2% (j100), contra 42,4% real. A janela mexe 0,2 a 0,6 ponto percentual; faltam ~3,5. **Fica fora do ajuste**, como as outras camadas de mando, e é a mesma conclusão do EWM de mando que o projeto já tinha descartado.
+
+**O que a janela não era: o problema.** Diagnóstico (`scripts/diagnostico_elasticidade_mando.py`, 2.800 jogos por linha): time médio contra time médio, impondo ao simulador uma razão de chutes casa/fora r (multiplicadores raiz de r e 1/raiz de r):
+
+| razão imposta | razão de chutes realizada | casa / empate / fora | gols casa / fora |
+|---|---|---|---|
+| 1,00 | 1,012 | 0,361 / 0,271 / 0,368 | 1,24 / 1,26 |
+| 1,13 (2024/25) | 1,071 | 0,376 / 0,268 / 0,355 | 1,27 / 1,22 |
+| 1,24 (2025/26) | 1,126 | 0,405 / 0,256 / 0,339 | 1,31 / 1,18 |
+
+A razão realizada é ~55% da pedida em escala logarítmica (ln 1,126 / ln 1,24 = 0,55; ln 1,071 / ln 1,13 = 0,56). Mesmo impondo a razão real de 2025/26, o simulador dá 40,5% de vitória em casa e gols 1,31 x 1,18 (razão 1,11), contra 42,6% e 1,53 x 1,22 (razão 1,25) no mundo real. Ou seja: **o multiplicador de chute é atenuado pela dinâmica de posse** (quem chuta mais por linha também cede a bola nas outras), e o erro de ~3,5 pontos de mando não é atraso de estimativa.
+
+**Consequência provável, ainda não testada.** A mesma atenuação deve valer para a camada de força dos times (`forca_chutes`, ataque x defesa), o que explicaria por que a força melhora o 1X2 só de leve (Achado 46) e por que o simulador discrimina pouco os times. O projeto já tem um expoente de amortecimento (`calibrar_expoente_forca.py`, Achado 32), mas no sentido contrário (amortecer a perda); aqui o que parece faltar é um expoente de **amplificação** (~1/0,55 = 1,8) nos multiplicadores de chute.
+
+**Próximo teste (proposto).** Camada `expoente_chute`: elevar os multiplicadores de chute (mando e força) a 1/0,55. O expoente sai deste diagnóstico no próprio simulador, não dos dados do teste, então não há ajuste em cima do que se mede; validar por ablação como as outras camadas.
+
+**Limites.** O diagnóstico usa times médios, sem camada de nível de gols; a elasticidade pode variar com a magnitude e entre ligas. Comparação de mando real com 2025/26 de uma liga só.
+
+
+---
+
+## Achado 50 — o mando é volume de chutes (não qualidade), e quem perde chuta mais e pior em qualquer perfil de força
+
+**Pergunta (do usuário).** (1) O mando multiplica também o xG e o λ, não só os chutes? (2) Times fracos que estão perdendo chutam mais, com menor qualidade? Consultas em `arquivos_do_claude/mando_e_estado_do_jogo.sql`.
+
+**(1) Mando.** Cinco ligas, 2022 a 2025 (20 liga-temporadas, jogos com xG dos dois lados). Razão casa/fora: **chutes 1,13 a 1,31** (típico 1,17 a 1,30); **xG por chute 0,95 a 1,09, média 1,017** (Bundesliga +2,6%, La Liga +3,8%, Ligue 1 +4,2%, Premier League +0,7%, Serie A -2,8%); gols por xG de casa e de fora ficam em 0,92 a 1,14, sem lado sistemático. Logo o xG do mandante é ~1,15 a 1,36 vezes o do visitante, e **quase tudo isso é volume**: a qualidade por chute entra com ~+2% (varia de sinal entre ligas) e a conversão com ~0. O multiplicador de mando pertence ao volume de chutes; pôr mando na conversão ou na qualidade não tem base nos dados, o que explica o `gols_mando` nulo do Achado 47.
+
+**(2) Estado do jogo por perfil de força** (5 ligas, `v_game_state_por_forca` separada pelo SINAL da diferença de Elo; a coluna `faixa_forca` da view agrupa pelo tamanho e mistura forte e fraco). Chutes por 90 minutos / xG por chute:
+
+| perfil | ganhando | empatando | perdendo |
+|---|---|---|---|
+| bem mais fraco (Elo <= -100) | 8,18 / 0,1207 | 9,12 / 0,1005 | 11,05 / 0,1004 |
+| parelho (|Elo| <= 30) | 10,17 / 0,1215 | 11,31 / 0,1055 | 13,60 / 0,1034 |
+| bem mais forte (Elo >= 100) | 13,33 / 0,1359 | 14,62 / 0,1147 | 16,94 / 0,1097 |
+
+- **Volume:** perdendo, o time chuta bem mais que ganhando, em todos os perfis (fraco +35%, parelho +34%, forte +27%).
+- **Qualidade:** perdendo, a qualidade por chute é 15 a 19% menor que ganhando (fraco 0,1004 contra 0,1207; forte 0,1097 contra 0,1359). Em relação a empatando, o time perdendo mal piora (fraco 0,1005 -> 0,1004; forte 0,1147 -> 0,1097): a diferença vem sobretudo de quem está ganhando ter chute melhor.
+- **Os dois efeitos quase se cancelam no xG total:** fraco perdendo gera 1,11 xG/90 contra 0,99 ganhando (+12%); forte, 1,86 contra 1,81 (+3%). É por isso que o xG agregado quase não mostra efeito de estado (conclusão que o projeto já tinha), enquanto os componentes mostram.
+- **A hipótese do usuário vale, mas não é específica de time fraco:** é efeito do placar em todo perfil; a força separa o nível (o forte tem chute ~14% melhor em qualquer estado), não a reação.
+
+**O simulador ignora o placar.** `simular_partida` não tem nenhuma reação ao placar: nem mais volume de quem perde, nem melhor chance de quem ganha. Os efeitos acima (+27 a +35% em volume, 15 a 19% em qualidade) são grandes e têm sentido regressivo, isto é, puxam o placar de volta, o que afeta a distribuição de saldos e o 1X2.
+
+**Limites.** Comparar ganhando com perdendo é pareado no tempo (linhas espelhadas, mesmos minutos); comparar com empatando não é (empate tem muito 0 a 0 inicial, mais cauteloso), então não leio o "empatando" como base causal. Não controla casa e fora dentro do estado. Perfil de Elo de resultado.
+
+**Próximos testes (propostos):** (a) expoente de amplificação nos multiplicadores de chute (Achado 49), (b) camada de estado do jogo no simulador (multiplicador de volume e de conversão por saldo de gols), com parâmetros estimados só nas temporadas 2022 a 2024 e avaliada em 2025/26.
+
+**Complemento do Achado 48 — a diferença entre os times no top-N contra a diferença no resto do elenco** (`scripts/decompor_topn_resto.py`, mesmas 3.504 partidas). O R² do saldo de xG só com o Elo é 0,256 (desvio-padrão da diferença de Elo entre os times: 177 pontos). Somar a diferença de xG previsto entre os times eleva o R² em apenas +0,008 (top-2) a +0,012 (elenco inteiro); com xA, +0,008 (top-2) a +0,016 (elenco inteiro), isto é, de 0,8 a 1,6 ponto percentual de variância além do Elo. A diferença entre os times é maior no elenco inteiro do que no top-N (desvio-padrão em xG: top-2 0,34, top-3 0,44, top-5 0,58, inteiro 0,80; em xA: 0,17, 0,23, 0,34, 0,62). **O resto do elenco acrescenta tanto ou mais que os craques:** com Elo mais top-3 e resto separados, o resto sozinho ganha +0,010 (xG) e +0,015 (xA) contra +0,008 e +0,011 do top-3 sozinho; separar top-N e resto não melhora o elenco inteiro (R² 0,2683 contra 0,2682 em xG). Ou seja, profundidade de elenco pesa pelo menos tanto quanto os melhores jogadores, o que combina com o top-N não bater o elenco inteiro.
+
+
+---
+
+## Achado 51 — amplificar o multiplicador de força dos times (expoente 2) melhora o 1X2 de forma significativa e leva o simulador a um empate técnico com o Dixon-Coles; o mesmo no mando não ajuda
+
+**Pergunta.** O Achado 49 mostrou que o simulador realiza só ~50% (em log) da razão de chutes pedida por um multiplicador. Compensar com um expoente nos multiplicadores de chute melhora a previsão?
+
+**Calibração (sem dado de jogo real).** `scripts/calibrar_elasticidade_chute.py`: com times médios, o simulador realiza razão de chutes pedida^e com **e = 0,44 (m 1,06), 0,48 (1,12), 0,49 (1,25)**, idêntico para ataque e defesa (o código multiplica os dois no mesmo ponto); erro-padrão ~0,05, 0,03 e 0,014; compatível com 0,49 a 0,50. Expoente de compensação = 1/e ≈ **2,0**, fixado ANTES de ver qualquer resultado de teste. Fica como parâmetro: `--exp-mando`, `--exp-forca`, `--cfg-extra` e entradas do workflow (padrão 1,0 nas camadas = comportamento dos Achados 46 a 49). O progresso do backtest só é reaproveitado se os parâmetros forem idênticos, e os valores usados ficam em `resumo["parametros"]`.
+
+**Método.** Mesmo teste dos Achados 46 a 49 (Premier League 2025/26, 342 jogos, 1.000 simulações por jogo, IC 95% por bootstrap pareado). Referência `forca_gols_nivel`; variantes: expoente 2 só no mando (`exp_mando`), só na força dos times (`exp_forca`, ataque e defesa), nos dois (`exp_ambos`), com teto dos multiplicadores alargado para [0,5; 2,0].
+
+**Resultado (log-loss médio 1X2 / Brier 1X2 / log-loss over-under).**
+
+| | 1X2 | Brier 1X2 | over/under 2,5 |
+|---|---|---|---|
+| mercado | 0,9985 | 0,5980 | 0,6823 |
+| Dixon-Coles | 1,0347 | 0,6219 | 0,6872 |
+| referência (Achado 47) | 1,0667 | 0,6435 | 0,6868 |
+| expoente 2 só no mando | 1,0615 | 0,6400 | 0,6849 |
+| **expoente 2 só na força** | **1,0481** | **0,6301** | 0,6901 |
+| expoente 2 nos dois | 1,0487 | 0,6305 | 0,6901 |
+
+Diferenças pareadas (negativo = melhora), IC 95%:
+- **força amplificada sobre a referência: 1X2 -0,0186 [-0,0279; -0,0096]**, Brier -0,0134 [-0,0199; -0,0072]. Melhora significativa, maior que a de qualquer camada anterior.
+- mando amplificado sobre a referência: -0,0052 [-0,0126; +0,0022]. Sem efeito detectável. E nos dois sobre só na força: sem ganho extra.
+- **força amplificada contra o Dixon-Coles: +0,0134 [-0,0172; +0,0421]**; antes eram +0,0320 [-0,0014; +0,0641]. Passa a ser indistinguível do Dixon-Coles no 1X2. Contra o mercado continua pior: +0,0496 [+0,0201; +0,0770] (era +0,0682).
+- over/under: força amplificada +0,0033 [-0,0035; +0,0097], sem diferença detectável.
+
+**Diagnóstico.** Gols por jogo simulados 2,74 (referência), 2,66 (força amplificada) contra 2,79 reais; over 2,5 médio 52,1% e 50,3% contra 56,1% real. Vitória do mandante 38,6% (referência), 39,9% (mando amplificado), 38,3% (força), contra 42,4% real; empate 25,4 a 25,6% contra 26,9%. A força amplificada melhora o log-loss porque **discrimina melhor os times**, não porque corrija as médias.
+
+**Leitura.** A atenuação do multiplicador de chute era a causa principal da fraqueza em discriminar a força dos times: com o expoente que compensa, o simulador chega ao patamar do Dixon-Coles no 1X2 numa janela de 342 jogos. O mando não se beneficia: mesmo com razão de chutes agora realizada, a vitória do mandante continua ~2,5 pontos abaixo do real (39,9% contra 42,4%); o que falta não está no volume de chutes, e o Achado 50 aponta o estado do jogo como candidato.
+
+**Limites.** (1) Uma liga e uma temporada. (2) A elasticidade foi medida com times médios e magnitudes de 1,06 a 1,25; vale supor o mesmo expoente para forças mais extremas, sem teste. (3) O nível de gols piorou com a amplificação (2,66 contra 2,79 reais) porque `gols_nivel` usa a constante do simulador neutro (0,1017); recalibrá-la para a configuração amplificada é o ajuste natural para o over/under. (4) Dixon-Coles com a mesma ressalva do Achado 46 (não verifiquei se foi gerado fora da amostra para esses jogos).
+
+**Próximos testes (propostos):** recalibrar `gols_nivel` sob a amplificação; camada de estado do jogo (Achado 50); repetir em outras ligas e temporadas, que é o que decide se o expoente 2 se mantém.
+
+
+---
+
+## Achado 52 — resposta ao placar por saldo exato de gols: o volume de chutes sobe e a qualidade cai de quem perde, e a curva é a mesma em todos os contextos de liga
+
+**Pergunta (do usuário).** Como o placar altera a probabilidade de chute, a qualidade do chute e a permissão de toques no último terço, e como entra o "placar desejado" de cada time (vitória simples, empate, vitória por 2, aceitar perder por 1 em jogo de volta; empate fora, vitória em casa, empate em casa contra um time muito superior)?
+
+**Método** (consultas somente de leitura, mesma regra de relógio da `derivar_game_state`, com `clock`). 5 ligas, temporadas 2022 a 2024 (a avaliação fica para 2025/26, sem vazamento), estado = saldo de gols de quem chuta, truncado em -2 e +2. Separado por perfil de força (sinal da diferença de Elo antes do jogo: fraco <= -100, forte >= +100) e por mando. Multiplicador = taxa do estado dividida pela taxa do empate do mesmo grupo.
+
+**Resultado agrupado (ponderado por minutos; volume = chutes por 90 minutos; qualidade = xG por chute):**
+
+| saldo de quem chuta | volume | qualidade |
+|---|---|---|
+| -2 ou menos | x1,231 | x0,966 |
+| -1 | x1,185 | x0,979 |
+| 0 | 1,000 | 1,000 |
+| +1 | x0,883 | x1,148 |
+| +2 ou mais | x0,941 | x1,235 |
+
+- Quem perde chuta 18% a 23% mais, com qualidade 2% a 3% menor; quem ganha por 1 chuta 12% menos e com qualidade 15% maior; ganhando por 2 ou mais, a qualidade sobe 24%.
+- A qualidade piora pouco para quem perde em relação ao empate (a queda grande do Achado 50 é contra quem ganha); o que sobe forte é a qualidade de quem ganha (contra-ataques em campo aberto).
+- **Sem controlar força, a curva engana:** o volume de quem ganha por 2 ou mais parece subir (12,2 chutes por 90 minutos contra 10,9 ganhando por 1) porque quem está duas bolas na frente costuma ser o time melhor; dentro de cada perfil a curva é limpa e igual.
+
+**A curva é a mesma em casa e fora, em fraco, parelho e forte.** Volume com saldo -1: x1,16 a x1,24; com +1: x0,86 a x0,89; qualidade com +1: x1,13 a x1,20; entre os seis grupos (casa/fora x perfil) a variação cabe no ruído. O time fraco jogando fora, candidato a jogar pelo empate, não mostra curva deslocada. **Conclusão: em liga não aparece objetivo diferente por contexto no nível de detalhe disponível**; o objetivo padrão pode ser o mesmo para todos.
+
+**Placar desejado como parâmetro.** Cada time recebe um alvo = saldo final que considera satisfatório (padrão +1, "ganhar"). A resposta usa o saldo efetivo = saldo atual + (1 - alvo), truncado em -2 e +2: empate satisfatório (alvo 0) faz o 0 a 0 valer como +1; vitória por 2 (alvo +2) faz o 1 a 0 valer como 0 a 0; aceitar perder por 1 (alvo -1) faz o 0 a 1 valer como +1. Em jogo de volta com vantagem do agregado L trazida da ida, alvo = 1 - L.
+
+**Limites.** (1) O placar desejado só pode ser verificado em jogos de volta de mata-mata, e `aggregate_advantage` está vazio nos 32.307 jogos; reconstruído pelo pareamento das partidas há 89 confrontos com chutes nas duas partidas (Libertadores 54, Champions 35; a Copa do Brasil não tem chutes): pouco poder estatístico, então o efeito do alvo fica como parâmetro, não como estimativa. (2) "Empatando" mistura o início cauteloso dos jogos; a comparação limpa é entre os estados de placar, pareada no tempo. (3) A permissão de toques no último terço por placar ainda NÃO foi medida: o FotMob só tem chutes por estado; precisa dos eventos do StatsBomb (La Liga e ligas recentes, torneios), com o placar reconstruído pelos gols.
+
+
+---
+
+## Achado 53 — a reação ao placar (volume e qualidade de chute) não melhora a previsão do 1X2, e ajustá-la por mando e favoritismo também não
+
+**Pergunta.** Dar ao simulador a resposta ao placar medida no Achado 52 (volume e qualidade do chute por saldo de gols, `simular_partida(estado=...)`) melhora a previsão? E ajustá-la por mando (casa/fora/neutro), favoritismo (Elo) e placar desejado (`montar_estado_jogo`) melhora mais?
+
+**Método.** Mesmo teste dos Achados 46 a 51 (Premier League 2025/26, 342 jogos com Dixon-Coles e odds, 1.000 simulações por jogo, IC 95% por bootstrap pareado). Referência = `exp_forca` (melhor configuração do Achado 51). A tabela de resposta vem só de 2022 a 2024 (sem vazamento); o expoente 2 do Achado 51 amplifica o multiplicador de volume (a qualidade age direto na chance de gol). Variantes: `estado_v` (só volume), `estado_q` (só qualidade), `estado_vq` (os dois), `estado_ctx` (os dois, com a tabela do contexto de cada time: casa/fora x forte/parelho/fraco pelo Elo do jogo, corte de 100 pontos; alvo padrão +1 para todos). O Elo antes do jogo veio de `team_elo_history`; o CSV ganhou as colunas `elod` e `neutro`. As variantes repetidas entre as duas rodadas (`exp_forca`, `estado_vq`) coincidem exatamente.
+
+**Resultado (log-loss médio 1X2 / Brier 1X2 / log-loss over-under).**
+
+| | 1X2 | Brier | over/under |
+|---|---|---|---|
+| mercado | 0,9985 | 0,5980 | 0,6823 |
+| Dixon-Coles | 1,0347 | 0,6219 | 0,6872 |
+| referência `exp_forca` | 1,0481 | 0,6301 | 0,6901 |
+| `estado_v` | 1,0522 | 0,6336 | 0,6877 |
+| `estado_q` | 1,0532 | 0,6332 | 0,6897 |
+| `estado_vq` | 1,0529 | 0,6340 | 0,6853 |
+| `estado_ctx` | 1,0553 | 0,6357 | 0,6887 |
+
+Diferenças pareadas, IC 95% (positivo = pior):
+- reação ao placar sobre a referência, 1X2: `estado_v` +0,0041 [-0,0040; +0,0120], `estado_q` +0,0051 [-0,0021; +0,0123], `estado_vq` +0,0047 [-0,0017; +0,0111]. Nenhuma diferença distinguível de zero, e o sinal é de leve piora.
+- reação ao placar sobre a referência, over/under: `estado_vq` -0,0047 [-0,0115; +0,0021], `estado_v` -0,0024, `estado_q` -0,0003. Também sem significância.
+- **por contexto sobre o agrupado: 1X2 +0,0024 [-0,0038; +0,0090]**, Brier +0,0018 [-0,0024; +0,0060], over/under +0,0034 [-0,0011; +0,0080]. O ajuste por mando e favoritismo não acrescenta nada.
+- contra o Dixon-Coles, 1X2: `estado_vq` +0,0181 [-0,0137; +0,0487], `estado_ctx` +0,0206 [-0,0119; +0,0522]; contra o mercado: +0,0543 [+0,0232; +0,0833] e +0,0568 [+0,0249; +0,0861].
+
+**Diagnóstico das médias.** A reação ao placar melhora as médias de resultado sem melhorar o log-loss: empate simulado 25,6% (referência) para 26,3% (`estado_vq`) e 26,2% (`estado_ctx`), contra 26,9% real; gols por jogo 2,66 para 2,77 (real 2,79); over 2,5 médio 50,3% para 52,6% (real 56,1%). Parte do aumento de gols vem do multiplicador de qualidade (`estado_q` sozinho: 2,66 para 2,76) porque quem está ganhando passa a converter mais; o nível de gols (`gols_nivel`) não foi recalibrado para isso.
+
+**Leitura.** O log-loss do 1X2 é decidido pela capacidade de discriminar a força dos times, que é o que o expoente do Achado 51 corrigiu; a reação ao placar mexe na dinâmica dentro do jogo, regressiva (puxa o saldo de volta), e melhora as proporções de empate e de gols, mas não separa melhor quem é favorito. O resultado para o contexto é consistente com o Achado 52: as curvas de resposta são praticamente iguais nos 6 contextos de liga, então escolher a curva pelo contexto não adiciona informação.
+
+**O que não se pode concluir.** (1) Uma liga e uma temporada, 342 jogos: os IC são largos e efeitos de ±0,01 não são detectáveis. (2) O expoente 2 foi calibrado para multiplicadores fixos e aqui o multiplicador muda durante o jogo. (3) A tabela vem de taxas por minuto que misturam a fase do jogo. (4) O placar desejado não foi exercitado: todos os times usam alvo +1, porque em liga não há contexto em que ele seja conhecido (o campo neutro também não existe no banco) e os jogos de volta com chutes são só 89. A camada fica disponível como parâmetro (`--alvo-casa`, `--alvo-fora`, `--alvo-ctx`), desligada por padrão: a melhor configuração segue sendo `exp_forca`.
+
+**Próximos testes (propostos):** recalibrar `gols_nivel` sob amplificação e reação ao placar; repetir em outras ligas e temporadas (decide se o expoente 2 e o resultado nulo do placar se mantêm); toques no último terço por placar com os eventos do StatsBomb; placar desejado em jogos de volta quando houver mais confrontos com chutes.
+
+## Achado 54 — recalibrar o nível de gols numa temporada e aplicar na seguinte não melhora a previsão de forma distinguível, e o fator ideal muda de uma temporada para outra
+
+**Pergunta.** O simulador com força amplificada (`exp_forca`) e o com reação ao placar (`estado_vq`) erram o total de gols (2,66 e 2,77 por jogo, contra 2,79 real). Um fator fixo de conversão (`gols_fator`, camada nova) calibrado numa temporada corrige isso na seguinte e melhora over/under e 1X2?
+
+**Método.** (1) Calibração em 2024/25 (280 jogos simulados, 2,954 gols reais por jogo): `exp_forca` simulava 2,686 e `estado_vq` 2,787, o que dá fatores de 1,0997 e 1,0598. (2) Os fatores ficaram **fixos** e foram aplicados em 2025/26 (mesmos 342 jogos com Dixon-Coles e odds, 1.000 simulações por jogo, mesmas sementes dos Achados 51 e 53). Comparação pareada jogo a jogo com a versão sem fator, bootstrap de 2.000 reamostragens.
+
+**Resultado (342 jogos, diferença novo menos sem fator; negativo = melhor):**
+
+| | gols/jogo (real 2,79) | P(over) médio (real 56,1%) | 1X2 log-loss | over/under log-loss |
+|---|---|---|---|---|
+| `exp_forca` sem fator | 2,664 | 50,3% | 1,0481 | 0,6901 |
+| `exp_forca` com 1,0997 | 2,903 | 56,1% | 1,0472 (-0,0009 [-0,0070; +0,0052]) | 0,6835 (-0,0066 [-0,0192; +0,0061]) |
+| `estado_vq` sem fator | 2,769 | 52,6% | 1,0529 | 0,6853 |
+| `estado_vq` com 1,0598 | 2,924 | 56,4% | 1,0491 (-0,0037 [-0,0103; +0,0028]) | 0,6844 (-0,0010 [-0,0092; +0,0079]) |
+
+Referências no mesmo conjunto: Dixon-Coles 1X2 1,0347 / over/under 0,6872; mercado 0,9985 / 0,6823. Contra o Dixon-Coles, `exp_forca` com fator: 1X2 +0,0125 [-0,0175; +0,0412], over/under -0,0038 [-0,0261; +0,0177]. Todos os intervalos incluem zero.
+
+**O que os números dizem.**
+- O fator corrige o sentido certo (over simulado sobe de 50,3% para 56,1%, igual ao real), mas **nenhuma melhora é distinguível de zero**. O over/under de `exp_forca` passa a ficar um pouco abaixo do Dixon-Coles e praticamente igual ao mercado (0,6835 contra 0,6823), sem significância.
+- O fator **ultrapassou o alvo em gols**: 2,903 e 2,924 simulados contra 2,79 reais (+4,0% e +4,7%). A temporada de calibração tinha 2,95 gols por jogo e a de teste 2,79; o fator ideal em 2025/26 teria sido cerca de 1,044 para `exp_forca` (1,0997 × 0,950) e cerca de 1,0 para `estado_vq` (1,0598 × 0,943), ou seja, **para `estado_vq` o fator não era necessário**.
+- Por isso o fator fixo transporta o viés da temporada em que foi calibrado. Quem se adapta à temporada é `gols_nivel` (usa o histórico anterior a cada jogo); o fator corrige só o viés da configuração e não deveria absorver o nível da temporada.
+
+**O que não se pode concluir.** Uma liga, duas temporadas, 342 jogos: efeitos de ±0,01 não são detectáveis. Não testei fator estimado só com o histórico anterior a cada jogo (calibração móvel), que é o caso que importaria em produção.
+
+**Próximos testes (propostos):** calibração móvel do fator (só com jogos anteriores); outras ligas; toques no último terço por placar (StatsBomb); corrigir o rótulo de `p_quebra` no simulador (100% em todas as zonas por filtro antigo `mesma|recuperação|`).
+
+## Achado 55 — a qualidade do chute não cai de forma consistente ao longo do jogo; o que muda depende do estado do placar, e o reserva chuta com qualidade um pouco maior que o titular
+
+**Pergunta.** Os Achados 8 e 27 mostravam xG por chute plano ao longo do jogo (0,108 a 0,113) e conversão subindo um pouco no 2º tempo. A hipótese era que a qualidade cai com a fadiga e que a entrada de reservas seria a exceção. Esses achados mediam a média de tudo junto, sem separar estado do placar, força do time nem quem chuta.
+
+**Método** (`arquivos_do_claude/qualidade_chute_no_tempo.sql`, só leitura; `scripts/analisar_qualidade_chute_no_tempo.py`, sem rede; dados agregados em `dados_referencia/qualidade_chute/`). Premier League, La Liga, Serie A, Bundesliga e Ligue 1, 2021 a 2025: 223.000 chutes, sem pênalti, gol contra e disputa de pênaltis. Estado do placar ANTES do chute e relógio monótono (`clock`), a mesma regra de `derivar_game_state`. Células: liga × estado (perde/empata/ganha) × perfil de força (Elo global, corte 100) × tipo de lance (jogo corrido ou bola parada). Cada faixa de 15 minutos é padronizada para a mesma composição de células. Fadiga medida só em titulares. Reserva comparado com titular na mesma célula e faixa de tempo, ponderando pelos chutes do reserva. Papel do reserva por minutos desde a entrada (`match_lineup_fotmob.substituted_in_minute`).
+
+**Resultado 1: sem controle, a qualidade é plana, e a alta no fim vem dos reservas.**
+
+| faixa | 0-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 |
+|---|---|---|---|---|---|---|
+| xG/chute, todos | 0,1023 | 0,1003 | 0,1011 | 0,1016 | 0,1042 | 0,1035 |
+| xG/chute, só titulares | 0,1022 | 0,1004 | 0,1012 | 0,1016 | 0,1038 | 0,1005 |
+| titulares, padronizado | 0,1031 | 0,1009 | 0,1010 | 0,1007 | 0,1023 | 0,0997 |
+| reservas entre os chutes | 0% | 0,2% | 0,6% | 3,5% | 13% | 28,8% |
+
+A inclinação padronizada dos titulares é **-0,00021 xG/chute por faixa de 15 min (ep 0,00023; z = -0,9)**, ou -0,0011 do início ao fim (-1%): não significativa. O gols/xG também fica plano (0,95 a 0,98 em todas as faixas).
+
+**Resultado 2: o efeito depende do estado do placar (titulares, padronizado por liga, perfil e tipo).**
+
+| estado | 0-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 | inclinação por faixa (z) |
+|---|---|---|---|---|---|---|---|
+| perdendo | 0,0939 | 0,0929 | 0,0925 | 0,0946 | 0,0942 | 0,0890 | -0,00056 (-1,4) |
+| empatando | 0,1014 | 0,0978 | 0,0992 | 0,0972 | 0,0985 | 0,0955 | **-0,00086 (-3,1)** |
+| ganhando | 0,1168 | 0,1162 | 0,1141 | 0,1147 | 0,1191 | 0,1199 | **+0,00114 (+2,2)** |
+
+Empatando, o xG por chute cai cerca de 6% do começo ao fim; ganhando, sobe cerca de 3%; perdendo, cai nos últimos 15 minutos. Os dois lados se cancelam na média. Isso é compatível com fadiga ou desespero de quem precisa do gol e com espaço para contra-ataque de quem está ganhando, mas os dados não separam as duas leituras.
+
+**Resultado 3: o padrão não é robusto entre ligas.** Inclinação padronizada de titulares por liga (z): Premier League -0,00116 (-2,3), Bundesliga -0,00046 (-0,8), La Liga +0,00001, Ligue 1 0,00000, Serie A +0,00075 (+1,5). Só a Premier League mostra queda (-0,0058 de 0-15 a 75-90); a Serie A sobe. "Ganhando sobe" aparece com z ≥ 2 em duas ligas (Ligue 1, Serie A). Jogo corrido (-0,00035, z = -1,2) e bola parada (+0,00010, z = +0,3) também não distinguem de zero.
+
+**Resultado 4: o reserva chuta com qualidade maior que o titular, e o efeito não some com o tempo em campo.** Mesma célula (liga, faixa, estado, perfil, tipo), diferença reserva menos titular em xG por chute: 0 a 15 min desde a entrada **+0,0053 (ep 0,0014; z = +3,8; 12.098 chutes)**, 15 a 30 min +0,0054 (z = +3,0), mais de 30 min +0,0048 (z = +1,8). A partir dos 60 minutos, **+0,0052 (ep 0,0012)**, cerca de +5% sobre os ~0,102 do titular. A direção é a mesma nas cinco ligas (de +0,0024 a +0,0063 a partir dos 60 minutos).
+
+**Leitura.**
+- A hipótese de queda geral por fadiga **não se sustenta**: a média é plana, e as diferenças por estado não se repetem em todas as ligas.
+- A "exceção do reserva" aparece, mas **não tem cara de pernas descansadas**: o efeito não decai com o tempo desde a entrada (+0,0053, +0,0054, +0,0048), como seria se fosse frescor que se esgota. É compatível com **composição**: reservas costumam ser atacantes, que chutam de mais perto, e a comparação não controla a posição.
+- Para o simulador: não há base para um multiplicador de qualidade por janela. Se existir um, o candidato é o estado do placar (já tratado no Achado 52), não o relógio.
+
+**O que não se pode concluir.** (1) A posição do jogador não foi controlada: sem isso, "reserva" mistura frescor e perfil de posição. (2) xG mede a qualidade da chance (lugar e tipo do chute), não a finalização; a fadiga na execução apareceria em gols/xG, que ficou plano mas é ruidoso. (3) Erro-padrão trata chutes como independentes (mesmo jogo e mesmo time se repetem), então é otimista. (4) Cinco ligas europeias, 2021 a 2025; o resultado não vale para outras competições. (5) `sem_escalacao` (4,8% dos chutes: jogador sem correspondência na escalação) tem o mesmo sinal que os reservas (+0,0067) e foi tratado à parte.
+
+**Próximo teste (proposto):** repetir a comparação reserva contra titular DENTRO da mesma posição (atacante, meia, defensor) com `match_lineup_fotmob.position_id`, para separar frescor de perfil de posição.
+
+## Achado 56 — o empate técnico com o Dixon-Coles (Achado 51) não se repete em outras ligas; o rótulo de quebra corrigido e o fator de gols móvel dão ganhos pequenos e semelhantes no 1X2
+
+**Perguntas.** (1) O simulador com força amplificada (`exp_forca`) continua empatado com o Dixon-Coles fora da Premier League? (2) Corrigir o rótulo de quebra (`p_quebra`) muda a previsão? (3) Um fator de gols que se atualiza com os jogos anteriores (móvel) funciona onde o fator fixo do Achado 54 falhou?
+
+**Método.** La Liga, Serie A, Bundesliga e Ligue 1 (temporada 2025/26 de teste, 2024/25 de aquecimento; dados de `scripts/exportar_csv_backtest_simulador.py`, que reproduz o CSV da Premier League) mais a Premier League dos achados anteriores. 1.000 simulações por jogo, mesmas sementes entre variantes (a diferença pareada é só o efeito da mudança), jogos com Dixon-Coles e odds de fechamento: 342 + 306 + 342 + 272 + 271 = **1.533**. Bootstrap de 4.000 reamostragens por jogo (`scripts/comparar_resultados_backtest.py`).
+- *Quebra corrigida* (`exp_forca_quebra`): o filtro de quebra usava o rótulo antigo `mesma|recuperação|`, que não existe nos dados; toda linha que continua contava como quebra (`p_quebra` = 100% em todas as zonas) e a bola seguia do núcleo em 95% das vezes (teto). Corrigido, `p_quebra` fica entre 1,5% e 4% (falta, lateral, escanteio, recuperação do adversário) e quem continua usa a matriz 18 × 20. O padrão continua o antigo (os Achados 41 a 54 seguem reproduzíveis).
+- *Fator de gols móvel* (`exp_forca_movel`): em cada jogo, razão gols reais / gols simulados sem fator dos **últimos 200 jogos anteriores** (data estritamente anterior), piso 0,85, teto 1,25, mínimo de 50 jogos; a base sem fator vem das rodadas de `exp_forca` de 2024 e 2025. Parâmetros fixados antes de olhar o teste.
+
+**Resultado 1: o simulador é pior que o Dixon-Coles no 1X2 e empata no over/under.** `exp_forca` menos Dixon-Coles, log-loss do 1X2 (positivo = pior): Premier League +0,0134 [-0,0165; +0,0419]; La Liga **+0,0506** [+0,0168; +0,0850]; Serie A +0,0290 [-0,0074; +0,0647]; Bundesliga **+0,0717** [+0,0361; +0,1065]; Ligue 1 **+0,0336** [+0,0028; +0,0637]. Agregado das cinco: **+0,0382 [+0,0228; +0,0530]** (Brier +0,0266 [+0,0159; +0,0367]). No over/under: **-0,0044 [-0,0169; +0,0077]**, empate. O próprio Dixon-Coles também fica atrás do mercado (agregado, 1X2 +0,0235 [+0,0128; +0,0346]; over/under +0,0192 [+0,0097; +0,0287]); `exp_forca` contra o mercado: 1X2 +0,0617 [+0,0467; +0,0765], over/under +0,0148 [+0,0049; +0,0243].
+
+**Resultado 2: rótulo de quebra corrigido, ganho pequeno no 1X2.** Contra `exp_forca`, log-loss do 1X2, por liga: Premier League +0,0015; La Liga -0,0056; Serie A -0,0019; Bundesliga -0,0069 [-0,0143; +0,0002]; Ligue 1 -0,0034; nenhuma isolada distingue de zero. Agregado: **-0,0030 [-0,0060; -0,0000]** (no limite da significância), Brier -0,0017 [-0,0037; +0,0003], over/under +0,0019 [-0,0005; +0,0045]. Os gols por jogo caem cerca de 1% a 1,5% (Premier League 2,664 para 2,630).
+
+**Resultado 3: o fator de gols móvel melhora o 1X2, o over/under não muda.** Contra `exp_forca`, agregado: 1X2 **-0,0032 [-0,0058; -0,0004]**, Brier **-0,0022 [-0,0039; -0,0004]**, over/under 0,0000 [-0,0042; +0,0039]. Por liga (1X2): Premier League -0,0003; La Liga **-0,0077** [-0,0135; -0,0014]; Serie A 0,0000; Bundesliga -0,0028; Ligue 1 -0,0062 [-0,0125; +0,0001]. Contra o Dixon-Coles continua pior no 1X2: **+0,0351 [+0,0199; +0,0495]**; over/under -0,0044 [-0,0172; +0,0078].
+
+**Viés de nível de gols (jogos com Dixon-Coles e odds; gols reais; sem fator; com fator móvel):**
+
+| liga | reais | sem fator | com fator móvel | fator médio (faixa) |
+|---|---|---|---|---|
+| Premier League | 2,792 | 2,664 (-4,6%) | 2,758 (-1,2%) | 1,038 (0,994-1,090) |
+| La Liga | 2,739 | 2,512 (-8,3%) | 2,629 (-4,0%) | 1,053 (1,008-1,116) |
+| Serie A | 2,412 | 2,428 (+0,6%) | 2,386 (-1,1%) | 0,983 (0,909-1,067) |
+| Bundesliga | 3,294 | 2,883 (-12,5%) | 3,115 (-5,4%) | 1,090 (1,042-1,142) |
+| Ligue 1 | 2,827 | 2,723 (-3,6%) | 2,847 (+0,7%) | 1,051 (0,993-1,102) |
+
+O nível de gols que o simulador erra é diferente em cada liga (a Bundesliga é subestimada em 12,5%; a Serie A, nada), o que explica por que um fator fixo não serve (Achado 54). O fator móvel acompanha cada liga, e ainda deixa viés de -4% a -5% na La Liga e na Bundesliga: a razão pura corrige só parte (um fator de 1,0997 deu +9% nos gols, elasticidade ~0,9) e a janela de 200 jogos atrasa.
+
+**Leitura.**
+- O "empate técnico" do Achado 51 era da Premier League: lá o intervalo incluía zero e a amostra era de 342 jogos. Com 1.533 jogos em cinco ligas, o simulador é pior que o Dixon-Coles no 1X2 (cerca de +0,04) e igual no over/under. Para decisões de aposta o simulador ainda não bate nenhuma das duas referências no 1X2.
+- Cada ajuste testado aqui (quebra e nível de gols) vale cerca de -0,003 no 1X2 e não fecha uma diferença de +0,038 contra o Dixon-Coles. O que falta provavelmente está em outro lugar: a força dos times, que o Dixon-Coles estima direto dos gols do histórico e o simulador estima só pelo canal dos chutes (hipótese, não testada aqui).
+- No over/under, o simulador acompanha o Dixon-Coles, mas ambos perdem para o mercado (e na Bundesliga e Ligue 1 o simulador perde significativamente).
+
+**O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada; os jogos da mesma liga e do mesmo time se repetem, então os IC são otimistas. (2) Só os jogos com previsão do Dixon-Coles entram (271 a 342 de 306 a 380): é o conjunto em que se pode comparar, não a temporada inteira. (3) A janela de 200 jogos, o piso e o teto do fator móvel não foram otimizados; o expoente 1,0 deixa parte do viés. (4) Quebra e fator móvel foram testados separados, não combinados.
+
+**Próximos testes (propostos):** combinar quebra corrigida e fator móvel; força dos times por gols (como o Dixon-Coles) no lugar de só chutes, que é onde está a diferença; outras ligas e temporadas anteriores.

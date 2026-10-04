@@ -128,3 +128,27 @@ def test_conversao_neutra_nao_muda_o_jogo_e_conversao_alta_faz_mais_gols():
     base = sum(s.simular_partida(P, random.Random(i)).get("gols_0", 0) for i in range(300))
     com = sum(s.simular_partida(P, random.Random(i), times=alto).get("gols_0", 0) for i in range(300))
     assert com > 1.3 * base
+
+
+def test_estado_neutro_nao_muda_o_jogo_e_alvo_desloca_o_saldo_efetivo():
+    import camadas_simulador as cam
+    base = s.simular_partida(P, random.Random(9))
+    neutro = {"tabela": {k: (1.0, 1.0) for k in range(-2, 3)}, "desvio": (0, 0)}
+    assert s.simular_partida(P, random.Random(9), estado=neutro) == base          # tabela neutra = jogo idêntico (mesmo número de sorteios)
+    e = cam.montar_estado()
+    assert e["desvio"] == (0, 0)                                                  # alvo padrão +1
+    assert cam.montar_estado(alvo=(0, 2))["desvio"] == (1, -1)                    # empate basta -> +1; vencer por 2 -> -1
+    assert cam.montar_estado(alvo=(-1, 1))["desvio"] == (2, 0)                    # aceita perder por 1 -> +2
+    # time que perde por 2 (saldo efetivo -2) chuta mais que o que está empatado, com a tabela real
+    tabela = cam.montar_estado(volume=True, qualidade=False)["tabela"]
+    assert tabela[-2][0] > 1.0 > tabela[1][0]
+
+
+def test_quebra_corrigida_separa_quebra_de_continuacao_e_reverte():
+    p = s.Parametros()
+    assert all(abs(x - 1.0) < 1e-9 for x in p.p_quebra)                           # legado: rótulo antigo faz toda linha que continua virar "quebra"
+    p.usar_quebra_corrigida()
+    assert all(0.0 < x < 0.1 for x in p.p_quebra)                                 # corrigido: só falta, lateral, escanteio, recuperação do adversário (~1,5% a 4%)
+    p.usar_quebra_corrigida(False)
+    assert all(abs(x - 1.0) < 1e-9 for x in p.p_quebra)                           # volta ao legado sem recarregar
+    assert s.simular_partida(p, random.Random(3)) == s.simular_partida(s.Parametros(), random.Random(3))

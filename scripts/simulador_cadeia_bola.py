@@ -148,8 +148,14 @@ class Parametros:
             self.p_perda_zona.append(pesos[19] / tot)
             self.destino_continua.append(Amostrador(pesos[:18]))
 
-    def _definir_nucleo(self, nucleo: dict) -> None:
-        """Núcleo empírico da próxima linha (chaves 'continua|z', 'perda|z', 'chute|z' -> {'quem|classe|zona': n})."""
+    def _definir_nucleo(self, nucleo: dict, quebra_corrigida: bool = False) -> None:
+        """Núcleo empírico da próxima linha (chaves 'continua|z', 'perda|z', 'chute|z' -> {'quem|classe|zona': n}).
+        `quebra_corrigida=False` (padrão, comportamento dos Achados 41-54): o filtro de "quebra" usa o rótulo antigo 'mesma|recuperação|', que não existe mais nos dados;
+        então TODA linha que continua conta como quebra (p_quebra = 100% em toda zona) e o destino de quem continua sai do núcleo em 95% das vezes (teto) e da matriz
+        18 x 20 em 5%. `quebra_corrigida=True`: quebra = só o que não é 'mesma|continua|' (falta, lateral, escanteio, recuperação do adversário, ~3%); quem continua usa a matriz."""
+        self._nucleo = nucleo
+        self._quebra_corrigida = quebra_corrigida
+        prefixo_continua = "mesma|continua|" if quebra_corrigida else "mesma|recuperação|"
 
         def da_zona(tipo: str, z: int) -> dict:
             """Contagens da zona; zonas com menos de 30 linhas (chute na defesa, por exemplo) usam o agregado de todo o campo."""
@@ -169,9 +175,15 @@ class Parametros:
             self.apos_chute.append(amostrador_de_chaves(da_zona("chute", z)))
             cz = da_zona("continua", z)
             total = sum(cz.values())
-            quebra = {k: v for k, v in cz.items() if not k.startswith("mesma|recuperação|")}
+            quebra = {k: v for k, v in cz.items() if not k.startswith(prefixo_continua)}
             self.p_quebra.append(sum(quebra.values()) / total if total else 0.0)
             self.apos_quebra.append(amostrador_de_chaves(quebra) if quebra else None)
+
+    def usar_quebra_corrigida(self, ligada: bool = True) -> "Parametros":
+        """Liga/desliga a correção do rótulo de quebra (ver `_definir_nucleo`); devolve o próprio objeto."""
+        if ligada != self._quebra_corrigida:
+            self._definir_nucleo(self._nucleo, ligada)
+        return self
 
     def _definir_pool(self, chutes: list) -> None:
         """Chutes reais por zona de 18 ([zona, xg, gol, tipo, cabeça, distância, ângulo]); pênalti (tipo 2) em conjunto à parte."""
@@ -270,9 +282,22 @@ def proxima_linha(p: Parametros, rng: random.Random, amostra: tuple[list, Amostr
     return quem, classe, int(zona)
 
 
-def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA, registro: list | None = None, memoria: bool = True) -> dict:
+def mult_estado(tabela: dict, ef: float) -> tuple:
+    """(mult. de volume, mult. de qualidade) para o saldo efetivo `ef` em [-2, 2]; entre dois inteiros interpola linearmente (alvos fracionários)."""
+    lo = math.floor(ef)
+    if lo == ef:
+        return tabela[int(ef)]
+    f = ef - lo
+    a, b = tabela[lo], tabela[min(lo + 1, 2)]
+    return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+
+
+def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA, registro: list | None = None, memoria: bool = True, estado: dict | None = None) -> dict:
     """Uma partida entre `times[0]` (começa o 1T) e `times[1]`. Devolve contagens (ações, chutes, gols, bolas paradas, tempo morto, posses, chutes por
     janela de 15 min, e por equipe: chutes_0/1, gols_0/1, escanteios_0/1) e a ocupação por classe/faixa.
+    `estado` (opcional, Achado 52): reação ao placar de quem tem a bola. dict com `tabela` {saldo efetivo -2..2: (mult. de chance de chute, mult. de chance de o chute virar gol)} (ou `tabelas`, uma por time, para contextos distintos de mando/favoritismo) e
+    `desvio` (d0, d1) = 1 - placar desejado de cada time (padrão (0, 0) com alvo +1: "ganhar"). Saldo efetivo = saldo atual + desvio, truncado em [-2, 2]. `None` = o jogo não reage ao placar
+    (idêntico ao de antes). Alvo: 0 = empate basta, +2 = quer vencer por 2, -1 = aceita perder por 1; em jogo de volta, alvo = 1 - vantagem do agregado trazida da ida.
     Se `registro` for uma lista, cada linha de ação é anexada como (equipe, zona, tipo, metade 0/1, xG, gol, segundos desde o início da metade)."""
     m: collections.Counter = collections.Counter()
     janela = [0] * 6                                     # chutes por janela de 15 min de relógio (0-15, 15-30, 30-45+, 45-60, 60-75, 75-90+)
@@ -298,7 +323,11 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                 m[f"mem|{zona}|n"] += 1
                 m[f"mem|{zona}|p"] += mem_perda
                 m[f"mem|{zona}|c"] += mem_chute
-            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"] * mem_chute, 0.5)
+            v_est = q_est = 1.0
+            if estado is not None:
+                ef = max(-2, min(2, m[f"gols_{equipe}"] - m[f"gols_{1 - equipe}"] + estado["desvio"][equipe]))
+                v_est, q_est = mult_estado(estado["tabelas"][equipe] if "tabelas" in estado else estado["tabela"], ef)
+            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"] * mem_chute * v_est, 0.5)
             pl = min(p.p_perda_zona[zona] * atk.ataque_perda * dfs.defesa_perda * jm["perda"] * mem_perda, 0.95 - ps)
             penalti = classe == "pênalti" and p.pool_penalti
             if penalti:
@@ -317,11 +346,11 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                     rec = rng.choice(p.pool_penalti) if penalti else rng.choice(p.pool_chute[zona])
                     if p.fonte_xg == "fotmob" and not penalti:
                         _, _, xg_pz, gol_pz = zp.FOTMOB[rec[6]]
-                        xg_linha, gol_linha = xg_pz, 1 if rng.random() < min(gol_pz * atk.conversao_ataque * dfs.conversao_defesa, 1.0) else 0
+                        xg_linha, gol_linha = xg_pz, 1 if rng.random() < min(gol_pz * atk.conversao_ataque * dfs.conversao_defesa * q_est, 1.0) else 0
                     else:
                         xg_linha, gol_linha = rec[0], rec[1]
                 else:
-                    xg_linha, gol_linha = p.xg_faixa[b], 1 if rng.random() < min(p.p_gol[b] * atk.conversao_ataque * dfs.conversao_defesa, 1.0) else 0
+                    xg_linha, gol_linha = p.xg_faixa[b], 1 if rng.random() < min(p.p_gol[b] * atk.conversao_ataque * dfs.conversao_defesa * q_est, 1.0) else 0
                 m["xG"] += xg_linha
                 if gol_linha:
                     m["gols"] += 1

@@ -21,10 +21,67 @@ CHUTES_POR_TIME_SIM_NEUTRO = 12.68      # simulador padrão, 400 jogos, semente 
 GOLS_POR_CHUTE_SIM_NEUTRO = 0.1017      # simulador padrão, 2.500 jogos, semente 11 (2,536 gols / 24,94 chutes)
 CHAVES = ("ataque_chute", "defesa_chute", "conversao_ataque", "conversao_defesa")
 
+# Resposta ao placar (Achado 52): por saldo de gols de QUEM CHUTA, truncado em -2..+2, relativa ao empate: (multiplicador de volume de chutes, multiplicador de qualidade).
+# Estimada em 5 ligas, temporadas 2022-2024 (fora do teste de 2025/26). Volume = chutes por 90 min; qualidade = xG por chute. Ponderada por minutos entre perfis de força.
+ESTADO_TABELA = {-2: (1.231, 0.966), -1: (1.185, 0.979), 0: (1.0, 1.0), 1: (0.883, 1.148), 2: (0.941, 1.235)}
+
+
+# Resposta ao placar por CONTEXTO (mando x favoritismo), mesma base e método da tabela acima, relativa ao empate do próprio grupo. Chave "local|perfil": local = casa/fora/neutro,
+# perfil = forte (Elo do time >= +corte sobre o adversário), fraco (<= -corte) ou parelho. O campo neutro não está registrado no banco (matches.is_neutral é falso em todos os jogos):
+# "neutro" é a média simples de casa e fora, uma hipótese, não medição. Em liga as curvas são praticamente iguais entre os contextos (Achado 52).
+ESTADO_TABELAS_CTX = {
+    "casa|forte": {-2: (1.223, 0.977), -1: (1.178, 1.011), 0: (1.0, 1.0), 1: (0.862, 1.144), 2: (0.878, 1.271)},
+    "casa|fraco": {-2: (1.265, 1.008), -1: (1.239, 1.01), 0: (1.0, 1.0), 1: (0.89, 1.132), 2: (0.909, 1.346)},
+    "casa|parelho": {-2: (1.267, 0.908), -1: (1.193, 0.963), 0: (1.0, 1.0), 1: (0.869, 1.147), 2: (0.936, 1.149)},
+    "fora|forte": {-2: (1.173, 0.936), -1: (1.159, 0.934), 0: (1.0, 1.0), 1: (0.873, 1.132), 2: (0.969, 1.252)},
+    "fora|fraco": {-2: (1.285, 0.947), -1: (1.186, 0.989), 0: (1.0, 1.0), 1: (0.868, 1.2), 2: (0.895, 1.51)},
+    "fora|parelho": {-2: (1.268, 0.993), -1: (1.203, 0.963), 0: (1.0, 1.0), 1: (0.881, 1.159), 2: (0.914, 1.167)},
+    "neutro|forte": {-2: (1.198, 0.957), -1: (1.168, 0.972), 0: (1.0, 1.0), 1: (0.867, 1.138), 2: (0.923, 1.261)},
+    "neutro|fraco": {-2: (1.275, 0.978), -1: (1.212, 1.0), 0: (1.0, 1.0), 1: (0.879, 1.166), 2: (0.902, 1.428)},
+    "neutro|parelho": {-2: (1.268, 0.951), -1: (1.198, 0.963), 0: (1.0, 1.0), 1: (0.875, 1.153), 2: (0.925, 1.158)},
+}
+
+
+def perfil_de_elo(elo_dif, corte=100.0):
+    """Favoritismo de um time pelo Elo dele menos o do adversário: 'forte' (>= corte), 'fraco' (<= -corte) ou 'parelho'. Elo ausente = parelho."""
+    if elo_dif is None or elo_dif != elo_dif:
+        return "parelho"
+    return "forte" if elo_dif >= corte else ("fraco" if elo_dif <= -corte else "parelho")
+
+
+def montar_estado_jogo(elo_dif_mandante=0.0, neutro=False, volume=True, qualidade=True, exp_volume=1.0, alvo=(1, 1), alvo_ctx=None, elo_corte=100.0):
+    """`estado` de UM jogo, ajustado por mando (casa/fora/neutro) e favoritismo (Elo). `alvo` é o placar desejado de cada time (padrão +1, ganhar); `alvo_ctx` {"local|perfil": alvo}
+    substitui o alvo do time cujo contexto casa com a chave (ex.: {"fora|fraco": 0} = o fraco que joga fora se contenta com o empate; aceita fracionário, que interpola)."""
+    locais = ("neutro", "neutro") if neutro else ("casa", "fora")
+    perfis = (perfil_de_elo(elo_dif_mandante, elo_corte), perfil_de_elo(None if elo_dif_mandante is None else -elo_dif_mandante, elo_corte))
+    tabelas, alvos = [], []
+    for i in (0, 1):
+        chave = f"{locais[i]}|{perfis[i]}"
+        tabelas.append({int(s): ((v ** exp_volume) if volume else 1.0, q if qualidade else 1.0) for s, (v, q) in ESTADO_TABELAS_CTX[chave].items()})
+        alvos.append(alvo_ctx[chave] if alvo_ctx and chave in alvo_ctx else alvo[i])
+    return {"tabelas": tabelas, "desvio": (1 - alvos[0], 1 - alvos[1])}
+
+
+def montar_estado(tabela=None, volume=True, qualidade=True, exp_volume=1.0, alvo=(1, 1)):
+    """dict `estado` para simular_partida. `volume`/`qualidade` ligam cada efeito; `exp_volume` amplifica o multiplicador de volume (o simulador realiza só ~50% em log
+    do multiplicador de chute, Achado 51; a qualidade age direto na chance de gol e não precisa); `alvo` = placar desejado (saldo final satisfatório) de cada time."""
+    tabela = tabela or ESTADO_TABELA
+    return {"tabela": {int(s): ((v ** exp_volume) if volume else 1.0, q if qualidade else 1.0) for s, (v, q) in tabela.items()},
+            "desvio": (1 - alvo[0], 1 - alvo[1])}
+
+
 CONFIG = {
     "k_time": 8.0,            # pseudo-jogos que puxam a força de um time para 1,0
     "k_mando_gols": 50.0,     # pseudo-jogos que puxam o mando da conversão para 1,0
+    "janela_mando": 200,      # nº de jogos mais recentes que as camadas *_janela olham (mando que acompanha mudança entre temporadas)
+    # Expoentes de amplificação dos multiplicadores de chute (Achado 51). O simulador entrega só ~50% (em log) da razão de chutes pedida
+    # (scripts/calibrar_elasticidade_chute.py: elasticidade 0,49 +- 0,02, igual para ataque e defesa), então o multiplicador precisa ser elevado a ~1/0,5 = 2.
+    # 1,0 = sem amplificação (comportamento dos Achados 46 a 49). O valor 2,0 foi fixado pela calibração do próprio simulador, antes de olhar o teste.
+    "exp_mando": 1.0,
+    "exp_forca": 1.0,
     "teto": (0.6, 1.6),       # limites do produto das camadas, por chave
+    "gols_fator": 1.0,        # fator de gols da calibração em outra temporada (camada gols_fator); 1,0 = sem fator
+    "elo_corte": 100.0,       # diferença de Elo a partir da qual um time é "forte" ou "fraco" na reação ao placar (Achado 52)
 }
 
 
@@ -35,6 +92,7 @@ class Historia:
         self.pro, self.contra, self.n = {}, {}, {}
         self.soma_casa = self.soma_fora = 0.0          # chutes
         self.gols_casa = self.gols_fora = 0.0
+        self.recentes = []                              # (chutes casa, chutes fora, gols casa, gols fora) de cada jogo, em ordem
         self.jogos = 0
 
     def add(self, j):
@@ -46,7 +104,13 @@ class Historia:
         self.soma_fora += j["as"]
         self.gols_casa += j["hg"]
         self.gols_fora += j["ag"]
+        self.recentes.append((j["hs"], j["as"], j["hg"], j["ag"]))
         self.jogos += 1
+
+    def janela(self, n):
+        """Somas (chutes casa, chutes fora, gols casa, gols fora) dos últimos `n` jogos (ou de todos, se houver menos) e quantos jogos entraram."""
+        r = self.recentes[-n:]
+        return (sum(x[0] for x in r), sum(x[1] for x in r), sum(x[2] for x in r), sum(x[3] for x in r)), len(r)
 
     def chutes_por_time(self):
         return (self.soma_casa + self.soma_fora) / (2 * self.jogos)
@@ -64,7 +128,15 @@ def camada_nivel_chutes(h, casa, fora, cfg):
 
 def camada_mando_chutes(h, casa, fora, cfg):
     """Mandante chuta mais: raiz da razão chutes casa / fora da história, dividida entre quem joga em casa (+) e fora (-)."""
-    m = math.sqrt(h.soma_casa / h.soma_fora)
+    m = math.sqrt(h.soma_casa / h.soma_fora) ** cfg.get("exp_mando", 1.0)
+    return {"ataque_chute": m}, {"ataque_chute": 1.0 / m}
+
+
+def camada_mando_chutes_janela(h, casa, fora, cfg):
+    """Igual a `mando_chutes`, mas só com os últimos `janela_mando` jogos: segue a mudança de mando entre temporadas (Achado 47: a razão de chutes
+    casa/fora foi de 1,13 em 2024/25 para 1,24 em 2025/26, e a história inteira ficou atrasada)."""
+    (sc, sf, _, _), _ = h.janela(cfg["janela_mando"])
+    m = math.sqrt(sc / sf) ** cfg.get("exp_mando", 1.0)
     return {"ataque_chute": m}, {"ataque_chute": 1.0 / m}
 
 
@@ -77,7 +149,8 @@ def camada_forca_chutes(h, casa, fora, cfg):
         return (h.pro[t] + k * m) / ((n + k) * m), (h.contra[t] + k * m) / ((n + k) * m)
     ac, dc = forca(casa)
     af, df = forca(fora)
-    return {"ataque_chute": ac, "defesa_chute": dc}, {"ataque_chute": af, "defesa_chute": df}
+    e = cfg.get("exp_forca", 1.0)
+    return {"ataque_chute": ac ** e, "defesa_chute": dc ** e}, {"ataque_chute": af ** e, "defesa_chute": df ** e}
 
 
 def camada_gols_nivel(h, casa, fora, cfg):
@@ -96,12 +169,33 @@ def camada_gols_mando(h, casa, fora, cfg):
     return {"conversao_ataque": m}, {"conversao_ataque": 1.0 / m}
 
 
+def camada_gols_mando_janela(h, casa, fora, cfg):
+    """Igual a `gols_mando`, mas com a razão de gols por chute dos últimos `janela_mando` jogos."""
+    (sc, sf, gc, gf), n = h.janela(cfg["janela_mando"])
+    if gc <= 0 or gf <= 0:
+        return {}, {}
+    r = (gc / sc) / (gf / sf)
+    w = n / (n + cfg["k_mando_gols"])
+    m = math.exp(0.5 * w * math.log(r))
+    return {"conversao_ataque": m}, {"conversao_ataque": 1.0 / m}
+
+
+def camada_gols_fator(h, casa, fora, cfg):
+    """Fator fixo de gols (multiplica a conversão dos dois lados). Vem da calibração do total de gols numa temporada DIFERENTE da avaliada (Achado 54): gols reais por jogo
+    sobre gols simulados por jogo da configuração. 1,0 = sem fator."""
+    g = cfg.get("gols_fator", 1.0)
+    return {"conversao_ataque": g}, {"conversao_ataque": g}
+
+
 CAMADAS = {
     "nivel_chutes": camada_nivel_chutes,
     "mando_chutes": camada_mando_chutes,
     "forca_chutes": camada_forca_chutes,
     "gols_nivel": camada_gols_nivel,
     "gols_mando": camada_gols_mando,
+    "gols_fator": camada_gols_fator,
+    "mando_chutes_janela": camada_mando_chutes_janela,
+    "gols_mando_janela": camada_gols_mando_janela,
 }
 
 
