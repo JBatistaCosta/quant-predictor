@@ -2384,3 +2384,41 @@ A maior diferença de xG é +0,0002 (+0,13% em 6-9 m aberto), a de gols por chut
 **Mudanças no repositório.** `DISTRIBUICAO_ZONA_CHUTE` e o comentário que descrevia as bases em `zoneTransitionMatrix.js` (agora as três tabelas dizem usar a mesma base); contagens e a matriz antiga em `dados_referencia/fotmob/distribuicao_zona_chute_clubes.json`; a consulta em `arquivos_do_claude/distribuicao_zona_chute.sql`. Testes: 132 do frontend passam; build ok.
 
 **Limites.** As linhas de defesa e de meio têm poucos chutes (12 a 1.559) e valem pelo que a geometria impõe, não por frequência observada; elas pesam quase nada porque a posse quase nunca vira chute lá (`TAXA_DESFECHO` ~0). A matriz de passes (3x3) continua sendo a do StatsBomb La Liga 2015/16 e não foi mexida.
+
+
+---
+
+## Achado 46 — o simulador como previsor (Premier League 2025/26, 342 jogos): a força dos times ajuda de forma significativa, mas ele ainda não bate o Dixon-Coles nem o mercado
+
+**Pergunta.** As probabilidades de 1X2 e de over/under 2,5 obtidas simulando cada jogo 1.000 vezes são melhores que as do Dixon-Coles (`dixon_coles_v1`) e as das odds de fechamento? Primeiro teste fora da amostra do simulador como previsor (o Achado 41 validou só totais por jogo, nunca placar nem empate).
+
+**Método** (`scripts/backtest_simulador_preditivo.py`, workflow `backtest_simulador_preditivo.yml`, entrada em `dados_referencia/backtest_simulador/`). Premier League 2025/26, 380 jogos, dos quais 342 têm Dixon-Coles **e** odds (a régua é calculada só nesses). Walk-forward: a força de cada time para o jogo J usa só jogos anteriores a J (a temporada 2024/25 inteira de aquecimento + a de teste até J), a partir de chutes feitos e sofridos (FotMob), encolhida para 1 com 8 pseudo-jogos. Só o canal "chute" tem força por time: o FotMob não tem as coordenadas de passe que `forca_dos_times.py` usa (StatsBomb), então perda e quebra ficam em 1. Mando de campo entra como fator nos chutes; o nível de chutes por time é reescalado para a média da história. Simulador no perfil padrão de 2015/16 (a recalibração por competição do Achado 41 **não** foi usada). Controle: a mesma simulação com todos os times iguais (só nível e mando). Odds: média das casas no fechamento, sem a margem (proporcional). Diferença pareada por jogo, IC 95% por bootstrap sobre jogos (5.000).
+
+**Resultado (log-loss médio; menor é melhor).**
+
+| | 1X2 | over/under 2,5 |
+|---|---|---|
+| mercado (fechamento) | 0,9985 | 0,6823 |
+| Dixon-Coles | 1,0347 | 0,6872 |
+| simulador com força dos times | 1,0657 | 0,7021 |
+| simulador, times iguais (controle) | 1,0880 | 0,7052 |
+| régua: frequências fixas do próprio teste | 1,0796 | 0,6856 |
+| régua: 50/50 | — | 0,6931 |
+
+Diferenças pareadas (positivo = o primeiro é pior), com IC 95%:
+- **força − controle, 1X2: −0,0223 [−0,0325; −0,0127]** (Brier −0,0161 [−0,0232; −0,0093]). A força dos times por chutes melhora o simulador de forma significativa.
+- força − Dixon-Coles, 1X2: +0,0309 [−0,0038; +0,0646]. O simulador é pior, mas o IC inclui zero.
+- **força − mercado, 1X2: +0,0671 [+0,0330; +0,0989]** (Brier +0,0454 [+0,0206; +0,0688]). Significativamente pior que o mercado. O Dixon-Coles também é pior que o mercado: +0,0362 [+0,0147; +0,0583].
+- over/under: força − controle −0,0031 [−0,0092; +0,0028]; força − Dixon-Coles +0,0149 [−0,0187; +0,0470]; força − mercado +0,0198 [−0,0042; +0,0434]. Nenhuma diferença é distinguível de zero, e o simulador (0,7021) fica **pior que jogar 50/50** (0,6931).
+
+**Por que erra (diagnóstico nos 342 jogos).**
+- **Nível de gols baixo:** 2,49 gols por jogo simulados contra 2,75 reais; over 2,5 simulado 45,8% contra 56,1% real. Os chutes batem (24,5 contra 25,0). É o que derruba o over/under: o erro é de nível, não de ordenação.
+- **Vantagem de jogar em casa subestimada:** vitória do mandante 37,9% simulada contra 42,4% real (visitante 35,3% contra 30,7%). O fator de mando só mexe nos chutes.
+- **Empate certo:** 26,8% simulado contra 26,9% real. O Dixon-Coles dá 22,3% (subestima) e o mercado 24,7%.
+- **Ordenação do over/under boa, nível ruim:** por quartil de probabilidade prevista pelo simulador, o over real sobe 45% → 56% → 58% → 65% (monotônico); no Dixon-Coles é 52% → 52% → 60% → 62%. Com ~85 jogos por quartil o erro-padrão é ~5 pontos, então isto é indício, **não** prova.
+
+**O que não se pode concluir.** (1) Uma liga e uma temporada, 342 jogos: os IC são largos. (2) Não verifiquei se `dixon_coles_v1` em `model_predictions` foi gerado estritamente fora da amostra para esses jogos; se não foi, ele está favorecido, e mesmo assim o simulador não o supera. (3) Com 1.000 simulações por jogo, cada probabilidade tem ruído de ~±0,016 só da simulação; isso adiciona um pouco de log-loss a todos os resultados do simulador. (4) "Não bate o mercado" não é surpresa (nenhum dos modelos testados aqui bate); a pergunta útil é se chega perto do Dixon-Coles, e ainda não chega.
+
+**Hipóteses a testar em seguida (não testadas; cada uma exige correção walk-forward, nunca ajustada com os dados do teste):** (a) recalibrar o nível de gols e o mando com a história anterior de cada jogo, o que atacaria direto o over/under e o 1X2; (b) usar o perfil recalibrado do Achado 41; (c) força de defesa e de perda de bola, não só de chutes; (d) previsões por jogador (`player_match_estimates`) como entrada da força do time — hoje só existem 66 jogos da Premier League 2025/26, todos com escalação oficial, o que é pouco para este teste; (e) outras ligas.
+
+**Operação.** Rodar localmente na sessão falhou duas vezes (o contêiner reinicia e mata o processo; a rodada local chegou a 104/760). O workflow divide as 760 simulações em 8 jobs e termina em ~10 minutos; cada simulação tem semente fixa, então o resultado não depende do fatiamento. O script grava o progresso e retoma de onde parou.

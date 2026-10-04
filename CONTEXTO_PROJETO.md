@@ -9,6 +9,10 @@
 
 ---
 
+**Simulador como previsor testado -- Achado 46 (04/10).** Walk-forward na Premier League 2025/26 (342 jogos com Dixon-Coles e odds): a força dos times por chutes melhora o simulador de forma significativa (log-loss 1X2 -0,022 [-0,033; -0,013] contra o controle com times iguais), mas ele continua pior que o Dixon-Coles (+0,031 [-0,004; +0,065], IC inclui zero) e significativamente pior que o mercado (+0,067 [+0,033; +0,099]). No over/under 2,5 fica pior que 50/50. Causa visível: gols 2,49 simulados contra 2,75 reais e mando subestimado (37,9% contra 42,4%); empate certo (26,8% contra 26,9%). Próximo passo candidato: recalibrar nível de gols e mando walk-forward. Rodar com `.github/workflows/backtest_simulador_preditivo.yml` (8 fatias, ~10 min); rodar localmente na sessão não funciona (o contêiner reinicia). Detalhes e limites em ACHADOS_COMPORTAMENTO.md.
+
+---
+
 **Distribuição por zona de origem recalculada -- Achado 45 (04/10).** `DISTRIBUICAO_ZONA_CHUTE` (9x14, zona 3x3 de origem do chute -> zona polar) refeita na mesma base das outras tabelas polares (só clubes, desde 01/08/2021, 428.248 chutes); consulta em `arquivos_do_claude/distribuicao_zona_chute.sql`, validada contra a matriz de 01/10 (mesmas 4 casas). Linhas de ataque (99,5% dos chutes) mudam no máximo 0,0021; a maior diferença, 0,0064, está em `meio_esq` (575 chutes, ruído). Nada mais a recalcular nas tabelas de zona polar.
 
 ---
