@@ -9,6 +9,10 @@
 
 ---
 
+**xG do FotMob mudou em jul/ago de 2021 (04/10) -- Achado 39, revisa os 37 e 38.** Teste só com o banco, 5 grandes ligas, jogo corrido, chute de pé, faixas fixas de distância/ângulo: o xG médio por chute dá um degrau nítido entre 12/07 e 02/08/2021 (início da 2021/22): central 14-22 m +29% (0,064 -> 0,082), central 10-14 m +21%, aberto 0-12 m -23%, central 0-6 m -12%, aberto 22-30 m -17%; gols por chute iguais, calibração melhora (gols/xG de 1,4-1,6 para ~1,0 nos centrais de 14-22 m). O banco guarda xG antigo até jul/2021 (~46,6 mil de ~477 mil chutes) e novo depois: a tabela polar da Análise de Evento e tudo que usa xG do FotMob atravessando jul/2021 (Elo por xG) deve começar em 01/08/2021. A "queda de 8% nos gols/xG" dos Achados 37/38 era mistura de ligas. Consulta em `arquivos_do_claude/analise_mudanca_xg_fotmob.sql`.
+
+---
+
 **Copa do Mundo de 2018 do FotMob (04/10) -- fecho do Achado 38.** 64 jogos baixados e casados, mas o FotMob não tem mapa de chutes nem xG de time em 2018 (xG com chutes só desde a Euro 2020), então o teste da mudança no xG não se resolve com ela. Cruzamento disponível: gols idênticos, escanteios +4%, passes -8%, chutes (estatística) -2%. Total de jogos do FotMob versionados: 394 em `dados_referencia/fotmob/`.
 
 ---
