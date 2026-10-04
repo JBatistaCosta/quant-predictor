@@ -1669,3 +1669,80 @@ A escalação prevê os cabeceios do time **pior** que o histórico recente do p
 **Uso no simulador:** o escanteio é um **quarto desfecho** da ação (além de continua, chute e perda), com taxa por zona da tabela acima, relevante só nas duas faixas de ataque; o volume por time continua vindo do modelo de produção (`api/corners-model.js`, binomial negativa, calibrada sobre `match_stats`). Depois do escanteio, a bola reaparece na grande área; onde cai a cobrança (posição final do passe de escanteio) ainda NÃO foi medido.
 
 **Limites da parte B:** uma liga e uma temporada, sem IC 95%; a atribuição ao "último lance do atacante" é aproximação (um desvio de defensor pode ser a causa real); a taxa de 11,06 por 100 chutes soma chutes de qualquer resultado; as taxas por tipo de lance excluem dribles e desarmes (a matriz do Achado 15 não os conta como ação); o FotMob não dá a posição de onde sai o escanteio (só chutes bloqueados e defendidos por zona, que daria para cruzar com os totais por time).
+
+
+## Achado 26 — a matriz de transição entre ligas, ligas recentes e torneios de seleções; mediana e variância dos escanteios
+
+**O que foi feito.** StatsBomb Open Data masculino gratuito, baixado com `scripts/comparar_competicoes_statsbomb.py`: Premier League, Serie A e Ligue 1 de 2015/16 (temporadas completas), La Liga 2015/16 (a baseline do Achado 18/19), Copa do Mundo (8 edições), Euro 2020 e 2024, Copa América 2024 e ligas recentes. **A Copa Africana de Nações foi excluída por pedido.** Os resumos (contagens, escanteios por jogo, ids dos jogos) ficam em `dados_referencia/statsbomb/` e `conferir` refaz as contas sem baixar nada; o bruto (mais de 150 MB) não vai para o Git.
+
+**Método.** Matriz de 18 zonas (mesma regra dos Achados 18/19). Para cada competição, o ganho = log-verossimilhança média por ação (nats) do modelo PRÓPRIO treinado por validação cruzada em 5 blocos contíguos, menos a do modelo da La Liga 2015/16 inteira. Positivo = a matriz da La Liga serve pior para aquela competição.
+
+| Competição | Jogos | Chute | Perda | Centro da grande área: chute / perda | Ganho próprio − La Liga |
+|---|---|---|---|---|---|
+| La Liga 2015/16 (base; conferência) | 380 | 1,37% | 15,8% | 45,2% / 19,3% | −0,0010 |
+| Premier League 2015/16 | 380 | 1,47% | 15,6% | 45,4% / 19,5% | +0,0009 |
+| Serie A 2015/16 | 380 | 1,47% | 14,9% | 47,5% / 18,9% | +0,0020 |
+| Ligue 1 2015/16 | 377 | 1,28% | 15,4% | 48,1% / 20,1% | +0,0025 |
+| Indian Super League 2021/22 | 115 | 1,78% | 17,5% | 50,5% / 16,3% | +0,0051 |
+| Copa América 2024 | 32 | 1,53% | 13,9% | 50,4% / 17,4% | +0,0050 |
+| Copa do Mundo 2018 | 64 | 1,45% | 12,7% | 50,7% / 15,6% | +0,0070 |
+| Copa do Mundo 2022 | 64 | 1,18% | 11,8% | 49,1% / 18,5% | +0,0129 |
+| Euro 2020 | 51 | 1,26% | 10,8% | 48,3% / 17,0% | +0,0142 |
+| Euro 2024 | 51 | 1,32% | 10,2% | 49,3% / 17,1% | +0,0207 |
+| La Liga 2018/19, 2019/20, 2020/21 (só Barcelona) | 34, 33, 35 | 1,25%, 1,08%, 1,11% | 10,2%, 9,6%, 9,2% | 45,2%, 42,5%, 42,9% / 15,7%, 17,6%, 17,1% | +0,0208, +0,0257, +0,0290 |
+| Ligue 1 2021/22, 2022/23 (só PSG) | 26, 32 | 1,23%, 1,21% | 8,5%, 8,1% | 45,8%, 43,2% / 17,8%, 17,1% | +0,0308, +0,0400 |
+| Bundesliga 2023/24 (só Bayer Leverkusen) | 34 | 1,24% | 10,0% | 42,4% / 18,3% | +0,0209 |
+
+As Copas do Mundo de 1958 a 1990 têm 1 a 6 jogos cada (19 no total): os números oscilam muito (ganhos de −0,072 a +0,048) e não valem nada.
+
+**Leitura.**
+- **Entre ligas completas de 2015/16 a matriz da La Liga serve:** ganhos de +0,001 a +0,0025 nats por ação, dentro do que o próprio erro de amostragem permite. Premier League, Serie A e Ligue 1 se comportam como a La Liga.
+- **O que muda é a taxa de perda:** 15 a 16% nas ligas de 2015/16, 10 a 14% nos torneios de seleções e 8 a 10% nas amostras de clube de elite (Barcelona, PSG, Leverkusen). O ganho da baseline própria acompanha: +0,005 a +0,021 nos torneios e +0,021 a +0,040 nas amostras de clube de elite. É de metade a quase o total do que a grade de 18 zonas ganhou sobre a de 12 no teste conservador (+0,042, Achado 19) e de 10 a 40 vezes o ganho de ajustar por Elo ou por time (Achado 24).
+- **Época dos dados ou nível do time? Não se separa com estes dados.** As ligas parciais recentes são todas as partidas de UM clube de elite com muita posse (Barcelona, PSG, Leverkusen, com os adversários comuns); os torneios têm seleções de nível alto. A Indian Super League 2021/22, de época recente e com 11 times, tem perda de 17,5%, tão alta quanto (ou maior que) as ligas de 2015/16: isso é um indício contra "a marcação da época explica tudo" e a favor do nível do time (que cai de forma contínua com o Elo, 11,96 a 8,72 perdas por 100 toques, Achado 24), mas não é prova. Para separar de verdade faltam ligas recentes COMPLETAS, que o StatsBomb gratuito não tem.
+- **Consequência para o simulador:** usar a matriz da La Liga como base e ajustar a taxa de perda pelo nível do time e do contexto (clube de elite ou seleção: perda de 8 a 14%; liga média: 15 a 16%). A estrutura de destino (para onde a bola vai a partir de cada zona) pode ficar a mesma.
+
+**Mediana e variância dos escanteios (StatsBomb, total do jogo = os dois times).**
+
+| Grupo | Jogos | Média | Mediana | Intervalo interquartil | Variância | Variância / média | r (NB, método bruto) |
+|---|---|---|---|---|---|---|---|
+| Ligas 2015/16 (4 ligas) | 1.517 | 10,20 | 10 | 8 a 12 | 12,23 | 1,20 | 51 |
+| Torneios de seleções modernos (Copa 2018/22, Euro 2020/24, Copa América 2024) | 262 | 9,11 | 9 | 7 a 11 | 12,12 | 1,33 | 28 |
+| Ligas recentes (clubes de elite e Indian Super League) | 309 | 9,45 | 9 | 7 a 11 | 11,85 | 1,25 | 37 |
+| Copas do Mundo 1958 a 1990 (19 jogos; só para registro) | 19 | 11,32 | 10 | 9 a 13,5 | 18,89 | 1,67 | 17 |
+
+Por time (um valor por time e jogo): ligas 2015/16 média 5,10, mediana 5, variância 8,00 (razão 1,57); torneios modernos média 4,56, mediana 4, variância 7,69 (razão 1,69); ligas recentes média 4,72, mediana 4, variância 7,65 (razão 1,62).
+
+Por liga 2015/16 (total do jogo): La Liga média 10,11, mediana 10, variância 11,68 (r bruto 65); Premier League 10,81, 10, 12,99 (54); Serie A 10,37, 10, 11,57 (89); Ligue 1 9,52, 9, 11,89 (38). Ligas atuais (banco, 2021 a 2025, mesma conta): média de 9,29 (Serie A) a 10,31 (Premier League), mediana 9 a 10, variância 10,9 a 11,5 (razão 1,12 a 1,23). O r bruto é `média² / (variância − média)`: **sem condicionar no λ de cada partida**, é um teto de dispersão (r menor = mais dispersão), diferente do r de `league_model_params` (calibrado pelo resíduo de Pearson condicionado, `api/corners-model.js`), que vale 188 (Premier League), 68 (Serie A), 51 (Brasileirão A), 41 (La Liga), 30 (Bundesliga) e 25 (Ligue 1).
+
+**Leitura dos escanteios.** A mediana do total é 9 a 10 em todos os grupos modernos; os torneios têm 1 escanteio a menos por jogo (9,1 contra 10,2) e dispersão um pouco maior (razão 1,33 contra 1,20), mas com 262 jogos a diferença de variância não é separável do ruído. A razão variância/média de 1,2 a 1,3 significa quase Poisson: com média de 10, r de 40 a 50 já descreve o total do jogo. A taxa de escanteios por chute e por cruzamento é parecida entre competições (11 a 14 por 100 chutes; 5 a 8 por 100 cruzamentos; 26% a 41% dos escanteios saem de um chute como último lance do atacante).
+
+**Limites:** uma temporada por liga em 2015/16; ligas recentes parciais com um clube de elite cada (viés de seleção forte); torneios com 32 a 64 jogos cada e sem intervalo de confiança; variância bruta de total do jogo com poucas dezenas de jogos oscila muito (razões de 0,82 a 1,96 nos torneios isolados); StatsBomb pode ter mudado a marcação de passes errados entre 2015/16 e 2018+ (não verificável aqui).
+
+
+## Achado 27 — as taxas dos eventos ao longo do jogo e a duração das ações (para simular a bola no tempo)
+
+**Para quê.** Uma simulação no tempo (cadeia semi-Markov) precisa de duas peças que a matriz de transição não tem: o ritmo dos eventos por janela do jogo e quanto dura cada ação (o tempo de permanência na zona). `scripts/analisar_tempo_eventos_statsbomb.py` mede as duas no StatsBomb (La Liga 2015/16, 380 jogos, os dois times somados); o resumo versionado está em `dados_referencia/statsbomb/tempo_la_liga_2015_16.json`. Os chutes e gols por janela também foram medidos no banco (FotMob, Premier League, La Liga, Serie A, Ligue 1 e Bundesliga, 2021 a 2025).
+
+**Por janela (StatsBomb, por minuto de jogo; os acréscimos usam a duração média até o último evento: 0,8 min no 1º tempo e 3,3 min no 2º, aproximação):**
+
+| Janela | Ações/min | Chutes/min | Gols/min | % perda | Faltas/min | Escanteios/min | Cruzamentos/min |
+|---|---|---|---|---|---|---|---|
+| 1-15 | 20,76 | 0,216 | 0,0258 | 16,0 | 0,312 | 0,098 | 0,243 |
+| 16-30 | 19,26 | 0,244 | 0,0274 | 15,6 | 0,336 | 0,104 | 0,273 |
+| 31-45 | 18,61 | 0,245 | 0,0256 | 15,6 | 0,357 | 0,102 | 0,266 |
+| acréscimo 1º tempo | 15,41 | 0,305 | 0,0350 | 16,8 | 0,327 | 0,207 | 0,280 |
+| 46-60 | 19,50 | 0,278 | 0,0295 | 15,9 | 0,345 | 0,111 | 0,291 |
+| 61-75 | 17,71 | 0,267 | 0,0263 | 15,4 | 0,334 | 0,113 | 0,266 |
+| 76-90 | 17,55 | 0,274 | 0,0339 | 15,2 | 0,340 | 0,110 | 0,272 |
+| acréscimo 2º tempo | 15,45 | 0,303 | 0,0345 | 18,6 | 0,396 | 0,113 | 0,269 |
+
+**Chutes, gols e qualidade por janela (banco, FotMob, 5 grandes ligas 2021 a 2025; por jogo, os dois times):** chutes 3,31 (1-15), 3,67 (16-30), 3,86 (31-45), 0,75 (acréscimo 1T), 4,11 (46-60), 4,00 (61-75), 3,99 (76-90), 1,66 (acréscimo 2T); gols 0,363, 0,394, 0,417, 0,084, 0,452, 0,454, 0,450, 0,197 (total 2,81 por jogo); xG por chute 0,108 a 0,113 em todas as janelas regulares e 0,120 no acréscimo do 2T.
+
+**Duração das ações (campo `duration`, segundos):** passe média 1,60 (mediana 1,39; p90 2,85); condução 1,73 (1,32; p90 3,67); cruzamento 1,75 (1,50; p90 2,92); chute 0,91 (0,67; p90 1,36); drible, `Dispossessed` e `Miscontrol` são eventos instantâneos (duração ~0). **Posses:** 195 por jogo, duração média 14,2 s (mediana 9,0; p90 34), ações por posse média 9,2 (mediana 6; p90 21). Somando as durações das posses, o time em posse ocupa ~46 dos ~94 minutos até o último evento: o resto é bola parada, bola fora e transição.
+
+**Leitura.**
+- **O ritmo de ações cai ao longo do jogo** (20,8 por minuto nos primeiros 15 minutos, 17,6 nos últimos), mas **o ritmo de chutes sobe** (0,216 a 0,274 por minuto, +27%) e o de gols também (0,026 a 0,030 a 0,034): cada ação que sobra termina mais em chute. A taxa de perda é estável (15 a 16%, com 18,6% no acréscimo do 2T), faltas e escanteios sobem devagar (+15%). A qualidade por chute é constante (xG por chute de 0,108 a 0,113), então o aumento de gols vem de mais chutes e não de chutes melhores.
+- **Os acréscimos são densos:** 0,30 chute por minuto e 0,035 gol por minuto, o maior de todas as janelas (amostra pequena e janela de duração aproximada).
+- **Para o simulador:** relógio = ações com tempo de permanência de ~1,6 s (gama ou lognormal ajustável aos quantis acima), com os multiplicadores por janela acima aplicados às taxas de chute, perda de bola, falta e escanteio; a duração do jogo (45,8 e 93,3 minutos até o último evento) define os acréscimos. As taxas por janela são descritivas: não separam estado do jogo (placar), nível dos times nem substituições, que mudam o ritmo (Achados 15 a 18).
+
+**Limites:** uma liga e uma temporada (La Liga 2015/16, StatsBomb) para o ritmo de ações e as durações; as taxas por minuto dos acréscimos dependem da duração média usada (até o último evento, não até o apito); a duração das posses conta só ações definidas no Achado 15 (não inclui recuperações, faltas e bolas paradas); chutes e gols por janela do banco juntam cinco ligas e cinco temporadas sem separar placar; sem intervalo de confiança.
