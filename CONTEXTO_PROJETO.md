@@ -9,6 +9,10 @@
 
 ---
 
+**Protótipo v0 do simulador semi-Markov da bola (04/10) -- Achado 31 em `ACHADOS_COMPORTAMENTO.md`.** `scripts/simulador_cadeia_bola.py` (+ `test_simulador_cadeia_bola.py`, 5 testes) simula jogos com as matrizes e tempos dos Achados 18–30. Reproduz chutes (25,0), gols (2,45), xG, tiros de meta, saídas de bola e faltas; falha em laterais (21,8 contra 46,3: faltam os que seguem bola desviada), tempo em ação (57 contra 46 min), escanteios (-8%) e tiros livres (+17%). Convenção do código: cada resolvedor devolve `(quem, zona, tempo morto, motivo)` com `quem` = `"mesma"` ou `"adv"`. Posses do simulador (trocas) não são comparáveis às 195 sequências do StatsBomb.
+
+---
+
 **Fraqueza aérea do adversário não muda o volume de cruzamentos (03/10) -- Achado 23 em `ACHADOS_COMPORTAMENTO.md`.** Brasileirão A e B (3.588 time-jogos, 44 times), características do adversário na média dos 8 jogos anteriores, controlando mando x Elo relativo: chutes de cabeça sofridos 0,045, xG de cabeça sofrido 0,035, fração de cabeça sofrida 0,002, cortes de cabeça 0,077 (positivo: mede exposição, não força), cruzamentos sofridos 0,106 (único com algum peso, igual ao do histórico do próprio time). Zaga forte ou fraca no jogo aéreo não muda os cruzamentos de forma detectável; falta uma medida por zagueiro escalado para um teste mais limpo.
 
 

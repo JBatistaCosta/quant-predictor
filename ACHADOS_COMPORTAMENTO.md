@@ -1910,3 +1910,28 @@ A taxa de falta por ação **sobe do primeiro terço (0,9 por 100 ações) até 
 - **Falta:** sorteada junto com a ação, com taxa que sobe de 0,9 para 3,3 por 100 ações do primeiro terço à grande área; 23% são faltas de ataque (a posse passa ao adversário no ponto da falta); 12,9% geram cartão.
 
 **Limites:** quatro ligas de 2015/16 somadas; faixas de 6 do campo (as 18 zonas completas estão no JSON só para os escanteios); chutes defendidos incluem os que o goleiro segura e os que desvia (o `play_pattern` seguinte já separa); o `play_pattern` da próxima posse é o do StatsBomb e mistura causas (um lateral depois de chute bloqueado é um desvio para fora); a falta é atribuída à zona onde o evento foi marcado (o local da falta, não do contato); sem intervalo de confiança nem divisão por janela do jogo, placar ou nível dos times.
+
+## Achado 31 — protótipo v0 do simulador semi-Markov da bola: reproduz o volume de chutes e gols, mas falha em lateral, tempo e posses
+
+`scripts/simulador_cadeia_bola.py` junta as peças dos Achados 18–30 (4 ligas de 2015/16) e simula partidas; `test_simulador_cadeia_bola.py` (5 testes) cobre determinismo, normalização e estados válidos. 3.000 jogos, semente 2, contra o observado por jogo:
+
+| por jogo | simulado | observado |
+|---|---|---|
+| chutes | 25,0 | 25,0 |
+| gols / xG | 2,45 / 2,55 | 2,55 / 2,47 |
+| tiros de meta / saídas de bola | 16,5 / 2,45 | 16,7 / 2,60 |
+| faltas | 29,4 | 30,0 |
+| escanteios | 9,4 | 10,2 |
+| tiros livres | 35,8 | 30,6 |
+| **laterais** | **21,8** | **46,3** |
+| tempo morto (min) | 36,8 | 40,7 |
+| tempo em ação (min) | 57,3 | 46,1 |
+| ações | 2.092 | 1.786 |
+| posses (trocas) | 341 | 195 (definição StatsBomb) |
+
+**Leitura:** o essencial do jogo (chute, gol, xG, tiro de meta, falta) sai da cadeia sem ajuste. As falhas são concentradas e têm causa conhecida:
+- **Laterais pela metade:** só os laterais que seguem uma perda (6,5% das perdas) entram; os outros ~25 por jogo seguem bola desviada pelo adversário/chute e não estão modelados. Isso explica ~4 min de tempo morto faltando e, como o relógio é preenchido por ações, ~17% a mais de ações.
+- **Escanteios 8% abaixo e tiros livres 17% acima:** o encaminhamento depois do chute/perda precisa de calibração conjunta.
+- **Posses:** a simulação conta cada troca (275 perdas/jogo); StatsBomb agrupa em 195 sequências. Definições diferentes, não é erro do modelo.
+- Chutes por janela de 15 min ficam planos (3,6–4,2), como esperado de um protótipo estático; falta a inclinação por janela (Achado 28).
+Próximo passo natural: modelar o lateral que mantém a posse (com tempo morto), recalibrar escanteio/tiro livre e então inserir janela e força dos times.
