@@ -35,11 +35,17 @@ import camadas_simulador as cam  # noqa: E402
 # Cada variante = lista de camadas (scripts/camadas_simulador.py) + semente própria. "neutro" e "forca" mantêm as sementes do Achado 46 (confere que o
 # resultado se reproduz). Cada variante é comparada com a anterior da cadeia ("ref") para medir o que a camada nova acrescenta.
 BASE = ["nivel_chutes", "mando_chutes"]
+SEM_MANDO = ["nivel_chutes"]
+KEEP = BASE + ["forca_chutes", "gols_nivel"]                  # o que o Achado 47 deixou ligado
 VARIANTES = {
-    "neutro": {"camadas": BASE, "semente": 2, "ref": None},
-    "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro"},
-    "forca_gols_nivel": {"camadas": BASE + ["forca_chutes", "gols_nivel"], "semente": 3, "ref": "forca"},
-    "forca_gols_nivel_mando": {"camadas": BASE + ["forca_chutes", "gols_nivel", "gols_mando"], "semente": 4, "ref": "forca_gols_nivel"},
+    "neutro": {"camadas": BASE, "semente": 2, "ref": None, "padrao": False},
+    "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro", "padrao": False},
+    "forca_gols_nivel": {"camadas": KEEP, "semente": 3, "ref": "forca", "padrao": True},
+    "forca_gols_nivel_mando": {"camadas": KEEP + ["gols_mando"], "semente": 4, "ref": "forca_gols_nivel", "padrao": False},
+    # Achado 48: o mando do chute (e depois o da conversão) olhando só os últimos N jogos, no lugar da história inteira
+    "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": True},
+    "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": True},
+    "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": True},
 }
 _P = None
 
@@ -110,12 +116,16 @@ def main():
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--limite", type=int, default=0, help="só os N primeiros jogos de teste (depuração)")
     ap.add_argument("--saida", default="resultado_backtest_simulador.json")
+    ap.add_argument("--variantes", default="", help="lista separada por vírgula, ou 'todas'; padrão: as marcadas como padrão em VARIANTES")
     ap.add_argument("--fatia", default="", help="K/N: simula só as tarefas de índice ≡ K (mod N) e grava o progresso (para dividir entre jobs)")
     ap.add_argument("--so-simular", action="store_true", help="simula a fatia e para, sem agregar")
     ap.add_argument("--agregar", action="store_true", help="não simula nada: junta os arquivos de progresso e calcula; erra se faltar tarefa")
     ap.add_argument("--parciais", default="", help="glob dos .jsonl de progresso a juntar (padrão: <saida>.parcial.jsonl)")
     a = ap.parse_args()
 
+    global VARIANTES
+    escolhidas = list(VARIANTES) if a.variantes == "todas" else (a.variantes.split(",") if a.variantes else [k for k, v in VARIANTES.items() if v["padrao"]])
+    VARIANTES = {k: VARIANTES[k] for k in escolhidas}
     jogos = ler(a.csv)
     hist, tarefas, meta = cam.Historia(), [], {}
     teste = 0
@@ -123,7 +133,7 @@ def main():
         if j["season"] == a.temporada and hist.jogos >= 100 and (not a.limite or teste < a.limite):
             teste += 1
             for nome, v in VARIANTES.items():
-                mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"])
+                mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"], {**cam.CONFIG, **v.get("cfg", {})})
                 tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"]))
             meta[j["id"]] = j
         hist.add(j)
@@ -186,7 +196,7 @@ def main():
                 perdas[m][k].append(v)
     n = len(comuns)
     resumo["medias"] = {m: {k: sum(v) / n for k, v in perdas[m].items()} for m in modelos}
-    pares = [(v, nome["ref"]) for v, nome in VARIANTES.items() if nome["ref"]] + [(v, "dc") for v in VARIANTES] + [(v, "mercado") for v in VARIANTES] + [("dc", "mercado")]
+    pares = [(v, nome["ref"]) for v, nome in VARIANTES.items() if nome["ref"] in VARIANTES] + [(v, "dc") for v in VARIANTES] + [(v, "mercado") for v in VARIANTES] + [("dc", "mercado")]
     resumo["diferencas_pareadas"] = {}
     for par in pares:
         for k in ("ll", "br", "ll_ou", "br_ou"):

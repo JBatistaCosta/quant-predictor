@@ -24,6 +24,7 @@ CHAVES = ("ataque_chute", "defesa_chute", "conversao_ataque", "conversao_defesa"
 CONFIG = {
     "k_time": 8.0,            # pseudo-jogos que puxam a força de um time para 1,0
     "k_mando_gols": 50.0,     # pseudo-jogos que puxam o mando da conversão para 1,0
+    "janela_mando": 200,      # nº de jogos mais recentes que as camadas *_janela olham (mando que acompanha mudança entre temporadas)
     "teto": (0.6, 1.6),       # limites do produto das camadas, por chave
 }
 
@@ -35,6 +36,7 @@ class Historia:
         self.pro, self.contra, self.n = {}, {}, {}
         self.soma_casa = self.soma_fora = 0.0          # chutes
         self.gols_casa = self.gols_fora = 0.0
+        self.recentes = []                              # (chutes casa, chutes fora, gols casa, gols fora) de cada jogo, em ordem
         self.jogos = 0
 
     def add(self, j):
@@ -46,7 +48,13 @@ class Historia:
         self.soma_fora += j["as"]
         self.gols_casa += j["hg"]
         self.gols_fora += j["ag"]
+        self.recentes.append((j["hs"], j["as"], j["hg"], j["ag"]))
         self.jogos += 1
+
+    def janela(self, n):
+        """Somas (chutes casa, chutes fora, gols casa, gols fora) dos últimos `n` jogos (ou de todos, se houver menos) e quantos jogos entraram."""
+        r = self.recentes[-n:]
+        return (sum(x[0] for x in r), sum(x[1] for x in r), sum(x[2] for x in r), sum(x[3] for x in r)), len(r)
 
     def chutes_por_time(self):
         return (self.soma_casa + self.soma_fora) / (2 * self.jogos)
@@ -65,6 +73,14 @@ def camada_nivel_chutes(h, casa, fora, cfg):
 def camada_mando_chutes(h, casa, fora, cfg):
     """Mandante chuta mais: raiz da razão chutes casa / fora da história, dividida entre quem joga em casa (+) e fora (-)."""
     m = math.sqrt(h.soma_casa / h.soma_fora)
+    return {"ataque_chute": m}, {"ataque_chute": 1.0 / m}
+
+
+def camada_mando_chutes_janela(h, casa, fora, cfg):
+    """Igual a `mando_chutes`, mas só com os últimos `janela_mando` jogos: segue a mudança de mando entre temporadas (Achado 47: a razão de chutes
+    casa/fora foi de 1,13 em 2024/25 para 1,24 em 2025/26, e a história inteira ficou atrasada)."""
+    (sc, sf, _, _), _ = h.janela(cfg["janela_mando"])
+    m = math.sqrt(sc / sf)
     return {"ataque_chute": m}, {"ataque_chute": 1.0 / m}
 
 
@@ -96,12 +112,25 @@ def camada_gols_mando(h, casa, fora, cfg):
     return {"conversao_ataque": m}, {"conversao_ataque": 1.0 / m}
 
 
+def camada_gols_mando_janela(h, casa, fora, cfg):
+    """Igual a `gols_mando`, mas com a razão de gols por chute dos últimos `janela_mando` jogos."""
+    (sc, sf, gc, gf), n = h.janela(cfg["janela_mando"])
+    if gc <= 0 or gf <= 0:
+        return {}, {}
+    r = (gc / sc) / (gf / sf)
+    w = n / (n + cfg["k_mando_gols"])
+    m = math.exp(0.5 * w * math.log(r))
+    return {"conversao_ataque": m}, {"conversao_ataque": 1.0 / m}
+
+
 CAMADAS = {
     "nivel_chutes": camada_nivel_chutes,
     "mando_chutes": camada_mando_chutes,
     "forca_chutes": camada_forca_chutes,
     "gols_nivel": camada_gols_nivel,
     "gols_mando": camada_gols_mando,
+    "mando_chutes_janela": camada_mando_chutes_janela,
+    "gols_mando_janela": camada_gols_mando_janela,
 }
 
 
