@@ -1,0 +1,14 @@
+{
+ "rotulo": "FIFA World Cup 1958",
+ "grupo": "copa_mundo",
+ "jogos": 2,
+ "partes": [
+  {
+   "arquivo": "parte-001.json.xz",
+   "match_ids": [
+    3888704,
+    3888705
+   ]
+  }
+ ]
+}

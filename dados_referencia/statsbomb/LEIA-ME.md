@@ -1,7 +1,9 @@
 # Resumos do StatsBomb Open Data (referência versionada)
 
 Fonte: **StatsBomb Open Data** (https://github.com/statsbomb/open-data), dados públicos, uso sujeito à licença do StatsBomb (citar a fonte ao usar).
-Aqui ficam só os RESUMOS (poucos KB); o bruto (mais de 150 MB de ações) fica fora do Git e se refaz com os scripts.
+O StatsBomb pode mudar o que oferece de graça (jogos já foram e podem ser retirados), por isso o repositório guarda DOIS níveis:
+1. `brutos/` (28 MB, 56 arquivos): os dados REDUZIDOS de cada partida, FRACIONADOS em arquivos `.json.xz` de até 50 partidas. Basta para refazer tudo SEM rede.
+2. os RESUMOS (poucos KB) por grupo, ao lado deste arquivo.
 
 | Arquivo | O que tem | Gerado por |
 |---|---|---|
@@ -17,3 +19,22 @@ Cada competição-temporada nos quatro primeiros arquivos tem: `jogos`, `match_i
 
 Conferir sem baixar nada: `python scripts/comparar_competicoes_statsbomb.py conferir --saida dados_referencia/statsbomb`.
 Refazer o bruto: `baixar` (cerca de 25 minutos para todos os grupos). Achados que dependem destes arquivos: 25, 26 e 27 de `ACHADOS_COMPORTAMENTO.md`.
+
+## Dados reduzidos e fracionados (`brutos/`)
+
+Layout: `brutos/<grupo>/<competição_temporada>/parte-NNN.json.xz` (até 50 partidas cada, ~16 KB por partida) e um `INDICE.json` por competição com o
+`match_id` de cada parte. Cada partida guarda, em colunas, só os tipos de evento que as análises usam (passe, condução, chute, drible, desarme sofrido,
+erro de domínio, falta e escalação) com: tipo, índice do time (0 ou 1), período, minuto, segundo, duração (arredondada a 0,01 s), posse, posição inicial
+e final, resultado do passe ou do chute e bits (1 = cruzamento, 2 = escanteio cobrado); mais a **origem de cada escanteio já calculada** (último lance do
+time que atacava, tipo e zona de 18), porque ela depende de eventos brutos que não são guardados.
+
+Sem rede:
+```
+python scripts/comparar_competicoes_statsbomb.py reconstruir --cache /tmp/sb_comp --fracionado dados_referencia/statsbomb/brutos
+python scripts/comparar_competicoes_statsbomb.py resumir     --cache /tmp/sb_comp --saida /tmp/resumos    # idêntico aos resumos versionados
+python scripts/comparar_competicoes_statsbomb.py comparar    --cache /tmp/sb_comp --baseline <acoes_v2.json da La Liga>
+python scripts/analisar_tempo_eventos_statsbomb.py --brutos dados_referencia/statsbomb/brutos
+```
+Verificado em 04/10/2026: a reconstrução reproduz os cinco resumos byte a byte (ações, contagens 18 x 20, origem e contagem dos escanteios) e as contagens
+por janela do tempo; a única diferença é a duração mediana do passe (1,3915 s no bruto, 1,39 s aqui) por causa do arredondamento a 0,01 s.
+Para refazer a partir do StatsBomb (enquanto o dado existir): `baixar --fracionado dados_referencia/statsbomb/brutos` (cerca de 15 minutos).

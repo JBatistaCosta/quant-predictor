@@ -8,6 +8,7 @@ Usa os campos `period`, `minute`, `second`, `duration` e `possession` dos evento
 `gerar_matriz_transicao_statsbomb.py` (passe completo/perdido, condução, chute, `Dispossessed`, `Miscontrol`).
 
 Uso:  python scripts/analisar_tempo_eventos_statsbomb.py [pasta_cache] [--resumo dados_referencia/statsbomb/tempo_la_liga_2015_16.json]
+      python scripts/analisar_tempo_eventos_statsbomb.py --brutos dados_referencia/statsbomb/brutos      # SEM rede: usa os dados reduzidos versionados
 O cache por partida (<pasta>/tempo_eventos.json, ~7,5 MB) fica fora do Git; `--resumo` grava o agregado (poucos KB) que fica versionado.
 """
 
@@ -105,6 +106,13 @@ def baixar(cache: str | None) -> dict:
     return res
 
 
+def do_fracionado(pasta: str, grupo: str = "ligas_2015_16", rotulo: str = "La Liga 2015/2016") -> dict:
+    """Mesma análise, a partir dos dados reduzidos e fracionados guardados no repositório (sem rede)."""
+    import comparar_competicoes_statsbomb as c
+    regs = c.carregar_fracionado(pasta, grupo)[rotulo]
+    return {"jogos": len(regs), "partidas": [analisar_partida(c.eventos_reconstruidos(r)) for r in regs]}
+
+
 def relatorio(res: dict) -> None:
     n = res["jogos"]
     tot = collections.Counter()
@@ -167,8 +175,11 @@ def resumo(res: dict) -> dict:
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    dados = baixar(args[0] if args else None)
+    if "--brutos" in sys.argv:
+        dados = do_fracionado(sys.argv[sys.argv.index("--brutos") + 1])
+    else:
+        args = [a for a in sys.argv[1:] if not a.startswith("--")]
+        dados = baixar(args[0] if args else None)
     relatorio(dados)
     if "--resumo" in sys.argv:
         alvo = sys.argv[sys.argv.index("--resumo") + 1]

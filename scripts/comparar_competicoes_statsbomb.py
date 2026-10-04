@@ -19,9 +19,13 @@ Uso (cada grupo grava `<cache>/<grupo>.json`; refazer não baixa de novo):
     python scripts/comparar_competicoes_statsbomb.py resumir   --cache /tmp/sb_comp --saida dados_referencia/statsbomb
     python scripts/comparar_competicoes_statsbomb.py conferir  --saida dados_referencia/statsbomb   # refaz as contas SEM baixar nada
 
-O cache bruto (ações de todas as partidas) passa de 150 MB e NÃO vai para o Git; o que fica versionado em `dados_referencia/statsbomb/` é o
-RESUMO por competição (matriz de contagens 18 x 20, escanteios por time e jogo, origem dos escanteios, ids dos jogos), suficiente para conferir
-os achados 25 e 26 e para refazer o cache bruto com o `baixar`. O StatsBomb Open Data é público (CC BY-NC: citar a fonte ao usar).
+O StatsBomb Open Data pode mudar o que oferece de graça (jogos já foram e podem ser retirados), então o repositório guarda os DADOS REDUZIDOS de cada
+partida, FRACIONADOS em arquivos `.json.xz` de até 50 partidas (`dados_referencia/statsbomb/brutos/<grupo>/<competição>/parte-NNN.json.xz`, ~16 KB por
+partida): só os tipos de evento que as análises usam (passe, condução, chute, drible, desarme sofrido, erro de domínio, falta, escalação), em colunas, mais
+a origem de cada escanteio já calculada. `reconstruir` refaz o cache e `resumir`/`comparar`/`escanteios` rodam a partir dele, SEM rede.
+    python scripts/comparar_competicoes_statsbomb.py baixar      --cache /tmp/sb_comp --fracionado dados_referencia/statsbomb/brutos
+    python scripts/comparar_competicoes_statsbomb.py reconstruir --cache /tmp/sb_comp --fracionado dados_referencia/statsbomb/brutos
+Os resumos (matriz de contagens 18 x 20 etc.) continuam em `dados_referencia/statsbomb/<grupo>.json`. O StatsBomb Open Data é público (citar a fonte ao usar).
 """
 
 from __future__ import annotations
@@ -91,6 +95,138 @@ def escanteios_por_time(eventos: list[dict]) -> list[int]:
     return list(cont.values())
 
 
+# ------------------------------------------------------------------------------------ dados reduzidos e fracionados
+TIPOS_GUARDADOS = {"Pass", "Carry", "Shot", "Dribble", "Dispossessed", "Miscontrol", "Foul Committed", "Starting XI"}
+CAMPOS = ("T", "team", "p", "m", "s", "d", "pos", "x", "y", "x2", "y2", "o", "f")
+PARTIDAS_POR_ARQUIVO = 50
+
+
+def reduzir_partida(ev: list[dict]) -> dict:
+    """Evento do StatsBomb -> colunas só com o que as análises usam. `team` é o índice do time (0, 1, ...) na ordem em que aparece;
+    `f` = bits (1 = cruzamento, 2 = escanteio cobrado); `o` = resultado do passe ou do chute. A origem de cada escanteio já vem calculada
+    (janela de 25 eventos BRUTOS, que não existem mais depois da redução)."""
+    cols = {k: [] for k in CAMPOS}
+    times: dict[int, int] = {}
+    for e in ev:
+        t = e["type"]["name"]
+        if t not in TIPOS_GUARDADOS:
+            continue
+        loc = e.get("location") or [None, None]
+        fim = None
+        out = None
+        flags = 0
+        if t == "Pass":
+            pp = e["pass"]
+            fim = pp.get("end_location")
+            out = (pp.get("outcome") or {}).get("name")
+            flags = (1 if pp.get("cross") else 0) | (2 if ((pp.get("type") or {}).get("name")) == "Corner" else 0)
+        elif t == "Carry":
+            fim = (e.get("carry") or {}).get("end_location")
+        elif t == "Shot":
+            out = (e["shot"].get("outcome") or {}).get("name")
+        d = e.get("duration")
+        linha = (t, times.setdefault(e["team"]["id"], len(times)), e.get("period"), e.get("minute"), e.get("second"),
+                 None if d is None else round(d, 2), e.get("possession"), loc[0], loc[1],
+                 fim[0] if fim else None, fim[1] if fim else None, out, flags)
+        for k, v in zip(CAMPOS, linha):
+            cols[k].append(v)
+    return {"cols": cols, "escanteios": origem_escanteios(ev)}
+
+
+def eventos_reconstruidos(red: dict) -> list[dict]:
+    """Colunas reduzidas -> eventos com a MESMA forma que as funções de análise leem (`acoes_da_partida`, `escanteios_por_time`, tempo)."""
+    c = red["cols"]
+    saida = []
+    for i in range(len(c["T"])):
+        t = c["T"][i]
+        e: dict = {"type": {"name": t}, "team": {"id": c["team"][i]}, "period": c["p"][i], "minute": c["m"][i], "second": c["s"][i]}
+        if c["d"][i] is not None:
+            e["duration"] = c["d"][i]
+        if c["pos"][i] is not None:
+            e["possession"] = c["pos"][i]
+        if c["x"][i] is not None:
+            e["location"] = [c["x"][i], c["y"][i]]
+        fim = [c["x2"][i], c["y2"][i]] if c["x2"][i] is not None else None
+        if t == "Pass":
+            pp: dict = {}
+            if fim:
+                pp["end_location"] = fim
+            if c["o"][i]:
+                pp["outcome"] = {"name": c["o"][i]}
+            if c["f"][i] & 1:
+                pp["cross"] = True
+            if c["f"][i] & 2:
+                pp["type"] = {"name": "Corner"}
+            e["pass"] = pp
+        elif t == "Carry":
+            e["carry"] = {"end_location": fim} if fim else {}
+        elif t == "Shot":
+            e["shot"] = {"outcome": {"name": c["o"][i]}} if c["o"][i] else {}
+        saida.append(e)
+    return saida
+
+
+def slug(rotulo: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]+", "_", rotulo.lower()).strip("_")
+
+
+def salvar_fracionado(pasta: str, grupo: str, rotulo: str, registros: list[dict], por_arquivo: int = PARTIDAS_POR_ARQUIVO) -> None:
+    """Grava as partidas de UMA competição-temporada em `<pasta>/<grupo>/<slug>/parte-NNN.json.xz` (até `por_arquivo` partidas por arquivo)
+    mais um `INDICE.json` com os ids de cada parte. `registros` = [{'match_id', 'cols', 'escanteios'}] em ordem de match_id."""
+    import lzma
+    destino = os.path.join(pasta, grupo, slug(rotulo))
+    os.makedirs(destino, exist_ok=True)
+    partes = []
+    for k in range(0, len(registros), por_arquivo):
+        bloco = registros[k:k + por_arquivo]
+        nome = f"parte-{k // por_arquivo + 1:03d}.json.xz"
+        with lzma.open(os.path.join(destino, nome), "wt", preset=9 | lzma.PRESET_EXTREME) as f:
+            json.dump(bloco, f, separators=(",", ":"))
+        partes.append({"arquivo": nome, "match_ids": [r["match_id"] for r in bloco]})
+    with open(os.path.join(destino, "INDICE.json"), "w") as f:
+        json.dump({"rotulo": rotulo, "grupo": grupo, "jogos": len(registros), "partes": partes}, f, ensure_ascii=False, indent=1)
+
+
+def carregar_fracionado(pasta: str, grupo: str) -> dict[str, list[dict]]:
+    """{rótulo: [registros em ordem]} lidos de `<pasta>/<grupo>/*/parte-*.json.xz`. Sem rede."""
+    import lzma
+    base = os.path.join(pasta, grupo)
+    saida = {}
+    for sub in sorted(os.listdir(base)):
+        d = os.path.join(base, sub)
+        if not os.path.isdir(d):
+            continue
+        ind = json.load(open(os.path.join(d, "INDICE.json")))
+        regs = []
+        for parte in ind["partes"]:
+            with lzma.open(os.path.join(d, parte["arquivo"]), "rt") as f:
+                regs.extend(json.load(f))
+        saida[ind["rotulo"]] = regs
+    return saida
+
+
+def registro_para_cache(regs: list[dict]) -> dict:
+    """Registros reduzidos de uma competição -> o mesmo formato do cache de `baixar_grupo` (acoes, escanteios, corners_times, jogos)."""
+    c = {"jogos": 0, "acoes": [], "escanteios": [], "corners_times": []}
+    for r in regs:
+        ev = eventos_reconstruidos(r)
+        c["jogos"] += 1
+        c["acoes"].extend(g.acoes_da_partida(ev))
+        c["escanteios"].extend([tuple(x) for x in r["escanteios"]])
+        c["corners_times"].append(escanteios_por_time(ev))
+    return c
+
+
+def reconstruir(pasta: str, cache: str, grupos: list[str]) -> None:
+    os.makedirs(cache, exist_ok=True)
+    for gr in grupos:
+        res = {rotulo: registro_para_cache(regs) for rotulo, regs in carregar_fracionado(pasta, gr).items()}
+        json.dump(res, open(os.path.join(cache, f"{gr}.json"), "w"))
+        for k, v in res.items():
+            print(f"  {k}: {v['jogos']} jogos, {len(v['acoes'])} acoes, {len(v['escanteios'])} escanteios")
+
+
 def jogos_do_grupo(grupo: str) -> list[tuple[int, str]]:
     """[(match_id, rótulo competição/temporada)] do grupo, a partir de competitions.json (competições excluídas nunca entram)."""
     comps = g.baixar_json(f"{g.BASE}/competitions.json")
@@ -108,11 +244,11 @@ def jogos_do_grupo(grupo: str) -> list[tuple[int, str]]:
     return sorted(set(jogos))
 
 
-def baixar_grupo(grupo: str, cache: str, workers: int = 6) -> dict:
+def baixar_grupo(grupo: str, cache: str, workers: int = 6, fracionado: str | None = None) -> dict:
     caminho = os.path.join(cache, f"{grupo}.json")
     if os.path.exists(caminho):
         antigo = json.load(open(caminho))
-        if all("corners_times" in c for c in antigo.values()):    # caches antigos sem a contagem por jogo são refeitos
+        if all("corners_times" in c for c in antigo.values()) and fracionado is None:    # caches antigos sem a contagem por jogo são refeitos
             return antigo
     jogos = jogos_do_grupo(grupo)
     print(f"{grupo}: {len(jogos)} jogos")
@@ -120,11 +256,15 @@ def baixar_grupo(grupo: str, cache: str, workers: int = 6) -> dict:
     def um(par):
         mid, rotulo = par
         ev = g.baixar_json(f"{g.BASE}/events/{mid}.json")
-        return rotulo, g.acoes_da_partida(ev), origem_escanteios(ev), escanteios_por_time(ev)
+        red = reduzir_partida(ev)
+        red["match_id"] = mid
+        return rotulo, g.acoes_da_partida(ev), origem_escanteios(ev), escanteios_por_time(ev), red
 
     por_comp: dict[str, dict] = collections.defaultdict(lambda: {"jogos": 0, "acoes": [], "escanteios": [], "corners_times": []})
+    registros: dict[str, list[dict]] = collections.defaultdict(list)
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        for i, (rotulo, acoes, esc, por_time) in enumerate(ex.map(um, jogos), 1):
+        for i, (rotulo, acoes, esc, por_time, red) in enumerate(ex.map(um, jogos), 1):
+            registros[rotulo].append(red)
             c = por_comp[rotulo]
             c["jogos"] += 1
             c["acoes"].extend(acoes)
@@ -135,6 +275,9 @@ def baixar_grupo(grupo: str, cache: str, workers: int = 6) -> dict:
     res = dict(por_comp)
     os.makedirs(cache, exist_ok=True)
     json.dump(res, open(caminho, "w"))
+    if fracionado:
+        for rotulo, regs in registros.items():
+            salvar_fracionado(fracionado, grupo, rotulo, sorted(regs, key=lambda r: r["match_id"]))
     return res
 
 
@@ -299,7 +442,8 @@ def corners_por_competicao(cache: str, grupos: list[str]) -> dict[str, dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir"])
+    ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir", "reconstruir"])
+    ap.add_argument("--fracionado", default=None, help="pasta dos dados reduzidos fracionados (baixar grava; reconstruir lê)")
     ap.add_argument("--cache", default=None)
     ap.add_argument("--saida", default="dados_referencia/statsbomb", help="pasta dos resumos versionados (resumir/conferir)")
     ap.add_argument("--grupos", default=",".join(GRUPOS))
@@ -314,9 +458,14 @@ def main() -> None:
     if args.acao == "resumir":
         resumir(args.cache, args.saida, grupos)
         return
+    if args.acao == "reconstruir":
+        if not args.fracionado:
+            raise SystemExit("--fracionado é obrigatório para reconstruir")
+        reconstruir(args.fracionado, args.cache, grupos)
+        return
     if args.acao == "baixar":
         for gr in grupos:
-            r = baixar_grupo(gr, args.cache)
+            r = baixar_grupo(gr, args.cache, fracionado=args.fracionado)
             for k, v in r.items():
                 print(f"  {k}: {v['jogos']} jogos, {len(v['acoes'])} acoes, {len(v['escanteios'])} escanteios")
         return

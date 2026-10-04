@@ -1673,7 +1673,7 @@ A escalação prevê os cabeceios do time **pior** que o histórico recente do p
 
 ## Achado 26 — a matriz de transição entre ligas, ligas recentes e torneios de seleções; mediana e variância dos escanteios
 
-**O que foi feito.** StatsBomb Open Data masculino gratuito, baixado com `scripts/comparar_competicoes_statsbomb.py`: Premier League, Serie A e Ligue 1 de 2015/16 (temporadas completas), La Liga 2015/16 (a baseline do Achado 18/19), Copa do Mundo (8 edições), Euro 2020 e 2024, Copa América 2024 e ligas recentes. **A Copa Africana de Nações foi excluída por pedido.** Os resumos (contagens, escanteios por jogo, ids dos jogos) ficam em `dados_referencia/statsbomb/` e `conferir` refaz as contas sem baixar nada; o bruto (mais de 150 MB) não vai para o Git.
+**O que foi feito.** StatsBomb Open Data masculino gratuito, baixado com `scripts/comparar_competicoes_statsbomb.py`: Premier League, Serie A e Ligue 1 de 2015/16 (temporadas completas), La Liga 2015/16 (a baseline do Achado 18/19), Copa do Mundo (8 edições), Euro 2020 e 2024, Copa América 2024 e ligas recentes. **A Copa Africana de Nações foi excluída por pedido.** Como o StatsBomb pode mudar o que oferece de graça, o repositório guarda os dados REDUZIDOS de cada partida, fracionados em arquivos `.json.xz` de até 50 partidas (`dados_referencia/statsbomb/brutos/`, 28 MB, 56 arquivos), e também os resumos (contagens, escanteios por jogo, ids dos jogos) em `dados_referencia/statsbomb/`. `reconstruir` refaz o cache e os resumos SEM rede (verificado: os cinco resumos saem idênticos byte a byte), e `conferir` refaz as contas dos resumos.
 
 **Método.** Matriz de 18 zonas (mesma regra dos Achados 18/19). Para cada competição, o ganho = log-verossimilhança média por ação (nats) do modelo PRÓPRIO treinado por validação cruzada em 5 blocos contíguos, menos a do modelo da La Liga 2015/16 inteira. Positivo = a matriz da La Liga serve pior para aquela competição.
 
@@ -1721,7 +1721,7 @@ Por liga 2015/16 (total do jogo): La Liga média 10,11, mediana 10, variância 1
 
 ## Achado 27 — as taxas dos eventos ao longo do jogo e a duração das ações (para simular a bola no tempo)
 
-**Para quê.** Uma simulação no tempo (cadeia semi-Markov) precisa de duas peças que a matriz de transição não tem: o ritmo dos eventos por janela do jogo e quanto dura cada ação (o tempo de permanência na zona). `scripts/analisar_tempo_eventos_statsbomb.py` mede as duas no StatsBomb (La Liga 2015/16, 380 jogos, os dois times somados); o resumo versionado está em `dados_referencia/statsbomb/tempo_la_liga_2015_16.json`. Os chutes e gols por janela também foram medidos no banco (FotMob, Premier League, La Liga, Serie A, Ligue 1 e Bundesliga, 2021 a 2025).
+**Para quê.** Uma simulação no tempo (cadeia semi-Markov) precisa de duas peças que a matriz de transição não tem: o ritmo dos eventos por janela do jogo e quanto dura cada ação (o tempo de permanência na zona). `scripts/analisar_tempo_eventos_statsbomb.py` mede as duas no StatsBomb (La Liga 2015/16, 380 jogos, os dois times somados); o resumo versionado está em `dados_referencia/statsbomb/tempo_la_liga_2015_16.json` e a análise também roda a partir dos dados reduzidos versionados (`--brutos`, sem rede; as durações guardadas são arredondadas a 0,01 s). Os chutes e gols por janela também foram medidos no banco (FotMob, Premier League, La Liga, Serie A, Ligue 1 e Bundesliga, 2021 a 2025).
 
 **Por janela (StatsBomb, por minuto de jogo; os acréscimos usam a duração média até o último evento: 0,8 min no 1º tempo e 3,3 min no 2º, aproximação):**
 

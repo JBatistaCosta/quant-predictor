@@ -109,3 +109,52 @@ def test_resumo_e_conferencia_sem_rede(tmp_path):
 def test_contagens_conta_cada_acao_uma_vez():
     m = c.contagens([("chute", 110, 40, None, None, "chute"), ("perda", 50, 40, None, None, "falha")])
     assert sum(sum(l) for l in m) == 2 and sum(l[18] for l in m) == 1 and sum(l[19] for l in m) == 1
+
+
+def _partida_sintetica():
+    return [
+        ev("Starting XI", 1), ev("Starting XI", 2),
+        ev("Pass", 1, [60, 40], period=1, minute=3, second=10, duration=1.234, possession=1,
+           **{"pass": {"end_location": [75, 40]}}),
+        ev("Pass", 1, [100, 10], period=1, minute=20, second=0, duration=2.0, possession=2,
+           **{"pass": {"cross": True, "outcome": {"name": "Incomplete"}, "end_location": [112, 40]}}),
+        ev("Carry", 1, [50, 40], period=1, minute=21, second=0, duration=1.5, possession=3, carry={"end_location": [60, 42]}),
+        ev("Shot", 1, [108, 38], period=2, minute=50, second=5, duration=0.7, possession=4, shot={"outcome": {"name": "Blocked"}}),
+        ev("Block", 2, [110, 38], period=2, minute=50, second=6),
+        corner(1),
+        ev("Dispossessed", 2, [30, 40], period=2, minute=70, second=1),
+        ev("Foul Committed", 2, [30, 40], period=2, minute=71, second=1),
+    ]
+
+
+def test_reduzir_e_reconstruir_preservam_as_acoes_e_a_contagem_de_escanteios():
+    bruto = _partida_sintetica()
+    red = c.reduzir_partida(bruto)
+    rec = c.eventos_reconstruidos(red)
+    assert g.acoes_da_partida(rec) == g.acoes_da_partida(bruto)
+    assert sorted(c.escanteios_por_time(rec)) == sorted(c.escanteios_por_time(bruto)) == [0, 1]
+    assert red["escanteios"] == c.origem_escanteios(bruto)        # a origem do escanteio vem calculada com os eventos brutos
+    assert all(e["type"]["name"] != "Block" for e in rec)          # tipos que ninguém usa não são guardados
+
+
+def test_fracionado_em_varios_arquivos_e_recarga_sem_rede(tmp_path):
+    registros = []
+    for k in range(5):
+        r = c.reduzir_partida(_partida_sintetica())
+        r["match_id"] = 100 + k
+        registros.append(r)
+    c.salvar_fracionado(str(tmp_path), "grupo_x", "Teste Liga 2015/2016", registros, por_arquivo=2)
+    pasta = tmp_path / "grupo_x" / "teste_liga_2015_2016"
+    assert sorted(f.name for f in pasta.iterdir()) == ["INDICE.json", "parte-001.json.xz", "parte-002.json.xz", "parte-003.json.xz"]
+    lido = c.carregar_fracionado(str(tmp_path), "grupo_x")["Teste Liga 2015/2016"]
+    assert [r["match_id"] for r in lido] == [100, 101, 102, 103, 104]
+    cache = c.registro_para_cache(lido)
+    assert cache["jogos"] == 5 and len(cache["escanteios"]) == 5
+    assert all(sorted(x) == [0, 1] for x in cache["corners_times"])
+    assert len(cache["acoes"]) == 5 * len(g.acoes_da_partida(_partida_sintetica()))
+
+
+def test_analise_de_tempo_e_igual_nos_eventos_brutos_e_nos_reconstruidos():
+    import analisar_tempo_eventos_statsbomb as t
+    bruto = _partida_sintetica()
+    assert t.analisar_partida(c.eventos_reconstruidos(c.reduzir_partida(bruto)))["cont"] == t.analisar_partida(bruto)["cont"]

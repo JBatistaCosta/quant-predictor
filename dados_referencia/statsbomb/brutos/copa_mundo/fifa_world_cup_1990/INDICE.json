@@ -1,0 +1,13 @@
+{
+ "rotulo": "FIFA World Cup 1990",
+ "grupo": "copa_mundo",
+ "jogos": 1,
+ "partes": [
+  {
+   "arquivo": "parte-001.json.xz",
+   "match_ids": [
+    3793185
+   ]
+  }
+ ]
+}
