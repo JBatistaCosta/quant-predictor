@@ -102,10 +102,11 @@ export const MATRIZ_TRANSICAO = [
 // disputa de pênaltis), coordenadas FotMob x∈[0,105] (gol em x=105), y∈[0,68].
 // Distância = até o CENTRO do gol; ângulo = do eixo do campo. XG_MEDIO_ZONA_CHUTE
 // e DISTRIBUICAO_ZONA_CHUTE são fotografias desse dado (não recalculadas em
-// runtime); refazer se a base crescer muito. XG_MEDIO_ZONA_CHUTE e
-// ESTATISTICA_ZONA_CHUTE usam só jogos desde 01/08/2021 (Achado 40);
-// DISTRIBUICAO_ZONA_CHUTE segue a fotografia de 01/10/2026 com todas as datas (a fatia
-// de cada zona difere em no máximo 0,11 ponto percentual entre as duas bases).
+// runtime); refazer se a base crescer muito. As três usam a MESMA base: só ligas
+// de clubes (sem Copa América, Eurocopa e Copa do Mundo) e só jogos desde
+// 01/08/2021 (Achados 40 e 44; DISTRIBUICAO_ZONA_CHUTE refeita no Achado 45,
+// 428.248 chutes; consulta em arquivos_do_claude/distribuicao_zona_chute.sql e
+// contagens em dados_referencia/fotmob/distribuicao_zona_chute_clubes.json).
 export const ANEIS_CHUTE_M = [0, 6, 9, 12, 16.5, 22, 30, Infinity];
 export const ANGULO_CONE_GRAUS = 30;
 
@@ -163,12 +164,12 @@ export const DISTRIBUICAO_ZONA_CHUTE = [
   /* def_esq  */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
   /* def_cen  */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
   /* def_dir  */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
-  /* meio_esq */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.8429, 0.1571],
+  /* meio_esq */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.8365, 0.1635],
   /* meio_cen */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
-  /* meio_dir */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.8717, 0.1283],
-  /* atq_esq  */ [0, 0, 0, 0, 0, 0.0023, 0, 0.2092, 0, 0.3495, 0.0903, 0.2629, 0.0473, 0.0385],
-  /* atq_cen  */ [0.0301, 0.0323, 0.0993, 0.0538, 0.1023, 0.0701, 0.1328, 0.1031, 0.1173, 0.0307, 0.1971, 0.0003, 0.031, 0],
-  /* atq_dir  */ [0, 0, 0, 0, 0, 0.002, 0, 0.198, 0, 0.3387, 0.0867, 0.277, 0.0536, 0.0439],
+  /* meio_dir */ [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.872, 0.128],
+  /* atq_esq  */ [0, 0, 0, 0, 0, 0.0023, 0, 0.2099, 0, 0.351, 0.09, 0.2608, 0.047, 0.0389],
+  /* atq_cen  */ [0.0304, 0.0325, 0.0993, 0.054, 0.1017, 0.0703, 0.133, 0.1031, 0.1179, 0.0309, 0.1957, 0.0003, 0.0309, 0],
+  /* atq_dir  */ [0, 0, 0, 0, 0, 0.002, 0, 0.1977, 0, 0.3404, 0.0866, 0.2769, 0.053, 0.0433],
 ];
 
 // Sorteia um índice de `pesos` (não precisa somar exatamente 1 -- normaliza
