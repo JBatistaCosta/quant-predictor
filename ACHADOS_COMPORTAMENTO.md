@@ -2280,3 +2280,30 @@ A calibração da época melhora o conjunto em **8 das 11 épocas** (média 8,6%
 **5. Limites.** (a) Dentro da amostra de 2015-2024 do StatsBomb Open Data: as ligas recentes são **clubes únicos** (Barcelona, PSG, Leverkusen) e não ligas inteiras, então o perfil descreve um time de posse, não a Bundesliga ou a Ligue 1. (b) O k é escolhido na verossimilhança da matriz de desfecho (um único k para matriz e núcleo). (c) Não há força por time dentro do perfil: os perfis são para times neutros do conjunto. (d) A normalização da memória da posse usa 700 a 1.200 jogos por iteração e deixa ruído de ~1% por zona. (e) Os perfis só valem para competições/épocas parecidas com as treinadas; para uma competição nova é preciso medir de novo (folga, duração do tempo e tempo morto saem direto dos eventos).
 
 **Uso.** `python scripts/simulador_cadeia_bola.py --perfil dados_referencia/statsbomb/perfil_torneios_selecoes.json` (ou `perfil_ligas_recentes.json`, `perfil_la_liga_2015_16.json`); o relatório completo está em `calibracao_por_competicao.json` e `calibracao_por_epoca.json`.
+
+
+## Achado 42 — seleções no banco: as edições antigas de Euro, Copa América e Copa do Mundo entram, os dados batem 115/115, e o importador errou o vínculo de um time
+
+**O que foi feito.** Pedido: baixar o FotMob pelo workflow do GitHub. Caminho usado: (1) verificar os 65 times de seleções do FotMob contra `team_source_ids` (52 já vinculados, 13 sem vínculo; só Portugal já existia em `teams`, vinculado à mão ao FotMob 8361); (2) `?tarefa=importar-jogos-fotmob` para cada liga/temporada (cria os jogos `fm_<id>`; não exige login); (3) workflow `temporadas_fotmob_backfill.yml` para liga 22/FotMob 50 (2020 2016 2012), liga 30/FotMob 44 (2021 2019 2016 2015) e liga 27/FotMob 77 (2022 2018). Nenhuma senha do site foi necessária.
+
+| Competição | Edição | Jogos | Enriquecidos | Com chutes/xG |
+|---|---|---|---|---|
+| Eurocopa | 2012 | 31 | 31 | 0 |
+| Eurocopa | 2016 | 51 | 51 | 0 |
+| Eurocopa | 2020 | 51 | 51 | 51 |
+| Copa América | 2015 | 26 | 26 | 0 |
+| Copa América | 2016 | 34 | 34 | 0 |
+| Copa América | 2019 | 26 | 26 | 0 |
+| Copa América | 2021 | 38 (10 cancelados) | 28 | 0 |
+| Copa do Mundo | 2018 | 64 | 64 | 0 |
+| Copa do Mundo | 2022 | 64 | 64 | 64 |
+
+**Validação.** (a) Dos 115 jogos com chutes, 115 batem com os arquivos baixados antes (`dados_referencia/fotmob/`) em número de chutes (sem disputa de pênaltis) e em xG: 2.712 chutes, 312,82 de xG nos dois lados. (b) O placar reconstruído pelos gols do mapa de chutes (gol contra creditado ao adversário, disputa de pênaltis fora) confere com o placar oficial em 115 de 115. Isso é a mesma invariante usada em `match_goal_timeline`.
+
+**Erros encontrados e corrigidos.**
+1. **Vínculo errado de time (o risco do CLAUDE.md, acontecido de novo).** Ao criar times novos, o importador resolve por nome e país; a Irlanda (FotMob 5791) caiu na Irlanda do Norte (10259), recém-criada. Sintoma: Irlanda do Norte com 11 jogos (3 de 2012 em que nem se classificou + 4 de 2016 + 4 da Irlanda de 2016). Correção: `teams` 1045 'Ireland' + `team_source_ids` (fotmob, 5791) + 7 jogos movidos por `external_id` (`fm_1139476/9/85`, `fm_1695445/48/60`, `fm_2148253`). Depois disso Irlanda do Norte tem 4 jogos. **Lição:** ao importar seleções novas, conferir contagem de jogos por time e nomes que contêm outro nome ("Ireland" dentro de "Northern Ireland"). A heurística de nome do importador (`escolherCandidatoPorNomeEPais`) continua sem correção no código; o ajuste foi só nos dados.
+2. **Momentum em meio-minuto.** `arquivos_do_claude/ingestao_fotmob.py` falhava na Copa 2022 com `22P02: invalid input syntax for type integer: "45.5"` (a coluna `match_momentum_fotmob.minute` é inteira) e o jogo ficava sem nada gravado. Agora `montar_linhas_momentum` descarta pontos fracionários; arredondar colidiria com o ponto inteiro vizinho e quebraria o upsert. Um run (Copa 2022/2018) falhou no `main` antigo e foi relançado a partir da branch com a correção, com sucesso.
+
+**Pegadinhas dos dados.** O banco tem 79 cobranças de disputa de pênaltis (`period='PenaltyShootout'`) nesses 115 jogos: sempre excluir. Copa América 2021 inclui 10 jogos `cancelled` (Austrália e Catar foram convidados e trocados). Copa América 2016 inclui 2 jogos de janeiro (Trinidad e Tobago × Haiti, Panamá × Cuba) que são eliminatórias da Copa Centenário, não o torneio. O FotMob não tem mapa de chutes antes da Euro 2020 (Euro 2012/2016, Copa América 2015-2021 e Copa 2018): essas edições servem para gols, escalações e estatísticas de time e jogador, não para xG.
+
+**Limites.** (a) Só duas edições têm xG (Euro 2020 e Copa 2022); a tabela polar de seleções continua apoiada em 115 jogos + Euro 2024/Copa América 2024/Copa 2026. (b) Os 9 jogos da Euro 2024 sem chutes seguem sem chutes. (c) A correção da heurística do importador não foi feita (decisão para o usuário: tornar o vínculo por nome mais rígido, ou exigir lista de vínculos supervisionada para seleções).
