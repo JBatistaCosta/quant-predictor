@@ -2422,3 +2422,39 @@ Diferenças pareadas (positivo = o primeiro é pior), com IC 95%:
 **Hipóteses a testar em seguida (não testadas; cada uma exige correção walk-forward, nunca ajustada com os dados do teste):** (a) recalibrar o nível de gols e o mando com a história anterior de cada jogo, o que atacaria direto o over/under e o 1X2; (b) usar o perfil recalibrado do Achado 41; (c) força de defesa e de perda de bola, não só de chutes; (d) previsões por jogador (`player_match_estimates`) como entrada da força do time — hoje só existem 66 jogos da Premier League 2025/26, todos com escalação oficial, o que é pouco para este teste; (e) outras ligas.
 
 **Operação.** Rodar localmente na sessão falhou duas vezes (o contêiner reinicia e mata o processo; a rodada local chegou a 104/760). O workflow divide as 760 simulações em 8 jobs e termina em ~10 minutos; cada simulação tem semente fixa, então o resultado não depende do fatiamento. O script grava o progresso e retoma de onde parou.
+
+
+---
+
+## Achado 47 — camadas de ajuste: o nível de gols conserta o over/under (empata com o Dixon-Coles), o mando na conversão não ajuda, e o 1X2 não mexe
+
+**Pergunta.** Dar ao simulador entradas modulares sobre a base fixa das transições (Achado 46 apontou nível de gols baixo e mando subestimado) fecha a distância para o Dixon-Coles e o mercado? Estrutura em `scripts/camadas_simulador.py`: a base não muda; cada camada olha só jogos anteriores, devolve multiplicadores perto de 1,0 sobre chute e conversão (chance do chute virar gol, botão novo `conversao_ataque/defesa` em `Multiplicadores`, neutro = jogo idêntico) e é combinada por produto com teto [0,6; 1,6]. Ablação: uma camada por vez, cada variante comparada com a anterior. Conferido antes de rodar: as variantes `neutro` e `forca` reproduzem exatamente as probabilidades do Achado 46.
+
+**Método.** Mesmo teste do Achado 46 (Premier League 2025/26, 342 jogos com Dixon-Coles e odds, 1.000 simulações por jogo, IC 95% por bootstrap pareado sobre jogos). Camadas: `gols_nivel` = gols por chute da história sobre o do simulador neutro (0,1017, medido em 2.500 jogos); `gols_mando` = razão (gols por chute em casa)/(fora) da história, encolhida por jogos/(jogos+50), dividida entre os dois lados.
+
+**Resultado (log-loss médio; menor é melhor).**
+
+| | 1X2 | over/under 2,5 |
+|---|---|---|
+| mercado | 0,9985 | 0,6823 |
+| Dixon-Coles | 1,0347 | 0,6872 |
+| times iguais (controle) | 1,0880 | 0,7052 |
+| + força por chutes | 1,0657 | 0,7021 |
+| + nível de gols | 1,0667 | **0,6868** |
+| + mando na conversão | 1,0692 | 0,6898 |
+
+Diferenças pareadas (positivo = o primeiro é pior), IC 95%:
+- **`gols_nivel` sobre a força: over/under −0,0153 [−0,0291; −0,0012]** (melhora significativa); 1X2 +0,0010 [−0,0064; +0,0087] (nada).
+- **`gols_mando` sobre `gols_nivel`: 1X2 +0,0025 [−0,0043; +0,0092]; over/under +0,0030 [−0,0013; +0,0073]** (nada; levemente pior). **Fica fora.**
+- Com o nível de gols, o simulador **empata com o Dixon-Coles no over/under** (−0,0004 [−0,0247; +0,0234]) e é indistinguível do mercado (+0,0045 [−0,0109; +0,0201]). Antes do nível ele estava pior que 50/50 (0,6931); agora 0,6868.
+- 1X2 continua pior que o Dixon-Coles (+0,0320 [−0,0014; +0,0641]) e significativamente pior que o mercado (+0,0682 [+0,0348; +0,0992]). A variante com mando fica significativamente pior que o Dixon-Coles no 1X2 (+0,0345 [+0,0003; +0,0680]).
+
+**Diagnóstico (342 jogos).** Gols por jogo simulados 2,74 com o nível (2,49 antes) contra 2,79 reais; over 2,5 médio 52,1% contra 56,1% real (ainda abaixo). Vitória do mandante simulada 38,6% contra 42,4% real (visitante 36,1% contra 30,7%): o erro de mando do Achado 46 **não** foi corrigido, e o 1X2 não melhora.
+
+**Por que o mando falhou: a estimativa vinda da história fica atrasada.** O mando mudou entre as duas temporadas do CSV. Razão de chutes casa/fora: 1,130 em 2024/25 contra 1,240 em 2025/26. Gols por chute casa/fora: 0,943 contra 1,006. Mandante vence 40,8% contra 42,6%; visitante 34,7% contra 30,0%. Um ajuste que olha a história (quase toda de 2024/25 durante o teste) subestima o mandante de 2025/26 por construção; nenhuma camada walk-forward "adivinha" uma mudança de nível entre temporadas. Isto é uma explicação consistente com os números, não um teste dela.
+
+**O que ficou decidido.** `gols_nivel` fica ligada; `gols_mando` fica no código e desligada (decisão pela ablação, não por gosto). O ganho real foi só no over/under; o 1X2 depende de discriminar bem a força dos times, e hoje essa força vem só de chutes feitos e sofridos.
+
+**Próximas camadas a testar (cada uma por ablação, nenhuma ajustada com dados do teste):** (a) mando com janela recente ou ponderada pelo tempo, para seguir mudanças entre temporadas (hipótese acima); (b) Elo de xG (`team_elo_xg`) como força geral; (c) fragilidade defensiva em chutes sofridos e xG sofrido por chute (`conversao_defesa` já existe e não foi usada); (d) jogadores, só quando houver cobertura (hoje 66 jogos da Premier League 2025/26 em `player_match_estimates`).
+
+**Limites.** Uma liga e uma temporada, 342 jogos: os IC são largos e várias diferenças "sem efeito" aqui podem ser efeitos pequenos não detectáveis. O ajuste de nível usa a constante do simulador neutro (0,1017) medida com ruído de ~±1,5%. Dixon-Coles com a mesma ressalva do Achado 46 (não verifiquei se foi gerado fora da amostra para esses jogos).

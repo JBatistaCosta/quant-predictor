@@ -9,6 +9,10 @@
 
 ---
 
+**Camadas de ajuste do simulador -- Achado 47 (04/10).** `scripts/camadas_simulador.py`: base fixa (transições) + camadas que olham só o histórico, encolhidas para 1,0 e combinadas com teto; botão novo de conversão (`conversao_ataque/defesa`) em `Multiplicadores`. Ablação na Premier League 2025/26 (342 jogos): **`gols_nivel` fica** (over/under -0,0153 [-0,0291; -0,0012] sobre a força; empata com o Dixon-Coles, 0,6868 contra 0,6872, e é indistinguível do mercado), **`gols_mando` sai** (sem efeito; a estimativa pela história fica atrasada porque o mando mudou de 2024/25 para 2025/26), 1X2 não muda e segue pior que o Dixon-Coles (+0,032 [-0,001; +0,064]) e o mercado. Próximas: mando com janela recente, Elo de xG, fragilidade defensiva, jogadores. Rodar com o workflow `backtest_simulador_preditivo.yml` (~20 min, 4 variantes). Detalhes em ACHADOS_COMPORTAMENTO.md.
+
+---
+
 **Simulador como previsor testado -- Achado 46 (04/10).** Walk-forward na Premier League 2025/26 (342 jogos com Dixon-Coles e odds): a força dos times por chutes melhora o simulador de forma significativa (log-loss 1X2 -0,022 [-0,033; -0,013] contra o controle com times iguais), mas ele continua pior que o Dixon-Coles (+0,031 [-0,004; +0,065], IC inclui zero) e significativamente pior que o mercado (+0,067 [+0,033; +0,099]). No over/under 2,5 fica pior que 50/50. Causa visível: gols 2,49 simulados contra 2,75 reais e mando subestimado (37,9% contra 42,4%); empate certo (26,8% contra 26,9%). Próximo passo candidato: recalibrar nível de gols e mando walk-forward. Rodar com `.github/workflows/backtest_simulador_preditivo.yml` (8 fatias, ~10 min); rodar localmente na sessão não funciona (o contêiner reinicia). Detalhes e limites em ACHADOS_COMPORTAMENTO.md.
 
 ---
