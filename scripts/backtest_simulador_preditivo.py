@@ -40,6 +40,8 @@ import camadas_simulador as cam  # noqa: E402
 BASE = ["nivel_chutes", "mando_chutes"]
 SEM_MANDO = ["nivel_chutes"]
 KEEP = BASE + ["forca_chutes", "gols_nivel", "gols_fator"]                  # o que o Achado 47 deixou ligado
+KEEP_GOLS = [c if c != "forca_chutes" else "forca_gols" for c in KEEP]      # força só por gols
+KEEP_MISTA = [c if c != "forca_chutes" else "forca_mista" for c in KEEP]    # força por mistura chutes/gols (peso_gols)
 VARIANTES = {
     "neutro": {"camadas": BASE, "semente": 2, "ref": None, "padrao": False},
     "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro", "padrao": False},
@@ -59,6 +61,9 @@ VARIANTES = {
     # ANTERIORES (base em --base-gols, gerada com --extrair-base a partir de uma rodada sem fator). Mesmas sementes de exp_forca: a diferença pareada é só o efeito da mudança.
     "exp_forca_quebra": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "quebra_corrigida": True}, "padrao": False},
     "exp_forca_movel": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_forca", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
+    # Achado 57: força dos times por gols (como o Dixon-Coles) no lugar de só chutes; mesma semente de exp_forca (comparação pareada)
+    "exp_gols": {"camadas": KEEP_GOLS, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "peso_gols": 1.0}, "padrao": False},
+    "exp_misto": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0)}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
@@ -164,6 +169,8 @@ def main():
     ap.add_argument("--exp-mando", type=float, default=2.0, help="expoente de amplificação do mando de chutes nas variantes exp_mando/exp_ambos (1 = sem amplificar; calibrado em 2: ver calibrar_elasticidade_chute.py)")
     ap.add_argument("--exp-forca", type=float, default=2.0, help="idem, para a força dos times (ataque e defesa) nas variantes exp_forca/exp_ambos")
     ap.add_argument("--exp-estado", type=float, default=2.0, help="expoente do multiplicador de VOLUME da reação ao placar nas variantes estado_* (1 = sem amplificar)")
+    ap.add_argument("--k-gols", type=float, default=None, help="pseudo-jogos que puxam a força por gols para 1 nas variantes exp_gols/exp_misto (padrão do CONFIG: 20)")
+    ap.add_argument("--peso-gols", type=float, default=None, help="peso dos gols na força da variante exp_misto (0 = só chutes, 1 = só gols; padrão 0,5)")
     ap.add_argument("--alvo-casa", type=float, default=1.0, help="placar desejado do mandante (saldo final satisfatório; 1 = ganhar, 0 = empate basta, 2 = vencer por 2, -1 = aceita perder por 1)")
     ap.add_argument("--alvo-fora", type=float, default=1.0, help="placar desejado do visitante (idem)")
     ap.add_argument("--alvo-ctx", default="{}", help='JSON {"local|perfil": alvo} que substitui o placar desejado do time com esse contexto na variante estado_ctx, ex.: \'{"fora|fraco": 0, "casa|fraco": 0.5}\' (local: casa/fora/neutro; perfil: forte/parelho/fraco)')
@@ -192,6 +199,10 @@ def main():
             v["cfg"]["exp_mando"] = a.exp_mando
         if "exp_forca" in v["cfg"]:
             v["cfg"]["exp_forca"] = a.exp_forca
+        if a.k_gols is not None and ("forca_gols" in v["camadas"] or "forca_mista" in v["camadas"]):
+            v["cfg"]["k_gols"] = a.k_gols
+        if a.peso_gols is not None and "forca_mista" in v["camadas"]:
+            v["cfg"]["peso_gols"] = a.peso_gols
         v["cfg"].update({k: (tuple(x) if isinstance(x, list) else x) for k, x in json.loads(a.cfg_extra).items()})
         if "estado" in v["cfg"]:
             v["cfg"]["estado"] = {**v["cfg"]["estado"], "exp_volume": a.exp_estado, "alvo": [a.alvo_casa, a.alvo_fora], "alvo_ctx": json.loads(a.alvo_ctx)}

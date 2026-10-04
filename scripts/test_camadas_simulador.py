@@ -97,3 +97,30 @@ def test_gols_fator_multiplica_a_conversao_dos_dois_lados_e_padrao_e_neutro():
     assert c["conversao_ataque"] == 1.0 and f["conversao_ataque"] == 1.0
     c, f = cam.multiplicadores(["gols_fator"], h, 1, 2, {**cam.CONFIG, "gols_fator": 1.06})
     assert c["conversao_ataque"] == 1.06 and f["conversao_ataque"] == 1.06
+
+
+def jogo_g(hs, as_, hg, ag, casa, fora):
+    return {"home": casa, "away": fora, "hs": hs, "as": as_, "hg": hg, "ag": ag}
+
+
+def test_forca_por_gols_segue_os_gols_e_e_encolhida_e_mistura_reverte_aos_chutes():
+    h = cam.Historia()
+    for _ in range(40):                                  # time 1 faz 3 gols e sofre 0; time 2 o contrário; chutes iguais; time 3 e 4 neutros
+        h.add(jogo_g(10, 10, 3, 0, 1, 2))
+        h.add(jogo_g(10, 10, 1, 1, 3, 4))
+    cfg = {**cam.CONFIG, "exp_forca": 1.0}
+    c, f = cam.camada_forca_gols(h, 1, 2, cfg)
+    assert c["ataque_chute"] > 1.2 and c["defesa_chute"] < 0.9                      # time 1: ataca muito e quase não sofre
+    assert f["ataque_chute"] < 0.9 and f["defesa_chute"] > 1.2
+    g = h.gols_por_time()
+    n, k = h.n[1], cfg["k_gols"]
+    assert abs(c["ataque_chute"] - (h.gpro[1] + k * g) / ((n + k) * g)) < 1e-12     # encolhimento por k pseudo-jogos
+    cfg_k = {**cfg, "k_gols": 400.0}                                                # mais pseudo-jogos: mais perto de 1
+    assert abs(cam.camada_forca_gols(h, 1, 2, cfg_k)[0]["ataque_chute"] - 1) < abs(c["ataque_chute"] - 1)
+    # mistura com peso 0 = camada de chutes (chutes iguais -> força 1); peso 1 = só gols
+    m0 = cam.camada_forca_mista(h, 1, 2, {**cfg, "peso_gols": 0.0})
+    ch = cam.camada_forca_chutes(h, 1, 2, cfg)
+    assert all(abs(m0[i][k_] - ch[i][k_]) < 1e-12 for i in range(2) for k_ in ("ataque_chute", "defesa_chute"))
+    m1 = cam.camada_forca_mista(h, 1, 2, {**cfg, "peso_gols": 1.0})
+    assert all(abs(m1[i][k_] - cam.camada_forca_gols(h, 1, 2, cfg)[i][k_]) < 1e-12 for i in range(2) for k_ in ("ataque_chute", "defesa_chute"))
+    assert cam.camada_forca_gols(cam.Historia(), 1, 2, cfg)[0] == {"ataque_chute": 1.0, "defesa_chute": 1.0}   # sem história: neutro

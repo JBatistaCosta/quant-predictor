@@ -44,6 +44,12 @@ on:
       variantes:
         description: "Variantes a rodar, separadas por vírgula (vazio = as marcadas como padrão em scripts/backtest_simulador_preditivo.py; 'todas' = todas)"
         default: ""
+      k_gols:
+        description: "Pseudo-jogos que puxam a força por gols para 1 (variantes exp_gols/exp_misto; vazio = padrão 20)"
+        default: ""
+      peso_gols:
+        description: "Peso dos gols na força da variante exp_misto (0 = só chutes, 1 = só gols; vazio = padrão 0,5)"
+        default: ""
       cfg_extra:
         description: 'JSON com overrides de camadas_simulador.CONFIG para todas as variantes, ex.: {"k_time": 12}'
         default: "{}"
@@ -76,6 +82,8 @@ jobs:
           VARIANTES: ${{ inputs.variantes || '' }}
           TEMPORADA: ${{ inputs.temporada || '2025' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
+          K_GOLS: ${{ inputs.k_gols || '' }}
+          PESO_GOLS: ${{ inputs.peso_gols || '' }}
           CSV: ${{ inputs.csv || 'premier_league_2024_25.csv' }}
           BASE_GOLS: ${{ inputs.base_gols || '' }}
         run: |
@@ -88,7 +96,7 @@ jobs:
           python scripts/backtest_simulador_preditivo.py \
             --csv "$CSV_CAMINHO" --base-gols "$BASES" \
             --sims "$SIMS" --workers "$(nproc)" \
-            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" ${K_GOLS:+--k-gols "$K_GOLS"} ${PESO_GOLS:+--peso-gols "$PESO_GOLS"} \
             --fatia ${{ matrix.fatia }}/8 --so-simular \
             --saida parcial_${{ matrix.fatia }}.json
       - uses: actions/upload-artifact@v4
@@ -122,6 +130,8 @@ jobs:
           VARIANTES: ${{ inputs.variantes || '' }}
           TEMPORADA: ${{ inputs.temporada || '2025' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
+          K_GOLS: ${{ inputs.k_gols || '' }}
+          PESO_GOLS: ${{ inputs.peso_gols || '' }}
           CSV: ${{ inputs.csv || 'premier_league_2024_25.csv' }}
           BASE_GOLS: ${{ inputs.base_gols || '' }}
         run: |
@@ -134,7 +144,7 @@ jobs:
           python scripts/backtest_simulador_preditivo.py \
             --csv "$CSV_CAMINHO" --base-gols "$BASES" \
             --sims "$SIMS" --agregar \
-            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" ${K_GOLS:+--k-gols "$K_GOLS"} ${PESO_GOLS:+--peso-gols "$PESO_GOLS"} \
             --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
           { echo "## Backtest do simulador ($CSV, temporada $TEMPORADA)"; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
