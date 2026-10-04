@@ -9,6 +9,11 @@ name: Backtest do simulador como previsor (em fatias)
 # "resultado-backtest-simulador" (JSON com as probabilidades de cada jogo).
 
 on:
+  # TEMPORÁRIO: workflow_dispatch só funciona com o arquivo na branch principal; enquanto o PR não é mergeado,
+  # um push que mexe neste arquivo dispara a rodada. Remover antes do merge.
+  push:
+    branches: [claude/compassionate-dirac-p61yy7]
+    paths: [".github/workflows/backtest_simulador_preditivo.yml"]
   workflow_dispatch:
     inputs:
       sims:
@@ -35,7 +40,7 @@ jobs:
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
-            --sims "${{ inputs.sims }}" --workers "$(nproc)" \
+            --sims "${{ inputs.sims || '1000' }}" --workers "$(nproc)" \
             --fatia ${{ matrix.fatia }}/8 --so-simular \
             --saida parcial_${{ matrix.fatia }}.json
       - uses: actions/upload-artifact@v4
@@ -61,7 +66,7 @@ jobs:
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
-            --sims "${{ inputs.sims }}" --agregar \
+            --sims "${{ inputs.sims || '1000' }}" --agregar \
             --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
           { echo '## Backtest do simulador (Premier League 2025/26)'; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
