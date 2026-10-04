@@ -9,6 +9,10 @@
 
 ---
 
+**Força dos times e janela do jogo no simulador (04/10) -- Achado 32.** Força medida nos próprios eventos (sem Elo, sem casar nomes): razão observado/esperado por linha, em ataque/defesa x chute/perda, encolhida pela confiabilidade entre metades (perda de ataque 0,93; chute 0,67; defesa 0,66-0,68). Janela de 15 min: chute por linha sobe 0,76 -> 1,21 do início ao fim do jogo. Fora da amostra (758 jogos): ganho de erro quadrático +6,0% chutes, +5,5% gols, +2,1% escanteios contra "todo time igual". Código: `scripts/analisar_forca_e_janela_statsbomb.py`, `forca_dos_times.py`, `calibrar_expoente_forca.py`, `validar_simulador_forca.py`; simulador agora recebe `times=(Multiplicadores, Multiplicadores)` e `janela_mult`. Limites: sem vantagem de mandante; posse sub-dispersa (inclinação 1,81) e chutes a favor super-dispersos (0,58) entre times. Pendência: comparar com ClubElo como prior da força (casamento de nomes só na análise, na mão).
+
+---
+
 **Simulador v3 fecha os totais por jogo (04/10) -- Achado 31, subseção v3.** `scripts/analisar_residuo_entradas_statsbomb.py` (+ teste, saída `residuo_entradas_ligas_2015_16.json`) mostrou que o resíduo do v2 são as bolas paradas (~106 linhas/jogo) e que a recuperação do v2 usava a zona do primeiro evento do adversário, não da próxima linha de ação. O simulador agora sorteia a próxima linha (quem, classe, zona) de um núcleo empírico condicionado à zona de início e ao tipo da linha (continua/perda/chute) e não tem mais constantes de lateral/escanteio/falta; uma única constante calibrada, `FOLGA_ENTRE_ACOES_S = 0,2`. Resultado em 3.000 jogos: ações 1.782/1.786, chutes 24,8/25,0, gols 2,55/2,55, escanteios 10,0/10,2, laterais 45,6/46,3, tiros livres 30,3/30,6, ocupação por faixa a menos de 0,6 p.p. É dentro da amostra; variância por jogo ainda é só de acaso (escanteios var/média 1,03 contra ~1,2). Próximo: janela de jogo e força dos times.
 
 ---

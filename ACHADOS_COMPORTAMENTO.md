@@ -1989,3 +1989,44 @@ Mudanças do v1 em `simulador_cadeia_bola.py` (3.000 jogos, semente 2): (1) tiro
 | ocupação grande área / ataque alto (%) | 2,5 / 10,0 | **3,1 / 12,2** | 3,1 / 12,3 |
 
 **Todos os totais ficam a menos de 3,5% do observado e a ocupação do campo bate a menos de 0,6 ponto percentual por faixa** (testes automáticos exigem < 1 ponto). **Limites que continuam valendo:** (a) é dentro da amostra (mesmos jogos que geraram o núcleo), não prova de previsão; (b) a variância por jogo é só a de acaso: escanteios var/média 1,03 contra ~1,2 observado, gols 0,97, chutes 0,95, porque não há força dos times nem estado do jogo (falta de heterogeneidade entre jogos); (c) chutes por janela de 15 min continuam planos (3,9 a 4,1; a última janela sobe só porque o 2T dura 48 min); (d) posses (237 trocas) não são comparáveis às 195 sequências do StatsBomb; (e) 'Goalkeeper' reposições do tipo From Keeper (0,5 min/jogo) não têm tempo morto próprio. **Próximo passo:** inclinação por janela (Achado 28) e força/Elo dos times nas taxas de perda e chute, que é onde a variância por jogo deve aparecer.
+
+## Achado 32 — força dos times e janela do jogo no simulador: a diferença de ataque é real, a de defesa é mais frágil, e o ganho fora da amostra é modesto
+
+**Como a força é medida (sem Elo e sem casar nomes de clube).** `scripts/analisar_forca_e_janela_statsbomb.py` conta, para cada um dos 80 times das 4 ligas de 2015/16 e para cada papel (ATAQUE: linhas de ação em que ele tem a bola; DEFESA: linhas do adversário contra ele), quantas linhas terminam em chute e em perda. A razão observado/esperado de um time médio dá 4 números por time: `ataque_chute`, `ataque_perda`, `defesa_chute`, `defesa_perda`. Cada um é encolhido em direção a 1 com o peso de confiabilidade (correlação entre duas metades dos jogos, Spearman-Brown): `1 + w x (razão - 1)`. Os jogos são divididos em 4 quartos (jogo % 4) para medir a confiabilidade e para validar fora da amostra. No simulador o chute e a perda de cada linha viram `taxa da zona x ataque do time x defesa do adversário x janela`.
+
+**Confiabilidade (quanto da diferença entre times se repete entre metades):**
+
+| razão | ataque | defesa |
+|---|---|---|
+| chute (todos os jogos) | 0,67 | 0,68 |
+| perda (todos os jogos) | **0,93** | 0,66 |
+| chute (só treino, usada na validação) | 0,52 | 0,52 |
+| perda (só treino, usada na validação) | 0,88 | 0,46 |
+
+A tendência de perder a bola (estilo de jogo: Barcelona 0,59, PSG 0,56, Real Madrid 0,66 contra Eibar, West Bromwich e Carpi em torno de 1,39) é muito estável; o que o time cede ou força na defesa é bem mais ruído.
+
+**Decisão de medida: razão por linha, SEM descontar a zona.** Descontar a mistura de zonas do time (primeiro teste) fazia o simulador exagerar o time forte, porque o simulador não dá ao time uma mistura de zonas própria. No nível do time (80 pontos, treino): sem descontar, correlação com o observado em chutes contra 0,83 e inclinação 1,00 (dispersão correta); descontando, 0,59 e 0,78.
+
+**Janela do jogo (6 janelas de 15 min, razão por linha sem descontar zona):** chute 0,76 / 0,93 / 1,01 / 1,00 / 1,10 / 1,21 e quebra de jogo (falta, bola parada) 0,84 / 0,91 / 1,07 / 0,99 / 1,01 / 1,18; perda praticamente plana (0,97 a 1,04). Ou seja, a taxa de chute por linha sobe 60% da primeira à última janela. No Achado 28, descontando a zona, isso era plano: o aumento vem do avanço da bola no campo (mais linhas em zonas de chute), e aqui ele entra como multiplicador porque o simulador não tem inclinação de zona.
+
+**Calibração do amortecimento, só no treino** (expoente sobre a razão; 1 = como medido):
+
+| expoente da perda | linhas por jogo: corr / inclinação | chutes a favor: corr / inclinação | chutes contra: corr / inclinação |
+|---|---|---|---|
+| 1,0 | 0,97 / 1,81 | 0,76 / 0,58 | 0,83 / 1,00 |
+| 1,5 | 0,97 / 1,21 | 0,73 / 0,36 | 0,75 / 0,63 |
+| 2,0 | 0,97 / 0,93 | 0,70 / 0,26 | 0,70 / 0,46 |
+
+(inclinação = observado sobre previsto entre os 80 times; 1 = dispersão certa, menor que 1 = o simulador exagera as diferenças). Subir o expoente da perda acerta a posse mas piora muito os chutes, então ficou **1,0, como medido, sem ajuste**.
+
+**Validação fora da amostra** (razões estimadas nos quartos 0 e 2; 758 jogos dos quartos 1 e 3 simulados 30 vezes entre os dois times reais; erro quadrático contra o palpite "todo time igual" = média do treino):
+
+| por time-jogo | correlação | ganho no erro quadrático |
+|---|---|---|
+| chutes | +0,37 | **+6,0%** |
+| gols | +0,25 | **+5,5%** |
+| escanteios | +0,18 | **+2,1%** |
+
+A força dos times melhora a previsão de forma real mas pequena (o chute de um time num jogo tem muito acaso: desvio-padrão observado 5,1 contra 3,3 previsto).
+
+**Limites que continuam valendo:** (a) mandante e visitante têm a mesma força (a vantagem de jogar em casa não está no modelo); (b) a posse fica sub-dispersa entre times (inclinação 1,81: a diferença de tempo de posse real é maior, em parte porque times de posse também passam mais rápido e a duração das ações é igual para todos) e os chutes a favor ficam super-dispersos (0,58): dominar a posse não vira chute na proporção que o simulador gera; (c) escanteios por jogo ainda têm variância só de acaso (observado var/média 1,2); (d) dentro da amostra de 4 ligas de 2015/16; (e) o teste com Elo do ClubElo, para estimar a força de times com poucos jogos e de outras ligas, ainda não foi feito.

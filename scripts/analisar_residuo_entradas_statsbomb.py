@@ -36,8 +36,16 @@ def classe_do_lance(e: dict) -> str | None:
     return None
 
 
-def linhas_da_partida(ev: list[dict]) -> list[tuple]:
-    """[(classe de entrada, zona 0..17, equipe, tipo da linha)] para cada linha que `acoes_da_partida` geraria, na mesma ordem."""
+def janela_de_15min(e: dict) -> int:
+    """0..5: 1T (0-15, 15-30, 30-45+) e 2T (45-60, 60-75, 75-90+), pelo minuto do evento."""
+    minuto = int(e.get("minute") or 0)
+    if e.get("period") == 2:
+        return 3 + min(max(minuto - 45, 0) // 15, 2)
+    return min(minuto // 15, 2)
+
+
+def linhas_com_janela(ev: list[dict]) -> list[tuple]:
+    """[(classe de entrada, zona 0..17, equipe, tipo da linha, janela 0..5)] para cada linha que `acoes_da_partida` geraria, na mesma ordem."""
     saida = []
     anterior = None                              # (equipe, tipo da linha)
     for e in ev:
@@ -50,9 +58,14 @@ def linhas_da_partida(ev: list[dict]) -> list[tuple]:
         cl = classe_do_lance(e)
         if cl is None:
             cl = "continua" if anterior is not None and anterior[0] == equipe and anterior[1] == "continua" else "recuperação"
-        saida.append((cl, zona, equipe, tipo))
+        saida.append((cl, zona, equipe, tipo, janela_de_15min(e)))
         anterior = (equipe, tipo)
     return saida
+
+
+def linhas_da_partida(ev: list[dict]) -> list[tuple]:
+    """[(classe de entrada, zona 0..17, equipe, tipo da linha)] para cada linha que `acoes_da_partida` geraria, na mesma ordem."""
+    return [x[:4] for x in linhas_com_janela(ev)]
 
 
 def nucleo_pos_perda_e_chute(linhas: list[tuple]) -> dict:

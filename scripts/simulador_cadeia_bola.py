@@ -85,7 +85,14 @@ class Parametros:
                     cont[o][s] += r["contagens_18x20"][o][s]
         self.cont = cont
         self.acoes_por_zona = [sum(l) for l in cont]
-        self.matriz = [Amostrador([v + 0.5 for v in l]) for l in cont]
+        # probabilidade de chute/perda por zona (alfa = 0,5) e destino de quem continua: permitem multiplicar chute e perda por força do time e janela
+        self.p_chute_zona, self.p_perda_zona, self.destino_continua = [], [], []
+        for l in cont:
+            pesos = [v + 0.5 for v in l]
+            tot = sum(pesos)
+            self.p_chute_zona.append(pesos[18] / tot)
+            self.p_perda_zona.append(pesos[19] / tot)
+            self.destino_continua.append(Amostrador(pesos[:18]))
         self.acoes_por_jogo_ref = sum(r["n_acoes"] for r in lig.values()) / self.jogos_ref
         # 2. durações
         d = tmp["duracao_acoes_s"]
@@ -139,6 +146,22 @@ class Parametros:
         }
 
 
+class Multiplicadores:
+    """Força de um time (razões encolhidas do Achado 32); 1,0 = time médio."""
+
+    def __init__(self, ataque_chute=1.0, ataque_perda=1.0, defesa_chute=1.0, defesa_perda=1.0):
+        self.ataque_chute, self.ataque_perda, self.defesa_chute, self.defesa_perda = ataque_chute, ataque_perda, defesa_chute, defesa_perda
+
+    @classmethod
+    def de_dict(cls, d: dict, gama_chute: float = 1.0, gama_perda: float = 1.0) -> "Multiplicadores":
+        """Os multiplicadores medidos elevados a um expoente (1 = como medido; <1 amortece): ver Achado 32 sobre por que a perda precisa de amortecimento."""
+        return cls(d["ataque_chute"] ** gama_chute, d["ataque_perda"] ** gama_perda, d["defesa_chute"] ** gama_chute, d["defesa_perda"] ** gama_perda)
+
+
+NEUTRO = Multiplicadores()
+JANELA_NEUTRA = [{"chute": 1.0, "perda": 1.0, "quebra": 1.0}] * 6
+
+
 def band(z: int) -> int:
     return z // 3
 
@@ -161,29 +184,39 @@ def proxima_linha(p: Parametros, rng: random.Random, amostra: tuple[list, Amostr
     return quem, classe, int(zona)
 
 
-def simular_partida(p: Parametros, rng: random.Random) -> dict:
-    """Uma partida. Devolve contagens (ações, chutes, gols, bolas paradas, tempo morto, posses, chutes por janela de 15 min) e a ocupação por classe/faixa."""
+def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA) -> dict:
+    """Uma partida entre `times[0]` (começa o 1T) e `times[1]`. Devolve contagens (ações, chutes, gols, bolas paradas, tempo morto, posses, chutes por
+    janela de 15 min, e por equipe: chutes_0/1, gols_0/1, escanteios_0/1) e a ocupação por classe/faixa."""
     m: collections.Counter = collections.Counter()
     janela = [0] * 6                                     # chutes por janela de 15 min de relógio (0-15, 15-30, 30-45+, 45-60, 60-75, 75-90+)
 
     for tempo, duracao in enumerate(DURACAO_TEMPO_S):
         t = 0.0
+        equipe = tempo % 2
         zona = ZONA_SAIDA
         classe = "jogo"
         m["posses"] += 1
         while t < duracao:
+            w = tempo * 3 + min(int(t // 900), 2)
+            jm = janela_mult[w]
+            atk, dfs = times[equipe], times[1 - equipe]
             m[f"ent|{classe}|{band(zona)}"] += 1
             t += FOLGA_ENTRE_ACOES_S
-            s = p.matriz[zona].sortear(rng)
+            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"], 0.5)
+            pl = min(p.p_perda_zona[zona] * atk.ataque_perda * dfs.defesa_perda * jm["perda"], 0.95 - ps)
+            u = rng.random()
             m["acoes"] += 1
+            m[f"acoes_{equipe}"] += 1
             chutes_antes = m["chutes"]
-            if s == 18:                                  # chute
+            if u < ps:                                   # chute
                 t += lognorm(rng, p.dur_chute)
                 b = band(zona)
                 m["chutes"] += 1
+                m[f"chutes_{equipe}"] += 1
                 m["xG"] += p.xg_faixa[b]
                 if rng.random() < p.p_gol[b]:
                     m["gols"] += 1
+                    m[f"gols_{equipe}"] += 1
                     quem, classe, nova = "adv", "saída de bola", ZONA_SAIDA
                 else:
                     quem, classe, nova = proxima_linha(p, rng, p.apos_chute[zona])
@@ -191,13 +224,13 @@ def simular_partida(p: Parametros, rng: random.Random) -> dict:
                 d = lognorm(rng, p.dur_acao)
                 t += d
                 m["tempo_em_acao"] += d
-                if s == 19:                              # perda
+                if u < ps + pl:                          # perda
                     quem, classe, nova = proxima_linha(p, rng, p.apos_perda[zona])
-                elif p.apos_quebra[zona] is not None and rng.random() < p.p_quebra[zona]:   # a bola parou (falta, lateral, ...)
+                elif p.apos_quebra[zona] is not None and rng.random() < min(p.p_quebra[zona] * jm["quebra"], 0.95):   # a bola parou (falta, lateral, ...)
                     quem, classe, nova = proxima_linha(p, rng, p.apos_quebra[zona])
-                else:                                    # a bola segue com a mesma equipe para a zona s
-                    quem, classe, nova = "mesma", "continua", s
-            janela[tempo * 3 + min(int(t // 900), 2)] += m["chutes"] - chutes_antes
+                else:                                    # a bola segue com a mesma equipe
+                    quem, classe, nova = "mesma", "continua", p.destino_continua[zona].sortear(rng)
+            janela[w] += m["chutes"] - chutes_antes
             if quem == "adv":
                 m["posses"] += 1
             if classe in CLASSE_PARA_REINICIO:
@@ -207,6 +240,10 @@ def simular_partida(p: Parametros, rng: random.Random) -> dict:
                 tm = dead(rng, p, CLASSE_PARA_REINICIO[classe])
                 t += tm
                 m["tempo morto"] += tm
+            if quem == "adv":
+                equipe = 1 - equipe
+            if classe == "escanteio":                    # o escanteio é de quem fica com a próxima linha
+                m[f"escanteios_{equipe}"] += 1
             zona = nova
     return dict(m, janela_chutes=janela)
 

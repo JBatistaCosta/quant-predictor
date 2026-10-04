@@ -53,3 +53,33 @@ def test_totais_perto_do_observado_e_ocupacao_por_faixa():
     obs = [sum(P.acoes_por_zona[b * 3:b * 3 + 3]) for b in range(6)]
     for o, x in zip(ocup, obs):
         assert abs(o / sum(ocup) - x / sum(obs)) < 0.01             # a ocupação do campo bate a menos de 1 ponto percentual
+
+
+def test_multiplicadores_neutros_nao_mudam_o_jogo_e_time_forte_chuta_mais():
+    neutro = s.simular(P, 200, 5)
+    forte = s.Multiplicadores(ataque_chute=1.5)
+    rng = random.Random(5)
+    chutes_forte = sum(s.simular_partida(P, rng, (forte, s.NEUTRO))["chutes_0"] for _ in range(200)) / 200
+    chutes_neutro = neutro["chutes"] / 2
+    assert chutes_forte > chutes_neutro * 1.15
+
+
+def test_multiplicador_de_chute_na_janela_aumenta_so_aquela_janela():
+    jm = [dict(w) for w in s.JANELA_NEUTRA]
+    jm[0]["chute"] = 2.0
+    rng = random.Random(9)
+    base = [0] * 6
+    alt = [0] * 6
+    for _ in range(300):
+        for i, v in enumerate(s.simular_partida(P, rng)["janela_chutes"]):
+            base[i] += v
+        for i, v in enumerate(s.simular_partida(P, rng, janela_mult=jm)["janela_chutes"]):
+            alt[i] += v
+    # dobrar a chance de chute por linha NÃO dobra os chutes: cada chute encerra a posse e devolve a bola à defesa (saturação), então sobe ~+28%
+    assert alt[0] > base[0] * 1.15 and abs(alt[5] / base[5] - 1) < 0.2
+
+
+def test_forca_dos_times_pesos_e_pearson():
+    import forca_dos_times as F
+    assert abs(F.pearson([1, 2, 3, 4], [2, 4, 6, 8]) - 1) < 1e-9 and F.pearson([1, 1, 1], [1, 2, 3]) == 0.0
+    assert F.peso_de_confiabilidade(0.0) == 0.0 and abs(F.peso_de_confiabilidade(1.0) - 1.0) < 1e-9 and F.peso_de_confiabilidade(-0.5) == 0.0

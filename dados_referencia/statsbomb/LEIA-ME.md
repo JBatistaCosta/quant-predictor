@@ -52,3 +52,5 @@ Ler (sem rede): `comparar_competicoes_statsbomb.carregar_completo('dados_referen
 Integridade: `python scripts/comparar_competicoes_statsbomb.py conferir_completo --fracionado dados_referencia/statsbomb/brutos` refaz o registro reduzido de cada
 partida a partir dos eventos completos e compara com `brutos/`. **Verificado em 04/10/2026: as 2.152 partidas das 21 competições-temporadas saem idênticas.**
 Refazer a partir do StatsBomb (enquanto o dado existir): `completo --fracionado dados_referencia/statsbomb/completo [--grupos ...] [--so "Premier League 2015"]`.
+
+Arquivos derivados do simulador (Achados 31 e 32), todos refazíveis com os eventos completos: `residuo_entradas_ligas_2015_16.json` (classe de entrada de cada linha de ação e núcleo empírico da próxima linha, `scripts/analisar_residuo_entradas_statsbomb.py`), `forca_e_janela_ligas_2015_16.json` (contagens por time, papel, zona e janela de 15 min, em 4 quartos de jogos, `scripts/analisar_forca_e_janela_statsbomb.py`) e `validacao_forca_ligas_2015_16.json` (saída de `scripts/validar_simulador_forca.py`).
