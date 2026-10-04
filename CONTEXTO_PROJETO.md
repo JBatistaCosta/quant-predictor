@@ -9,6 +9,10 @@
 
 ---
 
+**Expoente de amplificação dos multiplicadores de chute -- Achado 51 (04/10).** Calibração no próprio simulador: ele realiza só ~50% (em log) da razão de chutes pedida (elasticidade 0,49, igual para ataque e defesa), então o expoente que compensa é ~2, fixado antes do teste e parametrizado (`--exp-mando`, `--exp-forca`, `--cfg-extra`, entradas do workflow). Premier League 2025/26 (342 jogos): **força dos times amplificada melhora o 1X2 em -0,0186 [-0,0279; -0,0096]** e leva o simulador a empate técnico com o Dixon-Coles (+0,0134 [-0,0172; +0,0421]); mando amplificado não ajuda; contra o mercado segue pior (+0,0496 [+0,0201; +0,0770]). Nível de gols piorou (2,66 contra 2,79 reais): recalibrar `gols_nivel`. Pendente de repetir em outras ligas. Detalhes em ACHADOS_COMPORTAMENTO.md.
+
+---
+
 **Mando e estado do jogo -- Achado 50 (04/10).** (1) Mando = volume: razão casa/fora de chutes 1,13-1,31, de xG por chute só 1,017 em média (0,95-1,09 conforme liga), gols/xG sem lado; logo mando na conversão/qualidade não tem base (explica o `gols_mando` nulo). (2) Estado do jogo, por perfil de força (sinal do Elo): perdendo, o time chuta +27 a +35% mais e com qualidade 15-19% menor que ganhando, em qualquer perfil (fraco, parelho, forte); os dois efeitos quase se cancelam no xG total. O simulador ignora o placar. Próximos: expoente de amplificação dos multiplicadores de chute (Achado 49) e camada de estado do jogo (parâmetros de 2022-2024, teste em 2025/26).
 
 ---

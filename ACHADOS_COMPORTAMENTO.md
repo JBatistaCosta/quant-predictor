@@ -2541,3 +2541,39 @@ A razão realizada é ~55% da pedida em escala logarítmica (ln 1,126 / ln 1,24 
 **Próximos testes (propostos):** (a) expoente de amplificação nos multiplicadores de chute (Achado 49), (b) camada de estado do jogo no simulador (multiplicador de volume e de conversão por saldo de gols), com parâmetros estimados só nas temporadas 2022 a 2024 e avaliada em 2025/26.
 
 **Complemento do Achado 48 — a diferença entre os times no top-N contra a diferença no resto do elenco** (`scripts/decompor_topn_resto.py`, mesmas 3.504 partidas). O R² do saldo de xG só com o Elo é 0,256 (desvio-padrão da diferença de Elo entre os times: 177 pontos). Somar a diferença de xG previsto entre os times eleva o R² em apenas +0,008 (top-2) a +0,012 (elenco inteiro); com xA, +0,008 (top-2) a +0,016 (elenco inteiro), isto é, de 0,8 a 1,6 ponto percentual de variância além do Elo. A diferença entre os times é maior no elenco inteiro do que no top-N (desvio-padrão em xG: top-2 0,34, top-3 0,44, top-5 0,58, inteiro 0,80; em xA: 0,17, 0,23, 0,34, 0,62). **O resto do elenco acrescenta tanto ou mais que os craques:** com Elo mais top-3 e resto separados, o resto sozinho ganha +0,010 (xG) e +0,015 (xA) contra +0,008 e +0,011 do top-3 sozinho; separar top-N e resto não melhora o elenco inteiro (R² 0,2683 contra 0,2682 em xG). Ou seja, profundidade de elenco pesa pelo menos tanto quanto os melhores jogadores, o que combina com o top-N não bater o elenco inteiro.
+
+
+---
+
+## Achado 51 — amplificar o multiplicador de força dos times (expoente 2) melhora o 1X2 de forma significativa e leva o simulador a um empate técnico com o Dixon-Coles; o mesmo no mando não ajuda
+
+**Pergunta.** O Achado 49 mostrou que o simulador realiza só ~50% (em log) da razão de chutes pedida por um multiplicador. Compensar com um expoente nos multiplicadores de chute melhora a previsão?
+
+**Calibração (sem dado de jogo real).** `scripts/calibrar_elasticidade_chute.py`: com times médios, o simulador realiza razão de chutes pedida^e com **e = 0,44 (m 1,06), 0,48 (1,12), 0,49 (1,25)**, idêntico para ataque e defesa (o código multiplica os dois no mesmo ponto); erro-padrão ~0,05, 0,03 e 0,014; compatível com 0,49 a 0,50. Expoente de compensação = 1/e ≈ **2,0**, fixado ANTES de ver qualquer resultado de teste. Fica como parâmetro: `--exp-mando`, `--exp-forca`, `--cfg-extra` e entradas do workflow (padrão 1,0 nas camadas = comportamento dos Achados 46 a 49). O progresso do backtest só é reaproveitado se os parâmetros forem idênticos, e os valores usados ficam em `resumo["parametros"]`.
+
+**Método.** Mesmo teste dos Achados 46 a 49 (Premier League 2025/26, 342 jogos, 1.000 simulações por jogo, IC 95% por bootstrap pareado). Referência `forca_gols_nivel`; variantes: expoente 2 só no mando (`exp_mando`), só na força dos times (`exp_forca`, ataque e defesa), nos dois (`exp_ambos`), com teto dos multiplicadores alargado para [0,5; 2,0].
+
+**Resultado (log-loss médio 1X2 / Brier 1X2 / log-loss over-under).**
+
+| | 1X2 | Brier 1X2 | over/under 2,5 |
+|---|---|---|---|
+| mercado | 0,9985 | 0,5980 | 0,6823 |
+| Dixon-Coles | 1,0347 | 0,6219 | 0,6872 |
+| referência (Achado 47) | 1,0667 | 0,6435 | 0,6868 |
+| expoente 2 só no mando | 1,0615 | 0,6400 | 0,6849 |
+| **expoente 2 só na força** | **1,0481** | **0,6301** | 0,6901 |
+| expoente 2 nos dois | 1,0487 | 0,6305 | 0,6901 |
+
+Diferenças pareadas (negativo = melhora), IC 95%:
+- **força amplificada sobre a referência: 1X2 -0,0186 [-0,0279; -0,0096]**, Brier -0,0134 [-0,0199; -0,0072]. Melhora significativa, maior que a de qualquer camada anterior.
+- mando amplificado sobre a referência: -0,0052 [-0,0126; +0,0022]. Sem efeito detectável. E nos dois sobre só na força: sem ganho extra.
+- **força amplificada contra o Dixon-Coles: +0,0134 [-0,0172; +0,0421]**; antes eram +0,0320 [-0,0014; +0,0641]. Passa a ser indistinguível do Dixon-Coles no 1X2. Contra o mercado continua pior: +0,0496 [+0,0201; +0,0770] (era +0,0682).
+- over/under: força amplificada +0,0033 [-0,0035; +0,0097], sem diferença detectável.
+
+**Diagnóstico.** Gols por jogo simulados 2,74 (referência), 2,66 (força amplificada) contra 2,79 reais; over 2,5 médio 52,1% e 50,3% contra 56,1% real. Vitória do mandante 38,6% (referência), 39,9% (mando amplificado), 38,3% (força), contra 42,4% real; empate 25,4 a 25,6% contra 26,9%. A força amplificada melhora o log-loss porque **discrimina melhor os times**, não porque corrija as médias.
+
+**Leitura.** A atenuação do multiplicador de chute era a causa principal da fraqueza em discriminar a força dos times: com o expoente que compensa, o simulador chega ao patamar do Dixon-Coles no 1X2 numa janela de 342 jogos. O mando não se beneficia: mesmo com razão de chutes agora realizada, a vitória do mandante continua ~2,5 pontos abaixo do real (39,9% contra 42,4%); o que falta não está no volume de chutes, e o Achado 50 aponta o estado do jogo como candidato.
+
+**Limites.** (1) Uma liga e uma temporada. (2) A elasticidade foi medida com times médios e magnitudes de 1,06 a 1,25; vale supor o mesmo expoente para forças mais extremas, sem teste. (3) O nível de gols piorou com a amplificação (2,66 contra 2,79 reais) porque `gols_nivel` usa a constante do simulador neutro (0,1017); recalibrá-la para a configuração amplificada é o ajuste natural para o over/under. (4) Dixon-Coles com a mesma ressalva do Achado 46 (não verifiquei se foi gerado fora da amostra para esses jogos).
+
+**Próximos testes (propostos):** recalibrar `gols_nivel` sob a amplificação; camada de estado do jogo (Achado 50); repetir em outras ligas e temporadas, que é o que decide se o expoente 2 se mantém.
