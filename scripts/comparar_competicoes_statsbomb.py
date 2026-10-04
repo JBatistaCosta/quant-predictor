@@ -52,6 +52,7 @@ GRUPOS = {
     "ligas_recentes": [(9, "2023/2024"), (7, "2021/2022"), (7, "2022/2023"), (11, "2018/2019"), (11, "2019/2020"), (11, "2020/2021"), (1238, "2021/2022")],
 }
 EXCLUIDAS = {1267}   # Copa Africana de Nações (pedido do usuário)
+EXCLUIDAS_COMPLETO = {1238}   # Indian Super League: fica nos dados reduzidos (Achado 26), mas fora do armazenamento COMPLETO (pedido do usuário)
 LANCES_ATACANTE = {"Shot", "Pass", "Carry", "Dribble", "Dispossessed", "Miscontrol"}
 IGNORAR_ANTES = {"Pressure", "Ball Receipt*", "Starting XI", "Half Start", "Camera On", "Injury Stoppage", "Substitution", "Tactical Shift"}
 
@@ -261,6 +262,8 @@ def baixar_completo(grupo: str, pasta: str, workers: int = 6, so: str | None = N
     import lzma
     por_rotulo: dict[str, list[dict]] = collections.defaultdict(list)
     for rotulo, m in partidas_do_grupo(grupo):
+        if (m.get("competition") or {}).get("competition_id") in EXCLUIDAS_COMPLETO:
+            continue
         if so is None or so.lower() in rotulo.lower():
             por_rotulo[rotulo].append(m)
 

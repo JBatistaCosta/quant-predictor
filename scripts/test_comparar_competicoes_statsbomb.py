@@ -170,3 +170,9 @@ def test_completo_reduzido_a_partir_do_completo_e_igual_ao_reduzido_do_bruto():
     bruto = _partida_sintetica()
     completo = [c.limpar_evento(e) for e in bruto]
     assert c.reduzir_partida(completo) == c.reduzir_partida(bruto)
+
+
+def test_indian_super_league_fica_fora_do_armazenamento_completo_mas_dentro_dos_reduzidos():
+    assert 1238 in c.EXCLUIDAS_COMPLETO
+    assert 1238 in {cid for cid, _ in c.GRUPOS["ligas_recentes"]}      # continua nos dados reduzidos (Achado 26)
+    assert 1267 in c.EXCLUIDAS
