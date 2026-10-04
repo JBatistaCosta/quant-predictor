@@ -1,0 +1,70 @@
+name: Backtest do simulador como previsor (em fatias)
+
+# Simula cada jogo da Premier League 2025/26 N vezes (scripts/backtest_simulador_preditivo.py) e
+# compara 1X2 e over/under 2,5 contra o Dixon-Coles e as odds de fechamento, com IC 95% por bootstrap.
+# O trabalho (760 simulações de 1.000 partidas) é dividido em 8 jobs em paralelo; o job final junta os
+# arquivos de progresso e agrega. Cada simulação tem semente fixa, então o resultado não depende de como
+# foi fatiado. Entrada: dados_referencia/backtest_simulador/premier_league_2024_25.csv (sem segredos).
+# Sem custo de cota externa e sem acesso ao banco. O resultado fica no resumo da execução e no artefato
+# "resultado-backtest-simulador" (JSON com as probabilidades de cada jogo).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sims:
+        description: "Partidas simuladas por jogo"
+        default: "1000"
+
+permissions:
+  contents: read
+
+jobs:
+  simular:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        fatia: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Simular a fatia ${{ matrix.fatia }}/8
+        run: |
+          python scripts/backtest_simulador_preditivo.py \
+            --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
+            --sims "${{ inputs.sims }}" --workers "$(nproc)" \
+            --fatia ${{ matrix.fatia }}/8 --so-simular \
+            --saida parcial_${{ matrix.fatia }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parcial-${{ matrix.fatia }}
+          path: parcial_${{ matrix.fatia }}.json.parcial.jsonl
+
+  agregar:
+    needs: simular
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: parcial-*
+          path: parciais
+          merge-multiple: true
+      - name: Agregar e comparar
+        run: |
+          python scripts/backtest_simulador_preditivo.py \
+            --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
+            --sims "${{ inputs.sims }}" --agregar \
+            --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
+          { echo '## Backtest do simulador (Premier League 2025/26)'; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resultado-backtest-simulador
+          path: resultado_backtest_simulador.json

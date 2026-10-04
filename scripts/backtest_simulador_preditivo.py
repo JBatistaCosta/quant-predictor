@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import glob
 import json
 import math
 import multiprocessing as mp
@@ -139,6 +140,10 @@ def main():
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--limite", type=int, default=0, help="só os N primeiros jogos de teste (depuração)")
     ap.add_argument("--saida", default="resultado_backtest_simulador.json")
+    ap.add_argument("--fatia", default="", help="K/N: simula só as tarefas de índice ≡ K (mod N) e grava o progresso (para dividir entre jobs)")
+    ap.add_argument("--so-simular", action="store_true", help="simula a fatia e para, sem agregar")
+    ap.add_argument("--agregar", action="store_true", help="não simula nada: junta os arquivos de progresso e calcula; erra se faltar tarefa")
+    ap.add_argument("--parciais", default="", help="glob dos .jsonl de progresso a juntar (padrão: <saida>.parcial.jsonl)")
     a = ap.parse_args()
 
     jogos = ler(a.csv)
@@ -157,19 +162,31 @@ def main():
     # progresso gravado a cada simulação concluída: se o processo morrer (contêiner reiniciado), a próxima execução retoma daqui
     parcial = a.saida + ".parcial.jsonl"
     resultados = {}
-    if os.path.exists(parcial):
-        for linha in open(parcial):
+    for arq_in in sorted(glob.glob(a.parciais)) if a.parciais else ([parcial] if os.path.exists(parcial) else []):
+        for linha in open(arq_in):
             jid, variante, r = json.loads(linha)
             resultados[(jid, variante)] = r
-        print(f"retomando: {len(resultados)} simulações já prontas", flush=True)
-    args = [(t[0], t[1], t[2], t[3], t[4]) for t in tarefas if t[0] not in resultados]
-    with mp.Pool(a.workers, initializer=_iniciar) as pool, open(parcial, "a") as arq:
-        for i, (jid, r) in enumerate(pool.imap_unordered(_simular_jogo, args, chunksize=2), 1):
-            resultados[jid] = r
-            arq.write(json.dumps([jid[0], jid[1], r]) + "\n")
-            arq.flush()
-            if i % 50 == 0:
-                print(f"  {i}/{len(args)}", flush=True)
+    print(f"{len(resultados)} simulações já prontas", flush=True)
+    if not a.agregar:
+        pendentes = [t for t in tarefas if t[0] not in resultados]
+        if a.fatia:
+            k, n_f = (int(x) for x in a.fatia.split("/"))
+            indice = {t[0]: i for i, t in enumerate(tarefas)}
+            pendentes = [t for t in pendentes if indice[t[0]] % n_f == k]
+        args = [(t[0], t[1], t[2], t[3], t[4]) for t in pendentes]
+        print(f"simulando {len(args)}", flush=True)
+        with mp.Pool(a.workers, initializer=_iniciar) as pool, open(parcial, "a") as arq:
+            for i, (jid, r) in enumerate(pool.imap_unordered(_simular_jogo, args, chunksize=2), 1):
+                resultados[jid] = r
+                arq.write(json.dumps([jid[0], jid[1], r]) + "\n")
+                arq.flush()
+                if i % 50 == 0:
+                    print(f"  {i}/{len(args)}", flush=True)
+        if a.so_simular:
+            return
+    faltam = [t[0] for t in tarefas if t[0] not in resultados]
+    if faltam:
+        sys.exit(f"faltam {len(faltam)} simulações (ex.: {faltam[:3]}); rode todas as fatias antes de agregar")
 
     linhas = []
     for jid, j in meta.items():
