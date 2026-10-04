@@ -9,6 +9,10 @@
 
 ---
 
+**Tabela polar de clubes recalculada desde 01/08/2021 (05/10) -- Achado 40.** 17.095 jogos / 432.218 chutes do modelo de xG atual (a tela mistura ~10% do antigo): xG por zona muda só de -3% a +2%, fatias de chute iguais (<= 0,1 p.p.); o modelo antigo diferia de -20% a +23% por zona. `scripts/zonas_polares.py`: `FOTMOB` = regime novo (simulador), `FOTMOB_TELA` = a da tela; JSON com ICs em `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json`. Frontend NÃO alterado: `ESTATISTICA_ZONA_CHUTE` em `src/utils/zoneTransitionMatrix.js` e o texto de `src/components/MapaZonasChute.jsx` seguem com a tabela de todas as datas; atualizar é decisão do usuário.
+
+---
+
 **xG do FotMob mudou em jul/ago de 2021 (04/10) -- Achado 39, revisa os 37 e 38.** Teste só com o banco, 5 grandes ligas, jogo corrido, chute de pé, faixas fixas de distância/ângulo: o xG médio por chute dá um degrau nítido entre 12/07 e 02/08/2021 (início da 2021/22): central 14-22 m +29% (0,064 -> 0,082), central 10-14 m +21%, aberto 0-12 m -23%, central 0-6 m -12%, aberto 22-30 m -17%; gols por chute iguais, calibração melhora (gols/xG de 1,4-1,6 para ~1,0 nos centrais de 14-22 m). O banco guarda xG antigo até jul/2021 (~46,6 mil de ~477 mil chutes) e novo depois: a tabela polar da Análise de Evento e tudo que usa xG do FotMob atravessando jul/2021 (Elo por xG) deve começar em 01/08/2021. A "queda de 8% nos gols/xG" dos Achados 37/38 era mistura de ligas. Consulta em `arquivos_do_claude/analise_mudanca_xg_fotmob.sql`.
 
 ---

@@ -2212,3 +2212,28 @@ A calibração melhorou: antes, os gols/xG ficavam em 1,4 a 1,6 nos chutes centr
 **5. Consequências para o projeto.** (1) A tabela polar da Análise de Evento mistura os dois modelos (≈10% dos chutes são do antigo): para refletir o modelo atual deve usar só jogos a partir de 01/08/2021. (2) Qualquer coisa calculada com xG de time ou de chute que atravesse julho de 2021 (por exemplo, o Elo por xG e regressões que usam o xG do FotMob) tem um degrau de nível: o xG total por jogo cai ~4,6% na média e o de jogadas centrais de 10-22 m sobe 20 a 30%. Deve-se fixar o início da amostra em agosto de 2021 ou tratar o período antigo à parte. (3) O simulador, que usa a tabela polar de clubes para o xG e o gol do chute, herda a mistura.
 
 **Limites.** O recorte de pé e jogo corrido deixa de fora cabeçadas e bolas paradas (o xG delas pode ter mudado de outra forma); não foi testada a hipótese de que o FotMob simplesmente trocou de provedor (o dado diz só que o modelo mudou); a data exata está numa janela de três semanas por falta de jogos de grandes ligas entre maio e agosto de 2021.
+
+## Achado 40 — tabela polar de clubes recalculada só com jogos desde 01/08/2021 (modelo de xG atual): a da tela muda pouco (-3% a +2% no xG por zona), porque 90% dos chutes já são do modelo novo
+
+**Consulta.** `match_shots_fotmob` x `matches` no banco, sem pênaltis, gol contra e disputa de pênaltis, mesmas 14 zonas polares da Análise de Evento (7 anéis de distância ao centro do gol x cone central de 30 graus ou aberto), IC 95% pelo erro-padrão robusto a agrupamento por partida. Dois regimes, separados em 01/08/2021 (Achado 39): **novo** (17.095 jogos, 432.218 chutes) e **antigo** (até 31/07/2021, 2.032 jogos, 47.647 chutes). A soma dos dois (479.865) reproduz os ~479,6 mil chutes da tela. Tabela completa com ICs em `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json`.
+
+| zona | % chutes (novo) | xG/chute tela | xG/chute **novo** ± IC | xG/chute antigo | gol/chute novo ± IC | gols/xG novo |
+|---|---|---|---|---|---|---|
+| 0-6 m central | 2,34 | 0,443 | **0,4391** ± 0,0046 | 0,4856 | 0,3974 ± 0,0096 | 0,91 |
+| 0-6 m aberto | 2,49 | 0,404 | **0,3978** ± 0,0045 | 0,4638 | 0,3848 ± 0,0092 | 0,97 |
+| 6-9 m central | 7,64 | 0,197 | **0,1961** ± 0,0018 | 0,2027 | 0,1912 ± 0,0042 | 0,97 |
+| 6-9 m aberto | 4,15 | 0,162 | **0,1586** ± 0,0018 | 0,1981 | 0,1375 ± 0,0051 | 0,87 |
+| 9-12 m central | 7,82 | 0,129 | **0,1288** ± 0,0015 | 0,1324 | 0,1256 ± 0,0036 | 0,98 |
+| 9-12 m aberto | 5,44 | 0,118 | **0,1161** ± 0,0015 | 0,1380 | 0,1107 ± 0,0041 | 0,95 |
+| 12-16,5 m central | 10,22 | 0,116 | **0,1177** ± 0,0011 | 0,0985 | 0,1159 ± 0,0030 | 0,98 |
+| 12-16,5 m aberto | 12,50 | 0,093 | **0,0923** ± 0,0008 | 0,0963 | 0,0926 ± 0,0025 | 1,00 |
+| 16,5-22 m central | 9,06 | 0,065 | **0,0663** ± 0,0005 | 0,0538 | 0,0664 ± 0,0025 | 1,00 |
+| 16,5-22 m aberto | 10,14 | 0,044 | **0,0438** ± 0,0004 | 0,0496 | 0,0420 ± 0,0019 | 0,96 |
+| 22-30 m central | 17,03 | 0,032 | **0,0315** ± 0,0002 | 0,0326 | 0,0320 ± 0,0013 | 1,02 |
+| 22-30 m aberto | 6,09 | 0,028 | **0,0274** ± 0,0003 | 0,0335 | 0,0285 ± 0,0020 | 1,04 |
+| > 30 m central | 4,11 | 0,020 | **0,0198** ± 0,0004 | 0,0235 | 0,0169 ± 0,0019 | 0,85 |
+| > 30 m aberto | 0,96 | 0,022 | **0,0217** ± 0,0009 | 0,0260 | 0,0416 ± 0,0061 | 1,92 |
+
+**Leitura.** (1) A tabela da tela é uma boa aproximação do modelo atual: a mudança no xG por zona vai de -3% a +2% (a maior é -2% em 0-6 m aberto e em 6-9 m aberto), e as fatias de chute não mudam (no máximo 0,1 ponto percentual). (2) O que o modelo antigo fazia de diferente é grande (de -20% a +23% por zona, coluna "antigo") e fica nos ~10% dos chutes mais antigos. (3) O xG atual está calibrado: gols/xG entre 0,95 e 1,04 na maior parte das zonas. Exceções: 0-6 m central (0,91), 6-9 m aberto (0,87) e > 30 m central (0,85), em que o xG novo ainda é generoso, e > 30 m aberto (1,92, só 4,2 mil chutes), em que é baixo. (4) Totais: xG por chute 0,1002 (tela 0,1007; antigo 0,1040) e gols por chute 0,0970 (tela 0,0976; antigo 0,1024).
+
+**Mudanças no repositório.** `scripts/zonas_polares.py`: `FOTMOB` passa a ser a tabela do regime novo (usada pelo simulador, `--fonte-xg fotmob`) e a copiada da tela fica em `FOTMOB_TELA`. Efeito no simulador (4.000 jogos): gols 2,52 (observado 2,55), xG 2,63 na escala do FotMob. **O frontend não foi alterado:** `ESTATISTICA_ZONA_CHUTE` em `src/utils/zoneTransitionMatrix.js` e o texto de `MapaZonasChute.jsx` continuam com a tabela antiga (todas as datas); atualizar depende de decisão do usuário, pois muda números exibidos.
