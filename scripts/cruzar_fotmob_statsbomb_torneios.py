@@ -20,7 +20,7 @@ import comparar_competicoes_statsbomb as c  # noqa: E402
 
 PASTA_SB = "dados_referencia/statsbomb/completo"
 PASTA_FM = "dados_referencia/fotmob"
-PARES = [("euro", "2024", "euro", "UEFA Euro 2024"), ("euro", "2020", "euro", "UEFA Euro 2020"), ("copa_america", "2024", "copa_america", "Copa America 2024"), ("copa_mundo", "2022", "copa_mundo", "FIFA World Cup 2022")]
+PARES = [("euro", "2024", "euro", "UEFA Euro 2024"), ("euro", "2020", "euro", "UEFA Euro 2020"), ("copa_america", "2024", "copa_america", "Copa America 2024"), ("copa_mundo", "2022", "copa_mundo", "FIFA World Cup 2022"), ("copa_mundo", "2018", "copa_mundo", "FIFA World Cup 2018")]
 # nomes diferentes entre as fontes para a MESMA seleção (conferido à mão contra as listas de seleções de cada edição)
 APELIDOS = {"turkiye": "turkey", "czechia": "czech republic", "republic of ireland": "ireland", "ir iran": "iran", "korea republic": "south korea", "usa": "united states",
             "united states of america": "united states", "bosnia and herzegovina": "bosnia herzegovina", "north macedonia": "macedonia", "cabo verde": "cape verde"}
@@ -139,15 +139,17 @@ def comparar(pares: list[dict]) -> dict:
     """Razão FotMob/StatsBomb e correlação nos totais do jogo (soma dos dois times) para chutes, gols, xG, escanteios e passes."""
     import statistics as st
     out = {}
+    com_mapa = [p for p in pares if sum(p["fotmob"]["n_chutes"]) > 0]            # edições sem mapa de chutes (Copa 2018) ficam de fora das medidas que dependem dele
     def pearson(x, y):
         mx, my = st.mean(x), st.mean(y)
         sxx, syy = sum((a - mx) ** 2 for a in x), sum((b - my) ** 2 for b in y)
         return sum((a - mx) * (b - my) for a, b in zip(x, y)) / (sxx * syy) ** 0.5 if sxx and syy else float("nan")
-    for k, ext in (("chutes", lambda p: (sum(p["fotmob"]["n_chutes"]), sum(p["statsbomb"]["chutes"]))), ("gols", lambda p: (sum(p["fotmob"]["placar"]), sum(p["statsbomb"]["gols"]))),
+    for k, ext in (("chutes_estat", lambda p: (sum(p["fotmob"]["stats"].get("total_shots", [0, 0])), sum(p["statsbomb"]["chutes"]))),
+                   ("chutes", lambda p: (sum(p["fotmob"]["n_chutes"]), sum(p["statsbomb"]["chutes"]))), ("gols", lambda p: (sum(p["fotmob"]["placar"]), sum(p["statsbomb"]["gols"]))),
                    ("xg", lambda p: (sum(p["fotmob"]["xg_chutes"]), sum(p["statsbomb"]["xg"]))),
                    ("escanteios", lambda p: (sum(p["fotmob"]["stats"].get("corners", [0, 0])), sum(p["statsbomb"]["escanteios"]))),
                    ("passes", lambda p: (sum(x or 0 for x in p["fotmob"]["stats"].get("passes_totais", [0, 0])), sum(p["statsbomb"]["passes"])))):
-        v = [ext(p) for p in pares]
+        v = [ext(p) for p in (com_mapa if k in ("chutes", "xg") else pares)]
         x, y = [a for a, _ in v], [b for _, b in v]
         if len(v) > 2 and sum(y) > 0:
             out[k] = {"media_fotmob": st.mean(x), "media_statsbomb": st.mean(y), "razao": sum(x) / sum(y), "corr": pearson(x, y)}
@@ -157,7 +159,9 @@ def comparar(pares: list[dict]) -> dict:
 def razao_xg_com_ic(pares: list[dict], reamostras: int = 2000, semente: int = 3) -> dict:
     """Razão xG FotMob / xG StatsBomb (soma sobre soma) e IC 95% por bootstrap de jogos."""
     import random
-    v = [(sum(p["fotmob"]["xg_chutes"]), sum(p["statsbomb"]["xg"])) for p in pares]
+    v = [(sum(p["fotmob"]["xg_chutes"]), sum(p["statsbomb"]["xg"])) for p in pares if sum(p["fotmob"]["n_chutes"]) > 0]
+    if not v:
+        return {"razao": float("nan"), "ic_baixo": float("nan"), "ic_alto": float("nan"), "jogos": 0}
     rng = random.Random(semente)
     base = sum(a for a, _ in v) / sum(b for _, b in v)
     bs = sorted(sum(x[0] for x in amostra) / sum(x[1] for x in amostra) for amostra in ([v[rng.randrange(len(v))] for _ in v] for _ in range(reamostras)))
@@ -178,8 +182,8 @@ if __name__ == "__main__":
     print("\nRazão do xG FotMob / StatsBomb por edição (IC 95% por bootstrap de jogos):")
     for nome, v in res.items():
         r = razao_xg_com_ic(v["pares"])
-        print(f"  {nome:22s} {r['razao']:.3f}  [{r['ic_baixo']:.3f}; {r['ic_alto']:.3f}]  ({r['jogos']} jogos)")
-    tardias = [p for n, v in res.items() if n != "euro 2020" for p in v["pares"]]
+        print(f"  {nome:22s} " + (f"{r['razao']:.3f}  [{r['ic_baixo']:.3f}; {r['ic_alto']:.3f}]  ({r['jogos']} jogos)" if r["jogos"] else "sem mapa de chutes no FotMob"))
+    tardias = [p for n, v in res.items() if n not in ("euro 2020", "copa_mundo 2018") for p in v["pares"]]
     r = razao_xg_com_ic(tardias)
     print(f"  {'2022-2024 (juntas)':22s} {r['razao']:.3f}  [{r['ic_baixo']:.3f}; {r['ic_alto']:.3f}]  ({r['jogos']} jogos)")
     print("\nTODOS:", len(todos), "jogos casados")

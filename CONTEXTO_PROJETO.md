@@ -9,6 +9,10 @@
 
 ---
 
+**Copa do Mundo de 2018 do FotMob (04/10) -- fecho do Achado 38.** 64 jogos baixados e casados, mas o FotMob não tem mapa de chutes nem xG de time em 2018 (xG com chutes só desde a Euro 2020), então o teste da mudança no xG não se resolve com ela. Cruzamento disponível: gols idênticos, escanteios +4%, passes -8%, chutes (estatística) -2%. Total de jogos do FotMob versionados: 394 em `dados_referencia/fotmob/`.
+
+---
+
 **Copa do Mundo 2022 do FotMob e o teste da mudança no xG (04/10) -- Achado 38.** 64 jogos baixados e casados. O xG do FotMob em relação ao do StatsBomb: 1,026 na Euro 2020 contra 1,110 em 2022-2024 (ICs sem sobreposição): +8% a partir de 2022, mesma época da queda dos gols/xG nos clubes. Mas o xG do FotMob por faixa de distância não tem tendência (0-12 m: 0,197 / 0,215 / 0,180 / 0,180 em Euro 2020, Copa 2022, Euro 2024, Copa América 2024) e o do StatsBomb caiu ~10% em 0-12 m nos torneios de 2024: o sinal está no lado do StatsBomb ou na mistura de chutes, não numa mudança do cálculo da Opta. Com a Copa 2022 a conversão de seleções fica -5% (não -11%) contra clubes (4.698 chutes). Também corrigido: o cruzamento do Achado 36 somava as cobranças da disputa de pênaltis do FotMob e inflava xG e chutes.
 
 ---
