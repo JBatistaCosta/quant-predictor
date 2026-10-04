@@ -38,7 +38,7 @@ import camadas_simulador as cam  # noqa: E402
 # resultado se reproduz). Cada variante é comparada com a anterior da cadeia ("ref") para medir o que a camada nova acrescenta.
 BASE = ["nivel_chutes", "mando_chutes"]
 SEM_MANDO = ["nivel_chutes"]
-KEEP = BASE + ["forca_chutes", "gols_nivel"]                  # o que o Achado 47 deixou ligado
+KEEP = BASE + ["forca_chutes", "gols_nivel", "gols_fator"]                  # o que o Achado 47 deixou ligado
 VARIANTES = {
     "neutro": {"camadas": BASE, "semente": 2, "ref": None, "padrao": False},
     "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro", "padrao": False},
@@ -228,6 +228,14 @@ def main():
     resumo = {"jogos_teste": len(linhas), "jogos_comuns": len(comuns), "sims_por_jogo": a.sims,
               "parametros": {"exp_mando": a.exp_mando, "exp_forca": a.exp_forca, "exp_estado": a.exp_estado, "alvo_casa": a.alvo_casa, "alvo_fora": a.alvo_fora, "alvo_ctx": json.loads(a.alvo_ctx), "cfg_extra": json.loads(a.cfg_extra),
                              "variantes": {n: {"camadas": v["camadas"], "cfg": {k: x for k, x in v["cfg"].items()}} for n, v in VARIANTES.items()}}}
+    # calibração do nível de gols (usa TODOS os jogos simulados, não só os que têm Dixon-Coles e odds): gols reais por jogo sobre gols simulados por jogo de cada variante
+    gr = sum(meta[l["id"]]["hg"] + meta[l["id"]]["ag"] for l in linhas) / len(linhas)
+    resumo["calibracao_gols"] = {"jogos": len(linhas), "gols_reais_por_jogo": gr,
+                                 "variantes": {v: {"gols_sim_por_jogo": sum(l[v]["gols"] for l in linhas) / len(linhas), "fator": gr / (sum(l[v]["gols"] for l in linhas) / len(linhas))} for v in VARIANTES}}
+    if not comuns:                                  # temporada sem Dixon-Coles/odds (ex.: de calibração): só a calibração de gols
+        json.dump({"resumo": resumo, "jogos": linhas}, open(a.saida, "w"), ensure_ascii=False)
+        print(json.dumps(resumo["calibracao_gols"], indent=1, ensure_ascii=False))
+        return
     perdas = {m: {"ll": [], "br": [], "ll_ou": [], "br_ou": []} for m in modelos}
     for l in comuns:
         for m in modelos:

@@ -87,3 +87,13 @@ def test_ctx_todas_as_chaves_e_empate_neutro():
             t = cam.ESTADO_TABELAS_CTX[f"{l}|{p}"]
             assert set(t) == {-2, -1, 0, 1, 2} and t[0] == (1.0, 1.0)
             assert t[-1][0] > 1.0 > t[1][0] and t[1][1] > 1.0                               # perdendo chuta mais; ganhando chuta menos e com mais qualidade
+
+
+def test_gols_fator_multiplica_a_conversao_dos_dois_lados_e_padrao_e_neutro():
+    h = cam.Historia()
+    for _ in range(30):
+        h.add(jogo(12, 12, 1, 1))
+    c, f = cam.multiplicadores(["gols_fator"], h, 1, 2)
+    assert c["conversao_ataque"] == 1.0 and f["conversao_ataque"] == 1.0
+    c, f = cam.multiplicadores(["gols_fator"], h, 1, 2, {**cam.CONFIG, "gols_fator": 1.06})
+    assert c["conversao_ataque"] == 1.06 and f["conversao_ataque"] == 1.06

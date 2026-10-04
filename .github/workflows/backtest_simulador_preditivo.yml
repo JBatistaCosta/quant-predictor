@@ -32,6 +32,9 @@ on:
       alvo_ctx:
         description: 'JSON {"local|perfil": alvo} do placar desejado por contexto (variante estado_ctx), ex.: {"fora|fraco": 0}'
         default: "{}"
+      temporada:
+        description: "Temporada simulada (2025 = teste; 2024 = calibração do nível de gols, sem Dixon-Coles nem odds)"
+        default: "2025"
       variantes:
         description: "Variantes a rodar, separadas por vírgula (vazio = as marcadas como padrão em scripts/backtest_simulador_preditivo.py; 'todas' = todas)"
         default: ""
@@ -65,12 +68,13 @@ jobs:
           ALVO_FORA: ${{ inputs.alvo_fora || '1' }}
           ALVO_CTX: ${{ inputs.alvo_ctx || '{}' }}
           VARIANTES: ${{ inputs.variantes || '' }}
+          TEMPORADA: ${{ inputs.temporada || '2025' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
             --sims "$SIMS" --workers "$(nproc)" \
-            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --cfg-extra "$CFG_EXTRA" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" \
             --fatia ${{ matrix.fatia }}/8 --so-simular \
             --saida parcial_${{ matrix.fatia }}.json
       - uses: actions/upload-artifact@v4
@@ -102,12 +106,13 @@ jobs:
           ALVO_FORA: ${{ inputs.alvo_fora || '1' }}
           ALVO_CTX: ${{ inputs.alvo_ctx || '{}' }}
           VARIANTES: ${{ inputs.variantes || '' }}
+          TEMPORADA: ${{ inputs.temporada || '2025' }}
           CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
             --sims "$SIMS" --agregar \
-            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --cfg-extra "$CFG_EXTRA" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --exp-estado "$EXP_ESTADO" --alvo-casa "$ALVO_CASA" --alvo-fora "$ALVO_FORA" --alvo-ctx "$ALVO_CTX" --variantes "$VARIANTES" --temporada "$TEMPORADA" --cfg-extra "$CFG_EXTRA" \
             --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
           { echo '## Backtest do simulador (Premier League 2025/26)'; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4

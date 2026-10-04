@@ -80,6 +80,7 @@ CONFIG = {
     "exp_mando": 1.0,
     "exp_forca": 1.0,
     "teto": (0.6, 1.6),       # limites do produto das camadas, por chave
+    "gols_fator": 1.0,        # fator de gols da calibração em outra temporada (camada gols_fator); 1,0 = sem fator
     "elo_corte": 100.0,       # diferença de Elo a partir da qual um time é "forte" ou "fraco" na reação ao placar (Achado 52)
 }
 
@@ -179,12 +180,20 @@ def camada_gols_mando_janela(h, casa, fora, cfg):
     return {"conversao_ataque": m}, {"conversao_ataque": 1.0 / m}
 
 
+def camada_gols_fator(h, casa, fora, cfg):
+    """Fator fixo de gols (multiplica a conversão dos dois lados). Vem da calibração do total de gols numa temporada DIFERENTE da avaliada (Achado 54): gols reais por jogo
+    sobre gols simulados por jogo da configuração. 1,0 = sem fator."""
+    g = cfg.get("gols_fator", 1.0)
+    return {"conversao_ataque": g}, {"conversao_ataque": g}
+
+
 CAMADAS = {
     "nivel_chutes": camada_nivel_chutes,
     "mando_chutes": camada_mando_chutes,
     "forca_chutes": camada_forca_chutes,
     "gols_nivel": camada_gols_nivel,
     "gols_mando": camada_gols_mando,
+    "gols_fator": camada_gols_fator,
     "mando_chutes_janela": camada_mando_chutes_janela,
     "gols_mando_janela": camada_gols_mando_janela,
 }
