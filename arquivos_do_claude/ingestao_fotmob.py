@@ -458,10 +458,17 @@ def montar_linhas_momentum(content: dict, match_id: int) -> list[dict]:
     data = ((content.get("momentum") or {}).get("main") or {}).get("data")
     if not isinstance(data, list):
         return []
+    # Achado real (2026-10-04, Copa do Mundo 2022): o FotMob manda pontos em
+    # meio-minuto (ex.: 45.5, acréscimos do 1º tempo) e match_momentum_fotmob
+    # .minute é INTEGER -- o upsert inteiro falhava com 22P02 e a partida
+    # ficava sem nada gravado. Arredondar colidiria com o ponto inteiro
+    # vizinho (45 e 45.5 -> 45) e quebraria o upsert ("ON CONFLICT ... a
+    # second time"); por isso os pontos fracionários são descartados.
     return [
-        {"match_id": match_id, "minute": p["minute"], "value": p["value"]}
+        {"match_id": match_id, "minute": int(p["minute"]), "value": p["value"]}
         for p in data
-        if isinstance(p.get("minute"), (int, float)) and isinstance(p.get("value"), (int, float))
+        if isinstance(p.get("minute"), (int, float)) and float(p["minute"]).is_integer()
+        and isinstance(p.get("value"), (int, float))
     ]
 
 
