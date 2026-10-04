@@ -186,6 +186,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { gravarComDedupCruzado } from './_lib/dedupMatches.js';
+import { escolherTimePorNome } from './_lib/nomesTimes.js';
 import { calcularCartoesExtras } from './_lib/resultadosReais.js';
 
 function getSupabase() {
@@ -4554,6 +4555,18 @@ async function paisEsperadoParaLiga(supabase, leagueId, cache) {
   return pais;
 }
 
+// Torneio de seleções (leagues.type='international': Eurocopa, Copa América,
+// Copa do Mundo...). Nessas ligas o casamento de time é ESTRITO: só igualdade
+// exata de nome e só contra seleções (api/_lib/nomesTimes.js).
+async function ligaEhDeSelecoes(supabase, leagueId, cache) {
+  if (!leagueId) return false;
+  if (cache.has(leagueId)) return cache.get(leagueId);
+  const { data: liga } = await supabase.from('leagues').select('type').eq('id', leagueId).maybeSingle();
+  const ehSelecoes = liga?.type === 'international';
+  cache.set(leagueId, ehSelecoes);
+  return ehSelecoes;
+}
+
 // BUG REAL JÁ ACONTECIDO (ver CONTEXTO_PROJETO.md): o Athletic Club (Série B,
 // Brasil) foi mesclado com o Athletic Club de Bilbao (La Liga) porque o nome
 // bate 100% e o casamento abaixo não olhava país nenhum — o único candidato
@@ -4561,28 +4574,19 @@ async function paisEsperadoParaLiga(supabase, leagueId, cache) {
 // sendo sincronizada) é conhecido E o time candidato já tem `country`
 // cadastrado E eles divergem, NÃO mescla — cria um time novo e loga um aviso
 // pra revisão manual, em vez de gravar um crosswalk errado silenciosamente.
-function escolherCandidatoPorNomeEPais(todosOsTimes, nomeFonte, paisEsperado, logPrefix) {
-  const candidatos = todosOsTimes.filter(t =>
-    nomesBatemTime(t.name, nomeFonte) ||
-    (t.aliases || []).some(alias => nomesBatemTime(alias, nomeFonte))
-  );
-  if (candidatos.length === 0) return null;
-
-  const paisEsperadoNorm = paisEsperado ? normalizarPais(paisEsperado) : null;
-  const semConflito = candidatos.filter(t => {
-    if (!paisEsperadoNorm || !t.country) return true; // sem dado suficiente pra desambiguar -> não bloqueia
-    return normalizarPais(t.country) === paisEsperadoNorm;
-  });
-
-  if (semConflito.length === 1) return semConflito[0];
-
-  if (semConflito.length === 0) {
+function escolherCandidatoPorNomeEPais(todosOsTimes, nomeFonte, paisEsperado, logPrefix, { estrito = false } = {}) {
+  // Regra de casamento mora em api/_lib/nomesTimes.js (igualdade exata contra
+  // name/display_name/name_pt/name_en/name_native/nicknames/aliases; "contido
+  // no outro" só com afixos genéricos de clube; seleção só casa com seleção).
+  // Substitui a regra antiga de sub/superconjunto de palavras, que juntou
+  // Ireland com Northern Ireland e New England com England (Achado 43).
+  const { time, motivo, candidatos } = escolherTimePorNome(todosOsTimes, nomeFonte, { paisEsperado, estrito });
+  if (time) return time;
+  if (motivo === 'pais_diverge') {
     console.warn(`${logPrefix}: nome "${nomeFonte}" bate com ${candidatos.length} time(s) cadastrado(s) (ex.: team_id=${candidatos[0].id}, country="${candidatos[0].country}"), mas o país esperado ("${paisEsperado}") diverge de todos — criando time novo em vez de mesclar. Revisar manualmente se é o mesmo clube.`);
-    return null;
+  } else if (motivo === 'ambiguo') {
+    console.warn(`${logPrefix}: nome "${nomeFonte}" bate com ${candidatos.length} times cadastrados sem dar pra desambiguar — criando time novo em vez de escolher arbitrariamente. Revisar manualmente.`);
   }
-
-  // Mais de um candidato compatível com o país (ou país desconhecido) — ambíguo demais pra escolher sozinho.
-  console.warn(`${logPrefix}: nome "${nomeFonte}" bate com ${semConflito.length} times cadastrados sem dar pra desambiguar por país — criando time novo em vez de escolher arbitrariamente. Revisar manualmente.`);
   return null;
 }
 
@@ -4631,7 +4635,7 @@ async function tarefaBackfillApiFootball(supabase, apiKey, apiFootballLeagueId, 
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
 
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases, country');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases, country, is_national_team, display_name, name_pt, name_en, name_native, nicknames');
   const cachePais = new Map();
   const paisEsperado = await paisEsperadoParaLiga(supabase, fonteRow.league_id, cachePais);
 
@@ -4708,19 +4712,19 @@ async function tarefaFotmobLigaBuscar(termo) {
 // por país): crosswalk conhecido (source='fotmob') > casamento por nome (+
 // país da liga) com time já existente > cria novo. Único pra times, não pra
 // jogadores (não confundir com o crosswalk de player).
-async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, timeFm, paisEsperado) {
+async function resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, timeFm, paisEsperado, { estrito = false } = {}) {
   const fmId = String(timeFm.id);
   if (crosswalk[fmId]) return crosswalk[fmId];
 
-  const candidato = escolherCandidatoPorNomeEPais(todosOsTimes, timeFm.name, paisEsperado, 'resolverOuCriarTimeFotmob');
+  const candidato = escolherCandidatoPorNomeEPais(todosOsTimes, timeFm.name, paisEsperado, 'resolverOuCriarTimeFotmob', { estrito });
   let teamId;
   if (candidato) {
     teamId = candidato.id;
   } else {
-    const { data: novo, error } = await supabase.from('teams').insert({ name: timeFm.name, crest_url: `https://images.fotmob.com/image_resources/logo/teamlogo/${fmId}_xsmall.png`, country: paisEsperado || null }).select('id').single();
+    const { data: novo, error } = await supabase.from('teams').insert({ name: timeFm.name, crest_url: `https://images.fotmob.com/image_resources/logo/teamlogo/${fmId}_xsmall.png`, country: paisEsperado || null, ...(estrito ? { is_national_team: true } : {}) }).select('id').single();
     if (error || !novo) return null;
     teamId = novo.id;
-    todosOsTimes.push({ id: teamId, name: timeFm.name, aliases: [], country: paisEsperado || null });
+    todosOsTimes.push({ id: teamId, name: timeFm.name, aliases: [], country: paisEsperado || null, is_national_team: estrito ? true : null });
   }
 
   await supabase.from('team_source_ids').upsert(
@@ -4816,14 +4820,15 @@ async function tarefaBackfillFotmobLiga(supabase, { fotmobLeagueId, temporada, n
   const { data: crosswalkRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
   const crosswalk = {};
   (crosswalkRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases, country');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases, country, is_national_team, display_name, name_pt, name_en, name_native, nicknames');
   const cachePais = new Map();
   const paisEsperado = await paisEsperadoParaLiga(supabase, leagueId, cachePais);
+  const estrito = await ligaEhDeSelecoes(supabase, leagueId, new Map());
 
   const linhas = [];
   for (const fx of fixtures) {
-    const homeTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.home, paisEsperado);
-    const awayTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.away, paisEsperado);
+    const homeTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.home, paisEsperado, { estrito });
+    const awayTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.away, paisEsperado, { estrito });
     if (!homeTeamId || !awayTeamId) continue;
 
     const finalizado = fx.status?.finished && !fx.status?.cancelled;
@@ -5362,8 +5367,9 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
   const { data: cwRows } = await supabase.from('team_source_ids').select('source_id, team_id').eq('source', 'fotmob');
   const crosswalk = {};
   (cwRows || []).forEach(r => { crosswalk[r.source_id] = r.team_id; });
-  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases, country');
+  const { data: todosOsTimes } = await supabase.from('teams').select('id, name, aliases, country, is_national_team, display_name, name_pt, name_en, name_native, nicknames');
   const cachePais = new Map();
+  const cacheSelecoes = new Map();
 
   // Cache: evita buscar a mesma fixture list do FotMob mais de uma vez por (liga, temporada)
   const fixtureCache = new Map();
@@ -5374,6 +5380,7 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
     if (fixtureCache.has(cacheKey)) return fixtureCache.get(cacheKey);
 
     const paisEsperado = await paisEsperadoParaLiga(supabase, ligaIdInterno, cachePais);
+    const estrito = await ligaEhDeSelecoes(supabase, ligaIdInterno, cacheSelecoes);
     const index = new Map();
     try {
       const resp = await fetch(
@@ -5387,8 +5394,8 @@ async function tarefaPartidasFotmob(supabase, authHeader, { ligaId, temporada, l
             if (fx.status?.cancelled) continue;
             // encerradas: só fixtures já finalizados; ao_vivo: qualquer iniciado
             if (modoValido === 'encerradas' && !fx.status?.finished) continue;
-            const homeTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.home, paisEsperado);
-            const awayTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.away, paisEsperado);
+            const homeTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.home, paisEsperado, { estrito });
+            const awayTeamId = await resolverOuCriarTimeFotmob(supabase, crosswalk, todosOsTimes, fx.away, paisEsperado, { estrito });
             if (!homeTeamId || !awayTeamId) continue;
             const dia = fx.status?.utcTime?.slice(0, 10);
             if (dia) index.set(`${dia}|${homeTeamId}|${awayTeamId}`, fx.id);
