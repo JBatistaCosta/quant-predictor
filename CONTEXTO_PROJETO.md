@@ -9,6 +9,10 @@
 
 ---
 
+**xG por zona polar e ocupação do ataque corrigida (04/10) -- Achado 34.** O R² do xG fora da amostra é 0,22 pela zona de 18 e 0,61 por distância+ângulo (0,73 com cabeça e tipo): o chute simulado agora é um chute real do StatsBomb sorteado da zona e seu xG/gol vem da zona polar da calculadora (tabela do FotMob, `scripts/zonas_polares.py`; `--fonte-xg statsbomb` usa o chute real). A ocupação exagerada vinha da memória da perda: `scripts/calibrar_memoria_posse.py` normaliza o multiplicador por zona (média efetiva 1,00) e a constante `ESCALA_CHUTE_COM_MEMORIA` foi removida; ocupação por faixa fecha em <= 0,6 p.p. e chutes 24,9/25,0, gols 2,55/2,55 (FotMob). Força dos times fora da amostra: +1,1% chutes, +5,6% gols, +2,5% escanteios. Progressão da bola não depende da posição na posse. Pendente: outras ligas/temporadas, ClubElo (502 do servidor deles), xG do FotMob (escala) contra StatsBomb.
+
+---
+
 **Posse, xT, momentum e teste de Elo (04/10) -- Achado 33.** Posse replicada (237 corridas/jogo real e simulado; dispersão da posse entre times: força explica ~60%). Momentum existe: risco de perda dado a zona vai de 1,32-1,40 nas 2 primeiras linhas da posse a 0,75 em 15+; o simulador ganhou `memoria` (multiplicador por posição na corrida, medido) e uma constante calibrada `ESCALA_CHUTE_COM_MEMORIA=0,88`; autocorrelação de chutes 0,046 (real 0,056); xT dentro de ±7% (xG por zona ainda erra na grande área: o simulador usa o xG médio da faixa). Efeito colateral: ocupação do ataque exagerada (grande área 3,7% contra 3,1%) e ganho da força fora da amostra em chutes cai de +6,0% para +2,4%. Elo (interno, La Liga, 20 times) prevê `ataque_perda` (r -0,74/-0,79) e quase nada mais. ClubElo bloqueado na rede da sessão: liberar `api.clubelo.com` nos domínios permitidos do ambiente. Código: `metricas_posse_xt_momentum.py`, `comparar_posse_xt_momentum.py` (+ testes).
 
 ---

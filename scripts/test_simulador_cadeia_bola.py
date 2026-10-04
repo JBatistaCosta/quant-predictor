@@ -46,7 +46,7 @@ def test_proxima_linha_sempre_devolve_zona_valida_e_classe_conhecida():
 
 
 def test_totais_perto_do_observado_e_ocupacao_por_faixa():
-    med = s.simular(P, 400, 1, memoria=False)             # sem a memória da posse a ocupação do campo fecha a < 1 ponto percentual
+    med = s.simular(P, 400, 1)                            # com a memória da posse normalizada por zona, a ocupação do campo fecha a < 1 ponto percentual
     for k, tol in (("chutes", 0.08), ("gols", 0.15), ("escanteios", 0.10), ("laterais", 0.10)):
         assert abs(med[k] / P.alvos[k] - 1) < tol, k
     ocup = [sum(v for k, v in med.items() if k.startswith("ent|") and k.endswith(f"|{b}")) for b in range(6)]
@@ -102,3 +102,19 @@ def test_memoria_da_posse_reproduz_o_risco_de_perda_por_posicao_na_corrida():
         sem.append(reg)
     r0 = {r["posicao"]: r for r in M.calcular(sem)["risco_por_posicao_na_corrida"]}
     assert abs(r0["15+"]["perda_obs_sobre_esp"] - 1) < 0.1 or r0["15+"]["perda_obs_sobre_esp"] > risco["15+"]["perda_obs_sobre_esp"]
+
+
+def test_chute_simulado_e_um_chute_real_sorteado_da_zona_e_pools_nao_estao_vazios():
+    assert P.pool_chute is not None and all(len(pool) >= 30 for pool in P.pool_chute) and len(P.pool_penalti) > 100
+    assert all(r[5] == 2 for r in P.pool_penalti) and all(r[5] != 2 for pool in P.pool_chute for r in pool)       # pênalti fora dos pools de jogo
+    assert 0.6 < sum(r[0] for r in P.pool_penalti) / len(P.pool_penalti) < 0.9                                  # xG médio de pênalti ~0,76
+    # o xG médio por zona 16 do pool bate com o dos dados: centro da área é de longe a zona de maior xG por chute
+    medias = [sum(r[0] for r in pool) / len(pool) for pool in P.pool_chute]
+    assert medias.index(max(medias)) == 16
+
+
+def test_memoria_normalizada_mantem_a_media_do_multiplicador_em_1_em_cada_zona():
+    med = s.simular(P, 300, 2)
+    for z in range(18):
+        if med.get(f"mem|{z}|n"):
+            assert abs(med[f"mem|{z}|p"] / med[f"mem|{z}|n"] - 1) < 0.05
