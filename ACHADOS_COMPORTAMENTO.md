@@ -2307,3 +2307,26 @@ A calibração da época melhora o conjunto em **8 das 11 épocas** (média 8,6%
 **Pegadinhas dos dados.** O banco tem 79 cobranças de disputa de pênaltis (`period='PenaltyShootout'`) nesses 115 jogos: sempre excluir. Copa América 2021 inclui 10 jogos `cancelled` (Austrália e Catar foram convidados e trocados). Copa América 2016 inclui 2 jogos de janeiro (Trinidad e Tobago × Haiti, Panamá × Cuba) que são eliminatórias da Copa Centenário, não o torneio. O FotMob não tem mapa de chutes antes da Euro 2020 (Euro 2012/2016, Copa América 2015-2021 e Copa 2018): essas edições servem para gols, escalações e estatísticas de time e jogador, não para xG.
 
 **Limites.** (a) Só duas edições têm xG (Euro 2020 e Copa 2022); a tabela polar de seleções continua apoiada em 115 jogos + Euro 2024/Copa América 2024/Copa 2026. (b) Os 9 jogos da Euro 2024 sem chutes seguem sem chutes. (c) A correção da heurística do importador não foi feita (decisão para o usuário: tornar o vínculo por nome mais rígido, ou exigir lista de vínculos supervisionada para seleções).
+
+
+## Achado 43 — a regra "nome contido no outro" corrompeu três times; casamento passa a ser exato, com cinco nomes por time
+
+**Origem.** No Achado 42 a Irlanda (FotMob 5791) caiu na Irlanda do Norte. O pedido foi tornar o casamento mais rígido **mantendo redundância de identificação** (nome de exibição, português, inglês, apelido, língua original). Ao desenhar a regra nova, a checagem "seleção com jogo de liga doméstica" achou dois erros do mesmo tipo que já estavam no banco.
+
+**Contaminações achadas (dados ainda não reparados).**
+1. **Time 466 'England' = Inglaterra + New England Revolution.** São 138 jogos da MLS (2022-2025, todos `fm_`, 69 em casa e 69 fora) ligados à seleção inglesa, mais 1.696 chutes, 2.737 linhas de estatística de jogador, 2.656 de escalação, 294 de estado de jogo e 291 de `team_elo_history`. O Elo, as forças e qualquer agregado por `team_id` da Inglaterra estão misturados com um clube da MLS. Não existe linha de New England Revolution em `teams`.
+2. **Time 744 'Costa Rica ' (país 'Brazil') = seleção + clube.** Dois vínculos: API-Football 13103 (clube brasileiro, 2 jogos de Copa do Brasil 2022/2024) e FotMob 6705 (seleção, 9 jogos de Copa América 2016/2024 e Copa do Mundo 2018/2022).
+3. (já corrigido no Achado 42) Irlanda × Irlanda do Norte.
+Os três nasceram na regra de sub/superconjunto de palavras (`nomesBatemTime`), a mesma que o CLAUDE.md já condenava para heurística de nome.
+
+**O que foi feito.**
+- `api/_lib/nomesTimes.js`: igualdade exata (depois de normalizar, inclusive alfabetos não latinos: o normalizador antigo apagava tudo que não fosse a-z0-9 e deixava 'Россия' vazio) contra todos os nomes do time; afixos genéricos de clube são a única flexibilização; em liga de seleções, só seleção com seleção e só igualdade exata; ambiguidade não escolhe no chute. 14 testes novos reproduzem cada erro real.
+- Integração em `api/model-maintenance.js`: `escolherCandidatoPorNomeEPais` usa o módulo novo; `resolverOuCriarTimeFotmob` recebe `estrito` (liga com `leagues.type='international'`), e time novo criado nesse modo já nasce com `is_national_team=true`. Os três `select` de `teams` trazem as colunas novas.
+- Banco: `display_name`, `name_pt`, `name_en`, `name_native`, `nicknames text[]` em `teams`; 64 seleções preenchidas por vínculo `team_source_ids` (nunca por nome). A flag `is_national_team` estava `false` em 40 delas (inclusive Brasil e Argentina), o que as deixaria entrar na rotina de clubes do ClubElo.
+- **Prova com dados reais** (746 times do banco): das 65 seleções FotMob, 64 reencontram o próprio time pelo nome, 0 casam com time errado, 'Ireland' vai para o time 1045, 'New England' não casa com a Inglaterra e 'Costa Rica' (seleção) não casa mais com o clube.
+
+**Limites e riscos.**
+- A regra nova é mais conservadora: time **ainda sem vínculo** cujo nome difere por palavra que não é afixo (ex.: FotMob 'Portland' × banco 'Portland Timbers') agora cria time novo em vez de juntar. Isso é a falha segura (duplicata visível) no lugar da falha silenciosa (fusão errada). Times com vínculo em `team_source_ids` não são afetados.
+- Apelido repetido em dois times é ambíguo e não casa (ex.: 'La Roja' ficou só com o Chile; Espanha usa 'La Furia Roja').
+- Os nomes em português/original/apelido das 64 seleções foram escritos por mim a partir de conhecimento geral e **precisam de revisão sua**. A interface ainda mostra `name`; `display_name` não foi ligado ao frontend.
+- Nada dos itens 1 e 2 foi corrigido: o reparo mexe em mais de 35 tabelas e exige recomputar Elo e forças. Proposta de reparo em `CONTEXTO_PROJETO.md`/PR para aprovação.
