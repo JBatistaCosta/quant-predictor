@@ -46,7 +46,7 @@ def test_proxima_linha_sempre_devolve_zona_valida_e_classe_conhecida():
 
 
 def test_totais_perto_do_observado_e_ocupacao_por_faixa():
-    med = s.simular(P, 400, 1)
+    med = s.simular(P, 400, 1, memoria=False)             # sem a memória da posse a ocupação do campo fecha a < 1 ponto percentual
     for k, tol in (("chutes", 0.08), ("gols", 0.15), ("escanteios", 0.10), ("laterais", 0.10)):
         assert abs(med[k] / P.alvos[k] - 1) < tol, k
     ocup = [sum(v for k, v in med.items() if k.startswith("ent|") and k.endswith(f"|{b}")) for b in range(6)]
@@ -83,3 +83,22 @@ def test_forca_dos_times_pesos_e_pearson():
     import forca_dos_times as F
     assert abs(F.pearson([1, 2, 3, 4], [2, 4, 6, 8]) - 1) < 1e-9 and F.pearson([1, 1, 1], [1, 2, 3]) == 0.0
     assert F.peso_de_confiabilidade(0.0) == 0.0 and abs(F.peso_de_confiabilidade(1.0) - 1.0) < 1e-9 and F.peso_de_confiabilidade(-0.5) == 0.0
+
+
+def test_memoria_da_posse_reproduz_o_risco_de_perda_por_posicao_na_corrida():
+    import metricas_posse_xt_momentum as M
+    rng = random.Random(4)
+    partidas = []
+    for _ in range(150):
+        reg: list = []
+        s.simular_partida(P, rng, registro=reg)
+        partidas.append(reg)
+    risco = {r["posicao"]: r for r in M.calcular(partidas)["risco_por_posicao_na_corrida"]}
+    assert risco["1"]["perda_obs_sobre_esp"] > 1.1 and risco["15+"]["perda_obs_sobre_esp"] < 0.9        # posse recém-ganhada é frágil; posse longa é segura
+    sem = []
+    for _ in range(150):
+        reg = []
+        s.simular_partida(P, rng, registro=reg, memoria=False)
+        sem.append(reg)
+    r0 = {r["posicao"]: r for r in M.calcular(sem)["risco_por_posicao_na_corrida"]}
+    assert abs(r0["15+"]["perda_obs_sobre_esp"] - 1) < 0.1 or r0["15+"]["perda_obs_sobre_esp"] > risco["15+"]["perda_obs_sobre_esp"]

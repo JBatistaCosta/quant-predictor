@@ -2030,3 +2030,35 @@ A tendência de perder a bola (estilo de jogo: Barcelona 0,59, PSG 0,56, Real Ma
 A força dos times melhora a previsão de forma real mas pequena (o chute de um time num jogo tem muito acaso: desvio-padrão observado 5,1 contra 3,3 previsto).
 
 **Limites que continuam valendo:** (a) mandante e visitante têm a mesma força (a vantagem de jogar em casa não está no modelo); (b) a posse fica sub-dispersa entre times (inclinação 1,81: a diferença de tempo de posse real é maior, em parte porque times de posse também passam mais rápido e a duração das ações é igual para todos) e os chutes a favor ficam super-dispersos (0,58): dominar a posse não vira chute na proporção que o simulador gera; (c) escanteios por jogo ainda têm variância só de acaso (observado var/média 1,2); (d) dentro da amostra de 4 ligas de 2015/16; (e) o teste com Elo do ClubElo, para estimar a força de times com poucos jogos e de outras ligas, ainda não foi feito.
+
+## Achado 33 — posse, xT e momentum no simulador: a posse bate, o xT bate dentro de ±7% e o momentum existe e vem da MEMÓRIA DA POSSE; o Elo prevê o estilo de posse
+
+`scripts/metricas_posse_xt_momentum.py` mede a MESMA coisa nos eventos reais e nas partidas simuladas (`scripts/comparar_posse_xt_momentum.py observar|comparar`; saída real em `posse_xt_momentum_observado_ligas_2015_16.json`). Corrida = linhas consecutivas da mesma equipe na mesma metade; o tempo morto de um reinício entra na corrida de quem perdeu a bola (como na posse do StatsBomb).
+
+**1. Posse de bola (v3, sem memória): replicada em volume, subdispersa entre times.** Corridas por jogo 237,1 real contra 237,1 simulado (os "195" do StatsBomb eram outra definição de posse, não erro do simulador); duração média 24,0 s real, 23,7 simulado; linhas por corrida 7,53 contra 7,55. Dispersão da posse do mandante (dp): real 0,083 por tempo e 0,106 por linhas; neutro 0,035 / 0,028; com a força dos times 0,067 / 0,070. A força explica cerca de 60% da dispersão por tempo e 2/3 da por linhas.
+
+**2. Momentum: existe, e é memória da posse.** Risco observado/esperado dada a zona, por posição da linha dentro da corrida:
+
+| posição na corrida | 1 | 2 | 3 | 4-5 | 6-8 | 9-14 | 15+ |
+|---|---|---|---|---|---|---|---|
+| perda real | 1,32 | 1,40 | 1,12 | 1,04 | 0,92 | 0,82 | 0,75 |
+| perda simulada sem memória (força) | 1,03 | 1,02 | 1,02 | 1,02 | 1,00 | 0,99 | 0,94 |
+
+Quem acabou de ganhar a bola a perde com 32 a 40% mais chance do que a zona explica; quem a segura há 15 ou mais linhas, com 25% menos. O simulador sem memória não tem isso (e as razões de força de time quase não o produzem). Consequências medidas sem memória: autocorrelação dos chutes em janelas consecutivas de 5 min 0,056 real contra 0,037 (com força) e 0,000 (neutro), e chutes dentro de 60 s do anterior da mesma equipe 15,8% real contra 14,6% e 14,1%.
+
+**3. Correção (v4): multiplicador de perda e de chute por posição na corrida**, medido no real (`risco_por_posicao_na_corrida` do arquivo observado; `memoria=True` no simulador, `--sem-memoria` desliga). Efeito: risco de perda simulado 1,24 / 1,34 / 1,10 / 1,03 / 0,93 / 0,83 / 0,75 (real 1,32 / 1,40 / 1,12 / 1,04 / 0,92 / 0,82 / 0,75); autocorrelação 0,046 (real 0,056); chutes até 60 s / 120 s / 300 s do anterior 15,0 / 25,6 / 48,8% (real 15,8 / 26,2 / 49,2%). Com a memória ligada o simulador passou a chutar ~9% a mais e a empurrar a bola para o ataque; uma constante global, `ESCALA_CHUTE_COM_MEMORIA = 0,88` (CALIBRADA, não medida), recupera os totais por jogo (chutes 25,3 contra 25,0; gols 2,63 contra 2,55; ações 1.788 contra 1.786).
+
+**4. xT empírico por zona** (probabilidade de haver chute depois, na mesma corrida, a partir de uma linha na zona): sem memória o simulador ficava 10 a 17% abaixo do real nas zonas do meio (zona 4: 0,100 contra 0,122; zona 7: 0,139 contra 0,168). Com a memória ficou dentro de ±7% em quase todas as zonas (zona 4: 0,116; zona 7: 0,159; zona 10: 0,269 contra 0,289; zona 16: 0,669 contra 0,689). **O xG depois da linha ainda erra nas zonas da grande área e nos corredores do ataque:** zona 16 (centro da área) 0,101 simulado contra 0,126 real, enquanto os corredores sobem (zona 12: 0,032 contra 0,026), porque o simulador usa o xG médio da FAIXA e não da zona.
+
+**5. Limites novos:** a ocupação do ataque passou a exagerar (grande área 3,7% contra 3,1%; ataque fora alto 13,2% contra 12,3%) e a defesa a ficar baixa (22,7% contra 23,8%); a validação fora da amostra da força dos times, refeita com a memória ligada, deu ganho de erro quadrático de +2,4% em chutes (antes +6,0%), +5,8% em gols e +2,9% em escanteios (correlação em chutes 0,37). O ganho de chutes caiu porque a memória aumenta a dispersão prevista entre times sem aumentar a correlação.
+
+**6. ClubElo / Elo na força dos times.** O site do ClubElo está bloqueado na rede desta sessão (o proxy devolve 502 para `api.clubelo.com`); para liberar, o ambiente precisa de `api.clubelo.com` em Allowed domains (Network access do ambiente na nuvem). O banco só tem Elo de 2015/16 para uma liga (La Liga, 20 times, Elo interno do projeto, 3 promovidos no padrão 1500), então o teste foi feito ali: correlação entre o Elo do início da temporada e as razões de força medidas na temporada, 20 times (17 sem os promovidos com 1500):
+
+| razão | correlação (20 / 17 times) | por 100 pontos de Elo |
+|---|---|---|
+| ataque_perda | **-0,74 / -0,79** | -0,13 |
+| defesa_perda | -0,16 / -0,20 | -0,01 |
+| ataque_chute | -0,13 / -0,21 | -0,01 |
+| defesa_chute | +0,04 / +0,07 | +0,01 |
+
+O Elo conhecido ANTES da temporada prevê bem o estilo de posse (quem tem Elo alto perde menos a bola, o mesmo resultado do Achado 24) e quase nada do resto. Serve, portanto, como informação a priori da razão `ataque_perda` (a mais estável, confiabilidade 0,93) para times sem histórico de jogos, mas não substitui a medida nos eventos para chute e defesa. Só 20 times de uma liga: a conclusão é um indício, não prova.

@@ -37,6 +37,9 @@ CLASSE_PARA_REINICIO = {"lateral": "From Throw In", "tiro livre": "From Free Kic
 # Folga entre o fim de uma ação e o início da seguinte: a duração registrada pelo StatsBomb não cobre o intervalo todo (46,1 min em ação + 40,7 de tempo
 # morto somam 86,8 dos ~94 min de relógio). CALIBRADA, não medida: 0,2 s por linha fecha os ~7 min que faltam.
 FOLGA_ENTRE_ACOES_S = 0.2
+# Escala global da chance de chute por linha, CALIBRADA (não medida): com a memória da posse ligada o simulador chuta ~9% a mais (27,1 contra 25,0 por jogo).
+ESCALA_CHUTE_COM_MEMORIA = 0.88
+POSICOES_CORRIDA = ((1, 1), (2, 2), (3, 3), (4, 5), (6, 8), (9, 14), (15, 10**9))      # posição da linha dentro da corrida (mesmos cortes de metricas_posse_xt_momentum)
 CONTAGEM_DA_CLASSE = {"lateral": "laterais", "tiro livre": "tiros livres", "tiro de meta": "tiros de meta", "escanteio": "escanteios",
                       "saída de bola": "saídas de bola"}
 
@@ -132,6 +135,10 @@ class Parametros:
         # 5. tempo morto lognormal por tipo de reinício (Achado 29); mediana ~0 -> exponencial
         morto = rein["tempo_morto_por_reinicio_s"]
         self.morto = {k: (lognormal_de(v["mediana"], v["media"]) if v["mediana"] > 0.5 else (None, v["media"])) for k, v in morto.items()}
+        # 6. memória da posse (Achado 33): risco de perda/chute dado a zona, por posição da linha dentro da corrida do time (observado/esperado)
+        arq = os.path.join(pasta, "posse_xt_momentum_observado_ligas_2015_16.json")
+        risco = json.load(open(arq))["risco_por_posicao_na_corrida"] if os.path.exists(arq) else []
+        self.risco_posicao = [(r["perda_obs_sobre_esp"], r["chute_obs_sobre_esp"]) for r in risco] or [(1.0, 1.0)] * len(POSICOES_CORRIDA)
         # alvos observados por jogo
         j = chu["jogos"]
         n_chutes = sum(c["n"] for c in cf.values())
@@ -162,6 +169,13 @@ NEUTRO = Multiplicadores()
 JANELA_NEUTRA = [{"chute": 1.0, "perda": 1.0, "quebra": 1.0}] * 6
 
 
+def balde_da_posicao(posicao: int) -> int:
+    for i, (lo, hi) in enumerate(POSICOES_CORRIDA):
+        if lo <= posicao <= hi:
+            return i
+    return len(POSICOES_CORRIDA) - 1
+
+
 def band(z: int) -> int:
     return z // 3
 
@@ -184,9 +198,10 @@ def proxima_linha(p: Parametros, rng: random.Random, amostra: tuple[list, Amostr
     return quem, classe, int(zona)
 
 
-def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA) -> dict:
+def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA, registro: list | None = None, memoria: bool = True) -> dict:
     """Uma partida entre `times[0]` (começa o 1T) e `times[1]`. Devolve contagens (ações, chutes, gols, bolas paradas, tempo morto, posses, chutes por
-    janela de 15 min, e por equipe: chutes_0/1, gols_0/1, escanteios_0/1) e a ocupação por classe/faixa."""
+    janela de 15 min, e por equipe: chutes_0/1, gols_0/1, escanteios_0/1) e a ocupação por classe/faixa.
+    Se `registro` for uma lista, cada linha de ação é anexada como (equipe, zona, tipo, metade 0/1, xG, gol, segundos desde o início da metade)."""
     m: collections.Counter = collections.Counter()
     janela = [0] * 6                                     # chutes por janela de 15 min de relógio (0-15, 15-30, 30-45+, 45-60, 60-75, 75-90+)
 
@@ -195,15 +210,19 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
         equipe = tempo % 2
         zona = ZONA_SAIDA
         classe = "jogo"
+        posicao = 0                                      # posição da linha dentro da corrida (posse) do time
         m["posses"] += 1
         while t < duracao:
+            posicao += 1
             w = tempo * 3 + min(int(t // 900), 2)
             jm = janela_mult[w]
             atk, dfs = times[equipe], times[1 - equipe]
             m[f"ent|{classe}|{band(zona)}"] += 1
+            t_inicio, tipo_linha, xg_linha, gol_linha = t, "continua", 0.0, 0
             t += FOLGA_ENTRE_ACOES_S
-            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"], 0.5)
-            pl = min(p.p_perda_zona[zona] * atk.ataque_perda * dfs.defesa_perda * jm["perda"], 0.95 - ps)
+            mem_perda, mem_chute = p.risco_posicao[balde_da_posicao(posicao)] if memoria else (1.0, 1.0)
+            ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"] * mem_chute * (ESCALA_CHUTE_COM_MEMORIA if memoria else 1.0), 0.5)
+            pl = min(p.p_perda_zona[zona] * atk.ataque_perda * dfs.defesa_perda * jm["perda"] * mem_perda, 0.95 - ps)
             u = rng.random()
             m["acoes"] += 1
             m[f"acoes_{equipe}"] += 1
@@ -214,7 +233,9 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                 m["chutes"] += 1
                 m[f"chutes_{equipe}"] += 1
                 m["xG"] += p.xg_faixa[b]
+                tipo_linha, xg_linha = "chute", p.xg_faixa[b]
                 if rng.random() < p.p_gol[b]:
+                    gol_linha = 1
                     m["gols"] += 1
                     m[f"gols_{equipe}"] += 1
                     quem, classe, nova = "adv", "saída de bola", ZONA_SAIDA
@@ -225,12 +246,15 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                 t += d
                 m["tempo_em_acao"] += d
                 if u < ps + pl:                          # perda
+                    tipo_linha = "perda"
                     quem, classe, nova = proxima_linha(p, rng, p.apos_perda[zona])
                 elif p.apos_quebra[zona] is not None and rng.random() < min(p.p_quebra[zona] * jm["quebra"], 0.95):   # a bola parou (falta, lateral, ...)
                     quem, classe, nova = proxima_linha(p, rng, p.apos_quebra[zona])
                 else:                                    # a bola segue com a mesma equipe
                     quem, classe, nova = "mesma", "continua", p.destino_continua[zona].sortear(rng)
             janela[w] += m["chutes"] - chutes_antes
+            if registro is not None:
+                registro.append((equipe, zona, tipo_linha, tempo, xg_linha, gol_linha, t_inicio))
             if quem == "adv":
                 m["posses"] += 1
             if classe in CLASSE_PARA_REINICIO:
@@ -242,17 +266,18 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                 m["tempo morto"] += tm
             if quem == "adv":
                 equipe = 1 - equipe
+                posicao = 0
             if classe == "escanteio":                    # o escanteio é de quem fica com a próxima linha
                 m[f"escanteios_{equipe}"] += 1
             zona = nova
     return dict(m, janela_chutes=janela)
 
 
-def simular(p: Parametros, n_jogos: int, semente: int) -> dict:
+def simular(p: Parametros, n_jogos: int, semente: int, memoria: bool = True) -> dict:
     rng = random.Random(semente)
     tot: collections.Counter = collections.Counter()
     for _ in range(n_jogos):
-        r = simular_partida(p, rng)
+        r = simular_partida(p, rng, memoria=memoria)
         for k, v in r.items():
             if k != "janela_chutes":
                 tot[k] += v
@@ -283,6 +308,7 @@ if __name__ == "__main__":
     ap.add_argument("--jogos", type=int, default=2000)
     ap.add_argument("--semente", type=int, default=1)
     ap.add_argument("--pasta", default="dados_referencia/statsbomb")
+    ap.add_argument("--sem-memoria", action="store_true", help="desliga a memória da posse (Achado 33): risco de perda/chute só pela zona")
     a = ap.parse_args()
     par = Parametros(a.pasta)
-    relatorio(simular(par, a.jogos, a.semente), par)
+    relatorio(simular(par, a.jogos, a.semente, memoria=not a.sem_memoria), par)

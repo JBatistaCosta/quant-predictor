@@ -9,6 +9,10 @@
 
 ---
 
+**Posse, xT, momentum e teste de Elo (04/10) -- Achado 33.** Posse replicada (237 corridas/jogo real e simulado; dispersão da posse entre times: força explica ~60%). Momentum existe: risco de perda dado a zona vai de 1,32-1,40 nas 2 primeiras linhas da posse a 0,75 em 15+; o simulador ganhou `memoria` (multiplicador por posição na corrida, medido) e uma constante calibrada `ESCALA_CHUTE_COM_MEMORIA=0,88`; autocorrelação de chutes 0,046 (real 0,056); xT dentro de ±7% (xG por zona ainda erra na grande área: o simulador usa o xG médio da faixa). Efeito colateral: ocupação do ataque exagerada (grande área 3,7% contra 3,1%) e ganho da força fora da amostra em chutes cai de +6,0% para +2,4%. Elo (interno, La Liga, 20 times) prevê `ataque_perda` (r -0,74/-0,79) e quase nada mais. ClubElo bloqueado na rede da sessão: liberar `api.clubelo.com` nos domínios permitidos do ambiente. Código: `metricas_posse_xt_momentum.py`, `comparar_posse_xt_momentum.py` (+ testes).
+
+---
+
 **Força dos times e janela do jogo no simulador (04/10) -- Achado 32.** Força medida nos próprios eventos (sem Elo, sem casar nomes): razão observado/esperado por linha, em ataque/defesa x chute/perda, encolhida pela confiabilidade entre metades (perda de ataque 0,93; chute 0,67; defesa 0,66-0,68). Janela de 15 min: chute por linha sobe 0,76 -> 1,21 do início ao fim do jogo. Fora da amostra (758 jogos): ganho de erro quadrático +6,0% chutes, +5,5% gols, +2,1% escanteios contra "todo time igual". Código: `scripts/analisar_forca_e_janela_statsbomb.py`, `forca_dos_times.py`, `calibrar_expoente_forca.py`, `validar_simulador_forca.py`; simulador agora recebe `times=(Multiplicadores, Multiplicadores)` e `janela_mult`. Limites: sem vantagem de mandante; posse sub-dispersa (inclinação 1,81) e chutes a favor super-dispersos (0,58) entre times. Pendência: comparar com ClubElo como prior da força (casamento de nomes só na análise, na mão).
 
 ---
