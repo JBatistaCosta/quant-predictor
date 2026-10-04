@@ -25,6 +25,11 @@ CONFIG = {
     "k_time": 8.0,            # pseudo-jogos que puxam a força de um time para 1,0
     "k_mando_gols": 50.0,     # pseudo-jogos que puxam o mando da conversão para 1,0
     "janela_mando": 200,      # nº de jogos mais recentes que as camadas *_janela olham (mando que acompanha mudança entre temporadas)
+    # Expoentes de amplificação dos multiplicadores de chute (Achado 51). O simulador entrega só ~50% (em log) da razão de chutes pedida
+    # (scripts/calibrar_elasticidade_chute.py: elasticidade 0,49 +- 0,02, igual para ataque e defesa), então o multiplicador precisa ser elevado a ~1/0,5 = 2.
+    # 1,0 = sem amplificação (comportamento dos Achados 46 a 49). O valor 2,0 foi fixado pela calibração do próprio simulador, antes de olhar o teste.
+    "exp_mando": 1.0,
+    "exp_forca": 1.0,
     "teto": (0.6, 1.6),       # limites do produto das camadas, por chave
 }
 
@@ -72,7 +77,7 @@ def camada_nivel_chutes(h, casa, fora, cfg):
 
 def camada_mando_chutes(h, casa, fora, cfg):
     """Mandante chuta mais: raiz da razão chutes casa / fora da história, dividida entre quem joga em casa (+) e fora (-)."""
-    m = math.sqrt(h.soma_casa / h.soma_fora)
+    m = math.sqrt(h.soma_casa / h.soma_fora) ** cfg.get("exp_mando", 1.0)
     return {"ataque_chute": m}, {"ataque_chute": 1.0 / m}
 
 
@@ -80,7 +85,7 @@ def camada_mando_chutes_janela(h, casa, fora, cfg):
     """Igual a `mando_chutes`, mas só com os últimos `janela_mando` jogos: segue a mudança de mando entre temporadas (Achado 47: a razão de chutes
     casa/fora foi de 1,13 em 2024/25 para 1,24 em 2025/26, e a história inteira ficou atrasada)."""
     (sc, sf, _, _), _ = h.janela(cfg["janela_mando"])
-    m = math.sqrt(sc / sf)
+    m = math.sqrt(sc / sf) ** cfg.get("exp_mando", 1.0)
     return {"ataque_chute": m}, {"ataque_chute": 1.0 / m}
 
 
@@ -93,7 +98,8 @@ def camada_forca_chutes(h, casa, fora, cfg):
         return (h.pro[t] + k * m) / ((n + k) * m), (h.contra[t] + k * m) / ((n + k) * m)
     ac, dc = forca(casa)
     af, df = forca(fora)
-    return {"ataque_chute": ac, "defesa_chute": dc}, {"ataque_chute": af, "defesa_chute": df}
+    e = cfg.get("exp_forca", 1.0)
+    return {"ataque_chute": ac ** e, "defesa_chute": dc ** e}, {"ataque_chute": af ** e, "defesa_chute": df ** e}
 
 
 def camada_gols_nivel(h, casa, fora, cfg):

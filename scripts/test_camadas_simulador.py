@@ -49,3 +49,19 @@ def test_camadas_neutras_devolvem_um_e_o_teto_limita_o_produto():
     h2.add(jogo(40, 40, 3, 3))
     c, _ = cam.multiplicadores(["nivel_chutes"], h2, 1, 2, cfg)   # 40/12,68 = 3,15 -> limitado a 1,1
     assert c["ataque_chute"] == 1.1
+
+
+def test_expoente_amplifica_mando_e_forca_sem_mexer_no_padrao():
+    h = cam.Historia()
+    for _ in range(40):
+        h.add(jogo(15, 10, 2, 1, casa=1, fora=2))
+        h.add(jogo(12, 12, 1, 1, casa=3, fora=4))
+    base = {**cam.CONFIG}
+    amp = {**cam.CONFIG, "exp_mando": 2.0, "exp_forca": 2.0}
+    m1 = cam.camada_mando_chutes(h, 1, 2, base)[0]["ataque_chute"]
+    m2 = cam.camada_mando_chutes(h, 1, 2, amp)[0]["ataque_chute"]
+    assert math.isclose(m2, m1 ** 2)
+    f1 = cam.camada_forca_chutes(h, 1, 3, base)[0]
+    f2 = cam.camada_forca_chutes(h, 1, 3, amp)[0]
+    assert math.isclose(f2["ataque_chute"], f1["ataque_chute"] ** 2) and math.isclose(f2["defesa_chute"], f1["defesa_chute"] ** 2)
+    assert cam.CONFIG["exp_mando"] == 1.0 and cam.CONFIG["exp_forca"] == 1.0          # o padrão não amplifica

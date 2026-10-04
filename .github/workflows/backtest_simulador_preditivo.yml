@@ -14,6 +14,15 @@ on:
       sims:
         description: "Partidas simuladas por jogo"
         default: "1000"
+      exp_mando:
+        description: "Expoente de amplificação do mando de chutes (1 = sem amplificar; 2 = calibrado, Achado 51)"
+        default: "2.0"
+      exp_forca:
+        description: "Expoente de amplificação da força dos times nos chutes (1 = sem amplificar; 2 = calibrado, Achado 51)"
+        default: "2.0"
+      cfg_extra:
+        description: 'JSON com overrides de camadas_simulador.CONFIG para todas as variantes, ex.: {"k_time": 12}'
+        default: "{}"
 
 permissions:
   contents: read
@@ -32,10 +41,16 @@ jobs:
         with:
           python-version: "3.10"
       - name: Simular a fatia ${{ matrix.fatia }}/8
+        env:
+          SIMS: ${{ inputs.sims || '1000' }}
+          EXP_MANDO: ${{ inputs.exp_mando || '2.0' }}
+          EXP_FORCA: ${{ inputs.exp_forca || '2.0' }}
+          CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
-            --sims "${{ inputs.sims || '1000' }}" --workers "$(nproc)" \
+            --sims "$SIMS" --workers "$(nproc)" \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --cfg-extra "$CFG_EXTRA" \
             --fatia ${{ matrix.fatia }}/8 --so-simular \
             --saida parcial_${{ matrix.fatia }}.json
       - uses: actions/upload-artifact@v4
@@ -58,10 +73,16 @@ jobs:
           path: parciais
           merge-multiple: true
       - name: Agregar e comparar
+        env:
+          SIMS: ${{ inputs.sims || '1000' }}
+          EXP_MANDO: ${{ inputs.exp_mando || '2.0' }}
+          EXP_FORCA: ${{ inputs.exp_forca || '2.0' }}
+          CFG_EXTRA: ${{ inputs.cfg_extra || '{}' }}
         run: |
           python scripts/backtest_simulador_preditivo.py \
             --csv dados_referencia/backtest_simulador/premier_league_2024_25.csv \
-            --sims "${{ inputs.sims || '1000' }}" --agregar \
+            --sims "$SIMS" --agregar \
+            --exp-mando "$EXP_MANDO" --exp-forca "$EXP_FORCA" --cfg-extra "$CFG_EXTRA" \
             --parciais "parciais/*.jsonl" --saida resultado_backtest_simulador.json | tee resumo.txt
           { echo '## Backtest do simulador (Premier League 2025/26)'; echo '```json'; cat resumo.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
