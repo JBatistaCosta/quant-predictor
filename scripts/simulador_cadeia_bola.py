@@ -270,10 +270,20 @@ def proxima_linha(p: Parametros, rng: random.Random, amostra: tuple[list, Amostr
     return quem, classe, int(zona)
 
 
+def mult_estado(tabela: dict, ef: float) -> tuple:
+    """(mult. de volume, mult. de qualidade) para o saldo efetivo `ef` em [-2, 2]; entre dois inteiros interpola linearmente (alvos fracionários)."""
+    lo = math.floor(ef)
+    if lo == ef:
+        return tabela[int(ef)]
+    f = ef - lo
+    a, b = tabela[lo], tabela[min(lo + 1, 2)]
+    return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+
+
 def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, NEUTRO), janela_mult: list = JANELA_NEUTRA, registro: list | None = None, memoria: bool = True, estado: dict | None = None) -> dict:
     """Uma partida entre `times[0]` (começa o 1T) e `times[1]`. Devolve contagens (ações, chutes, gols, bolas paradas, tempo morto, posses, chutes por
     janela de 15 min, e por equipe: chutes_0/1, gols_0/1, escanteios_0/1) e a ocupação por classe/faixa.
-    `estado` (opcional, Achado 52): reação ao placar de quem tem a bola. dict com `tabela` {saldo efetivo -2..2: (mult. de chance de chute, mult. de chance de o chute virar gol)} e
+    `estado` (opcional, Achado 52): reação ao placar de quem tem a bola. dict com `tabela` {saldo efetivo -2..2: (mult. de chance de chute, mult. de chance de o chute virar gol)} (ou `tabelas`, uma por time, para contextos distintos de mando/favoritismo) e
     `desvio` (d0, d1) = 1 - placar desejado de cada time (padrão (0, 0) com alvo +1: "ganhar"). Saldo efetivo = saldo atual + desvio, truncado em [-2, 2]. `None` = o jogo não reage ao placar
     (idêntico ao de antes). Alvo: 0 = empate basta, +2 = quer vencer por 2, -1 = aceita perder por 1; em jogo de volta, alvo = 1 - vantagem do agregado trazida da ida.
     Se `registro` for uma lista, cada linha de ação é anexada como (equipe, zona, tipo, metade 0/1, xG, gol, segundos desde o início da metade)."""
@@ -304,7 +314,7 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
             v_est = q_est = 1.0
             if estado is not None:
                 ef = max(-2, min(2, m[f"gols_{equipe}"] - m[f"gols_{1 - equipe}"] + estado["desvio"][equipe]))
-                v_est, q_est = estado["tabela"][ef]
+                v_est, q_est = mult_estado(estado["tabelas"][equipe] if "tabelas" in estado else estado["tabela"], ef)
             ps = min(p.p_chute_zona[zona] * atk.ataque_chute * dfs.defesa_chute * jm["chute"] * mem_chute * v_est, 0.5)
             pl = min(p.p_perda_zona[zona] * atk.ataque_perda * dfs.defesa_perda * jm["perda"] * mem_perda, 0.95 - ps)
             penalti = classe == "pênalti" and p.pool_penalti

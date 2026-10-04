@@ -26,6 +26,42 @@ CHAVES = ("ataque_chute", "defesa_chute", "conversao_ataque", "conversao_defesa"
 ESTADO_TABELA = {-2: (1.231, 0.966), -1: (1.185, 0.979), 0: (1.0, 1.0), 1: (0.883, 1.148), 2: (0.941, 1.235)}
 
 
+# Resposta ao placar por CONTEXTO (mando x favoritismo), mesma base e método da tabela acima, relativa ao empate do próprio grupo. Chave "local|perfil": local = casa/fora/neutro,
+# perfil = forte (Elo do time >= +corte sobre o adversário), fraco (<= -corte) ou parelho. O campo neutro não está registrado no banco (matches.is_neutral é falso em todos os jogos):
+# "neutro" é a média simples de casa e fora, uma hipótese, não medição. Em liga as curvas são praticamente iguais entre os contextos (Achado 52).
+ESTADO_TABELAS_CTX = {
+    "casa|forte": {-2: (1.223, 0.977), -1: (1.178, 1.011), 0: (1.0, 1.0), 1: (0.862, 1.144), 2: (0.878, 1.271)},
+    "casa|fraco": {-2: (1.265, 1.008), -1: (1.239, 1.01), 0: (1.0, 1.0), 1: (0.89, 1.132), 2: (0.909, 1.346)},
+    "casa|parelho": {-2: (1.267, 0.908), -1: (1.193, 0.963), 0: (1.0, 1.0), 1: (0.869, 1.147), 2: (0.936, 1.149)},
+    "fora|forte": {-2: (1.173, 0.936), -1: (1.159, 0.934), 0: (1.0, 1.0), 1: (0.873, 1.132), 2: (0.969, 1.252)},
+    "fora|fraco": {-2: (1.285, 0.947), -1: (1.186, 0.989), 0: (1.0, 1.0), 1: (0.868, 1.2), 2: (0.895, 1.51)},
+    "fora|parelho": {-2: (1.268, 0.993), -1: (1.203, 0.963), 0: (1.0, 1.0), 1: (0.881, 1.159), 2: (0.914, 1.167)},
+    "neutro|forte": {-2: (1.198, 0.957), -1: (1.168, 0.972), 0: (1.0, 1.0), 1: (0.867, 1.138), 2: (0.923, 1.261)},
+    "neutro|fraco": {-2: (1.275, 0.978), -1: (1.212, 1.0), 0: (1.0, 1.0), 1: (0.879, 1.166), 2: (0.902, 1.428)},
+    "neutro|parelho": {-2: (1.268, 0.951), -1: (1.198, 0.963), 0: (1.0, 1.0), 1: (0.875, 1.153), 2: (0.925, 1.158)},
+}
+
+
+def perfil_de_elo(elo_dif, corte=100.0):
+    """Favoritismo de um time pelo Elo dele menos o do adversário: 'forte' (>= corte), 'fraco' (<= -corte) ou 'parelho'. Elo ausente = parelho."""
+    if elo_dif is None or elo_dif != elo_dif:
+        return "parelho"
+    return "forte" if elo_dif >= corte else ("fraco" if elo_dif <= -corte else "parelho")
+
+
+def montar_estado_jogo(elo_dif_mandante=0.0, neutro=False, volume=True, qualidade=True, exp_volume=1.0, alvo=(1, 1), alvo_ctx=None, elo_corte=100.0):
+    """`estado` de UM jogo, ajustado por mando (casa/fora/neutro) e favoritismo (Elo). `alvo` é o placar desejado de cada time (padrão +1, ganhar); `alvo_ctx` {"local|perfil": alvo}
+    substitui o alvo do time cujo contexto casa com a chave (ex.: {"fora|fraco": 0} = o fraco que joga fora se contenta com o empate; aceita fracionário, que interpola)."""
+    locais = ("neutro", "neutro") if neutro else ("casa", "fora")
+    perfis = (perfil_de_elo(elo_dif_mandante, elo_corte), perfil_de_elo(None if elo_dif_mandante is None else -elo_dif_mandante, elo_corte))
+    tabelas, alvos = [], []
+    for i in (0, 1):
+        chave = f"{locais[i]}|{perfis[i]}"
+        tabelas.append({int(s): ((v ** exp_volume) if volume else 1.0, q if qualidade else 1.0) for s, (v, q) in ESTADO_TABELAS_CTX[chave].items()})
+        alvos.append(alvo_ctx[chave] if alvo_ctx and chave in alvo_ctx else alvo[i])
+    return {"tabelas": tabelas, "desvio": (1 - alvos[0], 1 - alvos[1])}
+
+
 def montar_estado(tabela=None, volume=True, qualidade=True, exp_volume=1.0, alvo=(1, 1)):
     """dict `estado` para simular_partida. `volume`/`qualidade` ligam cada efeito; `exp_volume` amplifica o multiplicador de volume (o simulador realiza só ~50% em log
     do multiplicador de chute, Achado 51; a qualidade age direto na chance de gol e não precisa); `alvo` = placar desejado (saldo final satisfatório) de cada time."""
@@ -44,6 +80,7 @@ CONFIG = {
     "exp_mando": 1.0,
     "exp_forca": 1.0,
     "teto": (0.6, 1.6),       # limites do produto das camadas, por chave
+    "elo_corte": 100.0,       # diferença de Elo a partir da qual um time é "forte" ou "fraco" na reação ao placar (Achado 52)
 }
 
 

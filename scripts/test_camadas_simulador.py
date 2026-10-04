@@ -65,3 +65,25 @@ def test_expoente_amplifica_mando_e_forca_sem_mexer_no_padrao():
     f2 = cam.camada_forca_chutes(h, 1, 3, amp)[0]
     assert math.isclose(f2["ataque_chute"], f1["ataque_chute"] ** 2) and math.isclose(f2["defesa_chute"], f1["defesa_chute"] ** 2)
     assert cam.CONFIG["exp_mando"] == 1.0 and cam.CONFIG["exp_forca"] == 1.0          # o padrão não amplifica
+
+
+def test_estado_por_contexto_mando_favoritismo_e_alvo():
+    assert cam.perfil_de_elo(150) == "forte" and cam.perfil_de_elo(-150) == "fraco" and cam.perfil_de_elo(30) == "parelho" and cam.perfil_de_elo(None) == "parelho"
+    e = cam.montar_estado_jogo(elo_dif_mandante=200.0)                                  # mandante forte, visitante fraco
+    assert e["tabelas"][0][1] == cam.ESTADO_TABELAS_CTX["casa|forte"][1] and e["tabelas"][1][1] == cam.ESTADO_TABELAS_CTX["fora|fraco"][1]
+    assert e["desvio"] == (0, 0)
+    n = cam.montar_estado_jogo(elo_dif_mandante=0.0, neutro=True)                       # campo neutro: tabela "neutro|parelho" para os dois
+    assert n["tabelas"][0] == n["tabelas"][1] and n["tabelas"][0][1] == cam.ESTADO_TABELAS_CTX["neutro|parelho"][1]
+    a = cam.montar_estado_jogo(elo_dif_mandante=-200.0, alvo_ctx={"fora|forte": 0, "casa|fraco": 0.5})   # visitante forte se contenta com o empate; mandante fraco meio caminho
+    assert a["desvio"] == (0.5, 1)
+    # tabela por time: o simulador usa a do time com a bola
+    import simulador_cadeia_bola as s
+    assert s.mult_estado({-2: (1.2, .9), -1: (1.1, .95), 0: (1.0, 1.0), 1: (.9, 1.1), 2: (.8, 1.2)}, 0.5) == (0.95, 1.05)
+
+
+def test_ctx_todas_as_chaves_e_empate_neutro():
+    for l in ("casa", "fora", "neutro"):
+        for p in ("forte", "fraco", "parelho"):
+            t = cam.ESTADO_TABELAS_CTX[f"{l}|{p}"]
+            assert set(t) == {-2, -1, 0, 1, 2} and t[0] == (1.0, 1.0)
+            assert t[-1][0] > 1.0 > t[1][0] and t[1][1] > 1.0                               # perdendo chuta mais; ganhando chuta menos e com mais qualidade

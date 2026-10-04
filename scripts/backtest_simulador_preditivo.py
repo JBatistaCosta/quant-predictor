@@ -12,7 +12,7 @@ Regras que mantêm o teste honesto:
   * Controle obrigatório: a mesma simulação com todos os times iguais (só nível e mando) -- é o piso que a força dos times precisa bater.
 Camadas: ver scripts/camadas_simulador.py; cada variante liga uma camada a mais e é comparada com a anterior.
 Comparação: log-loss e Brier por jogo, apenas nos jogos que têm Dixon-Coles E odds; diferença pareada com IC 95% por bootstrap sobre jogos.
-Parâmetros ajustáveis SEM mexer no código: --exp-mando / --exp-forca / --exp-estado (expoentes de amplificação dos multiplicadores de chute), --alvo-casa / --alvo-fora (placar desejado) e --cfg-extra (JSON com
+Parâmetros ajustáveis SEM mexer no código: --exp-mando / --exp-forca / --exp-estado (expoentes de amplificação dos multiplicadores de chute), --alvo-casa / --alvo-fora / --alvo-ctx (placar desejado, global ou por contexto de mando e favoritismo) e --cfg-extra (JSON com
 overrides de camadas_simulador.CONFIG para todas as variantes). Os valores usados ficam gravados em resumo["parametros"] do JSON de saída.
 Uso: python scripts/backtest_simulador_preditivo.py --csv jogos.csv --temporada 2025 --sims 1000 --saida resultado.json
 CSV: id,season,date,home,away,hg,ag,hs,as,hxg,axg,hc,ac,dc_h,dc_d,dc_a,dc_over,o_h,o_d,o_a,o_over,o_under
@@ -52,6 +52,7 @@ VARIANTES = {
     # Achado 52: reação ao placar (volume de chutes e qualidade), tabela estimada em 2022-2024; referência = a melhor configuração do Achado 51 (força amplificada)
     "estado_v": {"camadas": KEEP, "semente": 11, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": False}}, "padrao": True},
     "estado_q": {"camadas": KEEP, "semente": 12, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": False, "qualidade": True}}, "padrao": True},
+    "estado_ctx": {"camadas": KEEP, "semente": 14, "ref": "estado_vq", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True, "ctx": True}}, "padrao": True},
     "estado_vq": {"camadas": KEEP, "semente": 13, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True}}, "padrao": True},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
@@ -88,7 +89,8 @@ def ler(caminho):
     out = []
     for r in csv.DictReader(open(caminho)):
         j = {"id": int(r["id"]), "season": r["season"], "date": r["date"], "home": int(r["home"]), "away": int(r["away"]),
-             "hg": int(r["hg"]), "ag": int(r["ag"]), "hs": float(r["hs"]), "as": float(r["as"])}
+             "hg": int(r["hg"]), "ag": int(r["ag"]), "hs": float(r["hs"]), "as": float(r["as"]),
+             "elod": float(r["elod"]) if r.get("elod") not in (None, "") else None, "neutro": r.get("neutro") == "1"}
         for k in ("dc_h", "dc_d", "dc_a", "dc_over", "o_h", "o_d", "o_a", "o_over", "o_under"):
             j[k] = float(r[k]) if r[k] != "" else None
         out.append(j)
@@ -132,6 +134,7 @@ def main():
     ap.add_argument("--exp-estado", type=float, default=2.0, help="expoente do multiplicador de VOLUME da reação ao placar nas variantes estado_* (1 = sem amplificar)")
     ap.add_argument("--alvo-casa", type=float, default=1.0, help="placar desejado do mandante (saldo final satisfatório; 1 = ganhar, 0 = empate basta, 2 = vencer por 2, -1 = aceita perder por 1)")
     ap.add_argument("--alvo-fora", type=float, default=1.0, help="placar desejado do visitante (idem)")
+    ap.add_argument("--alvo-ctx", default="{}", help='JSON {"local|perfil": alvo} que substitui o placar desejado do time com esse contexto na variante estado_ctx, ex.: \'{"fora|fraco": 0, "casa|fraco": 0.5}\' (local: casa/fora/neutro; perfil: forte/parelho/fraco)')
     ap.add_argument("--cfg-extra", default="{}", help='JSON com overrides de camadas_simulador.CONFIG aplicados a TODAS as variantes escolhidas, ex.: \'{"k_time": 12, "teto": [0.5, 2.0]}\'')
     ap.add_argument("--fatia", default="", help="K/N: simula só as tarefas de índice ≡ K (mod N) e grava o progresso (para dividir entre jobs)")
     ap.add_argument("--so-simular", action="store_true", help="simula a fatia e para, sem agregar")
@@ -149,13 +152,13 @@ def main():
             v["cfg"]["exp_forca"] = a.exp_forca
         v["cfg"].update({k: (tuple(x) if isinstance(x, list) else x) for k, x in json.loads(a.cfg_extra).items()})
         if "estado" in v["cfg"]:
-            v["cfg"]["estado"] = {**v["cfg"]["estado"], "exp_volume": a.exp_estado, "alvo": [a.alvo_casa, a.alvo_fora]}
+            v["cfg"]["estado"] = {**v["cfg"]["estado"], "exp_volume": a.exp_estado, "alvo": [a.alvo_casa, a.alvo_fora], "alvo_ctx": json.loads(a.alvo_ctx)}
     # "impressão digital" dos parâmetros de cada variante: o arquivo de progresso só é reaproveitado se for idêntica (mudar um expoente não mistura resultados)
     digital = {n: json.dumps({"camadas": v["camadas"], "cfg": {**cam.CONFIG, **v["cfg"]}, "semente": v["semente"], "sims": a.sims}, sort_keys=True, default=list) for n, v in VARIANTES.items()}
     estados = {}
     for nome, v in VARIANTES.items():
         e = v["cfg"].get("estado")
-        estados[nome] = cam.montar_estado(volume=e["volume"], qualidade=e["qualidade"], exp_volume=e["exp_volume"], alvo=tuple(e["alvo"])) if e else None
+        estados[nome] = cam.montar_estado(volume=e["volume"], qualidade=e["qualidade"], exp_volume=e["exp_volume"], alvo=tuple(e["alvo"])) if e and not e.get("ctx") else None
     jogos = ler(a.csv)
     hist, tarefas, meta = cam.Historia(), [], {}
     teste = 0
@@ -163,6 +166,9 @@ def main():
         if j["season"] == a.temporada and hist.jogos >= 100 and (not a.limite or teste < a.limite):
             teste += 1
             for nome, v in VARIANTES.items():
+                e = v["cfg"].get("estado")
+                if e and e.get("ctx"):                              # estado ajustado por mando e favoritismo (Elo) deste jogo
+                    estados[nome] = cam.montar_estado_jogo(j["elod"], j["neutro"], e["volume"], e["qualidade"], e["exp_volume"], tuple(e["alvo"]), e.get("alvo_ctx") or None, cam.CONFIG["elo_corte"])
                 mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"], {**cam.CONFIG, **v.get("cfg", {})})
                 tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"], estados[nome]))
             meta[j["id"]] = j
@@ -220,7 +226,7 @@ def main():
     comuns = [l for l in linhas if "dc" in l and "mercado" in l]
     modelos = list(VARIANTES) + ["dc", "mercado"]
     resumo = {"jogos_teste": len(linhas), "jogos_comuns": len(comuns), "sims_por_jogo": a.sims,
-              "parametros": {"exp_mando": a.exp_mando, "exp_forca": a.exp_forca, "exp_estado": a.exp_estado, "alvo_casa": a.alvo_casa, "alvo_fora": a.alvo_fora, "cfg_extra": json.loads(a.cfg_extra),
+              "parametros": {"exp_mando": a.exp_mando, "exp_forca": a.exp_forca, "exp_estado": a.exp_estado, "alvo_casa": a.alvo_casa, "alvo_fora": a.alvo_fora, "alvo_ctx": json.loads(a.alvo_ctx), "cfg_extra": json.loads(a.cfg_extra),
                              "variantes": {n: {"camadas": v["camadas"], "cfg": {k: x for k, x in v["cfg"].items()}} for n, v in VARIANTES.items()}}}
     perdas = {m: {"ll": [], "br": [], "ll_ou": [], "br_ou": []} for m in modelos}
     for l in comuns:
