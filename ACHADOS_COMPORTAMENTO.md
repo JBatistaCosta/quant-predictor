@@ -2484,3 +2484,30 @@ Contra o saldo de **gols**: Elo sozinho 0,430; xG top-2/3/4/5/inteiro 0,412 / 0,
 3. **Por que o top-N perde:** descartar jogadores joga fora informação de profundidade do elenco e de quem entra; somar mais jogadores dilui o acaso individual (cada xG por jogador explica só ~24% da variação, ver acima).
 
 **Limites.** Cinco ligas empilhadas e duas temporadas: diferenças entre ligas podem se misturar. A correlação parcial é linear. Elo de resultado, não o de xG. Bundesliga e Ligue 1 têm 612 partidas cada (18 times). Não rodei `relacionados` (convocados), só `previsto`. Correlação com o saldo não é o mesmo que ganho de previsão em log-loss: o ganho de log-loss de jogadores (saber quem começa, -0,015 no 1X2) está registrado à parte.
+
+
+---
+
+## Achado 49 — mando por janela recente não ajuda, e o motivo é outro: o simulador entrega só ~55% da razão de chutes que o multiplicador pede
+
+**Pergunta.** A hipótese do Achado 47: o mando estimado pela história inteira fica atrasado quando o mando muda de temporada (razão de chutes casa/fora 1,13 em 2024/25, 1,24 em 2025/26). Olhar só os últimos N jogos resolve?
+
+**Método.** Mesmo teste do Achado 47 (Premier League 2025/26, 342 jogos, 1.000 simulações por jogo, IC 95% por bootstrap pareado). Referência = `forca_gols_nivel` (mando pela história inteira). Variantes: `mando_j200` e `mando_j100` trocam o mando dos chutes pelos últimos 200 / 100 jogos; `mando_j200_gols` soma o mando da conversão pela janela de 200. Camadas em `scripts/camadas_simulador.py` (`mando_chutes_janela`, `gols_mando_janela`), três testes novos.
+
+**Resultado: nulo.** Log-loss 1X2 / over-under: referência 1,0667 / 0,6868; `mando_j200` 1,0655 / 0,6865 (1X2 -0,0012 [-0,0078; +0,0054]); `mando_j100` 1,0672 / 0,6888 (+0,0005 [-0,0062; +0,0071]); `mando_j200_gols` 1,0665 / 0,6878 (sobre `mando_j200` +0,0010 [-0,0070; +0,0092]). Todos os IC incluem zero. Vitória do mandante simulada: 38,6% (referência), 38,8% (j200), 39,2% (j100), contra 42,4% real. A janela mexe 0,2 a 0,6 ponto percentual; faltam ~3,5. **Fica fora do ajuste**, como as outras camadas de mando, e é a mesma conclusão do EWM de mando que o projeto já tinha descartado.
+
+**O que a janela não era: o problema.** Diagnóstico (`scripts/diagnostico_elasticidade_mando.py`, 2.800 jogos por linha): time médio contra time médio, impondo ao simulador uma razão de chutes casa/fora r (multiplicadores raiz de r e 1/raiz de r):
+
+| razão imposta | razão de chutes realizada | casa / empate / fora | gols casa / fora |
+|---|---|---|---|
+| 1,00 | 1,012 | 0,361 / 0,271 / 0,368 | 1,24 / 1,26 |
+| 1,13 (2024/25) | 1,071 | 0,376 / 0,268 / 0,355 | 1,27 / 1,22 |
+| 1,24 (2025/26) | 1,126 | 0,405 / 0,256 / 0,339 | 1,31 / 1,18 |
+
+A razão realizada é ~55% da pedida em escala logarítmica (ln 1,126 / ln 1,24 = 0,55; ln 1,071 / ln 1,13 = 0,56). Mesmo impondo a razão real de 2025/26, o simulador dá 40,5% de vitória em casa e gols 1,31 x 1,18 (razão 1,11), contra 42,6% e 1,53 x 1,22 (razão 1,25) no mundo real. Ou seja: **o multiplicador de chute é atenuado pela dinâmica de posse** (quem chuta mais por linha também cede a bola nas outras), e o erro de ~3,5 pontos de mando não é atraso de estimativa.
+
+**Consequência provável, ainda não testada.** A mesma atenuação deve valer para a camada de força dos times (`forca_chutes`, ataque x defesa), o que explicaria por que a força melhora o 1X2 só de leve (Achado 46) e por que o simulador discrimina pouco os times. O projeto já tem um expoente de amortecimento (`calibrar_expoente_forca.py`, Achado 32), mas no sentido contrário (amortecer a perda); aqui o que parece faltar é um expoente de **amplificação** (~1/0,55 = 1,8) nos multiplicadores de chute.
+
+**Próximo teste (proposto).** Camada `expoente_chute`: elevar os multiplicadores de chute (mando e força) a 1/0,55. O expoente sai deste diagnóstico no próprio simulador, não dos dados do teste, então não há ajuste em cima do que se mede; validar por ablação como as outras camadas.
+
+**Limites.** O diagnóstico usa times médios, sem camada de nível de gols; a elasticidade pode variar com a magnitude e entre ligas. Comparação de mando real com 2025/26 de uma liga só.

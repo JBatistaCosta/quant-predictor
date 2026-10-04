@@ -9,6 +9,10 @@
 
 ---
 
+**Mando por janela recente testado -- Achado 49 (04/10).** Nulo: janela de 100 ou 200 jogos mexe 0,2-0,6 ponto na vitória do mandante (38,6% -> 38,8-39,2%, real 42,4%) e o log-loss não muda (IC incluem zero). Diagnóstico que importa: **o simulador entrega só ~55% da razão de chutes casa/fora que o multiplicador pede** (impor 1,24 realiza 1,126; mesmo assim 40,5% de vitória em casa contra 42,6% real), então o erro de mando não era atraso de estimativa. Hipótese a testar: a mesma atenuação vale para a força dos times, e falta um expoente de amplificação (~1/0,55 = 1,8) nos multiplicadores de chute. Detalhes em ACHADOS_COMPORTAMENTO.md.
+
+---
+
 **Top-N de xG/xA previsto por jogador -- Achado 48 (04/10).** 3.504 partidas das 5 grandes ligas, fonte `previsto`: somar top-2 a top-5 NÃO bate o elenco inteiro (contra o saldo de xG todos ficam abaixo, IC fora de zero; confirma o descarte do top-N que o projeto já tinha só para xA). O Elo sozinho correlaciona tanto quanto os jogadores (0,430/0,506 contra 0,405-0,430/0,477-0,510); a correlação parcial depois do Elo é 0,07-0,15. Também medido: as estimativas individuais de xG/xA têm erro absoluto baixo só pela escala (54% dos jogadores têm xG zero; o modelo tem MAE 0,0930 contra 0,0893 de prever zero), explicam ~24% (xG) e ~19% (xA) da variação, e quase não batem a média do próprio jogador (RMSE 0,1743 contra 0,1752).
 
 ---
