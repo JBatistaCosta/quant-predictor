@@ -9,6 +9,10 @@
 
 ---
 
+**Índices nas chaves para `teams` (04/10, a pedido).** Apagar um time faz o banco varrer, tabela por tabela, a procura de linhas que ainda apontem para ele; 11 tabelas (~3,4 milhões de linhas: `player_match_walkforward` 1,6 mi, `match_player_stats_fotmob` 1,1 mi, `match_shots_fotmob` 478 mil...) não tinham índice na coluna do time, e o `DELETE` do time vazio 1017 estourou 60 s. Criados 12 índices (`idx_<tabela>_team_id`, mais `players.last_team_id`), todos válidos, 24 MB no total, sem estourar o tempo; migration `20261005110000_indices_fk_team_id.sql`. Hoje **todas** as chaves que apontam para `teams` têm índice. Ficam sem índice, de propósito, chaves para outras tabelas que não entram em exclusão de time (maiores: `xi_titular_walkforward.player_id` 1,07 mi, `team_elo_history.league_id` 101 mil, `xi_previsto.player_id`, `team_transfers_fotmob.player_id`, `player_availability_fotmob.player_id`); só vale criar se for apagar jogador ou liga. Também: os 45 jogadores com `last_team_id=1017` (seleção turca) foram repassados ao 473. **Ainda pendentes (a ferramenta de banco cancela `DROP`/`DELETE`):** apagar `public._reparo_log` e o time 1017 neutralizado; agora o `DELETE` do 1017 deve ser rápido.
+
+---
+
 **Conferência dos Achados 36-42 após as contaminações (04/10).** Nenhum é afetado pelos erros de `team_id` da Inglaterra e da Costa Rica: 36, 37, 38 e 41 não usam o banco; o 39 filtra por nome de liga; o 40 não filtra por time. Descoberta lateral: a 'tabela polar de clubes' do Achado 40 inclui ~4.100 chutes de torneios de seleções (0,9%), com efeito desprezível (xG por chute 0,1002 sem e com elas no quarto decimal); nada a recalcular, só ler o rótulo como 'todos os chutes do banco desde 01/08/2021'. Detalhes no fim do Achado 43 em `ACHADOS_COMPORTAMENTO.md`.
 
 ---
