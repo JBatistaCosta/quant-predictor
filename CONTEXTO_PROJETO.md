@@ -9,6 +9,10 @@
 
 ---
 
+**Distribuição por zona de origem recalculada -- Achado 45 (04/10).** `DISTRIBUICAO_ZONA_CHUTE` (9x14, zona 3x3 de origem do chute -> zona polar) refeita na mesma base das outras tabelas polares (só clubes, desde 01/08/2021, 428.248 chutes); consulta em `arquivos_do_claude/distribuicao_zona_chute.sql`, validada contra a matriz de 01/10 (mesmas 4 casas). Linhas de ataque (99,5% dos chutes) mudam no máximo 0,0021; a maior diferença, 0,0064, está em `meio_esq` (575 chutes, ruído). Nada mais a recalcular nas tabelas de zona polar.
+
+---
+
 **Tabela polar refeita só com ligas de clubes -- Achado 44 (04/10).** A 'tabela de clubes' do Achado 40 incluía ~4,1 mil chutes de seleções; refeita com `leagues.type <> 'international'` (consulta em `arquivos_do_claude/tabela_polar_por_regime_xg.sql`, validada contra a tabela publicada): regime novo (desde 01/08/2021) = 16.930 jogos e 428.248 chutes; diferença máxima de +0,0002 no xG por chute, -0,0003 no gol por chute e 0,02 ponto percentual nas fatias, tudo muito abaixo do IC 95%; regime antigo já era só de clubes. Atualizados o JSON de referência, `FOTMOB` em `scripts/zonas_polares.py` e a tabela/textos do frontend (`zoneTransitionMatrix.js`, `MapaZonasChute.jsx`, `AnaliseEvento.jsx`). `DISTRIBUICAO_ZONA_CHUTE` não foi recalculada (difere ≤ 0,11 ponto percentual).
 
 ---
