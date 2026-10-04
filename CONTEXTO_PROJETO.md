@@ -9,6 +9,10 @@
 
 ---
 
+**Reação ao placar e contexto -- Achado 53 (04/10).** `simular_partida(estado=...)` (volume e qualidade por saldo de gols) e `montar_estado_jogo` (por mando, Elo e placar desejado por time). Premier League 2025/26, 342 jogos: **nenhuma melhora no 1X2** (+0,004 a +0,005 sobre a força amplificada, IC incluem zero) e **ajustar por contexto não acrescenta** (+0,0024 [-0,0038; +0,0090] sobre o agrupado). Melhora as médias (empate 25,6% -> 26,3%, gols 2,66 -> 2,77) sem ganho de log-loss. Melhor configuração segue `exp_forca`; as camadas ficam como parâmetro, desligadas. `matches.is_neutral` é falso em todo o banco (campo neutro é hipótese). Pendente: recalibrar `gols_nivel`, outras ligas, toques no último terço (StatsBomb). Detalhes em ACHADOS_COMPORTAMENTO.md.
+
+---
+
 **Resposta ao placar por saldo exato -- Achado 52 (04/10).** 5 ligas, 2022-2024, por perfil de força e mando: quem perde chuta +18% a +23% mais com qualidade -2% a -3%; quem ganha por 1 chuta -12% com qualidade +15%, ganhando por 2+ qualidade +24%. Curva igual em casa/fora e fraco/parelho/forte (sem objetivo distinto detectável por contexto). Placar desejado = parâmetro explícito (saldo efetivo = saldo + (1 - alvo)); só verificável em jogo de volta (89 confrontos com chutes, pouco poder; `aggregate_advantage` vazio). Toques no último terço por placar: pendente (precisa de eventos StatsBomb). Detalhes em ACHADOS_COMPORTAMENTO.md.
 
 ---

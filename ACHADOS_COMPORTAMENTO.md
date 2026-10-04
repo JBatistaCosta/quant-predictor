@@ -2606,3 +2606,38 @@ Diferenças pareadas (negativo = melhora), IC 95%:
 **Placar desejado como parâmetro.** Cada time recebe um alvo = saldo final que considera satisfatório (padrão +1, "ganhar"). A resposta usa o saldo efetivo = saldo atual + (1 - alvo), truncado em -2 e +2: empate satisfatório (alvo 0) faz o 0 a 0 valer como +1; vitória por 2 (alvo +2) faz o 1 a 0 valer como 0 a 0; aceitar perder por 1 (alvo -1) faz o 0 a 1 valer como +1. Em jogo de volta com vantagem do agregado L trazida da ida, alvo = 1 - L.
 
 **Limites.** (1) O placar desejado só pode ser verificado em jogos de volta de mata-mata, e `aggregate_advantage` está vazio nos 32.307 jogos; reconstruído pelo pareamento das partidas há 89 confrontos com chutes nas duas partidas (Libertadores 54, Champions 35; a Copa do Brasil não tem chutes): pouco poder estatístico, então o efeito do alvo fica como parâmetro, não como estimativa. (2) "Empatando" mistura o início cauteloso dos jogos; a comparação limpa é entre os estados de placar, pareada no tempo. (3) A permissão de toques no último terço por placar ainda NÃO foi medida: o FotMob só tem chutes por estado; precisa dos eventos do StatsBomb (La Liga e ligas recentes, torneios), com o placar reconstruído pelos gols.
+
+
+---
+
+## Achado 53 — a reação ao placar (volume e qualidade de chute) não melhora a previsão do 1X2, e ajustá-la por mando e favoritismo também não
+
+**Pergunta.** Dar ao simulador a resposta ao placar medida no Achado 52 (volume e qualidade do chute por saldo de gols, `simular_partida(estado=...)`) melhora a previsão? E ajustá-la por mando (casa/fora/neutro), favoritismo (Elo) e placar desejado (`montar_estado_jogo`) melhora mais?
+
+**Método.** Mesmo teste dos Achados 46 a 51 (Premier League 2025/26, 342 jogos com Dixon-Coles e odds, 1.000 simulações por jogo, IC 95% por bootstrap pareado). Referência = `exp_forca` (melhor configuração do Achado 51). A tabela de resposta vem só de 2022 a 2024 (sem vazamento); o expoente 2 do Achado 51 amplifica o multiplicador de volume (a qualidade age direto na chance de gol). Variantes: `estado_v` (só volume), `estado_q` (só qualidade), `estado_vq` (os dois), `estado_ctx` (os dois, com a tabela do contexto de cada time: casa/fora x forte/parelho/fraco pelo Elo do jogo, corte de 100 pontos; alvo padrão +1 para todos). O Elo antes do jogo veio de `team_elo_history`; o CSV ganhou as colunas `elod` e `neutro`. As variantes repetidas entre as duas rodadas (`exp_forca`, `estado_vq`) coincidem exatamente.
+
+**Resultado (log-loss médio 1X2 / Brier 1X2 / log-loss over-under).**
+
+| | 1X2 | Brier | over/under |
+|---|---|---|---|
+| mercado | 0,9985 | 0,5980 | 0,6823 |
+| Dixon-Coles | 1,0347 | 0,6219 | 0,6872 |
+| referência `exp_forca` | 1,0481 | 0,6301 | 0,6901 |
+| `estado_v` | 1,0522 | 0,6336 | 0,6877 |
+| `estado_q` | 1,0532 | 0,6332 | 0,6897 |
+| `estado_vq` | 1,0529 | 0,6340 | 0,6853 |
+| `estado_ctx` | 1,0553 | 0,6357 | 0,6887 |
+
+Diferenças pareadas, IC 95% (positivo = pior):
+- reação ao placar sobre a referência, 1X2: `estado_v` +0,0041 [-0,0040; +0,0120], `estado_q` +0,0051 [-0,0021; +0,0123], `estado_vq` +0,0047 [-0,0017; +0,0111]. Nenhuma diferença distinguível de zero, e o sinal é de leve piora.
+- reação ao placar sobre a referência, over/under: `estado_vq` -0,0047 [-0,0115; +0,0021], `estado_v` -0,0024, `estado_q` -0,0003. Também sem significância.
+- **por contexto sobre o agrupado: 1X2 +0,0024 [-0,0038; +0,0090]**, Brier +0,0018 [-0,0024; +0,0060], over/under +0,0034 [-0,0011; +0,0080]. O ajuste por mando e favoritismo não acrescenta nada.
+- contra o Dixon-Coles, 1X2: `estado_vq` +0,0181 [-0,0137; +0,0487], `estado_ctx` +0,0206 [-0,0119; +0,0522]; contra o mercado: +0,0543 [+0,0232; +0,0833] e +0,0568 [+0,0249; +0,0861].
+
+**Diagnóstico das médias.** A reação ao placar melhora as médias de resultado sem melhorar o log-loss: empate simulado 25,6% (referência) para 26,3% (`estado_vq`) e 26,2% (`estado_ctx`), contra 26,9% real; gols por jogo 2,66 para 2,77 (real 2,79); over 2,5 médio 50,3% para 52,6% (real 56,1%). Parte do aumento de gols vem do multiplicador de qualidade (`estado_q` sozinho: 2,66 para 2,76) porque quem está ganhando passa a converter mais; o nível de gols (`gols_nivel`) não foi recalibrado para isso.
+
+**Leitura.** O log-loss do 1X2 é decidido pela capacidade de discriminar a força dos times, que é o que o expoente do Achado 51 corrigiu; a reação ao placar mexe na dinâmica dentro do jogo, regressiva (puxa o saldo de volta), e melhora as proporções de empate e de gols, mas não separa melhor quem é favorito. O resultado para o contexto é consistente com o Achado 52: as curvas de resposta são praticamente iguais nos 6 contextos de liga, então escolher a curva pelo contexto não adiciona informação.
+
+**O que não se pode concluir.** (1) Uma liga e uma temporada, 342 jogos: os IC são largos e efeitos de ±0,01 não são detectáveis. (2) O expoente 2 foi calibrado para multiplicadores fixos e aqui o multiplicador muda durante o jogo. (3) A tabela vem de taxas por minuto que misturam a fase do jogo. (4) O placar desejado não foi exercitado: todos os times usam alvo +1, porque em liga não há contexto em que ele seja conhecido (o campo neutro também não existe no banco) e os jogos de volta com chutes são só 89. A camada fica disponível como parâmetro (`--alvo-casa`, `--alvo-fora`, `--alvo-ctx`), desligada por padrão: a melhor configuração segue sendo `exp_forca`.
+
+**Próximos testes (propostos):** recalibrar `gols_nivel` sob amplificação e reação ao placar; repetir em outras ligas e temporadas (decide se o expoente 2 e o resultado nulo do placar se mantêm); toques no último terço por placar com os eventos do StatsBomb; placar desejado em jogos de volta quando houver mais confrontos com chutes.
