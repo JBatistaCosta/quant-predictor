@@ -2237,3 +2237,46 @@ A calibração melhorou: antes, os gols/xG ficavam em 1,4 a 1,6 nos chutes centr
 **Leitura.** (1) A tabela da tela é uma boa aproximação do modelo atual: a mudança no xG por zona vai de -3% a +2% (a maior é -2% em 0-6 m aberto e em 6-9 m aberto), e as fatias de chute não mudam (no máximo 0,1 ponto percentual). (2) O que o modelo antigo fazia de diferente é grande (de -20% a +23% por zona, coluna "antigo") e fica nos ~10% dos chutes mais antigos. (3) O xG atual está calibrado: gols/xG entre 0,95 e 1,04 na maior parte das zonas. Exceções: 0-6 m central (0,91), 6-9 m aberto (0,87) e > 30 m central (0,85), em que o xG novo ainda é generoso, e > 30 m aberto (1,92, só 4,2 mil chutes), em que é baixo. (4) Totais: xG por chute 0,1002 (tela 0,1007; antigo 0,1040) e gols por chute 0,0970 (tela 0,0976; antigo 0,1024).
 
 **Mudanças no repositório.** `scripts/zonas_polares.py`: `FOTMOB` passa a ser a tabela do regime novo (usada pelo simulador, `--fonte-xg fotmob`) e a copiada da tela fica em `FOTMOB_TELA`. Efeito no simulador (4.000 jogos): gols 2,52 (observado 2,55), xG 2,63 na escala do FotMob. **O frontend não foi alterado:** `ESTATISTICA_ZONA_CHUTE` em `src/utils/zoneTransitionMatrix.js` e o texto de `MapaZonasChute.jsx` continuam com a tabela antiga (todas as datas); atualizar depende de decisão do usuário, pois muda números exibidos.
+
+## Achado 41 — recalibrar o simulador por competição e época: o erro cai de 21% para 7% fora da amostra; ritmo, posse e bolas paradas passam a bater, gols e chutes ficam no piso do ruído
+
+**Método** (`scripts/calibrar_simulador_por_competicao.py`, 6 testes; saídas em `dados_referencia/statsbomb/`). Para cada conjunto re-estima: matriz de desfecho 18 x 20, núcleo da próxima linha, memória da posse (risco por posição + normalização por zona), tempo morto por tipo de reinício, duração de ação e de chute, duração dos dois tempos, **folga entre ações** e os chutes sorteáveis. A matriz e o núcleo são encolhidos em direção à base (contagens do conjunto + k pseudo-contagens da base), com k escolhido na verossimilhança fora da amostra da matriz. `Parametros.aplicar_perfil` e `--perfil` aplicam o resultado ao simulador. **Validação em 2 dobras** (jogos pares x ímpares): calibra numa metade e compara os totais por jogo com os da OUTRA metade. Métrica: erro absoluto relativo médio de 7 contagens por jogo (ações, chutes, gols, escanteios, laterais, tiros livres, tiros de meta) e 3 de posse (corridas por jogo, linhas por corrida, duração da corrida), além do desvio nas 6 faixas do campo.
+
+**A folga deixa de ser constante ajustada e vira medida.** Folga = (relógio dos tempos − tempo em ação − tempo morto modelado) / linhas. Na La Liga 2015/16 dá **0,192 s**, a mesma 0,2 s que eu tinha ajustado à mão no Achado 31; nas ligas recentes dá ~0,165 s e nos torneios ~0,246 s. A duração do 2º tempo também é medida (48,3 min em 2015/16; 48,9 a 50,6 min nas outras).
+
+**1. Por conjunto** (erro médio nas duas dobras; A = simulador de 2015/16, calibrado = perfil do conjunto):
+
+| conjunto | A | calibrado |
+|---|---|---|
+| ligas recentes, clube único (194 jogos) | 23,8% / 22,7% | **1,9% / 1,8%** |
+| torneios de seleções (262 jogos) | 16,9% / 16,6% | **3,6% / 3,2%** |
+| La Liga 2015/16, controle (380 jogos) | 3,1% / 2,8% | 1,8% / 3,2% (sem ganho; numa dobra o k escolhido foi o máximo, ou seja, a própria base) |
+
+Nas ligas recentes, as ações por jogo vão de 1.789 (simulador de 2015/16) para ~2.150 (real 2.126 a 2.153), as posses por jogo de 237 para ~180 (real 178) e as linhas por posse de 7,6 para ~12 (real 12), os laterais de 46 para ~30 (real 29 a 30) e os gols de 2,58 para 3,1 a 3,2 (real 3,15 a 3,25).
+
+**2. Por época, com o conjunto como prior (leave-one-out).** Para cada época: **A** simulador de 2015/16; **B** perfil do conjunto SEM a época; **C** B + calibração da época com metade dos jogos, avaliado na outra metade (média das duas dobras):
+
+| época | jogos | A | B | C |
+|---|---|---|---|---|
+| Euro 2020 | 51 | 18,3% | 7,3% | 8,4% |
+| Euro 2024 | 51 | 21,8% | 12,3% | **8,1%** |
+| Copa América 2024 | 32 | 14,6% | 11,3% | **8,3%** |
+| Copa do Mundo 2018 | 64 | 20,9% | 14,0% | **9,1%** |
+| Copa do Mundo 2022 | 64 | 14,5% | 7,4% | **5,0%** |
+| Bundesliga 2023/24 | 34 | 23,3% | 6,0% | 5,3% |
+| La Liga 2018/19 | 34 | 18,6% | 5,6% | **3,0%** |
+| La Liga 2019/20 | 33 | 22,8% | 6,5% | 7,2% |
+| La Liga 2020/21 | 35 | 23,2% | 4,5% | 5,1% |
+| Ligue 1 2021/22 | 26 | 24,6% | 6,3% | 6,2% |
+| Ligue 1 2022/23 | 32 | 33,0% | 13,2% | **7,6%** |
+| **média das 11 épocas** | | **21,4%** | **8,6%** | **6,7%** |
+
+A calibração da época melhora o conjunto em **8 das 11 épocas** (média 8,6% para 6,7%); piora ou empata nas que já eram bem descritas pelo conjunto (Euro 2020, La Liga 2019/20 e 2020/21), em que o k escolhido foi o máximo (a base) em quase todas as dobras. As edições que mais se afastam do conjunto são as que mais ganham: Ligue 1 2022/23 (13,2% para 7,6%), Euro 2024 (12,3% para 8,1%), Copa de 2018 (14,0% para 9,1%).
+
+**3. O que cada medida ganha** (erro médio nas 11 épocas, A / B / C): ações 12,7 / 5,2 / **2,8%**; laterais 44,0 / 10,5 / **7,5%**; tiros livres 16,3 / 11,7 / **6,8%**; corridas por jogo 31,4 / 6,9 / **5,9%**; linhas por corrida 30,6 / 10,1 / **5,3%**; duração da corrida 25,7 / 6,6 / 5,7%; escanteios 11,8 / 6,5 / 6,1%; tiros de meta 18,6 / 10,8 / 9,1%; faixas do campo 1,3 / 1,0 / 0,8 pontos percentuais. **Não melhoram:** chutes por jogo (6,3 / 6,4 / 6,7%) e gols (16,8 / 11,0 / 10,8%).
+
+**4. Chutes e gols estão no piso do ruído, não no do modelo.** Cada metade de época tem 13 a 18 jogos; o erro-padrão da média de chutes por jogo (desvio ~5) é ~5% e o dos gols (desvio ~1,6) é ~15%. O erro médio de 6,7% em chutes e 10,8% em gols é o que a amostragem da própria metade de teste produz, então esses dois números não diferenciam os modelos. Os totais de ritmo, posse e bolas paradas, medidos em milhares de linhas por jogo, têm erro-padrão muito menor e são os que mostram o ganho.
+
+**5. Limites.** (a) Dentro da amostra de 2015-2024 do StatsBomb Open Data: as ligas recentes são **clubes únicos** (Barcelona, PSG, Leverkusen) e não ligas inteiras, então o perfil descreve um time de posse, não a Bundesliga ou a Ligue 1. (b) O k é escolhido na verossimilhança da matriz de desfecho (um único k para matriz e núcleo). (c) Não há força por time dentro do perfil: os perfis são para times neutros do conjunto. (d) A normalização da memória da posse usa 700 a 1.200 jogos por iteração e deixa ruído de ~1% por zona. (e) Os perfis só valem para competições/épocas parecidas com as treinadas; para uma competição nova é preciso medir de novo (folga, duração do tempo e tempo morto saem direto dos eventos).
+
+**Uso.** `python scripts/simulador_cadeia_bola.py --perfil dados_referencia/statsbomb/perfil_torneios_selecoes.json` (ou `perfil_ligas_recentes.json`, `perfil_la_liga_2015_16.json`); o relatório completo está em `calibracao_por_competicao.json` e `calibracao_por_epoca.json`.
