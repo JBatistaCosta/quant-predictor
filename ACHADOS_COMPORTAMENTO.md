@@ -2104,3 +2104,23 @@ O Elo conhecido ANTES da temporada prevê bem o estilo de posse (quem tem Elo al
 **Conclusão e uso:** os parâmetros de 2015/16 valem para o volume de chutes e para a ocupação do campo em qualquer competição testada; o ritmo, a estrutura da posse, as bolas paradas e os gols precisam de calibração por competição/época (por exemplo, núcleo da próxima linha e razão de perdas estimados dentro do próprio conjunto, como os `forca_dos_times` já fazem para times). **Não usar o simulador como está para prever gols de torneios de seleções ou de clubes de elite.** Amostras pequenas (Copa América, 32 jogos) têm erro-padrão grande.
 
 **O que o banco tem do FotMob (pergunta do usuário):** Europa League (id 48) e Conference League (id 49) estão cadastradas em `leagues`, mas com 0 jogos em `matches` e portanto sem chutes em `match_shots_fotmob`; a Champions League (id 19) tem 647 jogos, 319 deles com chutes do FotMob (8.616 chutes, 19/09/2023 a 10/09/2026); a Eurocopa de seleções não está em `leagues` (nem a Copa América); a Copa Africana de Nações (id 61) está cadastrada com 0 jogos.
+
+## Achado 36 — FotMob da Eurocopa e da Copa América importado e cruzado com o StatsBomb: gols e escanteios idênticos, chutes +3%, passes -8%, xG do FotMob 26 a 49% maior
+
+**O que foi importado.** `scripts/baixar_fotmob_torneios.py` baixou do FotMob 330 jogos encerrados: Eurocopa 2024 (51), 2020 (51), 2016 (51) e 2012 (31); Copa América 2024 (32), 2021 (28), 2019 (26), 2016 (34) e 2015 (26). Cada jogo traz placar, eventos, estatísticas de time e de jogador, escalação, momentum e o mapa de chutes com xG e xGOT. Ficou versionado em `dados_referencia/fotmob/` (2,2 MB comprimido; ver o `LEIA-ME.md` da pasta), **sem gravar no banco**: a carga usual (`ingestao_fotmob.py`) exige a chave service_role do Supabase, que não existe no ambiente desta sessão, e as seleções ainda não têm linha em `teams`/`leagues`.
+
+**Cruzamento com o StatsBomb** (`scripts/cruzar_fotmob_statsbomb_torneios.py`; casamento por par de seleções + placar, com tabela de apelidos explícita; **134 de 134 jogos casaram** em Euro 2020, Euro 2024 e Copa América 2024; na Copa América 2024 o par Argentina x Canadá se repete com o mesmo placar e foi desempatado pela ordem cronológica). Totais por jogo, razão FotMob/StatsBomb e correlação:
+
+| medida | FotMob | StatsBomb | razão | correlação por jogo |
+|---|---|---|---|---|
+| gols | 2,46 | 2,46 | **1,000** | 1,000 |
+| escanteios | 9,30 | 9,28 | 1,002 | 0,999 |
+| chutes | 25,57 | 24,76 | 1,033 | 0,935 |
+| passes (FotMob = certos / taxa de acerto) | 940,9 | 1.019,0 | 0,923 | 0,992 |
+| xG | 3,21 | 2,45 | **1,309** | **0,455** |
+
+Por torneio, a razão de xG é 1,26 (Euro 2024), 1,25 (Euro 2020) e **1,49** (Copa América 2024, correlação 0,33); a de chutes, 1,02 a 1,05; a de passes, 0,90 a 0,94.
+
+**Leitura.** (1) Os fatos discretos (gols, escanteios) são os mesmos nas duas fontes; chutes e passes diferem pouco por definição de evento. (2) **O xG do FotMob é 26 a 49% maior que o do StatsBomb nos mesmos jogos e a correlação por jogo é só 0,33 a 0,55**: não são o mesmo modelo, e somar ou misturar as duas escalas distorce. Isso se aplica ao simulador: a tabela polar do FotMob usada para o xG do chute está na escala do FotMob (xG simulado 2,65 contra 2,47 do StatsBomb em 2015/16), e em torneios a diferença é maior que nas ligas. (3) Para dado de seleções com mapa de chutes, as edições de 2012, 2016, 2019, 2021 e 2015 só existem no FotMob.
+
+**Não feito:** a tabela polar (14 zonas) refeita só com os chutes de seleções, e o casamento das seleções com `teams` para a carga no banco (precisa do crosswalk supervisionado e da chave de escrita).

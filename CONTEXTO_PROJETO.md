@@ -9,6 +9,10 @@
 
 ---
 
+**FotMob da Eurocopa e da Copa América (04/10) -- Achado 36.** 330 jogos baixados (Euro 2024/2020/2016/2012; Copa América 2024/2021/2019/2016/2015) para `dados_referencia/fotmob/` (2,2 MB; `scripts/baixar_fotmob_torneios.py`), SEM carga no banco (falta `SUPABASE_KEY` service_role no ambiente e crosswalk de seleções). Cruzamento com o StatsBomb: 134 de 134 jogos casaram; gols e escanteios idênticos, chutes +3%, passes -8%, xG do FotMob 26-49% maior (correlação 0,33-0,55): escalas diferentes, não misturar. Para carregar no banco: definir `SUPABASE_URL` e `SUPABASE_KEY` como segredos do ambiente (ver docs `environment.secrets`), criar `leagues`/`teams` das seleções com crosswalk confirmado e rodar `ingestao_fotmob.py`.
+
+---
+
 **Validação do simulador fora das 4 ligas de 2015/16 (04/10) -- Achado 35.** Em ligas recentes (clube único), Euro 2020/24, Copa América 2024 e Copas 2018/22: chutes por jogo dentro de -2% a +7%, ocupação do campo dentro de ~2 p.p., gols só nas Copas e Copa América; NÃO se transferem o ritmo (1.617 a 2.140 linhas de ação por jogo contra 1.786), a estrutura da posse (9-12 linhas por corrida contra 7,6), laterais (29-39 contra 46), tiros de meta, escanteios (-6 a -26%) e os gols de clubes de elite. Não usar o simulador sem calibrar por competição/época. Banco FotMob: Europa League (48) e Conference (49) cadastradas com 0 jogos; Champions (19) tem 647 jogos, 319 com chutes (8.616); Euro/Copa América de seleções não estão em `leagues`. Script: `scripts/validar_simulador_outras_competicoes.py`.
 
 ---
