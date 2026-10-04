@@ -2458,3 +2458,29 @@ Diferenças pareadas (positivo = o primeiro é pior), IC 95%:
 **Próximas camadas a testar (cada uma por ablação, nenhuma ajustada com dados do teste):** (a) mando com janela recente ou ponderada pelo tempo, para seguir mudanças entre temporadas (hipótese acima); (b) Elo de xG (`team_elo_xg`) como força geral; (c) fragilidade defensiva em chutes sofridos e xG sofrido por chute (`conversao_defesa` já existe e não foi usada); (d) jogadores, só quando houver cobertura (hoje 66 jogos da Premier League 2025/26 em `player_match_estimates`).
 
 **Limites.** Uma liga e uma temporada, 342 jogos: os IC são largos e várias diferenças "sem efeito" aqui podem ser efeitos pequenos não detectáveis. O ajuste de nível usa a constante do simulador neutro (0,1017) medida com ruído de ~±1,5%. Dixon-Coles com a mesma ressalva do Achado 46 (não verifiquei se foi gerado fora da amostra para esses jogos).
+
+
+---
+
+## Achado 48 — xG e xA previstos por jogador: top-2 a top-5 não batem o elenco inteiro, e quase tudo que se correlaciona com o saldo do jogo é a força do time
+
+**Pergunta.** Somar só os N jogadores de maior xG (ou xA) previsto, em vez do elenco inteiro, correlaciona melhor com o saldo do jogo? E isso é sinal dos jogadores ou da força do time?
+
+**Método** (`scripts/analisar_topn_jogadores.py`, consulta em `arquivos_do_claude/topn_jogadores_previsto.sql`). Cinco ligas (Premier League, La Liga, Serie A, Bundesliga, Ligue 1), temporadas 2024 e 2025, 3.504 partidas com Elo. λ de `player_match_walkforward` (walk-forward) na fonte `previsto` (XI previsto, anterior ao jogo). Para cada partida, D_N = soma do λ dos N maiores do mandante menos a do visitante (N = 2, 3, 4, 5 e elenco inteiro); o ranking usa só o λ previsto. Alvos: saldo de gols e saldo de xG reais. Como a força do time confunde (armadilha já vista 3x no projeto), reporta também a **correlação parcial controlando pela diferença de Elo** (`team_elo_history`, escopo global, rating antes do jogo) e o IC 95% por bootstrap sobre partidas da diferença top-N menos elenco inteiro. λ nulo vira 0 (nunca selecionar por "existe λ", o viés pós-jogo do Achado 25/09).
+
+**Resultado: correlação r com o saldo de xG (alvo menos ruidoso).**
+
+| | r | r parcial (Elo) | top-N menos elenco inteiro [IC95%] |
+|---|---|---|---|
+| Elo sozinho | 0,506 | — | — |
+| xG previsto top-2 / 3 / 4 / 5 / inteiro | 0,477 / 0,481 / 0,483 / 0,484 / 0,494 | 0,104 / 0,105 / 0,107 / 0,109 / 0,127 | -0,017 [-0,027; -0,007] / -0,013 / -0,011 / -0,010 [-0,015; -0,004] |
+| xA previsto top-2 / 3 / 4 / 5 / inteiro | 0,478 / 0,492 / 0,497 / 0,500 / 0,510 | 0,105 / 0,121 / 0,127 / 0,131 / 0,149 | -0,032 [-0,041; -0,021] / -0,018 / -0,013 / -0,009 [-0,015; -0,004] |
+
+Contra o saldo de **gols**: Elo sozinho 0,430; xG top-2/3/4/5/inteiro 0,412 / 0,411 / 0,409 / 0,406 / 0,405 (top-N sobre o inteiro +0,006 [-0,004; +0,016] no top-2, sem efeito); xA 0,410 / 0,421 / 0,425 / 0,427 / 0,430 (top-2 -0,020 [-0,029; -0,010], top-3 -0,009 [-0,017; -0,001], top-4 e 5 sem diferença). Correlação parcial com gols: 0,07 a 0,11.
+
+**Leitura.**
+1. **Somar o elenco inteiro é igual ou melhor que qualquer top-N.** Contra o saldo de xG todos os top-N ficam abaixo, de forma monotônica (quanto menos jogadores, pior) e com IC fora de zero. Contra gols só o xA top-2 e top-3 ficam abaixo; o xG top-2/3 parece ligeiramente acima, mas dentro do ruído. Confirma, com xG incluído e em 3.504 partidas, o que o projeto já tinha para xA (elenco inteiro 0,403, top-3 0,389, top-2 0,381 em 15.089 partidas) e o descarte do top-N como agregação.
+2. **O Elo sozinho já correlaciona tanto quanto os jogadores** (0,430 e 0,506 contra 0,405-0,430 e 0,477-0,510). O que os jogadores trazem **além do Elo** é pequeno: correlação parcial de 0,07 a 0,15, ou seja, 0,5% a 2% da variância do saldo. É o mesmo padrão do rating de jogador do projeto (sinal real, pequeno, e o Elo explica a maior parte).
+3. **Por que o top-N perde:** descartar jogadores joga fora informação de profundidade do elenco e de quem entra; somar mais jogadores dilui o acaso individual (cada xG por jogador explica só ~24% da variação, ver acima).
+
+**Limites.** Cinco ligas empilhadas e duas temporadas: diferenças entre ligas podem se misturar. A correlação parcial é linear. Elo de resultado, não o de xG. Bundesliga e Ligue 1 têm 612 partidas cada (18 times). Não rodei `relacionados` (convocados), só `previsto`. Correlação com o saldo não é o mesmo que ganho de previsão em log-loss: o ganho de log-loss de jogadores (saber quem começa, -0,015 no 1X2) está registrado à parte.

@@ -9,6 +9,10 @@
 
 ---
 
+**Top-N de xG/xA previsto por jogador -- Achado 48 (04/10).** 3.504 partidas das 5 grandes ligas, fonte `previsto`: somar top-2 a top-5 NÃO bate o elenco inteiro (contra o saldo de xG todos ficam abaixo, IC fora de zero; confirma o descarte do top-N que o projeto já tinha só para xA). O Elo sozinho correlaciona tanto quanto os jogadores (0,430/0,506 contra 0,405-0,430/0,477-0,510); a correlação parcial depois do Elo é 0,07-0,15. Também medido: as estimativas individuais de xG/xA têm erro absoluto baixo só pela escala (54% dos jogadores têm xG zero; o modelo tem MAE 0,0930 contra 0,0893 de prever zero), explicam ~24% (xG) e ~19% (xA) da variação, e quase não batem a média do próprio jogador (RMSE 0,1743 contra 0,1752).
+
+---
+
 **Camadas de ajuste do simulador -- Achado 47 (04/10).** `scripts/camadas_simulador.py`: base fixa (transições) + camadas que olham só o histórico, encolhidas para 1,0 e combinadas com teto; botão novo de conversão (`conversao_ataque/defesa`) em `Multiplicadores`. Ablação na Premier League 2025/26 (342 jogos): **`gols_nivel` fica** (over/under -0,0153 [-0,0291; -0,0012] sobre a força; empata com o Dixon-Coles, 0,6868 contra 0,6872, e é indistinguível do mercado), **`gols_mando` sai** (sem efeito; a estimativa pela história fica atrasada porque o mando mudou de 2024/25 para 2025/26), 1X2 não muda e segue pior que o Dixon-Coles (+0,032 [-0,001; +0,064]) e o mercado. Próximas: mando com janela recente, Elo de xG, fragilidade defensiva, jogadores. Rodar com o workflow `backtest_simulador_preditivo.yml` (~20 min, 4 variantes). Detalhes em ACHADOS_COMPORTAMENTO.md.
 
 ---
