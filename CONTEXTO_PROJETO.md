@@ -9,6 +9,10 @@
 
 ---
 
+**Lacuna de migrations: `teams.aliases` (04/10, pós-Achado 43).** A coluna existe em produção mas nenhuma migration a criava; um banco montado só pelos arquivos (o branch de preview do Supabase de cada PR) nascia sem ela, e a migration `20261005100200` falhou lá com `column t.aliases does not exist`. O PR #768 foi mergeado antes de eu ver essa falha (o status só mostrava a Vercel; a falha do Supabase chegou 10 segundos depois). Corrigido com a migration `20261005095900_teams_aliases_coluna_faltante.sql` (no-op em produção). **Lição de fluxo:** antes de mergear PR com migration, esperar o ✅ da tarefa 'Migrations' do Supabase, e não só o status da Vercel.
+
+---
+
 **Revisão dos nomes das seleções (04/10).** Reli os 64 registros: removidos os apelidos 'Tartan Army' (Escócia) e 'Green and White Army' (Irlanda do Norte), que são das torcidas; variações de nome (Holanda, República Tcheca, USA...) saíram de `nicknames` para `aliases`, e entraram variações comuns de fontes externas (Korea Republic, IR Iran, Macedonia, Rep. of Ireland...) — migration `20261005100200`. Checagem de colisão entre todos os nomes de todas as seleções e contra clubes: **uma duplicata real, a Turquia** — time 473 'Turkey' (football-data 803, Eurocopa 2024 e Copa 2026, 8 jogos, sem vínculo FotMob) e time 1017 'Turkiye' (FotMob 6595, Eurocopa 2016 e 2020, 6 jogos). **Não unida: pede aprovação** (mesmo método do reparo do Achado 43: religar o vínculo FotMob 6595 ao 473 e mover os 6 jogos e suas linhas). Enquanto isso o 1017 não tem o alias 'Turkey' para não gerar ambiguidade.
 
 ---
