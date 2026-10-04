@@ -2707,3 +2707,38 @@ Empatando, o xG por chute cai cerca de 6% do começo ao fim; ganhando, sobe cerc
 **O que não se pode concluir.** (1) A posição do jogador não foi controlada: sem isso, "reserva" mistura frescor e perfil de posição. (2) xG mede a qualidade da chance (lugar e tipo do chute), não a finalização; a fadiga na execução apareceria em gols/xG, que ficou plano mas é ruidoso. (3) Erro-padrão trata chutes como independentes (mesmo jogo e mesmo time se repetem), então é otimista. (4) Cinco ligas europeias, 2021 a 2025; o resultado não vale para outras competições. (5) `sem_escalacao` (4,8% dos chutes: jogador sem correspondência na escalação) tem o mesmo sinal que os reservas (+0,0067) e foi tratado à parte.
 
 **Próximo teste (proposto):** repetir a comparação reserva contra titular DENTRO da mesma posição (atacante, meia, defensor) com `match_lineup_fotmob.position_id`, para separar frescor de perfil de posição.
+
+## Achado 56 — o empate técnico com o Dixon-Coles (Achado 51) não se repete em outras ligas; o rótulo de quebra corrigido e o fator de gols móvel dão ganhos pequenos e semelhantes no 1X2
+
+**Perguntas.** (1) O simulador com força amplificada (`exp_forca`) continua empatado com o Dixon-Coles fora da Premier League? (2) Corrigir o rótulo de quebra (`p_quebra`) muda a previsão? (3) Um fator de gols que se atualiza com os jogos anteriores (móvel) funciona onde o fator fixo do Achado 54 falhou?
+
+**Método.** La Liga, Serie A, Bundesliga e Ligue 1 (temporada 2025/26 de teste, 2024/25 de aquecimento; dados de `scripts/exportar_csv_backtest_simulador.py`, que reproduz o CSV da Premier League) mais a Premier League dos achados anteriores. 1.000 simulações por jogo, mesmas sementes entre variantes (a diferença pareada é só o efeito da mudança), jogos com Dixon-Coles e odds de fechamento: 342 + 306 + 342 + 272 + 271 = **1.533**. Bootstrap de 4.000 reamostragens por jogo (`scripts/comparar_resultados_backtest.py`).
+- *Quebra corrigida* (`exp_forca_quebra`): o filtro de quebra usava o rótulo antigo `mesma|recuperação|`, que não existe nos dados; toda linha que continua contava como quebra (`p_quebra` = 100% em todas as zonas) e a bola seguia do núcleo em 95% das vezes (teto). Corrigido, `p_quebra` fica entre 1,5% e 4% (falta, lateral, escanteio, recuperação do adversário) e quem continua usa a matriz 18 × 20. O padrão continua o antigo (os Achados 41 a 54 seguem reproduzíveis).
+- *Fator de gols móvel* (`exp_forca_movel`): em cada jogo, razão gols reais / gols simulados sem fator dos **últimos 200 jogos anteriores** (data estritamente anterior), piso 0,85, teto 1,25, mínimo de 50 jogos; a base sem fator vem das rodadas de `exp_forca` de 2024 e 2025. Parâmetros fixados antes de olhar o teste.
+
+**Resultado 1: o simulador é pior que o Dixon-Coles no 1X2 e empata no over/under.** `exp_forca` menos Dixon-Coles, log-loss do 1X2 (positivo = pior): Premier League +0,0134 [-0,0165; +0,0419]; La Liga **+0,0506** [+0,0168; +0,0850]; Serie A +0,0290 [-0,0074; +0,0647]; Bundesliga **+0,0717** [+0,0361; +0,1065]; Ligue 1 **+0,0336** [+0,0028; +0,0637]. Agregado das cinco: **+0,0382 [+0,0228; +0,0530]** (Brier +0,0266 [+0,0159; +0,0367]). No over/under: **-0,0044 [-0,0169; +0,0077]**, empate. O próprio Dixon-Coles também fica atrás do mercado (agregado, 1X2 +0,0235 [+0,0128; +0,0346]; over/under +0,0192 [+0,0097; +0,0287]); `exp_forca` contra o mercado: 1X2 +0,0617 [+0,0467; +0,0765], over/under +0,0148 [+0,0049; +0,0243].
+
+**Resultado 2: rótulo de quebra corrigido, ganho pequeno no 1X2.** Contra `exp_forca`, log-loss do 1X2, por liga: Premier League +0,0015; La Liga -0,0056; Serie A -0,0019; Bundesliga -0,0069 [-0,0143; +0,0002]; Ligue 1 -0,0034; nenhuma isolada distingue de zero. Agregado: **-0,0030 [-0,0060; -0,0000]** (no limite da significância), Brier -0,0017 [-0,0037; +0,0003], over/under +0,0019 [-0,0005; +0,0045]. Os gols por jogo caem cerca de 1% a 1,5% (Premier League 2,664 para 2,630).
+
+**Resultado 3: o fator de gols móvel melhora o 1X2, o over/under não muda.** Contra `exp_forca`, agregado: 1X2 **-0,0032 [-0,0058; -0,0004]**, Brier **-0,0022 [-0,0039; -0,0004]**, over/under 0,0000 [-0,0042; +0,0039]. Por liga (1X2): Premier League -0,0003; La Liga **-0,0077** [-0,0135; -0,0014]; Serie A 0,0000; Bundesliga -0,0028; Ligue 1 -0,0062 [-0,0125; +0,0001]. Contra o Dixon-Coles continua pior no 1X2: **+0,0351 [+0,0199; +0,0495]**; over/under -0,0044 [-0,0172; +0,0078].
+
+**Viés de nível de gols (jogos com Dixon-Coles e odds; gols reais; sem fator; com fator móvel):**
+
+| liga | reais | sem fator | com fator móvel | fator médio (faixa) |
+|---|---|---|---|---|
+| Premier League | 2,792 | 2,664 (-4,6%) | 2,758 (-1,2%) | 1,038 (0,994-1,090) |
+| La Liga | 2,739 | 2,512 (-8,3%) | 2,629 (-4,0%) | 1,053 (1,008-1,116) |
+| Serie A | 2,412 | 2,428 (+0,6%) | 2,386 (-1,1%) | 0,983 (0,909-1,067) |
+| Bundesliga | 3,294 | 2,883 (-12,5%) | 3,115 (-5,4%) | 1,090 (1,042-1,142) |
+| Ligue 1 | 2,827 | 2,723 (-3,6%) | 2,847 (+0,7%) | 1,051 (0,993-1,102) |
+
+O nível de gols que o simulador erra é diferente em cada liga (a Bundesliga é subestimada em 12,5%; a Serie A, nada), o que explica por que um fator fixo não serve (Achado 54). O fator móvel acompanha cada liga, e ainda deixa viés de -4% a -5% na La Liga e na Bundesliga: a razão pura corrige só parte (um fator de 1,0997 deu +9% nos gols, elasticidade ~0,9) e a janela de 200 jogos atrasa.
+
+**Leitura.**
+- O "empate técnico" do Achado 51 era da Premier League: lá o intervalo incluía zero e a amostra era de 342 jogos. Com 1.533 jogos em cinco ligas, o simulador é pior que o Dixon-Coles no 1X2 (cerca de +0,04) e igual no over/under. Para decisões de aposta o simulador ainda não bate nenhuma das duas referências no 1X2.
+- Como o gols/xG, o nível de gols e a estrutura de quebra entram só pelo 1X2, os ajustes pequenos (-0,003 cada) não fecham uma diferença de +0,038. A diferença vem de outro lugar (força dos times, que é o que o Dixon-Coles estima direto do histórico de gols e o simulador estima pelo canal dos chutes).
+- No over/under, o simulador acompanha o Dixon-Coles, mas ambos perdem para o mercado (e na Bundesliga e Ligue 1 o simulador perde significativamente).
+
+**O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada; os jogos da mesma liga e do mesmo time se repetem, então os IC são otimistas. (2) Só os jogos com previsão do Dixon-Coles entram (271 a 342 de 306 a 380): é o conjunto em que se pode comparar, não a temporada inteira. (3) A janela de 200 jogos, o piso e o teto do fator móvel não foram otimizados; o expoente 1,0 deixa parte do viés. (4) Quebra e fator móvel foram testados separados, não combinados.
+
+**Próximos testes (propostos):** combinar quebra corrigida e fator móvel; força dos times por gols (como o Dixon-Coles) no lugar de só chutes, que é onde está a diferença; outras ligas e temporadas anteriores.
