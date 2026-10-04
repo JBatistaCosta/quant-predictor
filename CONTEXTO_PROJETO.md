@@ -9,6 +9,10 @@
 
 ---
 
+**Marcador de seleção garantido (04/10, a pedido: "as seleções têm de ter marcador de seleção").** `teams.is_national_team` agora vale `true` para os 78 times que jogam ligas com `leagues.type='international'` (Eurocopa, Copa do Mundo, Copa América); 12 seleções da Copa 2026 estavam sem ele (Argélia, Bósnia, Cabo Verde, RD Congo, Curaçao, Iraque, Costa do Marfim, Jordânia, Nova Zelândia, Noruega, África do Sul, Uzbequistão). **Garantia permanente:** gatilho `trg_marcar_selecoes_por_liga` em `matches` (função `marcar_selecoes_por_liga`, `security definer`): toda partida gravada ou alterada numa liga de seleções marca os dois times, por qualquer importador. Testado com desfazimento: sem marcador -> com marcador após jogo de seleção; clube não ganha marcador por jogo de liga comum. Além disso `resolverOuCriarTimeFotmob` marca a seleção reconhecida que ainda estava com valor nulo. Migration `20261005100300_garante_marcador_selecao.sql`. Efeito colateral a saber: um clube que entrasse por engano numa partida de liga de seleções passaria a ser marcado como seleção (o erro de dados continua visível pelo vínculo, mas o marcador não o denuncia). A consulta de conserto com `EXISTS` correlacionado estourou 60 s e foi reescrita partindo só dos jogos das ligas de seleções.
+
+---
+
 **Lacuna de migrations: `teams.aliases` (04/10, pós-Achado 43).** A coluna existe em produção mas nenhuma migration a criava; um banco montado só pelos arquivos (o branch de preview do Supabase de cada PR) nascia sem ela, e a migration `20261005100200` falhou lá com `column t.aliases does not exist`. O PR #768 foi mergeado antes de eu ver essa falha (o status só mostrava a Vercel; a falha do Supabase chegou 10 segundos depois). Corrigido com a migration `20261005095900_teams_aliases_coluna_faltante.sql` (no-op em produção). **Lição de fluxo:** antes de mergear PR com migration, esperar o ✅ da tarefa 'Migrations' do Supabase, e não só o status da Vercel.
 
 ---
