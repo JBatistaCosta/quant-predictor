@@ -1,14 +1,19 @@
 name: Backtest do simulador como previsor (em fatias)
 
-# Simula cada jogo da Premier League 2025/26 N vezes (scripts/backtest_simulador_preditivo.py) e
+# Simula cada jogo da Premier League 2025/26 N vezes (scripts/backtest_simulador_preditivo.py), com variantes que ligam camadas de ajuste (scripts/camadas_simulador.py), e
 # compara 1X2 e over/under 2,5 contra o Dixon-Coles e as odds de fechamento, com IC 95% por bootstrap.
-# O trabalho (760 simulações de 1.000 partidas) é dividido em 8 jobs em paralelo; o job final junta os
+# O trabalho (jogos de teste x variantes, 1.000 partidas cada) é dividido em 8 jobs em paralelo; o job final junta os
 # arquivos de progresso e agrega. Cada simulação tem semente fixa, então o resultado não depende de como
 # foi fatiado. Entrada: dados_referencia/backtest_simulador/premier_league_2024_25.csv (sem segredos).
 # Sem custo de cota externa e sem acesso ao banco. O resultado fica no resumo da execução e no artefato
 # "resultado-backtest-simulador" (JSON com as probabilidades de cada jogo).
 
 on:
+  # TEMPORÁRIO: workflow_dispatch só funciona com o arquivo na branch principal; enquanto o PR não é mergeado,
+  # um push que mexe neste arquivo dispara a rodada. Remover antes do merge.
+  push:
+    branches: [claude/compassionate-dirac-p61yy7]
+    paths: [".github/workflows/backtest_simulador_preditivo.yml"]
   workflow_dispatch:
     inputs:
       sims:

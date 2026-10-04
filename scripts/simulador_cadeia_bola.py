@@ -221,10 +221,15 @@ class Parametros:
 
 
 class Multiplicadores:
-    """Força de um time (razões encolhidas do Achado 32); 1,0 = time médio."""
+    """Força de um time (razões encolhidas do Achado 32); 1,0 = time médio.
 
-    def __init__(self, ataque_chute=1.0, ataque_perda=1.0, defesa_chute=1.0, defesa_perda=1.0):
+    `conversao_ataque` multiplica a chance de um chute DESTE time virar gol (qualidade do ataque, mando, nível de gols da liga);
+    `conversao_defesa` multiplica a chance do chute que ele SOFRE virar gol (fragilidade da defesa, goleiro). Os dois valem 1,0 por padrão e,
+    nesse caso, o jogo sorteado é idêntico ao anterior à existência deles (mesmo número de sorteios)."""
+
+    def __init__(self, ataque_chute=1.0, ataque_perda=1.0, defesa_chute=1.0, defesa_perda=1.0, conversao_ataque=1.0, conversao_defesa=1.0):
         self.ataque_chute, self.ataque_perda, self.defesa_chute, self.defesa_perda = ataque_chute, ataque_perda, defesa_chute, defesa_perda
+        self.conversao_ataque, self.conversao_defesa = conversao_ataque, conversao_defesa
 
     @classmethod
     def de_dict(cls, d: dict, gama_chute: float = 1.0, gama_perda: float = 1.0) -> "Multiplicadores":
@@ -312,11 +317,11 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
                     rec = rng.choice(p.pool_penalti) if penalti else rng.choice(p.pool_chute[zona])
                     if p.fonte_xg == "fotmob" and not penalti:
                         _, _, xg_pz, gol_pz = zp.FOTMOB[rec[6]]
-                        xg_linha, gol_linha = xg_pz, 1 if rng.random() < gol_pz else 0
+                        xg_linha, gol_linha = xg_pz, 1 if rng.random() < min(gol_pz * atk.conversao_ataque * dfs.conversao_defesa, 1.0) else 0
                     else:
                         xg_linha, gol_linha = rec[0], rec[1]
                 else:
-                    xg_linha, gol_linha = p.xg_faixa[b], 1 if rng.random() < p.p_gol[b] else 0
+                    xg_linha, gol_linha = p.xg_faixa[b], 1 if rng.random() < min(p.p_gol[b] * atk.conversao_ataque * dfs.conversao_defesa, 1.0) else 0
                 m["xG"] += xg_linha
                 if gol_linha:
                     m["gols"] += 1

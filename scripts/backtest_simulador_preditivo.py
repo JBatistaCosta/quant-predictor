@@ -10,6 +10,7 @@ Regras que mantêm o teste honesto:
   * Mando de campo: o simulador não tem; entra como fator no ataque (mandante x sqrt(h), visitante / sqrt(h), h = chutes casa / chutes fora da história).
   * Nível: o simulador neutro faz ~12,7 chutes por time; o ataque é reescalado para a média de chutes por time da história.
   * Controle obrigatório: a mesma simulação com todos os times iguais (só nível e mando) -- é o piso que a força dos times precisa bater.
+Camadas: ver scripts/camadas_simulador.py; cada variante liga uma camada a mais e é comparada com a anterior.
 Comparação: log-loss e Brier por jogo, apenas nos jogos que têm Dixon-Coles E odds; diferença pareada com IC 95% por bootstrap sobre jogos.
 Uso: python scripts/backtest_simulador_preditivo.py --csv jogos.csv --temporada 2025 --sims 1000 --saida resultado.json
 CSV: id,season,date,home,away,hg,ag,hs,as,hxg,axg,hc,ac,dc_h,dc_d,dc_a,dc_over,o_h,o_d,o_a,o_over,o_under
@@ -29,9 +30,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import simulador_cadeia_bola as s  # noqa: E402
+import camadas_simulador as cam  # noqa: E402
 
-CHUTES_POR_TIME_SIM_NEUTRO = 12.68        # medido no simulador padrão (400 jogos, semente 1)
-K_ENCOLHIMENTO = 8.0                      # pseudo-jogos em direção ao time médio
+# Cada variante = lista de camadas (scripts/camadas_simulador.py) + semente própria. "neutro" e "forca" mantêm as sementes do Achado 46 (confere que o
+# resultado se reproduz). Cada variante é comparada com a anterior da cadeia ("ref") para medir o que a camada nova acrescenta.
+BASE = ["nivel_chutes", "mando_chutes"]
+VARIANTES = {
+    "neutro": {"camadas": BASE, "semente": 2, "ref": None},
+    "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro"},
+    "forca_gols_nivel": {"camadas": BASE + ["forca_chutes", "gols_nivel"], "semente": 3, "ref": "forca"},
+    "forca_gols_nivel_mando": {"camadas": BASE + ["forca_chutes", "gols_nivel", "gols_mando"], "semente": 4, "ref": "forca_gols_nivel"},
+}
 _P = None
 
 
@@ -44,8 +53,8 @@ def _iniciar():
 def _simular_jogo(args):
     jid, mult_casa, mult_fora, n, semente = args
     rng = random.Random(semente)
-    casa = s.Multiplicadores(ataque_chute=mult_casa[0], defesa_chute=mult_casa[1])
-    fora = s.Multiplicadores(ataque_chute=mult_fora[0], defesa_chute=mult_fora[1])
+    casa = s.Multiplicadores(**mult_casa)
+    fora = s.Multiplicadores(**mult_fora)
     h = d = a = over = 0
     gc = gf = ch = cf = 0
     for _ in range(n):
@@ -57,45 +66,6 @@ def _simular_jogo(args):
         over += (g0 + g1) >= 3
         gc, gf, ch, cf = gc + g0, gf + g1, ch + r.get("chutes_0", 0), cf + r.get("chutes_1", 0)
     return jid, {"h": h, "d": d, "a": a, "over": over, "n": n, "gols_casa": gc / n, "gols_fora": gf / n, "chutes_casa": ch / n, "chutes_fora": cf / n}
-
-
-class Historia:
-    """Acumula chutes feitos/sofridos por time só dos jogos já disputados."""
-
-    def __init__(self):
-        self.pro, self.contra, self.n = {}, {}, {}
-        self.soma_casa = self.soma_fora = 0.0
-        self.jogos = 0
-
-    def add(self, j):
-        for t, f, c in ((j["home"], j["hs"], j["as"]), (j["away"], j["as"], j["hs"])):
-            self.pro[t] = self.pro.get(t, 0.0) + f
-            self.contra[t] = self.contra.get(t, 0.0) + c
-            self.n[t] = self.n.get(t, 0) + 1
-        self.soma_casa += j["hs"]
-        self.soma_fora += j["as"]
-        self.jogos += 1
-
-    def media_time(self):
-        return (self.soma_casa + self.soma_fora) / (2 * self.jogos)
-
-    def mando(self):
-        return math.sqrt(self.soma_casa / self.soma_fora)
-
-    def forca(self, t, usar_forca):
-        if not usar_forca or self.n.get(t, 0) == 0:
-            return 1.0, 1.0
-        m, n = self.media_time(), self.n[t]
-        ataque = (self.pro[t] + K_ENCOLHIMENTO * m) / ((n + K_ENCOLHIMENTO) * m)
-        defesa = (self.contra[t] + K_ENCOLHIMENTO * m) / ((n + K_ENCOLHIMENTO) * m)
-        return ataque, defesa
-
-    def multiplicadores(self, casa, fora, usar_forca):
-        nivel = self.media_time() / CHUTES_POR_TIME_SIM_NEUTRO
-        mando = self.mando()
-        ac, dc = self.forca(casa, usar_forca)
-        af, df = self.forca(fora, usar_forca)
-        return (ac * nivel * mando, dc), (af * nivel / mando, df)
 
 
 def ler(caminho):
@@ -147,14 +117,14 @@ def main():
     a = ap.parse_args()
 
     jogos = ler(a.csv)
-    hist, tarefas, meta = Historia(), [], {}
+    hist, tarefas, meta = cam.Historia(), [], {}
     teste = 0
     for j in jogos:
         if j["season"] == a.temporada and hist.jogos >= 100 and (not a.limite or teste < a.limite):
             teste += 1
-            for variante, usar in (("forca", True), ("neutro", False)):
-                mc, mf = hist.multiplicadores(j["home"], j["away"], usar)
-                tarefas.append(((j["id"], variante), mc, mf, a.sims, j["id"] * 10 + (1 if usar else 2)))
+            for nome, v in VARIANTES.items():
+                mc, mf = cam.multiplicadores(v["camadas"], hist, j["home"], j["away"])
+                tarefas.append(((j["id"], nome), mc, mf, a.sims, j["id"] * 10 + v["semente"]))
             meta[j["id"]] = j
         hist.add(j)
 
@@ -193,7 +163,7 @@ def main():
         res = 0 if j["hg"] > j["ag"] else (1 if j["hg"] == j["ag"] else 2)
         over = (j["hg"] + j["ag"]) >= 3
         lin = {"id": jid, "data": j["date"], "res": res, "over": over}
-        for v in ("forca", "neutro"):
+        for v in VARIANTES:
             r = resultados[(jid, v)]
             n = r["n"]
             lin[v] = {"p1x2": [(r["h"] + 1) / (n + 3), (r["d"] + 1) / (n + 3), (r["a"] + 1) / (n + 3)], "pover": (r["over"] + 1) / (n + 2),
@@ -205,7 +175,7 @@ def main():
         linhas.append(lin)
 
     comuns = [l for l in linhas if "dc" in l and "mercado" in l]
-    modelos = ["forca", "neutro", "dc", "mercado"]
+    modelos = list(VARIANTES) + ["dc", "mercado"]
     resumo = {"jogos_teste": len(linhas), "jogos_comuns": len(comuns), "sims_por_jogo": a.sims}
     perdas = {m: {"ll": [], "br": [], "ll_ou": [], "br_ou": []} for m in modelos}
     for l in comuns:
@@ -216,20 +186,23 @@ def main():
                 perdas[m][k].append(v)
     n = len(comuns)
     resumo["medias"] = {m: {k: sum(v) / n for k, v in perdas[m].items()} for m in modelos}
+    pares = [(v, nome["ref"]) for v, nome in VARIANTES.items() if nome["ref"]] + [(v, "dc") for v in VARIANTES] + [(v, "mercado") for v in VARIANTES] + [("dc", "mercado")]
     resumo["diferencas_pareadas"] = {}
-    for par in (("forca", "dc"), ("forca", "mercado"), ("forca", "neutro"), ("dc", "mercado"), ("neutro", "dc")):
+    for par in pares:
         for k in ("ll", "br", "ll_ou", "br_ou"):
             dif = [x - y for x, y in zip(perdas[par[0]][k], perdas[par[1]][k])]
             m, lo, hi = bootstrap_ic(dif)
             resumo["diferencas_pareadas"][f"{par[0]}-{par[1]}:{k}"] = {"media": m, "ic95": [lo, hi]}
-    reais = [(l["over"], meta[l["id"]]) for l in linhas]
+    # diagnóstico nos jogos comuns: o nível e a forma das probabilidades de cada modelo contra o que aconteceu
     resumo["diagnostico"] = {
-        "gols_reais_por_jogo": sum(j["hg"] + j["ag"] for _, j in reais) / len(reais),
-        "gols_sim_forca": sum(l["forca"]["gols"] for l in linhas) / len(linhas),
-        "chutes_reais_por_jogo": sum(j["hs"] + j["as"] for _, j in reais) / len(reais),
-        "chutes_sim_forca": sum(l["forca"]["chutes"] for l in linhas) / len(linhas),
-        "frac_over_real": sum(1 for o, _ in reais if o) / len(reais),
-        "frac_over_sim_forca": sum(l["forca"]["pover"] for l in linhas) / len(linhas),
+        "freq_real_casa_empate_fora": [sum(1 for l in comuns if l["res"] == k) / n for k in range(3)],
+        "freq_over_real": sum(1 for l in comuns if l["over"]) / n,
+        "gols_reais_por_jogo": sum(meta[l["id"]]["hg"] + meta[l["id"]]["ag"] for l in comuns) / n,
+        "chutes_reais_por_jogo": sum(meta[l["id"]]["hs"] + meta[l["id"]]["as"] for l in comuns) / n,
+        "modelos": {m: {"p_casa_empate_fora_medio": [sum(l[m]["p1x2"][k] for l in comuns) / n for k in range(3)],
+                        "p_over_medio": sum(l[m]["pover"] for l in comuns) / n,
+                        **({"gols_por_jogo": sum(l[m]["gols"] for l in comuns) / n, "chutes_por_jogo": sum(l[m]["chutes"] for l in comuns) / n} if m in VARIANTES else {})}
+                    for m in modelos},
     }
     json.dump({"resumo": resumo, "jogos": linhas}, open(a.saida, "w"), ensure_ascii=False)
     print(json.dumps(resumo, indent=1, ensure_ascii=False))
