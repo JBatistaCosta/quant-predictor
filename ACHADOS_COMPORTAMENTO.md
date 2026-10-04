@@ -2667,3 +2667,43 @@ Referências no mesmo conjunto: Dixon-Coles 1X2 1,0347 / over/under 0,6872; merc
 **O que não se pode concluir.** Uma liga, duas temporadas, 342 jogos: efeitos de ±0,01 não são detectáveis. Não testei fator estimado só com o histórico anterior a cada jogo (calibração móvel), que é o caso que importaria em produção.
 
 **Próximos testes (propostos):** calibração móvel do fator (só com jogos anteriores); outras ligas; toques no último terço por placar (StatsBomb); corrigir o rótulo de `p_quebra` no simulador (100% em todas as zonas por filtro antigo `mesma|recuperação|`).
+
+## Achado 55 — a qualidade do chute não cai de forma consistente ao longo do jogo; o que muda depende do estado do placar, e o reserva chuta com qualidade um pouco maior que o titular
+
+**Pergunta.** Os Achados 8 e 27 mostravam xG por chute plano ao longo do jogo (0,108 a 0,113) e conversão subindo um pouco no 2º tempo. A hipótese era que a qualidade cai com a fadiga e que a entrada de reservas seria a exceção. Esses achados mediam a média de tudo junto, sem separar estado do placar, força do time nem quem chuta.
+
+**Método** (`arquivos_do_claude/qualidade_chute_no_tempo.sql`, só leitura; `scripts/analisar_qualidade_chute_no_tempo.py`, sem rede; dados agregados em `dados_referencia/qualidade_chute/`). Premier League, La Liga, Serie A, Bundesliga e Ligue 1, 2021 a 2025: 223.000 chutes, sem pênalti, gol contra e disputa de pênaltis. Estado do placar ANTES do chute e relógio monótono (`clock`), a mesma regra de `derivar_game_state`. Células: liga × estado (perde/empata/ganha) × perfil de força (Elo global, corte 100) × tipo de lance (jogo corrido ou bola parada). Cada faixa de 15 minutos é padronizada para a mesma composição de células. Fadiga medida só em titulares. Reserva comparado com titular na mesma célula e faixa de tempo, ponderando pelos chutes do reserva. Papel do reserva por minutos desde a entrada (`match_lineup_fotmob.substituted_in_minute`).
+
+**Resultado 1: sem controle, a qualidade é plana, e a alta no fim vem dos reservas.**
+
+| faixa | 0-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 |
+|---|---|---|---|---|---|---|
+| xG/chute, todos | 0,1023 | 0,1003 | 0,1011 | 0,1016 | 0,1042 | 0,1035 |
+| xG/chute, só titulares | 0,1022 | 0,1004 | 0,1012 | 0,1016 | 0,1038 | 0,1005 |
+| titulares, padronizado | 0,1031 | 0,1009 | 0,1010 | 0,1007 | 0,1023 | 0,0997 |
+| reservas entre os chutes | 0% | 0,2% | 0,6% | 3,5% | 13% | 28,8% |
+
+A inclinação padronizada dos titulares é **-0,00021 xG/chute por faixa de 15 min (ep 0,00023; z = -0,9)**, ou -0,0011 do início ao fim (-1%): não significativa. O gols/xG também fica plano (0,95 a 0,98 em todas as faixas).
+
+**Resultado 2: o efeito depende do estado do placar (titulares, padronizado por liga, perfil e tipo).**
+
+| estado | 0-15 | 15-30 | 30-45 | 45-60 | 60-75 | 75-90 | inclinação por faixa (z) |
+|---|---|---|---|---|---|---|---|
+| perdendo | 0,0939 | 0,0929 | 0,0925 | 0,0946 | 0,0942 | 0,0890 | -0,00056 (-1,4) |
+| empatando | 0,1014 | 0,0978 | 0,0992 | 0,0972 | 0,0985 | 0,0955 | **-0,00086 (-3,1)** |
+| ganhando | 0,1168 | 0,1162 | 0,1141 | 0,1147 | 0,1191 | 0,1199 | **+0,00114 (+2,2)** |
+
+Empatando, o xG por chute cai cerca de 6% do começo ao fim; ganhando, sobe cerca de 3%; perdendo, cai nos últimos 15 minutos. Os dois lados se cancelam na média. Isso é compatível com fadiga ou desespero de quem precisa do gol e com espaço para contra-ataque de quem está ganhando, mas os dados não separam as duas leituras.
+
+**Resultado 3: o padrão não é robusto entre ligas.** Inclinação padronizada de titulares por liga (z): Premier League -0,00116 (-2,3), Bundesliga -0,00046 (-0,8), La Liga +0,00001, Ligue 1 0,00000, Serie A +0,00075 (+1,5). Só a Premier League mostra queda (-0,0058 de 0-15 a 75-90); a Serie A sobe. "Ganhando sobe" aparece com z ≥ 2 em duas ligas (Ligue 1, Serie A). Jogo corrido (-0,00035, z = -1,2) e bola parada (+0,00010, z = +0,3) também não distinguem de zero.
+
+**Resultado 4: o reserva chuta com qualidade maior que o titular, e o efeito não some com o tempo em campo.** Mesma célula (liga, faixa, estado, perfil, tipo), diferença reserva menos titular em xG por chute: 0 a 15 min desde a entrada **+0,0053 (ep 0,0014; z = +3,8; 12.098 chutes)**, 15 a 30 min +0,0054 (z = +3,0), mais de 30 min +0,0048 (z = +1,8). A partir dos 60 minutos, **+0,0052 (ep 0,0012)**, cerca de +5% sobre os ~0,102 do titular. A direção é a mesma nas cinco ligas (de +0,0024 a +0,0063 a partir dos 60 minutos).
+
+**Leitura.**
+- A hipótese de queda geral por fadiga **não se sustenta**: a média é plana, e as diferenças por estado não se repetem em todas as ligas.
+- A "exceção do reserva" aparece, mas **não tem cara de pernas descansadas**: o efeito não decai com o tempo desde a entrada (+0,0053, +0,0054, +0,0048), como seria se fosse frescor que se esgota. É compatível com **composição**: reservas costumam ser atacantes, que chutam de mais perto, e a comparação não controla a posição.
+- Para o simulador: não há base para um multiplicador de qualidade por janela. Se existir um, o candidato é o estado do placar (já tratado no Achado 52), não o relógio.
+
+**O que não se pode concluir.** (1) A posição do jogador não foi controlada: sem isso, "reserva" mistura frescor e perfil de posição. (2) xG mede a qualidade da chance (lugar e tipo do chute), não a finalização; a fadiga na execução apareceria em gols/xG, que ficou plano mas é ruidoso. (3) Erro-padrão trata chutes como independentes (mesmo jogo e mesmo time se repetem), então é otimista. (4) Cinco ligas europeias, 2021 a 2025; o resultado não vale para outras competições. (5) `sem_escalacao` (4,8% dos chutes: jogador sem correspondência na escalação) tem o mesmo sinal que os reservas (+0,0067) e foi tratado à parte.
+
+**Próximo teste (proposto):** repetir a comparação reserva contra titular DENTRO da mesma posição (atacante, meia, defensor) com `match_lineup_fotmob.position_id`, para separar frescor de perfil de posição.

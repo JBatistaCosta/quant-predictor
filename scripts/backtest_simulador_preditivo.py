@@ -55,7 +55,7 @@ VARIANTES = {
     "estado_q": {"camadas": KEEP, "semente": 12, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": False, "qualidade": True}}, "padrao": True},
     "estado_ctx": {"camadas": KEEP, "semente": 14, "ref": "estado_vq", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True, "ctx": True}}, "padrao": True},
     "estado_vq": {"camadas": KEEP, "semente": 13, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "estado": {"volume": True, "qualidade": True}}, "padrao": True},
-    # Achado 55: (a) rótulo de quebra corrigido (simulador: Parametros.usar_quebra_corrigida); (b) fator de gols MÓVEL: razão gols reais / gols simulados dos últimos `janela` jogos
+    # Achado 56: (a) rótulo de quebra corrigido (simulador: Parametros.usar_quebra_corrigida); (b) fator de gols MÓVEL: razão gols reais / gols simulados dos últimos `janela` jogos
     # ANTERIORES (base em --base-gols, gerada com --extrair-base a partir de uma rodada sem fator). Mesmas sementes de exp_forca: a diferença pareada é só o efeito da mudança.
     "exp_forca_quebra": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "quebra_corrigida": True}, "padrao": False},
     "exp_forca_movel": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_forca", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
