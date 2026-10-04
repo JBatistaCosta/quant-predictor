@@ -1959,3 +1959,33 @@ Mudanças do v1 em `simulador_cadeia_bola.py` (3.000 jogos, semente 2): (1) tiro
 **O que o v2 do simulador fez:** lateral (de reinício, depois de chute ou mantido) agora cai na linha lateral na faixa medida (Achado 30), tiro de meta na defesa central. Efeito pequeno: ataque fora alto 9,2% -> 10,0%, grande área 2,4% -> 2,5%; ações 2.012 (+13%), chutes 25,3, gols 2,46, escanteios 9,8 (-4%), laterais 44,7 e tiros livres 29,3. Pouco, porque o lateral ainda **substitui** uma recuperação em vez de somar à entrada em jogo, que é o que o resíduo observado mostra.
 
 **Próximo passo:** modelar o resíduo como entradas adicionais por zona (distribuição acima), sem tirá-las das perdas — e checar com o StatsBomb de que evento vem cada linha de resíduo (lateral, tiro livre, escanteio) em vez de supor.
+
+### Achado 31 — v3: o resíduo é bola parada, a recuperação do v2 estava no lugar errado, e o simulador passa a fechar sem constante de lateral/escanteio
+
+`scripts/analisar_residuo_entradas_statsbomb.py` classifica TODA linha da matriz pela forma como a bola chegou (1.517 jogos, 4 ligas de 2015/16; saída em `dados_referencia/statsbomb/residuo_entradas_ligas_2015_16.json`). Por jogo:
+
+| classe de entrada | linhas/jogo | faixas (defesa / meio baixo / meio alto / ataque baixo / ataque alto / grande área, %) |
+|---|---|---|
+| continua | 1.449,8 | 20,3 / 27,0 / 26,2 / 10,5 / 12,6 / 3,4 |
+| recuperação em jogo | 229,5 | 40,9 / 26,1 / 17,9 / 6,4 / 6,1 / 2,5 |
+| lateral | 45,6 | 22,1 / 20,4 / 22,0 / 10,5 / 25,0 / 0 |
+| tiro livre | 30,1 | 35,0 / 25,1 / 22,0 / 8,9 / 8,8 / 0,3 |
+| tiro de meta | 16,2 | 100% defesa |
+| escanteio | 10,0 | 100% ataque fora alto (bandeirinha) |
+| saída de bola | 4,6 | 100% meio alto/centro |
+
+**Duas causas do v2, ambas corrigidas:** (1) o resíduo do Achado 31 v2 são as **bolas paradas** (≈106 linhas por jogo: lateral, tiro livre, tiro de meta, escanteio, saída de bola), e elas começam bem mais à frente do que uma recuperação; (2) a recuperação em jogo do v2 usava a zona do PRIMEIRO EVENTO do adversário (bloqueio, corte, duelo), mas a próxima linha de ação dele começa mais à frente: no v2 só 3,1% das recuperações caíam em ataque fora alto e 0,4% na grande área, contra 6,1% e 2,5% reais.
+
+**Núcleo empírico (substitui 4 peças e 2 constantes calibradas à mão):** para cada linha que começa na zona z e termina em continua, perda ou chute, a próxima linha é sorteada diretamente dos dados: quem a tem (mesma equipe ou adversário), a classe e a zona. Isso inclui o lateral que fica com a mesma equipe (7,8% das perdas), a bola que a mesma equipe retoma em jogo (14,6% das perdas), o escanteio depois de perda (2,3%) e a falta depois de ação que continua. `P_LATERAL_MESMA`, `ESCALA_ESCANTEIO`, `PROB_CHUTE_NO_ESCANTEIO` e o modelo de falta por faixa saíram do código. A bola parada ganha o tempo morto lognormal do Achado 29. Restou **uma** constante calibrada: folga de 0,2 s entre linhas (os 46,1 min em ação + 40,7 de tempo morto somam só 86,8 dos ~94 min de relógio).
+
+| por jogo (3.000 jogos simulados) | v2 | **v3** | observado |
+|---|---|---|---|
+| ações | 2.012 | **1.782** | 1.786 |
+| chutes / gols / xG | 25,3 / 2,46 / 2,59 | **24,8 / 2,55 / 2,46** | 25,0 / 2,55 / 2,47 |
+| escanteios | 9,8 | **10,0** | 10,2 |
+| laterais / tiros livres | 44,7 / 29,3 | **45,6 / 30,3** | 46,3 / 30,6 |
+| tiros de meta / saídas de bola | 15,8 / 2,46 | **16,1 / 2,55** | 16,7 / 2,60 |
+| tempo morto (min) | 38,8 | **39,4** | 40,7 |
+| ocupação grande área / ataque alto (%) | 2,5 / 10,0 | **3,1 / 12,2** | 3,1 / 12,3 |
+
+**Todos os totais ficam a menos de 3,5% do observado e a ocupação do campo bate a menos de 0,6 ponto percentual por faixa** (testes automáticos exigem < 1 ponto). **Limites que continuam valendo:** (a) é dentro da amostra (mesmos jogos que geraram o núcleo), não prova de previsão; (b) a variância por jogo é só a de acaso: escanteios var/média 1,03 contra ~1,2 observado, gols 0,97, chutes 0,95, porque não há força dos times nem estado do jogo (falta de heterogeneidade entre jogos); (c) chutes por janela de 15 min continuam planos (3,9 a 4,1; a última janela sobe só porque o 2T dura 48 min); (d) posses (237 trocas) não são comparáveis às 195 sequências do StatsBomb; (e) 'Goalkeeper' reposições do tipo From Keeper (0,5 min/jogo) não têm tempo morto próprio. **Próximo passo:** inclinação por janela (Achado 28) e força/Elo dos times nas taxas de perda e chute, que é onde a variância por jogo deve aparecer.

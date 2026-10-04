@@ -9,6 +9,10 @@
 
 ---
 
+**Simulador v3 fecha os totais por jogo (04/10) -- Achado 31, subseção v3.** `scripts/analisar_residuo_entradas_statsbomb.py` (+ teste, saída `residuo_entradas_ligas_2015_16.json`) mostrou que o resíduo do v2 são as bolas paradas (~106 linhas/jogo) e que a recuperação do v2 usava a zona do primeiro evento do adversário, não da próxima linha de ação. O simulador agora sorteia a próxima linha (quem, classe, zona) de um núcleo empírico condicionado à zona de início e ao tipo da linha (continua/perda/chute) e não tem mais constantes de lateral/escanteio/falta; uma única constante calibrada, `FOLGA_ENTRE_ACOES_S = 0,2`. Resultado em 3.000 jogos: ações 1.782/1.786, chutes 24,8/25,0, gols 2,55/2,55, escanteios 10,0/10,2, laterais 45,6/46,3, tiros livres 30,3/30,6, ocupação por faixa a menos de 0,6 p.p. É dentro da amostra; variância por jogo ainda é só de acaso (escanteios var/média 1,03 contra ~1,2). Próximo: janela de jogo e força dos times.
+
+---
+
 **Simulador v2: causa da sub-ocupação do terço final (04/10) -- Achado 31, subseção v2.** Teste sem simulação (distribuição estacionária com as matrizes exatas) reproduz o erro (grande área 2,3% contra 3,1%): é estrutural. As entradas "residuais" de ação (~61/jogo, 3,4% das ações; 25 em ataque fora alto) não vêm de continuação nem de recuperação em jogo; somá-las fecha 70% do erro. Lateral agora cai na linha lateral na faixa medida; efeito pequeno porque ainda substitui recuperação. Próximo passo: resíduo como entrada adicional por zona, conferindo a origem de cada linha no StatsBomb.
 
 ---
