@@ -34,3 +34,12 @@ def test_cruzamento_apelidos_e_total_de_passes():
     pares, sem = x.cruzar(fm, sb)
     assert len(pares) == 2 and not sem
     assert pares[0]["statsbomb"]["chutes"] == [5, 6] and pares[1]["statsbomb"]["chutes"] == [4, 3]       # o par repetido é desempatado pelo placar; ordem casa/fora acertada
+
+
+def test_resumo_fotmob_ignora_a_disputa_de_penaltis_nos_chutes_e_no_xg():
+    import cruzar_fotmob_statsbomb_torneios as x
+    reg = {"fotmob_match_id": 1, "fixture": {"home": {"id": "1", "name": "A", "score": 1}, "away": {"id": "2", "name": "B", "score": 1}, "status": {"utcTime": "2024-06-01T10:00:00Z"}},
+           "matchDetails": {"content": {"shotmap": {"shots": [{"teamId": 1, "expectedGoals": 0.3, "period": "FirstHalf"}, {"teamId": 1, "expectedGoals": 0.78, "period": "PenaltyShootout"},
+                                                              {"teamId": 2, "expectedGoals": 0.2, "period": "SecondHalf"}]}}}}
+    r = x.resumo_fotmob(reg)
+    assert r["n_chutes"] == [1, 1] and r["xg_chutes"] == [0.3, 0.2]

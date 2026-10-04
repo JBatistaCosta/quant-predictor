@@ -2109,19 +2109,19 @@ O Elo conhecido ANTES da temporada prevê bem o estilo de posse (quem tem Elo al
 
 **O que foi importado.** `scripts/baixar_fotmob_torneios.py` baixou do FotMob 330 jogos encerrados: Eurocopa 2024 (51), 2020 (51), 2016 (51) e 2012 (31); Copa América 2024 (32), 2021 (28), 2019 (26), 2016 (34) e 2015 (26). Cada jogo traz placar, eventos, estatísticas de time e de jogador, escalação, momentum e o mapa de chutes com xG e xGOT. Ficou versionado em `dados_referencia/fotmob/` (2,2 MB comprimido; ver o `LEIA-ME.md` da pasta), **sem gravar no banco**: a carga usual (`ingestao_fotmob.py`) exige a chave service_role do Supabase, que não existe no ambiente desta sessão, e as seleções ainda não têm linha em `teams`/`leagues`.
 
-**Cruzamento com o StatsBomb** (`scripts/cruzar_fotmob_statsbomb_torneios.py`; casamento por par de seleções + placar, com tabela de apelidos explícita; **134 de 134 jogos casaram** em Euro 2020, Euro 2024 e Copa América 2024; na Copa América 2024 o par Argentina x Canadá se repete com o mesmo placar e foi desempatado pela ordem cronológica). Totais por jogo, razão FotMob/StatsBomb e correlação:
+**Cruzamento com o StatsBomb** (`scripts/cruzar_fotmob_statsbomb_torneios.py`; casamento por par de seleções + placar, com tabela de apelidos explícita; **198 de 198 jogos casaram** em Euro 2020, Euro 2024, Copa América 2024 e Copa do Mundo 2022, esta baixada depois; o par Argentina x Canadá se repete na Copa América 2024 com o mesmo placar e foi desempatado pela ordem cronológica). Totais por jogo, razão FotMob/StatsBomb e correlação por jogo (valores CORRIGIDOS, ver abaixo):
 
 | medida | FotMob | StatsBomb | razão | correlação por jogo |
 |---|---|---|---|---|
-| gols | 2,46 | 2,46 | **1,000** | 1,000 |
-| escanteios | 9,30 | 9,28 | 1,002 | 0,999 |
-| chutes | 25,57 | 24,76 | 1,033 | 0,935 |
-| passes (FotMob = certos / taxa de acerto) | 940,9 | 1.019,0 | 0,923 | 0,992 |
-| xG | 3,21 | 2,45 | **1,309** | **0,455** |
+| gols | 2,53 | 2,53 | **1,000** | 1,000 |
+| escanteios | 9,16 | 9,14 | 1,003 | 0,999 |
+| chutes | 24,16 | 24,10 | 1,003 | 0,996 |
+| passes (FotMob = certos / taxa de acerto) | 956 | 1.036 | 0,923 | 0,993 |
+| xG | 2,66 | 2,44 | **1,087** | 0,940 |
 
-Por torneio, a razão de xG é 1,26 (Euro 2024), 1,25 (Euro 2020) e **1,49** (Copa América 2024, correlação 0,33); a de chutes, 1,02 a 1,05; a de passes, 0,90 a 0,94.
+**CORREÇÃO (04/10, ao baixar a Copa de 2022).** A primeira versão desta seção dizia que o xG do FotMob era 26 a 49% maior que o do StatsBomb, com correlação de 0,33 a 0,55, e que chutes tinham razão 1,03. **Estava errado:** o mapa de chutes do FotMob inclui as cobranças da disputa de pênaltis (`period = PenaltyShootout`) e o StatsBomb as guarda em outro período; somá-las inflava o xG e os chutes do FotMob nos jogos decididos nos pênaltis. Sem elas, chutes batem (razão 1,003; correlação 0,996) e o xG fica 3 a 13% acima (correlação 0,94 a 0,96). O erro foi meu (não excluí a disputa no cruzamento, embora tivesse excluído na tabela polar do Achado 37). O teste `test_resumo_fotmob_ignora_a_disputa_de_penaltis_nos_chutes_e_no_xg` cobre.
 
-**Leitura.** (1) Os fatos discretos (gols, escanteios) são os mesmos nas duas fontes; chutes e passes diferem pouco por definição de evento. (2) **O xG do FotMob é 26 a 49% maior que o do StatsBomb nos mesmos jogos e a correlação por jogo é só 0,33 a 0,55**: não são o mesmo modelo, e somar ou misturar as duas escalas distorce. Isso se aplica ao simulador: a tabela polar do FotMob usada para o xG do chute está na escala do FotMob (xG simulado 2,65 contra 2,47 do StatsBomb em 2015/16), e em torneios a diferença é maior que nas ligas. (3) Para dado de seleções com mapa de chutes, as edições de 2012, 2016, 2019, 2021 e 2015 só existem no FotMob.
+**Leitura.** Gols, escanteios e chutes são os mesmos nas duas fontes; passes do FotMob são 8% menores (definição de passe); **o xG do FotMob é cerca de 9% maior que o do StatsBomb nos mesmos jogos** (modelos diferentes, correlação alta). As edições de 2012, 2016 (Euro) e 2015, 2016, 2019, 2021 (Copa América) só existem no FotMob e sem mapa de chutes.
 
 **Não feito:** a tabela polar (14 zonas) refeita só com os chutes de seleções, e o casamento das seleções com `teams` para a carga no banco (precisa do crosswalk supervisionado e da chave de escrita).
 
@@ -2152,6 +2152,29 @@ Por torneio, a razão de xG é 1,26 (Euro 2024), 1,25 (Euro 2020) e **1,49** (Co
 1. **xG por local, em clubes (banco, `match_shots_fotmob`, 6 a 16,5 m em cone central, sem pênalti, só chutes extraídos antes de 08/2026):** xG médio por chute fica estável entre 2020 e 2026 (0,143 / 0,141 / 0,142 / 0,142 / 0,142 / 0,144 / 0,145 nos anos de 2020 a 2026), uma variação de +2%.
 2. **Mas os gols por chute caem:** 0,151 (2020), 0,149 (2021), 0,144 (2022), 0,140 (2023), 0,139 (2024), 0,141 (2025), 0,142 (2026), e **gols/xG vai de 1,06 / 1,06 em 2020-21 para 1,01 em 2022 e 0,98 de 2023 em diante** (n de ~14 mil chutes por ano, erro-padrão ~2%): uma queda de ~8%, concentrada entre 2021 e 2023, com xG por local constante.
 3. **Seleções (amostras pequenas):** gols/xG 0,99 (Euro 2020), 0,79 (Euro 2024), 0,89 (Copa América 2024); na faixa 0-12 m, 1,05 contra 0,75 e 0,88; a diferença entre as duas Euros (~0,2) está a ~1,5 erro-padrão, não é conclusiva.
-4. **Contra o StatsBomb nos mesmos jogos (Achado 36):** FotMob/StatsBomb 1,25 (Euro 2020) e 1,26 (Euro 2024): sem mudança relativa entre as duas edições, mas 1,49 na Copa América 2024.
+4. **Contra o StatsBomb nos mesmos jogos:** ver o Achado 38 (a razão do Achado 36 que estava aqui foi corrigida: sem as cobranças da disputa de pênaltis, os valores são 1,03 na Euro 2020 e 1,11 na Euro 2024).
 
 **O que isso permite dizer.** O xG por local do FotMob **não deu salto** entre 2020 e 2026 (mesmos locais, mesmo xG médio), então não há sinal de recalibração do tamanho que o xG precisaria ter. O que aparece é uma **queda gradual da conversão em relação ao xG** (~8%) entre 2021 e 2023. Duas explicações compatíveis: o xG passou a refletir mais do que a posição (por exemplo, tipo de passe, pressão, goleiro) e ficou mais generoso sem mudar a média por local, ou a conversão real caiu (ou o registro dos chutes/gols mudou). Dois dados do próprio FotMob não bastam para separar as duas: é preciso uma referência externa estável (o StatsBomb de 2015/16, que só tem ligas antigas, e a Copa 2022 inteira, que está no StatsBomb mas não no FotMob do banco). **Cautela para o simulador:** a tabela polar de clubes que ele usa mistura 2020-2026 e embute essa deriva; seu gols/xG médio é ~1,0 e deve ser recalculado por período se o simulador for usado para uma temporada específica.
+
+
+## Achado 38 — Copa do Mundo de 2022 do FotMob e a hipótese de mudança no xG da Opta: o xG do FotMob subiu ~8% em relação ao StatsBomb entre a Euro 2020 e 2022, mas o xG por distância do FotMob não mudou
+
+**Dados.** `baixar_fotmob_torneios.py` agora inclui a Copa do Mundo de 2022 (FotMob 77): 64 jogos em `dados_referencia/fotmob/copa_mundo/2022/`, todos casados com o StatsBomb (`FIFA World Cup 2022`).
+
+**Razão do xG FotMob / StatsBomb por edição** (sem disputa de pênaltis; IC 95% por bootstrap de jogos):
+
+| edição | razão | IC 95% | jogos |
+|---|---|---|---|
+| Euro 2020 (jun-jul 2021) | **1,026** | 0,994 a 1,060 | 51 |
+| Copa do Mundo 2022 (nov-dez 2022) | 1,128 | 1,088 a 1,176 | 64 |
+| Euro 2024 | 1,106 | 1,076 a 1,137 | 51 |
+| Copa América 2024 | 1,076 | 1,034 a 1,125 | 32 |
+| 2022 a 2024 juntas | **1,110** | 1,085 a 1,134 | 147 |
+
+Os ICs da Euro 2020 e do conjunto 2022-2024 **não se sobrepõem**: o xG do FotMob subiu ~8% em relação ao do StatsBomb entre meados de 2021 e novembro de 2022 e ficou estável depois. É a mesma ordem de grandeza e o mesmo período da queda de ~8% nos gols/xG dos clubes do banco entre 2021 e 2023 (Achado 37).
+
+**Mas não dá para atribuir à Opta.** Em faixas de distância fixas, xG por chute do FotMob (sem pênaltis) em 0-12 m: 0,197 (Euro 2020), **0,215 (Copa 2022)**, 0,180 (Euro 2024), 0,180 (Copa América 2024); em 12-22 m: 0,080 / 0,089 / 0,080 / 0,092; em >= 22 m: 0,029 / 0,030 / 0,030 / 0,028. Não há degrau monótono (a Copa de 2022 é a mais alta, não a mais recente) e, nos clubes do banco, o xG por local é estável de 2020 a 2026. O xG do StatsBomb em 0-12 m: 0,180 (Euro 2020), 0,181 (Copa 2022), 0,179 (Copa 2018), **0,154 (Euro 2024) e 0,164 (Copa América 2024)** — caiu cerca de 10% em 2024. A variação do xG de uma faixa de 0-12 m entre torneios (erro-padrão da média de ~0,008 por edição) mistura xG do local e mistura de chutes dentro da faixa (0-6 m contra 6-12 m). **A evidência não sustenta uma mudança no cálculo do xG da Opta: a razão FotMob/StatsBomb subiu em 2022-2024 porque o xG do StatsBomb por distância caiu nos torneios de 2024 e o do FotMob variou sem tendência; a origem mais provável está no lado do StatsBomb ou na composição dos chutes.** A queda da conversão em relação ao xG nos clubes (Achado 37) fica sem explicação por mudança de modelo do FotMob.
+
+**Atualização da tabela polar de seleções (Achado 37) com a Copa de 2022:** 4.698 chutes (sem pênaltis); xG por chute 0,1015 contra 0,1007 de clubes (+1%); **gols por chute 0,0930 contra 0,0976 (-5%)**, ou seja, a defasagem de conversão de seleções cai de -11% (Euro 2024 e Copa América 2024, 3.265 chutes) para -5% com a Copa de 2022, que converte 0,1068 por chute (gols/xG 0,97). O saldo menor de gols de seleções em 2024 não se repete em 2022; a tabela completa recalculada está em `dados_referencia/fotmob/zonas_polares_selecoes.json`.
+
+**Limites:** cada torneio tem 1,2 a 1,6 mil chutes (IC largo por faixa de distância); o StatsBomb Open Data não carrega a versão do modelo de xG; a Copa de 2018 do StatsBomb não foi baixada do FotMob (um teste a mais: 64 jogos, 2 min).

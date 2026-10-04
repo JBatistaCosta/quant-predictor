@@ -20,7 +20,7 @@ import comparar_competicoes_statsbomb as c  # noqa: E402
 
 PASTA_SB = "dados_referencia/statsbomb/completo"
 PASTA_FM = "dados_referencia/fotmob"
-PARES = [("euro", "2024", "euro", "UEFA Euro 2024"), ("euro", "2020", "euro", "UEFA Euro 2020"), ("copa_america", "2024", "copa_america", "Copa America 2024")]
+PARES = [("euro", "2024", "euro", "UEFA Euro 2024"), ("euro", "2020", "euro", "UEFA Euro 2020"), ("copa_america", "2024", "copa_america", "Copa America 2024"), ("copa_mundo", "2022", "copa_mundo", "FIFA World Cup 2022")]
 # nomes diferentes entre as fontes para a MESMA seleção (conferido à mão contra as listas de seleções de cada edição)
 APELIDOS = {"turkiye": "turkey", "czechia": "czech republic", "republic of ireland": "ireland", "ir iran": "iran", "korea republic": "south korea", "usa": "united states",
             "united states of america": "united states", "bosnia and herzegovina": "bosnia herzegovina", "north macedonia": "macedonia", "cabo verde": "cape verde"}
@@ -67,7 +67,9 @@ def resumo_fotmob(reg: dict) -> dict:
                 bruto = {"passes_totais": [total_de_passes(x) for x in st_["stats"]]}
                 break
     stats.update(bruto)
-    chutes = (((d.get("content") or {}).get("shotmap") or {}).get("shots")) or []
+    # o mapa de chutes do FotMob inclui as cobranças da disputa de pênaltis (period 'PenaltyShootout'); o StatsBomb as guarda em outro período e aqui são
+    # excluídas dos dois lados (achado na revisão do Achado 36: elas inflavam o xG e os chutes do FotMob em jogos decididos nos pênaltis)
+    chutes = [x for x in ((((d.get("content") or {}).get("shotmap") or {}).get("shots")) or []) if x.get("period") != "PenaltyShootout"]
     home, away = fx["home"], fx["away"]
     return {"id": reg["fotmob_match_id"], "casa": norm(home["name"]), "fora": norm(away["name"]), "placar": (home.get("score"), away.get("score")),
             "data": (fx["status"] or {}).get("utcTime", "")[:10], "stats": stats, "n_chutes": [sum(1 for s in chutes if s.get("teamId") == int(home["id"]) or str(s.get("teamId")) == str(home["id"])),
@@ -152,6 +154,16 @@ def comparar(pares: list[dict]) -> dict:
     return out
 
 
+def razao_xg_com_ic(pares: list[dict], reamostras: int = 2000, semente: int = 3) -> dict:
+    """Razão xG FotMob / xG StatsBomb (soma sobre soma) e IC 95% por bootstrap de jogos."""
+    import random
+    v = [(sum(p["fotmob"]["xg_chutes"]), sum(p["statsbomb"]["xg"])) for p in pares]
+    rng = random.Random(semente)
+    base = sum(a for a, _ in v) / sum(b for _, b in v)
+    bs = sorted(sum(x[0] for x in amostra) / sum(x[1] for x in amostra) for amostra in ([v[rng.randrange(len(v))] for _ in v] for _ in range(reamostras)))
+    return {"razao": base, "ic_baixo": bs[int(0.025 * (reamostras - 1))], "ic_alto": bs[int(0.975 * (reamostras - 1))], "jogos": len(v)}
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--saida", default="")
@@ -163,6 +175,13 @@ if __name__ == "__main__":
         todos += v["pares"]
         for k, m in comparar(v["pares"]).items():
             print(f"  {k:10s} FotMob {m['media_fotmob']:7.2f} StatsBomb {m['media_statsbomb']:7.2f} razão {m['razao']:.3f} corr {m['corr']:+.3f}")
+    print("\nRazão do xG FotMob / StatsBomb por edição (IC 95% por bootstrap de jogos):")
+    for nome, v in res.items():
+        r = razao_xg_com_ic(v["pares"])
+        print(f"  {nome:22s} {r['razao']:.3f}  [{r['ic_baixo']:.3f}; {r['ic_alto']:.3f}]  ({r['jogos']} jogos)")
+    tardias = [p for n, v in res.items() if n != "euro 2020" for p in v["pares"]]
+    r = razao_xg_com_ic(tardias)
+    print(f"  {'2022-2024 (juntas)':22s} {r['razao']:.3f}  [{r['ic_baixo']:.3f}; {r['ic_alto']:.3f}]  ({r['jogos']} jogos)")
     print("\nTODOS:", len(todos), "jogos casados")
     for k, m in comparar(todos).items():
         print(f"  {k:10s} FotMob {m['media_fotmob']:7.2f} StatsBomb {m['media_statsbomb']:7.2f} razão {m['razao']:.3f} corr {m['corr']:+.3f}")

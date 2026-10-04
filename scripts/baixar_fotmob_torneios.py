@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Baixa do FotMob (API interna www.fotmob.com/api/data/*) a Eurocopa e a Copa América de seleções, para cruzar com o StatsBomb (Achado 36).
+"""Baixa do FotMob (API interna www.fotmob.com/api/data/*) a Eurocopa, a Copa América e a Copa do Mundo (2022) de seleções, para cruzar com o StatsBomb (Achado 36).
 
 Para cada temporada: `fixtures` (lista de jogos) e `matchDetails` de cada jogo encerrado (placar, eventos, estatísticas do jogo e de jogadores, escalações, mapa de
 chutes com xG/xGOT, momentum). Grava fracionado e comprimido em `dados_referencia/fotmob/<torneio>/<temporada>/parte-NNN.json.xz` (+ INDICE.json), igual ao
@@ -21,7 +21,7 @@ import requests
 BASE = "https://www.fotmob.com/api/data"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
 PACING_S = 1.3
-TORNEIOS = {"euro": (50, ["2024", "2020", "2016", "2012"]), "copa_america": (44, ["2024", "2021", "2019", "2016", "2015"])}
+TORNEIOS = {"euro": (50, ["2024", "2020", "2016", "2012"]), "copa_america": (44, ["2024", "2021", "2019", "2016", "2015"]), "copa_mundo": (77, ["2022"])}
 CHAVES_DESCARTADAS = ("nav", "seo", "ongoing", "hasPendingVAR")
 PARTIDAS_POR_ARQUIVO = 25
 
