@@ -2511,3 +2511,31 @@ A razão realizada é ~55% da pedida em escala logarítmica (ln 1,126 / ln 1,24 
 **Próximo teste (proposto).** Camada `expoente_chute`: elevar os multiplicadores de chute (mando e força) a 1/0,55. O expoente sai deste diagnóstico no próprio simulador, não dos dados do teste, então não há ajuste em cima do que se mede; validar por ablação como as outras camadas.
 
 **Limites.** O diagnóstico usa times médios, sem camada de nível de gols; a elasticidade pode variar com a magnitude e entre ligas. Comparação de mando real com 2025/26 de uma liga só.
+
+
+---
+
+## Achado 50 — o mando é volume de chutes (não qualidade), e quem perde chuta mais e pior em qualquer perfil de força
+
+**Pergunta (do usuário).** (1) O mando multiplica também o xG e o λ, não só os chutes? (2) Times fracos que estão perdendo chutam mais, com menor qualidade? Consultas em `arquivos_do_claude/mando_e_estado_do_jogo.sql`.
+
+**(1) Mando.** Cinco ligas, 2022 a 2025 (20 liga-temporadas, jogos com xG dos dois lados). Razão casa/fora: **chutes 1,13 a 1,31** (típico 1,17 a 1,30); **xG por chute 0,95 a 1,09, média 1,017** (Bundesliga +2,6%, La Liga +3,8%, Ligue 1 +4,2%, Premier League +0,7%, Serie A -2,8%); gols por xG de casa e de fora ficam em 0,92 a 1,14, sem lado sistemático. Logo o xG do mandante é ~1,15 a 1,36 vezes o do visitante, e **quase tudo isso é volume**: a qualidade por chute entra com ~+2% (varia de sinal entre ligas) e a conversão com ~0. O multiplicador de mando pertence ao volume de chutes; pôr mando na conversão ou na qualidade não tem base nos dados, o que explica o `gols_mando` nulo do Achado 47.
+
+**(2) Estado do jogo por perfil de força** (5 ligas, `v_game_state_por_forca` separada pelo SINAL da diferença de Elo; a coluna `faixa_forca` da view agrupa pelo tamanho e mistura forte e fraco). Chutes por 90 minutos / xG por chute:
+
+| perfil | ganhando | empatando | perdendo |
+|---|---|---|---|
+| bem mais fraco (Elo <= -100) | 8,18 / 0,1207 | 9,12 / 0,1005 | 11,05 / 0,1004 |
+| parelho (|Elo| <= 30) | 10,17 / 0,1215 | 11,31 / 0,1055 | 13,60 / 0,1034 |
+| bem mais forte (Elo >= 100) | 13,33 / 0,1359 | 14,62 / 0,1147 | 16,94 / 0,1097 |
+
+- **Volume:** perdendo, o time chuta bem mais que ganhando, em todos os perfis (fraco +35%, parelho +34%, forte +27%).
+- **Qualidade:** perdendo, a qualidade por chute é 15 a 19% menor que ganhando (fraco 0,1004 contra 0,1207; forte 0,1097 contra 0,1359). Em relação a empatando, o time perdendo mal piora (fraco 0,1005 -> 0,1004; forte 0,1147 -> 0,1097): a diferença vem sobretudo de quem está ganhando ter chute melhor.
+- **Os dois efeitos quase se cancelam no xG total:** fraco perdendo gera 1,11 xG/90 contra 0,99 ganhando (+12%); forte, 1,86 contra 1,81 (+3%). É por isso que o xG agregado quase não mostra efeito de estado (conclusão que o projeto já tinha), enquanto os componentes mostram.
+- **A hipótese do usuário vale, mas não é específica de time fraco:** é efeito do placar em todo perfil; a força separa o nível (o forte tem chute ~14% melhor em qualquer estado), não a reação.
+
+**O simulador ignora o placar.** `simular_partida` não tem nenhuma reação ao placar: nem mais volume de quem perde, nem melhor chance de quem ganha. Os efeitos acima (+27 a +35% em volume, 15 a 19% em qualidade) são grandes e têm sentido regressivo, isto é, puxam o placar de volta, o que afeta a distribuição de saldos e o 1X2.
+
+**Limites.** Comparar ganhando com perdendo é pareado no tempo (linhas espelhadas, mesmos minutos); comparar com empatando não é (empate tem muito 0 a 0 inicial, mais cauteloso), então não leio o "empatando" como base causal. Não controla casa e fora dentro do estado. Perfil de Elo de resultado.
+
+**Próximos testes (propostos):** (a) expoente de amplificação nos multiplicadores de chute (Achado 49), (b) camada de estado do jogo no simulador (multiplicador de volume e de conversão por saldo de gols), com parâmetros estimados só nas temporadas 2022 a 2024 e avaliada em 2025/26.

@@ -9,6 +9,10 @@
 
 ---
 
+**Mando e estado do jogo -- Achado 50 (04/10).** (1) Mando = volume: razão casa/fora de chutes 1,13-1,31, de xG por chute só 1,017 em média (0,95-1,09 conforme liga), gols/xG sem lado; logo mando na conversão/qualidade não tem base (explica o `gols_mando` nulo). (2) Estado do jogo, por perfil de força (sinal do Elo): perdendo, o time chuta +27 a +35% mais e com qualidade 15-19% menor que ganhando, em qualquer perfil (fraco, parelho, forte); os dois efeitos quase se cancelam no xG total. O simulador ignora o placar. Próximos: expoente de amplificação dos multiplicadores de chute (Achado 49) e camada de estado do jogo (parâmetros de 2022-2024, teste em 2025/26).
+
+---
+
 **Mando por janela recente testado -- Achado 49 (04/10).** Nulo: janela de 100 ou 200 jogos mexe 0,2-0,6 ponto na vitória do mandante (38,6% -> 38,8-39,2%, real 42,4%) e o log-loss não muda (IC incluem zero). Diagnóstico que importa: **o simulador entrega só ~55% da razão de chutes casa/fora que o multiplicador pede** (impor 1,24 realiza 1,126; mesmo assim 40,5% de vitória em casa contra 42,6% real), então o erro de mando não era atraso de estimativa. Hipótese a testar: a mesma atenuação vale para a força dos times, e falta um expoente de amplificação (~1/0,55 = 1,8) nos multiplicadores de chute. Detalhes em ACHADOS_COMPORTAMENTO.md.
 
 ---
