@@ -2337,3 +2337,35 @@ Os três nasceram na regra de sub/superconjunto de palavras (`nomesBatemTime`), 
 **Revisão dos nomes (04/10, a pedido).** Reli os 64 registros de seleções. Corrigido: 'Tartan Army' e 'Green and White Army' eram nomes de torcida (removidos); variações de nome que estavam em `nicknames` foram para `aliases` (Holanda, República Tcheca, USA...) e entraram variações usadas por outras fontes (Korea Republic, IR Iran, Macedonia, Rep. of Ireland, Eire, EUA...). Teste de colisão entre todos os nomes de todas as seleções e contra os nomes de clubes: **achou a Turquia duplicada** (time 473 'Turkey', football-data, 8 jogos de Eurocopa 2024 e Copa 2026; time 1017 'Turkiye', FotMob 6595, 6 jogos de Eurocopa 2016/2020). É o mesmo país com dois `team_id`: qualquer agregado por time da Turquia está dividido em dois. Unida em seguida, com aprovação (ver abaixo). Única seleção sem vínculo FotMob no banco até então: o próprio 473.
 
 **União da Turquia (04/10, após aprovação).** Mantido o time 473 'Turkey' (football-data 803, o mais antigo e com os jogos de 2024 e 2026). Do 1017 'Turkiye' passaram para ele: o vínculo FotMob 6595, os 6 jogos (Eurocopa 2016: Croácia, Espanha, Tchéquia; Eurocopa 2020: Itália, País de Gales, Suíça), as linhas por jogo (14 de eventos, 6 de estatística de time, 6 por período, 41 chutes, 138 de escalação, 138 de estatística de jogador, 6 de histórico de Elo e 6 de Elo de xG; contagens antes = depois), as 30 disponibilidades de jogadores e o elenco. O 473 recebeu os nomes (Turquia/Türkiye) e o alias 'Turkiye'. Elo global e de xG reconstruídos do zero (ambos com sucesso): Turquia (473) com Elo global 1454,8 e Elo de xG 1453,4, ambos com 14 jogos; o 1017 saiu das tabelas de Elo. **O time 1017 foi apagado depois.** O primeiro `DELETE` estourou 60 s (o banco confere, tabela por tabela, se algo ainda aponta para o time; 11 tabelas, ~3,4 milhões de linhas, não tinham índice na coluna do time) e foi desfeito; o 1017 ficou neutralizado (nome '[duplicata unida em 473] Turkiye', sem nomes alternativos, sem marcador, sem vínculos; 0 colisões de nomes entre as 77 seleções). Ainda havia 45 jogadores com `players.last_team_id=1017` (todos da seleção turca), repassados ao 473. Depois que 12 índices foram criados nas chaves para `teams`, o usuário apagou o 1017 (e a tabela temporária `_reparo_log`) no painel do Supabase, porque a ferramenta de banco da sessão cancelava `DROP` e `DELETE`; conferido por consulta. Lição técnica: duas CTEs que alteram a mesma linha na mesma instrução só aplicam uma; nomes e elenco foram refeitos em instruções separadas.
+
+
+## Achado 44 — tabela polar refeita só com ligas de clubes: nada muda de forma relevante (xG por zona até ±0,0002; fatias até ±0,02 ponto percentual)
+
+**Por que.** O Achado 40 chamou de "tabela de clubes" uma tabela que incluía ~4,1 mil chutes de torneios de seleções (Copa América e Eurocopa 2024, Copa do Mundo 2026; conferência dos Achados 36-42, Achado 43). Pedido: refazer sem as ligas de seleções (`leagues.type <> 'international'`).
+
+**Método.** Mesmo do Achado 40, com o filtro de liga explícito e a consulta agora guardada em `arquivos_do_claude/tabela_polar_por_regime_xg.sql`: chutes sem pênalti, gol contra e disputa de pênaltis, 14 zonas polares (7 anéis x cone central de 30 graus ou aberto), IC 95% pelo erro-padrão robusto a agrupamento por partida. **Validação do método:** com o filtro antigo (todas as ligas, sem a Copa 2022 que entrou no banco em 04/10) a consulta reproduz a tabela publicada (zona 0-6 m central: 0,4391 ± 0,0046 de xG e 0,3974 ± 0,0096 de gol por chute, as mesmas casas decimais). O **regime antigo** (até 31/07/2021) só de clubes dá exatamente a tabela publicada (47.647 chutes, 2.032 jogos): ela já era só de clubes, porque os jogos de seleções entraram todos no regime novo.
+
+**Resultado, regime novo (desde 01/08/2021), só clubes: 16.930 jogos, 428.248 chutes** (antes: 17.095 jogos e 432.218 chutes). Diferença para a tabela publicada:
+
+| zona | xG/chute antes | agora | gol/chute antes | agora | % chutes antes | agora |
+|---|---|---|---|---|---|---|
+| 0-6 m central | 0,4391 | 0,4392 | 0,3974 | 0,3977 | 2,34 | 2,33 |
+| 0-6 m aberto | 0,3978 | 0,3980 | 0,3848 | 0,3852 | 2,49 | 2,50 |
+| 6-9 m central | 0,1961 | 0,1963 | 0,1912 | 0,1912 | 7,64 | 7,63 |
+| 6-9 m aberto | 0,1586 | 0,1588 | 0,1375 | 0,1375 | 4,15 | 4,15 |
+| 9-12 m central | 0,1288 | 0,1287 | 0,1256 | 0,1257 | 7,82 | 7,82 |
+| 9-12 m aberto | 0,1161 | 0,1162 | 0,1107 | 0,1106 | 5,44 | 5,45 |
+| 12-16,5 m central | 0,1177 | 0,1176 | 0,1159 | 0,1158 | 10,22 | 10,22 |
+| 12-16,5 m aberto | 0,0923 | 0,0923 | 0,0926 | 0,0924 | 12,50 | 12,50 |
+| 16,5-22 m central | 0,0663 | 0,0663 | 0,0664 | 0,0664 | 9,06 | 9,07 |
+| 16,5-22 m aberto | 0,0438 | 0,0438 | 0,0420 | 0,0420 | 10,14 | 10,15 |
+| 22-30 m central | 0,0315 | 0,0315 | 0,0320 | 0,0320 | 17,03 | 17,02 |
+| 22-30 m aberto | 0,0274 | 0,0274 | 0,0285 | 0,0282 | 6,09 | 6,08 |
+| > 30 m central | 0,0198 | 0,0198 | 0,0169 | 0,0168 | 4,11 | 4,11 |
+| > 30 m aberto | 0,0217 | 0,0218 | 0,0416 | 0,0417 | 0,96 | 0,96 |
+
+A maior diferença de xG é +0,0002 (+0,13% em 6-9 m aberto), a de gols por chute é -0,0003 (22-30 m aberto) e a das fatias é 0,02 ponto percentual; todas muito abaixo do IC 95% de cada zona. **Conclusão do Achado 40 inalterada:** a tabela da tela já era uma boa aproximação do modelo atual de xG. Simulador com a tabela nova, 4.000 jogos, semente 1: gols 2,55 (observado 2,55), xG 2,63; com a anterior: 2,54 e 2,63 (dentro do ruído).
+
+**Mudanças no repositório.** `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json` (regime novo só clubes; a tabela antiga do Achado 40 ficou guardada na chave `achado40_todas_as_ligas_novo`); `FOTMOB` em `scripts/zonas_polares.py`; `XG_MEDIO_ZONA_CHUTE` e `ESTATISTICA_ZONA_CHUTE` em `src/utils/zoneTransitionMatrix.js` e os textos "~428 mil chutes ... de clubes" em `MapaZonasChute.jsx` e `AnaliseEvento.jsx`. Testes: 22 do frontend, 22 do simulador, build ok.
+
+**Limites.** `DISTRIBUICAO_ZONA_CHUTE` (fotografia de 01/10 com todas as datas, que vem do cruzamento da matriz de passes com o FotMob) não foi recalculada: a fatia de cada zona dela difere em no máximo 0,11 ponto percentual das bases novas, e a mudança desta rodada nas fatias é de 0,02. A Copa 2022 e a Eurocopa 2020, que entraram no banco em 04/10, ficam fora da tabela por serem de seleções.

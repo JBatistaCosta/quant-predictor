@@ -3020,7 +3020,7 @@ export default function AnaliseEvento() {
                       <span className="text-xs text-slate-500">
                         Simulação separada do motor acima, baseada numa matriz de transição de bola entre 9 zonas do
                         campo (Achado 15 — StatsBomb, La Liga 2015/16, 552 mil ações); o chute é então localizado em 14
-                        zonas polares com a distribuição real de ~432 mil chutes do FotMob (jogos desde 01/08/2021, modelo de xG atual). É uma constante universal, igual
+                        zonas polares com a distribuição real de ~428 mil chutes do FotMob (jogos de clubes desde 01/08/2021, modelo de xG atual). É uma constante universal, igual
                         pra qualquer confronto — não foi calibrada pra este jogo, nem por liga, nem por time.
                       </span>
                     </div>

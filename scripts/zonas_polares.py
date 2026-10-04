@@ -12,22 +12,22 @@ NOMES = [f"{a} · {c}" for a in ("0–6 m", "6–9 m", "9–12 m", "12–16.5 m"
 
 # (chutes, % real, xG por chute, gols por chute) na ordem de NOMES.
 # TABELA ATUAL (usada pelo simulador): chutes de clubes do banco (match_shots_fotmob) de jogos a partir de 01/08/2021, depois da mudança do modelo de xG do FotMob
-# (Achado 39), sem pênaltis, gol contra e disputa de pênaltis; 17.095 jogos, 432.218 chutes. Fonte: `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json`.
+# (Achado 39), sem pênaltis, gol contra e disputa de pênaltis, SEM as ligas de seleções (Achado 44); 16.930 jogos, 428.248 chutes. Fonte: `dados_referencia/fotmob/tabela_polar_clubes_por_regime_xg.json`.
 FOTMOB = [
-    (10097, 2.34, 0.4391, 0.3974),
-    (10783, 2.49, 0.3978, 0.3848),
-    (33012, 7.64, 0.1961, 0.1912),
-    (17934, 4.15, 0.1586, 0.1375),
-    (33813, 7.82, 0.1288, 0.1256),
-    (23513, 5.44, 0.1161, 0.1107),
-    (44157, 10.22, 0.1177, 0.1159),
-    (54028, 12.5, 0.0923, 0.0926),
-    (39180, 9.06, 0.0663, 0.0664),
-    (43832, 10.14, 0.0438, 0.042),
-    (73623, 17.03, 0.0315, 0.032),
-    (26316, 6.09, 0.0274, 0.0285),
-    (17772, 4.11, 0.0198, 0.0169),
-    (4158, 0.96, 0.0217, 0.0416),
+    (9996, 2.33, 0.4392, 0.3977),
+    (10686, 2.5, 0.3980, 0.3852),
+    (32685, 7.63, 0.1963, 0.1912),
+    (17792, 4.15, 0.1588, 0.1375),
+    (33488, 7.82, 0.1287, 0.1257),
+    (23344, 5.45, 0.1162, 0.1106),
+    (43766, 10.22, 0.1176, 0.1158),
+    (53543, 12.5, 0.0923, 0.0924),
+    (38826, 9.07, 0.0663, 0.0664),
+    (43448, 10.15, 0.0438, 0.0420),
+    (72908, 17.02, 0.0315, 0.0320),
+    (26043, 6.08, 0.0274, 0.0282),
+    (17594, 4.11, 0.0198, 0.0168),
+    (4129, 0.96, 0.0218, 0.0417),
 ]
 
 # TABELA DA TELA (copiada em 04/10/2026): todos os jogos do banco, 479.611 chutes, MISTURA o xG antigo (até jul/2021, ~10% dos chutes) com o novo.
