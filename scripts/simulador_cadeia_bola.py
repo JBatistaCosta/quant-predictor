@@ -148,6 +148,11 @@ def band(z: int) -> int:
     return z // 3
 
 
+def zona_lateral(p: Parametros, rng: random.Random) -> int:
+    """Zona de quem recebe o lateral: faixa sorteada da distribuição medida (Achado 30) e corredor da esquerda ou da direita (a linha lateral)."""
+    return p.lateral_faixa.sortear(rng) * 3 + rng.choice((0, 2))
+
+
 def lognorm(rng, par) -> float:
     mu, sigma = par
     return rng.lognormvariate(mu, sigma) if sigma > 0 else math.exp(mu)
@@ -238,6 +243,8 @@ def resolver_chute(p: Parametros, rng: random.Random, m: collections.Counter, zo
         m["laterais"] += 1
     elif chave == "From Free Kick":
         m["tiros livres"] += 1
+    if chave == "From Throw In":                          # o lateral põe a bola na linha lateral, qualquer que seja o time
+        return ("mesma" if rng.random() < mesma_pool else "adv", zona_lateral(p, rng), tm, "lateral")
     if rng.random() < mesma_pool:
         return ("mesma", zona, tm, "mesma equipe")
     return ("adv", p.recup[zona].sortear(rng), tm, "adversário")
@@ -258,12 +265,16 @@ def resolver_perda(p: Parametros, rng: random.Random, m: collections.Counter, zo
         return resolver_escanteio(p, rng, m)
     if rng.random() < p.p_lateral_mesma:                 # a bola desviada sai e o lateral é de quem a perdeu na ação: posse mantida, tempo morto de lateral
         m["laterais"] += 1
-        return ("mesma", zona, dead(rng, p, "From Throw In"), "lateral mantido")
+        return ("mesma", zona_lateral(p, rng), dead(rng, p, "From Throw In"), "lateral mantido")
     z_adv = p.recup[zona].sortear(rng)
     if rng.random() < p.p_reinicio:
         tipos, amostra = p.tipo_reinicio
         tipo = tipos[amostra.sortear(rng)]
         m["laterais" if tipo == "From Throw In" else ("tiros de meta" if tipo == "From Goal Kick" else "tiros livres")] += 1
+        if tipo == "From Throw In":
+            z_adv = zona_lateral(p, rng)
+        elif tipo == "From Goal Kick":
+            z_adv = ZONA_DEFESA_CENTRO
         return ("adv", z_adv, dead(rng, p, tipo), "reinício")
     return ("adv", z_adv, 0.0, "recuperação")
 
