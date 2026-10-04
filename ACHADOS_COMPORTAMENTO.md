@@ -2641,3 +2641,29 @@ Diferenças pareadas, IC 95% (positivo = pior):
 **O que não se pode concluir.** (1) Uma liga e uma temporada, 342 jogos: os IC são largos e efeitos de ±0,01 não são detectáveis. (2) O expoente 2 foi calibrado para multiplicadores fixos e aqui o multiplicador muda durante o jogo. (3) A tabela vem de taxas por minuto que misturam a fase do jogo. (4) O placar desejado não foi exercitado: todos os times usam alvo +1, porque em liga não há contexto em que ele seja conhecido (o campo neutro também não existe no banco) e os jogos de volta com chutes são só 89. A camada fica disponível como parâmetro (`--alvo-casa`, `--alvo-fora`, `--alvo-ctx`), desligada por padrão: a melhor configuração segue sendo `exp_forca`.
 
 **Próximos testes (propostos):** recalibrar `gols_nivel` sob amplificação e reação ao placar; repetir em outras ligas e temporadas (decide se o expoente 2 e o resultado nulo do placar se mantêm); toques no último terço por placar com os eventos do StatsBomb; placar desejado em jogos de volta quando houver mais confrontos com chutes.
+
+## Achado 54 — recalibrar o nível de gols numa temporada e aplicar na seguinte não melhora a previsão de forma distinguível, e o fator ideal muda de uma temporada para outra
+
+**Pergunta.** O simulador com força amplificada (`exp_forca`) e o com reação ao placar (`estado_vq`) erram o total de gols (2,66 e 2,77 por jogo, contra 2,79 real). Um fator fixo de conversão (`gols_fator`, camada nova) calibrado numa temporada corrige isso na seguinte e melhora over/under e 1X2?
+
+**Método.** (1) Calibração em 2024/25 (280 jogos simulados, 2,954 gols reais por jogo): `exp_forca` simulava 2,686 e `estado_vq` 2,787, o que dá fatores de 1,0997 e 1,0598. (2) Os fatores ficaram **fixos** e foram aplicados em 2025/26 (mesmos 342 jogos com Dixon-Coles e odds, 1.000 simulações por jogo, mesmas sementes dos Achados 51 e 53). Comparação pareada jogo a jogo com a versão sem fator, bootstrap de 2.000 reamostragens.
+
+**Resultado (342 jogos, diferença novo menos sem fator; negativo = melhor):**
+
+| | gols/jogo (real 2,79) | P(over) médio (real 56,1%) | 1X2 log-loss | over/under log-loss |
+|---|---|---|---|---|
+| `exp_forca` sem fator | 2,664 | 50,3% | 1,0481 | 0,6901 |
+| `exp_forca` com 1,0997 | 2,903 | 56,1% | 1,0472 (-0,0009 [-0,0070; +0,0052]) | 0,6835 (-0,0066 [-0,0192; +0,0061]) |
+| `estado_vq` sem fator | 2,769 | 52,6% | 1,0529 | 0,6853 |
+| `estado_vq` com 1,0598 | 2,924 | 56,4% | 1,0491 (-0,0037 [-0,0103; +0,0028]) | 0,6844 (-0,0010 [-0,0092; +0,0079]) |
+
+Referências no mesmo conjunto: Dixon-Coles 1X2 1,0347 / over/under 0,6872; mercado 0,9985 / 0,6823. Contra o Dixon-Coles, `exp_forca` com fator: 1X2 +0,0125 [-0,0175; +0,0412], over/under -0,0038 [-0,0261; +0,0177]. Todos os intervalos incluem zero.
+
+**O que os números dizem.**
+- O fator corrige o sentido certo (over simulado sobe de 50,3% para 56,1%, igual ao real), mas **nenhuma melhora é distinguível de zero**. O over/under de `exp_forca` passa a ficar um pouco abaixo do Dixon-Coles e praticamente igual ao mercado (0,6835 contra 0,6823), sem significância.
+- O fator **ultrapassou o alvo em gols**: 2,903 e 2,924 simulados contra 2,79 reais (+4,0% e +4,7%). A temporada de calibração tinha 2,95 gols por jogo e a de teste 2,79; o fator ideal em 2025/26 teria sido cerca de 1,044 para `exp_forca` (1,0997 × 0,950) e cerca de 1,0 para `estado_vq` (1,0598 × 0,943), ou seja, **para `estado_vq` o fator não era necessário**.
+- Por isso o fator fixo transporta o viés da temporada em que foi calibrado. Quem se adapta à temporada é `gols_nivel` (usa o histórico anterior a cada jogo); o fator corrige só o viés da configuração e não deveria absorver o nível da temporada.
+
+**O que não se pode concluir.** Uma liga, duas temporadas, 342 jogos: efeitos de ±0,01 não são detectáveis. Não testei fator estimado só com o histórico anterior a cada jogo (calibração móvel), que é o caso que importaria em produção.
+
+**Próximos testes (propostos):** calibração móvel do fator (só com jogos anteriores); outras ligas; toques no último terço por placar (StatsBomb); corrigir o rótulo de `p_quebra` no simulador (100% em todas as zonas por filtro antigo `mesma|recuperação|`).
