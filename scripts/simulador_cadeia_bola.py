@@ -90,16 +90,7 @@ class Parametros:
             for o in range(18):
                 for s in range(20):
                     cont[o][s] += r["contagens_18x20"][o][s]
-        self.cont = cont
-        self.acoes_por_zona = [sum(l) for l in cont]
-        # probabilidade de chute/perda por zona (alfa = 0,5) e destino de quem continua: permitem multiplicar chute e perda por força do time e janela
-        self.p_chute_zona, self.p_perda_zona, self.destino_continua = [], [], []
-        for l in cont:
-            pesos = [v + 0.5 for v in l]
-            tot = sum(pesos)
-            self.p_chute_zona.append(pesos[18] / tot)
-            self.p_perda_zona.append(pesos[19] / tot)
-            self.destino_continua.append(Amostrador(pesos[:18]))
+        self._definir_matriz(cont)
         self.acoes_por_jogo_ref = sum(r["n_acoes"] for r in lig.values()) / self.jogos_ref
         # 2. durações
         d = tmp["duracao_acoes_s"]
@@ -113,7 +104,52 @@ class Parametros:
             self.p_gol.append(c["resultados_pct"]["Goal"] / 100.0)
             self.xg_faixa.append(c["xg_medio"])
         # 4. núcleo empírico: próxima linha depois de uma linha que começou na zona z
-        nucleo = nuc["nucleo_pos_perda_e_chute"]
+        self._definir_nucleo(nuc["nucleo_pos_perda_e_chute"])
+        # 5. tempo morto lognormal por tipo de reinício (Achado 29); mediana ~0 -> exponencial
+        morto = rein["tempo_morto_por_reinicio_s"]
+        self.morto = {k: (lognormal_de(v["mediana"], v["media"]) if v["mediana"] > 0.5 else (None, v["media"])) for k, v in morto.items()}
+        # 6. memória da posse (Achado 33): risco de perda/chute dado a zona, por posição da linha dentro da corrida do time (observado/esperado)
+        arq = os.path.join(pasta, "posse_xt_momentum_observado_ligas_2015_16.json")
+        risco = json.load(open(arq))["risco_por_posicao_na_corrida"] if os.path.exists(arq) else []
+        self.risco_posicao = [(r["perda_obs_sobre_esp"], r["chute_obs_sobre_esp"]) for r in risco] or [(1.0, 1.0)] * len(POSICOES_CORRIDA)
+        # 7. normalização da memória por zona (Achado 34): mantém a taxa de perda/chute de CADA zona igual à da matriz; a memória só redistribui entre posições
+        arq = os.path.join(pasta, "memoria_normalizacao_ligas_2015_16.json")
+        self.norma_memoria = [tuple(x) for x in json.load(open(arq))["norma"]] if os.path.exists(arq) else [(1.0, 1.0)] * 18
+        # 8. chutes observados por zona (xG, gol, distância, ângulo, cabeça, tipo): o chute simulado é UM chute real sorteado da zona (Achado 34)
+        arq = os.path.join(pasta, "chutes_e_progressao_ligas_2015_16.json")
+        self.pool_chute, self.pool_penalti = None, []
+        if os.path.exists(arq):
+            self._definir_pool(json.load(open(arq))["chutes"])
+        self.folga = FOLGA_ENTRE_ACOES_S
+        self.duracao_tempo = DURACAO_TEMPO_S
+        # alvos observados por jogo
+        j = chu["jogos"]
+        n_chutes = sum(c["n"] for c in cf.values())
+        self.alvos = {
+            "ações": self.acoes_por_jogo_ref, "chutes": n_chutes / j,
+            "gols": sum(c["n"] * c["resultados_pct"]["Goal"] / 100 for c in cf.values()) / j,
+            "xG": sum(c["n"] * c["xg_medio"] for c in cf.values()) / j,
+            "escanteios": chu["escanteios"]["n"] / j, "tiros livres": rein["reinicios_por_jogo"]["From Free Kick"],
+            "laterais": rein["reinicios_por_jogo"]["From Throw In"], "tiros de meta": rein["reinicios_por_jogo"]["From Goal Kick"],
+            "saídas de bola": rein["reinicios_por_jogo"]["From Kick Off"],
+            "tempo morto (min)": sum(rein["tempo_morto_por_jogo_min"][k] for k in ("From Throw In", "From Free Kick", "From Goal Kick", "From Corner", "From Keeper", "From Kick Off")),
+        }
+
+
+    def _definir_matriz(self, cont) -> None:
+        """Matriz de desfecho 18 x 20 (zona -> 18 destinos, chute, perda): probabilidades (alfa = 0,5) e sorteio do destino de quem continua."""
+        self.cont = cont
+        self.acoes_por_zona = [sum(l) for l in cont]
+        self.p_chute_zona, self.p_perda_zona, self.destino_continua = [], [], []
+        for l in cont:
+            pesos = [v + 0.5 for v in l]
+            tot = sum(pesos)
+            self.p_chute_zona.append(pesos[18] / tot)
+            self.p_perda_zona.append(pesos[19] / tot)
+            self.destino_continua.append(Amostrador(pesos[:18]))
+
+    def _definir_nucleo(self, nucleo: dict) -> None:
+        """Núcleo empírico da próxima linha (chaves 'continua|z', 'perda|z', 'chute|z' -> {'quem|classe|zona': n})."""
 
         def da_zona(tipo: str, z: int) -> dict:
             """Contagens da zona; zonas com menos de 30 linhas (chute na defesa, por exemplo) usam o agregado de todo o campo."""
@@ -136,46 +172,52 @@ class Parametros:
             quebra = {k: v for k, v in cz.items() if not k.startswith("mesma|recuperação|")}
             self.p_quebra.append(sum(quebra.values()) / total if total else 0.0)
             self.apos_quebra.append(amostrador_de_chaves(quebra) if quebra else None)
-        # 5. tempo morto lognormal por tipo de reinício (Achado 29); mediana ~0 -> exponencial
-        morto = rein["tempo_morto_por_reinicio_s"]
-        self.morto = {k: (lognormal_de(v["mediana"], v["media"]) if v["mediana"] > 0.5 else (None, v["media"])) for k, v in morto.items()}
-        # 6. memória da posse (Achado 33): risco de perda/chute dado a zona, por posição da linha dentro da corrida do time (observado/esperado)
-        arq = os.path.join(pasta, "posse_xt_momentum_observado_ligas_2015_16.json")
-        risco = json.load(open(arq))["risco_por_posicao_na_corrida"] if os.path.exists(arq) else []
-        self.risco_posicao = [(r["perda_obs_sobre_esp"], r["chute_obs_sobre_esp"]) for r in risco] or [(1.0, 1.0)] * len(POSICOES_CORRIDA)
-        # 7. normalização da memória por zona (Achado 34): mantém a taxa de perda/chute de CADA zona igual à da matriz; a memória só redistribui entre posições
-        arq = os.path.join(pasta, "memoria_normalizacao_ligas_2015_16.json")
-        self.norma_memoria = [tuple(x) for x in json.load(open(arq))["norma"]] if os.path.exists(arq) else [(1.0, 1.0)] * 18
-        # 8. chutes observados por zona (xG, gol, distância, ângulo, cabeça, tipo): o chute simulado é UM chute real sorteado da zona (Achado 34)
-        arq = os.path.join(pasta, "chutes_e_progressao_ligas_2015_16.json")
-        self.pool_chute, self.pool_penalti = None, []
-        if os.path.exists(arq):
-            originais = [[] for _ in range(18)]
-            for z, xg, gol, tipo, cab, dist, ang in json.load(open(arq))["chutes"]:
-                if tipo == 2:
-                    self.pool_penalti.append((xg, gol, dist, ang, cab, tipo, zp.indice(dist, ang)))
-                else:
-                    originais[int(z)].append((xg, gol, dist, ang, cab, tipo, zp.indice(dist, ang)))
-            self.pool_chute = []
-            for z in range(18):
-                pool = originais[z]
-                if len(pool) < 30:                           # zonas quase sem chute: usa a faixa; se ainda faltar, os chutes de fora da área
-                    pool = [r for zz in range(z // 3 * 3, z // 3 * 3 + 3) for r in originais[zz]]
-                    if len(pool) < 30:
-                        pool = [r for zz in range(9, 12) for r in originais[zz]]
-                self.pool_chute.append(pool)
-        # alvos observados por jogo
-        j = chu["jogos"]
-        n_chutes = sum(c["n"] for c in cf.values())
-        self.alvos = {
-            "ações": self.acoes_por_jogo_ref, "chutes": n_chutes / j,
-            "gols": sum(c["n"] * c["resultados_pct"]["Goal"] / 100 for c in cf.values()) / j,
-            "xG": sum(c["n"] * c["xg_medio"] for c in cf.values()) / j,
-            "escanteios": chu["escanteios"]["n"] / j, "tiros livres": rein["reinicios_por_jogo"]["From Free Kick"],
-            "laterais": rein["reinicios_por_jogo"]["From Throw In"], "tiros de meta": rein["reinicios_por_jogo"]["From Goal Kick"],
-            "saídas de bola": rein["reinicios_por_jogo"]["From Kick Off"],
-            "tempo morto (min)": sum(rein["tempo_morto_por_jogo_min"][k] for k in ("From Throw In", "From Free Kick", "From Goal Kick", "From Corner", "From Keeper", "From Kick Off")),
-        }
+
+    def _definir_pool(self, chutes: list) -> None:
+        """Chutes reais por zona de 18 ([zona, xg, gol, tipo, cabeça, distância, ângulo]); pênalti (tipo 2) em conjunto à parte."""
+        originais = [[] for _ in range(18)]
+        self.pool_penalti = []
+        for z, xg, gol, tipo, cab, dist, ang in chutes:
+            if tipo == 2:
+                self.pool_penalti.append((xg, gol, dist, ang, cab, tipo, zp.indice(dist, ang)))
+            else:
+                originais[int(z)].append((xg, gol, dist, ang, cab, tipo, zp.indice(dist, ang)))
+        self.pool_chute = []
+        for z in range(18):
+            pool = originais[z]
+            if len(pool) < 30:                           # zonas quase sem chute: usa a faixa; se ainda faltar, os chutes de fora da área
+                pool = [r for zz in range(z // 3 * 3, z // 3 * 3 + 3) for r in originais[zz]]
+                if len(pool) < 30:
+                    pool = [r for zz in range(9, 12) for r in originais[zz]]
+            self.pool_chute.append(pool)
+
+    def aplicar_perfil(self, perfil: dict) -> "Parametros":
+        """Troca as peças medidas em 2015/16 pelas de uma competição/época (Achado 41). Chaves de `perfil` (todas opcionais):
+        cont (18 x 20), nucleo, risco_posicao [[perda, chute] x 7], norma_memoria [[perda, chute] x 18], morto {tipo: {mediana, media}},
+        dur_acao / dur_chute {mediana, media}, folga (s), duracao_tempo [s do 1T, s do 2T], chutes (lista como em `_definir_pool`), fonte_xg."""
+        if "cont" in perfil:
+            self._definir_matriz(perfil["cont"])
+        if "nucleo" in perfil:
+            self._definir_nucleo(perfil["nucleo"])
+        if "risco_posicao" in perfil:
+            self.risco_posicao = [tuple(x) for x in perfil["risco_posicao"]]
+        if "norma_memoria" in perfil:
+            self.norma_memoria = [tuple(x) for x in perfil["norma_memoria"]]
+        if "morto" in perfil:
+            self.morto = {k: (lognormal_de(v["mediana"], v["media"]) if v["mediana"] > 0.5 else (None, v["media"])) for k, v in perfil["morto"].items()}
+        if "dur_acao" in perfil:
+            self.dur_acao = lognormal_de(perfil["dur_acao"]["mediana"], perfil["dur_acao"]["media"])
+        if "dur_chute" in perfil:
+            self.dur_chute = lognormal_de(perfil["dur_chute"]["mediana"], perfil["dur_chute"]["media"])
+        if "folga" in perfil:
+            self.folga = perfil["folga"]
+        if "duracao_tempo" in perfil:
+            self.duracao_tempo = tuple(perfil["duracao_tempo"])
+        if "chutes" in perfil:
+            self._definir_pool(perfil["chutes"])
+        if "fonte_xg" in perfil:
+            self.fonte_xg = perfil["fonte_xg"]
+        return self
 
 
 class Multiplicadores:
@@ -230,7 +272,7 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
     m: collections.Counter = collections.Counter()
     janela = [0] * 6                                     # chutes por janela de 15 min de relógio (0-15, 15-30, 30-45+, 45-60, 60-75, 75-90+)
 
-    for tempo, duracao in enumerate(DURACAO_TEMPO_S):
+    for tempo, duracao in enumerate(p.duracao_tempo):
         t = 0.0
         equipe = tempo % 2
         zona = ZONA_SAIDA
@@ -244,7 +286,7 @@ def simular_partida(p: Parametros, rng: random.Random, times: tuple = (NEUTRO, N
             atk, dfs = times[equipe], times[1 - equipe]
             m[f"ent|{classe}|{band(zona)}"] += 1
             t_inicio, tipo_linha, xg_linha, gol_linha = t, "continua", 0.0, 0
-            t += FOLGA_ENTRE_ACOES_S
+            t += p.folga
             mem_perda, mem_chute = p.risco_posicao[balde_da_posicao(posicao)] if memoria else (1.0, 1.0)
             if memoria:
                 mem_perda, mem_chute = mem_perda / p.norma_memoria[zona][0], mem_chute / p.norma_memoria[zona][1]
@@ -350,7 +392,16 @@ if __name__ == "__main__":
     ap.add_argument("--semente", type=int, default=1)
     ap.add_argument("--pasta", default="dados_referencia/statsbomb")
     ap.add_argument("--fonte-xg", choices=["fotmob", "statsbomb"], default="fotmob", help="de onde vem o xG/gol do chute simulado (zona polar do FotMob ou o chute real do StatsBomb)")
+    ap.add_argument("--perfil", help="JSON de perfil por competição/época (ex.: dados_referencia/statsbomb/perfil_torneios_selecoes.json, Achado 41); sem ele, usa as 4 ligas de 2015/16")
     ap.add_argument("--sem-memoria", action="store_true", help="desliga a memória da posse (Achado 33): risco de perda/chute só pela zona")
     a = ap.parse_args()
     par = Parametros(a.pasta, a.fonte_xg)
-    relatorio(simular(par, a.jogos, a.semente, memoria=not a.sem_memoria), par)
+    if a.perfil:
+        par.aplicar_perfil({k: v for k, v in json.load(open(a.perfil)).items() if k != "k"})
+        med = simular(par, a.jogos, a.semente, memoria=not a.sem_memoria)
+        print(f"Perfil {a.perfil} ({a.jogos} jogos simulados); por jogo:")
+        for k, v in (("ações", "acoes"), ("chutes", "chutes"), ("gols", "gols"), ("escanteios", "escanteios"), ("laterais", "laterais"), ("tiros livres", "tiros livres"), ("tiros de meta", "tiros de meta")):
+            print(f"  {k:16s} {med.get(v, 0):9.2f}")
+        print(f"  tempo morto (min) {med.get('tempo morto', 0) / 60:8.1f}")
+    else:
+        relatorio(simular(par, a.jogos, a.semente, memoria=not a.sem_memoria), par)
