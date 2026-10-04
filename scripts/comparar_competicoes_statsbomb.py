@@ -304,6 +304,32 @@ def baixar_completo(grupo: str, pasta: str, workers: int = 6, so: str | None = N
         print(f"{rotulo}: {len(partidas)} jogos em {n_parte} arquivos")
 
 
+def conferir_completo(brutos: str, completo: str) -> bool:
+    """Integridade: para cada partida guardada em `completo`, `reduzir_partida(eventos completos)` tem de ser IGUAL ao registro reduzido guardado em
+    `brutos` (colunas e origem dos escanteios), e os ids de partidas têm de coincidir. Sem rede. Devolve True se tudo bate."""
+    tudo_ok = True
+    for grupo in sorted(os.listdir(completo)):
+        for sub in sorted(os.listdir(os.path.join(completo, grupo))):
+            indice = json.load(open(os.path.join(completo, grupo, sub, "INDICE.json")))
+            rotulo = indice["rotulo"]
+            reduzidos = {r["match_id"]: r for r in carregar_fracionado(brutos, grupo).get(rotulo, [])}
+            n_ok = n_dif = n_sem = 0
+            for reg in carregar_completo(completo, grupo, rotulo):
+                ref = reduzidos.get(reg["match_id"])
+                if ref is None:
+                    n_sem += 1
+                    continue
+                novo = reduzir_partida(reg["eventos"])
+                if novo["cols"] == ref["cols"] and [list(x) for x in novo["escanteios"]] == [list(x) for x in ref["escanteios"]]:
+                    n_ok += 1
+                else:
+                    n_dif += 1
+            ok = n_dif == 0 and n_sem == 0 and n_ok == indice["jogos"]
+            tudo_ok &= ok
+            print(f"{'OK ' if ok else 'ERRO'} {rotulo:32s} partidas={indice['jogos']:4d} identicas={n_ok} diferentes={n_dif} sem_reduzido={n_sem}")
+    return tudo_ok
+
+
 def carregar_completo(pasta: str, grupo: str, rotulo: str):
     """Gera, em ordem, os registros {match_id, partida, escalacoes, eventos} de uma competição-temporada guardada por `baixar_completo` (sem rede)."""
     import lzma
@@ -528,7 +554,7 @@ def corners_por_competicao(cache: str, grupos: list[str]) -> dict[str, dict]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir", "reconstruir", "completo"])
+    ap.add_argument("acao", choices=["baixar", "comparar", "escanteios", "resumir", "conferir", "reconstruir", "completo", "conferir_completo"])
     ap.add_argument("--so", default=None, help="só as competições cujo rótulo contém este texto (completo; permite rodar em paralelo)")
     ap.add_argument("--workers", type=int, default=6, help="downloads simultâneos (completo)")
     ap.add_argument("--fracionado", default=None, help="pasta dos dados reduzidos fracionados (baixar grava; reconstruir lê)")
@@ -541,6 +567,9 @@ def main() -> None:
     if args.acao == "conferir":
         conferir(args.saida)
         return
+    if args.acao == "conferir_completo":
+        base = os.path.dirname(args.fracionado.rstrip("/")) if args.fracionado else "dados_referencia/statsbomb"
+        raise SystemExit(0 if conferir_completo(os.path.join(base, "brutos"), os.path.join(base, "completo")) else 1)
     if args.acao == "completo":
         if not args.fracionado:
             raise SystemExit("--fracionado é obrigatório para completo")

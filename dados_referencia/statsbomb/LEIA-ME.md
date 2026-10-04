@@ -1,9 +1,10 @@
 # Resumos do StatsBomb Open Data (referência versionada)
 
 Fonte: **StatsBomb Open Data** (https://github.com/statsbomb/open-data), dados públicos, uso sujeito à licença do StatsBomb (citar a fonte ao usar).
-O StatsBomb pode mudar o que oferece de graça (jogos já foram e podem ser retirados), por isso o repositório guarda DOIS níveis:
-1. `brutos/` (28 MB, 56 arquivos): os dados REDUZIDOS de cada partida, FRACIONADOS em arquivos `.json.xz` de até 50 partidas. Basta para refazer tudo SEM rede.
-2. os RESUMOS (poucos KB) por grupo, ao lado deste arquivo.
+O StatsBomb pode mudar o que oferece de graça (jogos já foram e podem ser retirados), por isso o repositório guarda TRÊS níveis:
+1. `completo/` (163 MB): TUDO de cada partida (todos os tipos de evento e campos, escalações e metadados), fracionado em arquivos `.json.xz` de até 25 partidas.
+2. `brutos/` (28 MB): os dados REDUZIDOS de cada partida, em arquivos de até 50 partidas. Basta para refazer as análises dos Achados 25 a 28 SEM rede.
+3. os RESUMOS (poucos KB) por grupo, ao lado deste arquivo.
 
 | Arquivo | O que tem | Gerado por |
 |---|---|---|
@@ -38,3 +39,16 @@ python scripts/analisar_tempo_eventos_statsbomb.py --brutos dados_referencia/sta
 Verificado em 04/10/2026: a reconstrução reproduz os cinco resumos byte a byte (ações, contagens 18 x 20, origem e contagem dos escanteios) e as contagens
 por janela do tempo; a única diferença é a duração mediana do passe (1,3915 s no bruto, 1,39 s aqui) por causa do arredondamento a 0,01 s.
 Para refazer a partir do StatsBomb (enquanto o dado existir): `baixar --fracionado dados_referencia/statsbomb/brutos` (cerca de 15 minutos).
+
+## Dados completos (`completo/`)
+
+Layout: `completo/<grupo>/<competição_temporada>/parte-NNN.json.xz` (até 25 partidas cada, ~100 KB por partida) e um `INDICE.json` com os ids de cada parte.
+Cada partida: `{match_id, partida (metadados do `matches/<competição>/<temporada>.json`: times, placar, data, estádio, árbitro, técnicos), escalacoes (lineups), eventos}`.
+Os eventos são os do StatsBomb COMPLETOS (todos os tipos e campos, inclusive `freeze_frame` dos chutes e `play_pattern`), exceto `id` e `related_events`
+(UUIDs que não comprimem; `index` e `timestamp` ficam). 21 competições-temporadas, 2.152 partidas. **A Copa Africana de Nações e a Indian Super League 2021/22 NÃO
+estão** (a Indian Super League está nos dados reduzidos e nos resumos).
+
+Ler (sem rede): `comparar_competicoes_statsbomb.carregar_completo('dados_referencia/statsbomb/completo', '<grupo>', '<rótulo>')` gera as partidas em ordem.
+Integridade: `python scripts/comparar_competicoes_statsbomb.py conferir_completo --fracionado dados_referencia/statsbomb/brutos` refaz o registro reduzido de cada
+partida a partir dos eventos completos e compara com `brutos/`. **Verificado em 04/10/2026: as 2.152 partidas das 21 competições-temporadas saem idênticas.**
+Refazer a partir do StatsBomb (enquanto o dado existir): `completo --fracionado dados_referencia/statsbomb/completo [--grupos ...] [--so "Premier League 2015"]`.
