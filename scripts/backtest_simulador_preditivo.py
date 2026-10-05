@@ -64,6 +64,11 @@ VARIANTES = {
     # Achado 57: força dos times por gols (como o Dixon-Coles) no lugar de só chutes; mesma semente de exp_forca (comparação pareada)
     "exp_gols": {"camadas": KEEP_GOLS, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "peso_gols": 1.0}, "padrao": False},
     "exp_misto": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0)}, "padrao": False},
+    # Achado 58: força por gols ajustada pelo adversário e/ou com decaimento no tempo (EWMA em dias); todas na mistura chutes/gols (peso 0,5) do Achado 57, mesma semente
+    "misto_adv": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30}, "padrao": False},
+    "misto_adv_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30, "meia_vida_dias": 365.0}, "padrao": False},
+    "misto_adv_ewma120": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30, "meia_vida_dias": 120.0}, "padrao": False},
+    "misto_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "meia_vida_dias": 365.0}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
@@ -230,6 +235,7 @@ def main():
                 e = v["cfg"].get("estado")
                 if e and e.get("ctx"):                              # estado ajustado por mando e favoritismo (Elo) deste jogo
                     estados[nome] = cam.montar_estado_jogo(j["elod"], j["neutro"], e["volume"], e["qualidade"], e["exp_volume"], tuple(e["alvo"]), e.get("alvo_ctx") or None, cam.CONFIG["elo_corte"])
+                hist.data_atual = j["date"]                         # a força por gols só usa jogos com data anterior a esta
                 cfg_jogo = {**cam.CONFIG, **v.get("cfg", {})}
                 if nome in bases:                                   # fator de gols móvel: só jogos com data anterior à deste
                     cfg_jogo["gols_fator"] = fator_gols_movel(bases[nome], j["date"], v["cfg"]["fator_movel"])

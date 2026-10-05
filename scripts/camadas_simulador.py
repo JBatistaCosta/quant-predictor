@@ -15,6 +15,7 @@ Para criar uma camada nova: escreva `def camada_x(h, casa, fora, cfg) -> (dict_c
 
 from __future__ import annotations
 
+import datetime
 import math
 
 CHUTES_POR_TIME_SIM_NEUTRO = 12.68      # simulador padrão, 400 jogos, semente 1
@@ -84,6 +85,9 @@ CONFIG = {
     # Força dos times por GOLS (Achado 57), no estilo do Dixon-Coles: ataque = gols feitos / média da liga, defesa = gols sofridos / média, sem ajuste pelo adversário.
     "k_gols": 20.0,           # pseudo-jogos que puxam a força por gols para 1,0 (gols são mais ruidosos que chutes: 20 contra 8 dos chutes; fixado antes de olhar o teste)
     "peso_gols": 0.5,         # camada forca_mista: força = chutes^(1-peso) x gols^peso (0 = só chutes, 1 = só gols)
+    # Força por gols ajustada pelo adversário e com decaimento no tempo (Achado 58). Sem nenhum dos dois (padrão) a força por gols é a razão simples do Achado 57.
+    "ajuste_adv_iter": 0,     # iterações do ajuste pelo adversário (ataque e defesa estimados juntos); 0 = sem ajuste
+    "meia_vida_dias": None,   # meia-vida do peso de cada jogo anterior, em dias (EWMA); None = todos os jogos com o mesmo peso
     "elo_corte": 100.0,       # diferença de Elo a partir da qual um time é "forte" ou "fraco" na reação ao placar (Achado 52)
 }
 
@@ -94,6 +98,9 @@ class Historia:
     def __init__(self):
         self.pro, self.contra, self.n = {}, {}, {}
         self.gpro, self.gcontra = {}, {}                # gols feitos e sofridos por time
+        self.lista = []                                 # (dia, mandante, visitante, gols casa, gols fora) de cada jogo, em ordem
+        self.data_atual = None                          # dia (ISO) do jogo que vai ser previsto; quem chama define antes de pedir os multiplicadores
+        self._cache_forca = {}
         self.soma_casa = self.soma_fora = 0.0          # chutes
         self.gols_casa = self.gols_fora = 0.0
         self.recentes = []                              # (chutes casa, chutes fora, gols casa, gols fora) de cada jogo, em ordem
@@ -112,6 +119,7 @@ class Historia:
         self.gols_casa += j["hg"]
         self.gols_fora += j["ag"]
         self.recentes.append((j["hs"], j["as"], j["hg"], j["ag"]))
+        self.lista.append((datetime.date.fromisoformat(str(j["date"])[:10]).toordinal() if j.get("date") else None, j["home"], j["away"], j["hg"], j["ag"]))
         self.jogos += 1
 
     def janela(self, n):
@@ -163,8 +171,53 @@ def camada_forca_chutes(h, casa, fora, cfg):
     return {"ataque_chute": ac ** e, "defesa_chute": dc ** e}, {"ataque_chute": af ** e, "defesa_chute": df ** e}
 
 
-def _forca_gols(h, t, k):
-    """(ataque, defesa) pelos gols feitos e sofridos, encolhidos para 1,0 com `k` pseudo-jogos."""
+def forca_gols_ajustada(h, k, meia_vida_dias, iteracoes):
+    """Ataque e defesa de cada time pelos gols, com peso de cada jogo anterior 0,5^(dias desde o jogo / meia-vida) (None = peso 1), só jogos com data ANTERIOR à do
+    jogo previsto (`h.data_atual`), e ajuste pelo adversário: ataque_i = gols feitos / gols esperados contra as defesas enfrentadas, defesa_i = gols sofridos / esperados
+    contra os ataques enfrentados, iterado `iteracoes` vezes (0 = razão simples, sem ajuste). Mandante e visitante têm médias próprias (o mando não vira força).
+    k pseudo-jogos de um time médio puxam cada força para 1,0. Normalizado a média 1 entre os times. -> {time: (ataque, defesa)}."""
+    chave = (h.jogos, k, meia_vida_dias, iteracoes, h.data_atual)
+    if chave in h._cache_forca:
+        return h._cache_forca[chave]
+    hoje = datetime.date.fromisoformat(str(h.data_atual)[:10]).toordinal() if h.data_atual else None
+    jogos = []
+    for dia, casa, fora, gc, gf in h.lista:
+        if hoje is not None and dia is not None and dia >= hoje:
+            continue
+        w = 0.5 ** ((hoje - dia) / meia_vida_dias) if (meia_vida_dias and hoje is not None and dia is not None) else 1.0
+        jogos.append((w, casa, fora, gc, gf))
+    forca = {}
+    sw = sum(w for w, *_ in jogos)
+    if sw > 0:
+        mh = sum(w * gc for w, _, _, gc, _ in jogos) / sw           # gols do mandante por jogo
+        ma = sum(w * gf for w, _, _, _, gf in jogos) / sw           # gols do visitante por jogo
+        mb = (mh + ma) / 2
+        times = {t for _, c, f, _, _ in jogos for t in (c, f)}
+        atk = {t: 1.0 for t in times}
+        dfs = {t: 1.0 for t in times}
+        for _ in range(max(iteracoes, 0) + 1):                      # 1ª passada = razão simples (força 1 para todos); as seguintes ajustam pelo adversário
+            num_a, den_a = {t: k * mb for t in times}, {t: k * mb for t in times}
+            num_d, den_d = {t: k * mb for t in times}, {t: k * mb for t in times}
+            for w, c, f, gc, gf in jogos:
+                num_a[c] += w * gc; den_a[c] += w * mh * dfs[f]          # ataque do mandante contra a defesa do visitante
+                num_a[f] += w * gf; den_a[f] += w * ma * dfs[c]
+                num_d[c] += w * gf; den_d[c] += w * ma * atk[f]          # defesa do mandante contra o ataque do visitante
+                num_d[f] += w * gc; den_d[f] += w * mh * atk[c]
+            atk = {t: num_a[t] / den_a[t] for t in times}
+            dfs = {t: num_d[t] / den_d[t] for t in times}
+            ma_, md_ = sum(atk.values()) / len(atk), sum(dfs.values()) / len(dfs)
+            atk = {t: v / ma_ for t, v in atk.items()}
+            dfs = {t: v / md_ for t, v in dfs.items()}
+        forca = {t: (atk[t], dfs[t]) for t in times}
+    h._cache_forca[chave] = forca
+    return forca
+
+
+def _forca_gols(h, t, k, cfg=None):
+    """(ataque, defesa) pelos gols feitos e sofridos, encolhidos para 1,0 com `k` pseudo-jogos. Com `ajuste_adv_iter` > 0 ou `meia_vida_dias` no cfg: força ajustada
+    pelo adversário e/ou com decaimento no tempo (`forca_gols_ajustada`)."""
+    if cfg and (cfg.get("meia_vida_dias") or cfg.get("ajuste_adv_iter", 0) > 0):
+        return forca_gols_ajustada(h, k, cfg.get("meia_vida_dias"), cfg.get("ajuste_adv_iter", 0)).get(t, (1.0, 1.0))
     if h.n.get(t, 0) == 0:
         return 1.0, 1.0
     m, n = h.gols_por_time(), h.n[t]
@@ -185,7 +238,7 @@ def _camada_forca(h, casa, fora, cfg, peso):
     out = []
     for t in (casa, fora):
         ac, dc = _forca_chutes(h, t, cfg["k_time"])
-        ag, dg = _forca_gols(h, t, cfg["k_gols"])
+        ag, dg = _forca_gols(h, t, cfg["k_gols"], cfg)
         a = math.exp((1 - peso) * math.log(ac) + peso * math.log(ag))
         d = math.exp((1 - peso) * math.log(dc) + peso * math.log(dg))
         out.append({"ataque_chute": a ** e, "defesa_chute": d ** e})

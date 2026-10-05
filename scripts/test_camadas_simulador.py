@@ -124,3 +124,39 @@ def test_forca_por_gols_segue_os_gols_e_e_encolhida_e_mistura_reverte_aos_chutes
     m1 = cam.camada_forca_mista(h, 1, 2, {**cfg, "peso_gols": 1.0})
     assert all(abs(m1[i][k_] - cam.camada_forca_gols(h, 1, 2, cfg)[i][k_]) < 1e-12 for i in range(2) for k_ in ("ataque_chute", "defesa_chute"))
     assert cam.camada_forca_gols(cam.Historia(), 1, 2, cfg)[0] == {"ataque_chute": 1.0, "defesa_chute": 1.0}   # sem história: neutro
+
+
+def jogo_d(data, casa, fora, hg, ag):
+    return {"home": casa, "away": fora, "hs": 12, "as": 12, "hg": hg, "ag": ag, "date": data}
+
+
+def test_forca_por_gols_ajuste_pelo_adversario_decaimento_e_sem_futuro():
+    h = cam.Historia()
+    # times 1 e 2 jogam sempre em casa e fazem 3 gols por jogo, mas 1 enfrenta o time 9 (que também sofre contra 8) e 2 enfrenta o 8; 8 e 9 empatam entre si
+    for d in range(1, 21):
+        h.add(jogo_d(f"2025-01-{d:02d}", 1, 9, 3, 0))
+        h.add(jogo_d(f"2025-01-{d:02d}", 2, 8, 3, 0))
+        h.add(jogo_d(f"2025-01-{d:02d}", 9, 8, 1, 1))
+        h.add(jogo_d(f"2025-01-{d:02d}", 3, 4, 1, 1))
+    h.data_atual = "2025-02-01"
+    simples = cam.forca_gols_ajustada(h, 5.0, None, 0)
+    ajust = cam.forca_gols_ajustada(h, 5.0, None, 30)
+    assert abs(simples[1][0] - simples[2][0]) < 1e-9                                 # sem ajuste, 1 e 2 têm o mesmo ataque (mesmos gols)
+    assert ajust[1][0] != ajust[2][0]                                                # com ajuste, o ataque muda conforme o adversário enfrentado
+    assert abs(sum(a for a, _ in ajust.values()) / len(ajust) - 1.0) < 1e-9          # normalizado a média 1
+    # decaimento: jogos antigos pesam menos; se o time 3 passou a marcar muito só no fim, o ataque com decaimento curto fica maior que o sem decaimento
+    h2 = cam.Historia()
+    for d in range(1, 21):
+        h2.add(jogo_d(f"2025-01-{d:02d}", 3, 4, 0 if d <= 12 else 4, 1))
+        for a_, b_ in ((5, 6), (7, 8), (9, 10), (11, 12), (13, 14), (15, 16)):       # outros times estáveis mantêm a média da liga
+            h2.add(jogo_d(f"2025-01-{d:02d}", a_, b_, 1, 1))
+    h2.data_atual = "2025-02-01"
+    assert cam.forca_gols_ajustada(h2, 0.5, 5.0, 0)[3][0] > cam.forca_gols_ajustada(h2, 0.5, None, 0)[3][0]      # (k pequeno: o decaimento reduz o peso dos dados, e o prior de k jogos não decai)
+    # sem futuro: jogos com a data do jogo previsto (ou depois) não entram
+    h2.data_atual = "2025-01-10"
+    n_antes = sum(1 for d in h2.lista if d[0] < __import__("datetime").date(2025, 1, 10).toordinal())
+    assert n_antes == 9 * 7
+    antes = cam.forca_gols_ajustada(h2, 5.0, None, 0)
+    h2.add(jogo_d("2025-01-10", 3, 4, 9, 9))
+    h2.add(jogo_d("2025-02-20", 3, 4, 9, 9))
+    assert cam.forca_gols_ajustada(h2, 5.0, None, 0) == antes                        # o jogo de 10/01 (mesmo dia) e o de fevereiro (futuro) são ignorados
