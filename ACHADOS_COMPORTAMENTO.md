@@ -2742,3 +2742,383 @@ O nível de gols que o simulador erra é diferente em cada liga (a Bundesliga é
 **O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada; os jogos da mesma liga e do mesmo time se repetem, então os IC são otimistas. (2) Só os jogos com previsão do Dixon-Coles entram (271 a 342 de 306 a 380): é o conjunto em que se pode comparar, não a temporada inteira. (3) A janela de 200 jogos, o piso e o teto do fator móvel não foram otimizados; o expoente 1,0 deixa parte do viés. (4) Quebra e fator móvel foram testados separados, não combinados.
 
 **Próximos testes (propostos):** combinar quebra corrigida e fator móvel; força dos times por gols (como o Dixon-Coles) no lugar de só chutes, que é onde está a diferença; outras ligas e temporadas anteriores.
+
+## Achado 57 — força dos times por gols no lugar de só chutes melhora o 1X2 só um pouco (mistura chutes + gols: -0,0059) e fecha menos de um sexto da diferença para o Dixon-Coles
+
+**Pergunta.** O simulador estima a força dos times só pelo canal dos chutes; o Dixon-Coles a estima pelos gols. Usar gols fecha a diferença de +0,0382 no 1X2 (Achado 56)?
+
+**Método.** Mesmas cinco ligas, 1.533 jogos com Dixon-Coles e odds, 1.000 simulações, mesmas sementes de `exp_forca` (diferença pareada), bootstrap por jogo. Duas variantes novas:
+- `exp_gols`: ataque e defesa de cada time pelos gols feitos e sofridos, divididos pela média da liga e encolhidos para 1 com 20 pseudo-jogos (`k_gols`, fixado antes de olhar o teste; os chutes usam 8), só jogos anteriores; entra pelo volume de chutes com o expoente 2 do Achado 51.
+- `exp_misto`: força = chutes^0,5 × gols^0,5 (`peso_gols` = 0,5, fixado antes).
+Parâmetros ajustáveis por simulação: `--k-gols`, `--peso-gols` e as entradas `k_gols`/`peso_gols` do workflow. Sem opção de ajuste pelo adversário nem de decaimento no tempo.
+
+**Resultado (diferença contra `exp_forca`; negativo = melhor; * = IC 95% exclui zero).**
+
+| | log-loss 1X2 | Brier 1X2 | log-loss over/under |
+|---|---|---|---|
+| `exp_gols`, 5 ligas | -0,0032 [-0,0092; +0,0032] | -0,0022 [-0,0065; +0,0022] | +0,0038 [-0,0008; +0,0086] |
+| `exp_misto`, 5 ligas | **-0,0059 [-0,0099; -0,0018]*** | **-0,0039 [-0,0067; -0,0011]*** | +0,0013 [-0,0015; +0,0041] |
+
+`exp_misto` por liga (1X2): Premier League +0,0011; La Liga -0,0074; Serie A **-0,0137** [-0,0224; -0,0052]; Bundesliga -0,0071; Ligue 1 -0,0019. `exp_gols` por liga: +0,0081; -0,0020; -0,0129; -0,0084; -0,0012 (nenhum isolado distingue de zero).
+
+**Contra o Dixon-Coles (agregado, positivo = pior):**
+
+| | 1X2 | Brier 1X2 | over/under |
+|---|---|---|---|
+| `exp_forca` (só chutes) | +0,0382 [+0,0228; +0,0530] | +0,0266 | -0,0044 [-0,0169; +0,0077] |
+| `exp_gols` | +0,0351 [+0,0216; +0,0483] | +0,0243 | -0,0006 [-0,0119; +0,0105] |
+| `exp_misto` | **+0,0324 [+0,0180; +0,0460]** | +0,0227 | -0,0031 [-0,0149; +0,0084] |
+
+O gols por jogo simulado quase não muda (Premier League 2,664 contra 2,667 e 2,673; Bundesliga 2,883, 2,792 e 2,841).
+
+**Leitura.**
+- Misturar gols à força melhora o 1X2 em 0,006, e esse ganho é significativo; gols sozinhos (com 20 pseudo-jogos) não se distinguem de zero. O over/under não muda.
+- A hipótese de que a diferença para o Dixon-Coles vinha de a força sair dos chutes **não se sustenta como causa principal**: usando gols, a diferença cai de +0,0382 para +0,0324 (15%) e continua significativa em La Liga, Bundesliga e Ligue 1.
+- Falta o que o Dixon-Coles faz além de ter gols: ajuste da força pelo adversário (os ratios aqui ignoram contra quem o time jogou), ataque e defesa estimados juntos por máxima verossimilhança, correção de baixos placares e decaimento no tempo. Esses itens não foram testados aqui. Também pode haver perda na tradução da força para o placar simulado (cadeia de ações sorteadas).
+
+**O que não se pode concluir.** (1) `k_gols` e `peso_gols` fixos em 20 e 0,5; não varridos, para não escolher parâmetro com o teste. (2) Cinco ligas, uma temporada de teste cada; IC otimistas por jogos repetidos do mesmo time. (3) Só o 1X2 melhora; o over/under (onde o simulador já empatava com o Dixon-Coles) não se mexe.
+
+**Próximos testes (propostos):** ajuste da força pelo adversário (iterar ataque/defesa até estabilizar, como um Elo de gols); decaimento no tempo; comparar a força simulada com a esperada de um Poisson direto, para separar erro de força de perda na simulação.
+
+## Achado 58 — ajuste da força pelo adversário não muda o 1X2, e o decaimento no tempo (EWMA) piora um pouco; a diferença para o Dixon-Coles continua em +0,033
+
+**Pergunta.** O Dixon-Coles estima ataque e defesa juntos (cada gol é explicado pela força do adversário) e dá mais peso aos jogos recentes. Fazer isso com a força por gols do Achado 57 fecha a diferença restante, e o EWMA (peso decrescente no tempo) ajuda?
+
+**Método.** Mesmas cinco ligas, 1.533 jogos com Dixon-Coles e odds, 1.000 simulações, mesmas sementes de `exp_misto` (diferença pareada), bootstrap por jogo. Base: `exp_misto` (força = chutes^0,5 × gols^0,5, Achado 57). Quatro variantes, parâmetros fixados antes de olhar o teste e todas reportadas:
+- `misto_adv`: gols com ajuste pelo adversário (ataque e defesa estimados juntos, 30 iterações; mandante e visitante com médias próprias), sem decaimento.
+- `misto_ewma365`: decaimento sozinho, peso 0,5^(dias/365), sem ajuste.
+- `misto_adv_ewma365` e `misto_adv_ewma120`: os dois juntos, meia-vida de 365 e de 120 dias.
+Só jogos com data anterior à do jogo previsto entram (inclusive os do mesmo dia ficam fora). O prior de `k_gols` = 20 pseudo-jogos não decai. Só a parte dos gols é ajustada; a parte dos chutes continua a razão simples.
+
+**Resultado (log-loss; positivo = pior que a referência; * = IC 95% exclui zero).**
+
+| variante (5 ligas) | contra `exp_misto`, 1X2 | contra `exp_misto`, over/under | contra o Dixon-Coles, 1X2 |
+|---|---|---|---|
+| `misto_adv` | +0,0007 [-0,0019; +0,0033] | -0,0006 [-0,0022; +0,0010] | +0,0331 [+0,0188; +0,0469] |
+| `misto_ewma365` | +0,0029 [-0,0000; +0,0057] | +0,0008 [-0,0010; +0,0026] | +0,0352 [+0,0206; +0,0496] |
+| `misto_adv_ewma365` | **+0,0033 [+0,0004; +0,0061]*** | -0,0001 [-0,0019; +0,0018] | +0,0357 [+0,0211; +0,0497] |
+| `misto_adv_ewma120` | **+0,0058 [+0,0023; +0,0092]*** | -0,0017 [-0,0041; +0,0008] | +0,0381 [+0,0226; +0,0530] |
+
+Referências: `exp_misto` contra o Dixon-Coles +0,0324 (Achado 57), `exp_forca` +0,0382 (Achado 56). Contra `exp_forca`, só `misto_adv` mantém ganho (-0,0052 [-0,0091; -0,0011]), e é basicamente o ganho do Achado 57; `misto_adv_ewma120` volta ao nível de `exp_forca` (-0,0001).
+Por liga, `misto_adv_ewma120` contra `exp_misto` no 1X2: Premier League +0,0009; La Liga +0,0059; Serie A **+0,0117** [+0,0046; +0,0182]; Bundesliga +0,0050; Ligue 1 +0,0051. Os gols por jogo simulados mudam menos de 1,5% entre as variantes.
+
+**Leitura.**
+- **Resposta direta à pergunta sobre o EWMA:** não melhora; piora um pouco, e quanto mais curta a meia-vida, pior (120 dias +0,0058, 365 dias +0,0029 a +0,0033). Nos achados anteriores (Achado 24) o EWMA com meia-vida de 8 a 16 jogos tinha ganho pequeno de correlação em toques e xG sofrido, mas gols são mais ruidosos que isso.
+- **Ajuste pelo adversário:** sem efeito (+0,0007). Em uma liga de 20 times, com todos jogando contra todos mais de uma vez, o calendário já é equilibrado e a razão simples chega perto da ajustada.
+- Duas explicações para o EWMA piorar, que os dados daqui não separam: (1) menos informação efetiva por time (a história de uma temporada e meia já é curta; descartar peso aumenta o ruído), e (2) o prior fixo de 20 pseudo-jogos passa a pesar mais quando o peso dos dados cai, o que encolhe a força para 1.
+- A diferença de +0,033 a +0,038 para o Dixon-Coles **não vem** de: nível de gols (Achado 56), canal da força (Achado 57), ajuste pelo adversário nem decaimento no tempo (este achado). O que sobra está na estrutura: o Dixon-Coles estima direto o placar por Poisson bivariado com correção de baixos placares, e o simulador gera o placar por uma cadeia de ações sorteadas, o que pode distorcer as probabilidades de empate e de placares baixos mesmo com a força certa.
+
+**O que não se pode concluir.** (1) Só duas meias-vidas (120 e 365 dias) e um `k_gols`: uma meia-vida mais longa ou menos encolhimento pode se comportar diferente. (2) A parte de chutes da força não foi ajustada. (3) Cinco ligas, uma temporada de teste cada, IC otimistas por jogos repetidos do mesmo time. (4) Não foi medido onde a distribuição simulada de placares difere da do Dixon-Coles.
+
+**Próximo teste (proposto):** comparar, nos 1.533 jogos, a probabilidade simulada de empate e de cada placar baixo (0-0, 1-0, 1-1) com a do Dixon-Coles e com a frequência real, para ver se o erro está na distribuição do placar e não na força.
+
+## Achado 59 — a forma da distribuição de placares do simulador não é a causa da diferença para o Dixon-Coles: com as mesmas médias de gols, uma Poisson simples dá o mesmo 1X2; o erro está nas médias
+
+**Hipótese (Achado 58).** O Dixon-Coles gera o placar por uma Poisson com correção de baixos placares; o simulador, por uma cadeia de ações sorteadas. A cadeia poderia distorcer empates e placares baixos e explicar o +0,033 no 1X2.
+
+**Método** (`scripts/analisar_placares_simulados.py`, sem rede; resultado em `dados_referencia/placares_simulados/exp_misto_5ligas_2025.json`). O backtest passou a guardar, por jogo, a contagem de cada placar simulado (gols de cada lado limitados a 7) e os gols esperados de cada lado; mesmas sementes de antes (as probabilidades de 1X2 dos 1.533 jogos saíram idênticas às rodadas anteriores). Variante `exp_misto` (Achado 57), cinco ligas, 1.533 jogos com Dixon-Coles e odds. Teste central: trocar a distribuição de placares da simulação por **duas Poisson independentes com as médias de gols do próprio simulador** (mesma média, outra forma) e recalcular o 1X2 e o over/under.
+
+**Resultado 1: a forma não importa.** Log-loss (menor = melhor):
+
+| | 1X2 | Brier 1X2 | over/under |
+|---|---|---|---|
+| simulação | 1,0333 | 0,6201 | 0,6915 |
+| Poisson com as médias da simulação | 1,0340 | 0,6206 | 0,6923 |
+| Dixon-Coles | 1,0011 | 0,5975 | 0,6946 |
+
+Poisson menos simulação: 1X2 **+0,0007 [-0,0011; +0,0024]**, over/under +0,0008 [-0,0002; +0,0019]; por liga, nenhuma diferença no 1X2 distingue de zero (de -0,0021 a +0,0035). Simulação menos Dixon-Coles: 1X2 +0,0323 [+0,0179; +0,0459], e **Poisson menos Dixon-Coles: +0,0329 [+0,0188; +0,0465]**: a Poisson com as médias da simulação perde para o Dixon-Coles tanto quanto a própria simulação.
+
+**Resultado 2: o placar sai quase como uma Poisson independente.**
+- Frequência (real, simulação, Poisson): empate 24,7%, 25,9%, 26,1% (Dixon-Coles 24,4%); 0-0 5,9%, 6,9%, 7,5%; 1-1 11,4%, 12,6%, 12,3%; 2-1 ou 1-2 16,6%, 16,6%, 16,0%. A simulação superestima o empate em 1,2 ponto percentual (erro-padrão do real ~1,1) e o 0-0 em 1,1 (ep 0,6).
+- Total de gols (real, simulação): 2 gols 23,4% e 25,4%; 4 gols 16,0% e 14,5%; 6 ou mais 6,2% e 4,6%: a simulação concentra mais em torno de 2 gols e tem cauda alta um pouco fina.
+- Dispersão: variância sobre média do total de gols = 0,94 dentro do jogo na simulação (Poisson = 1; subdispersa), contra 1,04 do real em torno da média do modelo.
+- Correlação entre os gols dos dois lados: -0,024 na simulação; real (resíduos) 0,000 [-0,053; +0,051]. A dependência que a cadeia cria (mais posse para um, menos para o outro) é pequena.
+
+**Resultado 3 (ressalva): verossimilhança do placar real.** -log P(placar real): simulação 2,976, Poisson 2,954 (Poisson - simulação = -0,0229 [-0,0318; -0,0140], a simulação explica pior). Esse número é favorável à Poisson por construção: a simulação usa um histograma de 1.000 sorteios com suavização, e o ruído de amostra de um histograma de 64 células penaliza a verossimilhança. Não use como prova de que a cadeia é pior; o teste do Resultado 1 não tem esse viés.
+
+**Leitura.**
+- A hipótese da forma da distribuição **não se sustenta**: mesma média, outra forma, mesmo resultado no 1X2 e no over/under. A cadeia de ações se comporta, para o placar, quase como duas Poisson independentes.
+- Logo, os +0,033 contra o Dixon-Coles estão nas **médias de gols esperados** de cada lado (ou seja, em como a força dos times vira gols esperados), não em como o placar é sorteado.
+- O que o Dixon-Coles tem a mais e não foi testado: **mais história** (o `dixon_coles_v1` usa janela de 2 a 3 temporadas anteriores com decaimento, e o simulador só recebeu a temporada 2024/25 de aquecimento mais a atual até o jogo) e estimação conjunta por máxima verossimilhança. O EWMA sozinho (Achado 58) piorou, mas esse teste mantinha a história curta.
+
+**O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada. (2) Não temos a distribuição de placares do Dixon-Coles (só 1X2 e over/under 2,5 em `model_predictions`), então a comparação de forma é contra a Poisson, não contra o Dixon-Coles com correção de baixos placares. (3) A origem do erro nas médias não foi isolada: mais história é a hipótese mais barata de testar, não confirmada.
+
+**Próximo teste (proposto):** acrescentar as temporadas de 2022 e 2023 ao CSV de cada liga só como história (não precisam de odds nem de Dixon-Coles, e não são simuladas) e repetir `exp_forca`, `exp_misto` e o fator móvel com 3 a 4 temporadas de história.
+
+## Achado 60 — três temporadas de história ajudam só a mistura chutes+gols (-0,0052), o EWMA continua piorando o 1X2, o fator móvel dá ganho pequeno; a diferença para o Dixon-Coles cai de +0,033 para +0,026
+
+**Pergunta.** A diferença restante para o Dixon-Coles poderia vir de o simulador ter pouca história (1 temporada de aquecimento, contra 2 a 3 do `dixon_coles_v1`)? E o EWMA, que piorava com pouca história, passa a ajudar com mais?
+
+**Método.** Acrescentei 2022 e 2023 ao CSV de cada liga **só como história** (chutes, gols e Elo; não são simuladas nem precisam de odds), de modo que o teste de 2025 usa 3 temporadas anteriores (`*_2022_25.csv`; exportador com repetição em erro 5xx). Mesmos 1.533 jogos de teste com Dixon-Coles e odds, 1.000 simulações, mesmas sementes (diferença pareada), bootstrap por jogo. Variantes: `exp_forca` (só chutes), `exp_misto` (chutes e gols, Achado 57), `misto_ewma365` e `misto_adv_ewma365` (Achado 58), e o fator de gols móvel sobre as duas (`exp_forca_movel`, `exp_misto_movel`: razão gols reais / simulados dos últimos 200 jogos anteriores, bases geradas a partir de 2024 e 2025 com a mesma história).
+
+**Resultado 1: 3 temporadas contra 1 (log-loss; negativo = melhor).**
+
+| | 1X2 | over/under |
+|---|---|---|
+| `exp_forca` | -0,0003 [-0,0046; +0,0040] | -0,0011 [-0,0041; +0,0019] |
+| `exp_misto` | **-0,0052 [-0,0092; -0,0012]** | +0,0019 [-0,0012; +0,0049] |
+
+Por liga, `exp_misto` no 1X2: Premier League -0,0074; La Liga -0,0052; Serie A +0,0071 [+0,0002; +0,0140]; Bundesliga **-0,0133** [-0,0222; -0,0042]; Ligue 1 **-0,0098** [-0,0194; -0,0001]. O canal só de chutes não aproveita a história extra (a força por chutes converge rápido: há muitos chutes por jogo); o canal de gols, mais ruidoso, aproveita.
+
+**Resultado 2: contra o Dixon-Coles (1X2; positivo = pior).** `exp_forca` 3t +0,0379 [+0,0233; +0,0522] (era +0,0382); `exp_misto` 3t **+0,0272 [+0,0139; +0,0400]** (era +0,0324). Over/under: -0,0055 e -0,0012, empate.
+
+**Resultado 3: o EWMA continua piorando o 1X2, mas agora melhora o over/under.** Contra `exp_misto` 3t: `misto_ewma365` 1X2 **+0,0053 [+0,0022; +0,0084]**, over/under **-0,0031 [-0,0052; -0,0010]**; `misto_adv_ewma365` 1X2 +0,0046 [+0,0016; +0,0077], over/under -0,0034 [-0,0055; -0,0014]. A hipótese de que o EWMA perdia por falta de história **não se confirmou para o 1X2**.
+
+**Resultado 4: fator de gols móvel com 3 temporadas.** `exp_forca_movel` contra `exp_forca` 3t: 1X2 **-0,0028 [-0,0055; -0,0001]**, over/under -0,0019 [-0,0064; +0,0026]. `exp_misto_movel` contra `exp_misto` 3t: 1X2 -0,0011 [-0,0040; +0,0018], over/under **-0,0052 [-0,0103; -0,0000]** (Bundesliga -0,0253 [-0,0437; -0,0070]). Fator médio por liga: Premier League 1,036; La Liga 1,083; Serie A 1,009; Bundesliga 1,127; Ligue 1 1,099. Os gols por jogo sobem (Bundesliga 2,784 para 3,100; real 3,294 nos jogos comparados). Melhor configuração do dia: `exp_misto_movel`, **1X2 +0,0260 [+0,0130; +0,0387]** contra o Dixon-Coles e over/under -0,0064 [-0,0175; +0,0043]; contra `exp_forca_movel`, 1X2 -0,0091 [-0,0128; -0,0053].
+
+**Leitura.**
+- A pouca história **não é a causa principal** da diferença: três temporadas aproximam de +0,033 para +0,026, e só pela mistura chutes+gols.
+- O 1X2 melhor do simulador (`exp_misto_movel`) segue 0,026 pior que o Dixon-Coles e muito atrás dos modelos cadastrados (Achado 61, que mostra onde está o resto: a amplitude dos lambdas).
+- O over/under do simulador está agora no nível do Dixon-Coles (-0,006, intervalo cobrindo zero).
+
+**O que não se pode concluir.** Cinco ligas, uma temporada de teste, IC otimistas; meia-vida do EWMA só em 365 dias neste teste; o fator móvel só foi avaliado com janela de 200 jogos e sem otimizar. O Dixon-Coles usa janelas e decaimento próprios que não reproduzi.
+
+## Achado 61 — comparando os lambdas (gols esperados) previstos: o simulador ordena os times bem, mas espalha só metade do que deveria e subestima o mando; os modelos cadastrados superam o Dixon-Coles e ainda perdem para o mercado
+
+**Pergunta.** Até aqui só tínhamos o 1X2 e o over/under. Os lambdas de cada lado (gols esperados de mandante e visitante) são o que o simulador, o Dixon-Coles e os modelos cadastrados realmente estimam. Como se comparam entre si e com o mercado?
+
+**Método** (`scripts/comparar_lambdas_modelos.py`, só leitura; resultado em `dados_referencia/placares_simulados/lambdas_5ligas_2025.json`). Cinco ligas, temporada 2025/26, **1.404 jogos** em que todas as fontes existem. Lambdas: (a) **mercado** e **`dixon_coles_v1`**: lambdas implícitos, as duas Poisson independentes cujo 1X2 e over 2,5 mais se aproximam das probabilidades do mercado (odds de fechamento sem margem) ou do modelo (só há essas probabilidades guardadas); (b) **`markov_multievento_v1`, `hibrido_gols_v1`, `hibrido_gols_xg_v1`**: gols esperados pelas linhas de gols por time guardadas (soma das probabilidades de "mais de 0,5 a 4,5 gols" de cada time; a cauda acima de 5 gols é desprezada); (c) **simulador**: `gols_casa` e `gols_fora` médios simulados (`exp_forca` e `exp_misto`, 3 temporadas de história, e `exp_misto` com 1). Medida: log-verossimilhança negativa de Poisson (NLL) dos gols reais de cada time em cada jogo com aquele lambda (menor = melhor), bootstrap por time-jogo (IC 95%).
+
+**Resultado** (gols reais: mandante 1,546, visitante 1,251, total 2,796):
+
+| fonte | λ casa | λ fora | viés total | NLL/time | contra o mercado | contra o Dixon-Coles | inclinação | correl. (λcasa-λfora) com o saldo real |
+|---|---|---|---|---|---|---|---|---|
+| mercado (implícito) | 1,533 | 1,247 | -0,016 | 1,4351 | referência | | 0,95 | 0,450 |
+| `hibrido_gols_xg_v1` | 1,537 | 1,235 | -0,024 | 1,4496 | +0,0145 [+0,0080; +0,0211] | **-0,0113 [-0,0200; -0,0027]** | 1,13 | 0,418 |
+| `hibrido_gols_v1` | 1,562 | 1,291 | +0,057 | 1,4517 | +0,0166 [+0,0101; +0,0228] | **-0,0091 [-0,0181; -0,0002]** | 0,93 | 0,410 |
+| `markov_multievento_v1` | 1,579 | 1,308 | +0,091 | 1,4541 | +0,0190 [+0,0127; +0,0256] | -0,0067 [-0,0155; +0,0028] | 0,85 | 0,410 |
+| `dixon_coles_v1` (implícito) | 1,517 | 1,295 | +0,016 | 1,4608 | +0,0257 [+0,0174; +0,0340] | referência | 0,78 | 0,402 |
+| simulador `exp_misto`, 3 temporadas | 1,325 | 1,252 | **-0,220** | 1,4716 | +0,0365 [+0,0262; +0,0466] | +0,0108 [-0,0003; +0,0216] | **1,95** | 0,410 |
+| simulador `exp_forca`, 3 temporadas | 1,343 | 1,270 | -0,183 | 1,4752 | +0,0401 [+0,0284; +0,0511] | +0,0144 [+0,0030; +0,0256] | **2,11** | 0,389 |
+| simulador `exp_misto`, 1 temporada | 1,339 | 1,272 | -0,185 | 1,4731 | +0,0380 [+0,0272; +0,0490] | +0,0123 [+0,0007; +0,0232] | 1,95 | 0,394 |
+
+(inclinação = regressão dos gols sobre o lambda: 1 = bem calibrado; acima de 1 = lambdas espalhados de menos; abaixo de 1 = de mais.)
+
+**Leitura.**
+1. **Confirmado o que você disse: os modelos cadastrados superam o Dixon-Coles nos lambdas** (híbridos por 0,009 a 0,011 de NLL, o Markov por 0,007, este sem significância), **e todos continuam atrás do mercado** (+0,0145 a +0,0257). O mercado é a régua.
+2. **O simulador está atrás de todos eles**: +0,011 a +0,014 de NLL contra o Dixon-Coles e +0,036 a +0,040 contra o mercado. Isso é o mesmo +0,03 que aparecia no 1X2, agora visto no lambda.
+3. **O simulador ordena bem e dimensiona mal.** A correlação entre a diferença de lambdas e o saldo de gols real (0,41 para `exp_misto`) iguala a do Markov e dos híbridos e supera a do Dixon-Coles (0,402). Mas a **inclinação é cerca de 2** (1,95 e 2,11): os lambdas do simulador espalham **metade** do que a realidade espalha. Os modelos cadastrados ficam entre 0,78 e 1,13, o mercado em 0,95.
+4. **Isso se repete em outra temporada**: em 2024 (calibração, sem odds) a inclinação agregada é 2,08 [1,85; 2,35] (`exp_forca`) e 2,02 [1,83; 2,24] (`exp_misto`); em 2025, 2,13 [1,91; 2,39] e 1,98 [1,80; 2,18]. Os intervalos de 2024 e de 2025 se sobrepõem por inteiro.
+5. **O simulador subestima o mando em gols**: lambda do mandante 1,33 contra 1,55 real (-14%), enquanto o do visitante (1,25 a 1,27) acerta (1,25 real). Quase todo o viés de nível de gols (-0,18 a -0,22) está no lado do mandante.
+6. Isso explica por que cada correção anterior moveu tão pouco o 1X2: nível de gols, forma da distribuição, adversário e história mexem no que já está bem; o que falta é **amplitude** (quanto um time forte é mais perigoso que um fraco) e **mando em gols**.
+
+**Ressalvas importantes.**
+- **As previsões dos modelos cadastrados foram gravadas em lote depois dos jogos** (`hibrido_gols_*` em 03/09/2026, `markov_multievento_v1` em 24/09/2026; nenhuma antes da data do jogo). O `markov_multievento_v1` usa os lambdas do `hibrido_gols_v1` (workflow `rodar_markov_batch.yml`), então não são fontes independentes. Não verifiquei se cada previsão usou só dados anteriores ao jogo; o treino do híbrido usa um corte cronológico 60/20/20, e a temporada 2025/26 deve estar no trecho de teste, mas isso não foi conferido aqui. **A comparação é, portanto, favorável a esses modelos em um grau que não medi**; o simulador e os lambdas implícitos do mercado e do Dixon-Coles não têm esse problema.
+- Os lambdas implícitos do mercado e do Dixon-Coles supõem duas Poisson independentes; o Dixon-Coles real tem correção de baixos placares, então o lambda implícito dele é aproximado.
+- O NLL de Poisson avalia só os lambdas, não a dependência entre os lados.
+- Cinco ligas, uma temporada de teste; o simulador na comparação é o de 3 temporadas de história, o do Achado 57.
+
+**Próximo teste (pré-registrado, não ajustado no teste).** Se a inclinação de ~2 vem de a amplificação dos multiplicadores de chute ficar curta, dobrar a amplitude resolve: `--exp-forca 4` (2 × a inclinação medida **em 2024**) com teto sem corte (0,3 a 3,0), em `exp_forca` e `exp_misto`; e, separadamente, o mando na conversão (`gols_mando`). Critério: a inclinação em 2024 tem de chegar perto de 1, e só então se olha o teste de 2025.
+
+## Achado 62 — o "pseudo-modelo" de Elo da calculadora acerta o vencedor (68%), não encontra empates (nenhum modelo de Elo encontra) e é confiante demais com peso 100%; um logit de 3 parâmetros sobre a mesma diferença de Elo empata com o Dixon-Coles e é muito melhor que o simulador
+
+**Pergunta (sua observação).** A calculadora (`src/pages/AnaliseEvento.jsx`, `runAlgorithm`) transforma a diferença de Elo em expectativa `E = 1 / (1 + 10^(-d/400))` e usa `λ1 = base × E/0,5`, `λ2 = base × (1-E)/0,5` (peso do Elo na tela: 50% por padrão). Esse caminho acerta quem vence, mas não acha empates e é confiante demais?
+
+**Método** (`scripts/avaliar_pseudo_modelo_elo.py`, sem rede; resultado em `dados_referencia/elo/pseudo_modelo_elo_2024_25.json`). Só a diferença de Elo global antes do jogo (`team_elo_history`, a coluna `elod` dos CSVs do backtest), 7.082 jogos das cinco ligas (3.578 em 2022-2023 só para ajustar; **3.504 de teste em 2024 e 2025**). O 1X2 sai de duas Poisson independentes com os lambdas acima (base de gols da liga em 2022-2023). Comparado com um logit ordenado de 3 parâmetros (`scripts/elo_xg_tres_vias.py`: `P(casa) = σ(a·x − t)`, `P(fora) = σ(−a·x − t)`), ajustado em 2022-2023: `a = 0,852`, `h = 70,2` pontos de mando, `t = 0,612`; e com a climatologia.
+
+**Resultado (jogos de 2024 e 2025).**
+
+| modelo | acerto do vencedor, sem empates | acerto 1X2 | P(empate) médio (real 25,2%) | AUC do empate | confiança média | erro de calibração (ECE) do favorito | log-loss |
+|---|---|---|---|---|---|---|---|
+| calculadora, peso Elo 100% | 68,3% | 51,1% | 20,9% | 0,554 | 0,600 | **0,089** | 1,0272 |
+| calculadora, peso 50% (padrão da tela) | 68,3% | 51,1% | 23,7% | 0,547 | 0,501 | 0,027 | 1,0052 |
+| calculadora 100% com base de mando | 69,3% | 51,8% | 20,8% | 0,553 | 0,605 | 0,087 | 1,0172 |
+| logit ordenado (calibrado no treino) | 69,2% | 51,7% | 25,3% | 0,546 | 0,529 | 0,024 | **0,9929** |
+| climatologia | 57,5% | 43,0% | 25,3% | 0,513 | 0,444 | 0,014 | 1,0752 |
+
+**1. "Acerta quem vence": confirmado.** 68,3% entre os jogos sem empate, contra 57,5% de quem chuta só o mandante (climatologia). Todos os modelos de Elo ficam entre 68% e 69%; o peso e o mando mexem pouco.
+
+**2. "Não é bom em achar empates": confirmado, mas não é defeito dele.** Nenhum dos modelos de Elo, nem o bem calibrado, escolhe o empate como resultado mais provável em nenhum jogo (0% dos palpites). A probabilidade de empate ordena só um pouco melhor que o acaso: AUC 0,55 contra 0,51 da climatologia, igual no logit calibrado (0,546). **O que a calculadora faz pior é o nível**: com peso 100% ela dá 20,9% de empate contra 25,2% reais (subestima 4,3 pontos percentuais), porque os lambdas ficam muito distantes um do outro e duas Poisson desiguais empatam menos.
+
+**3. "Muito confiante": confirmado com peso 100%; com 50% fica calibrada em média.** Peso 100%: confiança média 0,600 contra acerto 0,511; nas faixas, onde diz 65% acerta 54,5% (n = 662), onde diz 75% acerta 62,7% (n = 576), onde diz 84% acerta 72,6% (n = 409); 28% dos jogos recebem favorito acima de 70% e nesses ela acerta 66,8%. O mecanismo: multiplicar um lambda por `E/0,5` e o outro por `(1-E)/0,5` faz a razão de gols esperados valer `E/(1-E) = 10^(d/400)`, bem mais extrema que a realidade (o ajuste de máxima verossimilhança dá inclinação `a = 0,85`, menor que 1). Com o peso padrão de 50% da tela a confiança cai para 0,501, o erro de calibração para 0,027 e o log-loss para 1,0052; o preço é só usar metade do sinal.
+
+**4. Contra o mercado e o Dixon-Coles (1.533 jogos de 2025 com odds; log-loss do 1X2, positivo = pior).**
+
+| modelo | contra o mercado | contra o Dixon-Coles |
+|---|---|---|
+| calculadora, peso 100% | +0,0594 [+0,0416; +0,0785] | +0,0359 [+0,0176; +0,0551] |
+| calculadora, peso 50% | +0,0324 [+0,0215; +0,0429] | +0,0089 [-0,0014; +0,0198] |
+| **logit ordenado de Elo (3 parâmetros)** | **+0,0166 [+0,0079; +0,0253]** | **-0,0069 [-0,0173; +0,0036]** |
+
+Referência: mercado 0,9776, Dixon-Coles 1,0011, logit de Elo 0,9942. O simulador (`exp_misto`, 3 temporadas, a melhor versão sem o fator móvel) fica em torno de 1,028 nesses mesmos jogos, ou seja, **cerca de 0,034 pior que um logit de 3 parâmetros sobre a diferença de Elo**.
+
+**Leitura.**
+- O que você descreveu é exatamente o comportamento do caminho de Elo da calculadora com peso 100%. A causa de confiança excessiva e de poucos empates é a regra de multiplicar os lambdas por `E/0,5`; consertar isso é simples: usar o logit ordenado com parâmetros ajustados (a ≈ 0,85, mando ≈ 70 pontos, t ≈ 0,61), que dá o mesmo acerto do vencedor, empate a 25% e confiança calibrada.
+- **A diferença de Elo, bem convertida, é um previsor de 1X2 melhor que o Dixon-Coles nesta amostra (diferença não significativa) e muito melhor que o simulador.** O Elo global resume toda a história dos times (inclusive de outras competições e dos anos anteriores ao banco, pela semente do ClubElo) com atualização jogo a jogo; a força do simulador usa só 1 a 3 temporadas de chutes e gols. É a forma mais barata de recuperar o que falta ao simulador: **usar o Elo como camada de força** (a ideia do "elo_rating_xG" do início desta frente), com a amplitude calibrada pela inclinação, em vez de estimar a força só com chutes e gols.
+- O empate fica sem solução por Elo: AUC 0,55 em qualquer conversão. Quem prever empate precisa de outro sinal (jogo fechado, baixo xG esperado, pouco volume), não da diferença de força.
+
+**O que não se pode concluir.** (1) Mede só a conversão Elo para 1X2, não o uso do Elo dentro da calculadora com xG, posse e histórico (`trueXG` e `modPoss` mudam o resultado final). (2) Elo "antes do jogo" vem de `team_elo_history` (inclui a semente do ClubElo para clubes europeus); a diferença não é medida sem mando. (3) O logit foi ajustado em 2022-2023 e testado em 2024-2025 (sem vazamento); os 1.533 jogos com odds são só de 2025. (4) Cinco ligas europeias. (5) Intervalos tratam os jogos como independentes.
+
+**Próximo teste (proposto):** camada `forca_elo` no simulador: multiplicadores de chute derivados da diferença de Elo com a amplitude do logit (`a ≈ 0,85`), sozinha e combinada com chutes e gols.
+
+## Achado 64 — Elo por xG contra Elo normal e a mistura 25%/75% (05/10)
+
+**Pergunta.** Houve uma tentativa de mesclar o Elo por xG com o Elo normal na proporção 25%/75%. Ela ajuda como previsor do 1X2?
+
+**O que a tentativa documentada fez.** A mistura 25/75 está no *escore de atualização* do Elo (`scripts/elo_global_xg.py`): 25% resultado e 75% logística do xG, K=40, mando 60; o multiplicador de gols só vale nos jogos sem xG. Na época, melhor Brier (0,15841 contra 0,16099 do Elo só por resultado), com platô entre 20% e 30% de resultado.
+
+**Teste aqui** (`scripts/avaliar_mistura_elo_xg.py`). Mesmo logit ordenado de 3 parâmetros para todos, ajustado em 2022-2023, avaliado em 2024-2025 (3.504 jogos, 5 ligas). Misturei também as NOTAS finais (25% normal + 75% xG etc.), que é outra coisa.
+
+| modelo | acerto do vencedor | AUC empate | log-loss | contra o Elo normal |
+|---|---|---|---|---|
+| Elo normal | 0,692 | 0,546 | 0,9929 | — |
+| Elo por xG | 0,705 | 0,557 | **0,9867** | -0,0063 [-0,0103; -0,0019] |
+| 25% normal + 75% xG | 0,702 | 0,556 | 0,9870 | -0,0060 |
+| 50/50 | 0,699 | 0,553 | 0,9883 | -0,0046 |
+| 75% normal + 25% xG | 0,692 | 0,549 | 0,9904 | -0,0025 |
+| peso ótimo (10% normal) | 0,705 | 0,557 | 0,9866 | -0,0063 |
+
+Nos 1.533 jogos de 2025 com odds: Elo por xG 0,9906 (**+0,0131 contra o mercado** [+0,0045; +0,0217]; -0,0104 contra o Dixon-Coles, ns); Elo normal 0,9942 (+0,0166 contra o mercado).
+
+**Conclusão.** O Elo por xG é melhor que o normal de forma significativa (~0,006), mas o ganho vem do xG na atualização; **misturar as notas dos dois Elos não acrescenta nada** (as notas têm correlação 0,957; o peso ótimo manda 90% para o xG). Continua atrás do mercado (+0,013). Para a camada `forca_elo` do simulador, a base deve ser `team_elo_xg_history`.
+
+**Ressalvas.** Mede só Elo para 1X2, não o uso dentro da calculadora; os parâmetros do Elo por xG (K, peso 25/75) foram escolhidos antes por Brier em dados que incluem anos deste teste (possível otimismo pequeno); intervalos tratam jogos como independentes.
+
+## Achado 63 — Expoente de força 4 e calibração dos lambdas por lei de potência (05/10)
+
+**Pergunta.** (1) O expoente de força 4 (e o teto 0,3-3,0) corrige a amplitude dos lambdas do simulador (inclinação ≈2 nos Achados 60-61)? (2) Estimar a taxa geradora por uma transformada (lei de potência) aproxima as previsões do 1X2 e do over/under 2,5 das do Dixon-Coles e do mercado?
+
+**Desenho (fixado antes de olhar 2025).** 5 ligas, variantes `forca_expo`, `misto_expo`, `misto_expo_mando` com `exp_forca` 4 e teto 0,3-3,0 (1.000 simulações por jogo, 3 temporadas de história). Transformada `lambda' = c_lado · lambda^beta` ajustada por máxima verossimilhança de Poisson dos gols em **2024** (1.752 jogos) e avaliada em **2025** (1.752 jogos; 1.533 com Dixon-Coles e odds). 1X2 e over/under saem de duas Poisson independentes com o lambda calibrado. Três formas: só nível (beta = 1), beta comum e beta por lado.
+
+**Passo 1 — amplitude (inclinação dos gols sobre o lambda; 1 = calibrado).** `forca_expo` 1,38 [1,23; 1,52] em 2024 e 1,32 [1,18; 1,45] em 2025; `misto_expo` 1,31 [1,19; 1,42] e 1,19 [1,07; 1,31]; `misto_expo_mando` 1,31 e 1,19. Antes: ≈2,0. O expoente corrigiu a maior parte da amplitude, mas não toda (o IC de 2024 não inclui 1). O lambda do mandante segue baixo (1,24 contra 1,50 em 2024 e 1,54 em 2025 reais; visitante 1,17 contra 1,33 e 1,23).
+
+**Passo 2 — 2025, diferença de log-loss do 1X2 (com IC 95% pareado):**
+
+| modelo | 1X2 | contra Dixon-Coles | contra mercado | O/U contra mercado |
+|---|---|---|---|---|
+| `forca_expo` sem transformar | 1,0182 | +0,0171 * | +0,0406 * | +0,0269 * |
+| `forca_expo` + nível | 1,0113 | +0,0103 (ns) | +0,0338 * | +0,0121 * |
+| `forca_expo` + potência (beta 1,18) | 1,0085 | +0,0074 (ns) | +0,0309 * | +0,0126 * |
+| `misto_expo` sem transformar | 1,0073 | +0,0062 (ns) | +0,0297 * | +0,0364 * |
+| `misto_expo` + nível (c 1,21 e 1,13) | **1,0011** | **0,0000** [-0,0089; +0,0089] | +0,0235 [+0,0138; +0,0336] * | +0,0151 * |
+| `misto_expo` + potência (beta 1,08) | 1,0001 | -0,0010 (ns) | +0,0225 * | +0,0157 * |
+| `misto_expo_mando` + potência | 1,0005 | -0,0006 (ns) | +0,0229 * | +0,0160 * |
+
+Referências nos mesmos jogos: mercado 0,9776, Dixon-Coles 1,0011, Elo por xG 0,9906 (Achado 64). NLL de Poisson por time-jogo: `misto_expo` + nível 1,4599 (Dixon-Coles 1,4608, `exp_misto` 3t sem transformar 1,4716).
+
+**Conclusão.** (a) O expoente 4 foi o ganho grande: a distância ao Dixon-Coles no 1X2 caiu de +0,027 para +0,006 sem nenhuma transformação. (b) A transformada completa (potência) quase não acrescenta ao ajuste de **nível**: depois do expoente, o erro que sobra é principalmente viés de nível (gols do mandante ~20% abaixo do real), não de forma da relação. (c) Com nível corrigido o simulador **empata com o Dixon-Coles** no 1X2 e fica ainda +0,023 pior que o mercado e +0,010 pior que o Elo por xG; no over/under melhora muito (+0,036 para +0,015 contra o mercado) mas segue pior. (d) A variante com mando de gols não muda nada.
+
+**O que não se pode concluir.** (1) Os parâmetros da transformada saem de uma única temporada (2024) e foram testados numa única (2025); não há verificação com outro par de anos. (2) O nível ajustado (c ≈ 1,2) corrige um viés que deveria ser tratado na origem (`gols_nivel`/`gols_fator`), e o `c` do mandante pode refletir a mudança de nível de gols de 2024 para 2025 (1,50 para 1,54). (3) 1X2 por Poisson independente, sem correlação nem Dixon-Coles; o placar simulado pode ter forma melhor ou pior (Achado 59 mostrou diferença pequena). (4) Intervalos tratam os jogos como independentes. (5) Cinco ligas europeias.
+
+**Próximo passo (proposto).** Camada `forca_elo` com o Elo por xG (Achado 64) combinada ao expoente 4, e corrigir o nível do mandante na origem em vez de uma transformada posterior.
+
+## Achado 65 — Camada de força pelo Elo dentro do simulador (05/10)
+
+**Pergunta.** Usar o Elo (normal e por xG) como camada de força do simulador, sozinha e combinada à mistura chutes/gols com expoente 4, fecha a distância para o Dixon-Coles e o mercado?
+
+**Desenho (fixado antes de olhar 2025).** Camada `forca_elo`: a diferença de Elo anterior ao jogo, x = dif/400·ln10, vira ataque `exp(k·x/2)` e defesa `exp(-k·x/2)` de chutes do mandante (o inverso no visitante). k pela regressão de log(chutes casa/fora) sobre x em 2022-2023, dividida por 2×0,49 (elasticidade do Achado 51): Elo normal 0,343; Elo por xG 0,436; versão "gols" (regressão do log xG) 0,618; `elo_xg_misto` = mistura chutes/gols (exp 4) + Elo por xG com peso 0,5. 5 ligas, 1.000 simulações por jogo, teto 0,3-3,0, mesma semente das variantes anteriores. Calibração por lei de potência ajustada em 2024 (1.752 jogos) e avaliada em 2025 (1.752; 1.533 com odds), como no Achado 63.
+
+**Resultado, 2025 (log-loss do 1X2; contra o Dixon-Coles e o mercado, IC 95% pareado):**
+
+| variante | inclinação crua | sem transformar | + nível | + potência |
+|---|---|---|---|---|
+| `elo_normal` | 2,16 | 1,0362 | 1,0308 | 1,0087 (beta 2,10; DC +0,0076 ns; mercado +0,0311 *) |
+| `elo_xg` | 2,16 | 1,0346 | 1,0293 | 1,0063 (beta 2,13; DC +0,0052 ns; mercado +0,0287 *) |
+| `elo_xg_gols` | 1,74 | 1,0237 | 1,0161 | 1,0003 (beta 1,69; DC -0,0008 ns; mercado +0,0227 *) |
+| `elo_xg_misto` | 1,09 | 1,0064 | **0,9990** (DC -0,0021 ns; mercado +0,0214 [+0,0122; +0,0312] *) | 0,9993 (beta 0,95) |
+
+Over/under 2,5 contra o mercado: `elo_xg_misto` + nível +0,0149; Elo sozinho entre +0,012 e +0,019. Referências nos mesmos jogos: mercado 0,9776; Dixon-Coles 1,0011; `misto_expo` + nível 1,0011; logit de 3 parâmetros do Elo por xG 0,9906.
+
+**Conclusão.** (a) O Elo sozinho, no desenho pré-registrado, deixa os lambdas com o **dobro** da amplitude (o k derivado da regressão de chutes entrega só metade do efeito em gols; o beta ≈ 2 confirma). Só a transformada de potência o conserta; k mais alto é o ajuste certo na origem. (b) Corrigida a amplitude, o Elo por xG dentro do simulador (1,0063) **não supera o logit simples de 3 parâmetros** sobre o mesmo Elo (0,9906) — o simulador não acrescenta informação sobre o Elo para o 1X2. (c) O melhor número da frente é `elo_xg_misto` com nível: 0,9990, diferença de -0,0021 do Dixon-Coles (ns) e +0,021 do mercado (significativa); o ganho sobre `misto_expo` + nível (1,0011) é de 0,002 e não foi testado como par. (d) Nenhuma variante bate o mercado.
+
+**O que não se pode concluir.** (1) Os k vêm de uma regressão de chutes e o simulador responde em gols; o k certo (≈ 2 vezes) não foi pré-registrado, então o beta da transformada é o único ajuste válido aqui. (2) Calibração treinada em 2024 e testada em 2025 apenas. (3) O Elo por xG tem parâmetros (K 40, peso 25/75) escolhidos antes em dados que incluem anos deste teste (Achado 64). (4) 1X2 por Poisson independente. (5) Intervalos tratam os jogos como independentes; cinco ligas europeias.
+
+**Leitura prática.** Para o 1X2, o caminho barato e competitivo é o próprio logit de Elo por xG (0,9906, +0,013 do mercado). O simulador só se justifica por mercados que o Elo não cobre (placar, eventos, cartões, escanteios), e aí o ponto de partida é `elo_xg_misto` com nível corrigido.
+
+## Achado 66 — Acurácia direta, placares exatos e mercados derivados (05/10)
+
+**Pergunta.** Além do log-loss, como ficam a acurácia direta do 1X2, os placares exatos e os outros mercados (ambos marcam, total de gols, handicap)?
+
+**Desenho.** Melhor variante do Achado 65 (`elo_xg_misto`), nível ajustado em 2024 (c 1,23 e 1,15), 1.752 jogos de 2025 (1.533 com Dixon-Coles e odds). Probabilidades de placar: contagem dos placares simulados (cru) e duas Poisson com o lambda calibrado. Referências: logit de Elo por xG (ajustado em 2022-2023), Dixon-Coles, mercado, `markov_multievento_v1` (grade 8x8 gravada em lote depois dos jogos, não verificada como walk-forward) e as frequências do treino.
+
+**1X2, nos 1.533 jogos com odds:**
+
+| modelo | acerto dos 3 resultados | acerto do vencedor (sem empate) | log-loss |
+|---|---|---|---|
+| mercado | **0,538** | **0,715** | 0,9776 |
+| logit de Elo por xG | 0,528 | 0,702 | 0,9906 |
+| simulador calibrado | 0,515 | 0,684 | 0,9990 |
+| simulador cru | 0,508 | 0,675 | 1,0064 |
+| Dixon-Coles | 0,508 | 0,679 | 1,0011 |
+| sempre mandante | 0,443 | 0,588 | — |
+
+Diferenças pareadas de acerto: simulador calibrado menos mercado -0,023 [-0,038; -0,009]*; menos Dixon-Coles +0,007 [-0,007; +0,021]; logit de Elo menos Dixon-Coles +0,020 [+0,005; +0,037]*; logit de Elo menos mercado -0,010 [-0,024; +0,005]. **Nenhum modelo palpita empate** (0 a 0,6% dos jogos), embora o empate ocorra em ~25%.
+
+**Placar exato (placares de 0 a 7):**
+
+| modelo | log-verossimilhança | placar mais provável | entre os 3 mais prováveis |
+|---|---|---|---|
+| simulador calibrado | **-2,920** | **13,5%** | **32,5%** |
+| `markov_multievento_v1` | -2,936 | 11,5% | 30,8% |
+| simulador cru | -2,982 | 12,8% | 31,1% |
+| frequências do treino | -3,025 | 11,7% | 30,2% |
+
+(Markov e simulador calibrado comparados em 1.742 jogos comuns.) O ganho sobre a frequência é pequeno (0,10 em log-verossimilhança); o placar mais provável acerta ~1 em 7,5.
+
+**Outros mercados (Brier; menor é melhor). Só há odds de 1X2 e over/under 2,5, então não há referência de mercado para os demais:**
+
+| mercado | frequência real | simulador calibrado | frequências do treino |
+|---|---|---|---|
+| mandante vence | 0,440 | **0,2173** | 0,2468 |
+| ambos marcam | 0,539 | 0,2481 | 0,2487 |
+| over 1,5 | 0,765 | 0,1801 | 0,1797 |
+| over 2,5 | 0,530 | 0,2499 | 0,2491 |
+| over 3,5 | 0,297 | 0,2073 | 0,2092 |
+| handicap -1,5 mandante | 0,224 | 0,1579 | 0,1740 |
+
+Over/under 2,5 com odds: acerto 0,579 (mercado), 0,547 (Dixon-Coles), 0,535 (simulador calibrado); log-loss 0,6754, 0,6946, 0,6903. O `markov_multievento_v1` fica em 0,2476 (over 2,5) e 0,2486 (ambos marcam), também sem ganho sobre a frequência.
+
+**Conclusão.** (a) O acerto direto do 1X2 segue a ordem do log-loss: mercado, logit de Elo por xG, simulador calibrado, Dixon-Coles; o simulador calibrado empata com o Dixon-Coles e perde para o mercado em ~2 pontos percentuais. (b) Nenhum modelo acerta empate, e nenhum acha o placar com frequência (~13%). (c) Total de gols e ambos marcam são praticamente imprevisíveis a partir da força dos times: nenhum modelo, simulador ou cadastrado, melhora o Brier da média histórica; o sinal está no resultado (vencedor e diferença de gols), não no total.
+
+**O que não se pode concluir.** (1) Não testei escanteios, cartões e faltas, que o simulador e o Markov geram, por falta de odds e de comparação preparada. (2) A grade do Markov foi gravada em lote depois dos jogos. (3) Calibração em uma temporada. (4) Intervalos tratam os jogos como independentes.
+
+## Achado 67 — Escanteios, cartões e faltas (05/10)
+
+**Pergunta.** O simulador (que gera escanteios e tiros livres, mas não cartões), um modelo simples de taxas dos times e o `markov_multievento_v1` preveem escanteios, cartões e faltas melhor que a frequência histórica?
+
+**Desenho.** 5 ligas, treino 2024, teste 2025. Resultado real: escanteios = hc + ac (FotMob, 1.752 jogos); faltas = soma de `match_disciplina.faltas_cometidas` (1.418 jogos); cartões = amarelos + vermelhos equivalentes de `match_disciplina`, só em jogos com `fonte_cartoes` em `match_events`/`fallback_fotmob` (o FotMob zera amarelos em parte dos jogos; 1.375 jogos). Modelos: frequência da liga em 2024; taxas dos times walk-forward (média do total dos jogos anteriores de cada time, encolhida para a média da liga com k = 10, média do jogo = liga + desvios dos dois times, binomial negativa com dispersão do treino); simulador `elo_xg_misto` (total simulado, depois nível e potência ajustados em 2024; faltas = tiros livres simulados, proxy); `markov_multievento_v1` (gravado em lote depois dos jogos). Não há odds desses mercados nas 5 ligas.
+
+**Correlação da média prevista com o total real, e Brier por linha (menor é melhor):**
+
+| mercado | taxas dos times | simulador | frequência da liga | `markov_multievento_v1` |
+|---|---|---|---|---|
+| escanteios, correlação | 0,114 | 0,010 | — | — |
+| escanteios, over 9,5 (freq. 0,489) | 0,2499 | 0,2499 (potência) | **0,2481** | 0,2626 |
+| faltas, correlação | **0,408** | 0,141 | — | — |
+| faltas, over 24,5 (freq. 0,446) | **0,2205** | 0,2439 (potência) | 0,2315 | 0,2290 |
+| cartões, correlação | 0,166 | não modela | — | — |
+| cartões, over 4,5 (freq. 0,514) | **0,2487** | — | 0,2497 | 0,2514 |
+
+Faltas, taxas dos times: Brier melhor que a frequência nas quatro linhas (22,5: 0,2149 contra 0,2267; 26,5: 0,2011 contra 0,2087; 28,5: 0,1584 contra 0,1640); acurácia da linha 24,5 de 0,651 contra 0,614. Escanteios: nas quatro linhas (8,5 a 11,5) nenhum modelo melhora a frequência; o `markov_multievento_v1` fica 0,01 a 0,015 pior. Cartões: sem ganho consistente (taxas dos times -0,0010 em 4,5, +0,0024 em 5,5; Markov pior em 2,5 e 3,5: 0,0930 contra 0,0833, 0,2051 contra 0,1972). A log-verossimilhança do total é melhor que a da frequência (suavizada) para as taxas dos times (escanteios +0,062 [+0,047; +0,079], faltas +0,106, cartões +0,036), mas parte disso é a suavização paramétrica da binomial negativa contra a contagem empírica; o Brier por linha é a medida mais honesta.
+
+**Simulador.** Escanteios simulados em média 9,90 contra 9,55 reais (nível 0,97), mas **a correlação do total simulado com o real é 0,01**: o simulador acerta o nível e não distingue jogos. Faltas (tiros livres simulados): 29,3 contra 24,1 reais; depois do ajuste de nível a correlação é 0,14 (taxas dos times: 0,41) e o Brier fica pior que a frequência (24,5: 0,2456 contra 0,2315). Tiros livres incluem impedimento, então a faltas é só proxy; mesmo assim o sinal por time está nos próprios times (árbitro e estilo), não na força.
+
+**Conclusão.** (a) Faltas dependem dos times e são previsíveis com média móvel simples (Brier -0,01 a -0,011 sobre a frequência); (b) escanteios e cartões são quase impossíveis de distinguir da média; (c) o simulador e o `markov_multievento_v1` não acrescentam nada nesses três mercados. Isso concorda com o histórico em `model_betting_strategy` (escanteios e cartões `nenhuma`).
+
+**O que não se pode concluir.** (1) Sem odds desses mercados nas 5 ligas, não se testa valor contra o mercado; o resultado é só sobre a qualidade da probabilidade. (2) A grade do `markov_multievento_v1` foi gravada em lote depois dos jogos. (3) k = 10 e a dispersão são escolhas simples, não otimizadas; um modelo melhor de faltas (árbitro, mando) não foi tentado. (4) Faltas e cartões cobrem só 80% dos jogos (fonte confiável). (5) Calibração em uma temporada.
+
+## Achado 68 — Faltas, cartões e escanteios com mando, times e árbitro (05/10)
+
+**Pergunta.** No Achado 67 as faltas foram o único mercado previsível (por taxas dos times). Mando, taxas separadas de "faz" e "provoca" e o árbitro melhoram isso, e ajudam em cartões e escanteios?
+
+**Desenho (k = 10 jogos de encolhimento para times e para o árbitro, fixados antes do teste; nada ajustado em 2025).** Walk-forward sobre 2022-2025, avaliação em 2025, dispersão da binomial negativa em 2024. Estatística por lado: faltas cometidas e cartões (amarelos + vermelhos equivalentes) de `match_disciplina`; escanteios de `hc`/`ac`. **M1**: taxas do total (Achado 67). **M2**: média da liga no lado (mandante e visitante separados) + o que o time faz (desvio contra a média do lado) + o que os adversários fazem contra ele (provoca); total = soma dos lados. **M3**: M2 + efeito do árbitro (desvio do total do jogo contra a previsão de M2 em jogos anteriores do árbitro, encolhido; 0 sem árbitro). Árbitro por nome (`match_context_fotmob.referee`), disponível em 99,9% dos jogos de 2025.
+
+**Faltas (1.418 jogos, total médio 24,07):**
+
+| modelo | correlação | Brier over 22,5 | over 24,5 | over 26,5 | over 28,5 |
+|---|---|---|---|---|---|
+| frequência da liga | — | 0,2267 | 0,2315 | 0,2087 | 0,1640 |
+| M1 taxas do total | 0,408 | 0,2149 | 0,2205 | 0,2011 | 0,1584 |
+| M2 mando + faz/provoca | 0,425 | 0,2134 | 0,2180 | 0,2003 | 0,1580 |
+| **M3 + árbitro** | **0,447** | **0,2099** | **0,2132** | **0,1956** | **0,1550** |
+
+Diferenças de Brier (IC 95% pareado): M2-M1 entre -0,0004 e -0,0025, não significativas por linha (a log-verossimilhança do total melhora +0,0091 [+0,0004; +0,0184]); **M3-M2: -0,0035, -0,0048*, -0,0046*, -0,0030***; M3-M1 -0,0034 a -0,0073, todas significativas. Só jogos com árbitro conhecido: M3-M2 médio -0,0040 [-0,0065; -0,0012]*. O árbitro é a maior contribuição.
+
+**Cartões (1.375 jogos, total médio 4,84):** correlação 0,166 (M1), 0,128 (M2), **0,194 (M3)**. Brier M3 contra M1: 3,5 -0,0007; **4,5 -0,0038***; **5,5 -0,0046***. Mando e times não ajudam (M2 pior que M1 na correlação); o árbitro sim.
+
+**Escanteios (1.752 jogos):** M1, M2 e M3 empatados (correlação 0,114, 0,118, 0,126; Brier das linhas 8,5 a 11,5 sem diferença); nem o árbitro ajuda.
+
+**Conclusão.** (a) Faltas e cartões dependem muito do árbitro e das equipes envolvidas, não da qualidade; com árbitro, o Brier das faltas melhora 0,013 a 0,018 contra a frequência da liga e 0,005 a 0,007 contra o modelo sem árbitro. (b) O mando separado e a divisão faz/provoca acrescentam pouco; o ganho é quase todo do efeito do árbitro. (c) Escanteios continuam sem sinal. (d) O modelo continua pequeno (correlação 0,45 em faltas): explica uma fração modesta da variação.
+
+**O que não se pode concluir.** (1) Não há odds de faltas e cartões nas 5 ligas, então não se sabe se o mercado já precifica o árbitro (o histórico do projeto aponta que sim em cartões). (2) k = 10 não foi otimizado; efeito do árbitro por nome (homônimos raros) e sem separar mando/visitante dele. (3) O árbitro de cada jogo costuma ser anunciado poucos dias antes; a previsão com ele só vale a partir daí. (4) Uma temporada de teste; intervalos tratam os jogos como independentes.
+

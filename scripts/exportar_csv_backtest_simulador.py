@@ -15,18 +15,30 @@ import csv
 import json
 import os
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
 
 COLUNAS = ["id", "season", "date", "home", "away", "hg", "ag", "hs", "as", "hxg", "axg", "hc", "ac", "dc_h", "dc_d", "dc_a", "dc_over",
-           "o_h", "o_d", "o_a", "o_over", "o_under", "elod", "neutro"]
+           "o_h", "o_d", "o_a", "o_over", "o_under", "elod", "neutro", "elox"]
 
 
 def _get(caminho: str) -> list:
+    """GET no PostgREST, repetindo (2, 4, 8 e 16 s) em erro de servidor 5xx ou de rede: o servidor às vezes devolve 500 passageiro numa consulta grande."""
     url, chave = os.environ["SUPABASE_URL"].rstrip("/"), os.environ["SUPABASE_KEY"]
     req = urllib.request.Request(f"{url}/rest/v1/{caminho}", headers={"apikey": chave, "Authorization": "Bearer " + chave})
-    return json.load(urllib.request.urlopen(req, timeout=120))
+    for espera in (2, 4, 8, 16, None):
+        try:
+            return json.load(urllib.request.urlopen(req, timeout=120))
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or espera is None:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if espera is None:
+                raise
+        time.sleep(espera)
 
 
 def paginar(caminho: str, ordem: str = "id") -> list:
@@ -78,6 +90,10 @@ def main() -> None:
     for r in em_lotes("team_elo_history?select=match_id,team_id,rating_antes&escopo=eq.global", "match_id", ids):
         elo[r["match_id"]][r["team_id"]] = r["rating_antes"]
 
+    elox = defaultdict(dict)                    # Elo por xG antes do jogo (team_elo_xg_history), diferença mandante - visitante na coluna `elox`
+    for r in em_lotes("team_elo_xg_history?select=match_id,team_id,rating_antes", "match_id", ids):
+        elox[r["match_id"]][r["team_id"]] = r["rating_antes"]
+
     def media(m: int, mercado: str, sel: str):
         v = odds[m].get((mercado, sel))
         return round(sum(v) / len(v), 3) if v else ""
@@ -99,7 +115,8 @@ def main() -> None:
                         num(dc[m].get(("over_under_2.5", "over")), 4),
                         media(m, "1X2", "home"), media(m, "1X2", "draw"), media(m, "1X2", "away"),
                         media(m, "over_under_2.5", "over"), media(m, "over_under_2.5", "under"),
-                        "" if eh is None or ea is None else round(eh - ea, 1), 1 if j["is_neutral"] else 0])
+                        "" if eh is None or ea is None else round(eh - ea, 1), 1 if j["is_neutral"] else 0,
+                        "" if h not in elox[m] or v not in elox[m] else round(elox[m][h] - elox[m][v], 1)])
 
 
 if __name__ == "__main__":

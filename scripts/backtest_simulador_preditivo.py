@@ -40,6 +40,9 @@ import camadas_simulador as cam  # noqa: E402
 BASE = ["nivel_chutes", "mando_chutes"]
 SEM_MANDO = ["nivel_chutes"]
 KEEP = BASE + ["forca_chutes", "gols_nivel", "gols_fator"]                  # o que o Achado 47 deixou ligado
+KEEP_GOLS = [c if c != "forca_chutes" else "forca_gols" for c in KEEP]      # força só por gols
+KEEP_MISTA = [c if c != "forca_chutes" else "forca_mista" for c in KEEP]    # força por mistura chutes/gols (peso_gols)
+KEEP_ELO = [c if c != "forca_chutes" else "forca_elo" for c in KEEP]        # força só pelo Elo
 VARIANTES = {
     "neutro": {"camadas": BASE, "semente": 2, "ref": None, "padrao": False},
     "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro", "padrao": False},
@@ -59,6 +62,28 @@ VARIANTES = {
     # ANTERIORES (base em --base-gols, gerada com --extrair-base a partir de uma rodada sem fator). Mesmas sementes de exp_forca: a diferença pareada é só o efeito da mudança.
     "exp_forca_quebra": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "quebra_corrigida": True}, "padrao": False},
     "exp_forca_movel": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_forca", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
+    # Achado 57: força dos times por gols (como o Dixon-Coles) no lugar de só chutes; mesma semente de exp_forca (comparação pareada)
+    "exp_gols": {"camadas": KEEP_GOLS, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "peso_gols": 1.0}, "padrao": False},
+    "exp_misto": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0)}, "padrao": False},
+    # Achado 58: força por gols ajustada pelo adversário e/ou com decaimento no tempo (EWMA em dias); todas na mistura chutes/gols (peso 0,5) do Achado 57, mesma semente
+    "misto_adv": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30}, "padrao": False},
+    "misto_adv_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30, "meia_vida_dias": 365.0}, "padrao": False},
+    "misto_adv_ewma120": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30, "meia_vida_dias": 120.0}, "padrao": False},
+    "misto_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "meia_vida_dias": 365.0}, "padrao": False},
+    # Achado 60: fator de gols móvel sobre a mistura chutes/gols (base = gols simulados de exp_misto sem fator)
+    "exp_misto_movel": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_misto", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
+    # Achado 61: a inclinação dos gols sobre o lambda simulado é ~2,0 nas duas temporadas (os lambdas do simulador espalham metade do que deveriam); o expoente de amplificação vem de --exp-forca
+    # (pré-registrado em 4,0 = 2 x inclinação medida em 2024, temporada de calibração) e o teto de --cfg-extra (para não cortar o produto amplificado)
+    "forca_expo": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
+    "misto_expo": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
+    "misto_expo_mando": {"camadas": KEEP_MISTA + ["gols_mando"], "semente": 9, "ref": "misto_expo", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
+    # Achado 65: camada forca_elo. k = beta/(2*0,49) com beta a regressão de log(chutes casa/fora) sobre x = dif.Elo/400*ln10 em 2022-2023 (Elo normal 0,336 -> 0,343; Elo por xG 0,427 -> 0,436;
+    # a versão "gols" usa o beta do log(xG casa/fora) do Elo por xG, 0,606 -> 0,618); fixados antes de olhar 2025. A combinada soma o Elo (peso 0,5) à mistura chutes/gols com expoente 4.
+    "elo_normal": {"camadas": KEEP_ELO, "semente": 9, "ref": "misto_expo", "cfg": {"elo_k": 0.343, "elo_fonte": "elod", "teto": (0.3, 3.0)}, "padrao": False},
+    "elo_xg": {"camadas": KEEP_ELO, "semente": 9, "ref": "misto_expo", "cfg": {"elo_k": 0.436, "elo_fonte": "elox", "teto": (0.3, 3.0)}, "padrao": False},
+    "elo_xg_gols": {"camadas": KEEP_ELO, "semente": 9, "ref": "elo_xg", "cfg": {"elo_k": 0.618, "elo_fonte": "elox", "teto": (0.3, 3.0)}, "padrao": False},
+    "elo_xg_misto": {"camadas": KEEP_MISTA + ["forca_elo"], "semente": 9, "ref": "misto_expo",
+                     "cfg": {"exp_forca": 4.0, "elo_k": 0.436, "peso_elo": 0.5, "elo_fonte": "elox", "teto": (0.3, 3.0)}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
@@ -84,6 +109,9 @@ def _simular_jogo(args):
     fora = s.Multiplicadores(**mult_fora)
     h = d = a = over = 0
     gc = gf = ch = cf = 0
+    esc_c = esc_f = fal = 0
+    dist_esc, dist_fal = {}, {}                     # distribuição do total de escanteios e de faltas (tiros livres) por partida simulada, para os mercados de escanteios e faltas
+    placares = {}                                   # contagem de cada placar simulado (gols de cada lado limitados a 7), para comparar a distribuição de placares
     for _ in range(n):
         r = s.simular_partida(pa, rng, times=(casa, fora), estado=estado)
         g0, g1 = r.get("gols_0", 0), r.get("gols_1", 0)
@@ -92,7 +120,16 @@ def _simular_jogo(args):
         a += g0 < g1
         over += (g0 + g1) >= 3
         gc, gf, ch, cf = gc + g0, gf + g1, ch + r.get("chutes_0", 0), cf + r.get("chutes_1", 0)
-    return jid, {"h": h, "d": d, "a": a, "over": over, "n": n, "gols_casa": gc / n, "gols_fora": gf / n, "chutes_casa": ch / n, "chutes_fora": cf / n}
+        e0, e1, ft = r.get("escanteios_0", 0), r.get("escanteios_1", 0), r.get("faltas", 0)
+        esc_c, esc_f, fal = esc_c + e0, esc_f + e1, fal + ft
+        dist_esc[e0 + e1] = dist_esc.get(e0 + e1, 0) + 1
+        dist_fal[ft] = dist_fal.get(ft, 0) + 1
+        k = (min(g0, 7), min(g1, 7))
+        placares[k] = placares.get(k, 0) + 1
+    return jid, {"h": h, "d": d, "a": a, "over": over, "n": n, "gols_casa": gc / n, "gols_fora": gf / n, "chutes_casa": ch / n, "chutes_fora": cf / n,
+                 "escanteios_casa": esc_c / n, "escanteios_fora": esc_f / n, "faltas": fal / n,
+                 "dist_escanteios": sorted([k, c] for k, c in dist_esc.items()), "dist_faltas": sorted([k, c] for k, c in dist_fal.items()),
+                 "placares": sorted([x, y, c] for (x, y), c in placares.items())}
 
 
 def ler(caminho):
@@ -100,7 +137,8 @@ def ler(caminho):
     for r in csv.DictReader(open(caminho)):
         j = {"id": int(r["id"]), "season": r["season"], "date": r["date"], "home": int(r["home"]), "away": int(r["away"]),
              "hg": int(r["hg"]), "ag": int(r["ag"]), "hs": float(r["hs"]), "as": float(r["as"]),
-             "elod": float(r["elod"]) if r.get("elod") not in (None, "") else None, "neutro": r.get("neutro") == "1"}
+             "elod": float(r["elod"]) if r.get("elod") not in (None, "") else None,
+             "elox": float(r["elox"]) if r.get("elox") not in (None, "") else None, "neutro": r.get("neutro") == "1"}
         for k in ("dc_h", "dc_d", "dc_a", "dc_over", "o_h", "o_d", "o_a", "o_over", "o_under"):
             j[k] = float(r[k]) if r[k] != "" else None
         out.append(j)
@@ -164,6 +202,8 @@ def main():
     ap.add_argument("--exp-mando", type=float, default=2.0, help="expoente de amplificação do mando de chutes nas variantes exp_mando/exp_ambos (1 = sem amplificar; calibrado em 2: ver calibrar_elasticidade_chute.py)")
     ap.add_argument("--exp-forca", type=float, default=2.0, help="idem, para a força dos times (ataque e defesa) nas variantes exp_forca/exp_ambos")
     ap.add_argument("--exp-estado", type=float, default=2.0, help="expoente do multiplicador de VOLUME da reação ao placar nas variantes estado_* (1 = sem amplificar)")
+    ap.add_argument("--k-gols", type=float, default=None, help="pseudo-jogos que puxam a força por gols para 1 nas variantes exp_gols/exp_misto (padrão do CONFIG: 20)")
+    ap.add_argument("--peso-gols", type=float, default=None, help="peso dos gols na força da variante exp_misto (0 = só chutes, 1 = só gols; padrão 0,5)")
     ap.add_argument("--alvo-casa", type=float, default=1.0, help="placar desejado do mandante (saldo final satisfatório; 1 = ganhar, 0 = empate basta, 2 = vencer por 2, -1 = aceita perder por 1)")
     ap.add_argument("--alvo-fora", type=float, default=1.0, help="placar desejado do visitante (idem)")
     ap.add_argument("--alvo-ctx", default="{}", help='JSON {"local|perfil": alvo} que substitui o placar desejado do time com esse contexto na variante estado_ctx, ex.: \'{"fora|fraco": 0, "casa|fraco": 0.5}\' (local: casa/fora/neutro; perfil: forte/parelho/fraco)')
@@ -192,6 +232,10 @@ def main():
             v["cfg"]["exp_mando"] = a.exp_mando
         if "exp_forca" in v["cfg"]:
             v["cfg"]["exp_forca"] = a.exp_forca
+        if a.k_gols is not None and ("forca_gols" in v["camadas"] or "forca_mista" in v["camadas"]):
+            v["cfg"]["k_gols"] = a.k_gols
+        if a.peso_gols is not None and "forca_mista" in v["camadas"]:
+            v["cfg"]["peso_gols"] = a.peso_gols
         v["cfg"].update({k: (tuple(x) if isinstance(x, list) else x) for k, x in json.loads(a.cfg_extra).items()})
         if "estado" in v["cfg"]:
             v["cfg"]["estado"] = {**v["cfg"]["estado"], "exp_volume": a.exp_estado, "alvo": [a.alvo_casa, a.alvo_fora], "alvo_ctx": json.loads(a.alvo_ctx)}
@@ -219,6 +263,8 @@ def main():
                 e = v["cfg"].get("estado")
                 if e and e.get("ctx"):                              # estado ajustado por mando e favoritismo (Elo) deste jogo
                     estados[nome] = cam.montar_estado_jogo(j["elod"], j["neutro"], e["volume"], e["qualidade"], e["exp_volume"], tuple(e["alvo"]), e.get("alvo_ctx") or None, cam.CONFIG["elo_corte"])
+                hist.elo = {k: j[k] for k in ("elod", "elox") if j.get(k) is not None}      # Elo antes deste jogo (camada forca_elo)
+                hist.data_atual = j["date"]                         # a força por gols só usa jogos com data anterior a esta
                 cfg_jogo = {**cam.CONFIG, **v.get("cfg", {})}
                 if nome in bases:                                   # fator de gols móvel: só jogos com data anterior à deste
                     cfg_jogo["gols_fator"] = fator_gols_movel(bases[nome], j["date"], v["cfg"]["fator_movel"])
@@ -272,7 +318,10 @@ def main():
             if (jid, v) in fatores:
                 lin[f"fator_{v}"] = fatores[(jid, v)]
             lin[v] = {"p1x2": [(r["h"] + 1) / (n + 3), (r["d"] + 1) / (n + 3), (r["a"] + 1) / (n + 3)], "pover": (r["over"] + 1) / (n + 2),
-                      "gols": r["gols_casa"] + r["gols_fora"], "chutes": r["chutes_casa"] + r["chutes_fora"]}
+                      "gols": r["gols_casa"] + r["gols_fora"], "chutes": r["chutes_casa"] + r["chutes_fora"],
+                      "gols_casa": r["gols_casa"], "gols_fora": r["gols_fora"], "placares": r.get("placares", []),
+                      "escanteios_casa": r.get("escanteios_casa"), "escanteios_fora": r.get("escanteios_fora"), "faltas": r.get("faltas"),
+                      "dist_escanteios": r.get("dist_escanteios", []), "dist_faltas": r.get("dist_faltas", [])}
         if j["dc_h"] is not None:
             lin["dc"] = {"p1x2": [j["dc_h"], j["dc_d"], j["dc_a"]], "pover": j["dc_over"]}
         if j["o_h"] is not None and j["o_over"] is not None:

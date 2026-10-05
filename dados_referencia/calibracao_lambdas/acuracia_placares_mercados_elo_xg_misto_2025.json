@@ -1,0 +1,229 @@
+{
+ "elo_xg_misto": {
+  "1x2": {
+   "simulador": {
+    "acc3": 0.5045662100456622,
+    "acc_vencedor": 0.6768759571209801,
+    "p_palpite_empate": 0.0,
+    "logloss": 1.0082950740316041
+   },
+   "simulador calibrado (nível)": {
+    "acc3": 0.5079908675799086,
+    "acc_vencedor": 0.6814701378254211,
+    "p_palpite_empate": 0.0,
+    "logloss": 1.001331607708542
+   },
+   "logit Elo por xG": {
+    "acc3": 0.521689497716895,
+    "acc_vencedor": 0.6998468606431854,
+    "p_palpite_empate": 0.0,
+    "logloss": 0.9940442971677589
+   },
+   "climatologia": {
+    "acc3": 0.4400684931506849,
+    "acc_vencedor": 0.5903522205206738,
+    "p_palpite_empate": 0.0,
+    "logloss": 1.0717928069409162
+   },
+   "simulador [com odds]": {
+    "acc3": 0.5081539465101109,
+    "acc_vencedor": 0.6750433275563258,
+    "p_palpite_empate": 0.0,
+    "logloss": 1.006372979752699
+   },
+   "simulador calibrado (nível) [com odds]": {
+    "acc3": 0.5146771037181996,
+    "acc_vencedor": 0.6837088388214905,
+    "p_palpite_empate": 0.0,
+    "logloss": 0.9990312394826631
+   },
+   "logit Elo por xG [com odds]": {
+    "acc3": 0.5283757338551859,
+    "acc_vencedor": 0.7019064124783362,
+    "p_palpite_empate": 0.0,
+    "logloss": 0.9906434601613371
+   },
+   "climatologia [com odds]": {
+    "acc3": 0.4429223744292237,
+    "acc_vencedor": 0.5883882149046794,
+    "p_palpite_empate": 0.0,
+    "logloss": 1.0693914906447661
+   },
+   "Dixon-Coles [com odds]": {
+    "acc3": 0.5081539465101109,
+    "acc_vencedor": 0.6785095320623917,
+    "p_palpite_empate": 0.005870841487279843,
+    "logloss": 1.0010902478506698
+   },
+   "mercado [com odds]": {
+    "acc3": 0.538160469667319,
+    "acc_vencedor": 0.7149046793760832,
+    "p_palpite_empate": 0.0045662100456621,
+    "logloss": 0.9775866450712466
+   }
+  },
+  "placar": {
+   "simulador": {
+    "logL": -2.9815297169581543,
+    "top1": 0.1284246575342466,
+    "top3": 0.3110730593607306
+   },
+   "simulador calibrado (nível)": {
+    "logL": -2.9202450251352188,
+    "top1": 0.13527397260273974,
+    "top3": 0.3247716894977169
+   },
+   "climatologia": {
+    "logL": -3.0248810965469715,
+    "top1": 0.11700913242009132,
+    "top3": 0.3019406392694064
+   }
+  },
+  "mercados": {
+   "btts": {
+    "freq_real": 0.5388127853881278,
+    "simulador": {
+     "acc": 0.5222602739726028,
+     "brier": 0.2550525787671233
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.5428082191780822,
+     "brier": 0.2484596466586416
+    },
+    "climatologia": {
+     "acc": 0.5388127853881278,
+     "brier": 0.24868122015804506
+    }
+   },
+   "hcp_-0.5": {
+    "freq_real": 0.4400684931506849,
+    "simulador": {
+     "acc": 0.6478310502283106,
+     "brier": 0.22081470662100458
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.6495433789954338,
+     "brier": 0.2172616354710366
+    },
+    "climatologia": {
+     "acc": 0.559931506849315,
+     "brier": 0.24680730176601812
+    }
+   },
+   "hcp_-1.5": {
+    "freq_real": 0.2237442922374429,
+    "simulador": {
+     "acc": 0.776255707762557,
+     "brier": 0.161056676369863
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.776255707762557,
+     "brier": 0.15790008012444484
+    },
+    "climatologia": {
+     "acc": 0.776255707762557,
+     "brier": 0.17395676956276973
+    }
+   },
+   "over_0.5": {
+    "freq_real": 0.934931506849315,
+    "simulador": {
+     "acc": 0.934931506849315,
+     "brier": 0.06239559817351598
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.934931506849315,
+     "brier": 0.061309741666584365
+    },
+    "climatologia": {
+     "acc": 0.934931506849315,
+     "brier": 0.060889642105043676
+    }
+   },
+   "over_1.5": {
+    "freq_real": 0.7654109589041096,
+    "simulador": {
+     "acc": 0.7648401826484018,
+     "brier": 0.1866280627853881
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.7654109589041096,
+     "brier": 0.18010030702250437
+    },
+    "climatologia": {
+     "acc": 0.7654109589041096,
+     "brier": 0.17972936344112922
+    }
+   },
+   "over_2.5": {
+    "freq_real": 0.5302511415525114,
+    "simulador": {
+     "acc": 0.5039954337899544,
+     "brier": 0.26115213527397263
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.5234018264840182,
+     "brier": 0.24990407112395
+    },
+    "climatologia": {
+     "acc": 0.5302511415525114,
+     "brier": 0.24910083192593985
+    }
+   },
+   "over_3.5": {
+    "freq_real": 0.2968036529680365,
+    "simulador": {
+     "acc": 0.7031963470319634,
+     "brier": 0.21311862328767123
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.704337899543379,
+     "brier": 0.20734742886967672
+    },
+    "climatologia": {
+     "acc": 0.7031963470319634,
+     "brier": 0.20920676435020122
+    }
+   },
+   "over_4.5": {
+    "freq_real": 0.14269406392694065,
+    "simulador": {
+     "acc": 0.8573059360730594,
+     "brier": 0.12560680422374426
+    },
+    "simulador calibrado (nível)": {
+     "acc": 0.8573059360730594,
+     "brier": 0.12440906933270558
+    },
+    "climatologia": {
+     "acc": 0.8573059360730594,
+     "brier": 0.12252012051458475
+    }
+   }
+  },
+  "over25_com_odds": {
+   "simulador": {
+    "acc": 0.50293542074364,
+    "logloss": 0.7162614719163363
+   },
+   "simulador calibrado (nível)": {
+    "acc": 0.5348988910632746,
+    "logloss": 0.6902632363549224
+   },
+   "Dixon-Coles": {
+    "acc": 0.5466405740378343,
+    "logloss": 0.694595676437504
+   },
+   "mercado": {
+    "acc": 0.578604044357469,
+    "logloss": 0.6753548172645734
+   }
+  },
+  "nivel": [
+   1.2290378071280095,
+   1.1477941046819728
+  ],
+  "jogos": 1752,
+  "jogos_com_odds": 1533
+ }
+}
