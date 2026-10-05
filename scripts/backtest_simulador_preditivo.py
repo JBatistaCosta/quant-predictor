@@ -71,6 +71,11 @@ VARIANTES = {
     "misto_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "meia_vida_dias": 365.0}, "padrao": False},
     # Achado 60: fator de gols móvel sobre a mistura chutes/gols (base = gols simulados de exp_misto sem fator)
     "exp_misto_movel": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_misto", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
+    # Achado 61: a inclinação dos gols sobre o lambda simulado é ~2,0 nas duas temporadas (os lambdas do simulador espalham metade do que deveriam); o expoente de amplificação vem de --exp-forca
+    # (pré-registrado em 4,0 = 2 x inclinação medida em 2024, temporada de calibração) e o teto de --cfg-extra (para não cortar o produto amplificado)
+    "forca_expo": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
+    "misto_expo": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
+    "misto_expo_mando": {"camadas": KEEP_MISTA + ["gols_mando"], "semente": 9, "ref": "misto_expo", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},

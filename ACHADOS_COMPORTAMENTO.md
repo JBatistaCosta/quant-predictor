@@ -2844,3 +2844,40 @@ Poisson menos simulação: 1X2 **+0,0007 [-0,0011; +0,0024]**, over/under +0,000
 **O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada. (2) Não temos a distribuição de placares do Dixon-Coles (só 1X2 e over/under 2,5 em `model_predictions`), então a comparação de forma é contra a Poisson, não contra o Dixon-Coles com correção de baixos placares. (3) A origem do erro nas médias não foi isolada: mais história é a hipótese mais barata de testar, não confirmada.
 
 **Próximo teste (proposto):** acrescentar as temporadas de 2022 e 2023 ao CSV de cada liga só como história (não precisam de odds nem de Dixon-Coles, e não são simuladas) e repetir `exp_forca`, `exp_misto` e o fator móvel com 3 a 4 temporadas de história.
+
+## Achado 61 — comparando os lambdas (gols esperados) previstos: o simulador ordena os times bem, mas espalha só metade do que deveria e subestima o mando; os modelos cadastrados superam o Dixon-Coles e ainda perdem para o mercado
+
+**Pergunta.** Até aqui só tínhamos o 1X2 e o over/under. Os lambdas de cada lado (gols esperados de mandante e visitante) são o que o simulador, o Dixon-Coles e os modelos cadastrados realmente estimam. Como se comparam entre si e com o mercado?
+
+**Método** (`scripts/comparar_lambdas_modelos.py`, só leitura; resultado em `dados_referencia/placares_simulados/lambdas_5ligas_2025.json`). Cinco ligas, temporada 2025/26, **1.404 jogos** em que todas as fontes existem. Lambdas: (a) **mercado** e **`dixon_coles_v1`**: lambdas implícitos, as duas Poisson independentes cujo 1X2 e over 2,5 mais se aproximam das probabilidades do mercado (odds de fechamento sem margem) ou do modelo (só há essas probabilidades guardadas); (b) **`markov_multievento_v1`, `hibrido_gols_v1`, `hibrido_gols_xg_v1`**: gols esperados pelas linhas de gols por time guardadas (soma das probabilidades de "mais de 0,5 a 4,5 gols" de cada time; a cauda acima de 5 gols é desprezada); (c) **simulador**: `gols_casa` e `gols_fora` médios simulados (`exp_forca` e `exp_misto`, 3 temporadas de história, e `exp_misto` com 1). Medida: log-verossimilhança negativa de Poisson (NLL) dos gols reais de cada time em cada jogo com aquele lambda (menor = melhor), bootstrap por time-jogo (IC 95%).
+
+**Resultado** (gols reais: mandante 1,546, visitante 1,251, total 2,796):
+
+| fonte | λ casa | λ fora | viés total | NLL/time | contra o mercado | contra o Dixon-Coles | inclinação | correl. (λcasa-λfora) com o saldo real |
+|---|---|---|---|---|---|---|---|---|
+| mercado (implícito) | 1,533 | 1,247 | -0,016 | 1,4351 | referência | | 0,95 | 0,450 |
+| `hibrido_gols_xg_v1` | 1,537 | 1,235 | -0,024 | 1,4496 | +0,0145 [+0,0080; +0,0211] | **-0,0113 [-0,0200; -0,0027]** | 1,13 | 0,418 |
+| `hibrido_gols_v1` | 1,562 | 1,291 | +0,057 | 1,4517 | +0,0166 [+0,0101; +0,0228] | **-0,0091 [-0,0181; -0,0002]** | 0,93 | 0,410 |
+| `markov_multievento_v1` | 1,579 | 1,308 | +0,091 | 1,4541 | +0,0190 [+0,0127; +0,0256] | -0,0067 [-0,0155; +0,0028] | 0,85 | 0,410 |
+| `dixon_coles_v1` (implícito) | 1,517 | 1,295 | +0,016 | 1,4608 | +0,0257 [+0,0174; +0,0340] | referência | 0,78 | 0,402 |
+| simulador `exp_misto`, 3 temporadas | 1,325 | 1,252 | **-0,220** | 1,4716 | +0,0365 [+0,0262; +0,0466] | +0,0108 [-0,0003; +0,0216] | **1,95** | 0,410 |
+| simulador `exp_forca`, 3 temporadas | 1,343 | 1,270 | -0,183 | 1,4752 | +0,0401 [+0,0284; +0,0511] | +0,0144 [+0,0030; +0,0256] | **2,11** | 0,389 |
+| simulador `exp_misto`, 1 temporada | 1,339 | 1,272 | -0,185 | 1,4731 | +0,0380 [+0,0272; +0,0490] | +0,0123 [+0,0007; +0,0232] | 1,95 | 0,394 |
+
+(inclinação = regressão dos gols sobre o lambda: 1 = bem calibrado; acima de 1 = lambdas espalhados de menos; abaixo de 1 = de mais.)
+
+**Leitura.**
+1. **Confirmado o que você disse: os modelos cadastrados superam o Dixon-Coles nos lambdas** (híbridos por 0,009 a 0,011 de NLL, o Markov por 0,007, este sem significância), **e todos continuam atrás do mercado** (+0,0145 a +0,0257). O mercado é a régua.
+2. **O simulador está atrás de todos eles**: +0,011 a +0,014 de NLL contra o Dixon-Coles e +0,036 a +0,040 contra o mercado. Isso é o mesmo +0,03 que aparecia no 1X2, agora visto no lambda.
+3. **O simulador ordena bem e dimensiona mal.** A correlação entre a diferença de lambdas e o saldo de gols real (0,41 para `exp_misto`) iguala a do Markov e dos híbridos e supera a do Dixon-Coles (0,402). Mas a **inclinação é cerca de 2** (1,95 e 2,11): os lambdas do simulador espalham **metade** do que a realidade espalha. Os modelos cadastrados ficam entre 0,78 e 1,13, o mercado em 0,95.
+4. **Isso se repete em outra temporada**: em 2024 (calibração, sem odds) a inclinação agregada é 2,08 [1,85; 2,35] (`exp_forca`) e 2,02 [1,83; 2,24] (`exp_misto`); em 2025, 2,13 [1,91; 2,39] e 1,98 [1,80; 2,18]. Os intervalos de 2024 e de 2025 se sobrepõem por inteiro.
+5. **O simulador subestima o mando em gols**: lambda do mandante 1,33 contra 1,55 real (-14%), enquanto o do visitante (1,25 a 1,27) acerta (1,25 real). Quase todo o viés de nível de gols (-0,18 a -0,22) está no lado do mandante.
+6. Isso explica por que cada correção anterior moveu tão pouco o 1X2: nível de gols, forma da distribuição, adversário e história mexem no que já está bem; o que falta é **amplitude** (quanto um time forte é mais perigoso que um fraco) e **mando em gols**.
+
+**Ressalvas importantes.**
+- **As previsões dos modelos cadastrados foram gravadas em lote depois dos jogos** (`hibrido_gols_*` em 03/09/2026, `markov_multievento_v1` em 24/09/2026; nenhuma antes da data do jogo). O `markov_multievento_v1` usa os lambdas do `hibrido_gols_v1` (workflow `rodar_markov_batch.yml`), então não são fontes independentes. Não verifiquei se cada previsão usou só dados anteriores ao jogo; o treino do híbrido usa um corte cronológico 60/20/20, e a temporada 2025/26 deve estar no trecho de teste, mas isso não foi conferido aqui. **A comparação é, portanto, favorável a esses modelos em um grau que não medi**; o simulador e os lambdas implícitos do mercado e do Dixon-Coles não têm esse problema.
+- Os lambdas implícitos do mercado e do Dixon-Coles supõem duas Poisson independentes; o Dixon-Coles real tem correção de baixos placares, então o lambda implícito dele é aproximado.
+- O NLL de Poisson avalia só os lambdas, não a dependência entre os lados.
+- Cinco ligas, uma temporada de teste; o simulador na comparação é o de 3 temporadas de história, o do Achado 57.
+
+**Próximo teste (pré-registrado, não ajustado no teste).** Se a inclinação de ~2 vem de a amplificação dos multiplicadores de chute ficar curta, dobrar a amplitude resolve: `--exp-forca 4` (2 × a inclinação medida **em 2024**) com teto sem corte (0,3 a 3,0), em `exp_forca` e `exp_misto`; e, separadamente, o mando na conversão (`gols_mando`). Critério: a inclinação em 2024 tem de chegar perto de 1, e só então se olha o teste de 2025.
