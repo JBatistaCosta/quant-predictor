@@ -94,6 +94,7 @@ def _simular_jogo(args):
     fora = s.Multiplicadores(**mult_fora)
     h = d = a = over = 0
     gc = gf = ch = cf = 0
+    placares = {}                                   # contagem de cada placar simulado (gols de cada lado limitados a 7), para comparar a distribuição de placares
     for _ in range(n):
         r = s.simular_partida(pa, rng, times=(casa, fora), estado=estado)
         g0, g1 = r.get("gols_0", 0), r.get("gols_1", 0)
@@ -102,7 +103,10 @@ def _simular_jogo(args):
         a += g0 < g1
         over += (g0 + g1) >= 3
         gc, gf, ch, cf = gc + g0, gf + g1, ch + r.get("chutes_0", 0), cf + r.get("chutes_1", 0)
-    return jid, {"h": h, "d": d, "a": a, "over": over, "n": n, "gols_casa": gc / n, "gols_fora": gf / n, "chutes_casa": ch / n, "chutes_fora": cf / n}
+        k = (min(g0, 7), min(g1, 7))
+        placares[k] = placares.get(k, 0) + 1
+    return jid, {"h": h, "d": d, "a": a, "over": over, "n": n, "gols_casa": gc / n, "gols_fora": gf / n, "chutes_casa": ch / n, "chutes_fora": cf / n,
+                 "placares": sorted([x, y, c] for (x, y), c in placares.items())}
 
 
 def ler(caminho):
@@ -289,7 +293,8 @@ def main():
             if (jid, v) in fatores:
                 lin[f"fator_{v}"] = fatores[(jid, v)]
             lin[v] = {"p1x2": [(r["h"] + 1) / (n + 3), (r["d"] + 1) / (n + 3), (r["a"] + 1) / (n + 3)], "pover": (r["over"] + 1) / (n + 2),
-                      "gols": r["gols_casa"] + r["gols_fora"], "chutes": r["chutes_casa"] + r["chutes_fora"]}
+                      "gols": r["gols_casa"] + r["gols_fora"], "chutes": r["chutes_casa"] + r["chutes_fora"],
+                      "gols_casa": r["gols_casa"], "gols_fora": r["gols_fora"], "placares": r.get("placares", [])}
         if j["dc_h"] is not None:
             lin["dc"] = {"p1x2": [j["dc_h"], j["dc_d"], j["dc_a"]], "pover": j["dc_over"]}
         if j["o_h"] is not None and j["o_over"] is not None:
