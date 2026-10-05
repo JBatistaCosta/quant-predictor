@@ -2811,3 +2811,36 @@ Por liga, `misto_adv_ewma120` contra `exp_misto` no 1X2: Premier League +0,0009;
 **O que não se pode concluir.** (1) Só duas meias-vidas (120 e 365 dias) e um `k_gols`: uma meia-vida mais longa ou menos encolhimento pode se comportar diferente. (2) A parte de chutes da força não foi ajustada. (3) Cinco ligas, uma temporada de teste cada, IC otimistas por jogos repetidos do mesmo time. (4) Não foi medido onde a distribuição simulada de placares difere da do Dixon-Coles.
 
 **Próximo teste (proposto):** comparar, nos 1.533 jogos, a probabilidade simulada de empate e de cada placar baixo (0-0, 1-0, 1-1) com a do Dixon-Coles e com a frequência real, para ver se o erro está na distribuição do placar e não na força.
+
+## Achado 59 — a forma da distribuição de placares do simulador não é a causa da diferença para o Dixon-Coles: com as mesmas médias de gols, uma Poisson simples dá o mesmo 1X2; o erro está nas médias
+
+**Hipótese (Achado 58).** O Dixon-Coles gera o placar por uma Poisson com correção de baixos placares; o simulador, por uma cadeia de ações sorteadas. A cadeia poderia distorcer empates e placares baixos e explicar o +0,033 no 1X2.
+
+**Método** (`scripts/analisar_placares_simulados.py`, sem rede; resultado em `dados_referencia/placares_simulados/exp_misto_5ligas_2025.json`). O backtest passou a guardar, por jogo, a contagem de cada placar simulado (gols de cada lado limitados a 7) e os gols esperados de cada lado; mesmas sementes de antes (as probabilidades de 1X2 dos 1.533 jogos saíram idênticas às rodadas anteriores). Variante `exp_misto` (Achado 57), cinco ligas, 1.533 jogos com Dixon-Coles e odds. Teste central: trocar a distribuição de placares da simulação por **duas Poisson independentes com as médias de gols do próprio simulador** (mesma média, outra forma) e recalcular o 1X2 e o over/under.
+
+**Resultado 1: a forma não importa.** Log-loss (menor = melhor):
+
+| | 1X2 | Brier 1X2 | over/under |
+|---|---|---|---|
+| simulação | 1,0333 | 0,6201 | 0,6915 |
+| Poisson com as médias da simulação | 1,0340 | 0,6206 | 0,6923 |
+| Dixon-Coles | 1,0011 | 0,5975 | 0,6946 |
+
+Poisson menos simulação: 1X2 **+0,0007 [-0,0011; +0,0024]**, over/under +0,0008 [-0,0002; +0,0019]; por liga, nenhuma diferença no 1X2 distingue de zero (de -0,0021 a +0,0035). Simulação menos Dixon-Coles: 1X2 +0,0323 [+0,0179; +0,0459], e **Poisson menos Dixon-Coles: +0,0329 [+0,0188; +0,0465]**: a Poisson com as médias da simulação perde para o Dixon-Coles tanto quanto a própria simulação.
+
+**Resultado 2: o placar sai quase como uma Poisson independente.**
+- Frequência (real, simulação, Poisson): empate 24,7%, 25,9%, 26,1% (Dixon-Coles 24,4%); 0-0 5,9%, 6,9%, 7,5%; 1-1 11,4%, 12,6%, 12,3%; 2-1 ou 1-2 16,6%, 16,6%, 16,0%. A simulação superestima o empate em 1,2 ponto percentual (erro-padrão do real ~1,1) e o 0-0 em 1,1 (ep 0,6).
+- Total de gols (real, simulação): 2 gols 23,4% e 25,4%; 4 gols 16,0% e 14,5%; 6 ou mais 6,2% e 4,6%: a simulação concentra mais em torno de 2 gols e tem cauda alta um pouco fina.
+- Dispersão: variância sobre média do total de gols = 0,94 dentro do jogo na simulação (Poisson = 1; subdispersa), contra 1,04 do real em torno da média do modelo.
+- Correlação entre os gols dos dois lados: -0,024 na simulação; real (resíduos) 0,000 [-0,053; +0,051]. A dependência que a cadeia cria (mais posse para um, menos para o outro) é pequena.
+
+**Resultado 3 (ressalva): verossimilhança do placar real.** -log P(placar real): simulação 2,976, Poisson 2,954 (Poisson - simulação = -0,0229 [-0,0318; -0,0140], a simulação explica pior). Esse número é favorável à Poisson por construção: a simulação usa um histograma de 1.000 sorteios com suavização, e o ruído de amostra de um histograma de 64 células penaliza a verossimilhança. Não use como prova de que a cadeia é pior; o teste do Resultado 1 não tem esse viés.
+
+**Leitura.**
+- A hipótese da forma da distribuição **não se sustenta**: mesma média, outra forma, mesmo resultado no 1X2 e no over/under. A cadeia de ações se comporta, para o placar, quase como duas Poisson independentes.
+- Logo, os +0,033 contra o Dixon-Coles estão nas **médias de gols esperados** de cada lado (ou seja, em como a força dos times vira gols esperados), não em como o placar é sorteado.
+- O que o Dixon-Coles tem a mais e não foi testado: **mais história** (o `dixon_coles_v1` usa janela de 2 a 3 temporadas anteriores com decaimento, e o simulador só recebeu a temporada 2024/25 de aquecimento mais a atual até o jogo) e estimação conjunta por máxima verossimilhança. O EWMA sozinho (Achado 58) piorou, mas esse teste mantinha a história curta.
+
+**O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada. (2) Não temos a distribuição de placares do Dixon-Coles (só 1X2 e over/under 2,5 em `model_predictions`), então a comparação de forma é contra a Poisson, não contra o Dixon-Coles com correção de baixos placares. (3) A origem do erro nas médias não foi isolada: mais história é a hipótese mais barata de testar, não confirmada.
+
+**Próximo teste (proposto):** acrescentar as temporadas de 2022 e 2023 ao CSV de cada liga só como história (não precisam de odds nem de Dixon-Coles, e não são simuladas) e repetir `exp_forca`, `exp_misto` e o fator móvel com 3 a 4 temporadas de história.
