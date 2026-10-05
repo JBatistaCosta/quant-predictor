@@ -3072,3 +3072,28 @@ Over/under 2,5 com odds: acerto 0,579 (mercado), 0,547 (Dixon-Coles), 0,535 (sim
 
 **O que não se pode concluir.** (1) Não testei escanteios, cartões e faltas, que o simulador e o Markov geram, por falta de odds e de comparação preparada. (2) A grade do Markov foi gravada em lote depois dos jogos. (3) Calibração em uma temporada. (4) Intervalos tratam os jogos como independentes.
 
+## Achado 67 — Escanteios, cartões e faltas (05/10)
+
+**Pergunta.** O simulador (que gera escanteios e tiros livres, mas não cartões), um modelo simples de taxas dos times e o `markov_multievento_v1` preveem escanteios, cartões e faltas melhor que a frequência histórica?
+
+**Desenho.** 5 ligas, treino 2024, teste 2025. Resultado real: escanteios = hc + ac (FotMob, 1.752 jogos); faltas = soma de `match_disciplina.faltas_cometidas` (1.418 jogos); cartões = amarelos + vermelhos equivalentes de `match_disciplina`, só em jogos com `fonte_cartoes` em `match_events`/`fallback_fotmob` (o FotMob zera amarelos em parte dos jogos; 1.375 jogos). Modelos: frequência da liga em 2024; taxas dos times walk-forward (média do total dos jogos anteriores de cada time, encolhida para a média da liga com k = 10, média do jogo = liga + desvios dos dois times, binomial negativa com dispersão do treino); simulador `elo_xg_misto` (total simulado, depois nível e potência ajustados em 2024; faltas = tiros livres simulados, proxy); `markov_multievento_v1` (gravado em lote depois dos jogos). Não há odds desses mercados nas 5 ligas.
+
+**Correlação da média prevista com o total real, e Brier por linha (menor é melhor):**
+
+| mercado | taxas dos times | simulador | frequência da liga | `markov_multievento_v1` |
+|---|---|---|---|---|
+| escanteios, correlação | 0,114 | 0,010 | — | — |
+| escanteios, over 9,5 (freq. 0,489) | 0,2499 | 0,2499 (potência) | **0,2481** | 0,2626 |
+| faltas, correlação | **0,408** | 0,141 | — | — |
+| faltas, over 24,5 (freq. 0,446) | **0,2205** | 0,2439 (potência) | 0,2315 | 0,2290 |
+| cartões, correlação | 0,166 | não modela | — | — |
+| cartões, over 4,5 (freq. 0,514) | **0,2487** | — | 0,2497 | 0,2514 |
+
+Faltas, taxas dos times: Brier melhor que a frequência nas quatro linhas (22,5: 0,2149 contra 0,2267; 26,5: 0,2011 contra 0,2087; 28,5: 0,1584 contra 0,1640); acurácia da linha 24,5 de 0,651 contra 0,614. Escanteios: nas quatro linhas (8,5 a 11,5) nenhum modelo melhora a frequência; o `markov_multievento_v1` fica 0,01 a 0,015 pior. Cartões: sem ganho consistente (taxas dos times -0,0010 em 4,5, +0,0024 em 5,5; Markov pior em 2,5 e 3,5: 0,0930 contra 0,0833, 0,2051 contra 0,1972). A log-verossimilhança do total é melhor que a da frequência (suavizada) para as taxas dos times (escanteios +0,062 [+0,047; +0,079], faltas +0,106, cartões +0,036), mas parte disso é a suavização paramétrica da binomial negativa contra a contagem empírica; o Brier por linha é a medida mais honesta.
+
+**Simulador.** Escanteios simulados em média 9,90 contra 9,55 reais (nível 0,97), mas **a correlação do total simulado com o real é 0,01**: o simulador acerta o nível e não distingue jogos. Faltas (tiros livres simulados): 29,3 contra 24,1 reais; depois do ajuste de nível a correlação é 0,14 (taxas dos times: 0,41) e o Brier fica pior que a frequência (24,5: 0,2456 contra 0,2315). Tiros livres incluem impedimento, então a faltas é só proxy; mesmo assim o sinal por time está nos próprios times (árbitro e estilo), não na força.
+
+**Conclusão.** (a) Faltas dependem dos times e são previsíveis com média móvel simples (Brier -0,01 a -0,011 sobre a frequência); (b) escanteios e cartões são quase impossíveis de distinguir da média; (c) o simulador e o `markov_multievento_v1` não acrescentam nada nesses três mercados. Isso concorda com o histórico em `model_betting_strategy` (escanteios e cartões `nenhuma`).
+
+**O que não se pode concluir.** (1) Sem odds desses mercados nas 5 ligas, não se testa valor contra o mercado; o resultado é só sobre a qualidade da probabilidade. (2) A grade do `markov_multievento_v1` foi gravada em lote depois dos jogos. (3) k = 10 e a dispersão são escolhas simples, não otimizadas; um modelo melhor de faltas (árbitro, mando) não foi tentado. (4) Faltas e cartões cobrem só 80% dos jogos (fonte confiável). (5) Calibração em uma temporada.
+
