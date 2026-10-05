@@ -3025,3 +3025,50 @@ Over/under 2,5 contra o mercado: `elo_xg_misto` + nível +0,0149; Elo sozinho en
 
 **Leitura prática.** Para o 1X2, o caminho barato e competitivo é o próprio logit de Elo por xG (0,9906, +0,013 do mercado). O simulador só se justifica por mercados que o Elo não cobre (placar, eventos, cartões, escanteios), e aí o ponto de partida é `elo_xg_misto` com nível corrigido.
 
+## Achado 66 — Acurácia direta, placares exatos e mercados derivados (05/10)
+
+**Pergunta.** Além do log-loss, como ficam a acurácia direta do 1X2, os placares exatos e os outros mercados (ambos marcam, total de gols, handicap)?
+
+**Desenho.** Melhor variante do Achado 65 (`elo_xg_misto`), nível ajustado em 2024 (c 1,23 e 1,15), 1.752 jogos de 2025 (1.533 com Dixon-Coles e odds). Probabilidades de placar: contagem dos placares simulados (cru) e duas Poisson com o lambda calibrado. Referências: logit de Elo por xG (ajustado em 2022-2023), Dixon-Coles, mercado, `markov_multievento_v1` (grade 8x8 gravada em lote depois dos jogos, não verificada como walk-forward) e as frequências do treino.
+
+**1X2, nos 1.533 jogos com odds:**
+
+| modelo | acerto dos 3 resultados | acerto do vencedor (sem empate) | log-loss |
+|---|---|---|---|
+| mercado | **0,538** | **0,715** | 0,9776 |
+| logit de Elo por xG | 0,528 | 0,702 | 0,9906 |
+| simulador calibrado | 0,515 | 0,684 | 0,9990 |
+| simulador cru | 0,508 | 0,675 | 1,0064 |
+| Dixon-Coles | 0,508 | 0,679 | 1,0011 |
+| sempre mandante | 0,443 | 0,588 | — |
+
+Diferenças pareadas de acerto: simulador calibrado menos mercado -0,023 [-0,038; -0,009]*; menos Dixon-Coles +0,007 [-0,007; +0,021]; logit de Elo menos Dixon-Coles +0,020 [+0,005; +0,037]*; logit de Elo menos mercado -0,010 [-0,024; +0,005]. **Nenhum modelo palpita empate** (0 a 0,6% dos jogos), embora o empate ocorra em ~25%.
+
+**Placar exato (placares de 0 a 7):**
+
+| modelo | log-verossimilhança | placar mais provável | entre os 3 mais prováveis |
+|---|---|---|---|
+| simulador calibrado | **-2,920** | **13,5%** | **32,5%** |
+| `markov_multievento_v1` | -2,936 | 11,5% | 30,8% |
+| simulador cru | -2,982 | 12,8% | 31,1% |
+| frequências do treino | -3,025 | 11,7% | 30,2% |
+
+(Markov e simulador calibrado comparados em 1.742 jogos comuns.) O ganho sobre a frequência é pequeno (0,10 em log-verossimilhança); o placar mais provável acerta ~1 em 7,5.
+
+**Outros mercados (Brier; menor é melhor). Só há odds de 1X2 e over/under 2,5, então não há referência de mercado para os demais:**
+
+| mercado | frequência real | simulador calibrado | frequências do treino |
+|---|---|---|---|
+| mandante vence | 0,440 | **0,2173** | 0,2468 |
+| ambos marcam | 0,539 | 0,2481 | 0,2487 |
+| over 1,5 | 0,765 | 0,1801 | 0,1797 |
+| over 2,5 | 0,530 | 0,2499 | 0,2491 |
+| over 3,5 | 0,297 | 0,2073 | 0,2092 |
+| handicap -1,5 mandante | 0,224 | 0,1579 | 0,1740 |
+
+Over/under 2,5 com odds: acerto 0,579 (mercado), 0,547 (Dixon-Coles), 0,535 (simulador calibrado); log-loss 0,6754, 0,6946, 0,6903. O `markov_multievento_v1` fica em 0,2476 (over 2,5) e 0,2486 (ambos marcam), também sem ganho sobre a frequência.
+
+**Conclusão.** (a) O acerto direto do 1X2 segue a ordem do log-loss: mercado, logit de Elo por xG, simulador calibrado, Dixon-Coles; o simulador calibrado empata com o Dixon-Coles e perde para o mercado em ~2 pontos percentuais. (b) Nenhum modelo acerta empate, e nenhum acha o placar com frequência (~13%). (c) Total de gols e ambos marcam são praticamente imprevisíveis a partir da força dos times: nenhum modelo, simulador ou cadastrado, melhora o Brier da média histórica; o sinal está no resultado (vencedor e diferença de gols), não no total.
+
+**O que não se pode concluir.** (1) Não testei escanteios, cartões e faltas, que o simulador e o Markov geram, por falta de odds e de comparação preparada. (2) A grade do Markov foi gravada em lote depois dos jogos. (3) Calibração em uma temporada. (4) Intervalos tratam os jogos como independentes.
+
