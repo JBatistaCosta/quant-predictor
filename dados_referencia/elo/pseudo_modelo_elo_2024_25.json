@@ -1,0 +1,156 @@
+{
+ "parametros_logit": [
+  0.8517077851493322,
+  70.15560985633043,
+  0.6116869015455579
+ ],
+ "modelos": [
+  {
+   "nome": "calculadora, peso Elo 100%",
+   "n": 3504,
+   "acc_vencedor_sem_empate": 0.6825639069057612,
+   "acc_3": 0.5105593607305936,
+   "p_empate_medio": 0.2090705543034184,
+   "freq_empate": 0.2519977168949772,
+   "palpite_empate": 0.0,
+   "auc_empate": 0.5541036916308429,
+   "confianca_media": 0.5995894413297244,
+   "ece_favorito": 0.08903008059913071,
+   "p_max_acima_70": 0.2811073059360731,
+   "acerto_se_p_max_acima_70": 0.6680203045685279,
+   "logloss": 1.0272117258522775,
+   "brier": 0.6121604990172902
+  },
+  {
+   "nome": "calculadora, peso Elo 50% (padrão da tela)",
+   "n": 3504,
+   "acc_vencedor_sem_empate": 0.6825639069057612,
+   "acc_3": 0.5105593607305936,
+   "p_empate_medio": 0.23706704615333138,
+   "freq_empate": 0.2519977168949772,
+   "palpite_empate": 0.0,
+   "auc_empate": 0.5465110400662304,
+   "confianca_media": 0.500709228455356,
+   "ece_favorito": 0.027088727279983692,
+   "p_max_acima_70": 0.027968036529680364,
+   "acerto_se_p_max_acima_70": 0.7551020408163265,
+   "logloss": 1.0052419346074997,
+   "brier": 0.600332817395721
+  },
+  {
+   "nome": "calculadora 100% + base de mando",
+   "n": 3504,
+   "acc_vencedor_sem_empate": 0.6928653185806944,
+   "acc_3": 0.5182648401826484,
+   "p_empate_medio": 0.20763026141883736,
+   "freq_empate": 0.2519977168949772,
+   "palpite_empate": 0.0,
+   "auc_empate": 0.5533635247670722,
+   "confianca_media": 0.6051862988754596,
+   "ece_favorito": 0.0869214586928111,
+   "p_max_acima_70": 0.3007990867579909,
+   "acerto_se_p_max_acima_70": 0.6736242884250474,
+   "logloss": 1.0172287079662619,
+   "brier": 0.6058845096987715
+  },
+  {
+   "nome": "logit ordenado (calibrado no treino)",
+   "n": 3504,
+   "acc_vencedor_sem_empate": 0.6917207172834796,
+   "acc_3": 0.5174086757990868,
+   "p_empate_medio": 0.25253874709315255,
+   "freq_empate": 0.2519977168949772,
+   "palpite_empate": 0.0,
+   "auc_empate": 0.5458050081599832,
+   "confianca_media": 0.5285605545230609,
+   "ece_favorito": 0.023603780300360026,
+   "p_max_acima_70": 0.12471461187214612,
+   "acerto_se_p_max_acima_70": 0.7574370709382151,
+   "logloss": 0.9929489443567385,
+   "brier": 0.5925473101938784
+  },
+  {
+   "nome": "climatologia (frequências do treino)",
+   "n": 3504,
+   "acc_vencedor_sem_empate": 0.5749713849675696,
+   "acc_3": 0.4300799086757991,
+   "p_empate_medio": 0.2532140860816097,
+   "freq_empate": 0.2519977168949772,
+   "palpite_empate": 0.0,
+   "auc_empate": 0.512727802231562,
+   "confianca_media": 0.4443823365008386,
+   "ece_favorito": 0.014302427825039488,
+   "p_max_acima_70": 0.0,
+   "acerto_se_p_max_acima_70": null,
+   "logloss": 1.075181663925221,
+   "brier": 0.6509006587267978
+  }
+ ],
+ "contra_referencias": {
+  "calculadora, peso Elo 100%": {
+   "logloss": 1.0369985666741681,
+   "contra_mercado": [
+    0.05941192160292154,
+    0.04157368031368149,
+    0.07854575774731988
+   ],
+   "contra_dc": [
+    0.035908318823498424,
+    0.017646638112705396,
+    0.055127023520570945
+   ]
+  },
+  "calculadora, peso Elo 50% (padrão da tela)": {
+   "logloss": 1.0099860965423557,
+   "contra_mercado": [
+    0.032399451471109175,
+    0.021506444415213558,
+    0.042942146694963525
+   ],
+   "contra_dc": [
+    0.008895848691686073,
+    -0.0013620161700545856,
+    0.019808503085954353
+   ]
+  },
+  "calculadora 100% + base de mando": {
+   "logloss": 1.0222801198632467,
+   "contra_mercado": [
+    0.04469347479200013,
+    0.02877552645845606,
+    0.06113418898981684
+   ],
+   "contra_dc": [
+    0.021189872012577014,
+    0.0044723540284383615,
+    0.038767953464324385
+   ]
+  },
+  "logit ordenado (calibrado no treino)": {
+   "logloss": 0.9941528241237979,
+   "contra_mercado": [
+    0.016566179052551155,
+    0.007850669096939385,
+    0.02525621021038682
+   ],
+   "contra_dc": [
+    -0.006937423726871955,
+    -0.01725149906925738,
+    0.0035774413351686418
+   ]
+  },
+  "climatologia (frequências do treino)": {
+   "logloss": 1.0693914906447661,
+   "contra_mercado": [
+    0.09180484557351938,
+    0.07257304123158306,
+    0.10998130305450925
+   ],
+   "contra_dc": [
+    0.06830124279409629,
+    0.048412506174742576,
+    0.08705352556879387
+   ]
+  }
+ }
+}

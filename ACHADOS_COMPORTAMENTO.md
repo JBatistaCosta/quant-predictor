@@ -2909,3 +2909,44 @@ Por liga, `exp_misto` no 1X2: Premier League -0,0074; La Liga -0,0052; Serie A +
 - Cinco ligas, uma temporada de teste; o simulador na comparação é o de 3 temporadas de história, o do Achado 57.
 
 **Próximo teste (pré-registrado, não ajustado no teste).** Se a inclinação de ~2 vem de a amplificação dos multiplicadores de chute ficar curta, dobrar a amplitude resolve: `--exp-forca 4` (2 × a inclinação medida **em 2024**) com teto sem corte (0,3 a 3,0), em `exp_forca` e `exp_misto`; e, separadamente, o mando na conversão (`gols_mando`). Critério: a inclinação em 2024 tem de chegar perto de 1, e só então se olha o teste de 2025.
+
+## Achado 62 — o "pseudo-modelo" de Elo da calculadora acerta o vencedor (68%), não encontra empates (nenhum modelo de Elo encontra) e é confiante demais com peso 100%; um logit de 3 parâmetros sobre a mesma diferença de Elo empata com o Dixon-Coles e é muito melhor que o simulador
+
+**Pergunta (sua observação).** A calculadora (`src/pages/AnaliseEvento.jsx`, `runAlgorithm`) transforma a diferença de Elo em expectativa `E = 1 / (1 + 10^(-d/400))` e usa `λ1 = base × E/0,5`, `λ2 = base × (1-E)/0,5` (peso do Elo na tela: 50% por padrão). Esse caminho acerta quem vence, mas não acha empates e é confiante demais?
+
+**Método** (`scripts/avaliar_pseudo_modelo_elo.py`, sem rede; resultado em `dados_referencia/elo/pseudo_modelo_elo_2024_25.json`). Só a diferença de Elo global antes do jogo (`team_elo_history`, a coluna `elod` dos CSVs do backtest), 7.082 jogos das cinco ligas (3.578 em 2022-2023 só para ajustar; **3.504 de teste em 2024 e 2025**). O 1X2 sai de duas Poisson independentes com os lambdas acima (base de gols da liga em 2022-2023). Comparado com um logit ordenado de 3 parâmetros (`scripts/elo_xg_tres_vias.py`: `P(casa) = σ(a·x − t)`, `P(fora) = σ(−a·x − t)`), ajustado em 2022-2023: `a = 0,852`, `h = 70,2` pontos de mando, `t = 0,612`; e com a climatologia.
+
+**Resultado (jogos de 2024 e 2025).**
+
+| modelo | acerto do vencedor, sem empates | acerto 1X2 | P(empate) médio (real 25,2%) | AUC do empate | confiança média | erro de calibração (ECE) do favorito | log-loss |
+|---|---|---|---|---|---|---|---|
+| calculadora, peso Elo 100% | 68,3% | 51,1% | 20,9% | 0,554 | 0,600 | **0,089** | 1,0272 |
+| calculadora, peso 50% (padrão da tela) | 68,3% | 51,1% | 23,7% | 0,547 | 0,501 | 0,027 | 1,0052 |
+| calculadora 100% com base de mando | 69,3% | 51,8% | 20,8% | 0,553 | 0,605 | 0,087 | 1,0172 |
+| logit ordenado (calibrado no treino) | 69,2% | 51,7% | 25,3% | 0,546 | 0,529 | 0,024 | **0,9929** |
+| climatologia | 57,5% | 43,0% | 25,3% | 0,513 | 0,444 | 0,014 | 1,0752 |
+
+**1. "Acerta quem vence": confirmado.** 68,3% entre os jogos sem empate, contra 57,5% de quem chuta só o mandante (climatologia). Todos os modelos de Elo ficam entre 68% e 69%; o peso e o mando mexem pouco.
+
+**2. "Não é bom em achar empates": confirmado, mas não é defeito dele.** Nenhum dos modelos de Elo, nem o bem calibrado, escolhe o empate como resultado mais provável em nenhum jogo (0% dos palpites). A probabilidade de empate ordena só um pouco melhor que o acaso: AUC 0,55 contra 0,51 da climatologia, igual no logit calibrado (0,546). **O que a calculadora faz pior é o nível**: com peso 100% ela dá 20,9% de empate contra 25,2% reais (subestima 4,3 pontos percentuais), porque os lambdas ficam muito distantes um do outro e duas Poisson desiguais empatam menos.
+
+**3. "Muito confiante": confirmado com peso 100%; com 50% fica calibrada em média.** Peso 100%: confiança média 0,600 contra acerto 0,511; nas faixas, onde diz 65% acerta 54,5% (n = 662), onde diz 75% acerta 62,7% (n = 576), onde diz 84% acerta 72,6% (n = 409); 28% dos jogos recebem favorito acima de 70% e nesses ela acerta 66,8%. O mecanismo: multiplicar um lambda por `E/0,5` e o outro por `(1-E)/0,5` faz a razão de gols esperados valer `E/(1-E) = 10^(d/400)`, bem mais extrema que a realidade (o ajuste de máxima verossimilhança dá inclinação `a = 0,85`, menor que 1). Com o peso padrão de 50% da tela a confiança cai para 0,501, o erro de calibração para 0,027 e o log-loss para 1,0052; o preço é só usar metade do sinal.
+
+**4. Contra o mercado e o Dixon-Coles (1.533 jogos de 2025 com odds; log-loss do 1X2, positivo = pior).**
+
+| modelo | contra o mercado | contra o Dixon-Coles |
+|---|---|---|
+| calculadora, peso 100% | +0,0594 [+0,0416; +0,0785] | +0,0359 [+0,0176; +0,0551] |
+| calculadora, peso 50% | +0,0324 [+0,0215; +0,0429] | +0,0089 [-0,0014; +0,0198] |
+| **logit ordenado de Elo (3 parâmetros)** | **+0,0166 [+0,0079; +0,0253]** | **-0,0069 [-0,0173; +0,0036]** |
+
+Referência: mercado 0,9776, Dixon-Coles 1,0011, logit de Elo 0,9942. O simulador (`exp_misto`, 3 temporadas, a melhor versão sem o fator móvel) fica em torno de 1,028 nesses mesmos jogos, ou seja, **cerca de 0,034 pior que um logit de 3 parâmetros sobre a diferença de Elo**.
+
+**Leitura.**
+- O que você descreveu é exatamente o comportamento do caminho de Elo da calculadora com peso 100%. A causa de confiança excessiva e de poucos empates é a regra de multiplicar os lambdas por `E/0,5`; consertar isso é simples: usar o logit ordenado com parâmetros ajustados (a ≈ 0,85, mando ≈ 70 pontos, t ≈ 0,61), que dá o mesmo acerto do vencedor, empate a 25% e confiança calibrada.
+- **A diferença de Elo, bem convertida, é um previsor de 1X2 melhor que o Dixon-Coles nesta amostra (diferença não significativa) e muito melhor que o simulador.** O Elo global resume toda a história dos times (inclusive de outras competições e dos anos anteriores ao banco, pela semente do ClubElo) com atualização jogo a jogo; a força do simulador usa só 1 a 3 temporadas de chutes e gols. É a forma mais barata de recuperar o que falta ao simulador: **usar o Elo como camada de força** (a ideia do "elo_rating_xG" do início desta frente), com a amplitude calibrada pela inclinação, em vez de estimar a força só com chutes e gols.
+- O empate fica sem solução por Elo: AUC 0,55 em qualquer conversão. Quem prever empate precisa de outro sinal (jogo fechado, baixo xG esperado, pouco volume), não da diferença de força.
+
+**O que não se pode concluir.** (1) Mede só a conversão Elo para 1X2, não o uso do Elo dentro da calculadora com xG, posse e histórico (`trueXG` e `modPoss` mudam o resultado final). (2) Elo "antes do jogo" vem de `team_elo_history` (inclui a semente do ClubElo para clubes europeus); a diferença não é medida sem mando. (3) O logit foi ajustado em 2022-2023 e testado em 2024-2025 (sem vazamento); os 1.533 jogos com odds são só de 2025. (4) Cinco ligas europeias. (5) Intervalos tratam os jogos como independentes.
+
+**Próximo teste (proposto):** camada `forca_elo` no simulador: multiplicadores de chute derivados da diferença de Elo com a amplitude do logit (`a ≈ 0,85`), sozinha e combinada com chutes e gols.
