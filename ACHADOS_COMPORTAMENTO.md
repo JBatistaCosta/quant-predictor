@@ -2950,3 +2950,26 @@ Referência: mercado 0,9776, Dixon-Coles 1,0011, logit de Elo 0,9942. O simulado
 **O que não se pode concluir.** (1) Mede só a conversão Elo para 1X2, não o uso do Elo dentro da calculadora com xG, posse e histórico (`trueXG` e `modPoss` mudam o resultado final). (2) Elo "antes do jogo" vem de `team_elo_history` (inclui a semente do ClubElo para clubes europeus); a diferença não é medida sem mando. (3) O logit foi ajustado em 2022-2023 e testado em 2024-2025 (sem vazamento); os 1.533 jogos com odds são só de 2025. (4) Cinco ligas europeias. (5) Intervalos tratam os jogos como independentes.
 
 **Próximo teste (proposto):** camada `forca_elo` no simulador: multiplicadores de chute derivados da diferença de Elo com a amplitude do logit (`a ≈ 0,85`), sozinha e combinada com chutes e gols.
+
+## Achado 64 — Elo por xG contra Elo normal e a mistura 25%/75% (05/10)
+
+**Pergunta.** Houve uma tentativa de mesclar o Elo por xG com o Elo normal na proporção 25%/75%. Ela ajuda como previsor do 1X2?
+
+**O que a tentativa documentada fez.** A mistura 25/75 está no *escore de atualização* do Elo (`scripts/elo_global_xg.py`): 25% resultado e 75% logística do xG, K=40, mando 60; o multiplicador de gols só vale nos jogos sem xG. Na época, melhor Brier (0,15841 contra 0,16099 do Elo só por resultado), com platô entre 20% e 30% de resultado.
+
+**Teste aqui** (`scripts/avaliar_mistura_elo_xg.py`). Mesmo logit ordenado de 3 parâmetros para todos, ajustado em 2022-2023, avaliado em 2024-2025 (3.504 jogos, 5 ligas). Misturei também as NOTAS finais (25% normal + 75% xG etc.), que é outra coisa.
+
+| modelo | acerto do vencedor | AUC empate | log-loss | contra o Elo normal |
+|---|---|---|---|---|
+| Elo normal | 0,692 | 0,546 | 0,9929 | — |
+| Elo por xG | 0,705 | 0,557 | **0,9867** | -0,0063 [-0,0103; -0,0019] |
+| 25% normal + 75% xG | 0,702 | 0,556 | 0,9870 | -0,0060 |
+| 50/50 | 0,699 | 0,553 | 0,9883 | -0,0046 |
+| 75% normal + 25% xG | 0,692 | 0,549 | 0,9904 | -0,0025 |
+| peso ótimo (10% normal) | 0,705 | 0,557 | 0,9866 | -0,0063 |
+
+Nos 1.533 jogos de 2025 com odds: Elo por xG 0,9906 (**+0,0131 contra o mercado** [+0,0045; +0,0217]; -0,0104 contra o Dixon-Coles, ns); Elo normal 0,9942 (+0,0166 contra o mercado).
+
+**Conclusão.** O Elo por xG é melhor que o normal de forma significativa (~0,006), mas o ganho vem do xG na atualização; **misturar as notas dos dois Elos não acrescenta nada** (as notas têm correlação 0,957; o peso ótimo manda 90% para o xG). Continua atrás do mercado (+0,013). Para a camada `forca_elo` do simulador, a base deve ser `team_elo_xg_history`.
+
+**Ressalvas.** Mede só Elo para 1X2, não o uso dentro da calculadora; os parâmetros do Elo por xG (K, peso 25/75) foram escolhidos antes por Brier em dados que incluem anos deste teste (possível otimismo pequeno); intervalos tratam jogos como independentes.
