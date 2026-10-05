@@ -2779,3 +2779,35 @@ O gols por jogo simulado quase não muda (Premier League 2,664 contra 2,667 e 2,
 **O que não se pode concluir.** (1) `k_gols` e `peso_gols` fixos em 20 e 0,5; não varridos, para não escolher parâmetro com o teste. (2) Cinco ligas, uma temporada de teste cada; IC otimistas por jogos repetidos do mesmo time. (3) Só o 1X2 melhora; o over/under (onde o simulador já empatava com o Dixon-Coles) não se mexe.
 
 **Próximos testes (propostos):** ajuste da força pelo adversário (iterar ataque/defesa até estabilizar, como um Elo de gols); decaimento no tempo; comparar a força simulada com a esperada de um Poisson direto, para separar erro de força de perda na simulação.
+
+## Achado 58 — ajuste da força pelo adversário não muda o 1X2, e o decaimento no tempo (EWMA) piora um pouco; a diferença para o Dixon-Coles continua em +0,033
+
+**Pergunta.** O Dixon-Coles estima ataque e defesa juntos (cada gol é explicado pela força do adversário) e dá mais peso aos jogos recentes. Fazer isso com a força por gols do Achado 57 fecha a diferença restante, e o EWMA (peso decrescente no tempo) ajuda?
+
+**Método.** Mesmas cinco ligas, 1.533 jogos com Dixon-Coles e odds, 1.000 simulações, mesmas sementes de `exp_misto` (diferença pareada), bootstrap por jogo. Base: `exp_misto` (força = chutes^0,5 × gols^0,5, Achado 57). Quatro variantes, parâmetros fixados antes de olhar o teste e todas reportadas:
+- `misto_adv`: gols com ajuste pelo adversário (ataque e defesa estimados juntos, 30 iterações; mandante e visitante com médias próprias), sem decaimento.
+- `misto_ewma365`: decaimento sozinho, peso 0,5^(dias/365), sem ajuste.
+- `misto_adv_ewma365` e `misto_adv_ewma120`: os dois juntos, meia-vida de 365 e de 120 dias.
+Só jogos com data anterior à do jogo previsto entram (inclusive os do mesmo dia ficam fora). O prior de `k_gols` = 20 pseudo-jogos não decai. Só a parte dos gols é ajustada; a parte dos chutes continua a razão simples.
+
+**Resultado (log-loss; positivo = pior que a referência; * = IC 95% exclui zero).**
+
+| variante (5 ligas) | contra `exp_misto`, 1X2 | contra `exp_misto`, over/under | contra o Dixon-Coles, 1X2 |
+|---|---|---|---|
+| `misto_adv` | +0,0007 [-0,0019; +0,0033] | -0,0006 [-0,0022; +0,0010] | +0,0331 [+0,0188; +0,0469] |
+| `misto_ewma365` | +0,0029 [-0,0000; +0,0057] | +0,0008 [-0,0010; +0,0026] | +0,0352 [+0,0206; +0,0496] |
+| `misto_adv_ewma365` | **+0,0033 [+0,0004; +0,0061]*** | -0,0001 [-0,0019; +0,0018] | +0,0357 [+0,0211; +0,0497] |
+| `misto_adv_ewma120` | **+0,0058 [+0,0023; +0,0092]*** | -0,0017 [-0,0041; +0,0008] | +0,0381 [+0,0226; +0,0530] |
+
+Referências: `exp_misto` contra o Dixon-Coles +0,0324 (Achado 57), `exp_forca` +0,0382 (Achado 56). Contra `exp_forca`, só `misto_adv` mantém ganho (-0,0052 [-0,0091; -0,0011]), e é basicamente o ganho do Achado 57; `misto_adv_ewma120` volta ao nível de `exp_forca` (-0,0001).
+Por liga, `misto_adv_ewma120` contra `exp_misto` no 1X2: Premier League +0,0009; La Liga +0,0059; Serie A **+0,0117** [+0,0046; +0,0182]; Bundesliga +0,0050; Ligue 1 +0,0051. Os gols por jogo simulados mudam menos de 1,5% entre as variantes.
+
+**Leitura.**
+- **Resposta direta à pergunta sobre o EWMA:** não melhora; piora um pouco, e quanto mais curta a meia-vida, pior (120 dias +0,0058, 365 dias +0,0029 a +0,0033). Nos achados anteriores (Achado 24) o EWMA com meia-vida de 8 a 16 jogos tinha ganho pequeno de correlação em toques e xG sofrido, mas gols são mais ruidosos que isso.
+- **Ajuste pelo adversário:** sem efeito (+0,0007). Em uma liga de 20 times, com todos jogando contra todos mais de uma vez, o calendário já é equilibrado e a razão simples chega perto da ajustada.
+- Duas explicações para o EWMA piorar, que os dados daqui não separam: (1) menos informação efetiva por time (a história de uma temporada e meia já é curta; descartar peso aumenta o ruído), e (2) o prior fixo de 20 pseudo-jogos passa a pesar mais quando o peso dos dados cai, o que encolhe a força para 1.
+- A diferença de +0,033 a +0,038 para o Dixon-Coles **não vem** de: nível de gols (Achado 56), canal da força (Achado 57), ajuste pelo adversário nem decaimento no tempo (este achado). O que sobra está na estrutura: o Dixon-Coles estima direto o placar por Poisson bivariado com correção de baixos placares, e o simulador gera o placar por uma cadeia de ações sorteadas, o que pode distorcer as probabilidades de empate e de placares baixos mesmo com a força certa.
+
+**O que não se pode concluir.** (1) Só duas meias-vidas (120 e 365 dias) e um `k_gols`: uma meia-vida mais longa ou menos encolhimento pode se comportar diferente. (2) A parte de chutes da força não foi ajustada. (3) Cinco ligas, uma temporada de teste cada, IC otimistas por jogos repetidos do mesmo time. (4) Não foi medido onde a distribuição simulada de placares difere da do Dixon-Coles.
+
+**Próximo teste (proposto):** comparar, nos 1.533 jogos, a probabilidade simulada de empate e de cada placar baixo (0-0, 1-0, 1-1) com a do Dixon-Coles e com a frequência real, para ver se o erro está na distribuição do placar e não na força.
