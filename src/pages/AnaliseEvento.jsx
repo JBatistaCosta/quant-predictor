@@ -166,6 +166,8 @@ export default function AnaliseEvento() {
   const [resultTab, setResultTab] = useState('heatmap');
 
   const [eloWeight, setEloWeight] = useState(50);
+  // Campo neutro (ex.: jogos de Copa): zera a vantagem de mando dos gols (gamma de casa/fora).
+  const [campoNeutro, setCampoNeutro] = useState(false);
   const [showAllScores, setShowAllScores] = useState(false);
   const [customScore1, setCustomScore1] = useState('2');
   const [customScore2, setCustomScore2] = useState('0');
@@ -508,7 +510,7 @@ export default function AnaliseEvento() {
   // --- Simulações Salvas: snapshot de tudo que runAlgorithm usa como entrada,
   // pra poder recarregar e recalcular depois (em outra sessão/dispositivo). ---
   const montarConfigSimulacao = () => ({
-    team1Id, team2Id, metrics, eloWeight,
+    team1Id, team2Id, metrics, eloWeight, campoNeutro,
     lambdaFormula, formulaParams, historico1, historico2,
     shotsModel, pConv1, pConv2,
     cornersModel, cornersDisp, dixonColesEnabled, dixonColesRho,
@@ -548,6 +550,7 @@ export default function AnaliseEvento() {
     if (c.team2Id != null) setTeam2Id(c.team2Id);
     if (c.metrics) setMetrics(c.metrics);
     if (c.eloWeight != null) setEloWeight(c.eloWeight);
+    setCampoNeutro(c.campoNeutro === true);
     if (c.lambdaFormula) setLambdaFormula(c.lambdaFormula);
     if (c.formulaParams) setFormulaParams(c.formulaParams);
     if (c.historico1) setHistorico1(c.historico1);
@@ -1055,14 +1058,14 @@ export default function AnaliseEvento() {
     };
     const formula = getLambdaFormula(lambdaFormula);
     const resultadoFormula = formula.calc({
-      m, historico1: parseHistorico(historico1), historico2: parseHistorico(historico2), params: paramsFormula,
+      m, historico1: parseHistorico(historico1), historico2: parseHistorico(historico2), params: paramsFormula, neutro: campoNeutro,
     });
     // Fórmulas que usam as médias cruas de xG/xGA (multiplicativo e time decay) têm a força da forma
     // encolhida em direção à média da liga: sem isso, forma recente + Elo contam a mesma força duas vezes
     // e o favorito da casa fica muito inflado (calibrado em src/utils/eloLambda.js, Achado 71).
     const calibraForma = formula.calibraForma === true;
-    const trueXG_T1 = calibraForma ? encolherForca(resultadoFormula.trueXG1, GAMMA_MANDANTE) : resultadoFormula.trueXG1;
-    const trueXG_T2 = calibraForma ? encolherForca(resultadoFormula.trueXG2, GAMMA_VISITANTE) : resultadoFormula.trueXG2;
+    const trueXG_T1 = calibraForma ? encolherForca(resultadoFormula.trueXG1, campoNeutro ? 1 : GAMMA_MANDANTE) : resultadoFormula.trueXG1;
+    const trueXG_T2 = calibraForma ? encolherForca(resultadoFormula.trueXG2, campoNeutro ? 1 : GAMMA_VISITANTE) : resultadoFormula.trueXG2;
     const avisoFormula = resultadoFormula.aviso;
 
     // Modelo de chutes (Binomial): chutes totais ~ n de tentativas fixo, chutes no
@@ -1178,7 +1181,7 @@ export default function AnaliseEvento() {
       t1, t2, lambda1, lambda2, probWin1, probWin2, probDraw, probOver25, probBtts, aiInsight,
       eff1, eff2, lambdaCorners, probOver85Corners, probOver95Corners,
       cornersModelUsado: cornersModel, cornersDisp,
-      lambdaFormulaUsada: lambdaFormula, avisoFormula,
+      lambdaFormulaUsada: lambdaFormula, avisoFormula, campoNeutroUsado: campoNeutro,
       shotsModel, chutesPainel1, chutesPainel2,
       exactScores: exactScores.sort((a, b) => b.prob - a.prob)
     });
@@ -1841,6 +1844,23 @@ export default function AnaliseEvento() {
                 </div>
               </div>
 
+              {/* CAMPO NEUTRO */}
+              <label className="flex items-start gap-3 bg-slate-900 border border-slate-700 p-4 rounded-xl mt-4 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={campoNeutro}
+                  onChange={(e) => setCampoNeutro(e.target.checked)}
+                  className="mt-1 accent-emerald-500"
+                />
+                <span>
+                  <span className="text-sm font-bold text-slate-200 block">Campo neutro (sem vantagem de mando)</span>
+                  <span className="text-xs text-slate-400 block mt-1">
+                    Para jogos em que nenhum time joga em casa (ex.: Copa do Mundo). Tira o bônus de casa (×1,10) e o desconto de fora (×0,90) dos gols esperados.
+                    Desligado, o mandante recebe a vantagem de sempre. Não altera os λ digitados do modelo misto, que já trazem o mando embutido.
+                  </span>
+                </span>
+              </label>
+
               {/* SELETOR DE FÓRMULA DO λ */}
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 mt-4">
                 <label className="text-xs text-slate-500 uppercase font-bold">Fórmula do λ (Gols Esperados)</label>
@@ -2045,6 +2065,7 @@ export default function AnaliseEvento() {
                     <span className="text-sm font-semibold text-slate-400 uppercase flex items-center gap-2">
                       Ajuste Definitivo de Força (λ)
                       <span className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Peso Elo: {eloWeight}%</span>
+                      {results.campoNeutroUsado && <span className="text-[10px] bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded">Campo neutro</span>}
                     </span>
                     <span className="text-lg font-mono">
                       <span className="text-emerald-400">{results.lambda1.toFixed(2)}</span> vs <span className="text-orange-400">{results.lambda2.toFixed(2)}</span>

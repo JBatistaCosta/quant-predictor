@@ -23,6 +23,14 @@ function mediaPonderada(historico, campo, xi) {
   return somaPesos > 0 ? somaValores / somaPesos : null;
 }
 
+// Campo neutro (ex.: jogos de Copa): sem vantagem de mando. Troca o gamma de casa/fora por 1 e as médias de
+// gols de casa/fora pela média geral. Sem a chave (padrão), tudo igual a antes.
+function mandoDe(neutro) {
+  return neutro
+    ? { gMand: 1, gVis: 1, ligaMand: LIGA_MEDIA_GERAL, ligaVis: LIGA_MEDIA_GERAL }
+    : { gMand: GAMMA_MANDANTE, gVis: GAMMA_VISITANTE, ligaMand: LIGA_MEDIA_MANDANTE, ligaVis: LIGA_MEDIA_VISITANTE };
+}
+
 function combinacaoMultiplicativa(xgAtaque, xgaDefesa, gamma) {
   return (xgAtaque * xgaDefesa / LIGA_MEDIA_GERAL) * gamma;
 }
@@ -34,10 +42,13 @@ export const LAMBDA_FORMULAS = [
     nome: 'Multiplicativo (xG × xGA, com mando real)',
     descricao: 'xG próprio × xGA do adversário ÷ média da liga, com vantagem de mando embutida (casa ×1,10, fora ×0,90, calibrado com 314 jogos reais). Times muito acima ou abaixo da média ficam com previsões mais decisivas, em vez de "amassadas" pela média do adversário.',
     precisaHistorico: false,
-    calc: ({ m }) => ({
-      trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, GAMMA_MANDANTE),
-      trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, GAMMA_VISITANTE),
-    }),
+    calc: ({ m, neutro }) => {
+      const { gMand, gVis } = mandoDe(neutro);
+      return {
+        trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, gMand),
+        trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, gVis),
+      };
+    },
   },
   {
     id: 'media_simples',
@@ -54,10 +65,13 @@ export const LAMBDA_FORMULAS = [
     nome: 'Ataque × Defesa vs média da liga (Dixon-Coles clássico)',
     descricao: 'Versão clássica do modelo Dixon-Coles: força de ataque (xG próprio ÷ média de gols de quem joga em casa/fora) × força de defesa do adversário (xGA ÷ a mesma média), multiplicado de volta pela média casa/fora. O mando de campo já está embutido nas médias separadas — não soma gamma extra.',
     precisaHistorico: false,
-    calc: ({ m }) => ({
-      trueXG1: (m.xg1 / LIGA_MEDIA_MANDANTE) * (m.xga2 / LIGA_MEDIA_VISITANTE) * LIGA_MEDIA_MANDANTE,
-      trueXG2: (m.xg2 / LIGA_MEDIA_VISITANTE) * (m.xga1 / LIGA_MEDIA_MANDANTE) * LIGA_MEDIA_VISITANTE,
-    }),
+    calc: ({ m, neutro }) => {
+      const { ligaMand, ligaVis } = mandoDe(neutro);
+      return {
+        trueXG1: (m.xg1 / ligaMand) * (m.xga2 / ligaVis) * ligaMand,
+        trueXG2: (m.xg2 / ligaVis) * (m.xga1 / ligaMand) * ligaVis,
+      };
+    },
   },
   {
     id: 'shrinkage',
@@ -68,15 +82,16 @@ export const LAMBDA_FORMULAS = [
       { id: 'n', label: 'Jogos na amostra', default: 5, min: 1, max: 38 },
       { id: 'k', label: 'Força do prior (peso da média da liga)', default: 6, min: 0, max: 30 },
     ],
-    calc: ({ m, params }) => {
+    calc: ({ m, params, neutro }) => {
+      const { gMand, gVis } = mandoDe(neutro);
       const n = params?.n ?? 5;
       const k = params?.k ?? 6;
       const encolher = (valor) => (n * valor + k * LIGA_MEDIA_GERAL) / (n + k);
       const xg1 = encolher(m.xg1), xga1 = encolher(m.xga1);
       const xg2 = encolher(m.xg2), xga2 = encolher(m.xga2);
       return {
-        trueXG1: combinacaoMultiplicativa(xg1, xga2, GAMMA_MANDANTE),
-        trueXG2: combinacaoMultiplicativa(xg2, xga1, GAMMA_VISITANTE),
+        trueXG1: combinacaoMultiplicativa(xg1, xga2, gMand),
+        trueXG2: combinacaoMultiplicativa(xg2, xga1, gVis),
       };
     },
   },
@@ -89,7 +104,8 @@ export const LAMBDA_FORMULAS = [
     parametros: [
       { id: 'xi', label: 'Taxa de decaimento (ξ) — maior = esquece mais rápido', default: 0.2, min: 0.01, max: 1 },
     ],
-    calc: ({ m, historico1, historico2, params }) => {
+    calc: ({ m, historico1, historico2, params, neutro }) => {
+      const { gMand, gVis } = mandoDe(neutro);
       const xi = params?.xi ?? 0.2;
       const xgDecay1 = mediaPonderada(historico1, 'xg', xi);
       const xgaDecay1 = mediaPonderada(historico1, 'xga', xi);
@@ -105,8 +121,8 @@ export const LAMBDA_FORMULAS = [
       if (xgDecay2 === null || xgaDecay2 === null) avisos.push('Sem histórico suficiente pro time visitante — usando a média informada.');
 
       return {
-        trueXG1: combinacaoMultiplicativa(xg1, xga2, GAMMA_MANDANTE),
-        trueXG2: combinacaoMultiplicativa(xg2, xga1, GAMMA_VISITANTE),
+        trueXG1: combinacaoMultiplicativa(xg1, xga2, gMand),
+        trueXG2: combinacaoMultiplicativa(xg2, xga1, gVis),
         aviso: avisos.length > 0 ? avisos.join(' ') : undefined,
       };
     },
@@ -122,14 +138,15 @@ export const LAMBDA_FORMULAS = [
       { id: 'xgaAdv2', label: 'xGA médio dos adversários do visitante', default: '' },
       { id: 'xgAdv2', label: 'xG médio dos adversários do visitante', default: '' },
     ],
-    calc: ({ m, params }) => {
+    calc: ({ m, params, neutro }) => {
+      const { gMand, gVis, ligaMand, ligaVis } = mandoDe(neutro);
       const { xgaAdv1, xgAdv1, xgaAdv2, xgAdv2 } = params || {};
       const completo = [xgaAdv1, xgAdv1, xgaAdv2, xgAdv2].every(v => Number.isFinite(v) && v > 0);
 
       if (!completo) {
         return {
-          trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, GAMMA_MANDANTE),
-          trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, GAMMA_VISITANTE),
+          trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, gMand),
+          trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, gVis),
           aviso: 'Preencha a força dos adversários enfrentados pelos dois times pra usar a normalização dinâmica — usando a fórmula multiplicativa por enquanto.',
         };
       }
@@ -140,8 +157,8 @@ export const LAMBDA_FORMULAS = [
       const forcaDef1 = m.xga1 / xgAdv1;
 
       return {
-        trueXG1: forcaAtq1 * forcaDef2 * LIGA_MEDIA_MANDANTE,
-        trueXG2: forcaAtq2 * forcaDef1 * LIGA_MEDIA_VISITANTE,
+        trueXG1: forcaAtq1 * forcaDef2 * ligaMand,
+        trueXG2: forcaAtq2 * forcaDef1 * ligaVis,
       };
     },
   },
@@ -168,15 +185,16 @@ export const LAMBDA_FORMULAS = [
       { id: 'lambdaHome', label: 'λ do mandante (gols esperados)', default: '' },
       { id: 'lambdaAway', label: 'λ do visitante (gols esperados)', default: '' },
     ],
-    calc: ({ m, params }) => {
+    calc: ({ m, params, neutro }) => {
+      const { gMand, gVis } = mandoDe(neutro);
       const lam = Number(params?.lambdaHome);
       const mu = Number(params?.lambdaAway);
       const valido = Number.isFinite(lam) && lam > 0 && Number.isFinite(mu) && mu > 0;
 
       if (!valido) {
         return {
-          trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, GAMMA_MANDANTE),
-          trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, GAMMA_VISITANTE),
+          trueXG1: combinacaoMultiplicativa(m.xg1, m.xga2, gMand),
+          trueXG2: combinacaoMultiplicativa(m.xg2, m.xga1, gVis),
           aviso: 'Sem λ do modelo misto pra este confronto — usando a fórmula multiplicativa. O λ é preenchido automaticamente quando a partida existe no pipeline (ver model_match_estimates), ou pode ser digitado nos campos acima.',
         };
       }
@@ -184,7 +202,11 @@ export const LAMBDA_FORMULAS = [
       // Sem gamma de mando aqui, de propósito: o λ do ML já foi treinado
       // separando mandante de visitante, então a vantagem de casa está embutida.
       // Multiplicar por GAMMA_MANDANTE de novo contaria o mando duas vezes.
-      return { trueXG1: lam, trueXG2: mu };
+      return {
+        trueXG1: lam,
+        trueXG2: mu,
+        aviso: neutro ? 'Campo neutro: os λ do modelo misto já foram estimados com mando de casa embutido e não são alterados por esta chave.' : undefined,
+      };
     },
   },
 ];
