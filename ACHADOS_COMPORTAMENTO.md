@@ -2845,6 +2845,34 @@ Poisson menos simulação: 1X2 **+0,0007 [-0,0011; +0,0024]**, over/under +0,000
 
 **Próximo teste (proposto):** acrescentar as temporadas de 2022 e 2023 ao CSV de cada liga só como história (não precisam de odds nem de Dixon-Coles, e não são simuladas) e repetir `exp_forca`, `exp_misto` e o fator móvel com 3 a 4 temporadas de história.
 
+## Achado 60 — três temporadas de história ajudam só a mistura chutes+gols (-0,0052), o EWMA continua piorando o 1X2, o fator móvel dá ganho pequeno; a diferença para o Dixon-Coles cai de +0,033 para +0,026
+
+**Pergunta.** A diferença restante para o Dixon-Coles poderia vir de o simulador ter pouca história (1 temporada de aquecimento, contra 2 a 3 do `dixon_coles_v1`)? E o EWMA, que piorava com pouca história, passa a ajudar com mais?
+
+**Método.** Acrescentei 2022 e 2023 ao CSV de cada liga **só como história** (chutes, gols e Elo; não são simuladas nem precisam de odds), de modo que o teste de 2025 usa 3 temporadas anteriores (`*_2022_25.csv`; exportador com repetição em erro 5xx). Mesmos 1.533 jogos de teste com Dixon-Coles e odds, 1.000 simulações, mesmas sementes (diferença pareada), bootstrap por jogo. Variantes: `exp_forca` (só chutes), `exp_misto` (chutes e gols, Achado 57), `misto_ewma365` e `misto_adv_ewma365` (Achado 58), e o fator de gols móvel sobre as duas (`exp_forca_movel`, `exp_misto_movel`: razão gols reais / simulados dos últimos 200 jogos anteriores, bases geradas a partir de 2024 e 2025 com a mesma história).
+
+**Resultado 1: 3 temporadas contra 1 (log-loss; negativo = melhor).**
+
+| | 1X2 | over/under |
+|---|---|---|
+| `exp_forca` | -0,0003 [-0,0046; +0,0040] | -0,0011 [-0,0041; +0,0019] |
+| `exp_misto` | **-0,0052 [-0,0092; -0,0012]** | +0,0019 [-0,0012; +0,0049] |
+
+Por liga, `exp_misto` no 1X2: Premier League -0,0074; La Liga -0,0052; Serie A +0,0071 [+0,0002; +0,0140]; Bundesliga **-0,0133** [-0,0222; -0,0042]; Ligue 1 **-0,0098** [-0,0194; -0,0001]. O canal só de chutes não aproveita a história extra (a força por chutes converge rápido: há muitos chutes por jogo); o canal de gols, mais ruidoso, aproveita.
+
+**Resultado 2: contra o Dixon-Coles (1X2; positivo = pior).** `exp_forca` 3t +0,0379 [+0,0233; +0,0522] (era +0,0382); `exp_misto` 3t **+0,0272 [+0,0139; +0,0400]** (era +0,0324). Over/under: -0,0055 e -0,0012, empate.
+
+**Resultado 3: o EWMA continua piorando o 1X2, mas agora melhora o over/under.** Contra `exp_misto` 3t: `misto_ewma365` 1X2 **+0,0053 [+0,0022; +0,0084]**, over/under **-0,0031 [-0,0052; -0,0010]**; `misto_adv_ewma365` 1X2 +0,0046 [+0,0016; +0,0077], over/under -0,0034 [-0,0055; -0,0014]. A hipótese de que o EWMA perdia por falta de história **não se confirmou para o 1X2**.
+
+**Resultado 4: fator de gols móvel com 3 temporadas.** `exp_forca_movel` contra `exp_forca` 3t: 1X2 **-0,0028 [-0,0055; -0,0001]**, over/under -0,0019 [-0,0064; +0,0026]. `exp_misto_movel` contra `exp_misto` 3t: 1X2 -0,0011 [-0,0040; +0,0018], over/under **-0,0052 [-0,0103; -0,0000]** (Bundesliga -0,0253 [-0,0437; -0,0070]). Fator médio por liga: Premier League 1,036; La Liga 1,083; Serie A 1,009; Bundesliga 1,127; Ligue 1 1,099. Os gols por jogo sobem (Bundesliga 2,784 para 3,100; real 3,294 nos jogos comparados). Melhor configuração do dia: `exp_misto_movel`, **1X2 +0,0260 [+0,0130; +0,0387]** contra o Dixon-Coles e over/under -0,0064 [-0,0175; +0,0043]; contra `exp_forca_movel`, 1X2 -0,0091 [-0,0128; -0,0053].
+
+**Leitura.**
+- A pouca história **não é a causa principal** da diferença: três temporadas aproximam de +0,033 para +0,026, e só pela mistura chutes+gols.
+- O 1X2 melhor do simulador (`exp_misto_movel`) segue 0,026 pior que o Dixon-Coles e muito atrás dos modelos cadastrados (Achado 61, que mostra onde está o resto: a amplitude dos lambdas).
+- O over/under do simulador está agora no nível do Dixon-Coles (-0,006, intervalo cobrindo zero).
+
+**O que não se pode concluir.** Cinco ligas, uma temporada de teste, IC otimistas; meia-vida do EWMA só em 365 dias neste teste; o fator móvel só foi avaliado com janela de 200 jogos e sem otimizar. O Dixon-Coles usa janelas e decaimento próprios que não reproduzi.
+
 ## Achado 61 — comparando os lambdas (gols esperados) previstos: o simulador ordena os times bem, mas espalha só metade do que deveria e subestima o mando; os modelos cadastrados superam o Dixon-Coles e ainda perdem para o mercado
 
 **Pergunta.** Até aqui só tínhamos o 1X2 e o over/under. Os lambdas de cada lado (gols esperados de mandante e visitante) são o que o simulador, o Dixon-Coles e os modelos cadastrados realmente estimam. Como se comparam entre si e com o mercado?
