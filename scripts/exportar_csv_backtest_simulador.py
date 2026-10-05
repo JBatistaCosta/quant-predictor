@@ -15,6 +15,8 @@ import csv
 import json
 import os
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -24,9 +26,19 @@ COLUNAS = ["id", "season", "date", "home", "away", "hg", "ag", "hs", "as", "hxg"
 
 
 def _get(caminho: str) -> list:
+    """GET no PostgREST, repetindo (2, 4, 8 e 16 s) em erro de servidor 5xx ou de rede: o servidor às vezes devolve 500 passageiro numa consulta grande."""
     url, chave = os.environ["SUPABASE_URL"].rstrip("/"), os.environ["SUPABASE_KEY"]
     req = urllib.request.Request(f"{url}/rest/v1/{caminho}", headers={"apikey": chave, "Authorization": "Bearer " + chave})
-    return json.load(urllib.request.urlopen(req, timeout=120))
+    for espera in (2, 4, 8, 16, None):
+        try:
+            return json.load(urllib.request.urlopen(req, timeout=120))
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or espera is None:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if espera is None:
+                raise
+        time.sleep(espera)
 
 
 def paginar(caminho: str, ordem: str = "id") -> list:

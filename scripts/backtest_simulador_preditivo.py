@@ -69,6 +69,8 @@ VARIANTES = {
     "misto_adv_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30, "meia_vida_dias": 365.0}, "padrao": False},
     "misto_adv_ewma120": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "ajuste_adv_iter": 30, "meia_vida_dias": 120.0}, "padrao": False},
     "misto_ewma365": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "meia_vida_dias": 365.0}, "padrao": False},
+    # Achado 60: fator de gols móvel sobre a mistura chutes/gols (base = gols simulados de exp_misto sem fator)
+    "exp_misto_movel": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 2.0, "teto": (0.5, 2.0), "fator_movel": {"base": "exp_misto", "janela": 200, "minimo_jogos": 50, "expoente": 1.0, "piso": 0.85, "teto": 1.25}}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
