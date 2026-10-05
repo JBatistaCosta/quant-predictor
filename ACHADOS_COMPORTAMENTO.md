@@ -3122,3 +3122,23 @@ Diferenças de Brier (IC 95% pareado): M2-M1 entre -0,0004 e -0,0025, não signi
 
 **O que não se pode concluir.** (1) Não há odds de faltas e cartões nas 5 ligas, então não se sabe se o mercado já precifica o árbitro (o histórico do projeto aponta que sim em cartões). (2) k = 10 não foi otimizado; efeito do árbitro por nome (homônimos raros) e sem separar mando/visitante dele. (3) O árbitro de cada jogo costuma ser anunciado poucos dias antes; a previsão com ele só vale a partir daí. (4) Uma temporada de teste; intervalos tratam os jogos como independentes.
 
+## Achado 69 — Pendências aplicadas: conversão Elo→λ da calculadora e rótulo de quebra do simulador (05/10)
+
+**Calculadora.** O fator de Elo no λ passou de `E/0,5` para `exp(±k·x/2)` (`src/utils/eloLambda.js`), com `k = 0,5737` ajustado por Poisson em 2022-2023 e avaliado em 2024-2025 (3.504 jogos, 5 ligas; `scripts/calibrar_elo_lambda_calculadora.py`). Log-loss do 1X2:
+
+| conversão Elo → λ | log-loss |
+|---|---|
+| `E/0,5` atual, peso 50% (base única de gols) | 1,0052 |
+| `E/0,5` atual, peso 100% | 1,0272 |
+| log-linear com k calibrado (base única) | 1,0042 |
+| log-linear com k calibrado, bases de gols de mandante e visitante | **0,9960** |
+| logit ordenado de 3 parâmetros (Achado 62) | 0,9929 |
+
+A forma log-linear melhora muito pouco no peso de 50% (-0,001), mas **remove a saturação e o excesso de confiança do peso alto** (no `E/0,5` o peso 100% custa +0,022; aqui o peso 100% apenas dobra o k). **O ganho de 0,008 no 1X2 vem de aplicar o mando separado nos gols de mandante e visitante** (bases 1,51 e 1,20 gols), o que a calculadora não faz para o Elo (ela é usada também em jogos de seleções em campo neutro); fica como decisão para a interface. O k calibrado equivale a peso de 57% na fórmula antiga, por isso o ponto médio do controle (50%) já era quase o calibrado: a mudança é de robustez, não de nível.
+
+**Simulador.** `usar_quebra_corrigida` agora é o padrão. O simulador neutro com o rótulo corrigido faz 12,30 chutes por time (12,68 antes) e 0,1003 gol por chute (0,1017 antes); `camadas_simulador.py` usa o par certo conforme `cfg["quebra_corrigida"]`. O backtest passa `False` explicitamente nas variantes antigas, e as novas devem pedir `True`. Conferido: as variantes `elo_normal`, `elo_xg`, `elo_xg_gols`, `elo_xg_misto` e `misto_expo` dão gols e placares simulados idênticos aos de antes da mudança (4 jogos, 100 simulações); a suíte de testes dos scripts passa.
+
+**Fora do escopo desta aplicação.** O modelo de faltas e cartões com árbitro (Achado 68) fica como análise: não há odds desses mercados nas 5 ligas e o histórico do projeto indica que o mercado já precifica o árbitro; ligá-lo em `api/corners-model.js` mudaria uma função em produção sem evidência de valor contra o mercado.
+
+**O que não se pode concluir.** (1) A calculadora não foi testada em browser autenticado (só unitários e build). (2) O k foi ajustado em ligas europeias de clubes; seleções (usadas na tela) têm outra relação entre Elo e gols. (3) O desempenho do simulador com o rótulo corrigido como padrão não foi remedido de ponta a ponta: só a equivalência das variantes antigas.
+

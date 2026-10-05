@@ -266,6 +266,7 @@ def main():
                 hist.elo = {k: j[k] for k in ("elod", "elox") if j.get(k) is not None}      # Elo antes deste jogo (camada forca_elo)
                 hist.data_atual = j["date"]                         # a força por gols só usa jogos com data anterior a esta
                 cfg_jogo = {**cam.CONFIG, **v.get("cfg", {})}
+                cfg_jogo["quebra_corrigida"] = bool(v["cfg"].get("quebra_corrigida", False))   # variantes antigas seguem no regime antigo (reproduzem os Achados 41-68); as novas pedem True
                 if nome in bases:                                   # fator de gols móvel: só jogos com data anterior à deste
                     cfg_jogo["gols_fator"] = fator_gols_movel(bases[nome], j["date"], v["cfg"]["fator_movel"])
                     fatores[(j["id"], nome)] = cfg_jogo["gols_fator"]

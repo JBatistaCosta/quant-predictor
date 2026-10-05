@@ -75,6 +75,9 @@ def amostrador_de_chaves(contagens: dict) -> tuple[list, Amostrador]:
     return chaves, Amostrador([contagens[k] for k in chaves])
 
 
+QUEBRA_CORRIGIDA_PADRAO = True           # Achado 56: o rótulo antigo de quebra não existe nos dados; corrigido melhora o 1X2 em -0,0030 [-0,0060; -0,0000]. Use usar_quebra_corrigida(False) para reproduzir os Achados 41 a 68
+
+
 class Parametros:
     def __init__(self, pasta: str = "dados_referencia/statsbomb", fonte_xg: str = "fotmob"):
         self.fonte_xg = fonte_xg                         # 'fotmob': xG e gol pela zona polar do chute (477 mil chutes); 'statsbomb': os do próprio chute sorteado
@@ -148,11 +151,12 @@ class Parametros:
             self.p_perda_zona.append(pesos[19] / tot)
             self.destino_continua.append(Amostrador(pesos[:18]))
 
-    def _definir_nucleo(self, nucleo: dict, quebra_corrigida: bool = False) -> None:
+    def _definir_nucleo(self, nucleo: dict, quebra_corrigida: bool = QUEBRA_CORRIGIDA_PADRAO) -> None:
         """Núcleo empírico da próxima linha (chaves 'continua|z', 'perda|z', 'chute|z' -> {'quem|classe|zona': n}).
-        `quebra_corrigida=False` (padrão, comportamento dos Achados 41-54): o filtro de "quebra" usa o rótulo antigo 'mesma|recuperação|', que não existe mais nos dados;
+        `quebra_corrigida=True` (padrão desde o Achado 69): quebra = só o que não é 'mesma|continua|' (falta, lateral, escanteio, recuperação do adversário, ~3%); quem continua usa a matriz.
+        `quebra_corrigida=False` (comportamento dos Achados 41-68, para reproduzi-los): o filtro de "quebra" usa o rótulo antigo 'mesma|recuperação|', que não existe mais nos dados;
         então TODA linha que continua conta como quebra (p_quebra = 100% em toda zona) e o destino de quem continua sai do núcleo em 95% das vezes (teto) e da matriz
-        18 x 20 em 5%. `quebra_corrigida=True`: quebra = só o que não é 'mesma|continua|' (falta, lateral, escanteio, recuperação do adversário, ~3%); quem continua usa a matriz."""
+        18 x 20 em 5%."""
         self._nucleo = nucleo
         self._quebra_corrigida = quebra_corrigida
         prefixo_continua = "mesma|continua|" if quebra_corrigida else "mesma|recuperação|"
