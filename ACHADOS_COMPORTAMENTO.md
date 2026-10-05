@@ -2973,3 +2973,32 @@ Nos 1.533 jogos de 2025 com odds: Elo por xG 0,9906 (**+0,0131 contra o mercado*
 **Conclusão.** O Elo por xG é melhor que o normal de forma significativa (~0,006), mas o ganho vem do xG na atualização; **misturar as notas dos dois Elos não acrescenta nada** (as notas têm correlação 0,957; o peso ótimo manda 90% para o xG). Continua atrás do mercado (+0,013). Para a camada `forca_elo` do simulador, a base deve ser `team_elo_xg_history`.
 
 **Ressalvas.** Mede só Elo para 1X2, não o uso dentro da calculadora; os parâmetros do Elo por xG (K, peso 25/75) foram escolhidos antes por Brier em dados que incluem anos deste teste (possível otimismo pequeno); intervalos tratam jogos como independentes.
+
+## Achado 63 — Expoente de força 4 e calibração dos lambdas por lei de potência (05/10)
+
+**Pergunta.** (1) O expoente de força 4 (e o teto 0,3-3,0) corrige a amplitude dos lambdas do simulador (inclinação ≈2 nos Achados 60-61)? (2) Estimar a taxa geradora por uma transformada (lei de potência) aproxima as previsões do 1X2 e do over/under 2,5 das do Dixon-Coles e do mercado?
+
+**Desenho (fixado antes de olhar 2025).** 5 ligas, variantes `forca_expo`, `misto_expo`, `misto_expo_mando` com `exp_forca` 4 e teto 0,3-3,0 (1.000 simulações por jogo, 3 temporadas de história). Transformada `lambda' = c_lado · lambda^beta` ajustada por máxima verossimilhança de Poisson dos gols em **2024** (1.752 jogos) e avaliada em **2025** (1.752 jogos; 1.533 com Dixon-Coles e odds). 1X2 e over/under saem de duas Poisson independentes com o lambda calibrado. Três formas: só nível (beta = 1), beta comum e beta por lado.
+
+**Passo 1 — amplitude (inclinação dos gols sobre o lambda; 1 = calibrado).** `forca_expo` 1,38 [1,23; 1,52] em 2024 e 1,32 [1,18; 1,45] em 2025; `misto_expo` 1,31 [1,19; 1,42] e 1,19 [1,07; 1,31]; `misto_expo_mando` 1,31 e 1,19. Antes: ≈2,0. O expoente corrigiu a maior parte da amplitude, mas não toda (o IC de 2024 não inclui 1). O lambda do mandante segue baixo (1,24 contra 1,50 em 2024 e 1,54 em 2025 reais; visitante 1,17 contra 1,33 e 1,23).
+
+**Passo 2 — 2025, diferença de log-loss do 1X2 (com IC 95% pareado):**
+
+| modelo | 1X2 | contra Dixon-Coles | contra mercado | O/U contra mercado |
+|---|---|---|---|---|
+| `forca_expo` sem transformar | 1,0182 | +0,0171 * | +0,0406 * | +0,0269 * |
+| `forca_expo` + nível | 1,0113 | +0,0103 (ns) | +0,0338 * | +0,0121 * |
+| `forca_expo` + potência (beta 1,18) | 1,0085 | +0,0074 (ns) | +0,0309 * | +0,0126 * |
+| `misto_expo` sem transformar | 1,0073 | +0,0062 (ns) | +0,0297 * | +0,0364 * |
+| `misto_expo` + nível (c 1,21 e 1,13) | **1,0011** | **0,0000** [-0,0089; +0,0089] | +0,0235 [+0,0138; +0,0336] * | +0,0151 * |
+| `misto_expo` + potência (beta 1,08) | 1,0001 | -0,0010 (ns) | +0,0225 * | +0,0157 * |
+| `misto_expo_mando` + potência | 1,0005 | -0,0006 (ns) | +0,0229 * | +0,0160 * |
+
+Referências nos mesmos jogos: mercado 0,9776, Dixon-Coles 1,0011, Elo por xG 0,9906 (Achado 64). NLL de Poisson por time-jogo: `misto_expo` + nível 1,4599 (Dixon-Coles 1,4608, `exp_misto` 3t sem transformar 1,4716).
+
+**Conclusão.** (a) O expoente 4 foi o ganho grande: a distância ao Dixon-Coles no 1X2 caiu de +0,027 para +0,006 sem nenhuma transformação. (b) A transformada completa (potência) quase não acrescenta ao ajuste de **nível**: depois do expoente, o erro que sobra é principalmente viés de nível (gols do mandante ~20% abaixo do real), não de forma da relação. (c) Com nível corrigido o simulador **empata com o Dixon-Coles** no 1X2 e fica ainda +0,023 pior que o mercado e +0,010 pior que o Elo por xG; no over/under melhora muito (+0,036 para +0,015 contra o mercado) mas segue pior. (d) A variante com mando de gols não muda nada.
+
+**O que não se pode concluir.** (1) Os parâmetros da transformada saem de uma única temporada (2024) e foram testados numa única (2025); não há verificação com outro par de anos. (2) O nível ajustado (c ≈ 1,2) corrige um viés que deveria ser tratado na origem (`gols_nivel`/`gols_fator`), e o `c` do mandante pode refletir a mudança de nível de gols de 2024 para 2025 (1,50 para 1,54). (3) 1X2 por Poisson independente, sem correlação nem Dixon-Coles; o placar simulado pode ter forma melhor ou pior (Achado 59 mostrou diferença pequena). (4) Intervalos tratam os jogos como independentes. (5) Cinco ligas europeias.
+
+**Próximo passo (proposto).** Camada `forca_elo` com o Elo por xG (Achado 64) combinada ao expoente 4, e corrigir o nível do mandante na origem em vez de uma transformada posterior.
+
