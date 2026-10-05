@@ -182,3 +182,17 @@ def test_forca_elo_segue_a_diferenca_de_elo_e_e_neutra_sem_dados_ou_com_k_zero()
     assert abs(cam.camada_forca_elo(h, 1, 2, {**cfg, "peso_elo": 0.5})[0]["ataque_chute"] - math.exp(0.25 * x / 2)) < 1e-12
     mult = cam.multiplicadores(["forca_elo"], h, 1, 2, cfg)                       # entra na combinação de camadas
     assert mult[0]["ataque_chute"] > 1.0 > mult[1]["ataque_chute"]
+
+
+def test_constantes_do_simulador_neutro_seguem_o_regime_de_quebra():
+    h = cam.Historia()
+    for _ in range(10):
+        h.add(jogo(10, 10, 1, 1))
+    antigo = cam.camada_nivel_chutes(h, 1, 2, {**cam.CONFIG, "quebra_corrigida": False})[0]["ataque_chute"]
+    corrigido = cam.camada_nivel_chutes(h, 1, 2, {**cam.CONFIG, "quebra_corrigida": True})[0]["ataque_chute"]
+    assert abs(antigo - 10 / cam.CHUTES_POR_TIME_SIM_NEUTRO) < 1e-12
+    assert abs(corrigido - 10 / cam.CHUTES_POR_TIME_SIM_NEUTRO_CORRIGIDO) < 1e-12 and corrigido > antigo
+    g_antigo = cam.camada_gols_nivel(h, 1, 2, {**cam.CONFIG, "quebra_corrigida": False})[0]["conversao_ataque"]
+    g_corr = cam.camada_gols_nivel(h, 1, 2, {**cam.CONFIG, "quebra_corrigida": True})[0]["conversao_ataque"]
+    assert g_corr > g_antigo
+    assert cam.CONFIG["quebra_corrigida"] is True                                  # padrão da CONFIG: regime corrigido

@@ -18,8 +18,18 @@ from __future__ import annotations
 import datetime
 import math
 
-CHUTES_POR_TIME_SIM_NEUTRO = 12.68      # simulador padrão, 400 jogos, semente 1
-GOLS_POR_CHUTE_SIM_NEUTRO = 0.1017      # simulador padrão, 2.500 jogos, semente 11 (2,536 gols / 24,94 chutes)
+CHUTES_POR_TIME_SIM_NEUTRO = 12.68      # simulador com o rótulo de quebra ANTIGO (Achados 41-68), 400 jogos, semente 1
+GOLS_POR_CHUTE_SIM_NEUTRO = 0.1017      # idem, 2.500 jogos, semente 11 (2,536 gols / 24,94 chutes)
+# Simulador com o rótulo de quebra CORRIGIDO (padrão desde o Achado 69), mesmas sementes e jogos: 24,60 chutes / 2 = 12,30 por time; 2,472 gols / 24,66 chutes = 0,1003
+CHUTES_POR_TIME_SIM_NEUTRO_CORRIGIDO = 12.30
+GOLS_POR_CHUTE_SIM_NEUTRO_CORRIGIDO = 0.1003
+
+
+def _constantes_neutras(cfg):
+    """(chutes por time, gols por chute) do simulador neutro no regime de quebra da configuração (`quebra_corrigida`, padrão da CONFIG)."""
+    if cfg.get("quebra_corrigida", True):
+        return CHUTES_POR_TIME_SIM_NEUTRO_CORRIGIDO, GOLS_POR_CHUTE_SIM_NEUTRO_CORRIGIDO
+    return CHUTES_POR_TIME_SIM_NEUTRO, GOLS_POR_CHUTE_SIM_NEUTRO
 CHAVES = ("ataque_chute", "defesa_chute", "conversao_ataque", "conversao_defesa")
 
 # Resposta ao placar (Achado 52): por saldo de gols de QUEM CHUTA, truncado em -2..+2, relativa ao empate: (multiplicador de volume de chutes, multiplicador de qualidade).
@@ -93,6 +103,7 @@ CONFIG = {
     "elo_k": 0.0,             # k da camada (0 = camada neutra). Fixado antes do teste pela regressão de log(chutes casa/fora) sobre x em 2022-2023, dividida por 2*0,49
     "peso_elo": 1.0,          # fração de k aplicada (permite combinar com outra camada de força sem contar a mesma informação duas vezes)
     "elo_fonte": "elox",      # "elod" = Elo normal (por resultado), "elox" = Elo por xG (team_elo_xg_history)
+    "quebra_corrigida": True, # regime de quebra do simulador (escolhe as constantes do simulador neutro); o backtest passa False nas variantes antigas para reproduzir os Achados 41-68
     "elo_corte": 100.0,       # diferença de Elo a partir da qual um time é "forte" ou "fraco" na reação ao placar (Achado 52)
 }
 
@@ -146,7 +157,7 @@ class Historia:
 # ------------------------------------------------------------------ camadas
 def camada_nivel_chutes(h, casa, fora, cfg):
     """Reescala os chutes do simulador para a média de chutes por time da história (o simulador neutro faz ~12,7)."""
-    n = h.chutes_por_time() / CHUTES_POR_TIME_SIM_NEUTRO
+    n = h.chutes_por_time() / _constantes_neutras(cfg)[0]
     return {"ataque_chute": n}, {"ataque_chute": n}
 
 
@@ -274,7 +285,7 @@ def camada_forca_elo(h, casa, fora, cfg):
 
 def camada_gols_nivel(h, casa, fora, cfg):
     """Nível de gols: gols por chute da história sobre o do simulador neutro, aplicado aos dois lados."""
-    g = h.gols_por_chute() / GOLS_POR_CHUTE_SIM_NEUTRO
+    g = h.gols_por_chute() / _constantes_neutras(cfg)[1]
     return {"conversao_ataque": g}, {"conversao_ataque": g}
 
 
