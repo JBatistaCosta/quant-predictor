@@ -3002,3 +3002,26 @@ Referências nos mesmos jogos: mercado 0,9776, Dixon-Coles 1,0011, Elo por xG 0,
 
 **Próximo passo (proposto).** Camada `forca_elo` com o Elo por xG (Achado 64) combinada ao expoente 4, e corrigir o nível do mandante na origem em vez de uma transformada posterior.
 
+## Achado 65 — Camada de força pelo Elo dentro do simulador (05/10)
+
+**Pergunta.** Usar o Elo (normal e por xG) como camada de força do simulador, sozinha e combinada à mistura chutes/gols com expoente 4, fecha a distância para o Dixon-Coles e o mercado?
+
+**Desenho (fixado antes de olhar 2025).** Camada `forca_elo`: a diferença de Elo anterior ao jogo, x = dif/400·ln10, vira ataque `exp(k·x/2)` e defesa `exp(-k·x/2)` de chutes do mandante (o inverso no visitante). k pela regressão de log(chutes casa/fora) sobre x em 2022-2023, dividida por 2×0,49 (elasticidade do Achado 51): Elo normal 0,343; Elo por xG 0,436; versão "gols" (regressão do log xG) 0,618; `elo_xg_misto` = mistura chutes/gols (exp 4) + Elo por xG com peso 0,5. 5 ligas, 1.000 simulações por jogo, teto 0,3-3,0, mesma semente das variantes anteriores. Calibração por lei de potência ajustada em 2024 (1.752 jogos) e avaliada em 2025 (1.752; 1.533 com odds), como no Achado 63.
+
+**Resultado, 2025 (log-loss do 1X2; contra o Dixon-Coles e o mercado, IC 95% pareado):**
+
+| variante | inclinação crua | sem transformar | + nível | + potência |
+|---|---|---|---|---|
+| `elo_normal` | 2,16 | 1,0362 | 1,0308 | 1,0087 (beta 2,10; DC +0,0076 ns; mercado +0,0311 *) |
+| `elo_xg` | 2,16 | 1,0346 | 1,0293 | 1,0063 (beta 2,13; DC +0,0052 ns; mercado +0,0287 *) |
+| `elo_xg_gols` | 1,74 | 1,0237 | 1,0161 | 1,0003 (beta 1,69; DC -0,0008 ns; mercado +0,0227 *) |
+| `elo_xg_misto` | 1,09 | 1,0064 | **0,9990** (DC -0,0021 ns; mercado +0,0214 [+0,0122; +0,0312] *) | 0,9993 (beta 0,95) |
+
+Over/under 2,5 contra o mercado: `elo_xg_misto` + nível +0,0149; Elo sozinho entre +0,012 e +0,019. Referências nos mesmos jogos: mercado 0,9776; Dixon-Coles 1,0011; `misto_expo` + nível 1,0011; logit de 3 parâmetros do Elo por xG 0,9906.
+
+**Conclusão.** (a) O Elo sozinho, no desenho pré-registrado, deixa os lambdas com o **dobro** da amplitude (o k derivado da regressão de chutes entrega só metade do efeito em gols; o beta ≈ 2 confirma). Só a transformada de potência o conserta; k mais alto é o ajuste certo na origem. (b) Corrigida a amplitude, o Elo por xG dentro do simulador (1,0063) **não supera o logit simples de 3 parâmetros** sobre o mesmo Elo (0,9906) — o simulador não acrescenta informação sobre o Elo para o 1X2. (c) O melhor número da frente é `elo_xg_misto` com nível: 0,9990, diferença de -0,0021 do Dixon-Coles (ns) e +0,021 do mercado (significativa); o ganho sobre `misto_expo` + nível (1,0011) é de 0,002 e não foi testado como par. (d) Nenhuma variante bate o mercado.
+
+**O que não se pode concluir.** (1) Os k vêm de uma regressão de chutes e o simulador responde em gols; o k certo (≈ 2 vezes) não foi pré-registrado, então o beta da transformada é o único ajuste válido aqui. (2) Calibração treinada em 2024 e testada em 2025 apenas. (3) O Elo por xG tem parâmetros (K 40, peso 25/75) escolhidos antes em dados que incluem anos deste teste (Achado 64). (4) 1X2 por Poisson independente. (5) Intervalos tratam os jogos como independentes; cinco ligas europeias.
+
+**Leitura prática.** Para o 1X2, o caminho barato e competitivo é o próprio logit de Elo por xG (0,9906, +0,013 do mercado). O simulador só se justifica por mercados que o Elo não cobre (placar, eventos, cartões, escanteios), e aí o ponto de partida é `elo_xg_misto` com nível corrigido.
+
