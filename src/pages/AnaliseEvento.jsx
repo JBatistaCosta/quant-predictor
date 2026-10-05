@@ -14,7 +14,7 @@ import { XT_GRID } from '../utils/xt';
 import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format';
 import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions';
 import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
-import { fatoresElo } from '../utils/eloLambda';
+import { fatoresElo, encolherForca } from '../utils/eloLambda';
 import { apiUrl } from '../utils/apiUrl';
 import { extractJsonFromImages } from '../utils/ocr';
 import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
@@ -1057,8 +1057,12 @@ export default function AnaliseEvento() {
     const resultadoFormula = formula.calc({
       m, historico1: parseHistorico(historico1), historico2: parseHistorico(historico2), params: paramsFormula,
     });
-    const trueXG_T1 = resultadoFormula.trueXG1;
-    const trueXG_T2 = resultadoFormula.trueXG2;
+    // Fórmulas que usam as médias cruas de xG/xGA (multiplicativo e time decay) têm a força da forma
+    // encolhida em direção à média da liga: sem isso, forma recente + Elo contam a mesma força duas vezes
+    // e o favorito da casa fica muito inflado (calibrado em src/utils/eloLambda.js, Achado 71).
+    const calibraForma = formula.calibraForma === true;
+    const trueXG_T1 = calibraForma ? encolherForca(resultadoFormula.trueXG1, GAMMA_MANDANTE) : resultadoFormula.trueXG1;
+    const trueXG_T2 = calibraForma ? encolherForca(resultadoFormula.trueXG2, GAMMA_VISITANTE) : resultadoFormula.trueXG2;
     const avisoFormula = resultadoFormula.aviso;
 
     // Modelo de chutes (Binomial): chutes totais ~ n de tentativas fixo, chutes no

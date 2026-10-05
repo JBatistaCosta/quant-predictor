@@ -3152,3 +3152,30 @@ A forma log-linear melhora muito pouco no peso de 50% (-0,001), mas **remove a s
 
 **Ressalva que continua valendo.** Mesmo com o mando embutido, a tela não tem opção de campo neutro: em jogos de seleções em campo neutro (Copa) o mando 1,10/0,90 também é aplicado. Uma chave 'campo neutro' que zere o mando seria a mudança útil nesse ponto; não foi feita porque exige decisão sua sobre o comportamento padrão.
 
+## Achado 71 — A calculadora estava descalibrada: forma recente e Elo contavam a mesma força duas vezes (05/10)
+
+**Problema relatado.** "Tá muito descalibrado. O mandante favorito eleva muito o percentual." Era verdade, e a causa é minha: o Achado 69 calibrou o fator de Elo **sozinho** (k 0,57, base de gols igual para todos). Na tela, o λ vem de xG próprio × xGA do adversário ÷ média da liga × gamma de mando, e essa força da forma já carrega a qualidade dos times; o fator de Elo multiplicava por cima e somava a mesma informação duas vezes.
+
+**Método.** `scripts/calibrar_calculadora_completa.py` reproduz a calculadora inteira jogo a jogo, só com dados anteriores ao jogo: forma = últimos 10 jogos de cada time (qualquer mando) com decaimento ξ 0,2 (como a importação), xG e xGA dos CSVs; mando = gamma atual (1,10 e 0,90); Elo = `elod`; posse neutra; Poisson com Dixon-Coles ρ -0,042. Ajuste por máxima verossimilhança do 1X2 em 2022-2023 (3.266 jogos), avaliação em 2024-2025 (3.434 jogos, nada ajustado neles).
+
+**Resultado (teste 2024-2025):**
+
+| variante | log-loss | ECE | favorito da casa: previsto / real |
+|---|---|---|---|
+| sem Elo (peso 0%) | 1,0206 | 0,050 | 0,651 / 0,608 |
+| **Achado 69 (k 0,5737, peso 50%)** | **1,0820** | **0,133** | **0,742 / 0,606** |
+| fórmula antiga E/0,5, peso 50% | 1,0565 | 0,114 | 0,726 / 0,607 |
+| fórmula antiga E/0,5, peso 100% | 1,1581 | 0,179 | 0,778 / 0,601 |
+| só k refeito (0,10) | 1,0195 | 0,058 | 0,666 / 0,611 |
+| k 0,4907 + expoente da forma 0,258 (mando atual) | **0,9882** | **0,013** | **0,637 / 0,625** |
+
+**O que o Achado 69 fez de errado.** Em pipeline completo o k do Achado 69 (0,57) ficou **pior** que a fórmula antiga com o mesmo peso (1,0820 contra 1,0565) e pior que não usar Elo (1,0206). Na faixa de 70% a 80% de vitória da casa o previsto era 0,748 e o real 0,574; de 90% a 100%, previsto 0,951 e real 0,782. O erro sistemático dizia respeito ao favorito da casa porque ele soma três coisas: gamma de mando, forma boa e Elo alto.
+
+**Correção aplicada.** (1) `ELO_K` passou a 0,4907 e (2) a razão (xG × xGA / média) da forma é elevada a `FORMA_EXPOENTE` = 0,258 (encolhida em direção à média da liga), nas fórmulas 'multiplicativo' e 'time decay', que usam as médias cruas (`calibraForma` em `src/utils/lambdaFormulas.js`, `encolherForca` em `src/utils/eloLambda.js`). As demais fórmulas (shrinkage, ataque × defesa, normalização dinâmica, λ de ML) não foram alteradas. O gamma de mando (1,10/0,90) ficou fixo, porque é compartilhado com outras partes do app. Resultado: log-loss 1,0820 → 0,9882, ECE 0,133 → 0,013; por faixa de P(vitória da casa) no teste: 60-70% previsto 0,648 / real 0,647; 70-80% 0,743 / 0,758; 80-90% 0,841 / 0,864. **Robusto à janela da forma** (ajustado com 10 jogos): log-loss 0,9902 com 5, 0,9882 com 10 e 0,9877 com 20 jogos, contra 1,1114, 1,0820 e 1,0737 antes.
+
+**Efeito na tela** (Espanha × África do Sul, valores de exemplo): peso 50% — Achado 69: 95,4% / 3,6% / 1,0%; agora: **91,1% / 6,8% / 2,1%** (o logit calibrado dá ~92% para 614 pontos de Elo). Peso 0%: 44,7% / 26,9% / 28,4% (a forma sozinha).
+
+**Verificação.** 5 casos de paridade entre o pipeline em Python e as funções JavaScript (λ iguais até 4 casas), mais testes das funções novas: `npx vitest run src/utils/eloLambda.test.js src/utils/lambdaFormulas.test.js` (32 passam) e `npm run build`.
+
+**O que não se pode concluir.** (1) O ajuste é de ligas europeias de clubes com a forma em 10 jogos; seleções (usadas na tela, com poucos jogos e campo neutro) podem pedir outro encolhimento. (2) A tela depende do que o usuário digita; o ajuste vale para médias de xG/xGA de ~10 jogos. (3) Entre as fórmulas não calibradas, o Elo com k 0,49 ainda se soma a uma força que pode estar cheia (ataque × defesa); não foram testadas aqui. (4) A faixa de 90% a 100% tem só 10 jogos de teste. (5) Expoente 0,26 significa que a forma de 10 jogos vale pouco; o resto da previsão vem de Elo e média da liga.
+
