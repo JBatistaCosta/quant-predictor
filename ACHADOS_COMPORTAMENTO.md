@@ -3134,11 +3134,48 @@ Diferenças de Brier (IC 95% pareado): M2-M1 entre -0,0004 e -0,0025, não signi
 | log-linear com k calibrado, bases de gols de mandante e visitante | **0,9960** |
 | logit ordenado de 3 parâmetros (Achado 62) | 0,9929 |
 
-A forma log-linear melhora muito pouco no peso de 50% (-0,001), mas **remove a saturação e o excesso de confiança do peso alto** (no `E/0,5` o peso 100% custa +0,022; aqui o peso 100% apenas dobra o k). **O ganho de 0,008 no 1X2 vem de aplicar o mando separado nos gols de mandante e visitante** (bases 1,51 e 1,20 gols), o que a calculadora não faz para o Elo (ela é usada também em jogos de seleções em campo neutro); fica como decisão para a interface. O k calibrado equivale a peso de 57% na fórmula antiga, por isso o ponto médio do controle (50%) já era quase o calibrado: a mudança é de robustez, não de nível.
+A forma log-linear melhora muito pouco no peso de 50% (-0,001), mas **remove a saturação e o excesso de confiança do peso alto** (no `E/0,5` o peso 100% custa +0,022; aqui o peso 100% apenas dobra o k). **O ganho de 0,008 no 1X2 vem de separar os gols de mandante e visitante** (bases 1,51 e 1,20 gols, razão 1,26). **Correção (Achado 70): a calculadora já faz essa separação** — as fórmulas de λ do app (multiplicativo, ataque × defesa, shrinkage, time decay, normalização dinâmica e λ de ML) já embutem o mando (`GAMMA_MANDANTE` 1,10 e `GAMMA_VISITANTE` 0,90 em `src/utils/poisson.js`, razão 1,23); só a 'Média simples' não, de propósito. A comparação do Achado 62 usava base única de gols e por isso não representava a calculadora real; o k calibrado aqui foi ajustado com bases separadas, coerente com a calculadora. O k calibrado equivale a peso de 57% na fórmula antiga, por isso o ponto médio do controle (50%) já era quase o calibrado: a mudança é de robustez, não de nível.
 
 **Simulador.** `usar_quebra_corrigida` agora é o padrão. O simulador neutro com o rótulo corrigido faz 12,30 chutes por time (12,68 antes) e 0,1003 gol por chute (0,1017 antes); `camadas_simulador.py` usa o par certo conforme `cfg["quebra_corrigida"]`. O backtest passa `False` explicitamente nas variantes antigas, e as novas devem pedir `True`. Conferido: as variantes `elo_normal`, `elo_xg`, `elo_xg_gols`, `elo_xg_misto` e `misto_expo` dão gols e placares simulados idênticos aos de antes da mudança (4 jogos, 100 simulações); a suíte de testes dos scripts passa.
 
 **Fora do escopo desta aplicação.** O modelo de faltas e cartões com árbitro (Achado 68) fica como análise: não há odds desses mercados nas 5 ligas e o histórico do projeto indica que o mercado já precifica o árbitro; ligá-lo em `api/corners-model.js` mudaria uma função em produção sem evidência de valor contra o mercado.
 
 **O que não se pode concluir.** (1) A calculadora não foi testada em browser autenticado (só unitários e build). (2) O k foi ajustado em ligas europeias de clubes; seleções (usadas na tela) têm outra relação entre Elo e gols. (3) O desempenho do simulador com o rótulo corrigido como padrão não foi remedido de ponta a ponta: só a equivalência das variantes antigas.
+
+## Achado 70 — O mando separado nos gols já está na calculadora (05/10)
+
+**Pedido.** Aplicar o mando separado nos gols da calculadora (resultado do Achado 69: bases de gols de mandante e visitante dão 0,9960 contra 1,0042 com base única).
+
+**O que a leitura do código mostrou.** O mando já entra no λ pelas fórmulas em `src/utils/lambdaFormulas.js`: multiplicativo, shrinkage, time decay, normalização dinâmica e λ de ML multiplicam por `GAMMA_MANDANTE` (1,1027) e `GAMMA_VISITANTE` (0,8973); a fórmula 'ataque × defesa' usa médias de gols separadas de casa (1,3854) e fora (1,1274); só 'média simples' não tem mando, por ser o comportamento antigo mantido de propósito. A razão casa/fora embutida (1,23) é próxima da ajustada nos dados no Achado 69 (1,26). Aplicar outro fator de mando em cima, no fator de Elo, **contaria o mando duas vezes** (o próprio `lambdaFormulas.js` já adverte disso para o λ de ML). **Nada foi alterado no código da calculadora.**
+
+**Correção de um erro meu.** O Achado 69 e a descrição do PR #777 diziam que a calculadora 'não aplica o mando para o Elo' e que o ganho de 0,008 faltava na interface. Isso estava errado: a comparação de 1,0042 usava base única de gols, que não é a calculadora real (com a fórmula padrão ela já tem o mando). O 0,9960 é, na prática, o desempenho esperado da calculadora padrão com o fator de Elo calibrado, e a conclusão de que ela melhorou 0,008 contra a fórmula antiga com base única não vale como ganho da mudança do Elo. Texto do Achado 69 corrigido.
+
+**Ressalva que continua valendo.** Mesmo com o mando embutido, a tela não tem opção de campo neutro: em jogos de seleções em campo neutro (Copa) o mando 1,10/0,90 também é aplicado. Uma chave 'campo neutro' que zere o mando seria a mudança útil nesse ponto; não foi feita porque exige decisão sua sobre o comportamento padrão.
+
+## Achado 71 — A calculadora estava descalibrada: forma recente e Elo contavam a mesma força duas vezes (05/10)
+
+**Problema relatado.** "Tá muito descalibrado. O mandante favorito eleva muito o percentual." Era verdade, e a causa é minha: o Achado 69 calibrou o fator de Elo **sozinho** (k 0,57, base de gols igual para todos). Na tela, o λ vem de xG próprio × xGA do adversário ÷ média da liga × gamma de mando, e essa força da forma já carrega a qualidade dos times; o fator de Elo multiplicava por cima e somava a mesma informação duas vezes.
+
+**Método.** `scripts/calibrar_calculadora_completa.py` reproduz a calculadora inteira jogo a jogo, só com dados anteriores ao jogo: forma = últimos 10 jogos de cada time (qualquer mando) com decaimento ξ 0,2 (como a importação), xG e xGA dos CSVs; mando = gamma atual (1,10 e 0,90); Elo = `elod`; posse neutra; Poisson com Dixon-Coles ρ -0,042. Ajuste por máxima verossimilhança do 1X2 em 2022-2023 (3.266 jogos), avaliação em 2024-2025 (3.434 jogos, nada ajustado neles).
+
+**Resultado (teste 2024-2025):**
+
+| variante | log-loss | ECE | favorito da casa: previsto / real |
+|---|---|---|---|
+| sem Elo (peso 0%) | 1,0206 | 0,050 | 0,651 / 0,608 |
+| **Achado 69 (k 0,5737, peso 50%)** | **1,0820** | **0,133** | **0,742 / 0,606** |
+| fórmula antiga E/0,5, peso 50% | 1,0565 | 0,114 | 0,726 / 0,607 |
+| fórmula antiga E/0,5, peso 100% | 1,1581 | 0,179 | 0,778 / 0,601 |
+| só k refeito (0,10) | 1,0195 | 0,058 | 0,666 / 0,611 |
+| k 0,4907 + expoente da forma 0,258 (mando atual) | **0,9882** | **0,013** | **0,637 / 0,625** |
+
+**O que o Achado 69 fez de errado.** Em pipeline completo o k do Achado 69 (0,57) ficou **pior** que a fórmula antiga com o mesmo peso (1,0820 contra 1,0565) e pior que não usar Elo (1,0206). Na faixa de 70% a 80% de vitória da casa o previsto era 0,748 e o real 0,574; de 90% a 100%, previsto 0,951 e real 0,782. O erro sistemático dizia respeito ao favorito da casa porque ele soma três coisas: gamma de mando, forma boa e Elo alto.
+
+**Correção aplicada.** (1) `ELO_K` passou a 0,4907 e (2) a razão (xG × xGA / média) da forma é elevada a `FORMA_EXPOENTE` = 0,258 (encolhida em direção à média da liga), nas fórmulas 'multiplicativo' e 'time decay', que usam as médias cruas (`calibraForma` em `src/utils/lambdaFormulas.js`, `encolherForca` em `src/utils/eloLambda.js`). As demais fórmulas (shrinkage, ataque × defesa, normalização dinâmica, λ de ML) não foram alteradas. O gamma de mando (1,10/0,90) ficou fixo, porque é compartilhado com outras partes do app. Resultado: log-loss 1,0820 → 0,9882, ECE 0,133 → 0,013; por faixa de P(vitória da casa) no teste: 60-70% previsto 0,648 / real 0,647; 70-80% 0,743 / 0,758; 80-90% 0,841 / 0,864. **Robusto à janela da forma** (ajustado com 10 jogos): log-loss 0,9902 com 5, 0,9882 com 10 e 0,9877 com 20 jogos, contra 1,1114, 1,0820 e 1,0737 antes.
+
+**Efeito na tela** (Espanha × África do Sul, valores de exemplo): peso 50% — Achado 69: 95,4% / 3,6% / 1,0%; agora: **91,1% / 6,8% / 2,1%** (o logit calibrado dá ~92% para 614 pontos de Elo). Peso 0%: 44,7% / 26,9% / 28,4% (a forma sozinha).
+
+**Verificação.** 5 casos de paridade entre o pipeline em Python e as funções JavaScript (λ iguais até 4 casas), mais testes das funções novas: `npx vitest run src/utils/eloLambda.test.js src/utils/lambdaFormulas.test.js` (32 passam) e `npm run build`.
+
+**O que não se pode concluir.** (1) O ajuste é de ligas europeias de clubes com a forma em 10 jogos; seleções (usadas na tela, com poucos jogos e campo neutro) podem pedir outro encolhimento. (2) A tela depende do que o usuário digita; o ajuste vale para médias de xG/xGA de ~10 jogos. (3) Entre as fórmulas não calibradas, o Elo com k 0,49 ainda se soma a uma força que pode estar cheia (ataque × defesa); não foram testadas aqui. (4) A faixa de 90% a 100% tem só 10 jogos de teste. (5) Expoente 0,26 significa que a forma de 10 jogos vale pouco; o resto da previsão vem de Elo e média da liga.
 

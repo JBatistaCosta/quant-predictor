@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Calibra a conversão diferença de Elo -> gols esperados da calculadora (src/pages/AnaliseEvento.jsx).
+"""[SUPERADO pelo Achado 71 -- ver scripts/calibrar_calculadora_completa.py: este ajuste isolado do fator de Elo (k 0,57) deixa o favorito da casa inflado quando a forma recente em xG/xGA entra junto.]
+Calibra a conversão diferença de Elo -> gols esperados da calculadora (src/pages/AnaliseEvento.jsx).
 
 Hoje a calculadora multiplica o λ de cada lado por E/0,5 e (1-E)/0,5, com E = 1/(1+10^(-peso*dif/400)): satura (fator 2 e 0 nos extremos, o λ vai ao piso 0,1) e, com peso 100%, é
 confiante demais (Achado 62). Aqui a alternativa log-linear: λ_casa = base_casa * exp(+k*x/2) e λ_fora = base_fora * exp(-k*x/2), com x = peso*dif/400*ln(10) e k = K_ELO. O k vem de uma

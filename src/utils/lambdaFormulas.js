@@ -30,6 +30,7 @@ function combinacaoMultiplicativa(xgAtaque, xgaDefesa, gamma) {
 export const LAMBDA_FORMULAS = [
   {
     id: 'multiplicativo',
+    calibraForma: true,
     nome: 'Multiplicativo (xG × xGA, com mando real)',
     descricao: 'xG próprio × xGA do adversário ÷ média da liga, com vantagem de mando embutida (casa ×1,10, fora ×0,90, calibrado com 314 jogos reais). Times muito acima ou abaixo da média ficam com previsões mais decisivas, em vez de "amassadas" pela média do adversário.',
     precisaHistorico: false,
@@ -81,6 +82,7 @@ export const LAMBDA_FORMULAS = [
   },
   {
     id: 'decay',
+    calibraForma: true,
     nome: 'Time Decay (peso maior pros jogos recentes)',
     descricao: 'Usa o xG/xGA jogo a jogo (não só a média) e dá peso exponencialmente maior pros jogos mais recentes — reage mais rápido a uma mudança de forma do time, sem "ancorar" nos jogos de várias rodadas atrás. Precisa do histórico preenchido (manual ou pela busca automática); sem histórico, cai de volta pra fórmula multiplicativa com a média informada.',
     precisaHistorico: true,
