@@ -160,3 +160,25 @@ def test_forca_por_gols_ajuste_pelo_adversario_decaimento_e_sem_futuro():
     h2.add(jogo_d("2025-01-10", 3, 4, 9, 9))
     h2.add(jogo_d("2025-02-20", 3, 4, 9, 9))
     assert cam.forca_gols_ajustada(h2, 5.0, None, 0) == antes                        # o jogo de 10/01 (mesmo dia) e o de fevereiro (futuro) são ignorados
+
+
+def test_forca_elo_segue_a_diferenca_de_elo_e_e_neutra_sem_dados_ou_com_k_zero():
+    h = cam.Historia()
+    cfg = {**cam.CONFIG, "elo_k": 0.5, "elo_fonte": "elox"}
+    assert cam.camada_forca_elo(h, 1, 2, cfg) == ({}, {})                         # sem Elo do jogo: não muda nada
+    h.elo = {"elox": 0.0}
+    mc, mf = cam.camada_forca_elo(h, 1, 2, cfg)
+    assert mc["ataque_chute"] == 1.0 and mf["defesa_chute"] == 1.0                # times iguais
+    h.elo = {"elox": 200.0, "elod": -100.0}
+    mc, mf = cam.camada_forca_elo(h, 1, 2, cfg)
+    x = 200.0 / 400.0 * math.log(10.0)
+    m = math.exp(0.5 * x / 2)
+    assert abs(mc["ataque_chute"] - m) < 1e-12 and abs(mc["defesa_chute"] - 1 / m) < 1e-12
+    assert abs(mf["ataque_chute"] - 1 / m) < 1e-12 and abs(mf["defesa_chute"] - m) < 1e-12
+    # razão de chutes pedida da casa sobre a de fora = exp(2*k*x)
+    assert abs((mc["ataque_chute"] * mf["defesa_chute"]) / (mf["ataque_chute"] * mc["defesa_chute"]) - math.exp(2 * 0.5 * x)) < 1e-9
+    assert cam.camada_forca_elo(h, 1, 2, {**cfg, "elo_fonte": "elod"})[0]["ataque_chute"] < 1.0       # a fonte escolhe a nota
+    assert cam.camada_forca_elo(h, 1, 2, {**cfg, "elo_k": 0.0}) == ({}, {})
+    assert abs(cam.camada_forca_elo(h, 1, 2, {**cfg, "peso_elo": 0.5})[0]["ataque_chute"] - math.exp(0.25 * x / 2)) < 1e-12
+    mult = cam.multiplicadores(["forca_elo"], h, 1, 2, cfg)                       # entra na combinação de camadas
+    assert mult[0]["ataque_chute"] > 1.0 > mult[1]["ataque_chute"]

@@ -42,6 +42,7 @@ SEM_MANDO = ["nivel_chutes"]
 KEEP = BASE + ["forca_chutes", "gols_nivel", "gols_fator"]                  # o que o Achado 47 deixou ligado
 KEEP_GOLS = [c if c != "forca_chutes" else "forca_gols" for c in KEEP]      # força só por gols
 KEEP_MISTA = [c if c != "forca_chutes" else "forca_mista" for c in KEEP]    # força por mistura chutes/gols (peso_gols)
+KEEP_ELO = [c if c != "forca_chutes" else "forca_elo" for c in KEEP]        # força só pelo Elo
 VARIANTES = {
     "neutro": {"camadas": BASE, "semente": 2, "ref": None, "padrao": False},
     "forca": {"camadas": BASE + ["forca_chutes"], "semente": 1, "ref": "neutro", "padrao": False},
@@ -76,6 +77,13 @@ VARIANTES = {
     "forca_expo": {"camadas": KEEP, "semente": 9, "ref": "exp_forca", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
     "misto_expo": {"camadas": KEEP_MISTA, "semente": 9, "ref": "exp_misto", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
     "misto_expo_mando": {"camadas": KEEP_MISTA + ["gols_mando"], "semente": 9, "ref": "misto_expo", "cfg": {"exp_forca": 4.0, "teto": (0.3, 3.0)}, "padrao": False},
+    # Achado 65: camada forca_elo. k = beta/(2*0,49) com beta a regressão de log(chutes casa/fora) sobre x = dif.Elo/400*ln10 em 2022-2023 (Elo normal 0,336 -> 0,343; Elo por xG 0,427 -> 0,436;
+    # a versão "gols" usa o beta do log(xG casa/fora) do Elo por xG, 0,606 -> 0,618); fixados antes de olhar 2025. A combinada soma o Elo (peso 0,5) à mistura chutes/gols com expoente 4.
+    "elo_normal": {"camadas": KEEP_ELO, "semente": 9, "ref": "misto_expo", "cfg": {"elo_k": 0.343, "elo_fonte": "elod", "teto": (0.3, 3.0)}, "padrao": False},
+    "elo_xg": {"camadas": KEEP_ELO, "semente": 9, "ref": "misto_expo", "cfg": {"elo_k": 0.436, "elo_fonte": "elox", "teto": (0.3, 3.0)}, "padrao": False},
+    "elo_xg_gols": {"camadas": KEEP_ELO, "semente": 9, "ref": "elo_xg", "cfg": {"elo_k": 0.618, "elo_fonte": "elox", "teto": (0.3, 3.0)}, "padrao": False},
+    "elo_xg_misto": {"camadas": KEEP_MISTA + ["forca_elo"], "semente": 9, "ref": "misto_expo",
+                     "cfg": {"exp_forca": 4.0, "elo_k": 0.436, "peso_elo": 0.5, "elo_fonte": "elox", "teto": (0.3, 3.0)}, "padrao": False},
     "mando_j200": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 5, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 200}, "padrao": False},
     "mando_j100": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel"], "semente": 6, "ref": "forca_gols_nivel", "cfg": {"janela_mando": 100}, "padrao": False},
     "mando_j200_gols": {"camadas": SEM_MANDO + ["mando_chutes_janela", "forca_chutes", "gols_nivel", "gols_mando_janela"], "semente": 7, "ref": "mando_j200", "cfg": {"janela_mando": 200}, "padrao": False},
@@ -121,7 +129,8 @@ def ler(caminho):
     for r in csv.DictReader(open(caminho)):
         j = {"id": int(r["id"]), "season": r["season"], "date": r["date"], "home": int(r["home"]), "away": int(r["away"]),
              "hg": int(r["hg"]), "ag": int(r["ag"]), "hs": float(r["hs"]), "as": float(r["as"]),
-             "elod": float(r["elod"]) if r.get("elod") not in (None, "") else None, "neutro": r.get("neutro") == "1"}
+             "elod": float(r["elod"]) if r.get("elod") not in (None, "") else None,
+             "elox": float(r["elox"]) if r.get("elox") not in (None, "") else None, "neutro": r.get("neutro") == "1"}
         for k in ("dc_h", "dc_d", "dc_a", "dc_over", "o_h", "o_d", "o_a", "o_over", "o_under"):
             j[k] = float(r[k]) if r[k] != "" else None
         out.append(j)
@@ -246,6 +255,7 @@ def main():
                 e = v["cfg"].get("estado")
                 if e and e.get("ctx"):                              # estado ajustado por mando e favoritismo (Elo) deste jogo
                     estados[nome] = cam.montar_estado_jogo(j["elod"], j["neutro"], e["volume"], e["qualidade"], e["exp_volume"], tuple(e["alvo"]), e.get("alvo_ctx") or None, cam.CONFIG["elo_corte"])
+                hist.elo = {k: j[k] for k in ("elod", "elox") if j.get(k) is not None}      # Elo antes deste jogo (camada forca_elo)
                 hist.data_atual = j["date"]                         # a força por gols só usa jogos com data anterior a esta
                 cfg_jogo = {**cam.CONFIG, **v.get("cfg", {})}
                 if nome in bases:                                   # fator de gols móvel: só jogos com data anterior à deste

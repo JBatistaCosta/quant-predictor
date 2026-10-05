@@ -88,6 +88,11 @@ CONFIG = {
     # Força por gols ajustada pelo adversário e com decaimento no tempo (Achado 58). Sem nenhum dos dois (padrão) a força por gols é a razão simples do Achado 57.
     "ajuste_adv_iter": 0,     # iterações do ajuste pelo adversário (ataque e defesa estimados juntos); 0 = sem ajuste
     "meia_vida_dias": None,   # meia-vida do peso de cada jogo anterior, em dias (EWMA); None = todos os jogos com o mesmo peso
+    # Camada forca_elo (Achado 65): a diferença de Elo antes do jogo (sem mando) vira multiplicador de ataque e defesa de chutes, em escala de log: x = dif/400*ln(10); casa recebe
+    # ataque exp(+k*x/2) e defesa exp(-k*x/2), o visitante o contrário, de modo que a razão de chutes pedida é exp(2*k*x) e o simulador entrega ~0,49 dela em log (Achado 51).
+    "elo_k": 0.0,             # k da camada (0 = camada neutra). Fixado antes do teste pela regressão de log(chutes casa/fora) sobre x em 2022-2023, dividida por 2*0,49
+    "peso_elo": 1.0,          # fração de k aplicada (permite combinar com outra camada de força sem contar a mesma informação duas vezes)
+    "elo_fonte": "elox",      # "elod" = Elo normal (por resultado), "elox" = Elo por xG (team_elo_xg_history)
     "elo_corte": 100.0,       # diferença de Elo a partir da qual um time é "forte" ou "fraco" na reação ao placar (Achado 52)
 }
 
@@ -101,6 +106,7 @@ class Historia:
         self.lista = []                                 # (dia, mandante, visitante, gols casa, gols fora) de cada jogo, em ordem
         self.data_atual = None                          # dia (ISO) do jogo que vai ser previsto; quem chama define antes de pedir os multiplicadores
         self._cache_forca = {}
+        self.elo = {}                                   # diferença de Elo do jogo a ser previsto por fonte ({"elod": ..., "elox": ...}); quem chama define antes de pedir os multiplicadores
         self.soma_casa = self.soma_fora = 0.0          # chutes
         self.gols_casa = self.gols_fora = 0.0
         self.recentes = []                              # (chutes casa, chutes fora, gols casa, gols fora) de cada jogo, em ordem
@@ -255,6 +261,17 @@ def camada_forca_mista(h, casa, fora, cfg):
     return _camada_forca(h, casa, fora, cfg, cfg["peso_gols"])
 
 
+def camada_forca_elo(h, casa, fora, cfg):
+    """Força dos times pelo Elo anterior ao jogo (fonte `elo_fonte`): ataque e defesa de chutes em escala de log da diferença de Elo, com k = `elo_k` x `peso_elo`.
+    Sem a diferença de Elo do jogo (`h.elo` vazio) ou com k = 0, não muda nada."""
+    x = h.elo.get(cfg.get("elo_fonte", "elox"))
+    k = cfg.get("elo_k", 0.0) * cfg.get("peso_elo", 1.0)
+    if x is None or k == 0.0:
+        return {}, {}
+    m = math.exp(k * (x / 400.0) * math.log(10.0) / 2.0)
+    return {"ataque_chute": m, "defesa_chute": 1.0 / m}, {"ataque_chute": 1.0 / m, "defesa_chute": m}
+
+
 def camada_gols_nivel(h, casa, fora, cfg):
     """Nível de gols: gols por chute da história sobre o do simulador neutro, aplicado aos dois lados."""
     g = h.gols_por_chute() / GOLS_POR_CHUTE_SIM_NEUTRO
@@ -295,6 +312,7 @@ CAMADAS = {
     "forca_chutes": camada_forca_chutes,
     "forca_gols": camada_forca_gols,
     "forca_mista": camada_forca_mista,
+    "forca_elo": camada_forca_elo,
     "gols_nivel": camada_gols_nivel,
     "gols_mando": camada_gols_mando,
     "gols_fator": camada_gols_fator,
