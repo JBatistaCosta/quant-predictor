@@ -2742,3 +2742,40 @@ O nível de gols que o simulador erra é diferente em cada liga (a Bundesliga é
 **O que não se pode concluir.** (1) Cinco ligas, uma temporada de teste cada; os jogos da mesma liga e do mesmo time se repetem, então os IC são otimistas. (2) Só os jogos com previsão do Dixon-Coles entram (271 a 342 de 306 a 380): é o conjunto em que se pode comparar, não a temporada inteira. (3) A janela de 200 jogos, o piso e o teto do fator móvel não foram otimizados; o expoente 1,0 deixa parte do viés. (4) Quebra e fator móvel foram testados separados, não combinados.
 
 **Próximos testes (propostos):** combinar quebra corrigida e fator móvel; força dos times por gols (como o Dixon-Coles) no lugar de só chutes, que é onde está a diferença; outras ligas e temporadas anteriores.
+
+## Achado 57 — força dos times por gols no lugar de só chutes melhora o 1X2 só um pouco (mistura chutes + gols: -0,0059) e fecha menos de um sexto da diferença para o Dixon-Coles
+
+**Pergunta.** O simulador estima a força dos times só pelo canal dos chutes; o Dixon-Coles a estima pelos gols. Usar gols fecha a diferença de +0,0382 no 1X2 (Achado 56)?
+
+**Método.** Mesmas cinco ligas, 1.533 jogos com Dixon-Coles e odds, 1.000 simulações, mesmas sementes de `exp_forca` (diferença pareada), bootstrap por jogo. Duas variantes novas:
+- `exp_gols`: ataque e defesa de cada time pelos gols feitos e sofridos, divididos pela média da liga e encolhidos para 1 com 20 pseudo-jogos (`k_gols`, fixado antes de olhar o teste; os chutes usam 8), só jogos anteriores; entra pelo volume de chutes com o expoente 2 do Achado 51.
+- `exp_misto`: força = chutes^0,5 × gols^0,5 (`peso_gols` = 0,5, fixado antes).
+Parâmetros ajustáveis por simulação: `--k-gols`, `--peso-gols` e as entradas `k_gols`/`peso_gols` do workflow. Sem opção de ajuste pelo adversário nem de decaimento no tempo.
+
+**Resultado (diferença contra `exp_forca`; negativo = melhor; * = IC 95% exclui zero).**
+
+| | log-loss 1X2 | Brier 1X2 | log-loss over/under |
+|---|---|---|---|
+| `exp_gols`, 5 ligas | -0,0032 [-0,0092; +0,0032] | -0,0022 [-0,0065; +0,0022] | +0,0038 [-0,0008; +0,0086] |
+| `exp_misto`, 5 ligas | **-0,0059 [-0,0099; -0,0018]*** | **-0,0039 [-0,0067; -0,0011]*** | +0,0013 [-0,0015; +0,0041] |
+
+`exp_misto` por liga (1X2): Premier League +0,0011; La Liga -0,0074; Serie A **-0,0137** [-0,0224; -0,0052]; Bundesliga -0,0071; Ligue 1 -0,0019. `exp_gols` por liga: +0,0081; -0,0020; -0,0129; -0,0084; -0,0012 (nenhum isolado distingue de zero).
+
+**Contra o Dixon-Coles (agregado, positivo = pior):**
+
+| | 1X2 | Brier 1X2 | over/under |
+|---|---|---|---|
+| `exp_forca` (só chutes) | +0,0382 [+0,0228; +0,0530] | +0,0266 | -0,0044 [-0,0169; +0,0077] |
+| `exp_gols` | +0,0351 [+0,0216; +0,0483] | +0,0243 | -0,0006 [-0,0119; +0,0105] |
+| `exp_misto` | **+0,0324 [+0,0180; +0,0460]** | +0,0227 | -0,0031 [-0,0149; +0,0084] |
+
+O gols por jogo simulado quase não muda (Premier League 2,664 contra 2,667 e 2,673; Bundesliga 2,883, 2,792 e 2,841).
+
+**Leitura.**
+- Misturar gols à força melhora o 1X2 em 0,006, e esse ganho é significativo; gols sozinhos (com 20 pseudo-jogos) não se distinguem de zero. O over/under não muda.
+- A hipótese de que a diferença para o Dixon-Coles vinha de a força sair dos chutes **não se sustenta como causa principal**: usando gols, a diferença cai de +0,0382 para +0,0324 (15%) e continua significativa em La Liga, Bundesliga e Ligue 1.
+- Falta o que o Dixon-Coles faz além de ter gols: ajuste da força pelo adversário (os ratios aqui ignoram contra quem o time jogou), ataque e defesa estimados juntos por máxima verossimilhança, correção de baixos placares e decaimento no tempo. Esses itens não foram testados aqui. Também pode haver perda na tradução da força para o placar simulado (cadeia de ações sorteadas).
+
+**O que não se pode concluir.** (1) `k_gols` e `peso_gols` fixos em 20 e 0,5; não varridos, para não escolher parâmetro com o teste. (2) Cinco ligas, uma temporada de teste cada; IC otimistas por jogos repetidos do mesmo time. (3) Só o 1X2 melhora; o over/under (onde o simulador já empatava com o Dixon-Coles) não se mexe.
+
+**Próximos testes (propostos):** ajuste da força pelo adversário (iterar ataque/defesa até estabilizar, como um Elo de gols); decaimento no tempo; comparar a força simulada com a esperada de um Poisson direto, para separar erro de força de perda na simulação.
