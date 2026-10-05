@@ -207,3 +207,43 @@ describe('fórmula dinamica', () => {
     expect(aviso).toBeUndefined();
   });
 });
+
+describe('campo neutro', () => {
+  const m = { xg1: 1.8, xga1: 1.0, xg2: 1.2, xga2: 1.4 };
+
+  it('sem a chave (padrão) nada muda e com ela o mando some do multiplicativo', () => {
+    const padrao = getLambdaFormula('multiplicativo').calc({ m });
+    const explicitoFalse = getLambdaFormula('multiplicativo').calc({ m, neutro: false });
+    expect(explicitoFalse).toEqual(padrao);
+    const neutro = getLambdaFormula('multiplicativo').calc({ m, neutro: true });
+    expect(neutro.trueXG1).toBeCloseTo(multiplicativoEsperado(m.xg1, m.xga2, 1), 10);
+    expect(neutro.trueXG2).toBeCloseTo(multiplicativoEsperado(m.xg2, m.xga1, 1), 10);
+    expect(neutro.trueXG1 / padrao.trueXG1).toBeCloseTo(1 / GAMMA_MANDANTE, 10);
+    expect(neutro.trueXG2 / padrao.trueXG2).toBeCloseTo(1 / GAMMA_VISITANTE, 10);
+  });
+
+  it('times iguais em campo neutro têm λ iguais', () => {
+    const mIgual = { xg1: 1.5, xga1: 1.1, xg2: 1.5, xga2: 1.1 };
+    for (const id of ['multiplicativo', 'ataque_defesa', 'shrinkage', 'decay']) {
+      const r = getLambdaFormula(id).calc({ m: mIgual, neutro: true, historico1: [], historico2: [], params: {} });
+      expect(r.trueXG1).toBeCloseTo(r.trueXG2, 10);
+    }
+  });
+
+  it('a média simples não tem mando e não muda; o λ do ML segue igual e avisa', () => {
+    const base = getLambdaFormula('media_simples').calc({ m });
+    expect(getLambdaFormula('media_simples').calc({ m, neutro: true })).toEqual(base);
+    const ml = getLambdaFormula('ml_params').calc({ m, params: { lambdaHome: 1.7, lambdaAway: 0.9 }, neutro: true });
+    expect(ml.trueXG1).toBe(1.7);
+    expect(ml.trueXG2).toBe(0.9);
+    expect(ml.aviso).toMatch(/Campo neutro/);
+  });
+
+  it('ataque × defesa e dinâmica usam a média geral dos dois lados em campo neutro', () => {
+    const ad = getLambdaFormula('ataque_defesa').calc({ m, neutro: true });
+    expect(ad.trueXG1).toBeCloseTo((m.xg1 / LIGA_MEDIA_GERAL) * (m.xga2 / LIGA_MEDIA_GERAL) * LIGA_MEDIA_GERAL, 10);
+    const din = getLambdaFormula('dinamica').calc({ m, neutro: true, params: { xgaAdv1: 1.2, xgAdv1: 1.3, xgaAdv2: 1.1, xgAdv2: 1.4 } });
+    expect(din.trueXG1).toBeCloseTo((m.xg1 / 1.2) * (m.xga2 / 1.4) * LIGA_MEDIA_GERAL, 10);
+    expect(din.trueXG2).toBeCloseTo((m.xg2 / 1.1) * (m.xga1 / 1.3) * LIGA_MEDIA_GERAL, 10);
+  });
+});

@@ -3179,3 +3179,13 @@ A forma log-linear melhora muito pouco no peso de 50% (-0,001), mas **remove a s
 
 **O que não se pode concluir.** (1) O ajuste é de ligas europeias de clubes com a forma em 10 jogos; seleções (usadas na tela, com poucos jogos e campo neutro) podem pedir outro encolhimento. (2) A tela depende do que o usuário digita; o ajuste vale para médias de xG/xGA de ~10 jogos. (3) Entre as fórmulas não calibradas, o Elo com k 0,49 ainda se soma a uma força que pode estar cheia (ataque × defesa); não foram testadas aqui. (4) A faixa de 90% a 100% tem só 10 jogos de teste. (5) Expoente 0,26 significa que a forma de 10 jogos vale pouco; o resto da previsão vem de Elo e média da liga.
 
+## Achado 72 — Chave de campo neutro na calculadora (05/10)
+
+**Pedido.** Uma chave para jogos sem mandante (Copa), já que as fórmulas de λ aplicam o mando de casa (×1,10) e de fora (×0,90) mesmo quando ninguém joga em casa (Achado 70).
+
+**O que foi feito.** Caixa 'Campo neutro (sem vantagem de mando)' na calculadora, desligada por padrão (comportamento de antes inalterado). Ligada: as fórmulas multiplicativa, shrinkage, time decay e normalização dinâmica usam gamma 1 nos dois lados; 'ataque × defesa' e a normalização dinâmica usam a média geral de gols nos dois lados em vez das médias de casa e fora; a 'média simples' já não tinha mando; o λ do modelo misto (ML) não é alterado (já vem com o mando embutido) e a tela avisa. O encolhimento da forma do Achado 71 passa a usar gamma 1 no campo neutro. A chave é salva e restaurada junto com as simulações salvas, e a tela mostra a etiqueta 'Campo neutro' no resultado. Código: `mandoDe(neutro)` em `src/utils/lambdaFormulas.js`, estado `campoNeutro` em `src/pages/AnaliseEvento.jsx`.
+
+**Verificação.** Testes novos em `src/utils/lambdaFormulas.test.js` (padrão inalterado, razão 1/gamma, times iguais dão λ iguais, média simples e ML, ataque × defesa e dinâmica); `npx vitest run src/utils` passa (139 testes; os três arquivos `.mjs` já falhavam em `main`, pois são testes do `node:test`, sem relação com esta mudança) e `npm run build`. Conferido numa página local sem login: Brasil × Alemanha com os valores de exemplo, peso 50%: padrão λ 1,62 × 1,03 e vitória do mandante 50,6%; campo neutro λ 1,47 × 1,15 e 43,9%.
+
+**O que não se pode concluir.** (1) Não há calibração própria para o campo neutro: o ajuste do Achado 71 vem de jogos de clubes com mando, e a chave só remove o mando, sem refazer o k nem o expoente. (2) A chave não é ativada sozinha para seleções; o padrão continua 'desligado'. (3) Sem teste em browser autenticado.
+
