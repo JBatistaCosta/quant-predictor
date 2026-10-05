@@ -3097,3 +3097,28 @@ Faltas, taxas dos times: Brier melhor que a frequência nas quatro linhas (22,5:
 
 **O que não se pode concluir.** (1) Sem odds desses mercados nas 5 ligas, não se testa valor contra o mercado; o resultado é só sobre a qualidade da probabilidade. (2) A grade do `markov_multievento_v1` foi gravada em lote depois dos jogos. (3) k = 10 e a dispersão são escolhas simples, não otimizadas; um modelo melhor de faltas (árbitro, mando) não foi tentado. (4) Faltas e cartões cobrem só 80% dos jogos (fonte confiável). (5) Calibração em uma temporada.
 
+## Achado 68 — Faltas, cartões e escanteios com mando, times e árbitro (05/10)
+
+**Pergunta.** No Achado 67 as faltas foram o único mercado previsível (por taxas dos times). Mando, taxas separadas de "faz" e "provoca" e o árbitro melhoram isso, e ajudam em cartões e escanteios?
+
+**Desenho (k = 10 jogos de encolhimento para times e para o árbitro, fixados antes do teste; nada ajustado em 2025).** Walk-forward sobre 2022-2025, avaliação em 2025, dispersão da binomial negativa em 2024. Estatística por lado: faltas cometidas e cartões (amarelos + vermelhos equivalentes) de `match_disciplina`; escanteios de `hc`/`ac`. **M1**: taxas do total (Achado 67). **M2**: média da liga no lado (mandante e visitante separados) + o que o time faz (desvio contra a média do lado) + o que os adversários fazem contra ele (provoca); total = soma dos lados. **M3**: M2 + efeito do árbitro (desvio do total do jogo contra a previsão de M2 em jogos anteriores do árbitro, encolhido; 0 sem árbitro). Árbitro por nome (`match_context_fotmob.referee`), disponível em 99,9% dos jogos de 2025.
+
+**Faltas (1.418 jogos, total médio 24,07):**
+
+| modelo | correlação | Brier over 22,5 | over 24,5 | over 26,5 | over 28,5 |
+|---|---|---|---|---|---|
+| frequência da liga | — | 0,2267 | 0,2315 | 0,2087 | 0,1640 |
+| M1 taxas do total | 0,408 | 0,2149 | 0,2205 | 0,2011 | 0,1584 |
+| M2 mando + faz/provoca | 0,425 | 0,2134 | 0,2180 | 0,2003 | 0,1580 |
+| **M3 + árbitro** | **0,447** | **0,2099** | **0,2132** | **0,1956** | **0,1550** |
+
+Diferenças de Brier (IC 95% pareado): M2-M1 entre -0,0004 e -0,0025, não significativas por linha (a log-verossimilhança do total melhora +0,0091 [+0,0004; +0,0184]); **M3-M2: -0,0035, -0,0048*, -0,0046*, -0,0030***; M3-M1 -0,0034 a -0,0073, todas significativas. Só jogos com árbitro conhecido: M3-M2 médio -0,0040 [-0,0065; -0,0012]*. O árbitro é a maior contribuição.
+
+**Cartões (1.375 jogos, total médio 4,84):** correlação 0,166 (M1), 0,128 (M2), **0,194 (M3)**. Brier M3 contra M1: 3,5 -0,0007; **4,5 -0,0038***; **5,5 -0,0046***. Mando e times não ajudam (M2 pior que M1 na correlação); o árbitro sim.
+
+**Escanteios (1.752 jogos):** M1, M2 e M3 empatados (correlação 0,114, 0,118, 0,126; Brier das linhas 8,5 a 11,5 sem diferença); nem o árbitro ajuda.
+
+**Conclusão.** (a) Faltas e cartões dependem muito do árbitro e das equipes envolvidas, não da qualidade; com árbitro, o Brier das faltas melhora 0,013 a 0,018 contra a frequência da liga e 0,005 a 0,007 contra o modelo sem árbitro. (b) O mando separado e a divisão faz/provoca acrescentam pouco; o ganho é quase todo do efeito do árbitro. (c) Escanteios continuam sem sinal. (d) O modelo continua pequeno (correlação 0,45 em faltas): explica uma fração modesta da variação.
+
+**O que não se pode concluir.** (1) Não há odds de faltas e cartões nas 5 ligas, então não se sabe se o mercado já precifica o árbitro (o histórico do projeto aponta que sim em cartões). (2) k = 10 não foi otimizado; efeito do árbitro por nome (homônimos raros) e sem separar mando/visitante dele. (3) O árbitro de cada jogo costuma ser anunciado poucos dias antes; a previsão com ele só vale a partir daí. (4) Uma temporada de teste; intervalos tratam os jogos como independentes.
+
