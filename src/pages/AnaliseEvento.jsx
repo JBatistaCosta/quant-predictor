@@ -14,6 +14,7 @@ import { XT_GRID } from '../utils/xt';
 import { toNumber, toOdd, toPct, getEloColor, heatColor } from '../utils/format';
 import { binomialPMF, binomialCDF, negBinomialCDF } from '../utils/distributions';
 import { LAMBDA_FORMULAS, getLambdaFormula } from '../utils/lambdaFormulas';
+import { fatoresElo } from '../utils/eloLambda';
 import { apiUrl } from '../utils/apiUrl';
 import { extractJsonFromImages } from '../utils/ocr';
 import { calcularStakeKellyPorFaixa, encontrarFaixaStaking } from '../utils/stakingPolicy';
@@ -1024,11 +1025,10 @@ export default function AnaliseEvento() {
       shots2: toNumber(metrics.shots2), shotsOnTarget2: toNumber(metrics.shotsOnTarget2), corners2: toNumber(metrics.corners2),
     };
 
+    // Fator de Elo no λ de cada lado: conversão log-linear calibrada (src/utils/eloLambda.js);
+    // substitui o antigo E/0,5, que saturava e ficava confiante demais com peso alto.
     const rawEloDiff = t1.rating - t2.rating;
-    const weightedEloDiff = rawEloDiff * (eloWeight / 100);
-
-    const expectancyT1 = 1 / (1 + Math.pow(10, -weightedEloDiff / 400));
-    const expectancyT2 = 1 - expectancyT1;
+    const { fator1: fatorElo1, fator2: fatorElo2 } = fatoresElo(rawEloDiff, eloWeight);
 
     const modPoss1 = 0.8 + (0.2 * (m.poss1 / 50));
     const modPoss2 = 0.8 + (0.2 * (m.poss2 / 50));
@@ -1085,8 +1085,8 @@ export default function AnaliseEvento() {
     const trueXG_T1_final = shotsModel === 'cadeia' ? chutesPainel1.lambdaChain : trueXG_T1;
     const trueXG_T2_final = shotsModel === 'cadeia' ? chutesPainel2.lambdaChain : trueXG_T2;
 
-    const lambda1 = Math.max(0.1, trueXG_T1_final * (expectancyT1 / 0.5) * modPoss1);
-    const lambda2 = Math.max(0.1, trueXG_T2_final * (expectancyT2 / 0.5) * modPoss2);
+    const lambda1 = Math.max(0.1, trueXG_T1_final * fatorElo1 * modPoss1);
+    const lambda2 = Math.max(0.1, trueXG_T2_final * fatorElo2 * modPoss2);
 
     const maxGoals = 10;
     let probWin1 = 0, probWin2 = 0, probDraw = 0;
@@ -1832,8 +1832,8 @@ export default function AnaliseEvento() {
                 />
                 <div className="flex justify-between text-xs text-slate-400 mt-2 font-medium">
                   <span>0% (Apenas Estatística Recente)</span>
-                  <span className="text-slate-300">50% (Cenário Médio Híbrido)</span>
-                  <span>100% (Ditadura do Elo)</span>
+                  <span className="text-slate-300">50% (Elo calibrado)</span>
+                  <span>100% (Elo em dobro)</span>
                 </div>
               </div>
 
